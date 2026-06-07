@@ -1,0 +1,818 @@
+'use strict';
+
+/**
+ * /api/assets/import — bulk asset import from CSV or Excel (.xlsx/.xls).
+ *
+ * "Day 1" integration: facility managers arrive with equipment spreadsheets.
+ * Two endpoints (mounted in index.ts BEFORE /api/assets so the assets
+ * router's /:id param routes never swallow these paths):
+ *
+ *   POST /preview — multipart `file=<csv|xlsx>` (+ optional `columnMap` JSON
+ *              to re-validate a user-edited mapping). Parse + auto-detect a
+ *              column mapping + per-row validate. NO writes. Returns headers,
+ *              suggested mapping, sample rows, per-row validation errors,
+ *              duplicate-serial rows, and unknown site names so the UI can
+ *              render the mapping/review step.
+ *
+ *   POST /commit  — multipart `file` plus form fields:
+ *                columnMap          JSON object  file header -> schema field (required)
+ *                createMissingSites 'true'|'false' (default 'false') — auto-create
+ *                                   unknown sites AND building/area/position
+ *                                   names under their site
+ *                autoApplySchedules 'true'|'false' (default 'false') — after
+ *                                   creation, create MaintenanceSchedules from
+ *                                   the GLOBAL task-definition matrix matching
+ *                                   each new asset's equipmentType (mirrors
+ *                                   POST /api/schedules/bulk-apply)
+ *              Re-parses (no server-side cache), applies the mapping, and
+ *              inserts within a single Prisma transaction. Rows with
+ *              validation errors are reported individually and never reach
+ *              the DB; rows whose (accountId, serialNumber) already exists
+ *              (or repeats within the file) are skipped and reported.
+ *
+ * Supported columns: siteName (required), equipmentType (required — accepts
+ * enum values OR display labels like "Transformer (Liquid)", fuzzy/trimmed
+ * case-insensitive), buildingName/areaName/positionName, manufacturer, model,
+ * serialNumber, installDate (several formats), conditionPhysical/
+ * Criticality/Environment (C1/C2/C3, default C2), inService (yes/no/true/
+ * false), notes. governingCondition is computed as the worst axis, same rule
+ * as routes/assets.ts.
+ *
+ * Caps: 500 data rows / 5MB file per request. Manager+ only. Every query
+ * scoped accountId = req.user.accountId. Activity log: ONE `assets_imported`
+ * row per call with counts — no per-row rows (would dilute asset timelines).
+ *
+ * Hardening inherited from the retired contracts importer: multer memory
+ * storage + size cap + extension filter, exceljs (not SheetJS — CVE-2023-30533/
+ * CVE-2024-22363), formula-injection sanitization on every free-text column
+ * on the way IN, per-row error collection with 1-indexed+header row numbers.
+ */
+
+const router = require('express').Router();
+const multer = require('multer');
+const Papa = require('papaparse');
+// exceljs, not xlsx/SheetJS — see header. Already a dependency (export path).
+const ExcelJS = require('exceljs');
+
+const { requireManager } = require('../middleware/roles');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
+const prisma = require('../lib/prisma').default;
+
+const MAX_IMPORT_ROWS  = 500;
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: MAX_IMPORT_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const name = file.originalname || '';
+    const isCsv  = /\.csv$/i.test(name);
+    const isXlsx = /\.(xlsx|xls)$/i.test(name);
+    if (!isCsv && !isXlsx) return cb(new Error('Only .csv or .xlsx files are accepted'));
+    return cb(null, true);
+  },
+});
+
+// ─── File parsing (CSV via papaparse, XLSX via exceljs) ──────────────────────
+
+/**
+ * Cell-value normalizer for exceljs — every cell becomes a string.
+ * Hyperlinks return their text label; rich-text cells return concatenated
+ * runs; formula cells return the cached result; dates render in ISO;
+ * everything else gets String(). Empty/null → ''.
+ */
+function _cellToString(v) {
+  if (v == null || v === '') return '';
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'object') {
+    if (typeof v.text === 'string') return v.text;            // hyperlink
+    if (Array.isArray(v.richText))  return v.richText.map(r => r.text || '').join('');
+    if ('result' in v)              return _cellToString(v.result);
+    if ('formula' in v && 'value' in v) return _cellToString(v.value);
+    return String(v);
+  }
+  return String(v);
+}
+
+/**
+ * Parse a multer-uploaded buffer into { headers: string[], rows: object[] }
+ * where each row is a plain object keyed by header string (papaparse shape).
+ */
+async function parseUploadedFile(buffer, originalname) {
+  const isXlsx = /\.(xlsx|xls)$/i.test(originalname || '');
+
+  if (isXlsx) {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const ws = wb.worksheets[0];
+    if (!ws) return { headers: [], rows: [] };
+
+    let headers = [];
+    const rows = [];
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      const values = row.values || []; // 1-indexed; index 0 always null
+      if (rowNumber === 1) {
+        headers = values.slice(1).map(h => _cellToString(h).trim());
+        return;
+      }
+      const cells = values.slice(1);
+      if (cells.every(c => c == null || c === '' || _cellToString(c) === '')) return;
+      const obj: any = {};
+      for (let j = 0; j < headers.length; j++) {
+        const h = headers[j];
+        if (!h) continue;
+        obj[h] = _cellToString(cells[j]);
+      }
+      rows.push(obj);
+    });
+    return { headers, rows };
+  }
+
+  const text   = buffer.toString('utf8');
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true, trimHeaders: true });
+  const headers = parsed.meta.fields || [];
+  const rows    = parsed.data || [];
+  return { headers, rows };
+}
+
+// ─── Equipment-type vocabulary ────────────────────────────────────────────────
+// Server-side mirror of client/src/lib/equipment.js EQUIPMENT_TYPE_LABELS —
+// keep in sync with the EquipmentType Prisma enum.
+
+const EQUIPMENT_TYPE_LABELS: any = {
+  TRANSFORMER_LIQUID:   'Transformer (Liquid)',
+  TRANSFORMER_DRY:      'Transformer (Dry)',
+  SWITCHGEAR:           'Switchgear',
+  GENERATOR:            'Generator',
+  MOTOR:                'Motor',
+  MCC:                  'MCC',
+  UPS_BATTERY:          'UPS / Battery',
+  CIRCUIT_BREAKER:      'Circuit Breaker',
+  ARC_FLASH_PANEL:      'Arc Flash Panel',
+  VFD:                  'VFD',
+  FIRE_PUMP_CONTROLLER: 'Fire Pump Controller',
+};
+const EQUIPMENT_TYPES = Object.keys(EQUIPMENT_TYPE_LABELS);
+
+// Fuzzy-match key: lowercase, strip everything non-alphanumeric so
+// "Transformer (Liquid)", "transformer liquid", and "TRANSFORMER_LIQUID"
+// all collapse to "transformerliquid".
+function normToken(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+const EQUIPMENT_TYPE_LOOKUP = (() => {
+  const m = new Map();
+  for (const [val, label] of Object.entries<any>(EQUIPMENT_TYPE_LABELS)) {
+    m.set(normToken(val), val);
+    m.set(normToken(label), val);
+  }
+  // Conservative real-world aliases seen on facility spreadsheets.
+  const aliases: any = {
+    TRANSFORMER_LIQUID:   ['liquid transformer', 'liquid-filled transformer', 'oil transformer', 'oil-filled transformer', 'wet transformer'],
+    TRANSFORMER_DRY:      ['dry transformer', 'dry-type transformer', 'cast coil transformer'],
+    SWITCHGEAR:           ['swgr', 'switch gear'],
+    GENERATOR:            ['genset', 'gen set', 'emergency generator', 'standby generator'],
+    MCC:                  ['motor control center', 'motor control centre'],
+    UPS_BATTERY:          ['ups', 'battery', 'ups system', 'battery string'],
+    CIRCUIT_BREAKER:      ['breaker', 'circuit brkr'],
+    ARC_FLASH_PANEL:      ['arc flash', 'panelboard'],
+    VFD:                  ['variable frequency drive', 'adjustable speed drive', 'vsd'],
+    FIRE_PUMP_CONTROLLER: ['fire pump', 'fire pump ctrl'],
+  };
+  for (const [val, list] of Object.entries<any>(aliases)) {
+    for (const a of list) {
+      const k = normToken(a);
+      if (!m.has(k)) m.set(k, val);
+    }
+  }
+  return m;
+})();
+
+// ─── Column mapping: header aliases -> internal field keys ──────────────────
+
+const HEADER_TO_FIELD: any = {
+  'site':                  'siteName',
+  'site name':             'siteName',
+  'facility':              'siteName',
+  'facility name':         'siteName',
+  'location':              'siteName',
+  'plant':                 'siteName',
+  'equipment type':        'equipmentType',
+  'equipment':             'equipmentType',
+  'type':                  'equipmentType',
+  'asset type':            'equipmentType',
+  'category':              'equipmentType',
+  'building':              'buildingName',
+  'building name':         'buildingName',
+  'area':                  'areaName',
+  'area name':             'areaName',
+  'room':                  'areaName',
+  'position':              'positionName',
+  'position name':         'positionName',
+  'cubicle':               'positionName',
+  'designation':           'positionName',
+  'manufacturer':          'manufacturer',
+  'make':                  'manufacturer',
+  'mfr':                   'manufacturer',
+  'mfg':                   'manufacturer',
+  'brand':                 'manufacturer',
+  'model':                 'model',
+  'model number':          'model',
+  'model #':               'model',
+  'model no':              'model',
+  'serial':                'serialNumber',
+  'serial number':         'serialNumber',
+  'serial #':              'serialNumber',
+  'serial no':             'serialNumber',
+  'sn':                    'serialNumber',
+  's/n':                   'serialNumber',
+  'install date':          'installDate',
+  'installed':             'installDate',
+  'installation date':     'installDate',
+  'date installed':        'installDate',
+  'in service date':       'installDate',
+  'commissioned':          'installDate',
+  'physical':              'conditionPhysical',
+  'physical condition':    'conditionPhysical',
+  'condition physical':    'conditionPhysical',
+  'condition':             'conditionPhysical',
+  'criticality':           'conditionCriticality',
+  'condition criticality': 'conditionCriticality',
+  'environment':           'conditionEnvironment',
+  'environmental':         'conditionEnvironment',
+  'condition environment': 'conditionEnvironment',
+  'environment condition': 'conditionEnvironment',
+  'in service':            'inService',
+  'in-service':            'inService',
+  'service status':        'inService',
+  'status':                'inService',
+  'notes':                 'notes',
+  'comments':              'notes',
+  'comment':               'notes',
+  'description':           'notes',
+  'remarks':               'notes',
+};
+
+// Surfaced to the client for the mapping dropdown UI.
+const SCHEMA_FIELDS = [
+  { key: 'siteName',             label: 'Site (lookup by name)',  type: 'siteName', required: true },
+  { key: 'equipmentType',        label: 'Equipment Type',         type: 'enum',     required: true, options: EQUIPMENT_TYPES },
+  { key: 'buildingName',         label: 'Building',               type: 'string' },
+  { key: 'areaName',             label: 'Area',                   type: 'string' },
+  { key: 'positionName',         label: 'Position',               type: 'string' },
+  { key: 'manufacturer',         label: 'Manufacturer',           type: 'string' },
+  { key: 'model',                label: 'Model',                  type: 'string' },
+  { key: 'serialNumber',         label: 'Serial Number',          type: 'string' },
+  { key: 'installDate',          label: 'Install Date',           type: 'date' },
+  { key: 'conditionPhysical',    label: 'Condition — Physical',   type: 'enum', options: ['C1', 'C2', 'C3'] },
+  { key: 'conditionCriticality', label: 'Condition — Criticality', type: 'enum', options: ['C1', 'C2', 'C3'] },
+  { key: 'conditionEnvironment', label: 'Condition — Environment', type: 'enum', options: ['C1', 'C2', 'C3'] },
+  { key: 'inService',            label: 'In Service',             type: 'boolean' },
+  { key: 'notes',                label: 'Notes',                  type: 'string' },
+];
+const VALID_FIELD_KEYS = new Set(SCHEMA_FIELDS.map(f => f.key));
+
+function suggestMapping(headers) {
+  const m: any = {};
+  for (const h of headers) {
+    const key = String(h || '').trim().toLowerCase();
+    m[h] = (key && HEADER_TO_FIELD[key] !== undefined) ? HEADER_TO_FIELD[key] : null;
+  }
+  return m;
+}
+
+// ─── Coercion / validation helpers ───────────────────────────────────────────
+
+// Governing condition = worst of the three axes (C3 wins) — same rule as
+// routes/assets.ts.
+const worstCondition = (a, b, c) =>
+  ['C3', 'C2', 'C1'].find(v => [a, b, c].includes(v)) || 'C2';
+
+// Defense-in-depth formula-injection guard for free-text columns (inherited
+// from the contracts importer, audit Cluster A P2): sanitize on the way IN so
+// the stored value is never dangerous regardless of which tool re-exports it.
+function sanitizeFormulaPrefix(v) {
+  if (v == null) return v;
+  if (typeof v !== 'string') return v;
+  if (/^\s*[=+\-@\t\r]/.test(v)) return "'" + v;
+  return v;
+}
+
+function parseDateCell(s) {
+  let d = null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    d = new Date(s);                                   // ISO / exceljs dates
+  } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+    const [mm, dd, yy] = s.split('/');                 // m/d/yyyy (US)
+    d = new Date(`${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+  } else if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(s)) {
+    const [mm, dd, yy] = s.split('-');                 // m-d-yyyy
+    d = new Date(`${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
+  } else {
+    d = new Date(s);                                   // "Jan 5, 2026" etc.
+  }
+  if (Number.isNaN(d?.getTime?.())) return new Error(`Invalid date: "${s}"`);
+  return d;
+}
+
+function parseConditionCell(s) {
+  const v = String(s).trim().toUpperCase();
+  if (['C1', 'C2', 'C3'].includes(v)) return v;
+  if (v === '1' || v === 'GOOD') return 'C1';
+  if (v === '2' || v === 'FAIR') return 'C2';
+  if (v === '3' || v === 'POOR') return 'C3';
+  return new Error(`Invalid condition rating: "${s}" (expected C1, C2, or C3)`);
+}
+
+// Coerce a raw cell into the JS shape the Asset model expects. Returns the
+// coerced value, or an Error with a human-readable message. null/empty
+// returns null (= "leave field blank / use default").
+function coerce(field, raw) {
+  if (raw == null || raw === '') return null;
+  const s = String(raw).trim();
+  if (s === '') return null;
+
+  switch (field) {
+    case 'installDate':
+      return parseDateCell(s);
+    case 'conditionPhysical':
+    case 'conditionCriticality':
+    case 'conditionEnvironment':
+      return parseConditionCell(s);
+    case 'inService': {
+      const v = s.toLowerCase();
+      if (['yes', 'true', 'y', '1', 'in service', 'in-service', 'active'].includes(v))  return true;
+      if (['no', 'false', 'n', '0', 'out of service', 'out', 'inactive'].includes(v))  return false;
+      return new Error(`Invalid in-service value: "${s}" (expected Yes/No)`);
+    }
+    case 'equipmentType': {
+      const match = EQUIPMENT_TYPE_LOOKUP.get(normToken(s));
+      if (!match) return new Error(`Unknown equipment type: "${s}"`);
+      return match;
+    }
+    case 'notes': {
+      if (s.length > 2000) return new Error(`Notes exceeds 2000 characters`);
+      return s;
+    }
+    default: {
+      // Free-text short strings (names, manufacturer, model, serial).
+      if (s.length > 500) return new Error(`Value exceeds 500 characters`);
+      return s;
+    }
+  }
+}
+
+const lc = (s) => String(s || '').trim().toLowerCase();
+
+// ─── Shared preview/commit pipeline ──────────────────────────────────────────
+// Parses the upload, resolves the mapping (client-supplied or suggested),
+// normalizes + validates every row, and computes unknown sites + duplicate
+// serials. Returns { error: { status, body } } or the full context object.
+async function prepareImport(req): Promise<any> {
+  if (!req.file || !req.file.buffer) {
+    return { error: { status: 400, body: { success: false, error: 'No file uploaded' } } };
+  }
+
+  let parsed;
+  try {
+    parsed = await parseUploadedFile(req.file.buffer, req.file.originalname);
+  } catch (parseErr) {
+    return { error: { status: 400, body: { success: false, error: `File parse error: ${parseErr.message}` } } };
+  }
+  const { headers, rows } = parsed;
+
+  if (headers.length === 0) {
+    return { error: { status: 400, body: { success: false, error: 'File has no header row' } } };
+  }
+  if (rows.length === 0) {
+    return { error: { status: 400, body: { success: false, error: 'File contained no data rows' } } };
+  }
+  if (rows.length > MAX_IMPORT_ROWS) {
+    return { error: { status: 400, body: { success: false, error: `Import exceeds ${MAX_IMPORT_ROWS}-row cap (${rows.length} rows)` } } };
+  }
+
+  // Mapping — client-supplied columnMap (commit always; preview optionally,
+  // so the UI can re-validate after the user edits the dropdowns) or suggested.
+  let mapping;
+  if (req.body && req.body.columnMap) {
+    try { mapping = JSON.parse(req.body.columnMap); }
+    catch { return { error: { status: 400, body: { success: false, error: 'columnMap must be valid JSON' } } }; }
+    if (typeof mapping !== 'object' || mapping === null || Array.isArray(mapping)) {
+      return { error: { status: 400, body: { success: false, error: 'columnMap must be a JSON object' } } };
+    }
+    // Drop unknown target keys defensively — a stale client can't write to
+    // arbitrary asset columns.
+    for (const [h, f] of Object.entries<any>(mapping)) {
+      if (f != null && !VALID_FIELD_KEYS.has(f)) mapping[h] = null;
+    }
+  } else {
+    mapping = suggestMapping(headers);
+  }
+
+  // Required columns must be mapped before any row work makes sense.
+  const targetFields = Object.values<any>(mapping).filter(Boolean);
+  const missingRequired = [];
+  if (!targetFields.includes('siteName'))      missingRequired.push('Site');
+  if (!targetFields.includes('equipmentType')) missingRequired.push('Equipment Type');
+  if (missingRequired.length > 0) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          success: false,
+          error:   `Missing required column(s): ${missingRequired.join(', ')}. Map an existing column to each.`,
+          data:    { headers, suggestedMapping: mapping, schemaFields: SCHEMA_FIELDS },
+        },
+      },
+    };
+  }
+
+  // Per-row normalize + validate.
+  const normalizedRows   = [];
+  const validationErrors = [];
+  const siteNamesByLc    = new Map(); // lc -> original casing (first seen)
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const data: any = {};
+    const rowErrors = [];
+
+    for (const [header, fieldKey] of Object.entries<any>(mapping)) {
+      if (!fieldKey) continue;
+      const coerced = coerce(fieldKey, r[header]);
+      if (coerced instanceof Error) {
+        rowErrors.push({ field: fieldKey, error: coerced.message });
+        continue;
+      }
+      data[fieldKey] = coerced;
+    }
+
+    if (!data.siteName) {
+      rowErrors.push({ field: 'siteName', error: 'Site name is required' });
+    } else {
+      const k = lc(data.siteName);
+      if (!siteNamesByLc.has(k)) siteNamesByLc.set(k, data.siteName);
+    }
+    if (!data.equipmentType && !rowErrors.some(e => e.field === 'equipmentType')) {
+      rowErrors.push({ field: 'equipmentType', error: 'Equipment type is required' });
+    }
+
+    normalizedRows.push(data);
+    if (rowErrors.length > 0) {
+      validationErrors.push({ row: i + 2, errors: rowErrors }); // +2 = 1-indexed + header row
+    }
+  }
+
+  // Existing sites — case-insensitive match by trimmed name. Archived sites
+  // still match (assets keep their siteId on archive; re-importing under an
+  // archived site name should attach, not duplicate).
+  const siteRecords = await prisma.site.findMany({
+    where:  { accountId: req.user.accountId },
+    select: { id: true, name: true },
+  });
+  const siteByLc = new Map(siteRecords.map(s => [lc(s.name), s]));
+  const unknownSites = [...siteNamesByLc.keys()]
+    .filter(k => !siteByLc.has(k))
+    .map(k => siteNamesByLc.get(k));
+
+  // Dedupe — (accountId, serialNumber), case-insensitive trim, plus repeats
+  // within the file itself. Rows that fail validation are excluded (they're
+  // "failed", not "skipped").
+  const existingAssets = await prisma.asset.findMany({
+    where:  { accountId: req.user.accountId, serialNumber: { not: null } },
+    select: { id: true, serialNumber: true },
+  });
+  const existingBySerial = new Map();
+  for (const a of existingAssets) {
+    const k = lc(a.serialNumber);
+    if (k && !existingBySerial.has(k)) existingBySerial.set(k, a.id);
+  }
+
+  const errorRowSet = new Set(validationErrors.map(e => e.row));
+  const duplicates  = [];
+  const dupRowSet   = new Set();
+  const seenInFile  = new Set();
+  for (let i = 0; i < normalizedRows.length; i++) {
+    const rowNum = i + 2;
+    if (errorRowSet.has(rowNum)) continue;
+    const serial = normalizedRows[i].serialNumber;
+    if (!serial) continue;
+    const k = lc(serial);
+    const existingId = existingBySerial.get(k);
+    if (existingId) {
+      duplicates.push({ row: rowNum, serialNumber: serial, existingAssetId: existingId, reason: 'Serial number already exists in this account' });
+      dupRowSet.add(rowNum);
+    } else if (seenInFile.has(k)) {
+      duplicates.push({ row: rowNum, serialNumber: serial, existingAssetId: null, reason: 'Serial number repeats earlier in this file' });
+      dupRowSet.add(rowNum);
+    } else {
+      seenInFile.add(k);
+    }
+  }
+
+  return {
+    headers, rows, mapping,
+    normalizedRows, validationErrors, errorRowSet,
+    siteByLc, unknownSites,
+    duplicates, dupRowSet,
+  };
+}
+
+// Multer wrapper shared by both endpoints — converts the size-cap error to a
+// 413 and any other upload error to a 400 instead of the default handler.
+function handleUpload(req, res, next) {
+  importUpload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ success: false, error: `File exceeds ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)}MB cap` });
+      }
+      return res.status(400).json({ success: false, error: err.message || 'Upload failed' });
+    }
+    return next();
+  });
+}
+
+// ─── POST /api/assets/import/preview ─────────────────────────────────────────
+router.post('/preview', requireManager, handleUpload, async (req, res) => {
+  try {
+    const ctx = await prepareImport(req);
+    if (ctx.error) return res.status(ctx.error.status).json(ctx.error.body);
+
+    return res.json({
+      success: true,
+      data: {
+        step:             'preview',
+        totalRows:        ctx.rows.length,
+        headers:          ctx.headers,
+        suggestedMapping: ctx.mapping,
+        schemaFields:     SCHEMA_FIELDS,
+        sampleRows:       ctx.rows.slice(0, 10),     // raw rows keyed by header
+        validationErrors: ctx.validationErrors,
+        duplicates:       ctx.duplicates,
+        unknownSites:     ctx.unknownSites,
+        maxRows:          MAX_IMPORT_ROWS,
+      },
+    });
+  } catch (err) {
+    console.error('POST /api/assets/import/preview error:', err);
+    return res.status(500).json({ success: false, error: 'Import preview failed' });
+  }
+});
+
+// ─── POST /api/assets/import/commit ──────────────────────────────────────────
+router.post('/commit', requireManager, handleUpload, async (req, res) => {
+  try {
+    if (!req.body || !req.body.columnMap) {
+      return res.status(400).json({ success: false, error: 'columnMap is required on commit' });
+    }
+    const ctx = await prepareImport(req);
+    if (ctx.error) return res.status(ctx.error.status).json(ctx.error.body);
+
+    const createMissingSites = String(req.body.createMissingSites || '').toLowerCase() === 'true';
+    const autoApplySchedules = String(req.body.autoApplySchedules || '').toLowerCase() === 'true';
+
+    if (!createMissingSites && ctx.unknownSites.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error:   `Unknown sites: ${ctx.unknownSites.slice(0, 5).join(', ')}${ctx.unknownSites.length > 5 ? '…' : ''}. Enable "create missing sites" to auto-create.`,
+        data:    { unknownSites: ctx.unknownSites },
+      });
+    }
+
+    const { normalizedRows, validationErrors, errorRowSet, dupRowSet, siteByLc } = ctx;
+    const accountId = req.user.accountId;
+
+    // Preload hierarchy lookups for the whole account once — caches are keyed
+    // `${siteId}|${lc(name)}` and shared across rows so duplicate names in the
+    // file resolve to one created row.
+    const [allBuildings, allAreas, allPositions] = await Promise.all([
+      prisma.building.findMany({ where: { accountId }, select: { id: true, siteId: true, name: true } }),
+      prisma.area.findMany({ where: { accountId }, select: { id: true, siteId: true, buildingId: true, name: true } }),
+      prisma.equipmentPosition.findMany({ where: { accountId }, select: { id: true, siteId: true, areaId: true, name: true } }),
+    ]);
+    const buildingCache = new Map(allBuildings.map(b => [`${b.siteId}|${lc(b.name)}`, b]));
+    const areaCache     = new Map(allAreas.map(a => [`${a.siteId}|${lc(a.name)}`, a]));
+    const positionCache = new Map(allPositions.map(p => [`${p.siteId}|${lc(p.name)}`, p]));
+
+    const errorRows   = [];   // rows that failed validation or hierarchy linking
+    const skippedRows = ctx.duplicates.map(d => ({ row: d.row, serialNumber: d.serialNumber, reason: d.reason }));
+
+    let txResult;
+    try {
+      txResult = await prisma.$transaction(async (tx) => {
+        // Auto-create unknown sites (gated by flag; we 400'd above otherwise).
+        let sitesCreated = 0;
+        if (createMissingSites) {
+          for (const name of ctx.unknownSites) {
+            const site = await tx.site.create({
+              data:   { accountId, name: sanitizeFormulaPrefix(String(name).trim()) },
+              select: { id: true, name: true },
+            });
+            siteByLc.set(lc(name), site);
+            sitesCreated++;
+          }
+        }
+
+        let created = 0;
+        const createdAssets = []; // { id, equipmentType } for schedule auto-apply
+
+        for (let i = 0; i < normalizedRows.length; i++) {
+          const rowNum = i + 2;
+          if (errorRowSet.has(rowNum)) {
+            const ve = validationErrors.find(e => e.row === rowNum);
+            errorRows.push({ row: rowNum, errors: ve ? ve.errors : [{ field: '', error: 'Validation failed' }] });
+            continue;
+          }
+          if (dupRowSet.has(rowNum)) continue; // already in skippedRows
+
+          const r = normalizedRows[i];
+          const site: any = siteByLc.get(lc(r.siteName));
+          if (!site) {
+            // Shouldn't happen — either bailed above or created in this tx.
+            errorRows.push({ row: rowNum, errors: [{ field: 'siteName', error: 'Site not found in account' }] });
+            continue;
+          }
+
+          // Hierarchy resolution — match case-insensitively under the site;
+          // create when createMissingSites. Chain consistency mirrors
+          // routes/assets.ts resolveHierarchy: an area created directly under
+          // the site (buildingId null) pairs with anything; when both sides
+          // carry a building they must agree.
+          let buildingId = null, areaId = null, positionId = null;
+          let linkError = null;
+
+          if (r.buildingName) {
+            const bKey = `${site.id}|${lc(r.buildingName)}`;
+            let b: any = buildingCache.get(bKey);
+            if (!b && createMissingSites) {
+              b = await tx.building.create({
+                data:   { accountId, siteId: site.id, name: sanitizeFormulaPrefix(String(r.buildingName).trim()) },
+                select: { id: true, siteId: true, name: true },
+              });
+              buildingCache.set(bKey, b);
+            }
+            if (b) buildingId = b.id;
+            // No match + flag off → leave null (the site link is the only
+            // hard requirement; we don't fail the row over an optional level).
+          }
+
+          if (r.areaName) {
+            const aKey = `${site.id}|${lc(r.areaName)}`;
+            let a: any = areaCache.get(aKey);
+            if (!a && createMissingSites) {
+              a = await tx.area.create({
+                data: {
+                  accountId, siteId: site.id,
+                  buildingId: buildingId || null,
+                  name: sanitizeFormulaPrefix(String(r.areaName).trim()),
+                },
+                select: { id: true, siteId: true, buildingId: true, name: true },
+              });
+              areaCache.set(aKey, a);
+            }
+            if (a) {
+              if (buildingId && a.buildingId && a.buildingId !== buildingId) {
+                linkError = { field: 'areaName', error: `Area "${r.areaName}" belongs to a different building at this site` };
+              } else {
+                areaId = a.id;
+                if (!buildingId && a.buildingId) buildingId = a.buildingId; // inherit for chain consistency
+              }
+            }
+          }
+
+          if (!linkError && r.positionName) {
+            const pKey = `${site.id}|${lc(r.positionName)}`;
+            let p: any = positionCache.get(pKey);
+            if (!p && createMissingSites) {
+              p = await tx.equipmentPosition.create({
+                data: {
+                  accountId, siteId: site.id,
+                  areaId: areaId || null,
+                  name: sanitizeFormulaPrefix(String(r.positionName).trim()),
+                },
+                select: { id: true, siteId: true, areaId: true, name: true },
+              });
+              positionCache.set(pKey, p);
+            }
+            if (p) {
+              if (areaId && p.areaId && p.areaId !== areaId) {
+                linkError = { field: 'positionName', error: `Position "${r.positionName}" belongs to a different area at this site` };
+              } else {
+                positionId = p.id;
+              }
+            }
+          }
+
+          if (linkError) {
+            errorRows.push({ row: rowNum, errors: [linkError] });
+            continue;
+          }
+
+          // Default each unset axis to C2 (base interval) per NFPA 70B.
+          const physical    = r.conditionPhysical    || 'C2';
+          const criticality = r.conditionCriticality || 'C2';
+          const environment = r.conditionEnvironment || 'C2';
+
+          const asset = await tx.asset.create({
+            data: {
+              accountId,
+              siteId:               site.id,
+              buildingId,
+              areaId,
+              positionId,
+              equipmentType:        r.equipmentType,
+              manufacturer:         sanitizeFormulaPrefix(r.manufacturer) || null,
+              model:                sanitizeFormulaPrefix(r.model) || null,
+              serialNumber:         sanitizeFormulaPrefix(r.serialNumber) || null,
+              installDate:          r.installDate || null,
+              conditionPhysical:    physical,
+              conditionCriticality: criticality,
+              conditionEnvironment: environment,
+              governingCondition:   worstCondition(physical, criticality, environment) as any,
+              inService:            r.inService === null || r.inService === undefined ? true : r.inService,
+              notes:                sanitizeFormulaPrefix(r.notes) || null,
+            },
+            select: { id: true, equipmentType: true },
+          });
+          createdAssets.push(asset);
+          created++;
+        }
+
+        // Auto-apply the global NFPA 70B task matrix to the new assets —
+        // mirrors POST /api/schedules/bulk-apply: GLOBAL definitions only
+        // (accountId NULL), nextDueDate stays null until the first completion,
+        // skipDuplicates makes it idempotent.
+        let schedulesCreated = 0;
+        if (autoApplySchedules && createdAssets.length > 0) {
+          const types = [...new Set(createdAssets.map(a => a.equipmentType))];
+          const taskDefs = await tx.maintenanceTaskDefinition.findMany({
+            where:  { accountId: null, archivedAt: null, equipmentType: { in: types } },
+            select: { id: true, equipmentType: true },
+          });
+          const defsByType = new Map();
+          for (const d of taskDefs) {
+            if (!defsByType.has(d.equipmentType)) defsByType.set(d.equipmentType, []);
+            defsByType.get(d.equipmentType).push(d);
+          }
+          const scheduleRows = [];
+          for (const a of createdAssets) {
+            for (const def of defsByType.get(a.equipmentType) || []) {
+              scheduleRows.push({ accountId, assetId: a.id, taskDefinitionId: def.id });
+            }
+          }
+          if (scheduleRows.length > 0) {
+            const result = await tx.maintenanceSchedule.createMany({
+              data: scheduleRows,
+              skipDuplicates: true,
+            });
+            schedulesCreated = result.count;
+          }
+        }
+
+        return { created, sitesCreated, schedulesCreated };
+      }, { timeout: 60000 });
+    } catch (txErr) {
+      console.error('POST /api/assets/import/commit — transaction failed:', txErr);
+      return res.status(500).json({ success: false, error: `Import failed: ${txErr.message}` });
+    }
+
+    const { created, sitesCreated, schedulesCreated } = txResult;
+    const skipped = skippedRows.length;
+    const failed  = errorRows.length;
+
+    // Activity log — ONE row for the whole batch, fire-and-forget.
+    writeActivityLog({
+      assetId:   null,
+      userId:    req.user.id,
+      accountId: req.user.accountId,
+      action:    'assets_imported',
+      details: {
+        filename:  req.file.originalname,
+        totalRows: ctx.rows.length,
+        created, skipped, failed,
+        sitesCreated, schedulesCreated,
+        createMissingSites, autoApplySchedules,
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        step: 'commit',
+        created, skipped, failed,
+        sitesCreated, schedulesCreated,
+        skippedRows,
+        errors: errorRows,
+        createMissingSites, autoApplySchedules,
+      },
+    });
+  } catch (err) {
+    console.error('POST /api/assets/import/commit error:', err);
+    return res.status(500).json({ success: false, error: 'Import failed' });
+  }
+});
+
+module.exports = router;
+
+export {};

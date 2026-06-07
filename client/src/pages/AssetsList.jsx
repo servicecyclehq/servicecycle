@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Download, Plus, Zap } from 'lucide-react';
+import { Download, Plus, Upload, Zap } from 'lucide-react';
 import api from '../api/client';
 import { downloadAuthedFile } from '../api/download';
 import { useAuth } from '../context/AuthContext';
@@ -173,6 +173,17 @@ export default function AssetsList() {
             <Download size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
             {exporting ? 'Preparing export…' : 'Export'}
           </button>
+          {canWrite && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => navigate('/assets/import')}
+              title="Bulk import assets from a CSV or Excel spreadsheet"
+            >
+              <Upload size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              Import
+            </button>
+          )}
           {canWrite && (
             <button type="button" className="btn btn-primary" onClick={() => navigate('/assets/new')}>
               <Plus size={14} strokeWidth={2} style={{ verticalAlign: '-2px', marginRight: 6 }} />
