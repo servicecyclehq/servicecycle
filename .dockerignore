@@ -1,0 +1,73 @@
+# LapseIQ root .dockerignore — Sprint 5 (B2)
+#
+# Applies when a build is run from the REPO ROOT context (e.g.
+# `docker build .` or a future top-level Dockerfile). The per-stack
+# build contexts (./server and ./client used by docker-compose.yml)
+# each carry their own .dockerignore tailored to their tree.
+#
+# Two reasons this file exists:
+#   1. Secrets — a stray .env or credential file in the build context
+#      can end up in an image layer if a Dockerfile ever does `COPY . .`.
+#   2. Image size + cache invalidation — node_modules and uploads/
+#      both thrash Docker's layer cache and bloat the final image.
+
+# ── Secrets and credentials (NEVER ship) ─────────────────────────────────────
+**/.env
+**/.env.local
+**/.env.development
+**/.env.production
+**/.env.*.local
+**/secrets/
+**/.aws/
+**/.ssh/
+**/credentials.json
+
+# ── Runtime data (must come from bind mounts, not layers) ────────────────────
+**/uploads/
+**/backups/
+
+# ── Build artefacts and dependencies (regenerated inside the image) ──────────
+**/node_modules/
+**/dist/
+**/build/
+**/coverage/
+**/.cache/
+**/.parcel-cache/
+**/.vite/
+**/.prisma/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# ── Stray scratch files (must never ship) ────────────────────────────────────
+server/_check_user.js
+server/_reset_pw.js
+server/p.$disconnect())
+server/check.js
+
+# ── Source control / IDE ─────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+**/*.swp
+**/*.swo
+.DS_Store
+Thumbs.db
+
+# ── Tests and docs that bloat the image ──────────────────────────────────────
+**/*.test.js
+**/*.spec.js
+**/__tests__/
+**/test/
+**/tests/
+docs/
+ROADMAP.md
+# (NEXT_SESSION.md and UX_REVIEW_*.md patterns retired 2026-05-10: those
+# files now land under docs/sessions/YYYY-MM-DD/ per docs/CONVENTIONS.md,
+# which is already covered by the docs/ exclude above.)

@@ -1,0 +1,55 @@
+# LapseIQ client .dockerignore — Sprint 5 (B2)
+#
+# Applies when building the client image (build context = ./client).
+# The image runs `npm run preview` which serves the prebuilt dist/.
+# We KEEP src/ and the Vite config because the build happens inside
+# the image — see client/Dockerfile.
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+
+# ── Build artefacts and deps ─────────────────────────────────────────────────
+# node_modules excluded (npm ci runs inside the image when building locally,
+# but for the CI release path, the dist/ is pre-built on the GHA runner and
+# this Dockerfile is now a static-serve stage — see Dockerfile.prod header).
+node_modules/
+.cache/
+.vite/
+# NOTE 2026-05-12 (v0.5.3): dist/ is NO LONGER excluded. Dockerfile.prod
+# now copies a pre-built dist/ from the build context (produced by the GHA
+# pre-build step). Without this, the COPY would fail with "no such file."
+# For local builds, run `npm run build` first to produce client/dist/.
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── Source control / IDE ─────────────────────────────────────────────────────
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── Tests and docs ───────────────────────────────────────────────────────────
+*.test.js*
+*.spec.js*
+__tests__/
+test/
+tests/
+# NOTE 2026-05-12 (v0.5.2): the previous `*.md` blanket exclude was removed
+# because `src/legal/*.md` is imported by 5 legal page components via Vite's
+# `?raw` query (DemoSandboxNoticePage, EulaPage, SubProcessorsPage,
+# PrivacyPage, TermsPage). Excluding them broke the production build in
+# subtle ways. Keep markdown files in the build context.
+
+# ── Don't recursively bundle Docker artefacts ────────────────────────────────
+Dockerfile
+Dockerfile.*
+.dockerignore

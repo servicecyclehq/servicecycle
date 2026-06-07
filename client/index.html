@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LapseIQ — Renewal management that respects your data</title>
+    <meta name="description" content="Self-hosted renewal management for IT, procurement, and operations. Track every contract, get AI-generated negotiation briefs per category, keep your data on your infrastructure." />
+    <meta name="theme-color" content="#0d4f6e" />
+    <!-- v0.90.4: build identifier baked at build time. SPA polls /api/config
+         every 60s; when the server version moves ahead of this value the
+         app shows a 'New version available -- reload' toast. Closes the
+         residual stale-chunk window that lazyWithReload doesn't catch
+         (users mid-form-fill who haven't tried navigating yet). -->
+    <meta name="lapseiq-build-id" content="%LAPSEIQ_BUILD_ID%" />
+    <!-- Pass-3 audit MUST #4: demo SPA is operationally a sandbox + the
+         application surface — never the marketing surface. We don't want
+         Google indexing demo signup pages, contract data screenshots, or
+         setup-wizard intermediate states. The marketing site at the apex
+         is the indexable surface. Belt + braces: noindex meta here, plus
+         an X-Robots-Tag header from Caddy in deploy/Caddyfile.demo. -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <!-- v0.92.3: theme bootstrap externalized to /theme-bootstrap.js so the demo
+         CSP (script-src 'self') allows it without an inline-script hash. Classic
+         blocking script in <head> => runs before first paint (no FOUC). -->
+    <script src="/theme-bootstrap.js?v=%BOOTSTRAP_VER%"></script>
+        <!-- v0.92.3: bootstrap prefetch externalized to /bootstrap-prefetch.js
+         (CSP script-src 'self'). Fires /api/bootstrap during head parse on
+         /contracts, before React mounts. -->
+    <script src="/bootstrap-prefetch.js?v=%BOOTSTRAP_VER%"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="max-width:560px;margin:48px auto;padding:24px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#0a0d12">
+        <h1 style="font-size:20px;margin-bottom:12px">JavaScript required</h1>
+        <p style="line-height:1.5;color:#5b6373">LapseIQ runs as a single-page web app and needs JavaScript to render. Please enable JavaScript in your browser settings and reload this page.</p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

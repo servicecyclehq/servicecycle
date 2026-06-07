@@ -1,0 +1,1442 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum AccountStatus {
+  active
+  expiring
+  lapsed
+  read_only
+  inactive
+}
+
+enum PlanType {
+  saas
+  licensed
+}
+
+enum PlanTier {
+  small
+  mid
+  enterprise
+}
+
+enum UserRole {
+  admin
+  manager
+  viewer
+  consultant
+}
+
+enum CotermComplexity {
+  none
+  moderate
+  complex
+}
+
+enum ContractStatus {
+  active
+  under_review
+  renewed
+  cancelled
+  expired
+}
+
+enum DeliveryMethod {
+  user
+  device
+  shared_pool
+}
+
+enum FlagType {
+  auto_renewal
+  price_escalation
+  termination
+  notice_period
+  minimum_commit
+  other
+}
+
+enum CommunicationType {
+  call
+  email_thread
+  meeting
+  note
+}
+
+enum AlertType {
+  review_by
+  cancel_by
+  renewal
+  billing_60
+  billing_30
+  billing_48
+  payment_due
+}
+
+enum AlertStatus {
+  pending
+  sent
+  acknowledged
+  escalated
+  cancelled
+}
+
+enum IngestionStatus {
+  processing
+  review_pending
+  approved
+  imported
+  failed
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Account {
+  id                       String        @id @default(uuid())
+  companyName              String
+  status                   AccountStatus @default(active)
+  planType                 PlanType
+  planTier                 PlanTier?
+  stripeCustomerId         String?
+  // Sprint 6 Stripe seam — populated by a future Checkout flow + webhook
+  // handler. Null on self-hosted licensed instances (planType=licensed),
+  // which bypass tier enforcement entirely.
+  stripeSubscriptionId     String?
+  stripeSubscriptionStatus String? // active | past_due | canceled | trialing | unpaid | incomplete
+  stripeCurrentPeriodEnd   DateTime? // grace logic + renewal alert anchor
+  licenseDate              DateTime?
+  supportExpiresAt         DateTime?
+  // L3: debounced last-activity timestamp. Only meaningful in DEMO_MODE
+  // where it drives the per-visitor sandbox prune (5-day inactivity TTL).
+  // Updated by middleware/auth.js at most once per hour per account; null
+  // on accounts created before the L3 migration.
+  lastActiveAt             DateTime?
+  // ── Phase 4 (2026-05-11): per-account AI renewal-brief toggle ──────────────
+  // Default OFF on self-host so operators opt into the feature explicitly
+  // (and so the per-session consent modal in Layer 6 has something
+  // meaningful to gate behind). Demo seed flips this to true so the
+  // hosted demo at demo.lapseiq.com showcases the feature out of the box.
+  aiBriefEnabled           Boolean       @default(false)
+  // v0.37.4 W7 scaffolding: when true, admin-role users on this account
+  // are required to have TOTP enrolled. Enforcement wiring (login-time
+  // gate + enrollment UI) is deferred to a future session; this column
+  // exists now so the legal pack + SIG/CAIQ doc can honestly claim the
+  // foundation. Default false to preserve current behaviour on existing
+  // accounts. See legal/counsel-prep/security-posture-mfa-readiness-2026-05.md.
+  mfaRequiredForAdmins     Boolean       @default(false)
+  // v0.89.5 (2026-05-26): per-account region filter for the Outages tab on
+  // /news. When set to a non-'global' value, /api/news?view=outages filters
+  // to rows whose detected region is the account's region OR 'global' OR
+  // null (undetectable). Default 'global' = show all outages.
+  newsOutageRegion         String        @default("global") // global | us | eu | apac
+  // v0.58.0: per-tenant total headcount. Drives cost-per-employee KPI
+  // (most-cited investor-deck metric per the canned-reports research
+  // 2026-05-21). Edited in Settings -> General. Nullable so existing
+  // accounts continue to work; KPI tiles show "Set headcount" CTA
+  // when null.
+  fteCount                 Int?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  users                  User[]
+  vendors                Vendor[]
+  contracts              Contract[]
+  documents              Document[]
+  communications         Communication[]
+  alerts                 Alert[]
+  ingestionSessions      IngestionSession[]
+  invites                UserInvite[]
+  settings               AccountSetting[]
+  consultantAccesses     ConsultantAccess[]
+  vendorNews             VendorNews[]
+  cloudConnectors        CloudConnector[]
+  backupLogs             BackupLog[]
+  customFieldDefinitions CustomFieldDefinition[]
+  categories             Category[]
+  templateFeedback       TemplateFeedback[]
+  apiKeys                ApiKey[]
+  webhookEndpoints       WebhookEndpoint[]
+  outboundWebhookDlq     OutboundWebhookDLQ[] // v0.37.1 W5 MT-132
+  activityLogs           ActivityLog[]        // v0.69.0 inverse relation for the new FK
+  notificationLogs  NotificationLog[]    // S5-FN-07
+  negotiationCaches NegotiationCache[]
+
+  @@map("accounts")
+}
+
+model User {
+  id                            String    @id @default(uuid())
+  accountId                     String
+  name                          String
+  email                         String    @unique
+  passwordHash                  String
+  role                          UserRole
+  isActive                      Boolean   @default(true)
+  passwordResetToken            String?
+  passwordResetExpiresAt        DateTime?
+  lastLogin                     DateTime?
+  twoFactorSecret               String? // AES-256-GCM encrypted TOTP secret
+  twoFactorEnabled              Boolean   @default(false)
+  twoFactorBackupCodes          String? // JSON array of SHA-256-hashed one-time backup codes
+  twoFactorLastUsedStep         BigInt? // H1: TOTP replay prevention — step index of last successful verify
+  featureFlags                  Json? // admin-set: { news, budget, ingest, alerts } booleans
+  hiddenFeatures                Json? // user-set: features they've personally hidden
+  contractScopeRestricted       Boolean   @default(false) // when true, viewer only sees contracts where internalOwnerId = this user
+  // v0.69.0 (audit Quick Win): persist the OnboardingWizard step on the
+  // user row so the wizard resumes across devices. Pre-fix, the step was
+  // only in localStorage so a user who walked away on step 3 and came
+  // back on their phone restarted from step 1.
+  onboardingStep                Int       @default(0)
+  // Terms acceptance audit trail — populated at registration. Nullable so
+  // pre-L7 users (the legacy 4-user demo seed, on-prem admins created before
+  // this column existed) continue to work without a backfill ritual.
+  acceptedTermsAt               DateTime?
+  acceptedTermsVersion          String? // e.g. "tos-2026-05-04, privacy-2026-05-04"
+  // ── Phase 4 (v0.4.0): per-user AI consent state ───────────────────────────
+  // aiConsentDismissedAt is null until the user clicks "I understand" in the
+  // AI consent modal for the FIRST time. Subsequent AI endpoint calls check
+  // this column server-side: null → 403 with code 'ai_consent_required'
+  // (the client then shows the modal). Once set, the server stays happy
+  // forever; the per-session re-prompt is purely a client-side UX courtesy
+  // (sessionStorage flag). The persistent toggle lives in aiConsentSilenced
+  // below.
+  aiConsentDismissedAt          DateTime?
+  // aiConsentSilenced is the "don't ask me each session" persistent toggle.
+  // When true, the client suppresses the modal entirely (the server-side
+  // gate is unchanged — it's still satisfied by aiConsentDismissedAt). Per-
+  // user; defaults to false so the modal shows the first session after
+  // upgrade for every existing user.
+  aiConsentSilenced             Boolean   @default(false)
+  // Pass-4 audit L3-07 + L3-08 (2026-05-17): record WHAT was consented to
+  // and WHICH provider was named at acceptance time so consent isn't
+  // silently grandfathered when the modal text or AI_PROVIDER changes.
+  // Both nullable so legacy rows (pre-Pass-4 acceptances) continue to work
+  // — the server gate treats null + non-null aiConsentDismissedAt as
+  // "legacy grandfathered, force one re-prompt to backfill cleanly."
+  aiConsentVersion              String? // e.g. "ai-consent-2026-05-17"
+  aiConsentProviderAtAcceptance String? // "anthropic" | "openai" | "azure_openai" | "gemini"
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  account             Account                 @relation(fields: [accountId], references: [id])
+  ownedContracts      Contract[]              @relation("InternalOwner")
+  evaluationsStarted  Contract[]              @relation("EvaluationStarter")
+  uploadedDocuments   Document[]              @relation("Uploader")
+  communications      Communication[]         @relation("CommunicationCreator")
+  reviewedIngestions  IngestionSession[]      @relation("IngestionReviewer")
+  alertPreferences    AlertPreference[]
+  activityLogs        ActivityLog[]
+  sentInvites         UserInvite[]            @relation("InviteCreator")
+  consultantAccesses  ConsultantAccess[]      @relation("ConsultantUser")
+  grantedConsultants  ConsultantAccess[]      @relation("ConsultantGrantor")
+  revokedConsultants  ConsultantAccess[]      @relation("ConsultantRevoker")
+  newsWatches         UserNewsWatch[]
+  refreshTokens       RefreshToken[]
+  createdCustomFields CustomFieldDefinition[] @relation("CustomFieldCreator")
+  createdCategories   Category[]              @relation("CategoryCreator")
+  aiUsage             AiUsage[]
+  templateFeedback    TemplateFeedback[]      @relation("TemplateFeedbackUser")
+  // v0.42: per-user key/value preferences (saved views, column visibility,
+  // any cross-device personalization that doesn't deserve its own column).
+  preferences         UserPreference[]
+  // v0.55.0 — line-item edits track who last touched the row.
+  contractLineItemsEdited ContractLineItem[] @relation("ContractLineItemLastEditor")
+  notificationLogs  NotificationLog[]    // S5-FN-07
+
+  @@index([accountId])
+  // Password-reset lookups (routes/auth.js /reset-password) filter by
+  // passwordResetToken. The token is a 256-bit secret (so collisions are
+  // structurally impossible) but without an index every reset attempt is
+  // a full table scan — and credentialLimiter only limits 10 attempts per
+  // 15 min per IP, so an attacker on a botnet could still scan-burn.
+  @@index([passwordResetToken])
+  @@map("users")
+}
+
+// v0.42 — cross-device user preferences (saved views, column visibility,
+// other UI state that should follow the user across browsers/devices).
+// One row per (user, key) so an upsert is just a unique-violation retry.
+// `value` is Json so callers can stash arbitrary shape without schema churn.
+// Foreign key cascades on user delete so the GDPR Art. 17 erase path stays
+// simple — preferences aren't audit-relevant.
+model UserPreference {
+  id        String   @id @default(uuid())
+  userId    String
+  key       String // e.g. "contracts.columnVisibility", "alerts.savedViews"
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId])
+  @@map("user_preferences")
+}
+
+model Vendor {
+  id                    String           @id @default(uuid())
+  accountId             String
+  name                  String
+  vendorType            String? // fixed list: SaaS | Hardware | Professional Services | Cloud / Hosting | Telecom | Staffing | Facilities | Other
+  cotermComplexity      CotermComplexity @default(none)
+  cotermNotes           String?
+  // v0.58.0: strategic-importance tier (distinct from spend size).
+  // Accepted values: tier_1 (revenue-impacting) | tier_2 | tier_3 |
+  // tier_4 (nice-to-have). Editable on VendorDetail with tooltip
+  // explaining the distinction. Stored as String? not enum to keep
+  // schema additive (enum addition would require a separate migration
+  // step + Prisma client regen for downstream readers).
+  criticalityTier       String?
+  notes                 String?
+  budgetUpliftPercent   Decimal          @default(10) @db.Decimal(5, 2)
+  supportEmail          String?
+  supportPhone          String?
+  supportPortalUrl      String?
+  // #12 contract-section-refresh: vendor access/login portal URL. Editable from
+  // the contract License Keys & Access card; applies to all of this vendor contracts.
+  portalUrl             String?
+  scorePriceFlexibility Int? // 1-5 rating
+  scoreSupport          Int? // 1-5 rating
+  scoreStrategicValue   Int? // 1-5 rating
+  scoreSatisfaction     Int? // 1-5 overall rating
+  aliases               Json? // string[] of org-specific alternate names / procurement codes
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  account        Account         @relation(fields: [accountId], references: [id])
+  contacts       VendorContact[]
+  contracts      Contract[]
+  communications Communication[]
+  news           VendorNews[]
+
+  // Audit Cluster C P1 (2026-05-16): per-account name uniqueness.
+  // syncEngine.resolveVendor used case-insensitive findFirst on name + an
+  // auto-create on miss. Two concurrent nightly syncs (or two parallel
+  // CSV imports) for the same vendor name would both miss the lookup and
+  // both create a row — duplicate vendors with the same display name in
+  // the same account. The constraint closes the race at the DB level.
+  // Name comparison stays case-sensitive in Postgres; the resolveVendor
+  // lookup remains case-insensitive so existing case-insensitive lookups
+  // still hit. Pre-flight check confirmed zero duplicates before this
+  // constraint was added.
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@map("vendors")
+}
+
+model VendorContact {
+  id              String    @id @default(uuid())
+  vendorId        String
+  name            String
+  email           String?
+  phone           String?
+  title           String?
+  lastContactedAt DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+
+  @@index([vendorId])
+  @@map("vendor_contacts")
+}
+
+model Contract {
+  id                          String          @id @default(uuid())
+  accountId                   String
+  vendorId                    String
+  contractNumber              String?
+  customerNumber              String?
+  product                     String
+  quantity                    Int?
+  budgetNeededQty             Int? // persisted planning qty for budget forecast
+  costPerLicense              Decimal?        @db.Decimal(12, 2)
+  startDate                   DateTime?
+  endDate                     DateTime?
+  evaluationStartByDate       DateTime?
+  autoRenewal                 Boolean         @default(false)
+  autoRenewalNoticeDays       Int?
+  cancelByDate                DateTime?
+  poNumber                    String?
+  invoiceNumber               String?
+  requestor                   String?
+  deliveryEmail               String?
+  licenseKeys                 String?
+  department                  String?
+  team                        String?
+  costCenter                  String?
+  // v0.58.0: first-class GL code field (previously customers had to use a
+  // custom field). Nullable for zero-downtime migration; the custom-field
+  // path remains supported for accounts already populating it.
+  glCode                      String?
+  endUserName                 String?
+  endUserEmail                String?
+  internalOwnerId             String?
+  // v0.5.14: free-text fallback for contract owners who are NOT LapseIQ
+  // users. The UI shows a dropdown of LapseIQ users with an "Other..."
+  // option; selecting "Other" reveals these two fields. Either
+  // internalOwnerId is set (LapseIQ user) OR internalOwnerName is set
+  // (non-LapseIQ user), not both. Email is optional in either case.
+  internalOwnerName           String?
+  internalOwnerEmail          String?
+  deliveryMethod              DeliveryMethod?
+  resellerName                String?
+  resellerAccountNumber       String?
+  resellerContactName         String?
+  resellerContactEmail        String?
+  notes                       String?
+  status                      ContractStatus  @default(active)
+  parentContractId            String? // linked previous contract (renewal chain)
+  evaluationStartedById       String? // user who triggered Under Review
+  evaluationStartedAt         DateTime? // when evaluation was started
+  renewalBrief                String? // AI-generated negotiation brief (cached)
+  renewalBriefGeneratedAt     DateTime? // when the brief was last generated
+  // ── Phase 4 (2026-05-11): category-aware brief metadata ─────────────────────
+  // renewalBriefCategorySlug captures the category slug used to pick the
+  // template at brief-generation time. When `contract.category.slug` later
+  // diverges (e.g. user re-categorised the contract from saas → telecom),
+  // the ContractDetail UI surfaces a "regenerate brief" hint.
+  // renewalBriefTemplateVersion is the template version string (e.g. "1")
+  // so a future schema bump for the brief shape can be detected and an
+  // out-of-date brief flagged for regen.
+  renewalBriefCategorySlug    String?
+  renewalBriefTemplateVersion String?
+  // v0.36.0 (2026-05-18): hash of the enabled opt-in-section slug list at
+  // brief-generation time. AccountSetting key brief_sections_enabled holds
+  // the authoritative list (JSON array); routes/contracts.js compares the
+  // current hash to this stored value and treats a cached brief as stale
+  // when they diverge. Nullable so pre-v0.36 briefs regenerate naturally.
+  renewalBriefSectionsHash    String?
+  // v0.4.1 follow-up: persist the Tavily sources cited by the brief so
+  // they survive page reloads (not just the immediate post-regen
+  // render). Shape: [{ title, url, retrievedAt }]. retrievedAt is ISO
+  // string — the brief generation time, used by the UI to render
+  // "Sources retrieved on <date>; market conditions may have shifted"
+  // as protection against stale-link / shifted-market liability.
+  renewalBriefSources         Json?
+  renewalChecklist            Json? // { noticesSent, proposalReceived, underNegotiation, awaitingSignature, signed }
+  // ── Savings tracker ─────────────────────────────────────────────────────────
+  originalAsk                 Decimal?        @db.Decimal(12, 2) // vendor's initial quote price
+  finalNegotiatedPrice        Decimal?        @db.Decimal(12, 2) // what was actually agreed/paid
+  // v0.83.0: what lever created the saving — nullable String (not Postgres enum)
+  // so future lever additions don't require a migration. Valid values enforced
+  // at Zod layer: usage_reduction | term_length | benchmark_pressure |
+  // competitive_threat | seat_count_cut | legal_language | other
+  savingsLever                String?
+  // ── Negotiation log ─────────────────────────────────────────────────────────
+  negotiationLog              String? // free-form notes on the negotiation
+  // ── License utilization ──────────────────────────────────────────────────────
+  seatsLicensed               Int? // total seats/licenses purchased
+  seatsActivelyInUse          Int? // seats confirmed in active use
+  annualUpliftPercent         Decimal?        @db.Decimal(5, 2) // expected YoY price increase % at renewal
+  // ── Signature tracking ───────────────────────────────────────────────────────
+  signatureStatus             String? // 'pending' | 'signed' | 'declined'
+  signedAt                    DateTime? // when contract was signed
+  signerName                  String? // name of the signer
+  // ── Co-terming ──────────────────────────────────────────────────────────────
+  // Free-text group identifier — contracts sharing the same value belong to
+  // the same co-term group (e.g. "Microsoft Q4 2027", "Adobe FY26"). Used to
+  // surface combined renewal value across multiple contracts that should be
+  // negotiated as one event. Vendor.cotermComplexity / cotermNotes describe
+  // the *vendor's* co-term style; this field groups specific contracts.
+  coTermGroup                 String?
+  // ── Denormalized total value (A3 5/02) ─────────────────────────────────────
+  // costPerLicense × quantity, persisted at write time. Lets the contracts
+  // list sort by computed value in DB rather than after fetching every row.
+  // Maintained by routes/contracts.js POST/PUT handlers; nullable when either
+  // factor is null.
+  totalValue                  Decimal?        @db.Decimal(14, 2)
+  // ── Archive ─────────────────────────────────────────────────────────────────
+  archivedAt                  DateTime? // when archived (null = visible in active list)
+  // ── Cloud marketplace sync ───────────────────────────────────────────────────
+  // externalId: provider-assigned unique ID for this purchase/agreement
+  // syncSource: which provider created this record ('aws' | 'azure' | 'gcp')
+  // Both are null for manually-created contracts.
+  externalId                  String?
+  syncSource                  String?
+  archivedById                String? // user who archived it
+  // ── Category (Phase 1 of non-SaaS expansion — 2026-05-10) ──────────────────
+  // Nullable for zero-downtime migration; the seed flow assigns the account's
+  // "saas" category to every legacy contract during the 2026-05-11 migration.
+  // New contract POST/PUT validators (server/lib/zod/contract.js) require
+  // categoryId — see docs/sessions/2026-05-10/non-saas-schema-design.md.
+  categoryId                  String?
+  leaseStart                  DateTime?       // category-conditional (hardware + lease_rent): lease commencement
+  leaseEnd                    DateTime?       // lease expiration
+  leaseType                   String?         // e.g. operating | capital | FMV | dollar_buyout
+  leaseBuyout                 Decimal?        @db.Decimal(14, 2) // end-of-term buyout amount
+  createdAt                   DateTime        @default(now())
+  updatedAt                   DateTime        @updatedAt
+
+  account                 Account            @relation(fields: [accountId], references: [id])
+  vendor                  Vendor             @relation(fields: [vendorId], references: [id])
+  internalOwner           User?              @relation("InternalOwner", fields: [internalOwnerId], references: [id])
+  evaluationStartedByUser User?              @relation("EvaluationStarter", fields: [evaluationStartedById], references: [id])
+  category                Category?          @relation(fields: [categoryId], references: [id])
+  flags                   ContractFlag[]
+  documents               Document[]
+  communications          Communication[]
+  alerts                  Alert[]
+  tags                    ContractTag[]
+  parentContract          Contract?          @relation("RenewalChain", fields: [parentContractId], references: [id])
+  renewals                Contract[]         @relation("RenewalChain")
+  activityLogs            ActivityLog[]
+  paymentSchedule         PaymentSchedule?
+  customFieldValues       CustomFieldValue[]
+  templateFeedback        TemplateFeedback[]
+  // v0.10.0 (2026-05-13): multi-PO support. Contract.poNumber stays as a
+  // single-PO compat shim; PurchaseOrder rows are the new authoritative source
+  // for the Microsoft MPSA / Adobe VIP "one master agreement, many deliverable
+  // POs" pattern. The 20260513_add_purchase_orders migration backfills one
+  // PurchaseOrder row per non-null Contract.poNumber.
+  purchaseOrders          PurchaseOrder[]
+  // v0.55.0 — multi-SKU per-line renewal planning. Backfilled with one
+  // row per non-null (product, quantity) tuple from existing contracts.
+  lineItems               ContractLineItem[]
+  notificationLogs  NotificationLog[]    // S5-FN-07
+  negotiationCache  NegotiationCache?
+
+  @@index([accountId])
+  @@index([accountId, status])
+  @@index([accountId, endDate])
+  @@index([vendorId])
+  @@index([accountId, coTermGroup])
+  @@index([accountId, totalValue])
+  // Hot-path indexes flagged by the Opus N+1 audit (2026-05-02). Every
+  // dashboard / alerts query filters on cancelByDate or
+  // evaluationStartByDate; every scope-restricted viewer query filters on
+  // internalOwnerId. Without these, each was a full table scan over the
+  // account's contracts.
+  @@index([accountId, cancelByDate])
+  @@index([accountId, evaluationStartByDate])
+  @@index([accountId, internalOwnerId])
+  // Category filter on the contracts list (Phase 2).
+  @@index([accountId, categoryId])
+  // v0.37.2 W6 MT-136: the renewal-chain self-join walks parentContractId
+  // (Contract.parentContract / Contract.renewals). Without an index that's
+  // a full scan per contract.
+  @@index([parentContractId])
+  // H2 (audit High, 2026-05-22): unique key on (accountId, syncSource,
+  // externalId) so syncEngine.js findFirst+create no longer races. Postgres
+  // treats NULL as not-equal-to-NULL so manually-created contracts (where
+  // both syncSource + externalId are null) never collide; only synced
+  // rows (where both are populated) are uniqued.
+  @@unique([accountId, syncSource, externalId])
+  @@map("contracts")
+}
+
+// ─── Payment Schedules ────────────────────────────────────────────────────────
+// Tracks how a multi-year contract is paid. Three types:
+//   installment  — annual payments with individual amounts and due dates
+//   paid_upfront — full term paid up front (no installment rows); renewal still required at end
+//   dismissed    — not applicable (treated as standard annual recurring)
+
+model PaymentSchedule {
+  id           String   @id @default(uuid())
+  contractId   String   @unique
+  scheduleType String   @default("installment") // installment | paid_upfront | dismissed
+  notes        String? // optional top-level notes (e.g. "Invoice issued each March")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  contract     Contract             @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  installments PaymentInstallment[]
+
+  @@map("payment_schedules")
+}
+
+model PaymentInstallment {
+  id                String    @id @default(uuid())
+  paymentScheduleId String
+  yearNumber        Int // 1-based year of the contract term (1 = first year)
+  amount            Decimal   @db.Decimal(12, 2)
+  dueDate           DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  paymentSchedule PaymentSchedule @relation(fields: [paymentScheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentScheduleId, yearNumber])
+  @@index([paymentScheduleId])
+  @@map("payment_installments")
+}
+
+model ContractFlag {
+  id          String   @id @default(uuid())
+  contractId  String
+  flagType    FlagType
+  description String
+  sourcePage  Int?
+  sourceText  String?
+  createdAt   DateTime @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id])
+
+  @@index([contractId])
+  @@map("contract_flags")
+}
+
+// v0.10.0 (2026-05-13): multi-PO support for the Microsoft MPSA / Adobe VIP
+// pattern — one master agreement (Contract.contractNumber) with many
+// individual deliverable POs. Contract.poNumber stays as a single-PO compat
+// shim; PurchaseOrder rows are the new authoritative source. Backfill in the
+// 20260513_add_purchase_orders migration creates one PO row per non-null
+// Contract.poNumber so existing data stays addressable through the new model.
+//
+// Indexes:
+//   (contractId, archivedAt) — list-non-archived POs under a contract is the
+//                              hot read path on the Contract Detail page.
+//   (contractId, orderDate)  — sort by order date when rendering the list.
+//   (poNumber)               — search-by-PO across the account; cross-join
+//                              with Contract.accountId scopes per request.
+model PurchaseOrder {
+  id                String    @id @default(uuid())
+  contractId        String
+  poNumber          String
+  description       String?
+  amount            Decimal?  @db.Decimal(14, 2)
+  quantity          Int?
+  orderDate         DateTime?
+  coverageStartDate DateTime?
+  coverageEndDate   DateTime?
+  notes             String?
+  archivedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@index([contractId, archivedAt])
+  @@index([contractId, orderDate])
+  @@index([poNumber])
+  @@map("purchase_orders")
+}
+
+model Document {
+  id         String   @id @default(uuid())
+  contractId String?
+  poId       String?
+  accountId  String
+  filename   String
+  filePath   String // storage key (path on disk or S3 object key)
+  fileType   String
+  encrypted  Boolean  @default(false) // true = AES-256-GCM encrypted at upload time
+  version    Int      @default(1)
+  uploadedBy String
+  uploadedAt DateTime @default(now())
+
+  contract      Contract?      @relation(fields: [contractId], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id], onDelete: SetNull)
+  account    Account            @relation(fields: [accountId], references: [id])
+  uploader   User               @relation("Uploader", fields: [uploadedBy], references: [id])
+  ingestions IngestionSession[]
+
+  @@index([accountId])
+  @@index([contractId])
+  @@index([poId])
+  // routes/documents.js GET /file looks up by (filePath, accountId).
+  // Without this, every download triggers a full table scan.
+  @@index([accountId, filePath])
+  @@map("documents")
+}
+
+model Communication {
+  id         String            @id @default(uuid())
+  contractId String?
+  vendorId   String?
+  accountId  String
+  type       CommunicationType
+  subject    String?
+  body       String?
+  occurredAt DateTime
+  // Pass-2 audit P0 (2026-05-17): nullable + ON DELETE SET NULL so the
+  // GDPR Article 17 erasure path (DELETE /api/users/:id) can actually
+  // remove a user who has authored vendor communications. Pre-fix the
+  // FK was RESTRICT-effective (NOT NULL with no SetNull) — every realistic
+  // user (anyone who ever logged a call) failed to delete and the whole
+  // transaction aborted. The communication record itself is procurement
+  // context the account still wants; only the author identifier needs to
+  // drop. ActivityLog uses the same anonymize-not-delete pattern (W5).
+  createdBy  String?
+  createdAt  DateTime          @default(now())
+
+  contract      Contract? @relation(fields: [contractId], references: [id])
+  vendor        Vendor?   @relation(fields: [vendorId], references: [id])
+  account       Account   @relation(fields: [accountId], references: [id])
+  createdByUser User?     @relation("CommunicationCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([contractId])
+  @@map("communications")
+}
+
+model Alert {
+  id             String      @id @default(uuid())
+  contractId     String
+  accountId      String
+  alertType      AlertType
+  daysBeforeEnd  Int? // how many days before end date this fires
+  scheduledAt    DateTime
+  sentAt         DateTime?
+  acknowledgedAt DateTime?
+  escalatedAt    DateTime?
+  status         AlertStatus @default(pending)
+  createdAt      DateTime    @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  account  Account  @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([contractId])
+  @@index([accountId, status])
+  @@index([scheduledAt, status])
+  // Audit Cluster C P1: dedup query in alertEngine.js:438-456 filters by
+  // contractId IN (...) plus alertType + daysBeforeEnd + status. The
+  // existing contractId index is used but ~2000 rows per account get
+  // scanned. Composite index makes the dedup O(log n).
+  @@index([contractId, alertType, daysBeforeEnd, status])
+  @@map("alerts")
+}
+
+model ContractTag {
+  id         String   @id @default(uuid())
+  contractId String
+  tag        String
+  createdAt  DateTime @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, tag])
+  @@index([contractId])
+  @@map("contract_tags")
+}
+
+model AlertPreference {
+  id             String    @id @default(uuid())
+  userId         String
+  alertType      AlertType
+  daysBeforeList String    @default("90,60,30") // comma-separated days, e.g. "90,60,30"
+  emailEnabled   Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, alertType])
+  @@index([userId])
+  @@map("alert_preferences")
+}
+
+model IngestionSession {
+  id                String          @id @default(uuid())
+  accountId         String
+  documentId        String?
+  originalFilename  String
+  rawText           String?
+  extractedFields   Json?
+  confidenceScores  Json?
+  aiNotes           Json?
+  status            IngestionStatus @default(processing)
+  reviewedBy        String?
+  reviewCompletedAt DateTime?
+  importedAt        DateTime?
+  createdAt         DateTime        @default(now())
+
+  account  Account   @relation(fields: [accountId], references: [id])
+  document Document? @relation(fields: [documentId], references: [id])
+  reviewer User?     @relation("IngestionReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([accountId])
+  @@map("ingestion_sessions")
+}
+
+// ─── Activity Log ─────────────────────────────────────────────────────────────
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  contractId String? // nullable for non-contract audit events (M11)
+  userId     String? // (B4) nullable — login_failed for unknown emails has no associated user
+  // Pass-6 W4 MT-127: per-account hash chain. accountId is nullable for
+  // cross-tenant events (login_failed for unknown emails); those share a
+  // single global chain keyed by NULL.
+  accountId  String?
+  action     String // status_changed | fields_updated | owner_assigned | brief_generated | document_uploaded | contract_created | contract_renewed | contract_cancelled | login_failed | permission_denied | document_accessed
+  details    Json? // e.g. { "from": "active", "to": "under_review" } or { "fields": ["endDate", "quantity"] } or { "ip": "...", "reason": "unknown_email", "attemptedEmail": "..." }
+  createdAt  DateTime @default(now())
+  // Pass-6 W4 MT-127: hash-chain fields. Settled by the activityLogChainSettler
+  // background job ~30s after insert. rowHash = sha256(prevHash || canonical(row)).
+  prevHash   String?
+  rowHash    String?
+
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  // v0.71.4 (audit Medium "Data Integrity"): SetNull cascade on userId
+  // so GDPR-erase of a User does not break the transaction. Historical rows
+  // remain visible with userId=null (already supported by the chain verifier).
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // v0.69.0 (audit Medium "Logging & Audit Specialist"): explicit FK on
+  // accountId so forgeable rows fail at the DB layer. SetNull on cascade
+  // because GDPR-erase of an Account is a separate flow that should keep
+  // the historical rows discoverable for the (already-anonymized) tenant.
+  account  Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([contractId])
+  @@index([contractId, createdAt])
+  @@index([action, createdAt]) // (B4) query by audit category
+  @@index([accountId, createdAt]) // Pass-6 W4 MT-127: per-account chain reads
+  @@index([rowHash]) // Pass-6 W4 MT-127: lookup-by-hash for verifier
+  @@map("activity_logs")
+}
+
+// ─── Account Settings ─────────────────────────────────────────────────────────
+
+model AccountSetting {
+  id        String   @id @default(uuid())
+  accountId String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, key])
+  @@index([accountId])
+  @@map("account_settings")
+}
+
+// ─── Early-access requests (L7) ───────────────────────────────────────────────
+// Landing-page lead capture. Replaces the pre-L7 mailto:hello@lapseiq.com
+// CTAs. Rows are user-supplied via the unauthenticated POST /api/early-access
+// route, rate-limited by the existing apiLimiter anonymous bucket.
+//
+// Admin view (/admin/early-access) lists submissions sortable by createdAt;
+// the auto-reply email is fired from the route handler synchronously after
+// insert so a Resend outage still leaves the row recoverable for manual
+// follow-up.
+model EarlyAccessRequest {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  company   String?
+  timing    String? // 'now' | 'this_week' | 'this_month' | 'browsing' (free-form)
+  ipAddress String? // spam triage only
+  userAgent String? // spam triage only
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([email])
+  @@map("early_access_requests")
+}
+
+// ─── AI usage quota (L1) ──────────────────────────────────────────────────────
+// Per-user, per-action, per-day usage tracking. Composite PK enables a
+// single-round-trip atomic upsert via INSERT ... ON CONFLICT DO UPDATE so
+// concurrent AI calls cannot both read count=cap-1 and both pass the gate.
+//
+// `day` is a UTC YYYY-MM-DD string. Reset happens on UTC midnight everywhere
+// (servers, clients, log entries) so callers cannot exploit timezone drift.
+//
+// Default behaviour: unlimited on self-hosted (operators bring their own AI
+// key, credit spend is their concern). DEMO_MODE startup forces
+// AI_DAILY_CAP_PER_USER=2 in server/index.js — see lib/aiQuota.js for the
+// resolution rules.
+model AiUsage {
+  userId String
+  action String // 'ingest_extract' | 'signature_extract' | 'renewal_brief'
+  day    String // 'YYYY-MM-DD' UTC
+  count  Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, action, day])
+  @@index([day])
+  @@map("ai_usage")
+}
+
+// ─── Consultant Access ────────────────────────────────────────────────────────
+// Tracks explicit grants allowing a consultant user to access a tenant account.
+// Not on by default — admin must invite with consultant role to create a record.
+
+model ConsultantAccess {
+  id           String    @id @default(uuid())
+  accountId    String
+  consultantId String // the consultant User
+  grantedById  String // admin who granted access
+  grantedAt    DateTime  @default(now())
+  revokedById  String? // admin who revoked (null if still active)
+  revokedAt    DateTime?
+  isActive     Boolean   @default(true)
+  notes        String? // optional context (e.g. "Q2 renewal audit")
+
+  account    Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  consultant User    @relation("ConsultantUser", fields: [consultantId], references: [id])
+  grantedBy  User    @relation("ConsultantGrantor", fields: [grantedById], references: [id])
+  revokedBy  User?   @relation("ConsultantRevoker", fields: [revokedById], references: [id])
+
+  @@index([accountId])
+  @@index([consultantId])
+  @@map("consultant_accesses")
+}
+
+// ─── User Invites ─────────────────────────────────────────────────────────────
+
+model UserInvite {
+  id         String    @id @default(uuid())
+  accountId  String
+  email      String
+  role       UserRole
+  token      String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  invitedBy  String
+  createdAt  DateTime  @default(now())
+
+  account Account @relation(fields: [accountId], references: [id])
+  inviter User    @relation("InviteCreator", fields: [invitedBy], references: [id])
+
+  @@index([accountId])
+  @@index([token])
+  @@map("user_invites")
+}
+
+// ─── Vendor News ──────────────────────────────────────────────────────────────
+// Stores news items matched to vendors in the account via the RSS scanner.
+// Each item is unique per account+url to prevent duplicate storage across scanner runs.
+
+model VendorNews {
+  id          String   @id @default(uuid())
+  accountId   String
+  vendorId    String? // null for user watch-term matched items
+  watchTerm   String? // set when vendorId is null — the user-defined term that triggered the match
+  userId      String? // set for watch-term items — the user whose watchlist surfaced this
+  title       String
+  url         String
+  source      String // e.g. "TechCrunch", "BleepingComputer"
+  summary     String? // Claude-generated 1-2 sentence summary
+  category    String   @default("general") // security | outage | acquisition | pricing | new_feature | eol | legal | general
+  // v0.89.5 (2026-05-26): detected region from the article title, used to
+  // filter the Outages tab on /news by Account.newsOutageRegion. Values:
+  // 'us' | 'eu' | 'apac' | 'global' | null (undetectable, shown to everyone).
+  region      String?
+  publishedAt DateTime
+  fetchedAt   DateTime @default(now())
+  // ^ 2026-05-16: dropped isRead. Was deprecated 2026-05-02 (per-row flag
+  // that affected every user). Read state is per-user via UserNewsRead;
+  // no code path reads or writes isRead any more. Migration drops the
+  // column on the live DB.
+
+  account Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  vendor  Vendor?        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  reads   UserNewsRead[]
+
+  @@unique([accountId, url, userId])
+  @@index([accountId])
+  @@index([vendorId])
+  @@index([userId])
+  @@index([accountId, publishedAt])
+  @@map("vendor_news")
+}
+
+// ─── User News Read State ─────────────────────────────────────────────────────
+// Per-user join table tracking which VendorNews rows each user has read.
+// Replaces the previous per-row VendorNews.isRead flag, which had the
+// data-model bug where any user marking a row as read flipped it for the
+// entire account.
+model UserNewsRead {
+  id     String   @id @default(uuid())
+  userId String
+  newsId String
+  readAt DateTime @default(now())
+
+  news VendorNews @relation(fields: [newsId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, newsId])
+  @@index([userId])
+  @@index([newsId])
+  @@map("user_news_reads")
+}
+
+// ─── User News Watch Terms ────────────────────────────────────────────────────
+// Per-user free-form search terms. The news scanner picks these up each run
+// and stores matched articles in VendorNews with vendorId = null.
+
+model UserNewsWatch {
+  id        String   @id @default(uuid())
+  userId    String
+  term      String // e.g. "Nutanix", "SentinelOne", "HashiCorp"
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, term])
+  @@index([userId])
+  @@map("user_news_watches")
+}
+
+// ─── Cloud Marketplace Connectors ────────────────────────────────────────────
+// Stores per-account cloud marketplace API credentials (AWS, Azure, GCP).
+// One record per provider per account — credentials stored as JSON, never
+// returned in full to the client (masked on read, replaced on write).
+
+model CloudConnector {
+  id          String    @id @default(uuid())
+  accountId   String
+  provider    String // 'aws' | 'azure' | 'gcp'
+  label       String? // optional user-defined display name, e.g. "Production AWS"
+  credentials Json? // provider-specific credential fields (treat as sensitive)
+  status      String    @default("not_configured") // not_configured | connected | error
+  lastError   String? // last connection error message, if any
+  lastSyncAt  DateTime? // timestamp of last successful data pull
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([accountId, provider])
+  @@index([accountId])
+  @@map("cloud_connectors")
+}
+
+// ─── Refresh Tokens ────────────────────────────────────────────────────────────
+// Stores rotating refresh tokens for H4 (short-lived access tokens + revocable
+// 30-day refresh tokens). tokenHash is SHA-256 of the opaque token value.
+
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String
+  tokenHash    String // SHA-256 of the actual token (never stored plaintext)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String? // points to the rotated successor token id
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+// ── Backup Logs ───────────────────────────────────────────────────────────────
+// Records each automated and manual backup attempt for audit and UI display.
+
+model BackupLog {
+  id          String   @id @default(uuid())
+  accountId   String
+  status      String // 'success' | 'failure'
+  filename    String? // e.g. lapseiq-backup-2026-05-01T02-00-00.sql.gz
+  sizeBytes   Int?
+  storageKey  String? // S3 object key
+  error       String? // error message if status = 'failure'
+  triggeredBy String   @default("cron") // 'cron' | 'manual'
+  createdAt   DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([createdAt])
+  @@map("backup_logs")
+}
+
+// ── Instance Config ──────────────────────────────────────────────────────────
+// Singleton row holding deployment-wide flags that don't belong to any single
+// tenant Account. Created/upserted on first read by lib/instanceConfig.js.
+//
+//   setupCompletedAt — set by the first-run wizard once an admin account has
+//                      been created. Until non-null, the setup gate in
+//                      server/index.js returns 503 needsSetup:true on every
+//                      /api/* route except /api/health and /api/setup/*.
+//
+//   demoMode         — runtime flag mirrored from DEMO_MODE env at boot.
+//                      Stored in DB so the SPA can read it via a normal
+//                      authenticated endpoint (no env exposure to client).
+//
+// Exactly one row exists, with id = 'singleton'. Never insert additional rows.
+
+model InstanceConfig {
+  id               String    @id @default("singleton") // hardcoded — only one row ever
+  setupCompletedAt DateTime?
+  setupCompletedBy String? // userId of the admin who finished the wizard (no FK — survives user deletion)
+  demoMode         Boolean   @default(false)
+  demoLastResetAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("instance_config")
+}
+
+// --- Custom Contract Fields -------------------------------------------------
+// Admin-defined fields that show up on every contract form. The 	ype
+// column is text + a CHECK constraint at the DB layer so adding a new
+// field type later is an ALTER (not a Postgres enum migration). Application
+// layer enforces type-specific validation on write.
+//
+// Soft-delete (archivedAt) instead of hard-delete so existing contract
+// values don't disappear when an admin retires a field; the value still
+// exports cleanly in CSV and renders read-only in the form.
+
+model CustomFieldDefinition {
+  id           String    @id @default(uuid())
+  accountId    String
+  name         String // display label
+  fieldKey     String // slug, unique per account
+  type         String // text | textarea | number | date | checkbox | select
+  helpText     String? // small hint shown under the input
+  required     Boolean   @default(false)
+  options      Json? // for select: [{ value, label }]
+  displayOrder Int       @default(0)
+  archivedAt   DateTime? // soft-delete; values stay readable
+  // 2026-05-10 Phase 1 (non-SaaS categories): nullable scope. When set,
+  // this field is auto-suggested on contracts in that category (e.g. "Policy
+  // number" on Insurance). Null = account-wide field, current behaviour.
+  categoryId   String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  account   Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("CustomFieldCreator", fields: [createdById], references: [id])
+  category  Category?          @relation(fields: [categoryId], references: [id])
+  values    CustomFieldValue[]
+
+  // Uniqueness via two partial indexes in migration
+  // 20260525000000_custom_field_category_unique:
+  //   categoryId IS NULL     -> unique on (accountId, fieldKey)
+  //   categoryId IS NOT NULL -> unique on (accountId, categoryId, fieldKey)
+  @@index([accountId, fieldKey])
+  @@index([accountId])
+  @@index([accountId, archivedAt, displayOrder])
+  @@index([accountId, categoryId])
+  @@map("custom_field_definitions")
+}
+
+// ─── Categories (non-SaaS expansion, Phase 1 — 2026-05-10) ────────────────────
+// Per-account contract categories. Nine default categories are seeded by
+// server/scripts/seed-categories.js on every new account creation; users
+// can also create custom categories. See
+// docs/sessions/2026-05-10/non-saas-schema-design.md for the full design.
+//
+// A category is metadata + form defaults + reporting axis. It is NOT a state
+// machine — hardware-maintenance contracts and SaaS contracts still flow
+// through the same ContractStatus transitions.
+
+model Category {
+  id                 String    @id @default(uuid())
+  accountId          String
+  name               String // display: "Insurance"
+  slug               String // machine: "insurance" — stable across renames
+  icon               String? // emoji or icon-pack name
+  color              String? // hex; for category badge in lists
+  // Behavioural defaults applied when a new contract is created in this
+  // category. User can override per-contract; these are starting points, not
+  // constraints. Encoded from the renewal-management domain knowledge in
+  // the design doc: lease=90d notice, telecom=30d + auto-renew, etc.
+  defaultNoticeDays  Int?
+  defaultAutoRenewal Boolean?
+  // Provenance: true for the 9 system-seeded defaults; false for user-created
+  // categories. Determines visibility in the "system" vs "custom" sections
+  // of the Settings → Categories tab (Phase 2).
+  isSystemDefault    Boolean   @default(false)
+  displayOrder       Int       @default(0)
+  archivedAt         DateTime? // soft-delete; existing contracts keep their categoryId
+  createdById        String? // null for system-seeded
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  account                Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy              User?                   @relation("CategoryCreator", fields: [createdById], references: [id])
+  contracts              Contract[]
+  customFieldDefinitions CustomFieldDefinition[]
+
+  @@unique([accountId, slug])
+  @@index([accountId, archivedAt, displayOrder])
+  @@map("categories")
+}
+
+model CustomFieldValue {
+  id           String   @id @default(uuid())
+  contractId   String
+  definitionId String
+  // Single value column - text encoded; coerced to native type at the
+  // application boundary on write. Storing typed columns would force a
+  // 4-6 column nullable mess for a feature where the type-mix is sparse.
+  value        String?
+  updatedAt    DateTime @updatedAt
+
+  contract   Contract              @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  definition CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, definitionId])
+  @@index([contractId])
+  @@map("custom_field_values")
+}
+
+// ─── API Keys ─────────────────────────────────────────────────────────────────
+// Per-account REST API keys for the public v1 API (v0.20.0).
+// keyHash is SHA-256 of the plaintext key — never stored plaintext.
+// revokedAt is null while the key is active; set on revocation.
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  accountId  String
+  name       String
+  keyHash    String    @unique
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([accountId, revokedAt])
+  @@map("api_keys")
+}
+
+// ─── Generic Webhook Endpoints ───────────────────────────────────────────────
+// Per-account outbound webhook targets for renewal / cancel-by / payment
+// alerts. Each endpoint receives a signed JSON POST whenever the alert
+// engine fires. Enables Zapier, n8n, Make, custom HTTP listeners, etc.
+//
+// Security:
+//   - `url` is stored encrypted (via lib/crypto) and validated to https:// +
+//     a public IP/hostname at delivery time (SSRF guard in lib/webhook.js).
+//   - `hmacSecret` is a 32-byte hex secret stored encrypted. Delivered in
+//     X-LapseIQ-Signature: sha256=<hex> so the receiving end can verify.
+//   - Maximum 5 endpoints per account enforced at the route layer.
+
+model WebhookEndpoint {
+  id         String   @id @default(uuid())
+  accountId  String
+  label      String   @default("")
+  url        String // stored encrypted via lib/crypto
+  hmacSecret String // 32-byte hex random, stored encrypted
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  account    Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  dlqEntries OutboundWebhookDLQ[]
+
+  @@index([accountId])
+  @@map("webhook_endpoints")
+}
+
+// ─── Template Feedback ────────────────────────────────────────────────────────
+// Per-user thumbs-up/down ratings on AI renewal brief sections (Phase 4).
+// Used to surface low-confidence templates for admin review and eventual
+// fine-tuning. One row per user per section per brief generation.
+
+model TemplateFeedback {
+  id              String   @id @default(uuid())
+  accountId       String
+  contractId      String?
+  userId          String?
+  categorySlug    String
+  templateVersion String
+  section         String
+  rating          Boolean // true = thumbs up, false = thumbs down
+  freeText        String?
+  createdAt       DateTime @default(now())
+
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  user     User?     @relation("TemplateFeedbackUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([accountId, categorySlug])
+  @@index([contractId])
+  @@map("template_feedback")
+}
+
+// ─── Outbound Webhook DLQ ─────────────────────────────────────────────────────
+// v0.37.1 W5 MT-132. Persists a failed outbound webhook delivery after the
+// in-process retry loop (3 attempts, exponential backoff) exhausts. Admin UI
+// surfaces these for inspection and manual retry; lib/cron/dlqPrune.js purges
+// entries older than 30 days so the table stays bounded.
+//
+//   accountId         account that owns the originating endpoint
+//   webhookEndpointId NULLable — the endpoint may be deleted after a delivery
+//                     fails, but we keep the DLQ row until TTL so the operator
+//                     can still see what failed.
+//   deliveryId        per-delivery UUID echoed in the X-LapseIQ-Delivery-Id
+//                     header. Lets integrators correlate a failure they see on
+//                     their side with the DLQ entry on ours.
+//   targetUrlMasked   scheme://host/… form; full URL is sensitive so we never
+//                     persist it in plaintext to a long-lived row.
+//   payload           the JSON we attempted to deliver, stored as JSONB so a
+//                     manual retry can replay it byte-for-byte.
+
+model OutboundWebhookDLQ {
+  id                String   @id @default(uuid())
+  accountId         String
+  webhookEndpointId String?
+  deliveryId        String
+  eventType         String
+  targetUrlMasked   String
+  payload           Json
+  attemptCount      Int      @default(0)
+  lastError         String?
+  lastStatus        Int?
+  firstFailedAt     DateTime
+  lastAttemptAt     DateTime
+  createdAt         DateTime @default(now())
+
+  account  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  endpoint WebhookEndpoint? @relation(fields: [webhookEndpointId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@index([createdAt])
+  @@index([deliveryId])
+  @@map("outbound_webhook_dlq")
+}
+
+
+// ── ContractLineItem (v0.55.0) ─────────────────────────────────────────────
+// Per-SKU line items inside a Contract for renewal planning. Each row carries
+// the immutable "what it was at signing" pair (originalCount, originalCostPerUnit)
+// AND the editable "what we want next term" pair (plannedNewCount, plannedNewCostPerUnit).
+// Edits persist via debounced PUT auto-save from the client; the server is the
+// single source of truth so the user's planning survives any browser-side event.
+//
+// Backfill: one row per existing Contract where (product IS NOT NULL AND quantity
+// IS NOT NULL), idempotent — skipped if any non-archived line item already exists
+// for that contract.
+//
+// Soft-delete via archivedAt rather than hard-delete so an accidentally-removed
+// line can be restored from a snapshot (v0.56.0).
+//
+// Per-unit cost uses Decimal(12,4) — wider scale than Contract.costPerLicense
+// (12,2) because per-unit Oracle/IBM/Microsoft EA pricing genuinely uses 4
+// decimal places. Total-value math is still 14,2.
+//
+// See: docs/design/renewal-planning-persistence-v047.md (§2.1)
+model ContractLineItem {
+  id                    String    @id @default(uuid())
+  contractId            String
+  // Vendor SKU code if known. Nullable — many vendors don't publish a clean one.
+  sku                   String?
+  productName           String
+  // Immutable after insert. If wrong, user must delete + recreate the line
+  // (otherwise the delta math goes silently wrong on the next renewal).
+  originalCount         Int
+  originalCostPerUnit   Decimal?  @db.Decimal(12, 4)
+  // Nullable: null = "owner hasn't decided yet" (renders blank, not zero).
+  plannedNewCount       Int?
+  plannedNewCostPerUnit Decimal?  @db.Decimal(12, 4)
+  notes                 String?
+  sortOrder             Int       @default(0)
+  archivedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  lastEditedById        String?
+
+  contract     Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  lastEditedBy User?    @relation("ContractLineItemLastEditor", fields: [lastEditedById], references: [id], onDelete: SetNull)
+
+  // Hot read path for "render the planning table for contract X (non-archived only)".
+  @@index([contractId, archivedAt])
+  // Phase-2 ordered render — drag-to-reorder lands in v0.56+.
+  @@index([contractId, sortOrder])
+  @@map("contract_line_items")
+}
+
+// â”€â”€â”€ Notification Log (S5-FN-07 v0.75.x) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Records every alert digest send attempt (success or failure) so operators
+// can answer "did contract X renewal alert actually fire + reach the recipient?"
+// without digging through application logs.
+//
+// channel: "email" | "slack" | "teams" | "webhook"
+// template: alert type slug, e.g. "renewal_digest" | "cancel_by_digest"
+// status: "sent" | "failed" | "skipped"
+// retentionDays: rows older than 180 days are pruned by the nightly prune cron.
+
+model NotificationLog {
+  id                String    @id @default(uuid())
+  accountId         String
+  userId            String?   // recipient user (null for webhook/Slack channel sends)
+  contractId        String?   // contract this notification is about (null for multi-contract digests)
+  channel           String    // "email" | "slack" | "teams" | "webhook"
+  template          String    // "renewal_digest" | "cancel_by_digest" | "payment_due_digest" | etc.
+  recipient         String    // email address, Slack channel, webhook URL (masked)
+  providerMessageId String?   // Brevo messageId, Slack ts, etc.
+  status            String    // "sent" | "failed" | "skipped"
+  errorMessage      String?   // populated when status = "failed"
+  alertCount        Int?      // number of alerts bundled in this digest
+  sentAt            DateTime  @default(now())
+
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, sentAt(sort: Desc)])
+  @@index([contractId, sentAt(sort: Desc)])
+  @@index([sentAt])  // prune cron range query
+  @@map("notification_logs")
+}
+
+// ── Negotiation analysis cache (v0.87.0) ─────────────────────────────────────
+// Persists AI debate verdicts across server restarts. One row per contract.
+// negotiationAnalysis.js uses this as source of truth; in-memory Map is a
+// write-through cache for sub-millisecond repeat reads within a process.
+model NegotiationCache {
+  id          String   @id @default(uuid())
+  accountId   String
+  contractId  String   @unique
+  contextHash String
+  result      Json
+  validUntil  DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([validUntil])
+  @@map("negotiation_cache")
+}
+
+// === RenderError (v0.90.0) ===================================================
+// Client-side render crashes captured by ErrorBoundary auto-POST to
+// /api/errors/render. Every fire of componentDidCatch persists here so we
+// see B-class bugs the moment they happen in prod -- not when a customer
+// reports them. Anonymous (userId nullable) because demo/public pages can
+// crash before auth resolves.
+model RenderError {
+  id             String    @id @default(uuid())
+  // v0.90.8: kind discriminator -- 'render' (ErrorBoundary), 'uncaught'
+  // (window.onerror), 'promise' (unhandledrejection), 'server' (Express
+  // error middleware). Default 'render' for backwards-compat with rows
+  // already persisted under v0.90.0-v0.90.7.
+  kind           String    @default("render")
+  errorCode      String    // base36 timestamp from ErrorBoundary, the code shown to users
+  name           String?   // e.g. 'TypeError', 'ReferenceError'
+  message        String?   // truncated to 1000 chars server-side
+  stack          String?   // truncated to 4000 chars
+  componentStack String?   // React fiber stack
+  path           String?   // location.pathname at crash time (or req.path for server)
+  userId         String?   // null when crash predates auth
+  accountId      String?   // null for the same reason
+  userAgent      String?   // truncated to 500 chars
+  lapseiqVersion String?   // from <meta name='lapseiq-build-id'>
+  ip             String?   // first hop only
+  occurredAt     DateTime  @default(now())
+
+  @@index([occurredAt])
+  @@index([errorCode])
+  @@index([userId])
+  @@index([kind])
+  @@map("render_errors")
+}

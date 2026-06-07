@@ -1,0 +1,102 @@
+﻿# ServiceCycle — docker-compose.demo.yml override
+#
+# Use this on top of the base docker-compose.yml to run a public demo
+# instance behind a reverse proxy (Caddy or nginx — see deploy/).
+#
+# Apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+#
+# What this override changes vs. the base:
+#   - DEMO_MODE=true on the server, which forces EMAIL_MOCK=true,
+#     AI_ENABLED=true, REGISTRATION_OPEN=true at startup, plus pins
+#     AI_MODEL_OVERRIDE=claude-haiku-4-5-20251001 so a single visitor
+#     can't escalate the demo's per-call cost by routing through Sonnet.
+#     Turns on the nightly seed-reset cron at 03:30 server time and
+#     the per-visitor inactivity prune at 03:25.
+#   - L14: AI_ENABLED is on in demo because the in-product Ask ServiceCycle
+#     assistant needs it. Per-action quotas (lib/aiQuota.js) cap a single
+#     visitor's daily AI spend across the four AI features:
+#       ingest_extract      → 2/day  (one demo of PDF extraction is enough)
+#       signature_extract   → 2/day  (one demo of business-card extraction)
+#       renewal_brief       → 2/day  (one demo of AI brief generation)
+#       ask                 → 6/day  (assistant is conversational; visitors
+#                                     send 4-5 questions exploring the product)
+#     Operators can override per-action via AI_DAILY_CAP_PER_USER_ASK,
+#     AI_DAILY_CAP_PER_USER_INGEST_EXTRACT, etc., or uniformly with the
+#     legacy AI_DAILY_CAP_PER_USER. Cost protection on the larger Ask cap
+#     comes from Anthropic prompt caching on the AI Guide system prompt
+#     (server/routes/ask.js cacheSystem:true), which collapses Ask cost
+#     from ~$0.07 to ~$0.005 per call after the first call in a 5-minute
+#     window. Operators must supply AI_API_KEY in .env for the assistant +
+#     ingest + brief features to work; without one those features 503
+#     cleanly but the rest of the demo is unaffected.
+#   - Server + client ports bind to 127.0.0.1 only — the host's reverse
+#     proxy is the only thing reachable from the public internet.
+#   - NODE_ENV=production and CLIENT_URL pointing at the public demo URL
+#     so CORS, HSTS, and CSP all apply correctly.
+#   - Sets TRUST_PROXY=true so req.ip resolves to the real client IP
+#     after Caddy/nginx forwarding (per-IP rate limit + audit log
+#     correctness — see lib/activityLog + index.js trust proxy gate).
+#
+# Set DEMO_DOMAIN (or override CLIENT_URL directly) in the host's .env so
+# the SPA bundle and CORS know the canonical origin. Example:
+#
+#   DEMO_DOMAIN=demo.servicecycle.com
+#   CLIENT_URL=https://demo.servicecycle.com
+#   VITE_API_URL=https://demo.servicecycle.com
+
+services:
+
+  server:
+    environment:
+      DEMO_MODE:    "true"
+      NODE_ENV:     "production"
+      TRUST_PROXY:  "true"
+      CLIENT_URL:   "${CLIENT_URL:?CLIENT_URL must be set in .env to the public demo URL, e.g. https://demo.servicecycle.com}"
+      # Demo instances NEVER send real email — EMAIL_MOCK is forced true at
+      # startup, but we re-pin it here for clarity in `docker inspect`.
+      EMAIL_MOCK:   "true"
+      # L14: AI is ON in demo mode so the in-product Ask ServiceCycle assistant
+      # works. The DEMO_MODE startup in server/index.js pins
+      # AI_MODEL_OVERRIDE=claude-haiku-4-5-20251001 so a hostile burst can't
+      # inflate operator AI cost regardless of what AI_MODEL the operator's
+      # .env says. Per-action quotas live in lib/aiQuota.js DEMO_DEFAULT_CAPS
+      # (ask=6/day, others=2/day). Operator MUST supply AI_API_KEY in .env
+      # — the rest of the demo works without it but ingest, signature
+      # extraction, renewal-brief generation, and Ask ServiceCycle all 503
+      # until a key is configured.
+      AI_ENABLED:   "true"
+      # Phase 4 v0.4.x: Tavily web-search enrichment of the renewal
+      # brief's Market section. Without this passthrough, the .env value
+      # is read by `docker compose` for variable substitution but never
+      # reaches the container — symptom: brief generates with no live
+      # market data, no "enriched with N source(s)" subtitle, and no
+      # Sources footer. Found by Opus deep-dive 2026-05-12.
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+    # !override is required (Compose v2.20+). Without it, Compose CONCATENATES
+    # the ports list from the base file with this one, which would leave the
+    # public 0.0.0.0 binding from the base intact alongside the loopback
+    # binding here — defeating the entire reason for this override.
+    # https://docs.docker.com/reference/compose-file/merge/#override
+    ports: !override
+      # Bind to 127.0.0.1 only — the reverse proxy is the public surface.
+      # Host-side port moved from 3001 -> 13001 in 2026-05-12 ops session
+      # because Docker daemon's port-allocation DB got corrupted on the
+      # demo droplet ("address already in use" with no actual listener).
+      # Container internal port stays 3001; Caddyfile.demo proxies to 13001.
+      - "127.0.0.1:13001:3001"
+
+  client:
+    environment:
+      VITE_API_URL: "${CLIENT_URL:?CLIENT_URL must be set in .env to the public demo URL}"
+    # Bind to 127.0.0.1 only — Caddy is the public surface.
+    # Container port is 80 because the GHCR client image (client/Dockerfile.prod)
+    # serves the prebuilt SPA via nginx on port 80. The base docker-compose.yml
+    # uses Vite (port 5173) for dev; this override pins the prod-image port
+    # explicitly so Caddy → 127.0.0.1:5173 → nginx works regardless of which
+    # base file (docker-compose.yml dev vs docker-compose.ghcr.yml prod) is
+    # combined with this override.
+    ports: !override
+      # Host-side port moved from 5173 -> 15173 same reason as server above.
+      # Container port stays 80 (nginx in client image); Caddy proxies to 15173.
+      - "127.0.0.1:15173:80"

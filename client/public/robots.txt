@@ -1,0 +1,9 @@
+# LapseIQ public robots policy.
+# All authenticated surfaces live under /api/*; disallow them so
+# passive crawlers don't waste cycles probing API endpoints and
+# don't surface them in search-engine indexes. Filed against
+# F024 (2026-05-08 Tier 1 pen-test sweep).
+
+User-agent: *
+Disallow: /api/
+Allow: /

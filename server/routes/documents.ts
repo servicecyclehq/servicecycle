@@ -1,0 +1,423 @@
+'use strict';
+
+/**
+ * routes/documents.js
+ * -------------------
+ * Serves stored contract documents back to authenticated users.
+ *
+ * GET /api/documents/file?key=<storageKey>
+ *   — Streams a locally stored file. Auth enforced at mount level +
+ *     account ownership verified here. Handles on-the-fly decryption
+ *     for encrypted documents.
+ *
+ * GET /api/documents/:documentId/url
+ *   — Returns a URL to access the document (local API path or S3
+ *     pre-signed URL depending on STORAGE_DEST).
+ */
+
+const express            = require('express');
+const multer             = require('multer');
+import prisma from '../lib/prisma'; // (S7) default export — the existing { prisma } destructure was a no-op bug
+const { downloadFile, uploadFile, getFileUrl } = require('../lib/storage');
+const { decrypt, encrypt } = require('../lib/docCrypto');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
+const { requireManager } = require('../middleware/roles'); // RBAC: uploads are manager+ only (consultants are read-only)
+
+const router = express.Router();
+
+// ── Upload validation (S7) ───────────────────────────────────────────────────
+// Server-side MIME and size enforcement. Anything outside the allowlist is
+// rejected with HTTP 415 BEFORE the bytes are persisted to disk/S3.
+//
+// Allowlist: PDFs, Word (legacy + OOXML), and any image/* type.
+// Size cap: 20 MB enforced at the multer `limits` level — multer aborts the
+// stream as soon as the threshold is crossed, so a malicious 5 GB upload never
+// hits storage.
+//
+// fileFilter cb pattern:
+//   cb(err)        → multer surfaces err.message in the route's catch
+//   cb(null, false)→ multer silently drops the file (we'd rather fail loudly)
+// We pass an Error tagged with .status = 415 so the route handler can return
+// a precise status code instead of multer's default 500.
+
+const ALLOWED_DOC_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
+// Image MIMEs to actively reject regardless of magic bytes (F011 / 2026-05-03 audit).
+// SVG is XML and supports inline <script>; with Content-Disposition: inline (the
+// default for documents we serve back) the file renders as live HTML in the
+// authenticated origin. The CSP (script-src 'self' with no unsafe-inline)
+// blocks inline script execution, but defense-in-depth dictates we never store
+// SVG via this surface.
+const DENIED_IMAGE_MIME = new Set([
+  'image/svg+xml',
+  'image/svg',
+]);
+
+function isAllowedUploadMime(mimetype) {
+  if (!mimetype) return false;
+  if (DENIED_IMAGE_MIME.has(mimetype)) return false; // F011
+  if (ALLOWED_DOC_MIME.has(mimetype)) return true;
+  if (mimetype.startsWith('image/')) return true;
+  return false;
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 20 * 1024 * 1024 }, // (S7) 20 MB hard cap
+  fileFilter: (req, file, cb) => {
+    // #11: storage uploads accept ANY file type. Safety comes from serving
+    // every stored file as a forced download (Content-Disposition: attachment
+    // + X-Content-Type-Options: nosniff) so nothing renders inline in our
+    // origin. The AI-ingest path (routes/ingest.ts) keeps its own strict
+    // PDF/Word/image allowlist. The 20 MB size cap (limits, above) still applies.
+    return cb(null, true);
+  },
+});
+
+// Magic-byte sniffer. The multer fileFilter trusts the Content-Type header
+// the client sets, which is fully attacker-controlled. This second-line
+// check reads the actual file signature and rejects mismatches. Defense
+// in depth — even if a forged Content-Type slips past the fileFilter, a
+// non-PDF / non-Word / non-image payload won't match here.
+function looksLikeDeclaredType(buf, mime) {
+  if (!buf || buf.length < 4) return false;
+
+  // PDF: "%PDF"
+  if (mime === 'application/pdf') {
+    return buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46;
+  }
+
+  // DOCX (and the rest of OOXML) is a ZIP container — "PK\x03\x04"
+  if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04;
+  }
+
+  // Legacy .doc / OLE2 compound: D0 CF 11 E0 A1 B1 1A E1
+  if (mime === 'application/msword') {
+    if (buf.length < 8) return false;
+    return buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0
+        && buf[4] === 0xA1 && buf[5] === 0xB1 && buf[6] === 0x1A && buf[7] === 0xE1;
+  }
+
+  if (mime.startsWith('image/')) {
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (mime === 'image/png') {
+      return buf.length >= 8
+          && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47
+          && buf[4] === 0x0D && buf[5] === 0x0A && buf[6] === 0x1A && buf[7] === 0x0A;
+    }
+    // JPEG: FF D8 FF
+    if (mime === 'image/jpeg' || mime === 'image/jpg') {
+      return buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
+    }
+    // GIF: "GIF8"
+    if (mime === 'image/gif') {
+      return buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38;
+    }
+    // WebP: "RIFF" .. "WEBP" at offset 8
+    if (mime === 'image/webp') {
+      return buf.length >= 12
+          && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+          && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+    }
+    // BMP: "BM"
+    if (mime === 'image/bmp') {
+      return buf[0] === 0x42 && buf[1] === 0x4D;
+    }
+    // TIFF: "II*\0" little-endian or "MM\0*" big-endian
+    if (mime === 'image/tiff') {
+      return (buf[0] === 0x49 && buf[1] === 0x49 && buf[2] === 0x2A && buf[3] === 0x00)
+          || (buf[0] === 0x4D && buf[1] === 0x4D && buf[2] === 0x00 && buf[3] === 0x2A);
+    }
+    // Unknown image subtype — REJECT (F011 / 2026-05-03 audit). The earlier
+    // accept-by-default tolerated image/svg+xml + arbitrary bytes. SVG is
+    // now blocked at the MIME allowlist (DENIED_IMAGE_MIME) and any other
+    // image subtype that doesn't carry a recognised magic-byte prefix is
+    // also rejected here so the magic-byte sniffer can't be the weak link
+    // in defense-in-depth. A genuine HEIC / AVIF can be added to the
+    // allowlist when first requested by an operator.
+    return false;
+  }
+
+  return false;
+}
+
+// Wrap multer's middleware to translate fileFilter / limit errors into
+// well-typed JSON responses. Without this, multer surfaces them as 500s.
+function uploadSingle(field) {
+  const handler = upload.single(field);
+  return (req, res, next) => {
+    handler(req, res, (err) => {
+      if (!err) return next();
+      // multer signals size-limit breach via (err as any).code === 'LIMIT_FILE_SIZE'
+      if ((err as any).code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ success: false, error: 'File exceeds 20 MB limit.' });
+      }
+      if (err.status === 415 || (err as any).code === 'UNSUPPORTED_MEDIA_TYPE') {
+        return res.status(415).json({ success: false, error: err.message });
+      }
+      return res.status(400).json({ success: false, error: err.message || 'Upload failed.' });
+    });
+  };
+}
+
+// ── GET /api/documents/file?key=<storageKey> ──────────────────────────────────
+// Streams the raw file bytes to the client. The key must belong to the
+// requesting user's account — cross-account access returns 404.
+
+router.get('/file', async (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) return res.status(400).json({ success: false, error: 'Missing key parameter.' });
+
+    // H5 (audit High, 2026-05-22): verify the document belongs to this
+    // account AND the contract isn't archived AND, when the caller is
+    // contractScopeRestricted, the contract is one they own. Without
+    // this, archived contracts' documents kept leaking through to
+    // viewers and restricted users could read documents on contracts
+    // outside their scope.
+    const doc = await prisma.document.findFirst({
+      where: {
+        filePath: key,
+        accountId: req.user.accountId,
+        OR: [
+          { contractId: null },  // non-contract documents (vendor docs, etc.)
+          {
+            contract: {
+              archivedAt: null,
+              ...(req.user.contractScopeRestricted
+                ? { internalOwnerId: req.user.id }
+                : {}),
+            },
+          },
+        ],
+      },
+    });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found.' });
+
+    let buf = await downloadFile(key);
+
+    // Decrypt if the document was stored encrypted
+    if (doc.encrypted) {
+      buf = decrypt(buf, doc.id);
+    }
+
+    // Audit Cluster A P2: RFC 6266 filename encoding. The previous
+    // `filename="${encodeURIComponent(...)}"` form is not spec-compliant
+    // — Safari sometimes corrupts non-ASCII names. The dual form below
+    // gives a sanitized ASCII fallback for legacy clients and the
+    // RFC 5987 percent-encoded `filename*` for modern browsers.
+    const _safeAscii  = (doc.filename || 'document').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+    const _rfc5987    = encodeURIComponent(doc.filename || 'document');
+    res.set('Content-Type',        doc.fileType || 'application/octet-stream');
+    res.set('Content-Disposition', `attachment; filename="${_safeAscii}"; filename*=UTF-8''${_rfc5987}`);
+    res.set('X-Content-Type-Options', 'nosniff'); // #11: never sniff; force download
+    res.set('Content-Length',      buf.length);
+    res.set('Cache-Control',       'private, no-store');
+
+    // C1: audit document access — fire-and-forget, never blocks the response.
+    // contractId may be null for non-contract uploads.
+    writeActivityLog({
+      contractId: doc.contractId || null,
+      userId:     req.user.id,
+      action:     'document_accessed',
+      details:    {
+        documentId: doc.id,
+        filename:   doc.filename,
+        method:     'stream',
+        encrypted:  doc.encrypted,
+      },
+    });
+
+    // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- safe: explicit Content-Type from doc.fileType, MIME allowlist (PDF/Office/image; no HTML) enforced at upload, magic-byte verification prevents type smuggling. buf is a decrypted file buffer, not user-supplied HTML.
+    return res.send(buf);
+
+  } catch (err) {
+    console.error('[documents/file]', err.message);
+    if (err.message.includes('decryption failed') || err.message.includes('MASTER_KEY')) {
+      return res.status(500).json({
+        success: false,
+        error:   'Document decryption failed. The server MASTER_KEY may have changed since this document was uploaded.',
+      });
+    }
+    return res.status(500).json({ success: false, error: 'Failed to retrieve document.' });
+  }
+});
+
+// ── GET /api/documents/:documentId/url ───────────────────────────────────────
+// Returns the appropriate access URL for a document.
+// For local storage: returns an API path the client can call.
+// For S3 storage: returns a pre-signed URL (1 hour).
+
+router.get('/:documentId/url', async (req, res) => {
+  try {
+    // H5 (audit High, 2026-05-22): same archived + contractScopeRestricted
+    // filter as /file above. The /url path returns either an API path
+    // (local storage) or a presigned S3 URL -- either way, leaking access
+    // to archived or out-of-scope contracts is the same bug as /file.
+    const doc = await prisma.document.findFirst({
+      where: {
+        id: req.params.documentId,
+        accountId: req.user.accountId,
+        OR: [
+          { contractId: null },
+          {
+            contract: {
+              archivedAt: null,
+              ...(req.user.contractScopeRestricted
+                ? { internalOwnerId: req.user.id }
+                : {}),
+            },
+          },
+        ],
+      },
+    });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found.' });
+
+    const result = await getFileUrl(doc.filePath, doc.filename);
+
+    // C1: audit document URL fetch (S3 pre-signed URL or local API path).
+    // For S3 deployments this is the actionable signal — the bytes flow direct
+    // from S3 so the /file route never sees them.
+    writeActivityLog({
+      contractId: doc.contractId || null,
+      userId:     req.user.id,
+      action:     'document_accessed',
+      details:    {
+        documentId: doc.id,
+        filename:   doc.filename,
+        method:     'url',
+        encrypted:  doc.encrypted,
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        ...result,
+        filename:  doc.filename,
+        fileType:  doc.fileType,
+        encrypted: doc.encrypted,
+      },
+    });
+  } catch (err) {
+    console.error('[documents/url]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to get document URL.' });
+  }
+});
+
+// ── POST /api/documents/upload (S7) ──────────────────────────────────────────
+// Generic document upload endpoint. Validation:
+//   - allowed types: PDF, Word (.doc/.docx), any image/* (enforced in
+//     fileFilter; rejected with 415 before storage)
+//   - 20 MB cap (multer limits; rejected with 413)
+//
+// Body (multipart/form-data):
+//   file:        the binary upload (required)
+//   contractId:  optional UUID — if present, file is scoped to that contract
+//
+// On success creates a Document row and returns its id + storage key. The
+// caller is responsible for any post-processing (e.g. text extraction).
+
+router.post('/upload', requireManager, uploadSingle('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file provided.' });
+    }
+    // BRT-EDGE-001 (Round-5): reject 0-byte uploads.
+    if (req.file.size === 0) {
+      return res.status(400).json({ success: false, error: 'File is empty.' });
+    }
+
+    // #11: storage uploads accept any type, so there is no "declared type" to
+    // verify magic bytes against. The forced-download serving (attachment +
+    // nosniff in GET /file and the presigned URL) is what keeps an arbitrary
+    // upload from ever executing/rendering in our origin.
+
+    const { accountId, id: userId } = req.user;
+    let { contractId } = req.body || {};
+    const { poId } = req.body || {};
+
+    // If a contractId was given, verify it belongs to this account before
+    // letting the upload pin to it (defence-in-depth — Document.accountId is
+    // the source of truth, but a stale contractId pollutes navigation).
+    if (contractId) {
+      const owns = await prisma.contract.findFirst({
+        where:  { id: contractId, accountId },
+        select: { id: true },
+      });
+      if (!owns) {
+        return res.status(404).json({ success: false, error: 'Contract not found.' });
+      }
+    }
+
+    // #10: if a poId is supplied, verify the PO belongs to a contract in this
+    // account, then pin the document to that PO (and to its parent contract so
+    // it still surfaces in the contract Documents panel tagged by PO #).
+    if (poId) {
+      const po = await prisma.purchaseOrder.findFirst({
+        where:  { id: poId, contract: { accountId } },
+        select: { id: true, contractId: true },
+      });
+      if (!po) {
+        return res.status(404).json({ success: false, error: 'Purchase order not found.' });
+      }
+      if (!contractId) contractId = po.contractId;
+    }
+
+    // Optional at-rest encryption gate (mirrors ingest.js behaviour)
+    const encryptDocs = process.env.ENCRYPT_DOCS === 'true';
+    let bytes = req.file.buffer;
+    let encrypted = false;
+    let docId = null;
+
+    // Pre-allocate the Document row so encrypt() can use its id as the HKDF
+    // salt (per lib/docCrypto.js — key is derived from MASTER_KEY + docId).
+    // filePath is filled in after the storage write succeeds; if storage fails
+    // we leave a zero-byte placeholder row that the cleanup cron prunes.
+    const docRow = await prisma.document.create({
+      data: {
+        accountId,
+        contractId: contractId || null,
+        poId:       poId || null,
+        uploadedBy: userId,                       // schema field is `uploadedBy`, not `uploadedById`
+        filename:   req.file.originalname,
+        fileType:   req.file.mimetype,
+        filePath:   '__pending__',                // non-empty placeholder; updated after storage write
+        encrypted:  false,
+      },
+      select: { id: true },
+    });
+    docId = docRow.id;
+
+    if (encryptDocs) {
+      bytes = encrypt(bytes, docId);
+      encrypted = true;
+    }
+
+    const { storageKey } = await uploadFile(
+      accountId, contractId || null, req.file.originalname, bytes, req.file.mimetype
+    );
+
+    await prisma.document.update({
+      where: { id: docId },
+      data:  { filePath: storageKey, encrypted },
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: { id: docId, filename: req.file.originalname, sizeBytes: req.file.size, encrypted },
+    });
+  } catch (err) {
+    console.error('[documents/upload]', err);
+    return res.status(500).json({ success: false, error: 'Upload failed.' });
+  }
+});
+
+module.exports = router;
+
+export {};

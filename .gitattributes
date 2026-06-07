@@ -1,0 +1,4 @@
+# Shell scripts + CI/automation YAML must keep LF endings so they run on Linux
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf

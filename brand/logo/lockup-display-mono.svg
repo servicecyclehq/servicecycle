@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="44" viewBox="0 0 100 44" role="img" aria-labelledby="title desc">
+  <title id="title">LapseIQ</title>
+  <desc id="desc">LapseIQ display logo lockup, monochrome ink.</desc>
+  <text x="50" y="22" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="22" font-weight="500" letter-spacing="-0.44" fill="#0a0d12">lapseiq</text>
+  <rect x="7" y="29" width="86" height="6" rx="3" fill="#0a0d12"/>
+  <rect x="65" y="23" width="3" height="18" rx="1.5" fill="#0a0d12"/>
+</svg>

@@ -1,0 +1,3 @@
+Vendor,Product,Contract #,Customer #,Status,Start Date,End Date,Quantity,Cost Per License,Auto Renewal,Notice Days,PO Number,Invoice Number,Department,Team,Cost Center,Requestor,Reseller,Reseller Account #,Reseller Contact,Reseller Email,Notes
+Microsoft,Microsoft 365 E3,MS-2024-001,,active,2024-01-01,2025-01-01,50,36.00,Yes,30,PO-1234,,IT,,,Jane Smith,SoftwareOne,,,,Enterprise agreement renewal
+Salesforce,Sales Cloud Enterprise,SF-2024-008,1234567,active,2024-03-15,2025-03-15,25,150.00,Yes,90,PO-2024-008,,Sales,Enterprise,SALES-OP,Sandra Diaz,,,Salesforce Direct,a.chen@salesforce.com,Includes Service Cloud add-on

@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1.6
+#
+# LapseIQ server PRODUCTION image - TypeScript via tsx runtime (v0.91.53).
+# Build context = ./server (same as the legacy server/Dockerfile).
+#
+# WHY tsx instead of a bundle:
+#   The server is CommonJS authored in TypeScript - 136 of 139 files use
+#   module.exports/require with a trailing `export {};` module-marker. tsx
+#   transpiles each file on the fly at require-time (exactly like the
+#   `tsx index.ts` dev command), so per-file __dirname, require resolution and
+#   the schemas/data/uploads/backups paths all match the source tree. esbuild
+#   bundling mis-classifies the CJS+export{} files as ESM and drops their
+#   module.exports (routes resolve to undefined and the app crashes at boot),
+#   so bundling is not viable for this codebase.
+#
+# Single stage: tsx (and its esbuild engine) are devDependencies and ARE the
+# runtime, so dev deps are intentionally kept. The native build toolchain used
+# by `npm ci` is installed in a virtual package and removed afterwards.
+
+FROM node:20-alpine AS runtime
+
+# Runtime system deps:
+#   openssl           - Prisma probes for libssl at boot
+#   postgresql-client - pg_dump nightly backup cron (lib/backup)
+#   wget              - HEALTHCHECK
+RUN apk add --no-cache openssl postgresql-client wget
+
+WORKDIR /app
+
+# Manifest + prisma schema first so the deps + client layers cache well.
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+
+# Install (keep dev deps - tsx/esbuild are the runtime) and generate the Prisma
+# client. The C toolchain for native modules (sharp/bcryptjs) is added in a
+# virtual package and dropped immediately to keep the image lean.
+RUN apk add --no-cache --virtual .build python3 make g++ \
+ && npm ci \
+ && npx prisma generate \
+ && apk del .build \
+ && npm cache clean --force
+
+# Application source (incl. schemas/*.js, data/, *.ts, tsconfig.json).
+COPY . .
+
+# Pre-create writable bind-mount targets owned by the node user. The compose
+# stack runs this container with a read-only rootfs + tmpfs /tmp, so tsx's
+# on-the-fly transpile output goes to /tmp; uploads/backups are bind mounts.
+RUN mkdir -p /app/uploads /app/backups \
+ && chown -R node:node /app/uploads /app/backups
+
+USER node
+
+EXPOSE 3001
+ENV NODE_ENV=production
+
+# HEALTHCHECK exercises /api/ready (real DB probe, returns 503 if DB down).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3001/api/ready || exit 1
+
+# Run the TypeScript entrypoint through tsx's CLI directly (no npx => no cache
+# writes on the read-only rootfs).
+CMD ["node", "node_modules/tsx/dist/cli.mjs", "index.ts"]

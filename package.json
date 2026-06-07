@@ -1,0 +1,36 @@
+﻿{
+  "name": "servicecycle-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end Playwright tests + design/a11y audit-bot for ServiceCycle. Targets demo.servicecycle.com by default; override via E2E_BASE_URL.",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:property": "node tests/property/prefCache.property.test.js && node tests/property/columnVisibility.property.test.js && node tests/property/alertThresholds.property.test.js",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:install": "playwright install chromium",
+    "audit": "playwright test e2e/audit.spec.js --reporter=line && node server/scripts/run-lighthouse.js && node server/scripts/audit-aggregator.js",
+    "audit:capture": "playwright test e2e/audit.spec.js --reporter=line",
+    "audit:lighthouse": "node server/scripts/run-lighthouse.js",
+    "audit:aggregate": "node server/scripts/audit-aggregator.js",
+    "lint": "eslint .",
+    "lint:css": "stylelint \"client/src/**/*.css\"",
+    "lint:html": "html-validate marketing-site/*.html"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@eslint/js": "^9.13.0",
+    "@google/generative-ai": "^0.21.0",
+    "@playwright/test": "^1.49.0",
+    "chrome-launcher": "^1.1.2",
+    "eslint": "^9.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "fast-check": "^4.8.0",
+    "globals": "^15.11.0",
+    "html-validate": "^9.0.0",
+    "lighthouse": "^12.2.0",
+    "puppeteer-core": "^23.0.0",
+    "stylelint": "^16.10.0",
+    "stylelint-config-standard": "^36.0.0"
+  }
+}

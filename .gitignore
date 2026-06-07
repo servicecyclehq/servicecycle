@@ -1,0 +1,110 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment variables — never commit these
+.env
+.env.local
+.env.*.local
+
+# Private keys, certs, key stores — NEVER commit these.
+# A Cloudflare Origin Certificate keypair (lapseiq.key + lapseiq.crt) was
+# accidentally committed in 965b7cf and rotated 2026-05-02; this section
+# prevents the recurrence. If you need a key on disk for a deploy, keep
+# it OUTSIDE the repo (e.g., next to docker-compose, in /etc/ssl/, or in
+# a secret manager).
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+*.pkcs12
+*.jks
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+
+# Build output
+dist/
+build/
+
+# Prisma generated client
+server/node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+*.env.docker
+
+# Uploaded files (local disk storage, not for git)
+server/uploads/
+
+# Encrypted DB backups produced by server/lib/backup.js. Encrypted with
+# MASTER_KEY so even an accidental commit isn't a plaintext leak, but the
+# files have no business in version control either way — they're
+# operational artifacts, not source. Caught during the 2026-05-11 restore
+# test when a test backup landed in server/backups/.
+server/backups/
+
+# Credential scratch files used when handing short-lived tokens to local
+# tooling (e.g. a Cloudflare API token created for an evening of WAF work).
+# These should NEVER be committed.
+.cf-token-tmp
+.cf-headers.tmp
+temp key*.txt
+*.token.tmp
+*-token-tmp.txt
+
+# Local paste-staging dir for ops sessions (Caddy/install.sh paste blobs)
+_apex-deploy-tmp/
+
+# Vite timestamp shims generated during local dev builds
+client/vite.config.js.timestamp-*.mjs
+
+# Local dist/verify snapshots — not source
+client/dist-verify/
+
+# Ad-hoc files that shouldn't be tracked
+*.tar.gz
+*.pdf
+New Text Document.txt
+
+
+# Sandbox debug leftovers — created accidentally during the 2026-05-16 audit
+# fix session; can't be deleted from the Linux sandbox (Windows mount blocks
+# unlink). Delete from Windows side; .gitignore keeps them out of commits.
+marketing-site/*.test
+marketing-site/write-test.txt
+marketing-site/stdout.log
+marketing-site/stderr.log
+
+# Playwright E2E (audit-7)
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
+# Audit-bot output (e2e/audit.spec.js + lighthouse + aggregator).
+# Baseline ships with the tooling so v0.91.x can diff against it; subsequent
+# runs are local-only and stay out of the repo.
+audit-reports/*
+!audit-reports/0.90.9-*
+qa/
+.unlighthouse/
+data/

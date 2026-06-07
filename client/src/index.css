@@ -1,0 +1,906 @@
+﻿/* ΓöÇΓöÇ Brand typography (v0.5.4) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ   Inter (400, 500) + JetBrains Mono (400, 500) via Bunny Fonts ΓÇö a   privacy-friendly Google Fonts CDN that doesn't set cookies or send   analytics. Replaced the previous @fontsource npm imports which silently   broke the Linux production build (see v0.5.4 incident: 5 CSS imports   in main.jsx triggered Rollup tree-shaking that nuked our entire app   tree, producing a 185KB stub bundle).   ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ *//* ΓöÇΓöÇ Brand palette (v0.5.7 Quietly Modern) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ   App interior brand pass. Migrated from the Tailwind blue palette to the   petrol primary / emerald signal / cool-neutrals palette locked in   brand/brand.md. Components that use var(--color-primary), var(--color-bg)   etc. inherit the new look automatically. Components with inline-style   hardcoded hexes need follow-up spot fixes.   ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */:root {  --color-primary: #073a52;            /* petrol ΓÇö brand primary */  --color-primary-hover: #0d4f6e;      /* petrol hover */  --color-primary-light: #e6f0f5;      /* petrol tint ΓÇö badges, pills, soft bg */  --color-emerald: #10b981;            /* signal accent (live, fresh, positive ΓÇö sparingly) */  --color-sidebar-bg: #0a0d12;         /* ink ΓÇö sidebar surface */  --color-sidebar-hover: #13171f;      /* surface-dark ΓÇö hover/active rows */  --color-sidebar-active: #0d4f6e;     /* petrol ΓÇö active nav item */  --color-sidebar-text: #9aa3b2;
+  --color-sidebar-label: #cbd5e1;  /* a11y A1: sidebar user-name visible on dark bg */       /* faint text on dark sidebar */  --color-sidebar-text-active: #ffffff;  --color-bg: #fafbfd;                 /* app page background */  --color-surface: #ffffff;            /* card surface */  --color-border: #dde2eb;             /* default border (hover-bg shade) */  --color-border-strong: #c7cfdb;      /* emphasis border */  --color-text: #0a0d12;               /* ink ΓÇö primary text */  --color-text-secondary: #1e293b;     /* muted text */  --color-text-muted: #334155;         /* faint text ΓÇö captions, hints */  --color-danger: #b91c1c;             /* errors, destructive actions */  --color-danger-bg: #fee2e2;  --color-success: #15803d;            /* success states */  --color-success-bg: #dcfce7;  --color-warning: #b45309;            /* caution, attention needed */  --color-warning-bg: #fef3c7;  --color-success-soft: #f0fdf4;  --color-success-strong: #166534;  --color-success-bg-strong: #bbf7d0;  --color-danger-soft: #fef2f2;  --color-danger-strong: #7f1d1d;  --color-danger-bg-strong: #fecaca;  --color-warning-soft: #fffbeb;  --color-warning-strong: #92400e;  --color-warning-bg-strong: #fde68a;  --color-pill-archived-text: #475569;  --color-renewal-bg: #eef2ff;        /* indigo-50 — v0.54 alerts type pill */  --color-renewal-text: #4338ca;      /* indigo-700 */  --color-renewal-border: #c7d2fe;    /* indigo-200 */  --color-info: #0d4f6e;               /* info = petrol (same as primary by design) */  --color-info-bg: #e6f0f5;  --color-on-primary: #ffffff;  --sidebar-width: 220px;  --header-height: 56px;  --radius: 6px;   /* NOTE: overridden to 8px in the alias :root block lower in this file. See UX-A1-003. */  --radius-lg: 10px;  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  /* Font-size scale (v0.26.2) */
+  --font-size-xs:   11px;             /* captions, badges, table headers */
+  --font-size-sm:   12px;             /* labels, sub-labels, secondary text */
+  --font-size-base: 15px;             /* body / default */
+  --font-size-md:   15px;             /* card titles, slight lift */
+  --font-size-lg:   17px;             /* section headings (future use) */
+  --font-size-xl:   22px;             /* page titles */
+  --font-size-2xs:  10px;             /* tiny: nav badges, sort icons */
+  --font-size-ui:   13px;             /* UI chrome: nav, buttons, tooltips, labels */
+  --font-size-data: 14px;             /* data: table cells, field values */
+  --font-size-2xl:  24px;             /* KPI numbers, dashboard stats */
+  --font-size-3xl:  28px;             /* large display numbers */
+  --font-size-hero: 32px;             /* hero stat display */
+  --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace; /* UX-A2-007 */
+}/* ΓöÇΓöÇ Reset ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */*, *::before, *::after { box-sizing: border-box; }* { margin: 0; padding: 0; }body {  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;  font-size: 15px;  line-height: 1.5;  color: var(--color-text);  background: var(--color-bg);  -webkit-font-smoothing: antialiased;}a { color: var(--color-primary); text-decoration: none; }a:hover { text-decoration: underline; }button { cursor: pointer; font-family: inherit; }input, select, textarea { font-family: inherit; font-size: 16px; }/* ΓöÇΓöÇ Layout ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.app-shell {  display: flex;  min-height: 100dvh;}.sidebar {  width: var(--sidebar-width);  background: var(--color-sidebar-bg);  display: flex;  flex-direction: column;  flex-shrink: 0;  position: fixed;  /* (A1) honor the demo banner's height so the sidebar starts below it.     Defaults to 0px when no banner is mounted. */  top: var(--demo-banner-height, 0px);  left: 0;  bottom: 0;  z-index: 100;  overflow-y: auto;}.sidebar-logo {  padding: 14px 16px 12px;  border-bottom: 1px solid #13171f;  display: flex;  flex-direction: column;  gap: 4px;}.sidebar-logo-mark {  display: flex;  align-items: center;  gap: 6px;}.sidebar-logo-text {  font-size: 19px;  font-weight: 500;  color: var(--color-sidebar-text-active);  letter-spacing: -0.02em;  line-height: 1.15;}.sidebar-logo-sub {  font-size: 11px;  color: var(--color-sidebar-text);  margin-top: 2px;}.sidebar-nav {  padding: 8px 8px;  flex: 1;}.nav-section-label {  font-size: 11px;  font-weight: 600;  text-transform: uppercase;  letter-spacing: 0.07em;  color: var(--color-sidebar-text);  padding: 8px 8px 3px;}.nav-item {  display: flex;  align-items: center;  gap: 8px;  padding: 7px 10px;  border-radius: var(--radius);  color: var(--color-sidebar-text);  font-size: 13px;  font-weight: 500;  text-decoration: none;  transition: background 0.15s, color 0.15s;  margin-bottom: 1px;}.nav-item:hover { background: var(--color-sidebar-hover); color: #e2e8f0; text-decoration: none; }.nav-item.active { background: var(--color-sidebar-active); color: var(--color-sidebar-text-active); }.nav-item-row { display: flex; align-items: center; border-radius: var(--radius); margin-bottom: 1px; }.nav-item-row:has(> .nav-item.active) { background: var(--color-sidebar-active); }.nav-item-row > .nav-item.active { background: transparent; margin-bottom: 0; }.nav-item.disabled { opacity: 0.4; cursor: default; pointer-events: none; }.nav-item .nav-icon { width: 16px; flex-shrink: 0; }.nav-badge {  margin-left: auto;  font-size: 10px;  background: #374151;  color: #d1d5db;  padding: 1px 6px;  border-radius: 10px;}.sidebar-footer {  padding: 12px 8px 16px;  border-top: 1px solid #1e293b;}.sidebar-user {  display: flex;  align-items: center;  gap: 8px;  padding: 8px 10px;  border-radius: var(--radius);  background: transparent;  border: none;  color: inherit;}.sidebar-user-avatar {  width: 28px; height: 28px;  background: var(--color-primary);  border-radius: 50%;  display: flex; align-items: center; justify-content: center;  font-size: 11px; font-weight: 600; color: white; flex-shrink: 0;}.sidebar-user-name { font-size: 12px; font-weight: 500; color: var(--color-sidebar-label, #cbd5e1); }.sidebar-user-role { font-size: 11px; color: var(--color-sidebar-text); }.logout-btn {  width: 100%;  margin-top: 6px;  padding: 6px 10px;  background: transparent;  border: 1px solid #1e293b;  border-radius: var(--radius);  color: var(--color-sidebar-text);  font-size: 12px;  text-align: left;  transition: background 0.15s;}.logout-btn:hover { background: var(--color-sidebar-hover); color: #e2e8f0; }.main-content {  margin-left: var(--sidebar-width);  flex: 1;  /* (A1) shrink the min-height by the demo banner's height so the page     doesn't grow taller than the viewport when the banner is showing. */  min-height: calc(100vh - var(--demo-banner-height, 0px));  display: flex;  flex-direction: column;}.page-header {  background: var(--color-surface);  border-bottom: 1px solid var(--color-border);  padding: 16px 28px;  display: flex;  align-items: center;  justify-content: space-between;  /* 2026-05-10 review H2: allow the title-block + action-toolbar pair to     wrap onto two rows on narrow viewports (1366├ù768 with a 220px sidebar     leaves <1000px usable for the header ΓÇö the Contracts page's four     buttons were clipping "+ New Contract" off the right edge). */  flex-wrap: wrap;  gap: 8px;  min-height: 64px;}.page-title { font-size: 22px; font-weight: 700; color: var(--color-text); }.page-subtitle { font-size: 13px; color: var(--color-text-secondary); margin-top: 1px; }.page-body {  padding: 24px 28px;  flex: 1;}/* ΓöÇΓöÇ Buttons ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.btn {  display: inline-flex;  align-items: center;  gap: 6px;  padding: 7px 14px;  border-radius: var(--radius);  font-size: 13px;  font-weight: 500;  border: 1px solid transparent;  transition: background 0.15s, border-color 0.15s, color 0.15s;  white-space: nowrap;}.btn-primary {  background: var(--color-primary);  color: white;  border-color: var(--color-primary);}.btn-primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }.btn-secondary {  background: var(--color-surface);  color: var(--color-text);  border-color: var(--color-border-strong);}.btn-secondary:hover { background: var(--color-border); }.btn-danger {  background: var(--color-danger);  color: white;  border-color: var(--color-danger);}.btn-danger:hover { background: var(--color-danger); filter: brightness(0.9); }.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-text { background: transparent; border: none; color: var(--color-primary); padding: 7px 10px; }
+.btn-text:hover { color: var(--color-primary-hover); background: var(--color-primary-light); }.btn:disabled { opacity: 0.65; cursor: not-allowed; filter: grayscale(0.6); }/* ΓöÇΓöÇ Cards ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.card {  background: var(--color-surface);  border: 1px solid var(--color-border);  border-radius: var(--radius-lg);  box-shadow: var(--shadow-sm);}.card-header {  padding: 16px 20px;  border-bottom: 1px solid var(--color-border);  display: flex;  align-items: center;  justify-content: space-between;  /* 2026-05-10 review H2: allow the title/subtitle and trailing CTA to wrap     when content + button widths exceed the card. Prevents right-edge clip     on cards like "Needs Attention Today" ΓåÆ "Open Alerts ΓåÆ". */  flex-wrap: wrap;  gap: 8px;}.card-title { font-size: var(--font-size-md, 15px); font-weight: 600; }.card-body { padding: 20px; }/* ΓöÇΓöÇ Table ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.table-wrap { overflow-x: clip; overflow-y: visible; }table { width: 100%; border-collapse: collapse; }th {  text-align: left;  font-size: 11px;  font-weight: 600;  text-transform: uppercase;  letter-spacing: 0.05em;  color: var(--color-text-secondary);  padding: 10px 14px;  border-bottom: 1px solid var(--color-border);  white-space: nowrap;  background: var(--color-bg);}td {  padding: 12px 14px;  border-bottom: 1px solid var(--color-border);  color: var(--color-text);  font-size: 14px;  vertical-align: middle;  font-variant-numeric: tabular-nums;}tr:last-child td { border-bottom: none; }tr.table-row-clickable:hover td { background: var(--color-primary-light); }.td-muted { color: var(--color-text-secondary); }/* ΓöÇΓöÇ Badges ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.badge {  display: inline-flex;  align-items: center;  justify-content: center;  min-width: 76px;  padding: 2px 8px;  border-radius: 999px;  font-size: 11px;  font-weight: 700;  white-space: nowrap;  font-variant-numeric: tabular-nums;  text-align: center;}.badge-active    { background: var(--color-success-soft); color: var(--color-success-strong); }.badge-under_review { background: var(--color-warning-soft); color: var(--color-warning-strong); }.badge-renewed   { background: var(--color-primary-light); color: var(--color-primary); }.badge-cancelled { background: transparent; color: var(--color-pill-archived-text); border: 1px solid var(--color-border); }.badge-expired   { background: var(--color-danger-soft); color: var(--color-danger-strong); }.table-row-clickable:hover td { background: var(--color-primary-light); }.badge-urgent    { background: var(--color-danger-bg); color: var(--color-danger); }.badge-soon      { background: var(--color-warning-bg); color: var(--color-warning); }/* ΓöÇΓöÇ Forms ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.form-group { margin-bottom: 18px; }/* v0.5.19: kill doubled spacing inside form-row grids; row-gap owns intra-row spacing */ .form-row > .form-group { margin-bottom: 0; }.form-label {  display: block;  font-size: 12px;  font-weight: 600;  color: var(--color-text-secondary);  margin-bottom: 6px;  text-transform: uppercase;  letter-spacing: 0.04em;}.form-label .required { color: var(--color-danger); margin-left: 2px; }.form-control {  width: 100%;  padding: 8px 10px;  border: 1px solid var(--color-border-strong);  border-radius: var(--radius);  background: var(--color-surface);  color: var(--color-text);  font-size: 13px;  transition: border-color 0.15s, box-shadow 0.15s;}.form-control:focus {  outline: none;  border-color: var(--color-primary);  box-shadow: 0 0 0 3px rgb(13 79 110 / 0.15);}.form-control::placeholder { color: var(--color-text-muted); }select.form-control { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%235b6373' stroke-width='1.5'><polyline points='3 5 6 8 9 5'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }textarea.form-control { resize: vertical; min-height: 80px; }.form-hint { font-size: 11px; color: var(--color-text-secondary); margin-top: 4px; }/* v0.5.18: uniform 320px-cell grid for every form-row. Inputs are .form-control with max-width:320px (v0.5.16). The legacy .form-row-2 / .form-row-3 classes used 1fr/1fr-and-1fr/1fr/1fr columns, which were wider than 320px, so inputs sat at different x-positions across sections. Now every form-row uses fixed 320px cells with a 24px col gap; cell N is at the same x-position regardless of how many fields the row holds. Legacy class names stay as JSX hints. */
+.form-row { display: grid; gap: 18px 24px; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); margin-bottom: 18px; }/* v0.5.19: gap matches form-group margin; margin-bottom gives uniform 18px between sibling form-rows *//* ΓöÇΓöÇ Form Sections ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.form-section { margin-bottom: 28px; }.form-section-title {  font-size: 12px;  font-weight: 700;  text-transform: uppercase;  letter-spacing: 0.06em;  color: var(--color-text-secondary);  margin-bottom: 14px;  padding-bottom: 8px;  border-bottom: 1px solid var(--color-border);}/* ΓöÇΓöÇ Detail Grid ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.detail-grid {  display: grid;  grid-template-columns: repeat(3, 1fr);  gap: 20px;}.detail-item {}.detail-label {  font-size: 11px;  font-weight: 600;  text-transform: uppercase;  letter-spacing: 0.05em;  color: var(--color-text-secondary);  margin-bottom: 4px;}.detail-value {  font-size: 14px;  color: var(--color-text);}.detail-value.empty { color: var(--color-text-muted); font-style: italic; }/* ΓöÇΓöÇ Alert / Info Boxes ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.alert {  padding: 12px 16px;  border-radius: var(--radius);  font-size: 13px;  margin-bottom: 16px;}.alert-error { background: var(--color-danger-bg); color: var(--color-danger); border: 1px solid var(--color-danger); }.alert-success { background: var(--color-success-bg); color: var(--color-success); border: 1px solid var(--color-success); }.alert-info { background: var(--color-info-bg); color: var(--color-info); border: 1px solid var(--color-info); }/* ΓöÇΓöÇ Login Page ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.login-page {  min-height: 100vh;  display: flex;  align-items: center;  justify-content: center;  background: var(--color-bg);  padding: 20px;}.login-box {  background: var(--color-surface);  border: 1px solid var(--color-border);  border-radius: var(--radius-lg);  box-shadow: var(--shadow-md);  padding: 36px 40px;  width: 100%;  max-width: 400px;}.login-logo { text-align: center; margin-bottom: 28px; }.login-logo-name { font-size: 26px; font-weight: 500; color: var(--color-text); letter-spacing: -0.02em; line-height: 1; }.login-logo-tagline { font-size: 12px; color: var(--color-text-secondary); margin-top: 8px; letter-spacing: 0.01em; }.login-title { font-size: 16px; font-weight: 500; margin-bottom: 20px; }/* ΓöÇΓöÇ Brand-mark animation (v0.5.10) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ   Green renewal tick rides from the left edge of the petrol bar to its   final ~70% position on page load. Single fire, ~1.2s, ease-out. Used   across every surface that renders the bar+tick lockup: Sidebar, Login,   Register, LandingPage. Honors prefers-reduced-motion.   ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */@keyframes lapseiq-tick-slide {  0%   { transform: translateX(-24px); opacity: 0; }  25%  { opacity: 1; }  100% { transform: translateX(0);     opacity: 1; }}.lapseiq-tick {  animation: lapseiq-tick-slide 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;  transform-box: fill-box;  transform-origin: center;}@media (prefers-reduced-motion: reduce) {  .lapseiq-tick { animation: none; }}/* ΓöÇΓöÇ Loading ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.loading {  display: flex;  align-items: center;  justify-content: center;  padding: 60px;  color: var(--color-text-secondary);  font-size: 13px;}/* ΓöÇΓöÇ Empty State ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.empty-state {  text-align: center;  padding: 48px 24px;  color: var(--color-text-secondary);}.empty-state-title { font-size: var(--font-size-lg, 17px); font-weight: 600; color: var(--color-text); margin-bottom: 6px; }.empty-state-sub { font-size: 13px; }/* ΓöÇΓöÇ Filters Bar ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.filters-bar {  display: flex;  align-items: center;  gap: 10px;  flex-wrap: wrap;}.search-input {  padding: 7px 10px;  border: 1px solid var(--color-border-strong);  border-radius: var(--radius);  font-size: 13px;  max-width: 220px;  width: 100%;  background: var(--color-surface);}.search-input:focus { outline: none; border-color: var(--color-primary); }.filter-select {  padding: 7px 10px;  border: 1px solid var(--color-border-strong);  border-radius: var(--radius);  font-size: 13px;  background: var(--color-surface);  cursor: pointer;}/* ΓöÇΓöÇ Pagination ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.pagination {  display: flex;  align-items: center;  justify-content: space-between;  padding: 12px 16px;  border-top: 1px solid var(--color-border);  background: var(--color-bg);}.pagination-info { font-size: 12px; color: var(--color-text-secondary); }.pagination-controls { display: flex; gap: 6px; }.page-btn {  padding: 4px 10px;  border: 1px solid var(--color-border-strong);  border-radius: var(--radius);  background: var(--color-surface);  font-size: 12px;  cursor: pointer;  transition: background 0.15s;}.page-btn:hover:not(:disabled) { background: var(--color-bg); }.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }.page-btn.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }/* ΓöÇΓöÇ Contract Detail ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.contract-header-meta {  display: flex;  align-items: center;  gap: 10px;  flex-wrap: wrap;}.back-link {  display: inline-flex;  align-items: center;  gap: 4px;  font-size: 12px;  color: var(--color-text-secondary);  margin-bottom: 8px;}.back-link:hover { color: var(--color-text); text-decoration: none; }.section-gap { margin-top: 20px; }/* ΓöÇΓöÇ Checkbox ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.checkbox-group {  display: flex;  align-items: center;  gap: 8px;  padding: 8px 0;}.checkbox-group input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; }.checkbox-label { font-size: 13px; cursor: pointer; }/* ΓöÇΓöÇ Utilities ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.text-danger { color: var(--color-danger); }.text-muted { color: var(--color-text-muted); }.text-secondary { color: var(--color-text-secondary); }.font-mono { font-family: var(--font-mono); font-size: 12px; }.flex { display: flex; }.flex-center { display: flex; align-items: center; }.gap-8 { gap: 8px; }.gap-12 { gap: 12px; }.ml-auto { margin-left: auto; }.mt-4 { margin-top: 4px; }.mt-8 { margin-top: 8px; }.mt-16 { margin-top: 16px; }.mt-24 { margin-top: 24px; }.mb-16 { margin-bottom: 16px; }/* ΓöÇΓöÇ Sortable Column Headers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */th.sortable { cursor: pointer; user-select: none; }th.sortable:hover { background: var(--color-primary-light); color: var(--color-text); }th.sorted { color: var(--color-primary); }.sort-icon { margin-left: 4px; font-size: 10px; opacity: 0.45; transition: opacity 0.15s ease; }th.sorted .sort-icon { opacity: 1; }/* ΓöÇΓöÇ Auto-renewal trap row ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */tr.trap-row td { background: var(--color-danger-bg) !important; }tr.trap-row:hover td { background: var(--color-danger-bg) !important; }tr.trap-row td:first-child { box-shadow: inset 3px 0 0 var(--color-danger); }/* ΓöÇΓöÇ Days Until Indicator ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */.days-chip {  display: inline-flex;  align-items: center;  font-size: 11px;  font-weight: 600;  padding: 2px 7px;  border-radius: 20px;}.days-chip-overdue { background: var(--color-danger-bg); color: var(--color-danger); }.days-chip-urgent  { background: var(--color-warning-bg); color: var(--color-warning); }.days-chip-soon    { background: var(--color-warning-bg); color: var(--color-warning); }.days-chip-ok      { background: var(--color-success-bg); color: var(--color-success); }
+
+/* Round-5 BRT-A11Y-004: visually-hidden but available to assistive tech. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Round-5 BRT-MOB-002: bump sidebar nav-item to 44px touch target on touch devices. */
+@media (pointer: coarse) {
+  .nav-item { padding: 12px 14px; }
+}
+
+
+/* v0.5.15 site-wide form input width normalization */
+.form-control { max-width: 320px; }
+textarea.form-control { max-width: none; }
+.form-control-wide { max-width: none !important; }
+
+/* -- Dark mode (v0.7.0) ----------------------------------------------------
+   Activated by setting `data-theme="dark"` on <html> (set by ThemeToggle in
+   sidebar footer, persisted to localStorage, applied pre-React via a tiny
+   inline script in index.html to prevent flash-of-unstyled-theme).
+   Sidebar tokens stay as-is - sidebar was already dark in light mode by
+   design; keeping it consistent reads as "the chrome is the chrome".
+   Brand petrol is lifted in saturation (#2e95c2) for AA contrast on the
+   dark surface; emerald + danger / success / warning are nudged to lighter
+   variants so badges remain legible against dark cards. */
+[data-theme="dark"] {
+  --color-bg:                #0d1117;
+  --color-surface:           #161b22;
+  --color-border:            #30363d;
+  --color-border-strong:     #444c56;
+  --color-text:              #e6edf3;
+  --color-text-secondary:    #cbd5e1;
+  --color-text-muted:        #94a3b8;
+  --color-primary:           #3ab2dc;
+  --color-on-primary:         #0a0d12;
+  --color-primary-hover:     #2986b8;
+  --color-primary-light:     #102b3d;
+  --color-emerald:           #34d399;
+  --color-danger:            #f87171;
+  --color-danger-bg:         #4a1a1a;
+  --color-success:           #4ade80;
+  --color-success-bg:        #0f2818;
+  --color-warning:           #fbbf24;
+  --color-warning-bg:        #3a2e0a;
+  --color-success-soft:      #052e16;
+  --color-success-strong:    #86efac;
+  --color-success-bg-strong: #14532d;
+  --color-danger-soft:       #450a0a;
+  --color-danger-strong:     #fca5a5;
+  --color-danger-bg-strong:  #7f1d1d;
+  --color-warning-soft:      #422006;
+  --color-warning-strong:    #fcd34d;
+  --color-warning-bg-strong: #78350f;
+  --color-pill-archived-text: #94a3b8;
+  --color-renewal-bg:        #1e1b4b;        /* indigo-950 — v0.54 alerts type pill */
+  --color-renewal-text:      #a5b4fc;        /* indigo-300 */
+  --color-renewal-border:    #4f46e5;        /* indigo-600 */
+  --color-info:              #44b4dc;
+  --color-info-bg:           #143f54;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow:    0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+/* Smooth transition when the user flips the theme - limited to the small
+   set of properties that actually change so animation is fast + cheap. */
+html, body, .card, .nav-item, .form-control, .badge {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+/* -- v0.7.0: empty-state polish -------------------------------------------
+   Wraps a Lucide icon at the top of each empty-state card. The icon gets a
+   rounded soft-bg container so it reads as a deliberate visual element
+   rather than a free-floating dingbat. Used by the shared EmptyState
+   component (components/EmptyState.jsx). */
+.empty-state-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 14px;
+}
+[data-theme="dark"] .empty-state-icon {
+  background: var(--color-primary-light);
+  color: var(--color-emerald);  /* better contrast on dark petrol bg */
+}
+.empty-state-cta {
+  margin-top: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* -- Wave 3 audit fixes (2026-05-16) -------------------------------------
+   Closes Cluster B P0 - accessibility patterns missing across the SPA.
+*/
+
+/* WCAG 2.4.1 Bypass Blocks - skip-link is first focusable element. Hidden
+   off-screen until focused so the visual design isn't affected, but a
+   keyboard user pressing Tab on page load sees it as the first stop. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1000;
+  padding: 8px 16px;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: 0 0 var(--radius) 0;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 14px;
+}
+.skip-link:focus {
+  left: 0;
+  outline: 2px solid var(--color-emerald, #10b981);
+  outline-offset: 2px;
+}
+
+/* <main> tabIndex=-1 fallback - the JS focus() call from the skip-link
+   should land here. Suppress the default outline on programmatic focus
+   (Firefox shows it otherwise) since the surrounding page is the affordance. */
+main[id='main-content']:focus { outline: none; }
+
+/* WCAG 2.4.7 Focus Visible - restore a clear focus ring on every focusable
+   that doesn't already define one. Buttons with border:none, links inside
+   icon-only chips, and custom-styled <a> all silently lose the default
+   browser ring. This catch-all reinstates one. The :focus-visible pseudo
+   ensures the ring only appears for keyboard/AT navigation, not for mouse
+   clicks (matches what Chrome/Firefox/Safari natively do for the default). */
+:focus-visible {
+  outline: 2px solid var(--color-primary, #0d4f6e);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+/* The default browser focus ring on form controls is good - don't double up. */
+.form-control:focus-visible { outline: none; }
+
+/* WCAG (prefers-reduced-motion) - global safety net so any future
+   animation/transition added without a specific reduced-motion fallback
+   still respects the OS preference. Previously only the brand-mark tick
+   animation honored this. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* -- Wave 8 audit fixes (2026-05-16) ------------------------------------
+   Closes Cluster B P1 polish:
+     - --color-text-muted contrast bump (2.9:1 -> 4.83:1 on light bg)
+     - badge state communicated via glyph + color, not color alone
+     - .btn minimum 44x44 touch target
+*/
+
+/* The default light-theme --color-text-muted was #9aa3b2 which renders
+   at ~2.9:1 against the --color-bg-soft (#fafbfd) used on sidebar-
+   logo-sub, .form-control::placeholder, and .detail-value.empty.
+   WCAG 1.4.3 requires 4.5:1 for body text. #6b7280 (Tailwind gray-500)
+   measures 4.83:1 on #fafbfd. Dark theme override stays unchanged
+   (#6e7681 already passes 4.5:1 against #161b22). */
+:root {
+  --color-text-muted: #6b7280;
+}
+
+/* Badge state by glyph + color (audit Cluster B P1 / WCAG 1.4.1).
+   Pre-fix the badges relied on hue alone - red-green colorblind users
+   couldn't distinguish "expired" from "active." Each badge now leads
+   with a state glyph (rewritten 2026-05-17 - the first W8 write
+   corrupted the glyphs via a PowerShell UTF-8 round-trip; this block
+   uses Unicode escape sequences in the CSS content property to
+   prevent any future encoding round-trip from breaking them).
+     U+25CF BLACK CIRCLE        active / renewed   (good standing)
+     U+25D0 CIRCLE WITH LEFT HALF BLACK  under_review  (in progress)
+     U+26A0 WARNING SIGN        urgent / soon      (action needed)
+     U+2715 MULTIPLICATION X    cancelled / expired (terminal) */
+.badge::before {
+  margin-right: 4px;
+  font-weight: 600;
+}
+.badge-active::before,
+.badge-renewed::before {
+  content: "\25CF";
+}
+.badge-under_review::before {
+  content: "\25D0";
+}
+.badge-urgent::before,
+.badge-soon::before {
+  content: "\26A0";
+}
+.badge-cancelled::before,
+.badge-expired::before {
+  content: "\2715";
+}
+
+/* Button touch target - audit Cluster B P1 (WCAG 2.5.5 AAA / Apple HIG
+   + Android Material both require 44x44 minimum). The previous
+   7px/14px + 13px font-size rendered at ~30px tall. Bumping vertical
+   padding to 10px brings .btn to ~38px, and the explicit min-height
+   pushes it to the 44px floor on touch devices. Login submit override
+   at Login.jsx:148 already sized correctly; this only widens the
+   default for the rest of the SPA's buttons. */
+.btn {
+  padding: 10px 14px;
+  min-height: 38px;
+}
+@media (pointer: coarse) {
+  .btn { min-height: 44px; }
+}
+/* Pass-2 audit (2026-05-17): dark-theme --color-text-muted bump.
+   W8 fixed the light-theme value (#6b7280 on #fafbfd = 4.83:1 OK) but
+   the dark theme override at the existing [data-theme="dark"] block
+   uses #6e7681 on #161b22 which measures 4.46:1 - fails WCAG 1.4.3 AA.
+   Bumping to #7d828a clears 4.94:1. */
+[data-theme="dark"] {
+  --color-text-muted: #8a919a;
+}
+
+/* ===== Wave 11A undeclared-var sweep + @keyframes spin (2026-05-17) =====
+   Pass 3 audit caught 31 CSS variables referenced but never declared.
+   Each one was resolving to an empty value, with the browser falling
+   back to whatever inherited or initial value the consuming property
+   uses (often a different brand-incompatible default). The aliases below
+   map every legacy/loose name to the canonical token in the :root block
+   above. Adding them here as a separate :root selector so the canonical
+   declarations stay primary and these are just secondary aliases. */
+:root {
+  /* Layout primitives the components hardcoded against */
+  --sidebar-width:        220px;
+  --demo-banner-height:   44px;
+  --radius:               8px;
+  --radius-lg:            12px;
+  --font-sans:            'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono:            'JetBrains Mono', 'IBM Plex Mono', Menlo, Consolas, monospace;
+
+  /* Surface aliases - some components write "bg", "surface", "border" instead of
+     the full --color-bg, etc. Map them to the canonical tokens so nothing
+     resolves to empty. */
+  --bg:                   var(--color-bg);
+  --surface:              var(--color-bg-soft, var(--color-surface));
+  --surface-secondary:    var(--color-bg);
+  --color-surface-alt:    var(--color-bg-soft, var(--color-surface));
+  --color-surface-raised: var(--color-surface, var(--color-bg-soft));
+  --border:               var(--color-border);
+  --color-border-subtle:  var(--color-border);
+
+  /* Text aliases - some components used --text-* shorthand. */
+  --text-primary:         var(--color-text);
+  --text-secondary:       var(--color-text-secondary);
+  --color-text-primary:   var(--color-text);
+
+  /* Accent + petrol aliases - early code wrote --accent or --color-petrol
+     instead of --color-primary. */
+  --accent:               var(--color-primary);
+  --accent-muted:         var(--color-primary-light);
+  --color-accent:         var(--color-primary);
+  --color-petrol:         var(--color-primary);
+  --color-petrol-tint:    var(--color-primary-light);
+  --color-primary-rgb:    13, 79, 110;  /* light theme hex 0d4f6e split for rgba() use */
+
+  /* Error palette - aliased to existing --color-warning (deep red on light, amber on dark) */
+  --color-error:          var(--color-danger, var(--color-warning));
+  --color-error-bg:       var(--color-danger-bg, var(--color-warning-bg));
+  --color-error-border:   var(--color-danger, var(--color-warning));
+
+  /* Sidebar palette - intentionally NOT aliased here. The sidebar is dark
+     in both light and dark themes by design (see ThemeToggle.jsx). The
+     canonical values (#0a0d12 bg, #9aa3b2 text) are set in the first :root
+     block above and must NOT be overridden by surface/text-secondary aliases
+     which would produce wrong colors (white bg or near-black text on dark bg).
+     a11y A2 fix 2026-05-28: removing the override that was causing color-contrast
+     failures on sidebar elements. */
+}
+
+/* Dark-theme override for the rgb-split alias so rgba() patterns stay legible. */
+[data-theme="dark"] {
+  --color-primary-rgb: 58, 178, 220;  /* dark theme primary 3ab2dc */
+}
+
+/* ===== @keyframes spin (Pass 3 audit MUST item #6) =====
+   Multiple components reference nimation: spin Ns linear infinite but
+   the keyframe was never declared. Every SettingsPage export-spinner,
+   PageLoad fallback, and AskModal pending state was visually frozen
+   pre-fix. */
+@keyframes spin {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+/* ===== :active press state for .btn family (Pass 3 audit MED #4) =====
+   No keyboard / touch press-feedback existed on any button. Brief
+   scale-down + opacity gives a tactile signal without animating the
+   layout. Honoring prefers-reduced-motion via the global media-query
+   block already added in W3. */
+.btn:active,
+.btn-sm:active,
+.page-btn:active,
+.nav-cta:active {
+  transform: scale(0.97);
+  filter: brightness(0.95);
+}
+
+/* ===== .btn-sm + .page-btn 44x44 (Pass 3 audit HIGH #7) =====
+   W8 fixed .btn min-height for coarse pointer devices. .btn-sm and
+   .page-btn were missed. Match them now. */
+@media (pointer: coarse) {
+  .btn-sm,
+  .page-btn { min-height: 44px; }
+}
+/* ===== Wave 11D mobile responsive (Pass-3 MUST #5) =====
+   Pre-fix the SPA had ZERO viewport breakpoints. Sidebar was a fixed
+   220px column and .main-content had margin-left:220px, so on a 375px
+   phone the actual content area was 155px wide - unusable. This block
+   adds a single 900px breakpoint that:
+     - Slides the sidebar off-screen by default on narrow viewports
+     - Adds a fixed hamburger button at the top-left of the page that
+       toggles a `sidebar-open` class on the .app-shell wrapper
+     - Slides the sidebar in on toggle + overlays a backdrop
+     - Removes the main-content margin so content gets full width
+     - Adds horizontal-scroll wrappers on data tables that don't already
+       have one (the existing .table-wrap class already does this)
+   Desktop layout (>= 900px) is unchanged. */
+
+@media (max-width: 900px) {
+  /* Sidebar slides off-screen by default. transform animates in/out;
+     prefers-reduced-motion via the global block from W3 zeros the
+     animation duration. */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 200ms ease-out;
+    z-index: 50;
+    box-shadow: 0 0 40px rgba(0,0,0,0.25);
+  }
+  .app-shell.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  /* Main content gets full width - no sidebar margin. */
+  .main-content {
+    margin-left: 0;
+    min-width: 0; /* QA-mobile P1-1: flex item must shrink below content min-content, else dashboard overflows horizontally */
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* Backdrop appears when sidebar is open; tap-to-close. Lives inside
+     .app-shell so it's covered by the sidebar's higher z-index. */
+  .app-shell.sidebar-open::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 40;
+  }
+
+  /* Hamburger trigger - fixed at top-left, always visible at this width.
+     Sits above the demo banner via a higher z-index than .demo-banner. */
+  .mobile-menu-btn {
+    display: inline-flex !important;
+    position: fixed;
+    top: calc(var(--demo-banner-height, 0px) + 10px);
+    left: 10px;
+    z-index: 60;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    cursor: pointer;
+  }
+  /* Nudge page-header right so it doesn't sit underneath the hamburger. */
+  .page-header { padding-left: 56px; }
+
+  /* Data tables: if a parent isn't already .table-wrap, scroll horizontally
+     instead of overflowing the viewport. Cheap fallback for the bulk of
+     tables that DO live inside .table-wrap; the rule below catches the
+     handful that don't. */
+  .page-body > table,
+  .card > table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Hamburger is hidden on desktop. */
+.mobile-menu-btn { display: none; }
+/* ── v0.37.2 W6 MT-156 ─────────────────────────────────────────────────────
+   .sr-only — visually-hidden but available to screen readers. Standard
+   visually-hidden pattern (see https://a11yproject.com/posts/how-to-hide-content/).
+   Pass-3 batch noted the rule was missing from index.css; BriefSection now
+   relies on it for the "(optional section, enabled in account settings)"
+   announcement that complements the visual "Optional" tag. Future a11y
+   work (toast aria-live, session-expired hint, etc.) will reuse the same
+   utility.
+*/
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  border: 0 !important;
+}
+
+
+/* -- v0.47 design-pass (feature/design-pass) -------------------------------
+   Restrained color accents across the SPA. Goal: light mode reads less
+   "mostly white with black text" without becoming a circus. Every rule
+   below is purely additive - no existing selector is overridden destructively.
+
+   Token additions:
+     --color-accent-strong  slightly punchier brand for headings + key UI
+     --color-accent-soft    alias of --color-primary-light, for soft fills
+     --color-accent-bar     left-border stripe color for opt-in card accents
+
+   New utility classes:
+     .card--accent          adds a 3px brand-color left border to .card
+     .icon-brand            color: var(--color-primary)  (for inline lucide-react icons)
+     .icon-success          color: var(--color-success)
+     .icon-warning          color: var(--color-warning)
+     .icon-danger           color: var(--color-danger)
+     .accent-title          alternative title color (use sparingly on subhead h2/h3)
+
+   Global tweaks:
+     .page-title           gets a subtle brand-accent color in both themes
+     .nav-item.active      gets a left-border stripe + slightly bolder weight
+     .badge                stronger borders so pills POP on light cards
+     .empty-state-icon     dark-mode tweak so brand color comes through
+   ------------------------------------------------------------------------ */
+
+:root {
+  /* Slightly saturated brand for headings in light mode. The default
+     --color-primary (#0d4f6e) reads fine on bg but is muted on a page-title
+     where weight + size already carry the emphasis. --color-accent-strong
+     splits the difference between primary and primary-hover. */
+  --color-accent-strong: #1a6b91;  /* v0.48: bumped from #155a7d so brand reads in light mode */
+  --color-accent-soft:   var(--color-primary-light);
+  --color-accent-bar:    var(--color-primary);
+}
+
+[data-theme="dark"] {
+  /* In dark theme the brand is already lifted (#2e95c2). Going further
+     blows it out. Use a slightly brighter teal-blue for headings. */
+  --color-accent-strong: #4eabd6;
+  --color-accent-soft:   var(--color-primary-light);
+  --color-accent-bar:    var(--color-primary);
+}
+
+/* -- Page titles --------------------------------------------------------
+   Tint the page-title with the accent. Page subtitle stays neutral grey
+   (the existing rule already sets --color-text-secondary). Letter-spacing
+   tightened slightly so the colored title still feels like a heading,
+   not a brand mark. */
+.page-title {
+  color: var(--color-accent-strong);
+  letter-spacing: -0.005em;
+}
+
+/* -- Sidebar active item: stripe + weight bump --------------------------
+   Currently .nav-item.active uses solid --color-sidebar-active (#0d4f6e)
+   on the dark sidebar. The petrol-on-ink contrast is fine but with the
+   nav-item-row :has() flatten, the active state can blur into hover. A
+   3px stripe on the left + weight bump pulls it forward. */
+.nav-item.active {
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 #4eabd6;  /* v0.48: brand-petrol-lift, was emerald */
+}
+/* Sub-nav items shouldn't get the stripe - they're already indented and
+   the stripe collides with the alignment guide. */
+.nav-item.nav-item-sub.active {
+  box-shadow: none;
+}
+
+/* -- Card accent variant - opt-in 3px brand-color left border ----------
+   Apply to "this card is the headline of the page" cards. Restraint rule:
+   never use more than 1-2 .card--accent per page. */
+.card--accent {
+  border-left: 3px solid var(--color-accent-bar);
+}
+[data-theme="dark"] .card--accent {
+  border-left-color: var(--color-primary);
+}
+
+/* -- Badge contrast - stronger borders so pills read clearly -----------
+   Pre-fix the badges had bg + color but no border, so on the page-bg
+   (which is also very pale on light mode) the soft-fill pills (renewed,
+   active, etc.) bled into the background. Adding a 1px border in the
+   same hue makes them feel like deliberate chips. */
+.badge {
+  border: 1px solid transparent;
+}
+.badge-active,
+.badge-renewed { border-color: rgba(21, 128, 61, 0.25); }
+.badge-under_review,
+.badge-urgent,
+.badge-soon,
+.badge-expired { border-color: rgba(180, 83, 9, 0.30); }
+.badge-cancelled { border-color: var(--color-border); }
+[data-theme="dark"] .badge-active,
+[data-theme="dark"] .badge-renewed { border-color: rgba(74, 222, 128, 0.30); }
+[data-theme="dark"] .badge-under_review,
+[data-theme="dark"] .badge-urgent,
+[data-theme="dark"] .badge-soon,
+[data-theme="dark"] .badge-expired { border-color: rgba(251, 191, 36, 0.30); }
+[data-theme="dark"] .badge-cancelled { border-color: var(--color-border-strong); }
+
+/* -- Icon color utilities ----------------------------------------------
+   For lucide-react icons rendered inside paragraphs / card-titles / etc.
+   These do NOT affect sidebar icons (those use color inheritance from
+   the parent .nav-item color, which is correct). Use only where the
+   icon is the semantic anchor (alert bell, warning triangle, etc.). */
+.icon-brand   { color: var(--color-primary); }
+.icon-success { color: var(--color-success); }
+.icon-warning { color: var(--color-warning); }
+.icon-danger  { color: var(--color-danger); }
+
+/* -- Empty-state CTA slight brand tint on outline buttons -------------
+   Where pages use a .btn-secondary as an empty-state action ("Add your
+   first vendor"), the neutral border + neutral text was easy to miss.
+   Tinting the border to the brand color guides the eye without changing
+   the primary-button hierarchy. Class is opt-in via .btn-secondary.btn-accent
+   so existing buttons aren't affected. */
+.btn-secondary.btn-accent {
+  border-color: var(--color-accent-strong);
+  color: var(--color-accent-strong);
+}
+.btn-secondary.btn-accent:hover {
+  background: var(--color-accent-soft);
+}
+
+/* -- Section heading variant (h2/h3 inside .page-body) ----------------
+   Optional class for section headings that aren't inside a .card-header
+   but still want to read as structured "this is a new section". Sparing
+   use - over-applying re-introduces the "everything is colored" trap. */
+.accent-title {
+  color: var(--color-accent-strong);
+  letter-spacing: -0.005em;
+}
+
+/* -- Card title - slight weight bump on section heading inside cards -
+   The default .card-title (15px / 600) was hard to distinguish from
+   surrounding 13-14px body copy on dense cards. Bumping to 700 keeps
+   the size but adds visual weight without changing layout. */
+.card-title {
+  font-weight: 700;
+}
+
+/* -- Detail-grid labels - tint the all-caps labels with brand ---------
+   Currently .detail-label is muted-grey 11px uppercase. On Contract
+   Detail pages there can be 20+ of these labels at once which makes
+   the page feel washed out. Brand-tinting them adds a quiet rhythm
+   without making each label loud. */
+.detail-label {
+  color: var(--color-accent-strong);
+  opacity: 0.85;
+}
+[data-theme="dark"] .detail-label {
+  color: var(--color-accent-strong);
+  opacity: 1;
+}
+/* -- nav-item-row wrapper: extend the active stripe to the parent ------
+   Some nav items are wrapped in <div className="nav-item-row"> to attach
+   a trailing icon/badge. The CSS in :root layer makes the .nav-item-row
+   the visual active container (transparent bg on the inner .nav-item).
+   For the design-pass stripe to land, we apply the same inset shadow to
+   the wrapper when it contains an active item. */
+.nav-item-row:has(> .nav-item.active) {
+  box-shadow: inset 3px 0 0 #4eabd6;  /* v0.48: brand-petrol-lift, was emerald */
+}
+/* When the wrapper is inset-shadowed, the inner active item already
+   contributes its own - drop the inner one to avoid double stripes. */
+.nav-item-row > .nav-item.active {
+  box-shadow: none;
+}
+
+/* v0.54 — contract-detail header urgency stripe. Left border color reflects
+   the contract's current renewal pressure: petrol = calm, amber = evaluate,
+   red = urgent / overdue, neutral border for non-active contracts. */
+.contract-detail-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  transition: border-left-color 0.2s ease, box-shadow 0.2s ease;
+  /* v0.54.1 — keep the title + action row visible while scrolling through the
+     long detail body (Key Dates, POs, Payment Schedule, Brief, etc.). Sticks
+     below the demo banner if one is mounted; falls back to 0 otherwise. The
+     subtle drop-shadow gives a slight lift so the user can tell when it's
+     stuck vs. at its natural top-of-page position. */
+  position: sticky;
+  top: var(--demo-banner-height, 0px);
+  z-index: 10;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.06);
+}
+.contract-detail-card.urgency-calm     { border-left: 3px solid var(--color-primary); }
+.contract-detail-card.urgency-evaluate { border-left: 3px solid var(--color-warning); }
+.contract-detail-card.urgency-urgent   { border-left: 3px solid var(--color-danger); }
+.contract-detail-card.urgency-neutral  { border-left: 3px solid var(--color-border-strong); }
+
+
+/* v0.67.13 H30 mobile-responsive tables -- at <=640px viewports, wrap tables
+   in horizontal scroll so content isn't clipped. Full stacked-card-per-row
+   redesign is a separate UX exercise; this is the "tables stop being
+   unusable on mobile" minimum. */
+@media (max-width: 640px) {
+  .main-content table,
+  .card table,
+  .contracts-list-table,
+  .alerts-table,
+  .vendors-list-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100vw;
+  }
+  .main-content table th,
+  .main-content table td {
+    padding-left: 8px;
+    padding-right: 8px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+}
+/* T3-N10: visible focus ring for div[role=button] elements (e.g. Dashboard Pill cards) */
+[role="button"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+
+/* v0.91 Phase 0: ensure links in body content are distinguishable without colour alone. Resolves axe link-in-text-block (serious) on /profile (mailto:privacy@lapseiq.com) and any future in-body links in legal docs, help drawer content, or markdown-rendered help modules. */
+.prose a, .legal-doc a, .markdown-body a { text-decoration: underline; text-underline-offset: 2px; }
+
+/* === Settings section primitives (v0.91.8 Phase 1c Chunk B) ============= */
+/* Replaces the JS-object inline styles in client/src/components/settings/sharedStyles.js
+   and the local style helpers in client/src/pages/settings/SettingsTabRouter.jsx.
+   Visual values are byte-for-byte the JS object values; visible delta = 0. */
+
+.settings-section-heading {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+.settings-section-desc {
+  font-size: 0.825rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.settings-toggle {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-border-strong);
+  cursor: pointer;
+}
+.settings-toggle[data-state="on"] {
+  background: var(--color-primary);
+}
+.settings-toggle-thumb {
+  position: absolute;
+  top: 1px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+  transition: transform 0.2s;
+  transform: translateX(2px);
+}
+.settings-toggle[data-state="on"] .settings-toggle-thumb {
+  transform: translateX(20px);
+}
+
+.btn-settings-primary {
+  padding: 0.55rem 1.25rem;
+  background: var(--color-primary);
+  color: var(--color-on-primary);  /* a11y: dark ink on light cyan primary in dark mode */
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-settings-primary:hover:not(:disabled) { background: var(--color-primary-hover); }
+.btn-settings-primary:disabled { opacity: 0.65; cursor: not-allowed; }
+
+.btn-settings-secondary {
+  padding: 0.55rem 1.25rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-settings-secondary:hover:not(:disabled) { background: var(--color-border); }
+.btn-settings-secondary:disabled { opacity: 0.65; cursor: not-allowed; }
+
+/* IA chrome - top tabs + sub-pills (lifted from SettingsTabRouter.jsx) */
+.settings-tab-row {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.settings-tab-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.settings-tab-button[aria-selected="true"] {
+  font-weight: 700;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.settings-subpill-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.settings-subpill-button {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.settings-subpill-button[aria-selected="true"] {
+  font-weight: 600;
+  background: var(--color-primary-light);
+  border-color: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+/* A11y v0.91.47 -- dark-mode primary-as-background overrides.
+   --color-primary lifted to #3ab2dc for WCAG AA text contrast on dark
+   surfaces (4.5:1+ on all dark backgrounds). Elements that render
+   primary as a BACKGROUND with white fg text must keep the original
+   darker value (#1a6b91) so white text stays readable. */
+[data-theme="dark"] .btn-primary { background: #1a6b91; border-color: #1a6b91; color: white; }
+[data-theme="dark"] .btn-primary:hover { background: #2986b8; border-color: #2986b8; }
+[data-theme="dark"] .page-btn.active { background: #1a6b91; border-color: #1a6b91; color: white; }
+[data-theme="dark"] .sidebar-user-avatar { background: #1a6b91; }
+
+/* -- Self-hosted brand fonts (v0.92.3) -------------------------------
+   Inter (400/500/600/700) + JetBrains Mono (400/500) served same-origin
+   from /fonts/*.woff2 (copied from the @fontsource npm packages). Replaces
+   the previous third-party font CDN @import, which the demo CSP (font-src 'self' data:) blocked,
+   forcing a Segoe UI/Arial fallback for visitors without Inter installed.
+   Real font files (not a CSS @import) to avoid the v0.5.4 Rollup regression.
+   font-display: swap = paint immediately in fallback, swap to brand when ready. */
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/inter-latin-400-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/inter-latin-ext-400-normal.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('/fonts/inter-latin-500-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('/fonts/inter-latin-ext-500-normal.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('/fonts/inter-latin-600-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('/fonts/inter-latin-ext-600-normal.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url('/fonts/inter-latin-700-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url('/fonts/inter-latin-ext-700-normal.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/jetbrains-mono-latin-ext-400-normal.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/fonts/jetbrains-mono-latin-ext-500-normal.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+
+/* -- Mobile stacked-card list tables (v0.92.3 QA) -----------------------------
+   At <=640px the canonical list tables (.list-table--cards on the .table-wrap)
+   reflow from a horizontally-clipped grid into one card per row, with each cell
+   labelled from its data-label. Fixes the contracts/vendors table clipping at
+   390px (.table-wrap's overflow-x:clip previously cut off columns). Scoped to
+   the opt-in class so editable/report tables are unaffected. */
+@media (max-width: 640px) {
+  .list-table--cards { overflow-x: visible; }
+  .list-table--cards table { display: block; width: 100%; }
+  .list-table--cards colgroup,
+  .list-table--cards thead { display: none; }
+  .list-table--cards tbody { display: block; }
+  .list-table--cards tbody tr {
+    display: block;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    padding: 4px 12px;
+    margin-bottom: 10px;
+  }
+  .list-table--cards tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    text-align: right;
+    white-space: normal;
+    font-size: 13px;
+    width: auto !important;
+  }
+  .list-table--cards tbody tr td:last-child { border-bottom: none; }
+  .list-table--cards tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--color-text-secondary);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .list-table--cards tbody td[data-label=""]::before,
+  .list-table--cards tbody td:not([data-label])::before { content: none; }
+  .list-table--cards tbody td:first-child { padding-left: 0 !important; justify-content: flex-start; }
+}
+
+/* v0.92.6 QA: guard against horizontal overflow from the fixed, off-canvas
+   HelpDrawer (position:fixed; transform: translateX(105%) when closed) and any
+   wide list content. overflow-x: hidden on the root element propagates to the viewport and clips
+   horizontal scroll. Applied to the ROOT (html), not body/an intermediate
+   ancestor, so the .contract-detail-card position:sticky header is unaffected
+   (the overflow-x:hidden-breaks-sticky gotcha only applies to non-root
+   ancestors). overflow-x: clip does NOT propagate to the viewport, so hidden
+   is required here. Fixes /contracts (32px) + /activity (53px) overflow at 390px. */
+html { overflow-x: hidden; }
+
+/* Past Due alert badge (orange) - distinct from Cancel Window danger red */
+:root { --alert-pastdue-bg: #ffedd5; --alert-pastdue-text: #9a3412; --alert-pastdue-border: #f97316; }
+[data-theme="dark"] { --alert-pastdue-bg: #3a230a; --alert-pastdue-text: #fb923c; --alert-pastdue-border: #fb923c; }
+
+/* Budget Forecast: compact the By-Contract table so all columns fit without zoom-out */
+.budget-forecast-table { font-size: 12px; }
+.budget-forecast-table th, .budget-forecast-table td { padding: 6px 8px; }
+.budget-forecast-table th { white-space: normal; }
+.budget-forecast-table td:nth-child(2) { max-width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.budget-forecast-table td:nth-child(3) { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.budget-forecast-table td:nth-child(5) { max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

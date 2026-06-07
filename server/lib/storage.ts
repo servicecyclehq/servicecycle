@@ -1,0 +1,239 @@
+'use strict';
+
+/**
+ * lib/storage.js
+ * --------------
+ * Storage abstraction for contract documents (PDFs, Word files, images).
+ * Replaces the previous Supabase-only implementation with a local-first,
+ * self-hosted design.
+ *
+ * Destination controlled by STORAGE_DEST (default: 'local'):
+ *
+ *   local  — writes files to STORAGE_LOCAL_PATH on the host filesystem.
+ *             Works out of the box with zero config. In Docker, mount the
+ *             path as a host volume so files survive container restarts:
+ *               ./uploads:/app/uploads   (in docker-compose.yml)
+ *
+ *   s3     — uploads to an S3-compatible bucket. Works with AWS S3,
+ *             Backblaze B2, Wasabi, Cloudflare R2, or a self-hosted MinIO
+ *             instance on the same network.
+ *
+ * When document encryption is enabled (opt-in via Settings), buffers are
+ * encrypted with AES-256-GCM before being written. The storage layer is
+ * encryption-agnostic — it stores whatever bytes it is given.
+ *
+ * Env vars:
+ *   STORAGE_DEST            'local' (default) | 's3'
+ *   STORAGE_LOCAL_PATH      path on host (default: ./uploads)
+ *   STORAGE_S3_BUCKET       bucket name (S3 only)
+ *   STORAGE_S3_REGION       e.g. us-east-1 (S3 only)
+ *   STORAGE_S3_KEY_ID       access key ID (S3 only)
+ *   STORAGE_S3_SECRET       secret access key (S3 only)
+ *   STORAGE_S3_ENDPOINT     optional; set for non-AWS providers
+ */
+
+const path = require('path');
+const fsp  = require('fs/promises');
+
+// ── Config ────────────────────────────────────────────────────────────────────
+
+function getDest()      { return (process.env.STORAGE_DEST || 'local').toLowerCase(); }
+function getLocalPath() { return path.resolve(process.env.STORAGE_LOCAL_PATH || path.join(__dirname, '..', 'uploads')); }
+
+function s3Configured() {
+  return !!(
+    process.env.STORAGE_S3_BUCKET &&
+    process.env.STORAGE_S3_KEY_ID &&
+    process.env.STORAGE_S3_SECRET
+  );
+}
+
+function isConfigured() {
+  const dest = getDest();
+  if (dest === 'local') return true;
+  if (dest === 's3')    return s3Configured();
+  return false;
+}
+
+function getConfig() {
+  const dest = getDest();
+  return {
+    dest,
+    localPath:    dest === 'local' ? getLocalPath() : null,
+    s3Configured: s3Configured(),
+    s3Bucket:     process.env.STORAGE_S3_BUCKET || null,
+    s3Endpoint:   process.env.STORAGE_S3_ENDPOINT || null,
+  };
+}
+
+// ── Storage key ───────────────────────────────────────────────────────────────
+// Format: '{accountId}/{contractId|misc}/{timestamp}_{sanitizedFilename}'
+// This is the canonical identifier stored in Document.filePath.
+
+function buildStorageKey(accountId, filename, contractId = null) {
+  const ts     = Date.now();
+  const safe   = filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+  const folder = contractId ? `${accountId}/${contractId}` : `${accountId}/misc`;
+  return `${folder}/${ts}_${safe}`;
+}
+
+// ── S3 client (lazy singleton) ────────────────────────────────────────────────
+
+let _s3 = null;
+function getS3Client() {
+  if (_s3) return _s3;
+  const { S3Client } = require('@aws-sdk/client-s3');
+  const cfg: any = {
+    region:      process.env.STORAGE_S3_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId:     process.env.STORAGE_S3_KEY_ID,
+      secretAccessKey: process.env.STORAGE_S3_SECRET,
+    },
+  };
+  if (process.env.STORAGE_S3_ENDPOINT) {
+    cfg.endpoint       = process.env.STORAGE_S3_ENDPOINT;
+    cfg.forcePathStyle = true;  // required for MinIO, Backblaze, etc.
+  }
+  _s3 = new S3Client(cfg);
+  return _s3;
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+
+/**
+ * Upload a file buffer to the configured storage destination.
+ *
+ * @param {string}  accountId   — account that owns the file
+ * @param {string|null} contractId — optional; used to scope storage path
+ * @param {string}  filename    — original filename (used in storage key)
+ * @param {Buffer}  buffer      — file bytes (already encrypted if opt-in enabled)
+ * @param {string}  mimeType    — MIME type
+ * @returns {{ storageKey: string, sizeBytes: number }}
+ */
+async function uploadFile(accountId, contractId, filename, buffer, mimeType) {
+  const key  = buildStorageKey(accountId, filename, contractId);
+  const dest = getDest();
+
+  if (dest === 's3') {
+    if (!s3Configured()) throw new Error('STORAGE_DEST is set to "s3" but S3 credentials are not configured.');
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    await getS3Client().send(new PutObjectCommand({
+      Bucket:      process.env.STORAGE_S3_BUCKET,
+      Key:         key,
+      Body:        buffer,
+      ContentType: mimeType === 'text/plain' ? 'application/octet-stream' : (mimeType || 'application/octet-stream'),
+    }));
+  } else {
+    // local filesystem
+    const filePath = path.join(getLocalPath(), key);
+    await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    await fsp.writeFile(filePath, buffer);
+  }
+
+  return { storageKey: key, sizeBytes: buffer.length };
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+
+/**
+ * Download a file as a Buffer.
+ * The caller is responsible for decrypting if the document is encrypted.
+ *
+ * @param {string} storageKey
+ * @returns {Buffer}
+ */
+async function downloadFile(storageKey) {
+  const dest = getDest();
+
+  if (dest === 's3') {
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    const res = await getS3Client().send(new GetObjectCommand({
+      Bucket: process.env.STORAGE_S3_BUCKET,
+      Key:    storageKey,
+    }));
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  } else {
+    return fsp.readFile(path.join(getLocalPath(), storageKey));
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+/**
+ * Delete a stored file. Fails silently if the file no longer exists.
+ *
+ * @param {string} storageKey
+ */
+async function deleteFile(storageKey) {
+  const dest = getDest();
+
+  if (dest === 's3') {
+    const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    try {
+      await getS3Client().send(new DeleteObjectCommand({
+        Bucket: process.env.STORAGE_S3_BUCKET,
+        Key:    storageKey,
+      }));
+    } catch { /* ignore */ }
+  } else {
+    try {
+      await fsp.unlink(path.join(getLocalPath(), storageKey));
+    } catch { /* already gone */ }
+  }
+}
+
+// ── URL / access ──────────────────────────────────────────────────────────────
+
+/**
+ * Get a URL to access the stored file.
+ *
+ * Local: returns an authenticated API path (/api/documents/file?key=...).
+ *        The documents route handles auth and streaming.
+ *
+ * S3:    returns a pre-signed URL (1 hour validity).
+ *
+ * @param {string} storageKey
+ * @returns {{ url: string, type: 'local'|'presigned', expiresIn?: number }}
+ */
+async function getFileUrl(storageKey, filename = null) {
+  const dest = getDest();
+
+  if (dest === 's3') {
+    const { GetObjectCommand }  = require('@aws-sdk/client-s3');
+    const { getSignedUrl }      = require('@aws-sdk/s3-request-presigner');
+    // #11: force download on the presigned URL too. The bytes flow direct from
+    // the bucket (this URL bypasses our /file route), so the attachment
+    // disposition + octet-stream type must be signed into the request itself.
+    const safeName = (filename || 'download').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+    const url = await getSignedUrl(
+      getS3Client(),
+      new GetObjectCommand({
+        Bucket: process.env.STORAGE_S3_BUCKET,
+        Key: storageKey,
+        ResponseContentDisposition: `attachment; filename="${safeName}"`,
+        ResponseContentType: 'application/octet-stream',
+      }),
+      { expiresIn: 3600 }
+    );
+    return { url, type: 'presigned', expiresIn: 3600 };
+  } else {
+    return {
+      url:  `/api/documents/file?key=${encodeURIComponent(storageKey)}`,
+      type: 'local',
+    };
+  }
+}
+
+module.exports = {
+  uploadFile,
+  downloadFile,
+  deleteFile,
+  getFileUrl,
+  isConfigured,
+  getConfig,
+  buildStorageKey,
+};
+
+export {};
