@@ -125,6 +125,17 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // Required for Docker. See SECURITY NOTE above.
+    // Local dev proxy: the client uses relative /api/* URLs (empty baseURL —
+    // see src/api/client.js), which production fronts with Caddy. In bare
+    // `vite dev` there is no reverse proxy, so forward /api to the local
+    // API server. Override target with VITE_DEV_API_TARGET if your API runs
+    // on a different port.
+    proxy: {
+      '/api': {
+        target: process.env.VITE_DEV_API_TARGET || 'http://localhost:3001',
+        changeOrigin: false,
+      },
+    },
     watch: {
       // Use polling on Windows for reliable hot-reload through Docker volume mounts
       usePolling: true,
