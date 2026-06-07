@@ -18,6 +18,7 @@ import api from '../api/client';
 import { useConfirm } from '../context/ConfirmContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import InfoTip from '../components/InfoTip';
+import CustomFieldInputs from '../components/CustomFieldInputs';
 import { EQUIPMENT_TYPE_LABELS, CONDITION_META } from '../lib/equipment';
 
 const CONDITION_TIP =
@@ -49,6 +50,10 @@ export default function NewAsset() {
   });
   // Nameplate data as ordered key/value pairs; collapsed to an object on save.
   const [nameplate, setNameplate] = useState([{ key: '', value: '' }]);
+  // Admin-defined custom fields: active definitions drive the inputs, and
+  // values ride along keyed by definitionId (the server's customFields shape).
+  const [fieldDefs, setFieldDefs] = useState([]);
+  const [customFields, setCustomFields] = useState({});
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -56,6 +61,9 @@ export default function NewAsset() {
     api.get('/api/sites')
       .then(r => setSites(r.data.data?.sites || []))
       .catch(() => setError('Failed to load sites.'));
+    api.get('/api/custom-fields')
+      .then(r => setFieldDefs((r.data.data?.fields || []).filter(d => !d.archivedAt)))
+      .catch(() => { /* non-fatal — the section simply doesn't render */ });
   }, []);
 
   // Cascade: fetching the hierarchy tree whenever the site changes, and
@@ -128,6 +136,8 @@ export default function NewAsset() {
         isEnergized: form.isEnergized,
         notes:       form.notes.trim() || null,
         ...(Object.keys(nameplateData).length > 0 ? { nameplateData } : {}),
+        // Empty strings are dropped server-side; only send when touched.
+        ...(Object.keys(customFields).length > 0 ? { customFields } : {}),
       };
       const res = await api.post('/api/assets', body);
       const asset = res.data.data.asset;
@@ -366,6 +376,23 @@ export default function NewAsset() {
               </button>
             </div>
           </div>
+
+          {fieldDefs.length > 0 && (
+            <div className="card mb-16">
+              <div className="card-header"><div className="card-title">Custom Fields</div></div>
+              <div className="card-body">
+                <div className="form-hint" style={{ marginBottom: 10 }}>
+                  Defined by your admin in Settings → Custom Fields.
+                </div>
+                <CustomFieldInputs
+                  definitions={fieldDefs}
+                  values={customFields}
+                  onChange={(id, v) => setCustomFields(p => ({ ...p, [id]: v }))}
+                  disabled={saving}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="card mb-16">
             <div className="card-header"><div className="card-title">Notes</div></div>

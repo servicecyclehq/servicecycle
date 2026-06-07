@@ -25,6 +25,9 @@ const router = require('express').Router();
 const { z } = require('zod');
 const { requireManager } = require('../middleware/roles');
 const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
+// Shared per-type value coercion — the asset write path enforces the exact
+// same rules as the Settings → Custom Fields CRUD so the two can't drift.
+const { validateValueForDefinition } = require('./customFields');
 import prisma from '../lib/prisma';
 
 // ─── Condition helpers ────────────────────────────────────────────────────────
@@ -111,6 +114,10 @@ const AssetWritableFields: any = {
   inService:            BoolLike,
   isEnergized:          BoolLike,
   notes:                Str,
+  // Admin-defined custom field values, keyed by CustomFieldDefinition id.
+  // Zod only gates the container shape — per-type coercion happens against
+  // the stored definitions in resolveCustomFields, which zod can't see.
+  customFields:         z.record(z.union([z.string(), z.number(), z.boolean()]).nullable()).optional(),
 };
 
 // Create requires siteId + equipmentType; everything else optional.
@@ -164,6 +171,73 @@ async function resolveHierarchy(accountId, { siteId, buildingId, areaId, positio
     }
   }
   return { site };
+}
+
+// ─── Custom field resolution + persistence ────────────────────────────────────
+// Validates an incoming { [definitionId]: value } map against THIS account's
+// CustomFieldDefinitions BEFORE anything is written: every key must name an
+// active (non-archived) definition owned by the account, and every value must
+// pass the shared per-type coercion (number → finite numeric string, date →
+// YYYY-MM-DD, checkbox → 'true'/'false', select → member of options). Returns
+// { error } on the first bad entry, or { entries: [{ definition, value }] }
+// where value is the canonical string to store (null = clear the row).
+async function resolveCustomFields(accountId, customFields) {
+  const raw = Object.entries(customFields || {});
+  if (raw.length === 0) return { entries: [] };
+
+  const defs = await prisma.customFieldDefinition.findMany({
+    where: { id: { in: raw.map(([id]) => id) }, accountId },
+  });
+  const byId = new Map(defs.map(d => [d.id, d]));
+
+  const entries = [];
+  for (const [definitionId, value] of raw) {
+    const definition = byId.get(definitionId);
+    // Unknown id and other-tenant id are deliberately the same error —
+    // don't confirm a foreign definition exists.
+    if (!definition) return { error: 'Unknown custom field' };
+    if (definition.archivedAt) {
+      return { error: `${definition.name} is archived and no longer accepts values` };
+    }
+    try {
+      entries.push({ definition, value: validateValueForDefinition(definition, value) });
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+  return { entries };
+}
+
+// Persist resolved entries for one asset. Upsert on the (assetId,
+// definitionId) unique; a null canonical value DELETES the row so cleared
+// fields don't linger as empty strings in exports. Returns the display names
+// of fields whose stored value actually changed (feeds fields_updated).
+async function writeCustomFieldValues(assetId, entries) {
+  if (entries.length === 0) return [];
+  const existing = await prisma.customFieldValue.findMany({
+    where: { assetId, definitionId: { in: entries.map(e => e.definition.id) } },
+  });
+  const prevByDef = new Map(existing.map(v => [v.definitionId, v.value]));
+
+  const changedNames = [];
+  for (const { definition, value } of entries) {
+    if (value === null) {
+      if (prevByDef.has(definition.id)) {
+        await prisma.customFieldValue.delete({
+          where: { assetId_definitionId: { assetId, definitionId: definition.id } },
+        });
+        changedNames.push(definition.name);
+      }
+    } else {
+      await prisma.customFieldValue.upsert({
+        where:  { assetId_definitionId: { assetId, definitionId: definition.id } },
+        create: { assetId, definitionId: definition.id, value },
+        update: { value },
+      });
+      if (prevByDef.get(definition.id) !== value) changedNames.push(definition.name);
+    }
+  }
+  return changedNames;
 }
 
 // Shared include shape for single-row responses (create/update return the
@@ -354,6 +428,20 @@ router.get('/:id', async (req, res) => {
           orderBy: { uploadedAt: 'desc' },
           include: { uploader: { select: { id: true, name: true } } },
         },
+        // Admin-defined custom field values, with enough of the definition
+        // for the detail page to render each one without a second fetch
+        // (archived definitions stay readable — values outlive retirement).
+        customFieldValues: {
+          orderBy: { definition: { displayOrder: 'asc' } },
+          include: {
+            definition: {
+              select: {
+                id: true, name: true, fieldKey: true, type: true, options: true,
+                required: true, displayOrder: true, archivedAt: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -394,6 +482,13 @@ router.post('/', requireManager, async (req, res) => {
       return res.status(400).json({ success: false, error: chain.error });
     }
 
+    // Custom field values are validated up-front so a bad value 400s
+    // before the asset row exists, never after.
+    const cf = await resolveCustomFields(req.user.accountId, parsed.customFields);
+    if (cf.error) {
+      return res.status(400).json({ success: false, error: cf.error });
+    }
+
     // Default each unset axis to C2 (base interval) per NFPA 70B — an
     // unassessed asset is treated as "fair" until a qualified person rates it.
     const physical    = conditionPhysical    || 'C2';
@@ -424,6 +519,9 @@ router.post('/', requireManager, async (req, res) => {
       },
       include: ASSET_INCLUDE,
     });
+
+    // Values were pre-validated above; on a fresh asset nulls are no-ops.
+    await writeCustomFieldValues(asset.id, cf.entries);
 
     await logActivity(asset.id, req.user.id, req.user.accountId, 'asset_created', {
       equipmentType: asset.equipmentType,
@@ -488,6 +586,13 @@ router.put('/:id', requireManager, async (req, res) => {
       }
     }
 
+    // Resolve custom-field values BEFORE the row update so a bad value
+    // 400s with nothing written.
+    const cf = await resolveCustomFields(req.user.accountId, parsed.customFields);
+    if (cf.error) {
+      return res.status(400).json({ success: false, error: cf.error });
+    }
+
     const updateData: any = {};
     if (siteId !== undefined)     updateData.siteId = effSiteId;
     if (buildingId !== undefined) updateData.buildingId = effBuildingId;
@@ -548,6 +653,11 @@ router.put('/:id', requireManager, async (req, res) => {
       data: updateData,
       include: ASSET_INCLUDE,
     });
+
+    // Custom field upserts/deletes — names of fields whose stored value
+    // actually moved join the fields_updated log entry below.
+    const changedCustomFields = await writeCustomFieldValues(req.params.id, cf.entries);
+    changedFields.push(...changedCustomFields);
 
     // ── Log activity (non-fatal, after successful update) ────────────────────
     if (changedFields.length > 0) {
