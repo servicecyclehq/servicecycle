@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ServiceCycle — E2 modified (purple removed) vs E5</title>
+<style>
+  :root { font-family: 'Segoe UI', Inter, -apple-system, sans-serif; }
+  body { margin: 0; background: #0b0f1a; color: #e2e8f0; padding: 36px; }
+  h1 { font-size: 22px; margin: 0 0 4px; color: #f8fafc; }
+  .sub { color: #94a3b8; font-size: 14px; margin-bottom: 30px; max-width: 880px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(490px, 1fr)); gap: 18px; }
+  .card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 18px 22px; }
+  .card h2 { font-size: 14px; margin: 0 0 3px; color: #f1f5f9; }
+  .card .why { font-size: 12px; color: #94a3b8; margin: 0 0 12px; }
+  .row { display: flex; gap: 12px; align-items: stretch; }
+  .swatch { flex: 1; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 18px 12px; gap: 13px; }
+  .lightbg { background: #f1f5f9; }
+  .darkbg  { background: radial-gradient(circle at 35% 25%, #141d38, #0a0e1a); }
+  .side  { background: #161e2e; width: 195px; flex: none; flex-direction: column; gap: 7px; padding: 14px 10px; border: 1px solid #1f2937; }
+  .side .mini { display: flex; align-items: center; gap: 9px; }
+  .side .mini span { color: #f1f5f9; font-size: 14.5px; font-weight: 700; letter-spacing: -0.025em; }
+  .side small { color: #64748b; font-size: 9.5px; }
+  .wm { font-size: 23px; letter-spacing: -0.04em; white-space: nowrap; font-weight: 750; }
+  .gtext { background-clip: text; -webkit-background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+  .tag { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.08em; color:#bbf7d0; background:#052e16; border:1px solid #166534; border-radius:5px; padding:1px 7px; margin-right:8px; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<h1>E2 with the purple removed — two readings of your note, plus E5 for the side-by-side</h1>
+<div class="sub">Mark identical everywhere (locked E4 geometry). "Black" becomes near-white on dark backgrounds — that's the standard ink-flip, the green stays green in both worlds.</div>
+<div class="grid">
+
+<!-- MOD A: green C, black ycle -->
+<div class="card"><span class="tag">E2-MOD A</span><h2>Green “C”, black “ycle”</h2>
+<p class="why">Literal reading: only the C carries the green; the rest of Cycle is straight ink, same as Service.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="aL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#65a30d"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#475569" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#334155"/><circle cx="52" cy="32" r="4.4" fill="#334155"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#aL)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#111827">Service<span style="color:#65a30d">C</span>ycle</div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="aD" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#aD)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#f8fafc">Service<span style="color:#a3e635">C</span>ycle</div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><linearGradient id="aS" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#aS)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Service<span style="color:#a3e635">C</span>ycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- MOD B: green fading to ink across Cycle -->
+<div class="card"><span class="tag">E2-MOD B</span><h2>“Cycle” fades green → black</h2>
+<p class="why">Gradient reading: Cycle starts green and settles into ink — keeps the gradient feel without any purple.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="bL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#65a30d"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#475569" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#334155"/><circle cx="52" cy="32" r="4.4" fill="#334155"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#bL)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#111827">Service<span class="gtext" style="background-image:linear-gradient(100deg,#65a30d 0%,#365314 35%,#111827 75%)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="bD" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#bD)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#f8fafc">Service<span class="gtext" style="background-image:linear-gradient(100deg,#a3e635 0%,#d9f99d 35%,#f8fafc 75%)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><linearGradient id="bS" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#bS)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Service<span class="gtext" style="background-image:linear-gradient(100deg,#a3e635 0%,#f8fafc 75%)">Cycle</span></span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- MOD C: whole Cycle solid green -->
+<div class="card"><span class="tag">E2-MOD C</span><h2>Whole “Cycle” solid green</h2>
+<p class="why">The simplest no-purple option: Service in ink, Cycle entirely in the lime — the boldest split, included for the comparison.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="cL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#65a30d"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#475569" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#334155"/><circle cx="52" cy="32" r="4.4" fill="#334155"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#cL)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#111827">Service<span style="color:#65a30d">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="cD" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#cD)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#f8fafc">Service<span style="color:#a3e635">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><linearGradient id="cS" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#cS)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Service<span style="color:#a3e635">Cycle</span></span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E5 reference -->
+<div class="card"><span class="tag">E5 (unchanged)</span><h2>Amber → yellow, for the side-by-side</h2>
+<p class="why">Your other favorite, untouched, so the finalists sit on one sheet.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="eL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#65a30d"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#475569" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#334155"/><circle cx="52" cy="32" r="4.4" fill="#334155"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#eL)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#d97706,#facc15)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="46" height="46" viewBox="0 0 64 64"><defs><linearGradient id="eD" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#eD)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#fbbf24,#fde047)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><linearGradient id="eS" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" fill="none" stroke="url(#eS)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Service<span class="gtext" style="background-image:linear-gradient(120deg,#fbbf24,#fde047)">Cycle</span></span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+</div>
+<p style="color:#64748b;font-size:12.5px;margin-top:26px">Call the winner (A, B, C, or E5) and the wordmark gets baked into the sidebar, login, landing, and Field Mode — brand done.</p>
+</body>
+</html>
