@@ -165,8 +165,10 @@ model Account {
   workOrders             WorkOrder[]
   testMeasurements       TestMeasurement[]
   deficiencies           Deficiency[]
-  arcFlashStudies        ArcFlashStudy[]
+  systemStudies          SystemStudy[]
   labSamples             LabSample[]
+  auditVisits            AuditVisit[]
+  auditRecommendations   AuditRecommendation[]
   blackoutWindows        BlackoutWindow[]
   standardRevisionAlerts StandardRevisionAlert[]
   documents              Document[]
@@ -249,6 +251,8 @@ model User {
   acknowledgedRevisions    StandardRevisionAlert[] @relation("RevisionAcknowledger")
   resolvedDeficiencies     Deficiency[]            @relation("DeficiencyResolver")
   complianceSnapshots      ComplianceSnapshot[]    @relation("SnapshotGenerator")
+  ownedAssets              Asset[]                 @relation("AssetOwner")
+  assignedRecommendations  AuditRecommendation[]   @relation("RecAssignee")
 
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
@@ -285,6 +289,11 @@ model Contractor {
   id                    String   @id @default(uuid())
   accountId             String
   name                  String
+  // In-house maintenance crew flag. NFPA 70B applies the same qualified-
+  // person requirements regardless of employer; modeling internal staff as
+  // a contractor row keeps work-order assignment uniform while letting the
+  // UI label them honestly.
+  isInternal            Boolean  @default(false)
   // NETA-accredited company flag. Work orders for tasks where
   // requiresNetaCertified=true should be assigned to accredited contractors;
   // enforced at the route layer with an override + audit trail.
@@ -321,6 +330,16 @@ model ContractorTech {
   // ANSI/NETA ETT certification level of this tech. Work orders carry the
   // minimum level required; assignment validation happens at the route layer.
   netaCertLevel   NetaCertLevel?
+  // ── Qualification provenance (NFPA 70E 110.2(A)(1) + insurer audits) ────
+  // qualifiedPersonDesignatedAt: date of the EMPLOYER'S written qualified-
+  // person designation (a training certificate alone is insufficient).
+  // trainingExpiresAt: 70E retraining interval ≤3 years — drives an
+  // "expiring qualification" surface later.
+  // thermographerCertLevel: 'I' | 'II' | 'III' (Infraspection/ASNT model;
+  // Level II is the de-facto insurer minimum for signing IR reports).
+  qualifiedPersonDesignatedAt DateTime?
+  trainingExpiresAt           DateTime?
+  thermographerCertLevel      String?
   lastContactedAt DateTime?
   notes           String?
   createdAt       DateTime       @default(now())
@@ -365,9 +384,10 @@ model Site {
   areas               Area[]
   positions           EquipmentPosition[]
   assets              Asset[]
-  arcFlashStudies     ArcFlashStudy[]
+  systemStudies       SystemStudy[]
   blackoutWindows     BlackoutWindow[]
   complianceSnapshots ComplianceSnapshot[]
+  auditVisits         AuditVisit[]
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -467,6 +487,11 @@ model Asset {
   conditionPhysical     ConditionRating @default(C2)
   conditionCriticality  ConditionRating @default(C2)
   conditionEnvironment  ConditionRating @default(C2)
+  // Responsible person for this asset. Drives alert routing (owner receives
+  // every tier for their assets, in addition to the role matrix) and the
+  // "equipment owner" answer auditors expect. Nullable — unowned assets
+  // fall back to pure role routing.
+  ownerId               String?
   // Governing condition = worst of the three axes (C3 wins). Stored and
   // recomputed by the route layer on every condition write so list queries
   // and the scheduler never re-derive it. Drives interval selection on
@@ -484,6 +509,7 @@ model Asset {
   building          Building?            @relation(fields: [buildingId], references: [id])
   area              Area?                @relation(fields: [areaId], references: [id])
   position          EquipmentPosition?   @relation(fields: [positionId], references: [id])
+  owner             User?                @relation("AssetOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   schedules         MaintenanceSchedule[]
   workOrders        WorkOrder[]
   deficiencies      Deficiency[]
@@ -595,6 +621,10 @@ model MaintenanceSchedule {
   // Per-schedule condition override — e.g. a C1 asset whose battery string
   // the engineer insists on treating as C3. Null = use asset.governingCondition.
   conditionOverride       ConditionRating?
+  // Provenance for completions recorded without a work order: who actually
+  // performed the task (free text — name + employer). WO-based completions
+  // carry richer provenance on the work order itself.
+  lastPerformedByName     String?
   isActive                Boolean          @default(true)
   notes                   String?
   createdAt               DateTime         @default(now())
@@ -635,8 +665,17 @@ model WorkOrder {
   // NETA MTS as-found / as-left condition of maintenance.
   asFoundCondition ConditionRating?
   asLeftCondition  ConditionRating?
-  // NETA decal color affixed after testing.
+  // NETA decal color affixed after testing. NOTE: NETA MTS §5.5 colors are
+  // WHITE (serviceable) / YELLOW (limited service) / RED (non-serviceable);
+  // the enum's GREEN value renders as "Serviceable" in the UI.
   netaDecal        ResultRating?
+  // ── Test-condition + instrument provenance (NETA MTS §5.4.2 #4, §5.3) ──
+  // Ambient conditions at test time and the calibrated instruments used.
+  // testEquipment: [{ make, model, serial, calDate }] — calibration must be
+  // within 12 months of the test date, NIST-traceable.
+  ambientTempC     Decimal? @db.Decimal(5, 1)
+  humidityPct      Decimal? @db.Decimal(5, 1)
+  testEquipment    Json?
   reportPdfUrl     String? // contractor-issued test report (also attachable via Document)
   notes            String?
   createdAt        DateTime         @default(now())
@@ -675,6 +714,15 @@ model TestMeasurement {
   asLeftValue     Decimal?      @db.Decimal(16, 4)
   asLeftUnit      String?
   passFail        ResultRating?
+  // NETA MTS §5.4.2 #8: expected results placed beside actuals for direct
+  // comparison (e.g. "≥100 MΩ per NETA Table 100.1", "±20% of trip curve").
+  expectedRange   String?
+  testVoltage     String? // applied test voltage, e.g. "1000 V DC"
+  // IR thermography fields (Infraspection/NETA): load at scan time must be
+  // recorded (≥40% rule per HSB/Zurich); severityPriority is the NETA ΔT
+  // priority 1 (repair immediately) … 4 (possible deficiency).
+  loadPercent     Decimal?      @db.Decimal(5, 1)
+  severityPriority Int?
   notes           String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -717,17 +765,34 @@ model Deficiency {
   @@map("deficiencies")
 }
 
-// ─── Arc Flash Studies ────────────────────────────────────────────────────────
-// Site-level. NFPA 70E: re-study at 5 years max, OR when system changes
-// (new equipment, utility changes) invalidate the labels.
+// ─── System Studies ───────────────────────────────────────────────────────────
+// Site-level engineering studies — the documents loss-control auditors ask
+// for by name. studyType:
+//   arc_flash       — NFPA 70E 130.5 incident-energy analysis; review ≤5yr
+//   short_circuit   — fault-current study; ≤5yr or after system changes
+//   coordination    — protective device coordination study; same cadence
+//   one_line_review — dated confirmation the one-line diagram reflects the
+//                     actual system (HSB: update drawings on every change)
+// PE provenance (peName/peLicense) is the consistent insurer expectation
+// for incident-energy and coordination work.
+//
+// Renamed from ArcFlashStudy 2026-06-07 (audit-records research): the model
+// now carries all four study types; the underlying table was renamed in the
+// same migration (fresh-PoC DBs only — no production data existed).
 
-model ArcFlashStudy {
+model SystemStudy {
   id             String    @id @default(uuid())
   accountId      String
   siteId         String
+  studyType      String    @default("arc_flash") // arc_flash | short_circuit | coordination | one_line_review
   performedDate  DateTime
   expiresAt      DateTime // performedDate + 5yr; engine flags approaching expiry
   performedBy    String? // engineering firm name
+  // Method + responsible engineer (e.g. "IEEE 1584-2018"; PE name/license
+  // on the report cover is what auditors look for).
+  method         String?
+  peName         String?
+  peLicense      String?
   // Why a re-study happened before the 5yr clock: "system_change",
   // "utility_change", "scheduled" — free-form for PoC.
   trigger        String?
@@ -737,15 +802,72 @@ model ArcFlashStudy {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  account      Account         @relation(fields: [accountId], references: [id])
-  site         Site            @relation(fields: [siteId], references: [id])
-  supersededBy ArcFlashStudy?  @relation("StudyChain", fields: [supersededById], references: [id])
-  supersedes   ArcFlashStudy[] @relation("StudyChain")
+  account      Account       @relation(fields: [accountId], references: [id])
+  site         Site          @relation(fields: [siteId], references: [id])
+  supersededBy SystemStudy?  @relation("StudyChain", fields: [supersededById], references: [id])
+  supersedes   SystemStudy[] @relation("StudyChain")
 
   @@index([accountId])
   @@index([accountId, expiresAt])
+  @@index([siteId, studyType])
+  @@map("system_studies")
+}
+
+// ─── Audit Visits + Recommendations ───────────────────────────────────────────
+// First-class record of audits: insurance loss-control visits, OSHA
+// inspections, internal pre-audit walkthroughs, customer/AHJ audits.
+// Recommendations (RECs) mirror the carrier workflow: written response
+// expected within 30–45 days, completion tracked, consequences escalate.
+// Snapshots generated for an audit link back via ComplianceSnapshot.auditVisitId
+// — the audit record points at the exact hash-anchored evidence handed over.
+
+model AuditVisit {
+  id            String    @id @default(uuid())
+  accountId     String
+  siteId        String? // null = account-wide audit
+  auditType     String // insurance | osha | internal_preaudit | customer | ahj
+  auditorName   String?
+  auditorOrg    String? // carrier / agency / firm
+  scheduledDate DateTime?
+  performedDate DateTime?
+  outcome       String? // passed | passed_with_findings | failed | pending
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  account         Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  site            Site?                 @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  recommendations AuditRecommendation[]
+  snapshots       ComplianceSnapshot[]
+
+  @@index([accountId, performedDate(sort: Desc)])
   @@index([siteId])
-  @@map("arc_flash_studies")
+  @@map("audit_visits")
+}
+
+model AuditRecommendation {
+  id               String    @id @default(uuid())
+  accountId        String
+  auditVisitId     String?
+  source           String    @default("insurer") // insurer | osha | internal | customer | ahj
+  severity         String    @default("recommendation") // mandatory | recommendation
+  description      String
+  dueDate          DateTime? // carrier response/completion deadline
+  status           String    @default("open") // open | responded | completed | declined
+  responseNotes    String? // the written response sent back to the carrier
+  respondedAt      DateTime?
+  completedAt      DateTime?
+  assignedToUserId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  account    Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  auditVisit AuditVisit? @relation(fields: [auditVisitId], references: [id], onDelete: SetNull)
+  assignedTo User?       @relation("RecAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, status, dueDate])
+  @@index([auditVisitId])
+  @@map("audit_recommendations")
 }
 
 // ─── Lab Samples ──────────────────────────────────────────────────────────────
@@ -769,6 +891,16 @@ model LabSample {
   c2h6          Decimal?      @db.Decimal(10, 2)
   co            Decimal?      @db.Decimal(10, 2)
   co2           Decimal?      @db.Decimal(10, 2)
+  // O2 + N2 complete the IEEE C57.104-2019 gas set; the O2/N2 ratio
+  // distinguishes sealed vs free-breathing units and selects which
+  // reference table applies.
+  o2            Decimal?      @db.Decimal(10, 2)
+  n2            Decimal?      @db.Decimal(10, 2)
+  // IEEE C57.104-2019 DGA status (1 = normal, 2 = caution ≥90th pct,
+  // 3 = action required ≥95th pct) and the fault diagnosis code from
+  // Duval/Rogers interpretation (PD, T1, T2, T3, D1, D2).
+  ieeeStatus    Int?
+  faultCode     String?
   // Non-DGA results (dielectric strength, moisture, acidity, fuel
   // contamination...) — sparse per-type shape, JSONB like nameplateData.
   resultsData   Json?
@@ -855,6 +987,12 @@ model ComplianceSnapshot {
   accountId     String
   siteId        String?  // null = all sites in the account
   standardCode  String?  // e.g. "NFPA 70B"; null = all standards
+  // kind: 'compliance' = per-standard evidence pack; 'emp' = the generated
+  // written EMP document (NFPA 70B §4.2) — same immutable-storage +
+  // hash-chain-anchor pipeline, different renderer.
+  kind          String   @default("compliance")
+  // When generated for a specific audit, links the evidence to the visit.
+  auditVisitId  String?
   generatedById String?
   filename      String
   filePath      String   // storage key (path on disk or S3 object key)
@@ -863,9 +1001,10 @@ model ComplianceSnapshot {
   stats         Json?    // counts at generation time { assets, schedules, current, overdue, openDeficiencies }
   createdAt     DateTime @default(now())
 
-  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  site        Site?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  generatedBy User?   @relation("SnapshotGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+  account     Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  site        Site?       @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  generatedBy User?       @relation("SnapshotGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+  auditVisit  AuditVisit? @relation(fields: [auditVisitId], references: [id], onDelete: SetNull)
 
   @@index([accountId, createdAt(sort: Desc)])
   @@map("compliance_snapshots")

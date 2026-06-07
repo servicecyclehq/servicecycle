@@ -276,6 +276,7 @@ export default function AssetsList() {
                       <th>Manufacturer / Model</th>
                       <th>Serial #</th>
                       <th>Location</th>
+                      <th>Owner</th>
                       <th>Condition</th>
                       <th>Next Due</th>
                       <th style={{ textAlign: 'right' }}>Open Def.</th>
@@ -310,6 +311,7 @@ export default function AssetsList() {
                               </div>
                             )}
                           </td>
+                          <td className="td-muted">{a.owner?.name || '—'}</td>
                           <td><ConditionBadge condition={a.governingCondition} /></td>
                           <td><NextDueCell schedule={a.schedules?.[0]} /></td>
                           <td style={{ textAlign: 'right' }}>

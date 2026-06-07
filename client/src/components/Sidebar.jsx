@@ -14,7 +14,7 @@ import ThemeToggle from './ThemeToggle';
 // we don't reference.
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
-  Archive, MapPin, ClipboardList,
+  Archive, MapPin, ClipboardList, ClipboardCheck,
 } from 'lucide-react';
 
 // v0.37.1 W5 MT-117: per-NavLink HelpButton icons were dropped — the
@@ -30,6 +30,7 @@ const Icons = {
   sites:       <MapPin        {...ICON_PROPS} />,
   workOrders:  <ClipboardList {...ICON_PROPS} />,
   calendar:    <Calendar      {...ICON_PROPS} />,
+  audits:      <ClipboardCheck {...ICON_PROPS} />,
   contractors: <Briefcase     {...ICON_PROPS} />,
   alerts:      <Bell          {...ICON_PROPS} />,
   users:       <Users         {...ICON_PROPS} />,
@@ -619,6 +620,18 @@ export default function Sidebar() {
           {Icons.calendar}
           Compliance Calendar
         </NavLink>
+
+        {/* Audit visits + REC tracking — admin/manager only, matching the
+            /audits RequireRole gate in App.jsx. */}
+        {(user?.role === 'admin' || user?.role === 'manager') && (
+          <NavLink
+            to="/audits"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.audits}
+            Audits
+          </NavLink>
+        )}
 
         <NavLink
           to="/contractors"

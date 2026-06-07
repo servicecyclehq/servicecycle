@@ -69,6 +69,10 @@ const BulkApplySchema = z.object({
 const CompleteSchema = z.object({
   completedDate: DateLike,
   workOrderId:   UuidStr.optional().or(z.literal('')),
+  // Provenance for completions recorded outside the work-order flow: who
+  // actually performed the task (free text — name + employer). Stored to
+  // MaintenanceSchedule.lastPerformedByName.
+  performedByName: z.string().max(200).nullable().optional(),
 }).strict();
 
 // Shared include for list/detail responses — asset (+site) and the task
@@ -418,9 +422,16 @@ router.post('/:id/complete', requireManager, async (req, res) => {
       schedule.taskDefinition, schedule.asset, schedule, completedAt
     );
 
+    // Provenance — belongs to THIS completion, so it's written every time:
+    // a completion without a name clears any stale name from a prior cycle.
+    const performedByName =
+      typeof parsed.performedByName === 'string' && parsed.performedByName.trim()
+        ? parsed.performedByName.trim()
+        : null;
+
     const updated = await prisma.maintenanceSchedule.update({
       where: { id: schedule.id },
-      data: { lastCompletedDate, nextDueDate },
+      data: { lastCompletedDate, nextDueDate, lastPerformedByName: performedByName },
       include: scheduleInclude,
     });
 
@@ -437,6 +448,7 @@ router.post('/:id/complete', requireManager, async (req, res) => {
         completedDate: lastCompletedDate,
         nextDueDate,
         workOrderId,
+        performedByName,
       },
     });
 

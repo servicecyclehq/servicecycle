@@ -48,11 +48,28 @@ export const SEVERITY_META = {
   ADVISORY:    { label: 'Advisory',    color: '#64748b', bg: '#f1f5f9' },
 };
 
-// NETA decal / lab-sample ResultRating traffic light.
+// NETA decal / lab-sample ResultRating, relabeled to NETA service terms.
+// Note: NETA's physical "Serviceable" decal is WHITE — we keep the green
+// accent on screen because white carries no signal against a light UI.
 export const DECAL_META = {
-  GREEN:  { label: 'Green',  color: '#16a34a', bg: '#f0fdf4' },
-  YELLOW: { label: 'Yellow', color: '#d97706', bg: '#fffbeb' },
-  RED:    { label: 'Red',    color: '#dc2626', bg: '#fef2f2' },
+  GREEN:  { label: 'Serviceable',     color: '#16a34a', bg: '#f0fdf4' },
+  YELLOW: { label: 'Limited Service', color: '#d97706', bg: '#fffbeb' },
+  RED:    { label: 'Non-serviceable', color: '#dc2626', bg: '#fef2f2' },
+};
+
+// Engineering system studies tracked per site (audit-readiness).
+export const STUDY_TYPE_LABELS = {
+  arc_flash:       'Arc Flash / Incident Energy',
+  short_circuit:   'Short-Circuit Study',
+  coordination:    'Coordination Study',
+  one_line_review: 'One-Line Diagram Review',
+};
+
+// IEEE C57.104 DGA condition status for transformer lab samples.
+export const IEEE_STATUS_META = {
+  1: { label: 'Normal',          color: '#16a34a', bg: '#f0fdf4' },
+  2: { label: 'Caution',         color: '#d97706', bg: '#fffbeb' },
+  3: { label: 'Action required', color: '#dc2626', bg: '#fef2f2' },
 };
 
 /**

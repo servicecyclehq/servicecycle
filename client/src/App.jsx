@@ -113,6 +113,7 @@ const ReportsHub              = lazyWithReload(() => import('./pages/ReportsHub'
 const ComplianceStandardsReport      = lazyWithReload(() => import('./pages/ComplianceStandardsReport'));
 const ComplianceStandardDetailReport = lazyWithReload(() => import('./pages/ComplianceStandardDetailReport'));
 const AuditSnapshotsPage             = lazyWithReload(() => import('./pages/AuditSnapshotsPage'));
+const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 
 const SetupWizardPage         = lazyWithReload(() => import('./pages/SetupWizardPage'));   // (S8) first-run operator wizard
 const PrivacyPage             = lazyWithReload(() => import('./pages/PrivacyPage'));       // (A2) public, mounted outside Layout shell
@@ -292,6 +293,14 @@ function AppRoutes() {
             <Route path="reports/snapshots" element={
               <RequireRole roles={['admin', 'manager']}>
                 <AuditSnapshotsPage />
+              </RequireRole>
+            } />
+
+            {/* Audit visits + recommendation tracking — same admin/manager
+                gate as the Reports hub. */}
+            <Route path="audits" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <AuditsPage />
               </RequireRole>
             } />
 

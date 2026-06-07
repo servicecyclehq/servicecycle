@@ -37,6 +37,7 @@ import {
   WO_STATUS_META,
   SEVERITY_META,
   DECAL_META,
+  IEEE_STATUS_META,
   assetLabel,
   fmtDate,
 } from '../lib/equipment';
@@ -143,10 +144,64 @@ function formatCustomValue(def, value) {
   }
 }
 
+// ── Mark-complete modal ───────────────────────────────────────────────────────
+// Small prompt before POST /api/schedules/:id/complete — captures the optional
+// performedByName ('name / employer') auditors expect on maintenance records.
+function CompleteScheduleModal({ schedule, onClose, onConfirm, busy }) {
+  const [performedByName, setPerformedByName] = useState('');
+  return (
+    <div
+      role="dialog" aria-modal="true" aria-label="Mark task complete"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1050, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <form
+        onSubmit={e => { e.preventDefault(); onConfirm(performedByName.trim() || null); }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--color-surface)', color: 'var(--color-text)',
+          borderRadius: 'var(--radius-lg)', boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+          maxWidth: 440, width: '100%', padding: '20px 24px',
+        }}
+      >
+        <div style={{ fontSize: 'var(--font-size-base)', fontWeight: 700, marginBottom: 6 }}>
+          Mark task complete?
+        </div>
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>
+          Records "{schedule.taskDefinition?.taskName || 'this task'}" as completed today
+          and rolls the next due date forward by the condition-appropriate interval.
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>
+            Performed by (name / employer) <span className="text-muted" style={{ fontWeight: 400 }}>— optional</span>
+          </label>
+          <input
+            className="form-control form-control-wide"
+            placeholder="e.g. J. Rivera / Apex Electrical Testing"
+            value={performedByName}
+            onChange={e => setPerformedByName(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? 'Recording…' : 'Mark complete'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ── Inline edit form ──────────────────────────────────────────────────────────
-function EditAssetForm({ asset, fieldDefs, onCancel, onSaved }) {
+function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
   const [form, setForm] = useState({
     equipmentType:        asset.equipmentType,
+    ownerId:              asset.owner?.id || asset.ownerId || '',
     manufacturer:         asset.manufacturer || '',
     model:                asset.model || '',
     serialNumber:         asset.serialNumber || '',
@@ -204,6 +259,7 @@ function EditAssetForm({ asset, fieldDefs, onCancel, onSaved }) {
     try {
       const res = await api.put(`/api/assets/${asset.id}`, {
         equipmentType:        form.equipmentType,
+        ownerId:              form.ownerId || null,
         manufacturer:         form.manufacturer.trim() || null,
         model:                form.model.trim() || null,
         serialNumber:         form.serialNumber.trim() || null,
@@ -267,6 +323,19 @@ function EditAssetForm({ asset, fieldDefs, onCancel, onSaved }) {
             <div className="form-group">
               <label className="form-label">Last Commissioned</label>
               <input type="date" className="form-control" aria-label="Last commissioned date" value={form.lastCommissionedDate} onChange={e => setF('lastCommissionedDate', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Owner</label>
+              <select
+                aria-label="Asset owner"
+                className="form-control"
+                value={form.ownerId}
+                onChange={e => setF('ownerId', e.target.value)}
+              >
+                <option value="">— Unassigned —</option>
+                {(members || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <div className="form-hint">Owner receives every maintenance alert for this asset.</div>
             </div>
           </div>
 
@@ -368,6 +437,10 @@ export default function AssetDetail() {
   // editable inputs in the edit form; archived definitions never appear here
   // but their stored values still render read-only from the asset payload.
   const [fieldDefs, setFieldDefs] = useState([]);
+  // Account members ({id, name}) for the owner picker — from bootstrap.
+  const [members, setMembers] = useState([]);
+  // Schedule pending the mark-complete prompt (null when closed).
+  const [completingSchedule, setCompletingSchedule] = useState(null);
   // Collapsed per-standard schedule groups, keyed by standard code (or
   // 'Account-defined'). Default expanded; collapse choices persist across
   // sessions via localStorage. Map values are `true` when collapsed.
@@ -391,6 +464,13 @@ export default function AssetDetail() {
         setFieldDefs((r.data.data?.fields || []).filter(d => !d.archivedAt));
       })
       .catch(() => { /* section simply doesn't render */ });
+    // Members for the owner picker — bootstrap carries data.members {id,name}.
+    api.get('/api/bootstrap?limit=1')
+      .then(r => {
+        if (cancelled) return;
+        setMembers(r.data.data?.members || []);
+      })
+      .catch(() => { /* picker simply renders empty */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -459,16 +539,14 @@ export default function AssetDetail() {
     }
   }
 
-  async function handleCompleteSchedule(schedule) {
+  // Confirmation + optional performedByName captured by CompleteScheduleModal.
+  async function handleCompleteSchedule(schedule, performedByName) {
     if (busy) return;
-    if (!await confirm({
-      title: 'Mark task complete?',
-      message: `Records "${schedule.taskDefinition?.taskName || 'this task'}" as completed today and rolls the next due date forward by the condition-appropriate interval.`,
-      confirmLabel: 'Mark complete',
-    })) return;
     setBusy(true);
     try {
-      await api.post(`/api/schedules/${schedule.id}/complete`, {});
+      await api.post(`/api/schedules/${schedule.id}/complete`,
+        performedByName ? { performedByName } : {});
+      setCompletingSchedule(null);
       setToast({ message: 'Maintenance completion recorded.', variant: 'success', duration: 4000 });
       refetchAll();
     } catch (err) {
@@ -571,6 +649,10 @@ export default function AssetDetail() {
           <div className="page-subtitle">
             {EQUIPMENT_TYPE_LABELS[asset.equipmentType] || asset.equipmentType}
             {breadcrumb && <> · {breadcrumb}</>}
+            {' · '}
+            <span title={asset.owner?.email || undefined}>
+              Owner: {asset.owner?.name || 'Unassigned'}
+            </span>
           </div>
           <div className="contract-header-meta" style={{ marginTop: 8 }}>
             <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
@@ -612,6 +694,7 @@ export default function AssetDetail() {
           <EditAssetForm
             asset={asset}
             fieldDefs={fieldDefs}
+            members={members}
             onCancel={() => setEditing(false)}
             onSaved={() => {
               setEditing(false);
@@ -729,7 +812,7 @@ export default function AssetDetail() {
                                       <button
                                         type="button"
                                         className="btn btn-secondary btn-sm"
-                                        onClick={() => handleCompleteSchedule(s)}
+                                        onClick={() => setCompletingSchedule(s)}
                                         disabled={busy}
                                         title="Record a completion today and roll the recurrence forward"
                                       >
@@ -894,7 +977,19 @@ export default function AssetDetail() {
                       </td>
                       <td>{fmtDate(ls.sampleDate)}</td>
                       <td className="td-muted">{ls.labName || '—'}</td>
-                      <td><MetaChip meta={DECAL_META[ls.resultRating]} fallback="Pending" /></td>
+                      <td>
+                        <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <MetaChip meta={DECAL_META[ls.resultRating]} fallback="Pending" />
+                          {IEEE_STATUS_META[ls.ieeeStatus] && (
+                            <span title="IEEE C57.104 DGA status">
+                              <MetaChip meta={{
+                                ...IEEE_STATUS_META[ls.ieeeStatus],
+                                label: `IEEE ${ls.ieeeStatus} — ${IEEE_STATUS_META[ls.ieeeStatus].label}`,
+                              }} />
+                            </span>
+                          )}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1010,6 +1105,14 @@ export default function AssetDetail() {
           </div>
         </div>
       </div>
+      {completingSchedule && (
+        <CompleteScheduleModal
+          schedule={completingSchedule}
+          busy={busy}
+          onClose={() => setCompletingSchedule(null)}
+          onConfirm={(performedByName) => handleCompleteSchedule(completingSchedule, performedByName)}
+        />
+      )}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </>
   );

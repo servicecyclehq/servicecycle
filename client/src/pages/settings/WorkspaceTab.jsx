@@ -29,6 +29,7 @@ const WorkspaceTab = {
   // Users + Roles + Consultant Access.
   subTabIds: [
     'general',          // Company + Account preferences + Headcount
+    'emp',              // Electrical Maintenance Program (NFPA 70B §4.2)
     'customfields',     // Custom Fields
     'access',           // Users & Roles
   ],

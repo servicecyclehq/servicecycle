@@ -16,8 +16,16 @@
  *   GET    /summary                    — per-standard summary counts
  *   GET    /report/:standardCode       — full evidence for one standard
  *   POST   /snapshots                  — generate + persist a snapshot PDF (manager+)
- *   GET    /snapshots                  — list snapshots (paginated)
+ *   GET    /snapshots                  — list snapshots (paginated, ?kind= filter)
  *   GET    /snapshots/:id/download     — stream a snapshot PDF (integrity-checked)
+ *   POST   /emp-document               — generate the NFPA 70B §4.2 EMP document (manager+)
+ *   GET    /emp-settings               — EMP program settings (admin)
+ *   PUT    /emp-settings               — update EMP program settings (admin)
+ *
+ * Snapshot generation (both kinds) runs through lib/snapshotPipeline —
+ * render → sha256 → store → row create → DIRECT activity-log anchor with
+ * cleanup-on-failure. The pipeline lives in one place on purpose; do not
+ * re-inline it here.
  *
  * NO DELETE ENDPOINT — intentional, not an omission. Snapshots are
  * point-in-time audit evidence whose SHA-256 is anchored in the
@@ -33,32 +41,21 @@
 const express = require('express');
 const crypto  = require('crypto');
 const prisma  = require('../lib/prisma').default;
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireAdmin } = require('../middleware/roles');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
-const { uploadFile, downloadFile, deleteFile } = require('../lib/storage');
+const { downloadFile } = require('../lib/storage');
 const { buildStandardsSummary, buildStandardReport } = require('../lib/complianceReport');
-const { renderSnapshotPdf } = require('../lib/compliancePdf');
+const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
+const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 
 const router = express.Router();
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+const SNAPSHOT_KINDS = ['compliance', 'emp'];
+
 function sha256Hex(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
-}
-
-function slugify(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'all';
-}
-
-// yyyymmdd-hhmm in UTC, for the snapshot filename.
-function utcStamp(d) {
-  const p = (n, w = 2) => String(n).padStart(w, '0');
-  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}-` +
-         `${p(d.getUTCHours())}${p(d.getUTCMinutes())}`;
 }
 
 // Map the lib's coded errors to 404s; everything else re-throws.
@@ -113,12 +110,9 @@ router.get('/report/:standardCode', async (req, res) => {
 // Generate a snapshot PDF, persist it, and anchor its SHA-256 in the audit
 // log. Body: { standardCode? (null = all standards), siteId? (null = all sites) }.
 //
-// Failure ordering matters here:
-//   render → hash → store file → create snapshot row → audit anchor.
-// If the snapshot row fails, the stored file is deleted. If the AUDIT
-// ANCHOR fails, both the row and the file are deleted and the request
-// fails — an unanchored snapshot is worse than no snapshot, because the
-// whole product promise is "the hash is in the tamper-evident log".
+// The full render → hash → store → row → anchor sequence (including the
+// cleanup-on-failure ordering) lives in lib/snapshotPipeline.generateSnapshot
+// and is shared with POST /api/audits/:id/snapshots.
 
 router.post('/snapshots', requireManager, async (req, res) => {
   const { accountId, id: userId } = req.user;
@@ -126,153 +120,15 @@ router.post('/snapshots', requireManager, async (req, res) => {
   const standardCode = body.standardCode ? String(body.standardCode).trim() : null;
   const siteId       = body.siteId ? String(body.siteId) : null;
 
-  let storageKey = null;
-  let snapshotId = null;
-
   try {
-    // Validate the site up front (also needed for the filename + scope text).
-    let site = null;
-    if (siteId) {
-      site = await prisma.site.findFirst({
-        where:  { id: siteId, accountId },
-        select: { id: true, name: true },
-      });
-      if (!site) return res.status(404).json({ success: false, error: 'Site not found.' });
-    }
-
-    // 1. Assemble report bundle(s).
-    let bundles;
-    if (standardCode) {
-      bundles = [await buildStandardReport(prisma, accountId, { standardCode, siteId })];
-    } else {
-      const summary = await buildStandardsSummary(prisma, accountId, { siteId });
-      bundles = [];
-      for (const entry of summary) {
-        bundles.push(await buildStandardReport(prisma, accountId, {
-          standardCode: entry.standard.code,
-          siteId,
-        }));
-      }
-    }
-    if (bundles.length === 0) {
-      return res.status(422).json({
-        success: false,
-        error: 'No compliance data in the selected scope — nothing to snapshot.',
-      });
-    }
-
-    // 2. Aggregate stats across bundles (assets/deficiencies de-duplicated —
-    //    one asset can carry schedules under several standards).
-    const assetIds = new Set();
-    const defIds   = new Set();
-    let schedules = 0, current = 0, overdue = 0, unbaselined = 0;
-    for (const b of bundles) {
-      for (const r of b.rows) assetIds.add(r.asset.id);
-      for (const d of b.openDeficiencies) defIds.add(d.id);
-      schedules   += b.summary.scheduleCount;
-      current     += b.summary.currentCount;
-      overdue     += b.summary.overdueCount;
-      unbaselined += b.summary.unbaselinedCount;
-    }
-    const stats = {
-      standards:        bundles.length,
-      assets:           assetIds.size,
-      schedules,
-      current,
-      overdue,
-      unbaselined,
-      openDeficiencies: defIds.size,
-    };
-
-    // 3. Render. The snapshot id is pre-generated so it can be baked into
-    //    the PDF footer + integrity note BEFORE the row exists.
-    snapshotId = crypto.randomUUID();
-    const generatedAt = new Date();
-    const account = await prisma.account.findUnique({
-      where:  { id: accountId },
-      select: { companyName: true },
+    const { snapshot, site } = await generateSnapshot(prisma, {
+      accountId,
+      userId,
+      userName: req.user.name || null,
+      standardCode,
+      siteId,
+      kind: 'compliance',
     });
-
-    const scopeDescription =
-      `${standardCode || 'All standards'} — ${site ? site.name : 'all sites'}`;
-    const pdfBuffer = await renderSnapshotPdf(bundles, {
-      snapshotId,
-      accountName:      account ? account.companyName : 'Account',
-      generatedByName:  req.user.name || 'Unknown user',
-      generatedAtIso:   generatedAt.toISOString(),
-      scopeDescription,
-      standardEditions: bundles.map((b) =>
-        b.standard.edition ? `${b.standard.code} (${b.standard.edition})` : b.standard.code
-      ),
-    });
-
-    // 4. Hash, then store via the Document.filePath storage conventions
-    //    (storage key '{accountId}/misc/{ts}_{filename}').
-    const sha256 = sha256Hex(pdfBuffer);
-    const scopeSlug = [
-      standardCode ? slugify(standardCode) : 'all-standards',
-      site ? slugify(site.name) : null,
-    ].filter(Boolean).join('-');
-    const filename = `servicecycle-compliance-snapshot-${utcStamp(generatedAt)}-${scopeSlug}.pdf`;
-
-    const uploaded = await uploadFile(accountId, null, filename, pdfBuffer, 'application/pdf');
-    storageKey = uploaded.storageKey;
-
-    // 5. Snapshot row. On failure, remove the now-orphaned file.
-    let snapshot;
-    try {
-      snapshot = await prisma.complianceSnapshot.create({
-        data: {
-          id:            snapshotId,
-          accountId,
-          siteId:        site ? site.id : null,
-          standardCode:  standardCode || null,
-          generatedById: userId,
-          filename,
-          filePath:      storageKey,
-          sizeBytes:     uploaded.sizeBytes,
-          sha256,
-          stats,
-        },
-      });
-    } catch (rowErr) {
-      try { await deleteFile(storageKey); } catch (_) { /* best-effort */ }
-      throw rowErr;
-    }
-
-    // 6. THE INTEGRITY ANCHOR. This is a direct prisma.activityLog.create,
-    //    NOT lib/activityLog.writeLog — writeLog is fire-and-forget and
-    //    swallows its own errors by design, but here a silent failure would
-    //    break the product promise (the snapshot's sha256 MUST land in the
-    //    tamper-evident hash chain, which the activityLogChainSettler then
-    //    seals). If the anchor write fails, the snapshot row and file are
-    //    rolled back and the request fails.
-    try {
-      await prisma.activityLog.create({
-        data: {
-          assetId: null,
-          userId,
-          accountId,
-          action: 'compliance_snapshot_generated',
-          details: {
-            snapshotId,
-            sha256,
-            standardCode: standardCode || null,
-            siteId:       site ? site.id : null,
-            stats,
-          },
-        },
-      });
-    } catch (anchorErr) {
-      console.error('[compliance/snapshots] audit anchor failed — rolling back snapshot:',
-        anchorErr.message);
-      try { await prisma.complianceSnapshot.delete({ where: { id: snapshotId } }); } catch (_) { /* best-effort */ }
-      try { await deleteFile(storageKey); } catch (_) { /* best-effort */ }
-      return res.status(500).json({
-        success: false,
-        error: 'Snapshot could not be anchored in the audit log and was discarded. Please retry.',
-      });
-    }
 
     return res.status(201).json({
       success: true,
@@ -283,6 +139,7 @@ router.post('/snapshots', requireManager, async (req, res) => {
           standardCode: snapshot.standardCode,
           siteId:       snapshot.siteId,
           siteName:     site ? site.name : null,
+          kind:         snapshot.kind,
           filename:     snapshot.filename,
           sizeBytes:    snapshot.sizeBytes,
           sha256:       snapshot.sha256,
@@ -292,8 +149,79 @@ router.post('/snapshots', requireManager, async (req, res) => {
     });
   } catch (err) {
     if (handleBuilderError(res, err)) return;
+    if (err && err.code === 'NO_DATA') {
+      return res.status(422).json({ success: false, error: err.message });
+    }
+    if (err && err.code === 'ANCHOR_FAILED') {
+      return res.status(500).json({ success: false, error: err.message });
+    }
     console.error('[compliance/snapshots]', err);
     return res.status(500).json({ success: false, error: 'Failed to generate compliance snapshot.' });
+  }
+});
+
+// ── POST /emp-document ────────────────────────────────────────────────────────
+// Generate the written Electrical Maintenance Program document (NFPA 70B
+// §4.2) from live system data and persist it through the SAME pipeline as
+// compliance snapshots: kind='emp', standardCode null, hash anchored in the
+// activity log (action compliance_snapshot_generated, details.kind='emp').
+
+router.post('/emp-document', requireManager, async (req, res) => {
+  const { accountId, id: userId } = req.user;
+
+  try {
+    const empData = await buildEmpData(prisma, accountId);
+
+    // Pre-generate the id so it can be baked into the PDF footer +
+    // integrity note BEFORE the row exists (same as compliance snapshots).
+    const snapshotId  = crypto.randomUUID();
+    const generatedAt = new Date();
+
+    const pdfBuffer = await renderEmpPdf(empData, {
+      snapshotId,
+      accountName:     empData.accountName,
+      generatedByName: req.user.name || 'Unknown user',
+      generatedAtIso:  generatedAt.toISOString(),
+    });
+
+    const filename = `servicecycle-emp-document-${utcStamp(generatedAt)}.pdf`;
+
+    const { snapshot } = await persistSnapshot(prisma, {
+      accountId,
+      userId,
+      snapshotId,
+      pdfBuffer,
+      filename,
+      standardCode: null,
+      siteId:       null,
+      kind:         'emp',
+      auditVisitId: null,
+      stats:        empData.stats,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        snapshot: {
+          id:           snapshot.id,
+          createdAt:    snapshot.createdAt,
+          standardCode: snapshot.standardCode,
+          siteId:       snapshot.siteId,
+          siteName:     null,
+          kind:         snapshot.kind,
+          filename:     snapshot.filename,
+          sizeBytes:    snapshot.sizeBytes,
+          sha256:       snapshot.sha256,
+          stats:        snapshot.stats,
+        },
+      },
+    });
+  } catch (err) {
+    if (err && err.code === 'ANCHOR_FAILED') {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+    console.error('[compliance/emp-document]', err);
+    return res.status(500).json({ success: false, error: 'Failed to generate EMP document.' });
   }
 });
 
@@ -307,7 +235,17 @@ router.get('/snapshots', async (req, res) => {
     const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50));
     const skip  = (page - 1) * limit;
 
-    const where = { accountId: req.user.accountId };
+    const where: any = { accountId: req.user.accountId };
+    if (req.query.kind !== undefined) {
+      const kind = String(req.query.kind);
+      if (!SNAPSHOT_KINDS.includes(kind)) {
+        return res.status(400).json({
+          success: false,
+          error: `kind must be one of ${SNAPSHOT_KINDS.join(', ')}`,
+        });
+      }
+      where.kind = kind;
+    }
     const [rows, total] = await Promise.all([
       prisma.complianceSnapshot.findMany({
         where,
@@ -316,6 +254,7 @@ router.get('/snapshots', async (req, res) => {
         take: limit,
         select: {
           id: true, createdAt: true, standardCode: true, siteId: true,
+          kind: true, auditVisitId: true,
           filename: true, sizeBytes: true, sha256: true, stats: true,
           site:        { select: { name: true } },
           generatedBy: { select: { name: true } },
@@ -330,6 +269,8 @@ router.get('/snapshots', async (req, res) => {
       standardCode:    s.standardCode,       // null = all standards
       siteId:          s.siteId,             // null = all sites
       siteName:        s.site ? s.site.name : null,
+      kind:            s.kind,               // 'compliance' | 'emp'
+      auditVisitId:    s.auditVisitId,       // null unless generated for an audit visit
       filename:        s.filename,
       sizeBytes:       s.sizeBytes,
       sha256:          s.sha256,
@@ -421,6 +362,122 @@ router.get('/snapshots/:id/download', async (req, res) => {
 
 // (No DELETE /snapshots/:id — see the file header for why snapshots are
 // immutable in v1.)
+
+// ── EMP settings ──────────────────────────────────────────────────────────────
+// AccountSetting-backed knobs the EMP document generator reads:
+//   EMP_COORDINATOR_USER_ID — program owner (must be a same-account user)
+//   RETENTION_POLICY_TEXT   — records-retention policy text (free-form)
+//   EMP_LAST_REVIEWED_AT    — ISO date of the last formal program review
+// Admin-only on both verbs: this is account-level policy, same tier as the
+// rest of account settings.
+
+const EMP_SETTING_KEYS = ['EMP_COORDINATOR_USER_ID', 'RETENTION_POLICY_TEXT', 'EMP_LAST_REVIEWED_AT'];
+
+router.get('/emp-settings', requireAdmin, async (req, res) => {
+  try {
+    const rows = await prisma.accountSetting.findMany({
+      where: { accountId: req.user.accountId, key: { in: EMP_SETTING_KEYS } },
+    });
+    const db: any = {};
+    for (const r of rows) db[r.key] = r.value;
+
+    // Resolve the coordinator's name for display. A stale id (user deleted
+    // or moved accounts) resolves to null rather than erroring.
+    let coordinator = null;
+    if (db.EMP_COORDINATOR_USER_ID) {
+      coordinator = await prisma.user.findFirst({
+        where:  { id: db.EMP_COORDINATOR_USER_ID, accountId: req.user.accountId },
+        select: { id: true, name: true, email: true },
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        empCoordinatorUserId: db.EMP_COORDINATOR_USER_ID || null,
+        empCoordinator:       coordinator, // { id, name, email } | null
+        retentionPolicyText:  db.RETENTION_POLICY_TEXT || null,
+        empLastReviewedAt:    db.EMP_LAST_REVIEWED_AT || null,
+      },
+    });
+  } catch (err) {
+    console.error('[compliance/emp-settings:get]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to load EMP settings.' });
+  }
+});
+
+router.put('/emp-settings', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const updates = []; // [key, value|null] — null clears the setting
+
+    if (body.empCoordinatorUserId !== undefined) {
+      if (body.empCoordinatorUserId === null || body.empCoordinatorUserId === '') {
+        updates.push(['EMP_COORDINATOR_USER_ID', null]);
+      } else {
+        const user = await prisma.user.findFirst({
+          where:  { id: String(body.empCoordinatorUserId), accountId: req.user.accountId },
+          select: { id: true },
+        });
+        if (!user) {
+          return res.status(404).json({ success: false, error: 'Coordinator user not found in this account.' });
+        }
+        updates.push(['EMP_COORDINATOR_USER_ID', user.id]);
+      }
+    }
+
+    if (body.retentionPolicyText !== undefined) {
+      const text = body.retentionPolicyText === null ? '' : String(body.retentionPolicyText);
+      if (text.length > 20000) {
+        return res.status(400).json({ success: false, error: 'retentionPolicyText is too long (max 20000 chars).' });
+      }
+      updates.push(['RETENTION_POLICY_TEXT', text.trim() || null]);
+    }
+
+    if (body.empLastReviewedAt !== undefined) {
+      if (body.empLastReviewedAt === null || body.empLastReviewedAt === '') {
+        updates.push(['EMP_LAST_REVIEWED_AT', null]);
+      } else {
+        const d = new Date(String(body.empLastReviewedAt));
+        if (Number.isNaN(d.getTime())) {
+          return res.status(400).json({ success: false, error: 'empLastReviewedAt must be a valid date.' });
+        }
+        updates.push(['EMP_LAST_REVIEWED_AT', d.toISOString()]);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No EMP settings provided.' });
+    }
+
+    for (const [key, value] of updates) {
+      if (value === null) {
+        await prisma.accountSetting.deleteMany({
+          where: { accountId: req.user.accountId, key },
+        });
+      } else {
+        await prisma.accountSetting.upsert({
+          where:  { accountId_key: { accountId: req.user.accountId, key } },
+          update: { value },
+          create: { accountId: req.user.accountId, key, value },
+        });
+      }
+    }
+
+    writeActivityLog({
+      assetId:   null,
+      userId:    req.user.id,
+      accountId: req.user.accountId,
+      action:    'emp_settings_updated',
+      details:   { keys: updates.map(([k]) => k) },
+    });
+
+    return res.json({ success: true, data: { updated: updates.map(([k]) => k) } });
+  } catch (err) {
+    console.error('[compliance/emp-settings:put]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to update EMP settings.' });
+  }
+});
 
 module.exports = router;
 

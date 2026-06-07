@@ -37,6 +37,9 @@ const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { recomputeScheduleDates, worstCondition } = require('../lib/maintenanceInterval');
 const prisma = require('../lib/prisma').default;
+// Prisma.DbNull — clearing a nullable Json column (testEquipment) requires the
+// sentinel; a plain JS null is rejected by the client for Json fields.
+const { Prisma } = require('@prisma/client');
 
 // App-layer enum guards — bad strings 400 instead of throwing Prisma errors.
 const WO_STATUSES      = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETE', 'CANCELLED'];
@@ -55,6 +58,30 @@ const ALLOWED_TRANSITIONS: any = {
 
 const DateLike = z.preprocess(emptyToUndef, z.union([z.string(), z.date()]).nullable().optional());
 
+// ── Test-condition + instrument provenance (NETA MTS §5.4.2 #4, §5.3) ────────
+// Calibrated instrument list: max 10 entries, each field a string ≤200 chars,
+// no extra keys. Shared between the POST zod schema and the manual PUT path
+// so the two can't drift.
+const TestEquipmentSchema = z.array(
+  z.object({
+    make:    z.string().max(200).nullable().optional(),
+    model:   z.string().max(200).nullable().optional(),
+    serial:  z.string().max(200).nullable().optional(),
+    calDate: z.string().max(200).nullable().optional(),
+  }).strict()
+).max(10);
+
+// Ambient readings arrive as number or numeric string from the SPA; final
+// numeric coercion happens in the handlers via toDecimal.
+const NumLike = z.preprocess(emptyToUndef, z.union([z.number(), z.string()]).nullable().optional());
+
+// number | numeric-string | '' | null → number | null; undefined = invalid.
+function toDecimal(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isNaN(n) ? undefined : n;
+}
+
 const CreateWorkOrderSchema = z.object({
   assetId:        UuidStr,
   scheduleId:     UuidStr.nullable().optional().or(z.literal('')),
@@ -62,6 +89,9 @@ const CreateWorkOrderSchema = z.object({
   assignedTechId: UuidStr.nullable().optional().or(z.literal('')),
   netaCertLevel:  z.enum(NETA_CERT_LEVELS).nullable().optional().or(z.literal('')),
   scheduledDate:  DateLike,
+  ambientTempC:   NumLike,
+  humidityPct:    NumLike,
+  testEquipment:  TestEquipmentSchema.nullable().optional(),
   notes:          z.string().max(4000).nullable().optional(),
 }).strict();
 
@@ -263,6 +293,17 @@ router.post('/', requireManager, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid scheduledDate' });
     }
 
+    // Test-condition provenance — zod gated the container shapes above;
+    // toDecimal rejects non-numeric ambient strings here.
+    const ambientTempC = toDecimal(parsed.ambientTempC);
+    if (ambientTempC === undefined) {
+      return res.status(400).json({ success: false, error: 'ambientTempC must be numeric' });
+    }
+    const humidityPct = toDecimal(parsed.humidityPct);
+    if (humidityPct === undefined) {
+      return res.status(400).json({ success: false, error: 'humidityPct must be numeric' });
+    }
+
     const workOrder = await prisma.workOrder.create({
       data: {
         accountId:     req.user.accountId,
@@ -272,6 +313,9 @@ router.post('/', requireManager, async (req, res) => {
         assignedTechId,
         netaCertLevel,
         scheduledDate: when,
+        ambientTempC,
+        humidityPct,
+        testEquipment: parsed.testEquipment ?? undefined,
         notes:         notes || null,
         // status defaults to SCHEDULED in the schema
       },
@@ -311,6 +355,7 @@ router.put('/:id', requireManager, async (req, res) => {
       status, scheduledDate, completedDate, notes, reportPdfUrl,
       contractorId, assignedTechId, netaCertLevel,
       asFoundCondition, asLeftCondition, netaDecal,
+      ambientTempC, humidityPct, testEquipment,
     } = req.body;
 
     // ── Enum guards ───────────────────────────────────────────────────────────
@@ -357,6 +402,32 @@ router.put('/:id', requireManager, async (req, res) => {
     if (asFoundCondition !== undefined) updateData.asFoundCondition = asFoundCondition || null;
     if (asLeftCondition !== undefined)  updateData.asLeftCondition = asLeftCondition || null;
     if (netaDecal !== undefined)        updateData.netaDecal = netaDecal || null;
+
+    // ── Test-condition + instrument provenance ────────────────────────────────
+    if (ambientTempC !== undefined) {
+      const n = toDecimal(ambientTempC);
+      if (n === undefined) return res.status(400).json({ success: false, error: 'ambientTempC must be numeric' });
+      updateData.ambientTempC = n;
+    }
+    if (humidityPct !== undefined) {
+      const n = toDecimal(humidityPct);
+      if (n === undefined) return res.status(400).json({ success: false, error: 'humidityPct must be numeric' });
+      updateData.humidityPct = n;
+    }
+    if (testEquipment !== undefined) {
+      if (testEquipment === null || (Array.isArray(testEquipment) && testEquipment.length === 0)) {
+        updateData.testEquipment = Prisma.DbNull;
+      } else {
+        const te = TestEquipmentSchema.safeParse(testEquipment);
+        if (!te.success) {
+          return res.status(400).json({
+            success: false,
+            error: 'testEquipment must be an array of up to 10 { make, model, serial, calDate } entries, each a string of 200 characters or fewer',
+          });
+        }
+        updateData.testEquipment = te.data;
+      }
+    }
 
     // ── Status transitions ────────────────────────────────────────────────────
     const transitioning = status !== undefined && status !== existing.status;
@@ -423,9 +494,38 @@ router.put('/:id', requireManager, async (req, res) => {
         const { lastCompletedDate, nextDueDate } = recomputeScheduleDates(
           existing.schedule.taskDefinition, assetAfter, existing.schedule, completedAt
         );
+
+        // Provenance: who actually performed the work. Effective assignment
+        // (body value wins over stored) → "Tech Name — Contractor Name" when
+        // both are known, contractor name alone otherwise. Only written when
+        // a name resolves, so an unassigned completion doesn't clobber an
+        // earlier manual provenance entry.
+        const effTechId = assignedTechId !== undefined ? (assignedTechId || null) : existing.assignedTechId;
+        let performedByName = null;
+        if (effTechId) {
+          const tech = await prisma.contractorTech.findFirst({
+            where:  { id: effTechId, contractor: { accountId: req.user.accountId } },
+            select: { name: true, contractor: { select: { name: true } } },
+          });
+          if (tech) {
+            performedByName = tech.contractor?.name ? `${tech.name} — ${tech.contractor.name}` : tech.name;
+          }
+        }
+        if (!performedByName && effectiveContractorId) {
+          const c = await prisma.contractor.findFirst({
+            where:  { id: effectiveContractorId, accountId: req.user.accountId },
+            select: { name: true },
+          });
+          if (c) performedByName = c.name;
+        }
+
         ops.push(prisma.maintenanceSchedule.update({
           where: { id: existing.scheduleId },
-          data: { lastCompletedDate, nextDueDate },
+          data: {
+            lastCompletedDate,
+            nextDueDate,
+            ...(performedByName ? { lastPerformedByName: performedByName.slice(0, 200) } : {}),
+          },
         }));
       }
 
@@ -515,7 +615,10 @@ router.put('/:id', requireManager, async (req, res) => {
 // Per-row field normalizer + validator. Returns { error } or { data }.
 function buildMeasurementData(accountId, workOrderId, raw) {
   if (!raw || typeof raw !== 'object') return { error: 'Each measurement must be an object' };
-  const { measurementType, phase, asFoundValue, asFoundUnit, asLeftValue, asLeftUnit, passFail, notes } = raw;
+  const {
+    measurementType, phase, asFoundValue, asFoundUnit, asLeftValue, asLeftUnit, passFail,
+    expectedRange, testVoltage, loadPercent, severityPriority, notes,
+  } = raw;
   if (!measurementType || typeof measurementType !== 'string' || !measurementType.trim()) {
     return { error: 'measurementType is required' };
   }
@@ -532,6 +635,16 @@ function buildMeasurementData(accountId, workOrderId, raw) {
   if (found === undefined || left === undefined) {
     return { error: 'asFoundValue/asLeftValue must be numeric' };
   }
+  // IR thermography load at scan time (≥40% rule) — decimal percent.
+  const load = num(loadPercent);
+  if (load === undefined) {
+    return { error: 'loadPercent must be numeric' };
+  }
+  // NETA ΔT priority: 1 (repair immediately) … 4 (possible deficiency).
+  const sev = parseSeverityPriority(severityPriority);
+  if (sev === undefined) {
+    return { error: 'severityPriority must be an integer between 1 and 4' };
+  }
   return {
     data: {
       accountId,
@@ -543,9 +656,21 @@ function buildMeasurementData(accountId, workOrderId, raw) {
       asLeftValue:  left,
       asLeftUnit:   asLeftUnit || null,
       passFail:     passFail || null,
+      expectedRange:    expectedRange || null,
+      testVoltage:      testVoltage || null,
+      loadPercent:      load,
+      severityPriority: sev,
       notes:        notes || null,
     },
   };
+}
+
+// int 1–4, number or numeric string; ''/null clears. undefined = invalid.
+function parseSeverityPriority(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = typeof v === 'number' ? v : parseInt(v, 10);
+  if (!Number.isInteger(n) || n < 1 || n > 4) return undefined;
+  return n;
 }
 
 // ─── POST /api/work-orders/:id/measurements ───────────────────────────────────
@@ -595,7 +720,10 @@ router.put('/measurements/:mid', requireManager, async (req, res) => {
     });
     if (!measurement) return res.status(404).json({ success: false, error: 'Measurement not found' });
 
-    const { measurementType, phase, asFoundValue, asFoundUnit, asLeftValue, asLeftUnit, passFail, notes } = req.body;
+    const {
+      measurementType, phase, asFoundValue, asFoundUnit, asLeftValue, asLeftUnit, passFail,
+      expectedRange, testVoltage, loadPercent, severityPriority, notes,
+    } = req.body;
 
     if (passFail !== undefined && passFail !== null && passFail !== '' && !RESULT_RATINGS.includes(passFail)) {
       return res.status(400).json({ success: false, error: `passFail must be one of ${RESULT_RATINGS.join(', ')}` });
@@ -628,6 +756,20 @@ router.put('/measurements/:mid', requireManager, async (req, res) => {
     }
     if (asLeftUnit !== undefined)  updateData.asLeftUnit = asLeftUnit || null;
     if (passFail !== undefined)    updateData.passFail = passFail || null;
+    if (expectedRange !== undefined) updateData.expectedRange = expectedRange || null;
+    if (testVoltage !== undefined)   updateData.testVoltage = testVoltage || null;
+    if (loadPercent !== undefined) {
+      const n = num(loadPercent);
+      if (n === undefined) return res.status(400).json({ success: false, error: 'loadPercent must be numeric' });
+      updateData.loadPercent = n;
+    }
+    if (severityPriority !== undefined) {
+      const sev = parseSeverityPriority(severityPriority);
+      if (sev === undefined) {
+        return res.status(400).json({ success: false, error: 'severityPriority must be an integer between 1 and 4' });
+      }
+      updateData.severityPriority = sev;
+    }
     if (notes !== undefined)       updateData.notes = notes || null;
 
     const updated = await prisma.testMeasurement.update({
@@ -709,7 +851,8 @@ router.post('/:id/lab-samples', requireManager, async (req, res) => {
 
     const {
       sampleType, sampleDate, labName,
-      h2, ch4, c2h2, c2h4, c2h6, co, co2,
+      h2, ch4, c2h2, c2h4, c2h6, co, co2, o2, n2,
+      ieeeStatus, faultCode,
       resultsData, resultRating, reportPdfUrl, notes,
     } = req.body;
 
@@ -718,6 +861,16 @@ router.post('/:id/lab-samples', requireManager, async (req, res) => {
     }
     if (resultRating != null && resultRating !== '' && !RESULT_RATINGS.includes(resultRating)) {
       return res.status(400).json({ success: false, error: `resultRating must be one of ${RESULT_RATINGS.join(', ')}` });
+    }
+
+    // IEEE C57.104-2019 DGA status: 1 normal, 2 caution, 3 action required.
+    let ieee = null;
+    if (ieeeStatus !== undefined && ieeeStatus !== null && ieeeStatus !== '') {
+      const n = typeof ieeeStatus === 'number' ? ieeeStatus : parseInt(ieeeStatus, 10);
+      if (![1, 2, 3].includes(n)) {
+        return res.status(400).json({ success: false, error: 'ieeeStatus must be 1, 2, or 3' });
+      }
+      ieee = n;
     }
 
     const when = sampleDate ? new Date(sampleDate) : new Date();
@@ -739,6 +892,9 @@ router.post('/:id/lab-samples', requireManager, async (req, res) => {
         h2: gas(h2, 'h2'), ch4: gas(ch4, 'ch4'), c2h2: gas(c2h2, 'c2h2'),
         c2h4: gas(c2h4, 'c2h4'), c2h6: gas(c2h6, 'c2h6'),
         co: gas(co, 'co'), co2: gas(co2, 'co2'),
+        // O2 + N2 complete the IEEE C57.104-2019 gas set (sealed vs
+        // free-breathing discrimination).
+        o2: gas(o2, 'o2'), n2: gas(n2, 'n2'),
       };
     } catch (vErr) {
       return res.status(400).json({ success: false, error: vErr.message });
@@ -753,6 +909,8 @@ router.post('/:id/lab-samples', requireManager, async (req, res) => {
         sampleDate:  when,
         labName:     labName || null,
         ...gasValues,
+        ieeeStatus:   ieee,
+        faultCode:    faultCode || null,
         resultsData:  resultsData && typeof resultsData === 'object' ? resultsData : undefined,
         resultRating: resultRating || null,
         reportPdfUrl: reportPdfUrl || null,

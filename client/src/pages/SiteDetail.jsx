@@ -24,7 +24,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
-  EQUIPMENT_TYPE_LABELS, CONDITION_META, assetLabel,
+  EQUIPMENT_TYPE_LABELS, CONDITION_META, STUDY_TYPE_LABELS, assetLabel, fmtDate,
 } from '../lib/equipment';
 
 // Node-kind → API path segment for PUT/DELETE (mounted under /api/sites).
@@ -38,6 +38,22 @@ function metaOf(metaMap, key) {
   const m = metaMap?.[key];
   if (!m) return {};
   return typeof m === 'string' ? { label: m } : m;
+}
+
+const EMPTY_STUDY = {
+  studyType: 'arc_flash', performedDate: '', expiresAt: '', performedBy: '',
+  method: '', peName: '', peLicense: '', trigger: '', reportPdfUrl: '', notes: '',
+};
+
+// Study-expiry urgency: red when past, amber within 6 months, none otherwise.
+function studyExpiryStyle(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const days = (dt - new Date()) / 86400000;
+  if (days < 0)   return { color: 'var(--color-danger, #dc2626)', fontWeight: 700 };
+  if (days < 183) return { color: '#d97706', fontWeight: 600 };
+  return null;
 }
 
 function fmtDateTime(d) {
@@ -226,6 +242,14 @@ export default function SiteDetail() {
   const [bwOpen, setBwOpen] = useState(false);
   const [bwSaving, setBwSaving] = useState(false);
 
+  // System studies (audit-readiness). Add/edit shares one form; editingStudyId
+  // null means the form creates via POST, otherwise saves via PUT.
+  const [studies, setStudies] = useState([]);
+  const [studyFormOpen, setStudyFormOpen] = useState(false);
+  const [editingStudyId, setEditingStudyId] = useState(null);
+  const [studyForm, setStudyForm] = useState(EMPTY_STUDY);
+  const [studySaving, setStudySaving] = useState(false);
+
   useDocumentTitle(site ? site.name : 'Site');
 
   const fetchSite = useCallback(() => {
@@ -234,15 +258,22 @@ export default function SiteDetail() {
       .catch(err => setError(err.response?.status === 404 ? 'Site not found.' : 'Failed to load site.'));
   }, [id]);
 
+  const fetchStudies = useCallback(() => {
+    return api.get(`/api/sites/${id}/studies`)
+      .then(r => setStudies(r.data?.data?.studies || []))
+      .catch(() => { /* studies card simply shows empty — endpoint may lag the client (parallel build) */ });
+  }, [id]);
+
   useEffect(() => {
     setLoading(true);
     Promise.all([
       fetchSite(),
+      fetchStudies(),
       api.get('/api/assets', { params: { siteId: id, limit: 100 } })
         .then(r => setAssets(r.data?.data?.assets || []))
         .catch(() => { /* asset list is secondary — leave empty */ }),
     ]).finally(() => setLoading(false));
-  }, [id, fetchSite]);
+  }, [id, fetchSite, fetchStudies]);
 
   function apiError(err, fallback) {
     setToast({ message: err.response?.data?.error || fallback, variant: 'error' });
@@ -348,6 +379,63 @@ export default function SiteDetail() {
       await fetchSite();
     } catch (err) {
       apiError(err, 'Failed to delete blackout window.');
+    }
+  }
+
+  // ── System studies ─────────────────────────────────────────────────────────
+  function openStudyForm(study) {
+    if (study) {
+      setEditingStudyId(study.id);
+      setStudyForm({
+        studyType:     study.studyType || 'arc_flash',
+        performedDate: study.performedDate ? String(study.performedDate).slice(0, 10) : '',
+        expiresAt:     study.expiresAt ? String(study.expiresAt).slice(0, 10) : '',
+        performedBy:   study.performedBy || '',
+        method:        study.method || '',
+        peName:        study.peName || '',
+        peLicense:     study.peLicense || '',
+        trigger:       study.trigger || '',
+        reportPdfUrl:  study.reportPdfUrl || '',
+        notes:         study.notes || '',
+      });
+    } else {
+      setEditingStudyId(null);
+      setStudyForm(EMPTY_STUDY);
+    }
+    setStudyFormOpen(true);
+  }
+
+  async function saveStudy(e) {
+    e.preventDefault();
+    if (!studyForm.studyType || !studyForm.performedDate) return;
+    setStudySaving(true);
+    try {
+      const body = {
+        studyType:     studyForm.studyType,
+        performedDate: studyForm.performedDate,
+        expiresAt:     studyForm.expiresAt || null,
+        performedBy:   studyForm.performedBy.trim() || null,
+        method:        studyForm.method.trim() || null,
+        peName:        studyForm.peName.trim() || null,
+        peLicense:     studyForm.peLicense.trim() || null,
+        trigger:       studyForm.trigger.trim() || null,
+        reportPdfUrl:  studyForm.reportPdfUrl.trim() || null,
+        notes:         studyForm.notes.trim() || null,
+      };
+      if (editingStudyId) {
+        await api.put(`/api/sites/studies/${editingStudyId}`, body);
+      } else {
+        await api.post(`/api/sites/${id}/studies`, body);
+      }
+      setStudyFormOpen(false);
+      setEditingStudyId(null);
+      setStudyForm(EMPTY_STUDY);
+      await fetchStudies();
+      setToast({ message: editingStudyId ? 'Study updated.' : 'Study recorded.', variant: 'success', duration: 4000 });
+    } catch (err) {
+      apiError(err, 'Failed to save study.');
+    } finally {
+      setStudySaving(false);
     }
   }
 
@@ -714,6 +802,203 @@ export default function SiteDetail() {
                       )}
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── System studies ─────────────────────────────────────────────── */}
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header">
+            <div>
+              <div className="card-title">System Studies</div>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                Arc flash, short-circuit, coordination, and one-line reviews for this site
+              </div>
+            </div>
+            {canWrite && (
+              <button className="btn btn-secondary btn-sm" onClick={() => (studyFormOpen ? setStudyFormOpen(false) : openStudyForm(null))}>
+                {studyFormOpen ? 'Cancel' : '+ Add study'}
+              </button>
+            )}
+          </div>
+
+          <div style={{
+            padding: '10px 20px', borderBottom: '1px solid var(--color-border)',
+            fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', lineHeight: 1.5,
+          }}>
+            Auditors ask for: current arc flash study, short-circuit + coordination studies
+            (≤5 years), and a dated one-line diagram review.
+          </div>
+
+          {canWrite && studyFormOpen && (
+            <form onSubmit={saveStudy} style={{ padding: '12px 20px', borderBottom: '1px solid var(--color-border)' }}>
+              <div style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)', marginBottom: 10 }}>
+                {editingStudyId ? 'Edit study' : 'Record a study'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Study type *</label>
+                  <select
+                    className="form-control form-control-wide" required
+                    value={studyForm.studyType}
+                    onChange={e => setStudyForm(f => ({ ...f, studyType: e.target.value }))}
+                  >
+                    {Object.entries(STUDY_TYPE_LABELS).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Performed date *</label>
+                  <input
+                    type="date" className="form-control form-control-wide" required
+                    value={studyForm.performedDate}
+                    onChange={e => setStudyForm(f => ({ ...f, performedDate: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Expires</label>
+                  <input
+                    type="date" className="form-control form-control-wide"
+                    value={studyForm.expiresAt}
+                    min={studyForm.performedDate || undefined}
+                    onChange={e => setStudyForm(f => ({ ...f, expiresAt: e.target.value }))}
+                  />
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                    Optional — defaults to 5 years from performed date.
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Performed by</label>
+                  <input
+                    className="form-control form-control-wide" placeholder="Engineering firm / individual"
+                    value={studyForm.performedBy}
+                    onChange={e => setStudyForm(f => ({ ...f, performedBy: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Method</label>
+                  <input
+                    className="form-control form-control-wide" placeholder="e.g. IEEE 1584-2018"
+                    value={studyForm.method}
+                    onChange={e => setStudyForm(f => ({ ...f, method: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>PE name</label>
+                  <input
+                    className="form-control form-control-wide"
+                    value={studyForm.peName}
+                    onChange={e => setStudyForm(f => ({ ...f, peName: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>PE license #</label>
+                  <input
+                    className="form-control form-control-wide"
+                    value={studyForm.peLicense}
+                    onChange={e => setStudyForm(f => ({ ...f, peLicense: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Trigger</label>
+                  <input
+                    className="form-control form-control-wide" placeholder="e.g. 5-year cycle, system modification"
+                    value={studyForm.trigger}
+                    onChange={e => setStudyForm(f => ({ ...f, trigger: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Report PDF URL</label>
+                  <input
+                    className="form-control form-control-wide" placeholder="https://…"
+                    value={studyForm.reportPdfUrl}
+                    onChange={e => setStudyForm(f => ({ ...f, reportPdfUrl: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>Notes</label>
+                <textarea
+                  className="form-control" rows={2}
+                  value={studyForm.notes}
+                  onChange={e => setStudyForm(f => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                <button
+                  type="button" className="btn btn-secondary"
+                  onClick={() => { setStudyFormOpen(false); setEditingStudyId(null); }}
+                  disabled={studySaving}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={studySaving || !studyForm.studyType || !studyForm.performedDate}>
+                  {studySaving ? 'Saving…' : editingStudyId ? 'Save study' : 'Record study'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {studies.length === 0 ? (
+            <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-ui)' }}>
+              No studies recorded for this site yet
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Study</th>
+                    <th>Performed</th>
+                    <th>Expires</th>
+                    <th>PE</th>
+                    <th>Method</th>
+                    <th>Report</th>
+                    {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {studies.map(st => {
+                    const expStyle = studyExpiryStyle(st.expiresAt);
+                    const expired = st.expiresAt && new Date(st.expiresAt) < new Date();
+                    return (
+                      <tr key={st.id}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{STUDY_TYPE_LABELS[st.studyType] || st.studyType}</div>
+                          {(st.performedBy || st.trigger) && (
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                              {[st.performedBy, st.trigger].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                        </td>
+                        <td>{fmtDate(st.performedDate)}</td>
+                        <td>
+                          <span style={expStyle || undefined} className={expStyle ? undefined : 'td-muted'}>
+                            {fmtDate(st.expiresAt)}{expired ? ' · expired' : ''}
+                          </span>
+                        </td>
+                        <td className="td-muted">
+                          {st.peName
+                            ? <>{st.peName}{st.peLicense ? <div style={{ fontSize: 'var(--font-size-xs)' }}>Lic. {st.peLicense}</div> : null}</>
+                            : '—'}
+                        </td>
+                        <td className="td-muted">{st.method || '—'}</td>
+                        <td>
+                          {st.reportPdfUrl
+                            ? <a href={st.reportPdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>Open</a>
+                            : <span className="text-muted">—</span>}
+                        </td>
+                        {canWrite && (
+                          <td style={{ textAlign: 'right' }}>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => openStudyForm(st)}>
+                              Edit
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -91,6 +91,8 @@ router.get('/', async (req, res) => {
         include: {
           site:     { select: { id: true, name: true } },
           position: { select: { id: true, name: true, code: true } },
+          // Responsible-person column (mirrors routes/assets.ts GET / include).
+          owner:    { select: { id: true, name: true } },
           // Earliest active schedule drives the "next due" cell in the list.
           schedules: {
             where:   { isActive: true, nextDueDate: { not: null } },

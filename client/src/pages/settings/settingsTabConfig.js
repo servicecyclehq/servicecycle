@@ -31,6 +31,7 @@ export const TOP_TABS = [WorkspaceTab, IntegrationsTab, SecurityTab];
 // hunting through SettingsPage.jsx for labels.
 export const SUB_TAB_LABELS = {
   general:            'General',
+  emp:                'Maintenance Program',
   alerts:             'Alerts',
   ai:                 'AI & Extraction',
   access:             'Users & Roles',

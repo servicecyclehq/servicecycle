@@ -28,6 +28,20 @@ const OPEN_WO_STATUSES = ['SCHEDULED', 'IN_PROGRESS'];
 // so a bad string 400s instead of throwing a Prisma enum error.
 const NETA_CERT_LEVELS = ['LEVEL_I', 'LEVEL_II', 'LEVEL_III', 'LEVEL_IV'];
 
+// Thermographer certification levels (Infraspection/ASNT model; Level II is
+// the de-facto insurer minimum for signing IR reports). Stored as a plain
+// string column — guard here.
+const THERMOGRAPHER_LEVELS = ['I', 'II', 'III'];
+
+// Nullable-date normalizer for the tech qualification fields. Returns
+// { value } (Date or null) or { error } on garbage input.
+function parseNullableDate(v, field) {
+  if (v === undefined || v === null || v === '') return { value: null };
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return { error: `Invalid ${field}` };
+  return { value: d };
+}
+
 // 1–5 score guard for the contractor scorecard fields.
 function normalizeScore(v) {
   if (v === undefined || v === null || v === '') return null;
@@ -111,7 +125,7 @@ router.post('/', requireManager, async (req, res) => {
   }
   try {
     const {
-      name, netaAccredited, notes,
+      name, isInternal, netaAccredited, notes,
       supportEmail, supportPhone, supportPortalUrl, portalUrl,
       scoreSupport, scoreSatisfaction, aliases,
     } = req.body;
@@ -124,6 +138,9 @@ router.post('/', requireManager, async (req, res) => {
       data: {
         accountId:        req.user.accountId,
         name:             name.trim(),
+        // In-house maintenance crew flag — same qualified-person rules,
+        // honest UI labeling.
+        isInternal:       isInternal === true,
         netaAccredited:   netaAccredited === true,
         notes:            notes || null,
         supportEmail:     supportEmail || null,
@@ -160,7 +177,7 @@ router.put('/:id', requireManager, async (req, res) => {
     }
 
     const {
-      name, netaAccredited, notes,
+      name, isInternal, netaAccredited, notes,
       supportEmail, supportPhone, supportPortalUrl, portalUrl,
       scoreSupport, scoreSatisfaction, aliases,
     } = req.body;
@@ -171,6 +188,7 @@ router.put('/:id', requireManager, async (req, res) => {
 
     const updateData: any = {};
     if (name !== undefined)             updateData.name = name.trim();
+    if (isInternal !== undefined)       updateData.isInternal = isInternal === true;
     if (netaAccredited !== undefined)   updateData.netaAccredited = netaAccredited === true;
     if (notes !== undefined)            updateData.notes = notes || null;
     if (supportEmail !== undefined)     updateData.supportEmail = supportEmail || null;
@@ -213,13 +231,26 @@ router.post('/:id/techs', requireManager, async (req, res) => {
     });
     if (!contractor) return res.status(404).json({ success: false, error: 'Contractor not found' });
 
-    const { name, title, email, phone, netaCertLevel, notes } = req.body;
+    const {
+      name, title, email, phone, netaCertLevel, notes,
+      qualifiedPersonDesignatedAt, trainingExpiresAt, thermographerCertLevel,
+    } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, error: 'Tech name is required' });
     }
     if (netaCertLevel != null && netaCertLevel !== '' && !NETA_CERT_LEVELS.includes(netaCertLevel)) {
       return res.status(400).json({ success: false, error: `netaCertLevel must be one of ${NETA_CERT_LEVELS.join(', ')}` });
     }
+    if (thermographerCertLevel != null && thermographerCertLevel !== ''
+        && !THERMOGRAPHER_LEVELS.includes(thermographerCertLevel)) {
+      return res.status(400).json({ success: false, error: `thermographerCertLevel must be one of ${THERMOGRAPHER_LEVELS.join(', ')} (or null to clear)` });
+    }
+
+    // NFPA 70E qualification provenance dates.
+    const qpDate = parseNullableDate(qualifiedPersonDesignatedAt, 'qualifiedPersonDesignatedAt');
+    if (qpDate.error) return res.status(400).json({ success: false, error: qpDate.error });
+    const trainDate = parseNullableDate(trainingExpiresAt, 'trainingExpiresAt');
+    if (trainDate.error) return res.status(400).json({ success: false, error: trainDate.error });
 
     const tech = await prisma.contractorTech.create({
       data: {
@@ -229,6 +260,9 @@ router.post('/:id/techs', requireManager, async (req, res) => {
         email:         email || null,
         phone:         phone || null,
         netaCertLevel: netaCertLevel || null,
+        qualifiedPersonDesignatedAt: qpDate.value,
+        trainingExpiresAt:           trainDate.value,
+        thermographerCertLevel:      thermographerCertLevel || null,
         notes:         notes || null,
       },
     });
@@ -248,11 +282,18 @@ router.put('/techs/:techId', requireManager, async (req, res) => {
     });
     if (!tech) return res.status(404).json({ success: false, error: 'Tech not found' });
 
-    const { name, title, email, phone, netaCertLevel, notes, lastContactedAt } = req.body;
+    const {
+      name, title, email, phone, netaCertLevel, notes, lastContactedAt,
+      qualifiedPersonDesignatedAt, trainingExpiresAt, thermographerCertLevel,
+    } = req.body;
 
     if (netaCertLevel !== undefined && netaCertLevel !== null && netaCertLevel !== ''
         && !NETA_CERT_LEVELS.includes(netaCertLevel)) {
       return res.status(400).json({ success: false, error: `netaCertLevel must be one of ${NETA_CERT_LEVELS.join(', ')}` });
+    }
+    if (thermographerCertLevel !== undefined && thermographerCertLevel !== null
+        && thermographerCertLevel !== '' && !THERMOGRAPHER_LEVELS.includes(thermographerCertLevel)) {
+      return res.status(400).json({ success: false, error: `thermographerCertLevel must be one of ${THERMOGRAPHER_LEVELS.join(', ')} (or null to clear)` });
     }
 
     const updateData: any = {};
@@ -261,6 +302,17 @@ router.put('/techs/:techId', requireManager, async (req, res) => {
     if (email !== undefined)           updateData.email = email || null;
     if (phone !== undefined)           updateData.phone = phone || null;
     if (netaCertLevel !== undefined)   updateData.netaCertLevel = netaCertLevel || null;
+    if (thermographerCertLevel !== undefined) updateData.thermographerCertLevel = thermographerCertLevel || null;
+    if (qualifiedPersonDesignatedAt !== undefined) {
+      const qpDate = parseNullableDate(qualifiedPersonDesignatedAt, 'qualifiedPersonDesignatedAt');
+      if (qpDate.error) return res.status(400).json({ success: false, error: qpDate.error });
+      updateData.qualifiedPersonDesignatedAt = qpDate.value;
+    }
+    if (trainingExpiresAt !== undefined) {
+      const trainDate = parseNullableDate(trainingExpiresAt, 'trainingExpiresAt');
+      if (trainDate.error) return res.status(400).json({ success: false, error: trainDate.error });
+      updateData.trainingExpiresAt = trainDate.value;
+    }
     if (notes !== undefined)           updateData.notes = notes || null;
     if (lastContactedAt !== undefined) updateData.lastContactedAt = lastContactedAt ? new Date(lastContactedAt) : null;
 

@@ -111,7 +111,7 @@ async function pruneAccount(accountId) {
   await prisma.equipmentPosition.deleteMany({ where: filter }).catch(() => {});
   await prisma.area.deleteMany({ where: filter }).catch(() => {});
   await prisma.building.deleteMany({ where: filter }).catch(() => {});
-  await prisma.arcFlashStudy.deleteMany({ where: filter }).catch(() => {});
+  await prisma.systemStudy.deleteMany({ where: filter }).catch(() => {});
   await prisma.blackoutWindow.deleteMany({ where: filter }).catch(() => {});
   await prisma.site.deleteMany({ where: filter }).catch(() => {});
 

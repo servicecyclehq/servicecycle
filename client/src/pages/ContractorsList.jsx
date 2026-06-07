@@ -15,6 +15,23 @@ import EmptyState from '../components/EmptyState';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
+function InHouseBadge() {
+  return (
+    <span
+      title="In-house maintenance crew"
+      style={{
+        display: 'inline-flex', alignItems: 'center',
+        padding: '2px 8px', borderRadius: 999, marginLeft: 8,
+        fontSize: 'var(--font-size-xs)', fontWeight: 600, whiteSpace: 'nowrap',
+        background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
+        border: '1px solid var(--color-border)',
+      }}
+    >
+      In-house
+    </span>
+  );
+}
+
 function NetaBadge() {
   return (
     <span
@@ -205,7 +222,10 @@ export default function ContractorsList() {
                         onClick={go} tabIndex={0} onKeyDown={kbdActivate(go)}
                       >
                         <td>
-                          <div style={{ fontWeight: 600 }}>{c.name}</div>
+                          <div style={{ fontWeight: 600 }}>
+                            {c.name}
+                            {c.isInternal && <InHouseBadge />}
+                          </div>
                           {(c.supportEmail || c.supportPhone) && (
                             <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
                               {[c.supportEmail, c.supportPhone].filter(Boolean).join(' · ')}

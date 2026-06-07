@@ -41,7 +41,7 @@ export default function NewAsset() {
 
   const [form, setForm] = useState({
     siteId: '', buildingId: '', areaId: '', positionId: '',
-    equipmentType: '',
+    equipmentType: '', ownerId: '',
     manufacturer: '', model: '', serialNumber: '',
     installDate: '', lastCommissionedDate: '',
     conditionPhysical: 'C2', conditionCriticality: 'C2', conditionEnvironment: 'C2',
@@ -54,6 +54,8 @@ export default function NewAsset() {
   // values ride along keyed by definitionId (the server's customFields shape).
   const [fieldDefs, setFieldDefs] = useState([]);
   const [customFields, setCustomFields] = useState({});
+  // Account members ({id, name}) for the optional owner picker.
+  const [members, setMembers] = useState([]);
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -64,6 +66,9 @@ export default function NewAsset() {
     api.get('/api/custom-fields')
       .then(r => setFieldDefs((r.data.data?.fields || []).filter(d => !d.archivedAt)))
       .catch(() => { /* non-fatal — the section simply doesn't render */ });
+    api.get('/api/bootstrap?limit=1')
+      .then(r => setMembers(r.data.data?.members || []))
+      .catch(() => { /* non-fatal — owner picker renders empty */ });
   }, []);
 
   // Cascade: fetching the hierarchy tree whenever the site changes, and
@@ -124,6 +129,7 @@ export default function NewAsset() {
         areaId:        form.areaId || null,
         positionId:    form.positionId || null,
         equipmentType: form.equipmentType,
+        ownerId:       form.ownerId || null,
         manufacturer:  form.manufacturer.trim() || null,
         model:         form.model.trim() || null,
         serialNumber:  form.serialNumber.trim() || null,
@@ -295,6 +301,19 @@ export default function NewAsset() {
                 <div className="form-group">
                   <label className="form-label">Last Commissioned</label>
                   <input type="date" className="form-control" aria-label="Last commissioned date" value={form.lastCommissionedDate} onChange={e => setF('lastCommissionedDate', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Owner</label>
+                  <select
+                    aria-label="Asset owner"
+                    className="form-control"
+                    value={form.ownerId}
+                    onChange={e => setF('ownerId', e.target.value)}
+                  >
+                    <option value="">— Unassigned —</option>
+                    {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                  <div className="form-hint">Owner receives every maintenance alert for this asset.</div>
                 </div>
               </div>
 

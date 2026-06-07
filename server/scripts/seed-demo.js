@@ -51,9 +51,15 @@
  *     switchgear IR scan)
  *   - 4 deficiencies: 1 IMMEDIATE open (C3 switchgear B-phase hot joint),
  *     2 RECOMMENDED open, 1 ADVISORY resolved
- *   - 1 DGA LabSample (IEEE C57.104 gases, mildly elevated C2H2 → YELLOW)
- *   - 1 ArcFlashStudy performed ~4.2 years ago (NFPA 70E 5-year clock →
- *     expiry-warning territory)
+ *   - 1 DGA LabSample (IEEE C57.104 gases incl. O2/N2, mildly elevated C2H2 →
+ *     YELLOW, ieeeStatus 2, Duval D1)
+ *   - 3 SystemStudies at Riverside: arc_flash ~4.2yr ago (5-year clock →
+ *     expiry-warning territory, IEEE 1584-2018 + PE provenance),
+ *     short_circuit ~3yr ago, one_line_review ~6mo ago
+ *   - 1 AuditVisit (insurance loss-control, "Granite Mutual", ~5mo ago,
+ *     passed_with_findings) with 2 AuditRecommendations (1 completed,
+ *     1 open due ~30d out, assigned to the manager)
+ *   - ~5 assets carry an owner (admin/manager) for owner-aware alert routing
  *   - 1 BlackoutWindow (planned outage window ~45 days out, 48h)
  *   - ONBOARDING_COMPLETE account setting + a few activity-log rows so the
  *     Activity page isn't empty on first load
@@ -168,7 +174,9 @@ async function _resetDemoAccount() {
   await prisma.equipmentPosition.deleteMany({ where: filter }).catch(() => {});
   await prisma.area.deleteMany({ where: filter }).catch(() => {});
   await prisma.building.deleteMany({ where: filter }).catch(() => {});
-  await prisma.arcFlashStudy.deleteMany({ where: filter }).catch(() => {});
+  await prisma.auditRecommendation.deleteMany({ where: filter }).catch(() => {});
+  await prisma.auditVisit.deleteMany({ where: filter }).catch(() => {});
+  await prisma.systemStudy.deleteMany({ where: filter }).catch(() => {});
   await prisma.blackoutWindow.deleteMany({ where: filter }).catch(() => {});
   await prisma.site.deleteMany({ where: filter });
 
@@ -286,6 +294,9 @@ async function _createAsset(db, accountId, spec) {
       buildingId:           spec.buildingId || null,
       areaId:               spec.areaId || null,
       positionId:           spec.positionId || null,
+      // Responsible person (drives owner-aware alert routing + the
+      // "equipment owner" answer auditors expect).
+      ownerId:              spec.ownerId || null,
       equipmentType:        spec.equipmentType,
       manufacturer:         spec.manufacturer || null,
       model:                spec.model || null,
@@ -423,14 +434,21 @@ async function _seedAccount() {
     notes: 'Primary NETA testing partner. Handles annual IR campaign and all substation outage testing.',
   } });
   const apexTechs = {};
+  // Qualification provenance (NFPA 70E 110.2(A)(1)): employer designation
+  // ~2 years ago, retraining clock ~1 year out (inside the ≤3yr interval).
+  // Rios carries thermographer Level II — the insurer minimum for signing
+  // IR reports — since she runs the annual IR campaign.
   for (const t of [
-    { key: 'rios',    name: 'Carmen Rios',    title: 'Field Technician',        level: 'LEVEL_II',  email: 'c.rios@apextesting-demo.local' },
+    { key: 'rios',    name: 'Carmen Rios',    title: 'Field Technician',        level: 'LEVEL_II',  email: 'c.rios@apextesting-demo.local', therm: 'II' },
     { key: 'okafor',  name: 'David Okafor',   title: 'Senior Test Technician',  level: 'LEVEL_III', email: 'd.okafor@apextesting-demo.local' },
     { key: 'lindgren', name: 'Sofia Lindgren', title: 'Principal Engineer',     level: 'LEVEL_IV',  email: 's.lindgren@apextesting-demo.local' },
   ]) {
     apexTechs[t.key] = await prisma.contractorTech.create({ data: {
       contractorId: apex.id, name: t.name, title: t.title,
       netaCertLevel: t.level, email: t.email,
+      qualifiedPersonDesignatedAt: addDays(now, -730),
+      trainingExpiresAt:           addDays(now, 365),
+      thermographerCertLevel:      t.therm || null,
     } });
   }
   const murphy = await prisma.contractor.create({ data: {
@@ -460,12 +478,14 @@ async function _seedAccount() {
     // — Riverside / Substation A —
     { key: 'T-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
       positionId: rsPos.PAD1.id, equipmentType: 'TRANSFORMER_LIQUID',
+      ownerId: manager.id, // owner-aware alert routing demo
       manufacturer: 'Kestrel Power Apparatus', model: 'KPA-2500S', serialNumber: 'KPA-97-18254',
       installDate: new Date('1997-06-12'),
       nameplateData: { kVA: 2500, primaryVoltage: '13.8 kV delta', secondaryVoltage: '480Y/277 V', impedancePercent: 5.75, oilType: 'mineral', gallons: 690 },
       notes: 'Main plant transformer. Gasket weeping noted at NW radiator flange (open deficiency).' },
     { key: 'T-2', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
       positionId: rsPos.PAD2.id, equipmentType: 'TRANSFORMER_LIQUID',
+      ownerId: manager.id,
       manufacturer: 'Kestrel Power Apparatus', model: 'KPA-1500S', serialNumber: 'KPA-14-90417',
       installDate: new Date('2014-03-28'),
       conditionPhysical: 'C1', // refurbished 2024 — physical axis upgraded; governing stays worst-of
@@ -473,6 +493,7 @@ async function _seedAccount() {
       notes: 'Re-gasketed and oil-processed during 2024 outage; physical condition assessed C1.' },
     { key: 'SWGR-1A-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
       positionId: rsPos.CUB1.id, equipmentType: 'SWITCHGEAR',
+      ownerId: admin.id,
       manufacturer: 'NorthStar Switchgear Co.', model: 'NS-MV15', serialNumber: 'NS-96-3311-1',
       installDate: new Date('1996-09-04'),
       nameplateData: { voltageClass: '15 kV', busRating: '1200 A', aic: '25 kA' } },
@@ -489,6 +510,7 @@ async function _seedAccount() {
     // — Riverside / Mezzanine MCC Room (the C3 environment story) —
     { key: 'SWGR-2M', siteId: riverside.id, buildingId: mainProduction.id, areaId: mezzanine.id,
       positionId: rsPos.SWGR2M.id, equipmentType: 'SWITCHGEAR',
+      ownerId: admin.id, // the C3 problem child routes its alerts to the admin owner too
       manufacturer: 'NorthStar Switchgear Co.', model: 'NS-LV600', serialNumber: 'NS-99-7702',
       installDate: new Date('1999-11-19'),
       conditionEnvironment: 'C3', // dusty mezzanine — governing condition C3
@@ -503,6 +525,7 @@ async function _seedAccount() {
     // — Riverside / Main Production (building-level, no area) —
     { key: 'GEN-1', siteId: riverside.id, buildingId: mainProduction.id,
       equipmentType: 'GENERATOR',
+      ownerId: manager.id,
       manufacturer: 'Calder Engine & Generator', model: 'CG-750D', serialNumber: 'CG-05-2210',
       installDate: new Date('2005-08-23'),
       nameplateData: { kw: 750, voltage: '480Y/277 V', rpm: 1800, fuelType: 'diesel', tankGallons: 1100 },
@@ -584,6 +607,17 @@ async function _seedAccount() {
     await _createSchedules(prisma, account.id, assets, defsByType, story);
 
   // ── Work orders ───────────────────────────────────────────────────────────
+  // Test-condition + instrument provenance for the COMPLETE jobs (NETA MTS
+  // §5.4.2 #4, §5.3): ambient readings + a calibrated DLRO and IR camera.
+  // Calibration dates computed relative to NOW so they stay inside the
+  // 12-months-of-test-date window on every reset.
+  const testEquipmentProvenance = [
+    { make: 'Veritas Instruments', model: 'VI-DLRO 200 micro-ohmmeter',
+      serial: 'VI-23-08841', calDate: addDays(now, -140).toISOString().slice(0, 10) },
+    { make: 'Thermoline Optics',   model: 'TX-640 thermal imager',
+      serial: 'TX-21-5527',  calDate: addDays(now, -95).toISOString().slice(0, 10) },
+  ];
+
   // WO #1 — COMPLETE, GREEN decal: T-2 insulation resistance + PI (Apex).
   const wo1 = await prisma.workOrder.create({ data: {
     accountId: account.id,
@@ -595,6 +629,8 @@ async function _seedAccount() {
     scheduledDate: addDays(now, -32), startedAt: addDays(now, -30), completedDate: addDays(now, -30),
     asFoundCondition: 'C1', asLeftCondition: 'C1',
     netaDecal: 'GREEN',
+    ambientTempC: 21.5, humidityPct: 41.0,
+    testEquipment: testEquipmentProvenance,
     notes: 'IR + PI on both windings well above IEEE minimums post-refurb. No findings.',
   } });
 
@@ -611,6 +647,8 @@ async function _seedAccount() {
     scheduledDate: addDays(now, -47), startedAt: addDays(now, -45), completedDate: addDays(now, -45),
     asFoundCondition: 'C2', asLeftCondition: 'C2',
     netaDecal: 'YELLOW',
+    ambientTempC: 17.5, humidityPct: 56.0,
+    testEquipment: testEquipmentProvenance,
     notes: 'C-phase bus IR trending low vs. 2024 baseline; cleaned and re-tested — improved but still below adjacent phases. Deficiency logged.',
   } });
   const wo2Measurements = [
@@ -703,19 +741,83 @@ async function _seedAccount() {
     sampleType: 'dga', sampleDate: addDays(now, -28),
     labName: 'Delta Insulating Fluids Laboratory',
     h2: 42, ch4: 36, c2h2: 2.8, c2h4: 24, c2h6: 19, co: 340, co2: 3100,
+    // O2/N2 ratio ≈ 0.03 — sealed-unit reference table applies.
+    o2: 1850, n2: 56400,
+    // IEEE C57.104-2019 status 2 (caution) + Duval D1 (low-energy discharge)
+    // matching the detectable-acetylene story below.
+    ieeeStatus: 2, faultCode: 'D1',
     resultRating: 'YELLOW',
     notes: 'C2H2 detectable at 2.8 ppm (was <0.5 ppm in prior sample) — possible low-energy discharge. Lab recommends resample in 90 days; other gases within IEEE C57.104 Condition 1 limits for transformer age.',
   } });
 
-  // ── Arc flash study — approaching the NFPA 70E 5-year clock ──────────────
+  // ── System studies — the documents loss-control auditors ask for by name ──
+  // Arc flash study approaching the NFPA 70E 5-year clock.
   const afPerformed = addDays(now, -Math.round(4.2 * 365)); // ~4.2 years ago
-  const arcFlash = await prisma.arcFlashStudy.create({ data: {
+  const arcFlash = await prisma.systemStudy.create({ data: {
     accountId: account.id, siteId: riverside.id,
+    studyType: 'arc_flash',
     performedDate: afPerformed,
     expiresAt: addMonths(afPerformed, 60),
     performedBy: 'Hawthorne Power Engineering, PLLC',
+    method: 'IEEE 1584-2018',
+    peName: 'S. Hawthorne, PE',
     trigger: 'scheduled',
     notes: 'Site-wide incident energy analysis incl. Substation A and mezzanine lineup. Re-study due inside 10 months — budget approval pending.',
+  } });
+
+  // Short-circuit study ~3 years ago — PE license on the report cover.
+  const scPerformed = addDays(now, -Math.round(3 * 365));
+  await prisma.systemStudy.create({ data: {
+    accountId: account.id, siteId: riverside.id,
+    studyType: 'short_circuit',
+    performedDate: scPerformed,
+    expiresAt: addMonths(scPerformed, 60),
+    performedBy: 'Hawthorne Power Engineering, PLLC',
+    method: 'ANSI/IEEE C37 series',
+    peName: 'S. Hawthorne, PE', peLicense: 'IA PE 21487',
+    trigger: 'scheduled',
+    notes: 'Available fault current verified at Substation A main, feeders, and mezzanine lineup; device duty within ratings throughout.',
+  } });
+
+  // One-line review ~6 months ago — drawings confirmed current after the
+  // compressor-room feeder addition (HSB: update drawings on every change).
+  const olrPerformed = addDays(now, -182);
+  await prisma.systemStudy.create({ data: {
+    accountId: account.id, siteId: riverside.id,
+    studyType: 'one_line_review',
+    performedDate: olrPerformed,
+    expiresAt: addMonths(olrPerformed, 60),
+    performedBy: 'Meridian Manufacturing — plant engineering',
+    trigger: 'system_change',
+    notes: 'One-line diagrams walked down and red-lined after the compressor-room feeder addition; CAD masters updated and posted at Substation A.',
+  } });
+
+  // ── Audit visit — insurance loss-control survey (~5 months ago) ──────────
+  const auditVisit = await prisma.auditVisit.create({ data: {
+    accountId: account.id, siteId: riverside.id,
+    auditType: 'insurance',
+    auditorName: 'P. Okonjo',
+    auditorOrg: 'Granite Mutual', // fictional carrier
+    scheduledDate: addDays(now, -158), performedDate: addDays(now, -150),
+    outcome: 'passed_with_findings',
+    notes: 'Annual loss-control survey. Maintenance program, testing records, and study currency reviewed; two recommendations issued (one since closed).',
+  } });
+  await prisma.auditRecommendation.create({ data: {
+    accountId: account.id, auditVisitId: auditVisit.id,
+    source: 'insurer', severity: 'recommendation',
+    description: 'Reprint and post current arc-flash labels on the mezzanine lineup — labels in place reference superseded study values.',
+    dueDate: addDays(now, -105),
+    status: 'completed',
+    responseNotes: 'Labels reprinted from the current incident-energy study and applied; photo evidence returned to the carrier.',
+    respondedAt: addDays(now, -130), completedAt: addDays(now, -118),
+  } });
+  await prisma.auditRecommendation.create({ data: {
+    accountId: account.id, auditVisitId: auditVisit.id,
+    source: 'insurer', severity: 'recommendation',
+    description: 'Document the written qualified-person designation for in-house staff performing routine switching and inspections (NFPA 70E 110.2).',
+    dueDate: addDays(now, 30),
+    status: 'open',
+    assignedToUserId: manager.id,
   } });
 
   // ── Blackout window — planned production shutdown ────────────────────────
@@ -755,7 +857,9 @@ async function _seedAccount() {
       assets: assetSpecs.length,
       schedules: scheduleCount,
       workOrders: 5, testMeasurements: wo2Measurements.length,
-      deficiencies: 4, labSamples: 1, arcFlashStudies: 1, blackoutWindows: 1,
+      deficiencies: 4, labSamples: 1, systemStudies: 3,
+      auditVisits: 1, auditRecommendations: 2,
+      assetsWithOwner: 5, blackoutWindows: 1,
       activityLogs: 3,
     },
     dashboardStory: {

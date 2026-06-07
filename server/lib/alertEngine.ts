@@ -26,6 +26,12 @@
  *    -90      regulatory_breach  admin + manager + consultant, PLUS an
  *                                ActivityLog row (audit trail requirement)
  *
+ * OWNER ROUTING: when the alerting asset has an ACTIVE owner (Asset.ownerId,
+ * the responsible person), the owner receives EVERY tier for that asset in
+ * addition to the role-matrix targets above. Per-user AlertPreference checks
+ * (emailEnabled / daysBeforeList) still apply to the owner like any other
+ * recipient; the admin fallback for tiers with no role match is unchanged.
+ *
  * Overdue tiers are encoded as NEGATIVE leadDays on the Alert row so the
  * (scheduleId, alertType, leadDays) dedup key stays uniform across all tiers.
  *
@@ -384,6 +390,10 @@ async function runAlertEngine({ accountId }: any = {}) {
             id: true, equipmentType: true, manufacturer: true, model: true,
             serialNumber: true, accountId: true,
             site: { select: { id: true, name: true } },
+            // Responsible person — owner-aware routing adds this user as a
+            // digest recipient for every tier on their assets. isActive rides
+            // along so a deactivated owner is skipped at routing time.
+            owner: { select: { id: true, email: true, name: true, role: true, isActive: true } },
           },
         },
         account: {
@@ -556,6 +566,15 @@ async function runAlertEngine({ accountId }: any = {}) {
           // booking window is never silently dropped.
           const effective = targets.length > 0 ? targets : users.filter(u => u.role === 'admin');
           for (const user of effective) addToRecipient(user, alertItem);
+          // Owner routing: the asset's responsible person ALWAYS receives the
+          // alert (every tier), in addition to the role-matrix targets.
+          // Deactivated owners are skipped; preference checks still apply via
+          // userWantsEmail inside addToRecipient. The id check prevents a
+          // double-push when the owner is already a role-matrix target.
+          const owner = alertItem.asset?.owner;
+          if (owner && owner.isActive && !effective.some(u => u.id === owner.id)) {
+            addToRecipient(owner, alertItem);
+          }
         }
 
         for (const { user, alertItems: userAlerts } of recipientDigests.values()) {

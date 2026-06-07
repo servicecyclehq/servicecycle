@@ -130,6 +130,12 @@ router.get('/:id', async (req, res) => {
           where:   { endsAt: { gte: new Date() } },
           orderBy: { startsAt: 'asc' },
         },
+        // Engineering studies for the site (SystemStudy — renamed from
+        // ArcFlashStudy; carries all four study types). Newest first; the
+        // supersededById scalar keeps the revision chain visible.
+        systemStudies: {
+          orderBy: { performedDate: 'desc' },
+        },
         _count: {
           select: { assets: { where: { archivedAt: null } } },
         },
@@ -599,6 +605,213 @@ router.delete('/positions/:id', requireManager, async (req, res) => {
     }
     console.error('Delete position error:', err);
     res.status(500).json({ success: false, error: 'Failed to delete position' });
+  }
+});
+
+// ═══ System Studies ═══════════════════════════════════════════════════════════
+// Site-level engineering studies (SystemStudy — renamed from ArcFlashStudy):
+//   arc_flash       — NFPA 70E 130.5 incident-energy analysis; review ≤5yr
+//   short_circuit   — fault-current study; ≤5yr or after system changes
+//   coordination    — protective device coordination study; same cadence
+//   one_line_review — dated confirmation the one-line reflects the system
+// PE provenance (peName/peLicense) is what loss-control auditors ask for.
+// supersededById chains revisions; a superseding study must live at the
+// SAME site (validated on write).
+
+const STUDY_TYPES = ['arc_flash', 'short_circuit', 'coordination', 'one_line_review'];
+
+// performedDate + 5 years — the NFPA 70E / insurer review clock. Used when
+// the caller doesn't supply an explicit expiresAt.
+function defaultStudyExpiry(performedDate) {
+  const d = new Date(performedDate);
+  d.setFullYear(d.getFullYear() + 5);
+  return d;
+}
+
+// ─── GET /api/sites/:siteId/studies ───────────────────────────────────────────
+// All study types for one site, newest performedDate first. The slim
+// supersededBy/supersedes includes make the revision chain renderable
+// without a second fetch.
+router.get('/:siteId/studies', async (req, res) => {
+  try {
+    const site = await prisma.site.findFirst({
+      where:  { id: req.params.siteId, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
+
+    const studies = await prisma.systemStudy.findMany({
+      where:   { siteId: site.id, accountId: req.user.accountId },
+      orderBy: { performedDate: 'desc' },
+      include: {
+        supersededBy: { select: { id: true, studyType: true, performedDate: true } },
+        supersedes:   { select: { id: true, studyType: true, performedDate: true } },
+      },
+    });
+
+    res.json({ success: true, data: { studies } });
+  } catch (err) {
+    console.error('List system studies error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch system studies' });
+  }
+});
+
+// ─── POST /api/sites/:siteId/studies ──────────────────────────────────────────
+// Body: { studyType?, performedDate, expiresAt?, performedBy?, method?,
+//         peName?, peLicense?, trigger?, reportPdfUrl?, notes?, supersededById? }
+// studyType defaults to 'arc_flash' (schema default); expiresAt defaults to
+// performedDate + 5 years when absent.
+router.post('/:siteId/studies', requireManager, async (req, res) => {
+  try {
+    const site = await prisma.site.findFirst({
+      where: { id: req.params.siteId, accountId: req.user.accountId },
+    });
+    if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
+
+    const {
+      studyType, performedDate, expiresAt, performedBy, method,
+      peName, peLicense, trigger, reportPdfUrl, notes, supersededById,
+    } = req.body;
+
+    const type = studyType || 'arc_flash';
+    if (!STUDY_TYPES.includes(type)) {
+      return res.status(400).json({ success: false, error: `studyType must be one of ${STUDY_TYPES.join(', ')}` });
+    }
+    if (!performedDate) {
+      return res.status(400).json({ success: false, error: 'performedDate is required' });
+    }
+    const performed = new Date(performedDate);
+    if (Number.isNaN(performed.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid performedDate' });
+    }
+    let expiry;
+    if (expiresAt) {
+      expiry = new Date(expiresAt);
+      if (Number.isNaN(expiry.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid expiresAt' });
+      }
+    } else {
+      expiry = defaultStudyExpiry(performed);
+    }
+
+    // The superseded study must exist at THIS site (and this account) —
+    // cross-site/cross-tenant chains are meaningless and leak existence.
+    if (supersededById) {
+      const prior = await prisma.systemStudy.findFirst({
+        where:  { id: supersededById, siteId: site.id, accountId: req.user.accountId },
+        select: { id: true },
+      });
+      if (!prior) {
+        return res.status(400).json({ success: false, error: 'supersededById must reference a study at this site' });
+      }
+    }
+
+    const study = await prisma.systemStudy.create({
+      data: {
+        accountId:      req.user.accountId,
+        siteId:         site.id,
+        studyType:      type,
+        performedDate:  performed,
+        expiresAt:      expiry,
+        performedBy:    performedBy || null,
+        method:         method || null,
+        peName:         peName || null,
+        peLicense:      peLicense || null,
+        trigger:        trigger || null,
+        reportPdfUrl:   reportPdfUrl || null,
+        notes:          notes || null,
+        supersededById: supersededById || null,
+      },
+    });
+
+    await logActivity(req.user.id, req.user.accountId, 'system_study_recorded', {
+      studyType: study.studyType,
+      siteId:    site.id,
+    });
+
+    res.status(201).json({ success: true, data: { study } });
+  } catch (err) {
+    console.error('Create system study error:', err);
+    res.status(500).json({ success: false, error: 'Failed to create system study' });
+  }
+});
+
+// ─── PUT /api/sites/studies/:id ───────────────────────────────────────────────
+// Partial update, same fields as create. Clearing expiresAt ('' / null)
+// recomputes the default 5-year clock from the effective performedDate.
+router.put('/studies/:id', requireManager, async (req, res) => {
+  try {
+    const existing = await prisma.systemStudy.findFirst({
+      where: { id: req.params.id, accountId: req.user.accountId },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Study not found' });
+
+    const {
+      studyType, performedDate, expiresAt, performedBy, method,
+      peName, peLicense, trigger, reportPdfUrl, notes, supersededById,
+    } = req.body;
+
+    const updateData: any = {};
+    if (studyType !== undefined) {
+      if (!STUDY_TYPES.includes(studyType)) {
+        return res.status(400).json({ success: false, error: `studyType must be one of ${STUDY_TYPES.join(', ')}` });
+      }
+      updateData.studyType = studyType;
+    }
+    if (performedDate !== undefined) {
+      if (!performedDate) {
+        return res.status(400).json({ success: false, error: 'performedDate cannot be cleared' });
+      }
+      const performed = new Date(performedDate);
+      if (Number.isNaN(performed.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid performedDate' });
+      }
+      updateData.performedDate = performed;
+    }
+    if (expiresAt !== undefined) {
+      if (expiresAt) {
+        const expiry = new Date(expiresAt);
+        if (Number.isNaN(expiry.getTime())) {
+          return res.status(400).json({ success: false, error: 'Invalid expiresAt' });
+        }
+        updateData.expiresAt = expiry;
+      } else {
+        // expiresAt is non-nullable — clearing re-derives the 5-year default.
+        updateData.expiresAt = defaultStudyExpiry(updateData.performedDate || existing.performedDate);
+      }
+    }
+    if (performedBy !== undefined)  updateData.performedBy = performedBy || null;
+    if (method !== undefined)       updateData.method = method || null;
+    if (peName !== undefined)       updateData.peName = peName || null;
+    if (peLicense !== undefined)    updateData.peLicense = peLicense || null;
+    if (trigger !== undefined)      updateData.trigger = trigger || null;
+    if (reportPdfUrl !== undefined) updateData.reportPdfUrl = reportPdfUrl || null;
+    if (notes !== undefined)        updateData.notes = notes || null;
+    if (supersededById !== undefined) {
+      if (supersededById) {
+        if (supersededById === existing.id) {
+          return res.status(400).json({ success: false, error: 'A study cannot supersede itself' });
+        }
+        const prior = await prisma.systemStudy.findFirst({
+          where:  { id: supersededById, siteId: existing.siteId, accountId: req.user.accountId },
+          select: { id: true },
+        });
+        if (!prior) {
+          return res.status(400).json({ success: false, error: 'supersededById must reference a study at this site' });
+        }
+      }
+      updateData.supersededById = supersededById || null;
+    }
+
+    const study = await prisma.systemStudy.update({
+      where: { id: existing.id },
+      data:  updateData,
+    });
+
+    res.json({ success: true, data: { study } });
+  } catch (err) {
+    console.error('Update system study error:', err);
+    res.status(500).json({ success: false, error: 'Failed to update system study' });
   }
 });
 

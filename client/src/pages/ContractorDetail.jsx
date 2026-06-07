@@ -23,8 +23,25 @@ const NETA_CERT_LEVELS = ['LEVEL_I', 'LEVEL_II', 'LEVEL_III', 'LEVEL_IV'];
 const CERT_LABELS = {
   LEVEL_I: 'Level I', LEVEL_II: 'Level II', LEVEL_III: 'Level III', LEVEL_IV: 'Level IV',
 };
+// ASNT/ISO 18436-7 thermographer certification levels — Level II minimum to
+// sign IR reports.
+const THERMO_LEVELS = ['I', 'II', 'III'];
 
-const EMPTY_TECH = { name: '', title: '', netaCertLevel: '', email: '', phone: '' };
+const EMPTY_TECH = {
+  name: '', title: '', netaCertLevel: '', email: '', phone: '',
+  qualifiedPersonDesignatedAt: '', trainingExpiresAt: '', thermographerCertLevel: '',
+};
+
+// Training-expiry urgency: red when past, amber within 90 days, muted otherwise.
+function trainingExpiryStyle(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const days = (dt - new Date()) / 86400000;
+  if (days < 0)  return { color: 'var(--color-danger, #dc2626)', fontWeight: 700 };
+  if (days < 90) return { color: '#d97706', fontWeight: 600 };
+  return null;
+}
 
 function metaOf(metaMap, key) {
   const m = metaMap?.[key];
@@ -55,9 +72,19 @@ function CertSelect({ value, onChange }) {
 }
 
 // ── Tech row: view + inline edit ─────────────────────────────────────────────
+// Tech → editable form values (date fields trimmed to YYYY-MM-DD for inputs).
+function techToForm(tech) {
+  return {
+    ...tech,
+    qualifiedPersonDesignatedAt: tech.qualifiedPersonDesignatedAt ? String(tech.qualifiedPersonDesignatedAt).slice(0, 10) : '',
+    trainingExpiresAt: tech.trainingExpiresAt ? String(tech.trainingExpiresAt).slice(0, 10) : '',
+    thermographerCertLevel: tech.thermographerCertLevel || '',
+  };
+}
+
 function TechRow({ tech, canWrite, onSave, onDelete }) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState(tech);
+  const [form, setForm] = useState(() => techToForm(tech));
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -67,6 +94,9 @@ function TechRow({ tech, canWrite, onSave, onDelete }) {
       name: form.name, title: form.title || null,
       netaCertLevel: form.netaCertLevel || null,
       email: form.email || null, phone: form.phone || null,
+      qualifiedPersonDesignatedAt: form.qualifiedPersonDesignatedAt || null,
+      trainingExpiresAt: form.trainingExpiresAt || null,
+      thermographerCertLevel: form.thermographerCertLevel || null,
     });
     setBusy(false);
     if (ok) setEditing(false);
@@ -78,16 +108,41 @@ function TechRow({ tech, canWrite, onSave, onDelete }) {
         <td><input className="form-control" value={form.name} onChange={set('name')} /></td>
         <td><input className="form-control" value={form.title || ''} onChange={set('title')} /></td>
         <td><CertSelect value={form.netaCertLevel} onChange={v => setForm(f => ({ ...f, netaCertLevel: v }))} /></td>
+        <td>
+          <input
+            type="date" className="form-control"
+            aria-label="Qualified person designation date"
+            value={form.qualifiedPersonDesignatedAt} onChange={set('qualifiedPersonDesignatedAt')}
+          />
+        </td>
+        <td>
+          <input
+            type="date" className="form-control"
+            aria-label="Training expires date" title="NFPA 70E retraining ≤3 years"
+            value={form.trainingExpiresAt} onChange={set('trainingExpiresAt')}
+          />
+        </td>
+        <td>
+          <select
+            className="form-control" aria-label="Thermographer cert level"
+            title="Level II minimum to sign IR reports"
+            value={form.thermographerCertLevel} onChange={set('thermographerCertLevel')}
+          >
+            <option value="">—</option>
+            {THERMO_LEVELS.map(l => <option key={l} value={l}>Level {l}</option>)}
+          </select>
+        </td>
         <td><input type="email" className="form-control" value={form.email || ''} onChange={set('email')} /></td>
         <td><input className="form-control" value={form.phone || ''} onChange={set('phone')} /></td>
         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
           <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={busy || !form.name?.trim()}>Save</button>{' '}
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setEditing(false); setForm(tech); }} disabled={busy}>Cancel</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setEditing(false); setForm(techToForm(tech)); }} disabled={busy}>Cancel</button>
         </td>
       </tr>
     );
   }
 
+  const expiryStyle = trainingExpiryStyle(tech.trainingExpiresAt);
   return (
     <tr>
       <td style={{ fontWeight: 600 }}>{tech.name}</td>
@@ -103,11 +158,25 @@ function TechRow({ tech, canWrite, onSave, onDelete }) {
           </span>
         ) : <span className="text-muted">—</span>}
       </td>
+      <td className="td-muted" title="Qualified-person designation date (NFPA 70E)">
+        {fmtDate(tech.qualifiedPersonDesignatedAt)}
+      </td>
+      <td title="NFPA 70E retraining ≤3 years">
+        <span style={expiryStyle || undefined} className={expiryStyle ? undefined : 'td-muted'}>
+          {fmtDate(tech.trainingExpiresAt)}
+          {expiryStyle && new Date(tech.trainingExpiresAt) < new Date() ? ' · expired' : ''}
+        </span>
+      </td>
+      <td title="Level II minimum to sign IR reports">
+        {tech.thermographerCertLevel
+          ? <span style={{ fontWeight: 600 }}>Level {tech.thermographerCertLevel}</span>
+          : <span className="text-muted">—</span>}
+      </td>
       <td className="td-muted">{tech.email || '—'}</td>
       <td className="td-muted">{tech.phone || '—'}</td>
       {canWrite && (
         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setForm(tech); setEditing(true); }}>Edit</button>{' '}
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setForm(techToForm(tech)); setEditing(true); }}>Edit</button>{' '}
           <button type="button" className="btn btn-secondary btn-sm" style={{ color: 'var(--color-danger)' }} onClick={() => onDelete(tech)}>Remove</button>
         </td>
       )}
@@ -157,6 +226,7 @@ export default function ContractorDetail() {
     setForm({
       name: contractor.name || '',
       netaAccredited: !!contractor.netaAccredited,
+      isInternal: !!contractor.isInternal,
       supportEmail: contractor.supportEmail || '',
       supportPhone: contractor.supportPhone || '',
       supportPortalUrl: contractor.supportPortalUrl || '',
@@ -191,6 +261,9 @@ export default function ContractorDetail() {
         netaCertLevel: techForm.netaCertLevel || null,
         email: techForm.email || null,
         phone: techForm.phone || null,
+        qualifiedPersonDesignatedAt: techForm.qualifiedPersonDesignatedAt || null,
+        trainingExpiresAt: techForm.trainingExpiresAt || null,
+        thermographerCertLevel: techForm.thermographerCertLevel || null,
       });
       setTechForm(EMPTY_TECH);
       setAddingTech(false);
@@ -265,6 +338,17 @@ export default function ContractorDetail() {
           </button>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {contractor.name}
+            {contractor.isInternal && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center',
+                padding: '2px 10px', borderRadius: 999,
+                fontSize: 'var(--font-size-xs)', fontWeight: 600,
+                background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
+                border: '1px solid var(--color-border)',
+              }}>
+                In-house
+              </span>
+            )}
             {contractor.netaAccredited && (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -322,6 +406,16 @@ export default function ContractorDetail() {
                   NETA accredited company
                 </label>
               </div>
+              <div style={{ marginTop: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--font-size-ui)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.isInternal}
+                    onChange={e => setForm(f => ({ ...f, isInternal: e.target.checked }))}
+                  />
+                  In-house maintenance crew
+                </label>
+              </div>
               <div style={{ marginTop: 12 }}>
                 <label style={label}>Notes</label>
                 <textarea className="form-control" rows={3} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
@@ -375,6 +469,24 @@ export default function ContractorDetail() {
                   <label style={label}>Phone</label>
                   <input className="form-control" value={techForm.phone} onChange={e => setTechForm(f => ({ ...f, phone: e.target.value }))} />
                 </div>
+                <div>
+                  <label style={label}>Qualified person since</label>
+                  <input type="date" className="form-control" value={techForm.qualifiedPersonDesignatedAt} onChange={e => setTechForm(f => ({ ...f, qualifiedPersonDesignatedAt: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={label}>Training expires</label>
+                  <input type="date" className="form-control" title="NFPA 70E retraining ≤3 years" value={techForm.trainingExpiresAt} onChange={e => setTechForm(f => ({ ...f, trainingExpiresAt: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={label}>Thermographer cert</label>
+                  <select className="form-control" value={techForm.thermographerCertLevel} onChange={e => setTechForm(f => ({ ...f, thermographerCertLevel: e.target.value }))}>
+                    <option value="">—</option>
+                    {THERMO_LEVELS.map(l => <option key={l} value={l}>Level {l}</option>)}
+                  </select>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                    Level II minimum to sign IR reports
+                  </div>
+                </div>
                 <button type="submit" className="btn btn-primary" disabled={techSaving || !techForm.name.trim()}>
                   {techSaving ? 'Adding…' : 'Add tech'}
                 </button>
@@ -394,6 +506,9 @@ export default function ContractorDetail() {
                     <th>Name</th>
                     <th>Title</th>
                     <th>NETA cert</th>
+                    <th title="Qualified-person designation date (NFPA 70E)">Qualified person</th>
+                    <th title="NFPA 70E retraining ≤3 years">Training expires</th>
+                    <th title="Level II minimum to sign IR reports">Thermographer</th>
                     <th>Email</th>
                     <th>Phone</th>
                     {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}

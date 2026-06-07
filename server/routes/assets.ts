@@ -65,6 +65,7 @@ const TRACKED_FIELDS: any = {
   buildingId:           'Building',
   areaId:               'Area',
   positionId:           'Position',
+  ownerId:              'Owner',
   equipmentType:        'Equipment Type',
   manufacturer:         'Manufacturer',
   model:                'Model',
@@ -97,6 +98,10 @@ const AssetWritableFields: any = {
   buildingId:           OptUuid,
   areaId:               OptUuid,
   positionId:           OptUuid,
+  // Responsible person for this asset (drives owner-aware alert routing).
+  // Must be an ACTIVE user on THIS account — validated in the handlers via
+  // resolveOwner. Null/'' clears the owner (asset falls back to role routing).
+  ownerId:              OptUuid,
   equipmentType:        z.enum(EQUIPMENT_TYPES as any).optional(),
   manufacturer:         ShortStr,
   model:                ShortStr,
@@ -240,13 +245,27 @@ async function writeCustomFieldValues(assetId, entries) {
   return changedNames;
 }
 
+// ─── Owner validation ─────────────────────────────────────────────────────────
+// Asset owner must be an ACTIVE user on THIS account. Unknown id, other-tenant
+// id, and deactivated user are deliberately the same error — don't confirm a
+// foreign user exists. Returns null on success, error string otherwise.
+async function resolveOwner(accountId, ownerId) {
+  const owner = await prisma.user.findFirst({
+    where:  { id: ownerId, accountId, isActive: true },
+    select: { id: true },
+  });
+  return owner ? null : 'Owner must be an active user on this account';
+}
+
 // Shared include shape for single-row responses (create/update return the
-// same hierarchy context the list and detail views need).
+// same hierarchy context the list and detail views need). owner is the
+// responsible-person User (detail view widens this with email).
 const ASSET_INCLUDE: any = {
   site:     { select: { id: true, name: true } },
   building: { select: { id: true, name: true } },
   area:     { select: { id: true, name: true } },
   position: { select: { id: true, name: true, code: true } },
+  owner:    { select: { id: true, name: true } },
 };
 
 // Decorate an asset row with nextDue = the soonest active-schedule due date.
@@ -404,6 +423,9 @@ router.get('/:id', async (req, res) => {
       where: { id: req.params.id, accountId: req.user.accountId },
       include: {
         ...ASSET_INCLUDE,
+        // Detail view widens the shared include with the owner's email so the
+        // page can render a mailto without a second fetch.
+        owner: { select: { id: true, name: true, email: true } },
         schedules: {
           orderBy: { nextDueDate: 'asc' },
           // standard {code, edition} rides along so the detail page can
@@ -471,7 +493,7 @@ router.post('/', requireManager, async (req, res) => {
 
   try {
     const {
-      siteId, buildingId, areaId, positionId,
+      siteId, buildingId, areaId, positionId, ownerId,
       equipmentType, manufacturer, model, serialNumber, nameplateData,
       installDate, lastCommissionedDate,
       conditionPhysical, conditionCriticality, conditionEnvironment,
@@ -497,6 +519,15 @@ router.post('/', requireManager, async (req, res) => {
       return res.status(400).json({ success: false, error: cf.error });
     }
 
+    // Owner must be an active same-account user.
+    const effOwnerId = ownerId || null;
+    if (effOwnerId) {
+      const ownerErr = await resolveOwner(req.user.accountId, effOwnerId);
+      if (ownerErr) {
+        return res.status(400).json({ success: false, error: ownerErr });
+      }
+    }
+
     // Default each unset axis to C2 (base interval) per NFPA 70B — an
     // unassessed asset is treated as "fair" until a qualified person rates it.
     const physical    = conditionPhysical    || 'C2';
@@ -510,6 +541,7 @@ router.post('/', requireManager, async (req, res) => {
         buildingId: buildingId || null,
         areaId:     areaId || null,
         positionId: positionId || null,
+        ownerId:    effOwnerId,
         equipmentType,
         manufacturer:  manufacturer || null,
         model:         model || null,
@@ -562,7 +594,7 @@ router.put('/:id', requireManager, async (req, res) => {
     }
 
     const {
-      siteId, buildingId, areaId, positionId,
+      siteId, buildingId, areaId, positionId, ownerId,
       equipmentType, manufacturer, model, serialNumber, nameplateData,
       installDate, lastCommissionedDate,
       conditionPhysical, conditionCriticality, conditionEnvironment,
@@ -606,6 +638,18 @@ router.put('/:id', requireManager, async (req, res) => {
     if (buildingId !== undefined) updateData.buildingId = effBuildingId;
     if (areaId !== undefined)     updateData.areaId = effAreaId;
     if (positionId !== undefined) updateData.positionId = effPositionId;
+    // Owner: '' / null clears; a non-null value must be an active
+    // same-account user.
+    if (ownerId !== undefined) {
+      const effOwnerId = ownerId || null;
+      if (effOwnerId) {
+        const ownerErr = await resolveOwner(req.user.accountId, effOwnerId);
+        if (ownerErr) {
+          return res.status(400).json({ success: false, error: ownerErr });
+        }
+      }
+      updateData.ownerId = effOwnerId;
+    }
     if (equipmentType !== undefined) updateData.equipmentType = equipmentType;
     if (manufacturer !== undefined)  updateData.manufacturer = manufacturer || null;
     if (model !== undefined)         updateData.model = model || null;

@@ -27,7 +27,8 @@ import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
-  CONDITION_META, WO_STATUS_META, SEVERITY_META, DECAL_META, assetLabel, fmtDate,
+  CONDITION_META, WO_STATUS_META, SEVERITY_META, DECAL_META, IEEE_STATUS_META,
+  assetLabel, fmtDate,
 } from '../lib/equipment';
 
 const CONDITIONS = ['C1', 'C2', 'C3'];
@@ -39,8 +40,19 @@ const CERT_LABELS = {
 };
 const GASES = [
   ['h2', 'H₂'], ['ch4', 'CH₄'], ['c2h2', 'C₂H₂'], ['c2h4', 'C₂H₄'],
-  ['c2h6', 'C₂H₆'], ['co', 'CO'], ['co2', 'CO₂'],
+  ['c2h6', 'C₂H₆'], ['co', 'CO'], ['co2', 'CO₂'], ['o2', 'O₂'], ['n2', 'N₂'],
 ];
+
+// NETA ATS/MTS repair-priority classes for individual test results.
+// 1 red, 2 amber, 3 slate-amber, 4 slate.
+const SEVERITY_PRIORITY_META = {
+  1: { label: '1 — Repair immediately',     short: 'P1', color: '#dc2626', bg: '#fef2f2' },
+  2: { label: '2 — Monitor',                short: 'P2', color: '#d97706', bg: '#fffbeb' },
+  3: { label: '3 — Repair as time permits', short: 'P3', color: '#a16207', bg: '#f1f5f9' },
+  4: { label: '4 — Possible deficiency',    short: 'P4', color: '#64748b', bg: '#f1f5f9' },
+};
+
+const EMPTY_INSTRUMENT = { make: '', model: '', serial: '', calDate: '' };
 
 function metaOf(metaMap, key) {
   const m = metaMap?.[key];
@@ -181,17 +193,23 @@ export default function WorkOrderDetail() {
   const [contractors, setContractors] = useState([]);
   const [techs, setTechs] = useState([]);
 
+  // Test conditions & instruments (saved via the existing PUT).
+  const [condForm, setCondForm] = useState({ ambientTempC: '', humidityPct: '', testEquipment: [] });
+  const [condSaving, setCondSaving] = useState(false);
+
   // Child-record add forms
   const [measForm, setMeasForm] = useState({
-    measurementType: '', phase: '', asFoundValue: '', asFoundUnit: '',
-    asLeftValue: '', asLeftUnit: '', passFail: '',
+    measurementType: '', phase: '', testVoltage: '', asFoundValue: '', asFoundUnit: '',
+    asLeftValue: '', asLeftUnit: '', expectedRange: '', loadPercent: '',
+    severityPriority: '', passFail: '',
   });
   const [measSaving, setMeasSaving] = useState(false);
   const [defForm, setDefForm] = useState({ severity: 'RECOMMENDED', description: '', correctiveAction: '' });
   const [defSaving, setDefSaving] = useState(false);
   const [labForm, setLabForm] = useState({
     sampleType: 'dga', sampleDate: todayStr(), labName: '', resultRating: '',
-    h2: '', ch4: '', c2h2: '', c2h4: '', c2h6: '', co: '', co2: '',
+    h2: '', ch4: '', c2h2: '', c2h4: '', c2h6: '', co: '', co2: '', o2: '', n2: '',
+    ieeeStatus: '', faultCode: '',
   });
   const [labSaving, setLabSaving] = useState(false);
 
@@ -207,6 +225,22 @@ export default function WorkOrderDetail() {
     setLoading(true);
     fetchWo().finally(() => setLoading(false));
   }, [fetchWo]);
+
+  // Re-seed the conditions form from the freshly fetched work order. Server
+  // may not return these fields yet (parallel build) — default defensively.
+  useEffect(() => {
+    if (!wo) return;
+    setCondForm({
+      ambientTempC: wo.ambientTempC ?? '',
+      humidityPct:  wo.humidityPct ?? '',
+      testEquipment: Array.isArray(wo.testEquipment)
+        ? wo.testEquipment.map(t => ({
+            make: t?.make || '', model: t?.model || '', serial: t?.serial || '',
+            calDate: t?.calDate ? String(t.calDate).slice(0, 10) : '',
+          }))
+        : [],
+    });
+  }, [wo]);
 
   // Contractor list only needed once the editor opens.
   useEffect(() => {
@@ -316,6 +350,37 @@ export default function WorkOrderDetail() {
     }
   }
 
+  // ── Test conditions & instruments ──────────────────────────────────────────
+  function setInstrument(idx, field, value) {
+    setCondForm(f => ({
+      ...f,
+      testEquipment: f.testEquipment.map((t, i) => i === idx ? { ...t, [field]: value } : t),
+    }));
+  }
+
+  async function saveConditions(e) {
+    e.preventDefault();
+    setCondSaving(true);
+    try {
+      await api.put(`/api/work-orders/${id}`, {
+        ambientTempC: condForm.ambientTempC === '' ? null : Number(condForm.ambientTempC),
+        humidityPct:  condForm.humidityPct === '' ? null : Number(condForm.humidityPct),
+        testEquipment: condForm.testEquipment
+          .filter(t => t.make.trim() || t.model.trim() || t.serial.trim() || t.calDate)
+          .map(t => ({
+            make: t.make.trim() || null, model: t.model.trim() || null,
+            serial: t.serial.trim() || null, calDate: t.calDate || null,
+          })),
+      });
+      await fetchWo();
+      setToast({ message: 'Test conditions saved.', variant: 'success', duration: 4000 });
+    } catch (err) {
+      apiError(err, 'Failed to save test conditions.');
+    } finally {
+      setCondSaving(false);
+    }
+  }
+
   // ── Child records ──────────────────────────────────────────────────────────
   async function addMeasurement(e) {
     e.preventDefault();
@@ -325,13 +390,21 @@ export default function WorkOrderDetail() {
       await api.post(`/api/work-orders/${id}/measurements`, {
         measurementType: measForm.measurementType.trim(),
         phase: measForm.phase || null,
+        testVoltage: measForm.testVoltage.trim() || null,
         asFoundValue: measForm.asFoundValue === '' ? null : measForm.asFoundValue,
         asFoundUnit: measForm.asFoundUnit || null,
         asLeftValue: measForm.asLeftValue === '' ? null : measForm.asLeftValue,
         asLeftUnit: measForm.asLeftUnit || null,
+        expectedRange: measForm.expectedRange.trim() || null,
+        loadPercent: measForm.loadPercent === '' ? null : Number(measForm.loadPercent),
+        severityPriority: measForm.severityPriority === '' ? null : Number(measForm.severityPriority),
         passFail: measForm.passFail || null,
       });
-      setMeasForm({ measurementType: '', phase: '', asFoundValue: '', asFoundUnit: '', asLeftValue: '', asLeftUnit: '', passFail: '' });
+      setMeasForm({
+        measurementType: '', phase: '', testVoltage: '', asFoundValue: '', asFoundUnit: '',
+        asLeftValue: '', asLeftUnit: '', expectedRange: '', loadPercent: '',
+        severityPriority: '', passFail: '',
+      });
       await fetchWo();
     } catch (err) {
       apiError(err, 'Failed to add measurement.');
@@ -402,11 +475,14 @@ export default function WorkOrderDetail() {
       };
       if (labForm.sampleType === 'dga') {
         for (const [k] of GASES) body[k] = labForm[k] === '' ? null : labForm[k];
+        body.ieeeStatus = labForm.ieeeStatus === '' ? null : Number(labForm.ieeeStatus);
+        body.faultCode = labForm.faultCode.trim() || null;
       }
       await api.post(`/api/work-orders/${id}/lab-samples`, body);
       setLabForm({
         sampleType: 'dga', sampleDate: todayStr(), labName: '', resultRating: '',
-        h2: '', ch4: '', c2h2: '', c2h4: '', c2h6: '', co: '', co2: '',
+        h2: '', ch4: '', c2h2: '', c2h4: '', c2h6: '', co: '', co2: '', o2: '', n2: '',
+        ieeeStatus: '', faultCode: '',
       });
       await fetchWo();
     } catch (err) {
@@ -638,6 +714,135 @@ export default function WorkOrderDetail() {
           )}
         </div>
 
+        {/* ── Test conditions & instruments ─────────────────────────────── */}
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header">
+            <div>
+              <div className="card-title">Test conditions &amp; instruments</div>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                Ambient conditions and the calibrated instruments used on this job
+              </div>
+            </div>
+          </div>
+
+          {canWrite && !isTerminal ? (
+            <form onSubmit={saveConditions} style={{ padding: '12px 20px' }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div>
+                  <label style={labelStyle}>Ambient temp (°C)</label>
+                  <input
+                    type="number" step="any" className="form-control" style={{ maxWidth: 130 }}
+                    value={condForm.ambientTempC}
+                    onChange={e => setCondForm(f => ({ ...f, ambientTempC: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Humidity (%)</label>
+                  <input
+                    type="number" step="any" min="0" max="100" className="form-control" style={{ maxWidth: 130 }}
+                    value={condForm.humidityPct}
+                    onChange={e => setCondForm(f => ({ ...f, humidityPct: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 14 }}>
+                <label style={labelStyle}>Test instruments</label>
+                {condForm.testEquipment.length === 0 && (
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginBottom: 6 }}>
+                    No instruments recorded yet.
+                  </div>
+                )}
+                {condForm.testEquipment.map((t, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 8 }}>
+                    <input
+                      className="form-control" style={{ maxWidth: 160 }} placeholder="Make"
+                      aria-label={`Instrument ${idx + 1} make`}
+                      value={t.make} onChange={e => setInstrument(idx, 'make', e.target.value)}
+                    />
+                    <input
+                      className="form-control" style={{ maxWidth: 160 }} placeholder="Model"
+                      aria-label={`Instrument ${idx + 1} model`}
+                      value={t.model} onChange={e => setInstrument(idx, 'model', e.target.value)}
+                    />
+                    <input
+                      className="form-control" style={{ maxWidth: 150 }} placeholder="Serial"
+                      aria-label={`Instrument ${idx + 1} serial`}
+                      value={t.serial} onChange={e => setInstrument(idx, 'serial', e.target.value)}
+                    />
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: 'var(--font-size-xs)', marginBottom: 2 }}>Calibration date</label>
+                      <input
+                        type="date" className="form-control"
+                        aria-label={`Instrument ${idx + 1} calibration date`}
+                        value={t.calDate} onChange={e => setInstrument(idx, 'calDate', e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="button" className="btn btn-secondary btn-sm" style={{ color: 'var(--color-danger)' }}
+                      aria-label={`Remove instrument ${idx + 1}`}
+                      onClick={() => setCondForm(f => ({ ...f, testEquipment: f.testEquipment.filter((_, i) => i !== idx) }))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button" className="btn btn-secondary btn-sm"
+                  onClick={() => setCondForm(f => ({ ...f, testEquipment: [...f.testEquipment, { ...EMPTY_INSTRUMENT }] }))}
+                >
+                  + Add instrument
+                </button>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>
+                  NETA requires instruments calibrated within 12 months, NIST-traceable.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button type="submit" className="btn btn-primary" disabled={condSaving}>
+                  {condSaving ? 'Saving…' : 'Save conditions'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div style={{ padding: '12px 20px' }}>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 'var(--font-size-ui)' }}>
+                <span>
+                  <span style={{ fontWeight: 600 }}>Ambient temp:</span>{' '}
+                  {wo.ambientTempC != null ? `${wo.ambientTempC} °C` : <span className="text-muted">—</span>}
+                </span>
+                <span>
+                  <span style={{ fontWeight: 600 }}>Humidity:</span>{' '}
+                  {wo.humidityPct != null ? `${wo.humidityPct}%` : <span className="text-muted">—</span>}
+                </span>
+              </div>
+              {Array.isArray(wo.testEquipment) && wo.testEquipment.length > 0 ? (
+                <div className="table-wrap" style={{ marginTop: 10 }}>
+                  <table>
+                    <thead>
+                      <tr><th>Make</th><th>Model</th><th>Serial</th><th>Calibration date</th></tr>
+                    </thead>
+                    <tbody>
+                      {wo.testEquipment.map((t, idx) => (
+                        <tr key={idx}>
+                          <td>{t?.make || '—'}</td>
+                          <td>{t?.model || '—'}</td>
+                          <td className="td-muted">{t?.serial || '—'}</td>
+                          <td>{fmtDate(t?.calDate)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>
+                  No test instruments recorded.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* ── Test measurements ──────────────────────────────────────────── */}
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-header">
@@ -660,8 +865,12 @@ export default function WorkOrderDetail() {
                   <tr>
                     <th>Type</th>
                     <th>Phase</th>
+                    <th>Test voltage</th>
                     <th style={{ textAlign: 'right' }}>As found</th>
                     <th style={{ textAlign: 'right' }}>As left</th>
+                    <th>Expected range</th>
+                    <th style={{ textAlign: 'right' }}>Load %</th>
+                    <th>Priority</th>
                     <th>Pass/fail</th>
                     {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}
                   </tr>
@@ -671,11 +880,26 @@ export default function WorkOrderDetail() {
                     <tr key={m.id}>
                       <td style={{ fontWeight: 600 }}>{m.measurementType}</td>
                       <td className="td-muted">{m.phase || '—'}</td>
+                      <td className="td-muted">{m.testVoltage || '—'}</td>
                       <td style={{ textAlign: 'right' }}>
                         {m.asFoundValue != null ? `${m.asFoundValue}${m.asFoundUnit ? ` ${m.asFoundUnit}` : ''}` : '—'}
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         {m.asLeftValue != null ? `${m.asLeftValue}${m.asLeftUnit ? ` ${m.asLeftUnit}` : ''}` : '—'}
+                      </td>
+                      <td className="td-muted">{m.expectedRange || '—'}</td>
+                      <td style={{ textAlign: 'right' }} className="td-muted">
+                        {m.loadPercent != null ? `${m.loadPercent}%` : '—'}
+                      </td>
+                      <td>
+                        {SEVERITY_PRIORITY_META[m.severityPriority] ? (
+                          <span title={SEVERITY_PRIORITY_META[m.severityPriority].label}>
+                            <Chip meta={{
+                              ...SEVERITY_PRIORITY_META[m.severityPriority],
+                              label: SEVERITY_PRIORITY_META[m.severityPriority].short,
+                            }} />
+                          </span>
+                        ) : <span className="text-muted">—</span>}
                       </td>
                       <td>
                         {m.passFail
@@ -708,6 +932,10 @@ export default function WorkOrderDetail() {
                   <input className="form-control" style={{ maxWidth: 90 }} placeholder="A-B" value={measForm.phase} onChange={e => setMeasForm(f => ({ ...f, phase: e.target.value }))} />
                 </div>
                 <div>
+                  <label style={labelStyle}>Test voltage</label>
+                  <input className="form-control" style={{ maxWidth: 120 }} placeholder="e.g. 1000 VDC" value={measForm.testVoltage} onChange={e => setMeasForm(f => ({ ...f, testVoltage: e.target.value }))} />
+                </div>
+                <div>
                   <label style={labelStyle}>As found</label>
                   <input type="number" step="any" className="form-control" style={{ maxWidth: 110 }} value={measForm.asFoundValue} onChange={e => setMeasForm(f => ({ ...f, asFoundValue: e.target.value }))} />
                 </div>
@@ -722,6 +950,21 @@ export default function WorkOrderDetail() {
                 <div>
                   <label style={labelStyle}>Unit</label>
                   <input className="form-control" style={{ maxWidth: 80 }} placeholder="MΩ" value={measForm.asLeftUnit} onChange={e => setMeasForm(f => ({ ...f, asLeftUnit: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Expected range</label>
+                  <input className="form-control" style={{ maxWidth: 130 }} placeholder="e.g. >100 MΩ" value={measForm.expectedRange} onChange={e => setMeasForm(f => ({ ...f, expectedRange: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Load %</label>
+                  <input type="number" step="any" min="0" max="100" className="form-control" style={{ maxWidth: 90 }} value={measForm.loadPercent} onChange={e => setMeasForm(f => ({ ...f, loadPercent: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Priority</label>
+                  <select className="form-control" value={measForm.severityPriority} onChange={e => setMeasForm(f => ({ ...f, severityPriority: e.target.value }))}>
+                    <option value="">—</option>
+                    {[1, 2, 3, 4].map(p => <option key={p} value={p}>{SEVERITY_PRIORITY_META[p].label}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label style={labelStyle}>Pass/fail</label>
@@ -834,6 +1077,7 @@ export default function WorkOrderDetail() {
                     <th style={{ textAlign: 'right' }}>Sample date</th>
                     <th>Lab</th>
                     <th>Gases (ppm)</th>
+                    <th>IEEE status</th>
                     <th>Rating</th>
                   </tr>
                 </thead>
@@ -845,6 +1089,18 @@ export default function WorkOrderDetail() {
                       <td className="td-muted">{ls.labName || '—'}</td>
                       <td style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
                         {GASES.filter(([k]) => ls[k] != null).map(([k, lbl]) => `${lbl} ${ls[k]}`).join(' · ') || '—'}
+                      </td>
+                      <td>
+                        {IEEE_STATUS_META[ls.ieeeStatus] ? (
+                          <span title="IEEE C57.104 DGA condition status">
+                            <Chip meta={IEEE_STATUS_META[ls.ieeeStatus]} />
+                          </span>
+                        ) : <span className="text-muted">—</span>}
+                        {ls.faultCode && (
+                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                            Fault: {ls.faultCode}
+                          </div>
+                        )}
                       </td>
                       <td>
                         {ls.resultRating
@@ -886,19 +1142,41 @@ export default function WorkOrderDetail() {
                 </div>
               </div>
               {labForm.sampleType === 'dga' && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                  {GASES.map(([k, lbl]) => (
-                    <div key={k}>
-                      <label style={{ ...labelStyle, fontSize: 'var(--font-size-xs)' }}>{lbl} (ppm)</label>
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                    {GASES.map(([k, lbl]) => (
+                      <div key={k}>
+                        <label style={{ ...labelStyle, fontSize: 'var(--font-size-xs)' }}>{lbl} (ppm)</label>
+                        <input
+                          type="number" step="any" min="0"
+                          className="form-control" style={{ maxWidth: 90 }}
+                          value={labForm[k]}
+                          onChange={e => setLabForm(f => ({ ...f, [k]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 10 }}>
+                    <div>
+                      <label style={labelStyle}>IEEE C57.104 status</label>
+                      <select className="form-control" value={labForm.ieeeStatus} onChange={e => setLabForm(f => ({ ...f, ieeeStatus: e.target.value }))}>
+                        <option value="">—</option>
+                        {[1, 2, 3].map(s => (
+                          <option key={s} value={s}>{s} — {IEEE_STATUS_META[s].label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Fault code</label>
                       <input
-                        type="number" step="any" min="0"
-                        className="form-control" style={{ maxWidth: 90 }}
-                        value={labForm[k]}
-                        onChange={e => setLabForm(f => ({ ...f, [k]: e.target.value }))}
+                        className="form-control" style={{ maxWidth: 140 }}
+                        placeholder="e.g. T2, D1, PD"
+                        value={labForm.faultCode}
+                        onChange={e => setLabForm(f => ({ ...f, faultCode: e.target.value }))}
                       />
                     </div>
-                  ))}
-                </div>
+                  </div>
+                </>
               )}
               <div style={{ marginTop: 10 }}>
                 <button type="submit" className="btn btn-primary" disabled={labSaving}>
