@@ -113,7 +113,7 @@ export default function Login() {
             {/* Public routes always render light (theme-bootstrap UX-THEME-001),
                 so the onLight variant is correct here. */}
             <BrandMark size={40} variant="light" />
-            <span className="login-logo-name">servicecycle</span>
+            <span className="login-logo-name">Service<span style={{ color: '#65a30d' }}>C</span>ycle</span>
           </div>
           <div className="login-logo-tagline">Renewal management</div>
         </div>

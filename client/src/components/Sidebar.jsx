@@ -537,7 +537,7 @@ export default function Sidebar() {
       <div className="sidebar-logo" style={{ textAlign: 'center' }}>
         <div className="sidebar-logo-mark" style={{ justifyContent: 'center' }}>
           <BrandMark size={26} variant="dark" />
-          <span className="sidebar-logo-text">servicecycle</span>
+          <span className="sidebar-logo-text">Service<span style={{ color: '#a3e635' }}>C</span>ycle</span>
         </div>
         <div className="sidebar-logo-sub">{user?.account?.companyName || localStorage.getItem('servicecycle_company') || 'Maintenance Compliance'}</div>
       </div>

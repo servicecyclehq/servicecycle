@@ -97,7 +97,7 @@ export default function Register() {
           <div className="login-logo">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
               <BrandMark size={40} variant="light" />
-              <span className="login-logo-name">servicecycle</span>
+              <span className="login-logo-name">Service<span style={{ color: '#65a30d' }}>C</span>ycle</span>
             </div>
             <div className="login-logo-tagline">
               {demoMode ? 'Demo sandbox' : 'Self-host'}
@@ -136,7 +136,7 @@ export default function Register() {
           <div className="login-logo">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
               <BrandMark size={40} variant="light" />
-              <span className="login-logo-name">servicecycle</span>
+              <span className="login-logo-name">Service<span style={{ color: '#65a30d' }}>C</span>ycle</span>
             </div>
             <div className="login-logo-tagline">Renewal management</div>
           </div>
@@ -195,7 +195,7 @@ export default function Register() {
         <div className="login-logo">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
             <BrandMark size={40} variant="light" />
-            <span className="login-logo-name">servicecycle</span>
+            <span className="login-logo-name">Service<span style={{ color: '#65a30d' }}>C</span>ycle</span>
           </div>
           <div className="login-logo-tagline">
             {demoMode ? 'Demo sandbox' : 'Self-host'}

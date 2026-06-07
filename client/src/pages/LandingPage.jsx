@@ -307,7 +307,7 @@ export default function LandingPage() {
         <div style={s.navInner}>
           <div style={s.logo}>
             <BrandMark size={26} variant="light" />
-            <span style={s.logoText}>servicecycle</span>
+            <span style={s.logoText}>Service<span style={{ color: '#65a30d' }}>C</span>ycle</span>
           </div>
           <nav style={s.navLinks}>
             <a href="#features" style={s.navLink}>Features</a>
@@ -501,7 +501,7 @@ export default function LandingPage() {
         <div style={s.footerInner}>
           <div style={s.footerLogo}>
             <BrandMark size={26} variant="dark" />
-            <span style={{ ...s.logoText, color: '#9aa3b2' }}>servicecycle</span>
+            <span style={{ ...s.logoText, color: '#e2e8f0' }}>Service<span style={{ color: '#a3e635' }}>C</span>ycle</span>
           </div>
           <div style={s.footerLinks}>
             <Link to="/login" style={s.footerLink}>Sign in</Link>

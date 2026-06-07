@@ -41,7 +41,7 @@ export default function FieldLayout() {
         >
           <BrandMark size={20} variant="dark" />
           <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--color-text)', letterSpacing: '-0.01em' }}>
-            servicecycle
+            Service<span style={{ color: '#a3e635' }}>C</span>ycle
           </span>
           <span
             style={{

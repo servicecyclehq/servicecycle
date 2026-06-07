@@ -33,6 +33,36 @@ const COLORS = {
   },
 };
 
+// ── Wordmark (Mod A, Dustin 2026-06-07) ──────────────────────────────────────
+// "Service" + "ycle" in solid ink; ONLY the "C" carries the brand green
+// (echoes the arc's lime endpoint). No gradients in the name — solid ink
+// survives grayscale printers, which matters because this wordmark lands on
+// compliance PDFs handed to auditors. Ink flips near-white on dark, the
+// green stays green.
+const WORDMARK_COLORS = {
+  dark:  { ink: '#f8fafc', c: '#a3e635' },
+  light: { ink: '#111827', c: '#65a30d' },
+};
+
+export function BrandWordmark({ variant = 'dark', fontSize, style }) {
+  const v = variant === 'light' ? 'light' : 'dark';
+  const w = WORDMARK_COLORS[v];
+  return (
+    <span
+      style={{
+        fontWeight: 750,
+        letterSpacing: '-0.03em',
+        whiteSpace: 'nowrap',
+        color: w.ink,
+        ...(fontSize ? { fontSize } : {}),
+        ...(style || {}),
+      }}
+    >
+      Service<span style={{ color: w.c }}>C</span>ycle
+    </span>
+  );
+}
+
 export default function BrandMark({ size = 24, variant = 'dark' }) {
   const v = variant === 'light' ? 'light' : 'dark';
   const c = COLORS[v];
