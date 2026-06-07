@@ -184,6 +184,7 @@ async function _resetDemoAccount() {
   await prisma.auditVisit.deleteMany({ where: filter }).catch(() => {});
   await prisma.systemStudy.deleteMany({ where: filter }).catch(() => {});
   await prisma.blackoutWindow.deleteMany({ where: filter }).catch(() => {});
+  await prisma.quoteRequest.deleteMany({ where: filter }).catch(() => {});
   await prisma.site.deleteMany({ where: filter });
 
   // ── Contractors ───────────────────────────────────────────────────────────
@@ -346,6 +347,12 @@ async function _seedAccount() {
       aiBriefEnabled: true,
       fteCount:     380,
       lastActiveAt: now,
+      // Service rep contact — shown in Settings and used by the Quote Request
+      // feature to pre-fill who to call. PENDING BROTHER VALIDATION: replace
+      // with real rep name/contact before first live demo.
+      serviceRepName:  'Jordan Rivera',
+      serviceRepEmail: 'jrivera@example-electrical.com',
+      serviceRepPhone: '(555) 400-7890',
     },
   });
 
@@ -900,6 +907,69 @@ async function _seedAccount() {
     reason: 'Annual Thanksgiving production shutdown',
   } });
 
+  // ── Quote Requests — demo data for the Quote Request feature ────────────────
+  // Demonstrates the full lifecycle: one requested, one quoted, one accepted,
+  // one declined. Driver variety shows both normal and emergency flows.
+  // PENDING BROTHER VALIDATION: dossier snapshots are intentionally minimal
+  // here (real snapshots built live by the server on POST /api/quote-requests).
+  const dossierSnapshotT1 = {
+    assetId: assets['T-1'].id, name: 'T-1 Main Transformer',
+    equipmentType: 'TRANSFORMER_LIQUID', ageYears: 16, criticality: 5,
+    openDeficiencies: [{ severity: 'RECOMMENDED', description: 'Elevated DGA dissolved-gas levels trending upward' }],
+    overdueTaskCount: 2,
+    snapshotAt: now.toISOString(),
+  };
+  const dossierSnapshotGen1 = {
+    assetId: assets['GEN-1'].id, name: 'GEN-1 Emergency Generator',
+    equipmentType: 'GENERATOR', ageYears: 8, criticality: 5,
+    openDeficiencies: [],
+    overdueTaskCount: 0,
+    snapshotAt: now.toISOString(),
+  };
+
+  const qr1 = await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['T-1'].id, requestedById: manager.id,
+    status: 'quoted', driver: 'suspected_failing', timeline: 'within_1_week',
+    outageAvailable: true, outageWindow: 'Weekend of July 12th',
+    budgeted: false, budgetNotes: 'Need a number for Q3 capital request',
+    attachmentNotes: 'DGA trend report from oil lab (emailed separately)',
+    emergencyMode: false, dossierSnapshot: dossierSnapshotT1,
+    quotedAt: addDays(now, -3),
+    quoteNotes: 'Quote for full power transformer testing + oil sampling: $4,200. Includes DGA, power factor, and turns ratio. Available July 12-13.',
+  } });
+
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['T-1'].id, requestedById: admin.id,
+    status: 'accepted', driver: 'failed_inspection', timeline: 'within_30_days',
+    outageAvailable: true, outageWindow: 'Any weekday after 6pm',
+    budgeted: true,
+    emergencyMode: false, dossierSnapshot: dossierSnapshotT1,
+    quotedAt: addDays(now, -60), respondedAt: addDays(now, -55),
+    quoteNotes: 'Infrared thermography + partial discharge survey: $1,800.',
+    createdAt: addDays(now, -65),
+  } });
+
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['GEN-1'].id, requestedById: manager.id,
+    status: 'requested', driver: 'budgetary', timeline: 'next_budget_cycle',
+    outageAvailable: false,
+    budgeted: false, budgetNotes: 'FY2027 budget planning — need rough estimate for annual generator NETA test',
+    emergencyMode: false, dossierSnapshot: dossierSnapshotGen1,
+  } });
+
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['SWGR-2M'].id, requestedById: admin.id,
+    status: 'declined', driver: 'planned_replacement', timeline: 'next_budget_cycle',
+    outageAvailable: true,
+    budgeted: false,
+    emergencyMode: false,
+    dossierSnapshot: { assetId: assets['SWGR-2M'].id, name: 'SWGR-2M Mezzanine Switchgear', snapshotAt: now.toISOString() },
+    quotedAt: addDays(now, -90), respondedAt: addDays(now, -85),
+    quoteNotes: 'Quote sent for switchgear replacement: $180,000.',
+    declineReason: 'Capital project deferred to FY2027. Will re-request closer to budget approval.',
+    createdAt: addDays(now, -95),
+  } });
+
   // ── Activity log — so the Activity page isn't empty on first load ─────────
   await writeActivityLog({
     assetId: assets['T-1'].id, userId: admin.id, accountId: account.id,
@@ -930,7 +1000,7 @@ async function _seedAccount() {
       workOrders: 5, testMeasurements: wo2Measurements.length,
       deficiencies: 4, labSamples: 1, systemStudies: 3,
       auditVisits: 1, auditRecommendations: 2,
-      assetsWithOwner: 6, blackoutWindows: 1,
+      assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4,
       activityLogs: 3,
     },
     dashboardStory: {

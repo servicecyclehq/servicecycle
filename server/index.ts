@@ -212,8 +212,10 @@ const aiUsageRoutes             = require('./routes/aiUsage');      // v0.32.4: 
 // v0.20.0: Public REST API — versioned read-only routes (API key auth)
 const v1AssetRoutes      = require('./routes/v1/assets');
 const v1ContractorRoutes = require('./routes/v1/contractors');
-const apiKeyRoutes      = require('./routes/apiKeys');
-const webhookRoutes     = require('./routes/webhooks');
+const apiKeyRoutes        = require('./routes/apiKeys');
+const webhookRoutes       = require('./routes/webhooks');
+const quoteRequestRoutes  = require('./routes/quoteRequests');
+const outagePlanRoutes    = require('./routes/outagePlan');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
 const { requestId }                      = require('./middleware/requestId'); // v0.37.1 W5 MT-129
 const openapiRoute                       = require('./routes/openapi');        // v0.37.1 W5 MT-128
@@ -816,6 +818,8 @@ const exportLimiter = rateLimit({
   [aiUsageRoutes,          '/api/ai/usage'],
   [apiKeyRoutes,           '/api/settings/api-keys'],
   [webhookRoutes,          '/api/webhooks'],
+  [quoteRequestRoutes,     '/api/quote-requests'],
+  [outagePlanRoutes,       '/api/assets/:assetId/outage-plan'],
   [v1AssetRoutes,          '/api/v1/assets'],
   [v1ContractorRoutes,     '/api/v1/contractors'],
 ].forEach(([r, base]) => { try { installValidation(r, base); } catch (e) { console.error('[validation] install failed for', base, e && e.message); } });
@@ -1210,6 +1214,12 @@ app.use('/api/settings/api-keys', authenticateToken, apiKeyRoutes);
 
 // ── v0.24.0: Generic outbound webhooks — admin only ───────────────────────────
 app.use('/api/webhooks', authenticateToken, webhookRoutes);
+
+// ── Quote Request — per-asset service quote lifecycle ────────────────────────
+app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
+
+// ── Outage Consolidation Planner — clustered task scheduling ─────────────────
+app.use('/api/assets/:assetId/outage-plan', authenticateToken, outagePlanRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {

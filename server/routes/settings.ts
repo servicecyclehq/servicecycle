@@ -965,6 +965,43 @@ router.post('/encryption/disable', requireAdmin, async (req, res) => {
   }
 });
 
+// ── GET /api/settings/service-rep ─────────────────────────────────────────
+// Returns the per-account service representative contact info.
+// Used by the Quote Request feature to pre-fill who to contact.
+router.get('/service-rep', requireAdmin, async (req, res) => {
+  try {
+    const account = await prisma.account.findUnique({
+      where:  { id: req.user.accountId },
+      select: { serviceRepName: true, serviceRepEmail: true, serviceRepPhone: true },
+    });
+    return res.json({ success: true, data: account ?? {} });
+  } catch (err) {
+    console.error('[settings/service-rep GET]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load service rep' });
+  }
+});
+
+// ── PUT /api/settings/service-rep ─────────────────────────────────────────
+// Updates the per-account service rep contact.  Admin only.
+router.put('/service-rep', requireAdmin, async (req, res) => {
+  try {
+    const { serviceRepName, serviceRepEmail, serviceRepPhone } = req.body;
+    const updated = await prisma.account.update({
+      where: { id: req.user.accountId },
+      data: {
+        serviceRepName:  serviceRepName  != null ? String(serviceRepName)  : null,
+        serviceRepEmail: serviceRepEmail != null ? String(serviceRepEmail) : null,
+        serviceRepPhone: serviceRepPhone != null ? String(serviceRepPhone) : null,
+      },
+      select: { serviceRepName: true, serviceRepEmail: true, serviceRepPhone: true },
+    });
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('[settings/service-rep PUT]', err);
+    return res.status(500).json({ success: false, error: 'Failed to update service rep' });
+  }
+});
+
 module.exports = router;
 
 export {};

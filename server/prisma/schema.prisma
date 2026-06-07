@@ -9,6 +9,34 @@ datasource db {
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
+// Quote Request: why the customer is asking for a quote.
+// PENDING BROTHER VALIDATION — these 5 options are our best guess for the
+// electrical-maintenance service context; validate with real customer discovery.
+enum QuoteDriver {
+  down_now          // Asset is down right now — triggers EMERGENCY mode
+  suspected_failing // Intermittent issues / early warning signs
+  failed_inspection // Failed NETA/NFPA inspection or audit finding
+  planned_replacement // Scheduled capital replacement project
+  budgetary         // Just gathering numbers for future budget cycle
+}
+
+// Quote Request: customer's target timeline to proceed.
+// PENDING BROTHER VALIDATION — adjust wording to match how your reps quote these.
+enum QuoteTimeline {
+  immediately       // ASAP (pairs with down_now driver)
+  within_1_week     // Need action within 7 days
+  within_30_days    // Need to schedule within the month
+  next_budget_cycle // Planning, no immediate urgency
+}
+
+// Quote Request: current status in the service rep workflow.
+enum QuoteRequestStatus {
+  requested  // Customer submitted; rep has not yet responded
+  quoted     // Rep sent a quote (quotedAt + quoteNotes populated)
+  accepted   // Customer accepted the quote
+  declined   // Customer declined — reason captured (audit/liability trail)
+}
+
 enum AccountStatus {
   active
   expiring
@@ -170,6 +198,11 @@ model Account {
   // When true, admin-role users on this account are required to have TOTP
   // enrolled. Default false to preserve current behaviour on existing accounts.
   mfaRequiredForAdmins     Boolean       @default(false)
+  // Per-account service representative contact. Used to route quote requests
+  // and display the "CALL NOW" number in EMERGENCY mode. Editable in Settings.
+  serviceRepName           String?
+  serviceRepEmail          String?
+  serviceRepPhone          String?
   // Per-tenant total headcount — drives cost-per-employee KPI tiles.
   // Nullable so existing accounts continue to work.
   fteCount                 Int?
@@ -206,6 +239,7 @@ model Account {
   activityLogs           ActivityLog[]
   notificationLogs       NotificationLog[]
   complianceSnapshots    ComplianceSnapshot[]
+  quoteRequests          QuoteRequest[]
 
   @@map("accounts")
 }
@@ -273,6 +307,7 @@ model User {
   complianceSnapshots      ComplianceSnapshot[]    @relation("SnapshotGenerator")
   ownedAssets              Asset[]                 @relation("AssetOwner")
   assignedRecommendations  AuditRecommendation[]   @relation("RecAssignee")
+  quoteRequests            QuoteRequest[]          @relation("QuoteRequestCreator")
 
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
@@ -562,6 +597,7 @@ model Asset {
   alerts            Alert[]
   activityLogs      ActivityLog[]
   customFieldValues CustomFieldValue[]
+  quoteRequests     QuoteRequest[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -1594,4 +1630,61 @@ model RenderError {
   @@index([userId])
   @@index([kind])
   @@map("render_errors")
+}
+
+// ─── Quote Requests ───────────────────────────────────────────────────────────
+// Per-asset service quote requests submitted by the customer.
+// The server auto-assembles a full asset dossier so the service rep gets
+// everything they need without asking follow-up questions.
+//
+// EMERGENCY mode: when driver=down_now the frontend renders the rep phone
+// number in large text with "CALL NOW".
+//
+// 5 standard questions (PENDING BROTHER VALIDATION — finalised for demo/test):
+//   1. driver          — what prompted the request
+//   2. timeline        — how urgently is service needed
+//   3. outageAvailable — can the asset be de-energised + when
+//   4. budgeted        — approved budget vs needs a number for approval
+//   5. attachmentNotes — photos, IR scans, test reports (free text for now)
+//
+// Status lifecycle: requested → quoted → accepted | declined
+
+model QuoteRequest {
+  id              String             @id @default(uuid())
+  accountId       String
+  assetId         String
+  requestedById   String
+  status          QuoteRequestStatus @default(requested)
+  // PENDING BROTHER VALIDATION — question values to be reviewed before
+  // first real customer contact. Current values are live for demo/test.
+  driver          QuoteDriver
+  timeline        QuoteTimeline
+  outageAvailable Boolean? // can the asset be de-energised for service?
+  outageWindow    String?  // when — free text, e.g. "Saturdays after 10pm"
+  budgeted        Boolean? // has budget been approved?
+  budgetNotes     String?
+  attachmentNotes String?  // photos, IR scans, test reports
+  emergencyMode   Boolean            @default(false) // true when driver=down_now
+  // Full asset dossier snapshot at submission time — nameplate, age, open
+  // deficiencies, overdue tasks, downstream topology. Stored so the rep
+  // always sees the state of the asset when the request was submitted.
+  dossierSnapshot Json?
+  notes           String?  // free-text from the requester
+  // Rep response fields
+  quotedAt        DateTime?
+  quoteNotes      String?
+  respondedAt     DateTime?
+  declineReason   String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  asset       Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy User    @relation("QuoteRequestCreator", fields: [requestedById], references: [id])
+
+  @@index([accountId])
+  @@index([accountId, status])
+  @@index([assetId])
+  @@index([requestedById])
+  @@map("quote_requests")
 }

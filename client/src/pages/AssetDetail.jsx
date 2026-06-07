@@ -33,6 +33,8 @@ import CustomFieldInputs from '../components/CustomFieldInputs';
 import MaintenanceBriefCard from '../components/MaintenanceBriefCard';
 import PhotoInspectCard from '../components/PhotoInspectCard';
 import PowerPathCard from '../components/PowerPathCard';
+import OutageConsolidationCard from '../components/OutageConsolidationCard';
+import QuoteRequestButton from '../components/QuoteRequestButton';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -776,6 +778,11 @@ export default function AssetDetail() {
             object refreshes, and bumps the page on feed edits. */}
         <PowerPathCard asset={asset} canWrite={canWrite} onChanged={refetchAll} />
 
+        {/* ── Outage Consolidation Planner ──────────────────────────────────── */}
+        {/* Self-gating: renders null when there are no outage-requiring tasks
+            in the ±90-day window so it stays invisible for healthy assets. */}
+        <OutageConsolidationCard asset={asset} canWrite={canWrite} />
+
         {/* ── Maintenance Schedules ─────────────────────────────────────────── */}
         <div className="card mb-16">
           <div className="card-header">
@@ -924,6 +931,13 @@ export default function AssetDetail() {
         {/* Same self-gating as the brief card (maintenance_brief feature +
             aiEnabled + aiConfigured). Apply actions refetch the asset. */}
         <PhotoInspectCard asset={asset} onApplied={refetchAll} />
+
+        {/* ── Service Quote Request ─────────────────────────────────────────── */}
+        {/* "The dossier is the feature, not the button." Pre-fills full asset
+            context so the rep gets everything they need without asking.
+            EMERGENCY mode when driver=down_now: rep phone displayed large
+            with CALL NOW copy. PENDING BROTHER VALIDATION on question copy. */}
+        <QuoteRequestButton asset={asset} />
 
         {/* ── Work Orders ───────────────────────────────────────────────────── */}
         <div className="card mb-16">
