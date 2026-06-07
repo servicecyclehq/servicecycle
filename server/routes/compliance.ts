@@ -15,6 +15,7 @@
  *
  *   GET    /summary                    — per-standard summary counts
  *   GET    /report/:standardCode       — full evidence for one standard
+ *   GET    /overdue-report             — cross-standard overdue punch list
  *   POST   /snapshots                  — generate + persist a snapshot PDF (manager+)
  *   GET    /snapshots                  — list snapshots (paginated, ?kind= filter)
  *   GET    /snapshots/:id/download     — stream a snapshot PDF (integrity-checked)
@@ -44,7 +45,7 @@ const prisma  = require('../lib/prisma').default;
 const { requireManager, requireAdmin } = require('../middleware/roles');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { downloadFile } = require('../lib/storage');
-const { buildStandardsSummary, buildStandardReport } = require('../lib/complianceReport');
+const { buildStandardsSummary, buildStandardReport, buildOverdueReport } = require('../lib/complianceReport');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 
@@ -103,6 +104,24 @@ router.get('/report/:standardCode', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/report]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build compliance report.' });
+  }
+});
+
+// ── GET /overdue-report?siteId= ───────────────────────────────────────────────
+// Cross-standard overdue posture: every overdue active schedule (most-overdue
+// first, with daysOverdue) plus open deficiencies grouped by severity. Any
+// authenticated role — same read tier as /summary and /report (a consultant
+// is brought in precisely to look at this).
+
+router.get('/overdue-report', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const report = await buildOverdueReport(prisma, req.user.accountId, { siteId });
+    return res.json({ success: true, data: { report } });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/overdue-report]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build overdue report.' });
   }
 });
 

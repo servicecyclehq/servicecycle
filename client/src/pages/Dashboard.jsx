@@ -67,7 +67,9 @@ function KpiTile({ label, value, sub, accent, onClick }) {
 }
 
 // ── Severity chip tile ───────────────────────────────────────────────────────
-function SeverityTile({ severity, count }) {
+// Clickable — deep-links into /deficiencies pre-filtered to this severity's
+// open findings (the page reads ?severity=&resolved= from the URL).
+function SeverityTile({ severity, count, onClick }) {
   const m = metaOf(SEVERITY_META, severity);
   const isImmediate = severity === 'IMMEDIATE';
   const color = isImmediate && count > 0
@@ -76,11 +78,19 @@ function SeverityTile({ severity, count }) {
   return (
     <div
       className="card"
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : -1}
+      onKeyDown={kbdActivate(onClick)}
       style={{
         flex: '1 1 0', minWidth: 0, padding: '14px 18px',
         display: 'flex', alignItems: 'center', gap: 12,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'box-shadow 0.15s, transform 0.15s',
       }}
-      title={`Open ${m.label || severity} deficiencies`}
+      onMouseEnter={e => { if (onClick) { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.10)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.transform = ''; }}
+      title={`Open ${m.label || severity} deficiencies — click to triage`}
     >
       <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
       <div style={{ minWidth: 0 }}>
@@ -124,6 +134,192 @@ function SiteComplianceRow({ row, navigate }) {
       </div>
       <div style={{ height: 8, background: 'var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${row.complianceRate}%`, background: color, borderRadius: 4, transition: 'width 0.4s ease' }} />
+      </div>
+    </div>
+  );
+}
+
+// ── 36-month maintenance horizon ─────────────────────────────────────────────
+// Compact density strip: one cell per month for the next 36 months, colored by
+// how many schedules come due in that month. Backed by
+// GET /api/dashboard/calendar?from=YYYY-MM&months=36&density=1 — the density
+// param is new server-side, so we render defensively: if the response carries
+// a data.density array we use it; otherwise we aggregate data.schedules
+// client-side (the server may also cap `months` below 36, in which case the
+// later cells simply show zero until the server catches up).
+//
+// Color steps are literal blues (not theme vars) — like the NETA decal palette
+// in lib/equipment.js this is a data-intensity convention that must read the
+// same in light + dark mode.
+const HORIZON_MONTHS = 36;
+const HORIZON_STEPS = [
+  { min: 6, color: '#1d4ed8', label: '6+' },
+  { min: 3, color: '#60a5fa', label: '3–5' },
+  { min: 1, color: '#bfdbfe', label: '1–2' },
+];
+
+function horizonColor(due) {
+  for (const s of HORIZON_STEPS) if (due >= s.min) return s.color;
+  return 'var(--color-border)'; // 0 due — faint slate
+}
+
+function ymKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function MaintenanceHorizon({ navigate }) {
+  const [byMonth, setByMonth] = useState(null); // Map ym → {due, outage, overdue}; null = loading
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const from = ymKey(new Date());
+    api.get('/api/dashboard/calendar', { params: { from, months: HORIZON_MONTHS, density: 1 } })
+      .then(res => {
+        if (cancelled) return;
+        const d = res.data?.data || {};
+        const map = new Map();
+        if (Array.isArray(d.density)) {
+          // New server shape: [{ month: 'YYYY-MM', due, requiresOutage, overdue }]
+          for (const m of d.density) {
+            if (!m || typeof m.month !== 'string') continue;
+            map.set(m.month, {
+              due:     Number(m.due) || 0,
+              outage:  Number(m.requiresOutage) || 0,
+              overdue: Number(m.overdue) || 0,
+            });
+          }
+        } else if (Array.isArray(d.schedules)) {
+          // Fallback: aggregate the raw schedule list client-side. Overdue is
+          // only meaningful for the current month (past-due dates collapse
+          // into "now").
+          const nowT = Date.now();
+          for (const s of d.schedules) {
+            if (!s?.nextDueDate) continue;
+            const dt = new Date(s.nextDueDate);
+            if (Number.isNaN(dt.getTime())) continue;
+            const key = ymKey(dt);
+            const cur = map.get(key) || { due: 0, outage: 0, overdue: 0 };
+            cur.due += 1;
+            if (s.taskDefinition?.requiresOutage) cur.outage += 1;
+            if (dt.getTime() < nowT) cur.overdue += 1;
+            map.set(key, cur);
+          }
+        }
+        setByMonth(map);
+      })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (failed) return null; // optional widget — fail silent rather than alarm
+
+  // Build the 36 cells regardless of how much data came back.
+  const start = new Date();
+  const cells = [];
+  for (let i = 0; i < HORIZON_MONTHS; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    const ym = ymKey(d);
+    const stats = byMonth?.get(ym) || { due: 0, outage: 0, overdue: 0 };
+    cells.push({
+      ym,
+      monthIdx: d.getMonth(),
+      year: d.getFullYear(),
+      label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      showLabel: i === 0 || d.getMonth() === 0, // first cell + every January
+      isJan: d.getMonth() === 0 && i !== 0,     // year separator gap
+      ...stats,
+    });
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">Maintenance horizon — next 36 months</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+            Schedules coming due per month — click a month to open it in the calendar
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: '12px 16px 16px' }}>
+        {byMonth === null ? (
+          <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '8px 0' }}>
+            Loading horizon…
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 3, rowGap: 14 }}>
+              {cells.map(c => {
+                const tip = `${c.label} — ${c.due} due${c.outage > 0 ? ` · ${c.outage} need outage` : ''}${c.overdue > 0 ? ` · ${c.overdue} overdue` : ''}`;
+                return (
+                  <div
+                    key={c.ym}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                      // Year separator: extra leading gap before each January.
+                      marginLeft: c.isJan ? 10 : 0,
+                    }}
+                  >
+                    <div style={{
+                      fontSize: 'var(--font-size-2xs, 10px)', lineHeight: 1,
+                      color: 'var(--color-text-secondary)', height: 10,
+                      whiteSpace: 'nowrap', fontWeight: 600,
+                      visibility: c.showLabel ? 'visible' : 'hidden',
+                    }}>
+                      {c.showLabel ? (c.monthIdx === 0 ? String(c.year) : c.label) : '·'}
+                    </div>
+                    <button
+                      type="button"
+                      title={tip}
+                      aria-label={tip}
+                      onClick={() => navigate(`/calendar?from=${c.ym}`)}
+                      style={{
+                        width: 20, height: 20, padding: 0,
+                        borderRadius: 4, cursor: 'pointer', position: 'relative',
+                        background: horizonColor(c.due),
+                        border: '1px solid var(--color-border)',
+                        // Red ring on overdue months (only possible for the current month).
+                        boxShadow: c.overdue > 0 ? '0 0 0 2px var(--color-danger, #dc2626)' : 'none',
+                        transition: 'transform 0.1s',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.2)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = ''; }}
+                    >
+                      {c.outage > 0 && (
+                        <span aria-hidden="true" style={{
+                          position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)',
+                          width: 5, height: 5, borderRadius: '50%',
+                          background: c.due >= 3 ? '#fff' : 'var(--color-warning, #b45309)',
+                          boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
+                        }} />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Legend */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 12, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', border: '1px solid var(--color-border)' }} /> 0 due
+              </span>
+              {[...HORIZON_STEPS].reverse().map(s => (
+                <span key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 3, background: s.color }} /> {s.label}
+                </span>
+              ))}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', position: 'relative' }}>
+                  <span style={{ position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)', width: 5, height: 5, borderRadius: '50%', background: 'var(--color-warning, #b45309)' }} />
+                </span> needs outage
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', boxShadow: '0 0 0 2px var(--color-danger, #dc2626)' }} /> overdue
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -250,7 +446,7 @@ export default function Dashboard() {
                 label="Overdue" value={due.overdue}
                 sub={due.overdue > 0 ? 'Needs scheduling now' : 'All caught up'}
                 accent={due.overdue > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #22c55e)'}
-                onClick={() => navigate('/assets')}
+                onClick={() => navigate('/calendar')}
               />
             </div>
 
@@ -262,7 +458,12 @@ export default function Dashboard() {
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   {['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'].map(sev => (
-                    <SeverityTile key={sev} severity={sev} count={defs[sev] || 0} />
+                    <SeverityTile
+                      key={sev}
+                      severity={sev}
+                      count={defs[sev] || 0}
+                      onClick={() => navigate(`/deficiencies?severity=${sev}&resolved=false`)}
+                    />
                   ))}
                 </div>
               </div>
@@ -431,6 +632,9 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
+            {/* ── 36-month maintenance horizon ───────────────────────────── */}
+            <MaintenanceHorizon navigate={navigate} />
           </>
         )}
       </div>

@@ -41,12 +41,17 @@ const EQUIPMENT_TYPES = [
   'VFD', 'FIRE_PUMP_CONTROLLER',
 ];
 
+// Query-param uuid gate for list filters. Same literal lives in
+// routes/assets.ts — keep them identical.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ─── GET /api/bootstrap ────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const {
       page = 1, limit = 25,
       search, siteId, equipmentType, governingCondition, inService,
+      ownerId, dueWithin,
       sort = 'createdAt', sortDir = 'desc',
     } = req.query;
 
@@ -64,6 +69,30 @@ router.get('/', async (req, res) => {
     }
     if (inService === 'true')  where.inService = true;
     if (inService === 'false') where.inService = false;
+
+    // Owner filter: a uuid narrows to that owner's assets; the literal
+    // 'unassigned' selects assets with no owner set. Anything else is
+    // silently ignored (consistent with the other validated filters).
+    // ⚠ Mirrored in routes/assets.ts — keep the two in sync.
+    if (ownerId === 'unassigned') {
+      where.ownerId = null;
+    } else if (ownerId && UUID_RE.test(String(ownerId))) {
+      where.ownerId = String(ownerId);
+    }
+
+    // Due-window filter on the asset's ACTIVE schedules:
+    //   'overdue'        — at least one active schedule past due
+    //   '30'|'60'|'90'   — at least one active schedule due inside the
+    //                      forward window (overdue excluded — that's its own
+    //                      bucket, mirroring the dashboard tiles)
+    // ⚠ Mirrored in routes/assets.ts — keep the two in sync.
+    if (dueWithin === 'overdue') {
+      where.schedules = { some: { isActive: true, nextDueDate: { lt: new Date() } } };
+    } else if (['30', '60', '90'].includes(String(dueWithin))) {
+      const now = new Date();
+      const horizon = new Date(now.getTime() + parseInt(String(dueWithin), 10) * 86_400_000);
+      where.schedules = { some: { isActive: true, nextDueDate: { gte: now, lte: horizon } } };
+    }
 
     if (search) {
       where.OR = [

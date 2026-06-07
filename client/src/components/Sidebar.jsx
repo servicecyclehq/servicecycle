@@ -14,7 +14,7 @@ import ThemeToggle from './ThemeToggle';
 // we don't reference.
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
-  Archive, MapPin, ClipboardList, ClipboardCheck,
+  Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
 } from 'lucide-react';
 
 // v0.37.1 W5 MT-117: per-NavLink HelpButton icons were dropped — the
@@ -29,6 +29,8 @@ const Icons = {
   archive:     <Archive       {...ICON_PROPS} />,
   sites:       <MapPin        {...ICON_PROPS} />,
   workOrders:  <ClipboardList {...ICON_PROPS} />,
+  deficiencies: <AlertTriangle {...ICON_PROPS} />,
+  news:        <Newspaper     {...ICON_PROPS} />,
   calendar:    <Calendar      {...ICON_PROPS} />,
   audits:      <ClipboardCheck {...ICON_PROPS} />,
   contractors: <Briefcase     {...ICON_PROPS} />,
@@ -613,6 +615,16 @@ export default function Sidebar() {
           Work Orders
         </NavLink>
 
+        {/* Account-wide NETA deficiency triage — all roles (read-only roles
+            see the list; Resolve/Reopen are gated inside the page). */}
+        <NavLink
+          to="/deficiencies"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.deficiencies}
+          Deficiencies
+        </NavLink>
+
         <NavLink
           to="/calendar"
           className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
@@ -650,6 +662,15 @@ export default function Sidebar() {
             Alerts
           </NavLink>
         )}
+
+        {/* Industry news feed — all roles. */}
+        <NavLink
+          to="/news"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.news}
+          Industry News
+        </NavLink>
 
         {/* Reports hub — manager / admin only. Top-level nav item; links to
             /reports which shows the hub card grid. */}

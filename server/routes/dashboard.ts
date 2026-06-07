@@ -10,7 +10,11 @@
 // GET /api/dashboard           → all widgets in one round-trip
 // GET /api/dashboard/calendar  → schedule due dates + blackout windows for
 //                                the Compliance Calendar page
-//                                (?from=YYYY-MM&months=1..12&siteId=)
+//                                (?from=YYYY-MM&months=1..36&siteId=&density=1)
+//                                density=1 → per-month aggregate only (the
+//                                dashboard 36-month strip); without it the
+//                                full schedules+blackouts payload (calendar
+//                                page, ≤12 months in practice)
 //
 // Auth: authenticateToken mounted upstream. Every query scoped to
 // req.user.accountId (tenancy/IDOR rule).
@@ -144,7 +148,9 @@ router.get('/calendar', async (req, res) => {
   try {
     const accountId = req.user.accountId;
     const monthsRaw = parseInt(req.query.months, 10);
-    const months = isNaN(monthsRaw) ? 3 : Math.min(Math.max(monthsRaw, 1), 12);
+    // Cap raised 12 → 36 for the dashboard density strip; long ranges should
+    // use density=1 below so the full-payload branch stays a ≤12-month load.
+    const months = isNaN(monthsRaw) ? 3 : Math.min(Math.max(monthsRaw, 1), 36);
 
     let start;
     if (typeof req.query.from === 'string' && /^\d{4}-\d{2}$/.test(req.query.from)) {
@@ -158,6 +164,49 @@ router.get('/calendar', async (req, res) => {
 
     const assetWhere: any = { archivedAt: null };
     if (req.query.siteId) assetWhere.siteId = String(req.query.siteId);
+
+    // ── density=1: server-side per-month aggregate ────────────────────────
+    // The dashboard 36-month strip only needs three numbers per month —
+    // shipping 36 months of full schedule rows (hydrated task + asset +
+    // site) would be a multi-hundred-KB payload for a sparkline. SLIM
+    // select (nextDueDate + requiresOutage only), bucketed by YYYY-MM here.
+    // overdue = due items whose nextDueDate is already behind now (covers
+    // every fully-past month plus the elapsed part of the current one).
+    if (String(req.query.density || '') === '1') {
+      const slim = await prisma.maintenanceSchedule.findMany({
+        where: {
+          accountId,
+          isActive: true,
+          nextDueDate: { gte: start, lt: end },
+          asset: assetWhere,
+        },
+        select: {
+          nextDueDate: true,
+          taskDefinition: { select: { requiresOutage: true } },
+        },
+      });
+
+      const now = new Date();
+      const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+      // Pre-seed every month in range so the strip renders gap-free zeroes.
+      const buckets = new Map();
+      for (let i = 0; i < months; i++) {
+        const key = monthKey(new Date(start.getFullYear(), start.getMonth() + i, 1));
+        buckets.set(key, { month: key, due: 0, requiresOutage: 0, overdue: 0 });
+      }
+
+      for (const s of slim) {
+        const due = new Date(s.nextDueDate);
+        const bucket = buckets.get(monthKey(due));
+        if (!bucket) continue;
+        bucket.due++;
+        if (s.taskDefinition?.requiresOutage) bucket.requiresOutage++;
+        if (due < now) bucket.overdue++;
+      }
+
+      return res.json({ success: true, data: { density: [...buckets.values()] } });
+    }
 
     const [schedules, blackouts] = await Promise.all([
       prisma.maintenanceSchedule.findMany({

@@ -100,6 +100,8 @@ const ContractorDetail        = lazyWithReload(() => import('./pages/ContractorD
 const WorkOrdersList          = lazyWithReload(() => import('./pages/WorkOrdersList'));
 const WorkOrderDetail         = lazyWithReload(() => import('./pages/WorkOrderDetail'));
 const ComplianceCalendar      = lazyWithReload(() => import('./pages/ComplianceCalendar'));
+const DeficienciesPage        = lazyWithReload(() => import('./pages/DeficienciesPage'));   // account-wide NETA findings triage
+const NewsPage                = lazyWithReload(() => import('./pages/NewsPage'));           // industry news feed (all roles)
 // Shared / admin pages
 const UsersPage               = lazyWithReload(() => import('./pages/UsersPage'));
 const AdminMetrics            = lazyWithReload(() => import('./pages/AdminMetrics')); // audit 3.2.6
@@ -113,6 +115,8 @@ const ReportsHub              = lazyWithReload(() => import('./pages/ReportsHub'
 const ComplianceStandardsReport      = lazyWithReload(() => import('./pages/ComplianceStandardsReport'));
 const ComplianceStandardDetailReport = lazyWithReload(() => import('./pages/ComplianceStandardDetailReport'));
 const AuditSnapshotsPage             = lazyWithReload(() => import('./pages/AuditSnapshotsPage'));
+const OverdueReport                  = lazyWithReload(() => import('./pages/OverdueReport'));    // overdue maintenance report (admin/manager)
+const StandardsLibrary               = lazyWithReload(() => import('./pages/StandardsLibrary')); // standards reference library (admin/manager)
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 
 const SetupWizardPage         = lazyWithReload(() => import('./pages/SetupWizardPage'));   // (S8) first-run operator wizard
@@ -263,7 +267,13 @@ function AppRoutes() {
             <Route path="contractors/:id"    element={<ContractorDetail />} />
             <Route path="work-orders"        element={<WorkOrdersList />} />
             <Route path="work-orders/:id"    element={<WorkOrderDetail />} />
+            {/* Account-wide deficiency triage — all roles (viewers see the
+                list; Resolve/Reopen affordances are manager+ inside the page,
+                mirroring the server's requireManager gates). */}
+            <Route path="deficiencies"       element={<DeficienciesPage />} />
             <Route path="calendar"           element={<ComplianceCalendar />} />
+            {/* Industry news feed — all roles, like the other read surfaces. */}
+            <Route path="news"               element={<NewsPage />} />
             <Route path="profile"            element={<ProfilePage />} />
 
             {/* Legacy LapseIQ paths — old bookmarks and emails land on the
@@ -293,6 +303,16 @@ function AppRoutes() {
             <Route path="reports/snapshots" element={
               <RequireRole roles={['admin', 'manager']}>
                 <AuditSnapshotsPage />
+              </RequireRole>
+            } />
+            <Route path="reports/overdue" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <OverdueReport />
+              </RequireRole>
+            } />
+            <Route path="reports/standards-library" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <StandardsLibrary />
               </RequireRole>
             } />
 

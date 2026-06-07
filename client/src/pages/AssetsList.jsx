@@ -2,9 +2,12 @@
 // AssetsList.jsx — equipment asset register (ServiceCycle Assets v1).
 //
 // Single-round-trip mount via GET /api/bootstrap (assets page + pagination +
-// site/contractor lookups + settings). Intentionally simpler than the old
-// ContractsList canonical pattern: no saved views, no column picker — a plain
-// server-filtered table with search + three dropdown filters.
+// site/contractor/member lookups + settings). Intentionally simpler than the
+// old ContractsList canonical pattern: no saved views, no column picker — a
+// plain server-filtered table with search + two rows of dropdown filters
+// (site/type/condition, then owner/service-status/due-window) and an
+// active-filter chip row. All filters flow into both the bootstrap fetch and
+// the XLSX export URL via buildFilterParams().
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
@@ -72,7 +75,7 @@ export default function AssetsList() {
   // admin/manager can write, viewer/consultant cannot).
   const canWrite = features.assets_write ?? features.contracts_write;
 
-  const [data, setData]       = useState({ assets: [], pagination: { page: 1, pages: 1, total: 0 }, sites: [], equipmentTypes: [] });
+  const [data, setData]       = useState({ assets: [], pagination: { page: 1, pages: 1, total: 0 }, sites: [], equipmentTypes: [], members: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [toast, setToast]     = useState(null);
@@ -83,6 +86,12 @@ export default function AssetsList() {
   const [siteId, setSiteId]       = useState('');
   const [equipmentType, setEquipmentType] = useState('');
   const [condition, setCondition] = useState('');
+  // Column-filter row (second toolbar row): responsible person, service
+  // status, and due window. ownerId accepts a member uuid or the literal
+  // 'unassigned'; dueWithin is 'overdue' | '30' | '60' | '90'.
+  const [ownerId, setOwnerId]         = useState('');
+  const [inServiceF, setInServiceF]   = useState('');
+  const [dueWithin, setDueWithin]     = useState('');
 
   // Debounce the search box so we don't hammer /api/bootstrap per keystroke.
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -96,7 +105,7 @@ export default function AssetsList() {
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
     setPage(1);
-  }, [debouncedSearch, siteId, equipmentType, condition]);
+  }, [debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin]);
 
   function buildFilterParams() {
     const params = new URLSearchParams();
@@ -104,6 +113,9 @@ export default function AssetsList() {
     if (siteId)          params.set('siteId', siteId);
     if (equipmentType)   params.set('equipmentType', equipmentType);
     if (condition)       params.set('governingCondition', condition);
+    if (ownerId)         params.set('ownerId', ownerId);
+    if (inServiceF)      params.set('inService', inServiceF);
+    if (dueWithin)       params.set('dueWithin', dueWithin);
     return params;
   }
 
@@ -122,6 +134,7 @@ export default function AssetsList() {
           pagination:     d.pagination || { page: 1, pages: 1, total: 0 },
           sites:          d.sites || [],
           equipmentTypes: d.equipmentTypes || Object.keys(EQUIPMENT_TYPE_LABELS),
+          members:        d.members || [],
         });
         setError('');
       })
@@ -129,10 +142,32 @@ export default function AssetsList() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, siteId, equipmentType, condition]);
+  }, [page, debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin]);
 
-  const hasFilters = !!(debouncedSearch || siteId || equipmentType || condition);
-  const { assets, pagination, sites, equipmentTypes } = data;
+  const hasFilters = !!(debouncedSearch || siteId || equipmentType || condition || ownerId || inServiceF || dueWithin);
+  const { assets, pagination, sites, equipmentTypes, members } = data;
+
+  function clearAllFilters() {
+    setSearch(''); setSiteId(''); setEquipmentType(''); setCondition('');
+    setOwnerId(''); setInServiceF(''); setDueWithin('');
+  }
+
+  const DUE_WITHIN_LABELS = { overdue: 'Overdue', 30: 'Due ≤ 30 days', 60: 'Due ≤ 60 days', 90: 'Due ≤ 90 days' };
+
+  // One chip per active filter — each individually clearable, plus a
+  // clear-all at the end of the row (extends the old single-button pattern).
+  const activeChips = [];
+  if (debouncedSearch) activeChips.push({ key: 'search', label: `Search: “${debouncedSearch}”`, clear: () => setSearch('') });
+  if (siteId)          activeChips.push({ key: 'site', label: `Site: ${sites.find(s => s.id === siteId)?.name || 'selected'}`, clear: () => setSiteId('') });
+  if (equipmentType)   activeChips.push({ key: 'type', label: `Type: ${EQUIPMENT_TYPE_LABELS[equipmentType] || equipmentType}`, clear: () => setEquipmentType('') });
+  if (condition)       activeChips.push({ key: 'condition', label: `Condition: ${CONDITION_META[condition]?.label || condition}`, clear: () => setCondition('') });
+  if (ownerId)         activeChips.push({
+    key: 'owner',
+    label: `Owner: ${ownerId === 'unassigned' ? 'Unassigned' : (members.find(m => m.id === ownerId)?.name || 'selected')}`,
+    clear: () => setOwnerId(''),
+  });
+  if (inServiceF)      activeChips.push({ key: 'inservice', label: `In service: ${inServiceF === 'true' ? 'Yes' : 'No'}`, clear: () => setInServiceF('') });
+  if (dueWithin)       activeChips.push({ key: 'due', label: DUE_WITHIN_LABELS[dueWithin] || dueWithin, clear: () => setDueWithin('') });
 
   async function handleExport() {
     if (exporting) return;
@@ -236,16 +271,85 @@ export default function AssetsList() {
               <option key={k} value={k}>{m.label}</option>
             ))}
           </select>
-          {hasFilters && (
+        </div>
+
+        {/* Column filters — second toolbar row (owner / service status / due window). */}
+        <div className="filters-bar" style={{ marginBottom: hasFilters ? 10 : 16 }}>
+          <select
+            className="filter-select"
+            aria-label="Filter by responsible person"
+            value={ownerId}
+            onChange={e => setOwnerId(e.target.value)}
+          >
+            <option value="">All owners</option>
+            <option value="unassigned">Unassigned</option>
+            {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <select
+            className="filter-select"
+            aria-label="Filter by service status"
+            value={inServiceF}
+            onChange={e => setInServiceF(e.target.value)}
+          >
+            <option value="">In service: All</option>
+            <option value="true">In service: Yes</option>
+            <option value="false">In service: No</option>
+          </select>
+          <select
+            className="filter-select"
+            aria-label="Filter by maintenance due window"
+            value={dueWithin}
+            onChange={e => setDueWithin(e.target.value)}
+          >
+            <option value="">Any due window</option>
+            <option value="overdue">Overdue</option>
+            <option value="30">Due ≤ 30 days</option>
+            <option value="60">Due ≤ 60 days</option>
+            <option value="90">Due ≤ 90 days</option>
+          </select>
+        </div>
+
+        {/* Active-filter chips — one per filter, individually clearable, with
+            a one-click clear-all (extends the old single Clear button). */}
+        {hasFilters && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {activeChips.map(chip => (
+              <span
+                key={chip.key}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '3px 8px 3px 10px', borderRadius: 20,
+                  fontSize: 'var(--font-size-xs)', fontWeight: 600,
+                  background: 'var(--color-primary-light, #eef6f6)',
+                  color: 'var(--color-primary)',
+                  border: '1px solid var(--color-primary)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {chip.label}
+                <button
+                  type="button"
+                  aria-label={`Clear filter: ${chip.label}`}
+                  onClick={chip.clear}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'inherit', padding: 0, lineHeight: 1,
+                    fontSize: 13, fontWeight: 700,
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              onClick={() => { setSearch(''); setSiteId(''); setEquipmentType(''); setCondition(''); }}
+              onClick={clearAllFilters}
             >
-              Clear filters
+              Clear all
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="card">
           {loading ? (

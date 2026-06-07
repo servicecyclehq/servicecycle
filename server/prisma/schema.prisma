@@ -1010,6 +1010,31 @@ model ComplianceSnapshot {
   @@map("compliance_snapshots")
 }
 
+// ─── Regulatory / Industry News ───────────────────────────────────────────────
+// Items pulled from public RSS feeds (OSHA news releases, electrical trade
+// press) and matched against compliance-relevant terms (NFPA 70B/70E/110,
+// NETA, arc flash, transformer, switchgear...). GLOBAL — news is industry-
+// wide, not tenant data; no accountId. Populated by lib/newsScanner cron
+// (6h) and the manual refresh endpoint. Feeds the /news page and the
+// standard-revision awareness story (KICKOFF: no public NFPA/NETA APIs —
+// monitor via feeds + manual workflow).
+
+model NewsItem {
+  id          String   @id @default(uuid())
+  title       String
+  url         String   @unique // dedup across scanner runs
+  source      String // e.g. "OSHA Newsroom", "EC&M"
+  category    String   @default("industry") // regulatory | standards | safety | industry
+  summary     String?
+  matchedTerm String? // which watch term matched, for the category chip tooltip
+  publishedAt DateTime
+  fetchedAt   DateTime @default(now())
+
+  @@index([publishedAt(sort: Desc)])
+  @@index([category, publishedAt(sort: Desc)])
+  @@map("news_items")
+}
+
 // ─── Documents ────────────────────────────────────────────────────────────────
 
 model Document {

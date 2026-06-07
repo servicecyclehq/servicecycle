@@ -3,10 +3,11 @@
 //
 // The contract-renewal report grid was removed in the ServiceCycle conversion.
 // This hub renders the compliance report suite: ACTIVE cards either navigate
-// to an in-app report route (`to`: Compliance by Standard, Audit Evidence
-// Snapshots) or download an export (`exportView`: asset register via
-// GET /api/export/xlsx?view=assets). Remaining planned reports show as
-// disabled cards.
+// to an in-app report route (`to`: Compliance by Standard, Overdue
+// Maintenance by Severity, Standards Library, Audit Evidence Snapshots) or
+// download an export (`exportView`: asset register via
+// GET /api/export/xlsx?view=assets). Remaining planned reports (Maintenance
+// Activity Summary, Trend Analysis) show as disabled cards.
 //
 // The registry (client/src/tables/reportsRegistry.js) is the single source of
 // truth for the cards. When a planned report ships, flip `planned: false` and
@@ -149,7 +150,7 @@ export default function ReportsHub() {
         <div>
           <h1 className="page-title">Reports</h1>
           <div className="page-subtitle">
-            Per-standard compliance reporting, audit evidence snapshots, and data exports.
+            Audit-oriented reporting — compliance evidence, overdue risk, and exports today; more reports land as your maintenance data accumulates.
           </div>
         </div>
       </div>
@@ -168,8 +169,10 @@ export default function ReportsHub() {
         >
           <strong style={{ color: 'var(--color-text)' }}>What's here.</strong>{' '}
           Compliance by Standard rolls maintenance status up per governing standard with a drill-down
-          evidence table; Audit Evidence Snapshots produce immutable, hash-anchored PDFs for insurers and
-          AHJs. Overdue maintenance by severity is still planned.
+          evidence table; Overdue Maintenance by Severity surfaces the riskiest gaps first; the Standards
+          Library explains each governing document in plain language; Audit Evidence Snapshots produce
+          immutable, hash-anchored PDFs for insurers and AHJs. Activity summaries and test-value trending
+          are planned — they get useful once completion history accumulates.
         </div>
 
         <div style={{

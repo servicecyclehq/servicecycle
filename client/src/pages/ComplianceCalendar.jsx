@@ -85,7 +85,17 @@ function BlackoutBanner({ w }) {
 export default function ComplianceCalendar() {
   useDocumentTitle('Compliance calendar');
 
-  const [from, setFrom] = useState(() => ymOf(new Date()));
+  // Initial month: honor a ?from=YYYY-MM deep-link (e.g. the dashboard's
+  // 36-month maintenance-horizon strip links here per-month); fall back to
+  // the current month. Read once on mount — in-page navigation still goes
+  // through setFrom (Prev/Next buttons).
+  const [from, setFrom] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('from');
+      if (q && /^\d{4}-\d{2}$/.test(q)) return q;
+    } catch { /* ignore — fall back to current month */ }
+    return ymOf(new Date());
+  });
   const [siteId, setSiteId] = useState(() => {
     try { return localStorage.getItem(SITE_FILTER_KEY) || ''; } catch { return ''; }
   });

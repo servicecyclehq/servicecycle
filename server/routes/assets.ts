@@ -36,6 +36,11 @@ import prisma from '../lib/prisma';
 // first rating any axis holds. Defensive 'C2' fallback matches the schema
 // default and can only fire on malformed input that zod already rejects.
 const CONDITION_VALUES = ['C1', 'C2', 'C3'];
+
+// Query-param uuid gate for list filters (zod validates bodies; list query
+// params are validated inline like the other filters). Same literal lives in
+// routes/bootstrap.ts — keep them identical.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const worstCondition = (a, b, c) =>
   ['C3', 'C2', 'C1'].find(v => [a, b, c].includes(v)) || 'C2';
 
@@ -293,6 +298,9 @@ const NEXT_DUE_SCHEDULES: any = {
 //   ?siteId=                  — narrow to one site
 //   ?governingCondition=      — C1 | C2 | C3
 //   ?inService=true|false
+//   ?ownerId=                 — uuid (that owner) | 'unassigned' (no owner)
+//   ?dueWithin=               — 'overdue' | '30' | '60' | '90' — has an active
+//                               schedule overdue / due within N days
 //   ?archived=true            — show ONLY archived assets (default excludes them)
 //   ?sort=createdAt|nextDue   — default nextDue (soonest maintenance first)
 //   ?sortDir=asc|desc
@@ -301,6 +309,7 @@ router.get('/', async (req, res) => {
     const {
       page = 1, limit = 25,
       search, equipmentType, siteId, governingCondition, inService, archived,
+      ownerId, dueWithin,
       sort = 'nextDue', sortDir = 'asc',
     } = req.query;
 
@@ -322,6 +331,30 @@ router.get('/', async (req, res) => {
     }
     if (inService === 'true')       where.inService = true;
     else if (inService === 'false') where.inService = false;
+
+    // Owner filter: a uuid narrows to that owner's assets; the literal
+    // 'unassigned' selects assets with no owner set. Anything else is
+    // silently ignored (consistent with the other validated filters).
+    // ⚠ Mirrored in routes/bootstrap.ts — keep the two in sync.
+    if (ownerId === 'unassigned') {
+      where.ownerId = null;
+    } else if (ownerId && UUID_RE.test(String(ownerId))) {
+      where.ownerId = String(ownerId);
+    }
+
+    // Due-window filter on the asset's ACTIVE schedules:
+    //   'overdue'        — at least one active schedule past due
+    //   '30'|'60'|'90'   — at least one active schedule due inside the
+    //                      forward window (overdue excluded — that's its own
+    //                      bucket, mirroring the dashboard tiles)
+    // ⚠ Mirrored in routes/bootstrap.ts — keep the two in sync.
+    if (dueWithin === 'overdue') {
+      where.schedules = { some: { isActive: true, nextDueDate: { lt: new Date() } } };
+    } else if (['30', '60', '90'].includes(String(dueWithin))) {
+      const now = new Date();
+      const horizon = new Date(now.getTime() + parseInt(String(dueWithin), 10) * 86_400_000);
+      where.schedules = { some: { isActive: true, nextDueDate: { gte: now, lte: horizon } } };
+    }
 
     // Search across nameplate identity fields AND the parent site name —
     // "where is that Square D transformer" and "everything at Plant 2"

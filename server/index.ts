@@ -183,6 +183,7 @@ const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk
 const assetBriefRoutes      = require('./routes/assetBrief');   // AI maintenance brief
 const complianceRoutes      = require('./routes/compliance');   // per-standard reports + audit snapshots
 const auditRoutes           = require('./routes/audits');       // audit visits + recommendations (RECs)
+const newsRoutes            = require('./routes/news');         // regulatory/industry news feed (global)
 const dashboardRoutes       = require('./routes/dashboard');
 const userRoutes            = require('./routes/users');
 const preferencesRoutes     = require('./routes/preferences'); // v0.42 per-user key/value prefs
@@ -1109,6 +1110,9 @@ app.use('/api/compliance',      authenticateToken, complianceRoutes);
 // Audit visits + loss-control recommendation tracking. Snapshots generated
 // for a visit link back via ComplianceSnapshot.auditVisitId.
 app.use('/api/audits',          authenticateToken, auditRoutes);
+// Industry/regulatory news — global items (no tenant data), auth'd reads,
+// manager+ manual refresh. Populated by the 6h cron below.
+app.use('/api/news',            authenticateToken, newsRoutes);
 app.use('/api/dashboard',       authenticateToken, dashboardRoutes);
 // v0.32.4: per-user AI quota state for in-UI helper text. Authenticated;
 // no limiter — read-only inspection of the quota counters.
@@ -1355,6 +1359,17 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
       console.log('[Cron] Alert engine complete:', accounts.length, 'account(s) processed');
     }), { timezone: 'UTC' });
     console.log('[Cron] Alert engine scheduled (per-account) -- runs daily at 07:00')
+
+    // ── Regulatory news scanner (every 6 hours) ─────────────────────────────
+    // Pulls OSHA newsroom + electrical trade press RSS, filters to
+    // maintenance-compliance terms. Global rows; NEWS_SCANNER_ENABLED=false
+    // disables for air-gapped installs.
+    cron.schedule('20 */6 * * *', () => runOnce('newsScanner', async () => {
+      const { runNewsScanner } = require('./lib/newsScanner');
+      const summary = await runNewsScanner();
+      console.log('[Cron] News scanner:', JSON.stringify(summary));
+    }), { timezone: 'UTC' });
+    console.log('[Cron] News scanner scheduled — every 6 hours');
 
     // -- Cloudflare Workers AI monthly budget reset (v0.35.0) --------
     // The aiBudgetGuard tracks Cloudflare spend + Neuron count per

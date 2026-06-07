@@ -385,9 +385,145 @@ async function buildStandardReport(prisma, accountId, { standardCode, siteId = n
   };
 }
 
+// ── buildOverdueReport ────────────────────────────────────────────────────────
+
+const DAY_MS = 86_400_000;
+const SEVERITY_ORDER = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
+
+/**
+ * Cross-standard "what is overdue right now" report — the punch list an
+ * adjuster or maintenance supervisor works through, account-wide or one site.
+ *
+ * Archived assets are excluded (historical context, not live posture), and
+ * only ACTIVE schedules count — same posture rules as the summary above.
+ *
+ * Throws err.code = 'SITE_NOT_FOUND' for a missing / cross-tenant siteId.
+ *
+ * @returns {
+ *   generatedAt, scope: { siteId, siteName },
+ *   overdueSchedules: [{ asset { id, equipmentType, manufacturer, model,
+ *                                serialNumber, site, governingCondition },
+ *                        task { taskName, standardRef },
+ *                        nextDueDate, daysOverdue }],   // most-overdue first
+ *   openDeficiencies: [{ severity, items: [{ id, asset, description,
+ *                                            ageDays, workOrderId }] }],
+ *   summary: { overdueScheduleCount, openDeficiencyCount,
+ *              deficiencyBySeverity: { IMMEDIATE, RECOMMENDED, ADVISORY } }
+ * }
+ */
+async function buildOverdueReport(prisma, accountId, { siteId = null } = {} as any) {
+  const site = await resolveSite(prisma, accountId, siteId);
+  const now  = new Date();
+
+  const assetScope = { archivedAt: null, ...(siteId ? { siteId } : {}) };
+
+  const [schedules, deficiencies] = await Promise.all([
+    prisma.maintenanceSchedule.findMany({
+      where: {
+        accountId,
+        isActive:    true,
+        nextDueDate: { lt: now },
+        asset:       assetScope,
+      },
+      // nextDueDate ascending = most-overdue first.
+      orderBy: { nextDueDate: 'asc' },
+      select: {
+        nextDueDate: true,
+        taskDefinition: { select: { taskName: true, standardRef: true } },
+        asset: {
+          select: {
+            id: true, equipmentType: true, manufacturer: true, model: true,
+            serialNumber: true, governingCondition: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
+    prisma.deficiency.findMany({
+      where: { accountId, resolvedAt: null, asset: assetScope },
+      // Enum order IMMEDIATE → ADVISORY; oldest findings first within a tier.
+      orderBy: [{ severity: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true, severity: true, description: true, createdAt: true,
+        workOrderId: true,
+        asset: {
+          select: {
+            id: true, equipmentType: true, manufacturer: true, model: true,
+            serialNumber: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const assetShape = (a) => ({
+    id:            a.id,
+    equipmentType: a.equipmentType,
+    manufacturer:  a.manufacturer,
+    model:         a.model,
+    serialNumber:  a.serialNumber,
+    site:          a.site ? { id: a.site.id, name: a.site.name } : null,
+  });
+
+  const overdueSchedules = schedules.map((s) => ({
+    asset: {
+      ...assetShape(s.asset),
+      governingCondition: s.asset.governingCondition,
+    },
+    task: {
+      taskName:    s.taskDefinition.taskName,
+      standardRef: s.taskDefinition.standardRef,
+    },
+    nextDueDate: s.nextDueDate,
+    daysOverdue: Math.floor((now.getTime() - s.nextDueDate.getTime()) / DAY_MS),
+  }));
+
+  // Group open deficiencies by severity. All three tiers always present (in
+  // fixed IMMEDIATE → ADVISORY order, empty items arrays included) so the
+  // client renders a stable section list without existence checks.
+  const itemsBySeverity = new Map(SEVERITY_ORDER.map((sev) => [sev, []]));
+  for (const d of deficiencies) {
+    const bucket: any = itemsBySeverity.get(d.severity);
+    if (!bucket) continue; // unreachable — enum is closed
+    bucket.push({
+      id:          d.id,
+      asset:       assetShape(d.asset),
+      description: d.description,
+      ageDays:     Math.floor((now.getTime() - d.createdAt.getTime()) / DAY_MS),
+      workOrderId: d.workOrderId,
+    });
+  }
+  const openDeficiencies = SEVERITY_ORDER.map((severity) => ({
+    severity,
+    items: itemsBySeverity.get(severity),
+  }));
+
+  const deficiencyBySeverity: any = {};
+  for (const { severity, items } of openDeficiencies) {
+    deficiencyBySeverity[severity] = (items as any[]).length;
+  }
+
+  return {
+    generatedAt: now,
+    scope: {
+      siteId:   site ? site.id : null,
+      siteName: site ? site.name : null,
+    },
+    overdueSchedules,
+    openDeficiencies,
+    summary: {
+      overdueScheduleCount: overdueSchedules.length,
+      openDeficiencyCount:  deficiencies.length,
+      deficiencyBySeverity,
+    },
+  };
+}
+
 module.exports = {
   buildStandardsSummary,
   buildStandardReport,
+  buildOverdueReport,
   ACCOUNT_DEFINED_CODE,
 };
 
