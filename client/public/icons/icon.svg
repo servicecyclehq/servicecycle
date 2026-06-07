@@ -1,0 +1,9 @@
+<!-- PLACEHOLDER PWA icon pending logo selection. Dark slate rounded square +
+     white lightning bolt. Source of truth for the generated icon-192.png /
+     icon-512.png (see scripts/generate-pwa-icons.mjs). Replace this file and
+     re-run the script when the real ServiceCycle logo is chosen. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="#0f172a"/>
+  <!-- Lightning bolt, centered -->
+  <path d="M296 72 L150 296 L240 296 L216 440 L362 216 L272 216 Z" fill="#ffffff"/>
+</svg>

@@ -15,7 +15,10 @@ import ThemeToggle from './ThemeToggle';
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
+  Smartphone, QrCode,
 } from 'lucide-react';
+import { downloadAuthedFile } from '../api/download';
+import Toast from './Toast';
 
 // v0.37.1 W5 MT-117: per-NavLink HelpButton icons were dropped — the
 // standalone Help button + the Resources & Feedback footer menu are the
@@ -31,6 +34,7 @@ const Icons = {
   workOrders:  <ClipboardList {...ICON_PROPS} />,
   deficiencies: <AlertTriangle {...ICON_PROPS} />,
   news:        <Newspaper     {...ICON_PROPS} />,
+  field:       <Smartphone    {...ICON_PROPS} />,
   calendar:    <Calendar      {...ICON_PROPS} />,
   audits:      <ClipboardCheck {...ICON_PROPS} />,
   contractors: <Briefcase     {...ICON_PROPS} />,
@@ -505,6 +509,22 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const sidebarLocation = useLocation();
   const [showFeedback, setShowFeedback] = useState(false);
+  // Field Mode QR label sheet download (GET /api/assets/labels → PDF).
+  const [labelsBusy, setLabelsBusy] = useState(false);
+  const [labelsToast, setLabelsToast] = useState(null);
+
+  const handlePrintLabels = async () => {
+    if (labelsBusy) return;
+    setLabelsBusy(true);
+    try {
+      await downloadAuthedFile('/api/assets/labels', 'servicecycle-asset-labels.pdf');
+      setLabelsToast({ message: 'QR label sheet downloading…', variant: 'info', duration: 5000 });
+    } catch (err) {
+      setLabelsToast({ message: err.message || 'Failed to generate labels.', variant: 'error' });
+    } finally {
+      setLabelsBusy(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -540,6 +560,37 @@ export default function Sidebar() {
           {Icons.dashboard}
           Dashboard
         </NavLink>
+
+        {/* Field Mode — phone-first technician surface (/field/*), plus an
+            inline "Print QR labels" action (GET /api/assets/labels PDF) so
+            the desktop user can produce the label sheets the field scanner
+            reads. Same nav-item-row pattern as the Assets quick-add. */}
+        <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
+          <NavLink
+            to="/field"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            style={{ flex: 1 }}
+          >
+            {Icons.field}
+            Field Mode
+          </NavLink>
+          <button
+            onClick={handlePrintLabels}
+            disabled={labelsBusy}
+            title="Print QR labels (PDF)"
+            aria-label="Print QR labels"
+            style={{
+              background: 'none', border: 'none', cursor: labelsBusy ? 'default' : 'pointer',
+              padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
+              display: 'flex', alignItems: 'center', flexShrink: 0, borderRadius: 4,
+              transition: 'color 0.1s', opacity: labelsBusy ? 0.5 : 1,
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+          >
+            <QrCode size={14} strokeWidth={1.75} />
+          </button>
+        </div>
 
         {/* Assets + quick-add button. This row keeps the .nav-item-row
             wrapper because of the inline `+` quick-add button — without
@@ -814,6 +865,9 @@ export default function Sidebar() {
           Sign out
         </button>
       </div>
+
+      {/* QR-labels download feedback */}
+      <Toast toast={labelsToast} onClose={() => setLabelsToast(null)} />
     </aside>
   );
 }

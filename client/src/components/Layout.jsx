@@ -3,6 +3,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap'; // H7: mobile sidebar draw
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import DemoModeBanner from './DemoModeBanner';
+import OfflineBanner from './OfflineBanner';
 import { useAuth } from '../context/AuthContext';
 
 // v0.37.1 W5 MT-023: <HelpDrawer /> used to mount HERE inside the
@@ -206,6 +207,9 @@ export default function Layout() {
             : <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>}
         </svg>
       </button>
+      {/* PWA offline outbox status — fixed overlay, renders null when online
+          with nothing to announce. See src/components/OfflineBanner.jsx. */}
+      <OfflineBanner />
       <DemoModeBanner />
       <ContinueSetupBanner />
       <div

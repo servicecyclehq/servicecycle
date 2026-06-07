@@ -119,6 +119,13 @@ const OverdueReport                  = lazyWithReload(() => import('./pages/Over
 const StandardsLibrary               = lazyWithReload(() => import('./pages/StandardsLibrary')); // standards reference library (admin/manager)
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 
+// Field Mode — phone-first technician surface. Own chrome (FieldLayout, no
+// sidebar), mounted behind ProtectedRoute but OUTSIDE the desktop Layout.
+const FieldLayout             = lazyWithReload(() => import('./pages/field/FieldLayout'));
+const FieldHome               = lazyWithReload(() => import('./pages/field/FieldHome'));
+const FieldScan               = lazyWithReload(() => import('./pages/field/FieldScan'));
+const FieldAsset              = lazyWithReload(() => import('./pages/field/FieldAsset'));
+
 const SetupWizardPage         = lazyWithReload(() => import('./pages/SetupWizardPage'));   // (S8) first-run operator wizard
 const PrivacyPage             = lazyWithReload(() => import('./pages/PrivacyPage'));       // (A2) public, mounted outside Layout shell
 const TermsPage               = lazyWithReload(() => import('./pages/TermsPage'));         // (A3) public, mounted outside Layout shell
@@ -236,6 +243,21 @@ function AppRoutes() {
           <Route path="/legal/sub-processors"       element={<SubProcessorsPage />} />
           <Route path="/demo-sandbox-notice"        element={<DemoSandboxNoticePage />} />
           <Route path="/legal/demo-sandbox-notice"  element={<DemoSandboxNoticePage />} />
+
+          {/* Field Mode — authenticated but OUTSIDE the desktop Layout shell.
+              FieldLayout provides its own slim phone chrome (no sidebar). */}
+          <Route
+            path="/field"
+            element={
+              <ProtectedRoute>
+                <FieldLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<FieldHome />} />
+            <Route path="scan" element={<FieldScan />} />
+            <Route path="asset/:id" element={<FieldAsset />} />
+          </Route>
 
           {/* Protected — all routes inside the shell layout */}
           <Route

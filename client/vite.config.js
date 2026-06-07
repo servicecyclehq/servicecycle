@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // SECURITY NOTE — see docs/security/findings.csv (F002 / F003)
 //   Vite 5.x dev-server has CVE-2026-39365 (.map path traversal) and the
@@ -107,8 +108,71 @@ function buildIdMetaPlugin() {
   };
 }
 
+// PWA — installable app + offline support for field technicians.
+//
+// Strategy:
+//   - Precache (workbox generateSW default): the built JS/CSS/HTML shell, so
+//     the app loads with zero network. registerType 'autoUpdate' = new SW
+//     activates immediately and the v0.90.4 build-id toast handles telling
+//     the user a reload is worthwhile.
+//   - Runtime NetworkFirst for the read-mostly field API GETs (1h cap): fresh
+//     when online, last-known-good when offline. NON-GET requests are NEVER
+//     cached — offline mutations go through src/lib/outbox.js instead.
+//   - navigateFallback serves index.html for SPA deep links offline, but /api
+//     is excluded so API requests never get swallowed by the shell.
+//
+// ICONS ARE PLACEHOLDERS (dark slate square + lightning bolt) pending real
+// logo selection — regenerate via `node scripts/generate-pwa-icons.mjs`
+// after replacing public/icons/icon.svg.
+function pwaPlugin() {
+  return VitePWA({
+    registerType: 'autoUpdate',
+    // SW registration is imported in src/main.jsx via the virtual module.
+    // Dev mode keeps the SW OFF so HMR + the dev proxy behave normally.
+    devOptions: { enabled: false },
+    manifest: {
+      name: 'ServiceCycle',
+      short_name: 'ServiceCycle',
+      description: 'Electrical maintenance compliance',
+      display: 'standalone',
+      start_url: '/field',
+      theme_color: '#0f172a',
+      background_color: '#0f172a',
+      icons: [
+        // PLACEHOLDER icons pending logo selection (see comment above).
+        { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+      ],
+    },
+    workbox: {
+      // SPA offline deep-links — but never intercept API navigations/requests.
+      navigateFallback: 'index.html',
+      navigateFallbackDenylist: [/^\/api/],
+      runtimeCaching: [
+        {
+          // Read-path field data: GET-only NetworkFirst, 1h freshness cap.
+          // Static assets are CacheFirst by virtue of the precache manifest.
+          urlPattern: ({ url, request }) =>
+            request.method === 'GET' &&
+            url.origin === self.location.origin &&
+            (url.pathname.startsWith('/api/field/') ||
+              url.pathname === '/api/bootstrap' ||
+              url.pathname.startsWith('/api/assets')),
+          handler: 'NetworkFirst',
+          method: 'GET', // belt + braces: never cache non-GET
+          options: {
+            cacheName: 'api-cache',
+            expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 },
+            cacheableResponse: { statuses: [200] },
+          },
+        },
+      ],
+    },
+  });
+}
+
 export default defineConfig({
-  plugins: [react(), buildIdMetaPlugin(), routeModulePreloadPlugin()],
+  plugins: [react(), buildIdMetaPlugin(), routeModulePreloadPlugin(), pwaPlugin()],
 
   // Strip console.* and debugger from production bundles via esbuild.
   // Audit-7 launch-readiness fix: Vite's default prod minifier (esbuild)

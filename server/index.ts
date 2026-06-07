@@ -182,6 +182,8 @@ const standardsRoutes       = require('./routes/standards');    // NFPA/NETA mat
 const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
 const assetBriefRoutes      = require('./routes/assetBrief');   // AI maintenance brief
 const assetPhotoInspectRoutes = require('./routes/assetPhotoInspect'); // AI photo inspection (vision)
+const fieldRoutes           = require('./routes/fieldRoutes');  // Field Mode: My Day + field asset card
+const assetLabelRoutes      = require('./routes/assetLabels');  // QR label sheet PDF
 const complianceRoutes      = require('./routes/compliance');   // per-standard reports + audit snapshots
 const auditRoutes           = require('./routes/audits');       // audit visits + recommendations (RECs)
 const newsRoutes            = require('./routes/news');         // regulatory/industry news feed (global)
@@ -1090,6 +1092,9 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
 // assets router's /:id param routes. (Express matches in mount order.)
 // ingestLimiter (20/min): file parsing is CPU-bound; same budget the old
 // document-ingest path used.
+// QR label sheets — mounted BEFORE the /api/assets routers so GET /labels
+// isn't swallowed by the assets router's /:id param route.
+app.use('/api/assets/labels',   authenticateToken, assetLabelRoutes);
 app.use('/api/assets/import',   authenticateToken, ingestLimiter, assetsImportRoutes);
 app.use('/api/assets',          authenticateToken, assetRoutes);
 // AI maintenance brief — second router on the same mount; paths don't
@@ -1117,6 +1122,9 @@ app.use('/api/audits',          authenticateToken, auditRoutes);
 // Industry/regulatory news — global items (no tenant data), auth'd reads,
 // manager+ manual refresh. Populated by the 6h cron below.
 app.use('/api/news',            authenticateToken, newsRoutes);
+// Field Mode read endpoints — slim payloads designed for phones on bad
+// signal; the offline outbox replays mutations against the normal routes.
+app.use('/api/field',           authenticateToken, fieldRoutes);
 app.use('/api/dashboard',       authenticateToken, dashboardRoutes);
 // v0.32.4: per-user AI quota state for in-UI helper text. Authenticated;
 // no limiter — read-only inspection of the quota counters.

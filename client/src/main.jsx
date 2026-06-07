@@ -2,6 +2,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { installGlobalErrorHandlers } from './lib/globalErrorReporter.js';
+// PWA service worker registration (vite-plugin-pwa virtual module).
+// registerType 'autoUpdate' + devOptions.enabled:false in vite.config.js —
+// in `vite dev` this resolves to a no-op stub so HMR/dev-proxy are untouched;
+// in production builds it registers the workbox SW and self-updates.
+import { registerSW } from 'virtual:pwa-register';
 
 // Brand typography:
 // Inter + JetBrains Mono are self-hosted via @font-face in index.css,
@@ -19,6 +24,10 @@ import './index.css';
 // can't cover (event-handler throws, async errors, rejected promises). Both
 // classes auto-POST to /api/errors/render with kind='uncaught' or 'promise'.
 installGlobalErrorHandlers();
+
+// Register the PWA service worker (no-op in dev — see import note above).
+// immediate:true so updates are checked on every load, matching autoUpdate.
+registerSW({ immediate: true });
 
 // v0.92.19: take manual control of scroll restoration so the browser does not
 // restore a stale offset on reload/redirect (e.g. landing mid-dashboard after
