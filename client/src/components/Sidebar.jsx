@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
+import BrandMark from './BrandMark';
 
 // v0.37.1 W5 MT-117: per-NavLink HelpButton icons were dropped — the
 // standalone Help button + the Resources & Feedback footer menu are the
@@ -535,10 +536,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-logo" style={{ textAlign: 'center' }}>
         <div className="sidebar-logo-mark" style={{ justifyContent: 'center' }}>
-          <svg width="36" height="20" viewBox="0 0 44 24" aria-hidden="true" style={{ flexShrink: 0 }}>
-            <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
-            <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
-          </svg>
+          <BrandMark size={26} variant="dark" />
           <span className="sidebar-logo-text">servicecycle</span>
         </div>
         <div className="sidebar-logo-sub">{user?.account?.companyName || localStorage.getItem('servicecycle_company') || 'Maintenance Compliance'}</div>

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import PasswordInput from '../components/PasswordInput';
+import BrandMark from '../components/BrandMark';
 
 export default function Login() {
   useDocumentTitle('Sign in');
@@ -109,10 +110,9 @@ export default function Login() {
       <div className="login-box">
         <div className="login-logo">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-            <svg width="48" height="26" viewBox="0 0 44 24" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
-              <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
-            </svg>
+            {/* Public routes always render light (theme-bootstrap UX-THEME-001),
+                so the onLight variant is correct here. */}
+            <BrandMark size={40} variant="light" />
             <span className="login-logo-name">servicecycle</span>
           </div>
           <div className="login-logo-tagline">Renewal management</div>

@@ -15,6 +15,7 @@
 
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import BrandMark from '../components/BrandMark';
 
 // ── Feature card data ─────────────────────────────────────────────────────────
 
@@ -305,10 +306,7 @@ export default function LandingPage() {
       <header style={s.nav}>
         <div style={s.navInner}>
           <div style={s.logo}>
-            <svg width="44" height="24" viewBox="0 0 44 24" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
-              <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
-            </svg>
+            <BrandMark size={26} variant="light" />
             <span style={s.logoText}>servicecycle</span>
           </div>
           <nav style={s.navLinks}>
@@ -502,10 +500,7 @@ export default function LandingPage() {
       <footer style={s.footer}>
         <div style={s.footerInner}>
           <div style={s.footerLogo}>
-            <svg width="44" height="24" viewBox="0 0 44 24" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
-              <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981"/>
-            </svg>
+            <BrandMark size={26} variant="dark" />
             <span style={{ ...s.logoText, color: '#9aa3b2' }}>servicecycle</span>
           </div>
           <div style={s.footerLinks}>

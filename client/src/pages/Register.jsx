@@ -25,6 +25,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 // string. Was drifting across Register / SetupWizard / AcceptInvite.
 import { TERMS_VERSION_DEMO as TERMS_VERSION } from '../legal/termsVersion';
 import PasswordInput from '../components/PasswordInput';
+import BrandMark from '../components/BrandMark';
 
 export default function Register() {
   useDocumentTitle('Create account');
@@ -95,11 +96,8 @@ export default function Register() {
         <div className="login-box" style={{ maxWidth: 480 }}>
           <div className="login-logo">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-              <svg width="48" height="26" viewBox="0 0 44 24" aria-hidden="true" style={{ flexShrink: 0 }}>
-                <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
-                <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
-              </svg>
-              <span className="login-logo-name">lapseiq</span>
+              <BrandMark size={40} variant="light" />
+              <span className="login-logo-name">servicecycle</span>
             </div>
             <div className="login-logo-tagline">
               {demoMode ? 'Demo sandbox' : 'Self-host'}
@@ -119,7 +117,7 @@ export default function Register() {
             you'd like to be notified when sign-ups re-open, or you need
             access to the documents now for procurement or due-diligence,
             email{' '}
-            <a href="mailto:privacy@lapseiq.com" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>privacy@lapseiq.com</a>.
+            <a href="mailto:privacy@servicecycle.com" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>privacy@servicecycle.com</a>.
           </p>
           <Link to="/login" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
             Back to sign in
@@ -137,19 +135,16 @@ export default function Register() {
         <div className="login-box">
           <div className="login-logo">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-              <svg width="48" height="26" viewBox="0 0 44 24" aria-hidden="true" style={{ flexShrink: 0 }}>
-                <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
-                <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
-              </svg>
-              <span className="login-logo-name">lapseiq</span>
+              <BrandMark size={40} variant="light" />
+              <span className="login-logo-name">servicecycle</span>
             </div>
             <div className="login-logo-tagline">Renewal management</div>
           </div>
           <div className="login-title">Registration is closed on this instance</div>
           <p style={{ fontSize: 'var(--font-size-data)', color: 'var(--color-text-secondary)', marginTop: 16, marginBottom: 16 }}>
-            Public sign-up isn't enabled on this LapseIQ install. Contact your
+            Public sign-up isn't enabled on this ServiceCycle install. Contact your
             administrator for an invite, or visit the public demo at{' '}
-            <a href="https://demo.lapseiq.com" style={{ color: 'var(--color-primary)' }}>demo.lapseiq.com</a>.
+            <a href="https://demo.servicecycle.com" style={{ color: 'var(--color-primary)' }}>demo.servicecycle.com</a>.
           </p>
           <Link to="/login" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
             Back to sign in
@@ -199,11 +194,8 @@ export default function Register() {
       <div className="login-box" style={{ maxWidth: 460 }}>
         <div className="login-logo">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-            <svg width="48" height="26" viewBox="0 0 44 24" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
-              <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
-            </svg>
-            <span className="login-logo-name">lapseiq</span>
+            <BrandMark size={40} variant="light" />
+            <span className="login-logo-name">servicecycle</span>
           </div>
           <div className="login-logo-tagline">
             {demoMode ? 'Demo sandbox' : 'Self-host'}
@@ -232,7 +224,7 @@ export default function Register() {
               <li><strong>No real data.</strong> Demo is for clicking around — don't upload real contracts, customer data, or anything under NDA. We may suspend or delete accounts that misuse the sandbox.</li>
               <li><strong>5 consecutive calendar days of inactivity = deletion.</strong> If you don't log in for 5 calendar days, the entire sandbox is permanently deleted. No backup, no warning email. We do not access sandbox content as a matter of course, but we may where reasonably necessary to investigate abuse, respond to a security incident, comply with law, or enforce these terms.</li>
               <li><strong>AS-IS, no SLA.</strong> Demo might be slow or down. No support tickets against it.</li>
-              <li><strong>AI features run on a shared key with usage caps.</strong> PDF/image contract extraction is capped at <strong>1 per day per user</strong>; renewal-brief generation at <strong>3 per day per user</strong>; Ask LapseIQ chat at <strong>10 per day per user</strong>. Caps reset at midnight UTC and may be adjusted; on-prem installs use your own AI key with no cap by default. Full breakdown in the Demo Sandbox Notice below.</li>
+              <li><strong>AI features run on a shared key with usage caps.</strong> PDF/image equipment data extraction is capped at <strong>1 per day per user</strong>; renewal-brief generation at <strong>3 per day per user</strong>; Ask ServiceCycle chat at <strong>10 per day per user</strong>. Caps reset at midnight UTC and may be adjusted; on-prem installs use your own AI key with no cap by default. Full breakdown in the Demo Sandbox Notice below.</li>
             </ul>
           </div>
         )}
@@ -386,10 +378,10 @@ export default function Register() {
                 />
                 <span>
                   I confirm my business operates in the{' '}
-                  <strong>United States</strong>. The LapseIQ demo sandbox is
+                  <strong>United States</strong>. The ServiceCycle demo sandbox is
                   currently available to U.S.-based businesses only. If you
                   need access from outside the U.S., email{' '}
-                  <a href="mailto:sales@lapseiq.com" style={{ color: 'var(--color-primary)' }}>sales@lapseiq.com</a>.
+                  <a href="mailto:sales@servicecycle.com" style={{ color: 'var(--color-primary)' }}>sales@servicecycle.com</a>.
                 </span>
               </label>
             </div>

@@ -11,6 +11,7 @@
 import { Link, Outlet } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import OfflineBanner from '../../components/OfflineBanner';
+import BrandMark from '../../components/BrandMark';
 
 function getInitial(name = '') {
   const t = String(name).trim();
@@ -35,9 +36,10 @@ export default function FieldLayout() {
       >
         <Link
           to="/field"
-          style={{ textDecoration: 'none', display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}
+          style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
           aria-label="Field Mode home"
         >
+          <BrandMark size={20} variant="dark" />
           <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--color-text)', letterSpacing: '-0.01em' }}>
             servicecycle
           </span>
