@@ -81,7 +81,7 @@ async function authenticateToken(req, res, next) {
         email: true,
         role: true,
         isActive: true,
-        contractScopeRestricted: true,
+        assetScopeRestricted: true,
       },
     });
 

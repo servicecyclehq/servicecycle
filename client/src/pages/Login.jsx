@@ -39,9 +39,9 @@ export default function Login() {
   const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
     try {
-      if (sessionStorage.getItem('lapseiq_session_expired') === 'true') {
+      if (sessionStorage.getItem('servicecycle_session_expired') === 'true') {
         setSessionExpired(true);
-        sessionStorage.removeItem('lapseiq_session_expired');
+        sessionStorage.removeItem('servicecycle_session_expired');
       }
     } catch (_) { /* ignore */ }
   }, []);
@@ -113,7 +113,7 @@ export default function Login() {
               <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
               <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
             </svg>
-            <span className="login-logo-name">lapseiq</span>
+            <span className="login-logo-name">servicecycle</span>
           </div>
           <div className="login-logo-tagline">Renewal management</div>
         </div>
@@ -229,7 +229,7 @@ export default function Login() {
               </p>
             ) : (
               <p style={{ marginTop: 20, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', textAlign: 'center' }}>
-                Need access? Contact your LapseIQ administrator.
+                Need access? Contact your ServiceCycle administrator.
               </p>
             )}
           </>

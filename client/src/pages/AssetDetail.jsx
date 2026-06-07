@@ -1,0 +1,789 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AssetDetail.jsx — single-asset compliance hub (ServiceCycle Assets v1).
+//
+// GET /api/assets/:id → asset with hierarchy context, maintenance schedules
+// (incl. task definitions), latest work orders, open deficiencies, recent lab
+// samples, and documents. Sections below mirror that payload; the activity
+// feed comes from GET /api/assets/:id/activity.
+//
+// Write actions (manager+, mirrored by the server's requireManager gates):
+//   • inline edit            → PUT  /api/assets/:id
+//   • archive / unarchive    → POST /api/assets/:id/(un)archive
+//   • apply schedule template→ POST /api/schedules/bulk-apply {assetId}
+//   • mark schedule complete → POST /api/schedules/:id/complete {}
+//   • spawn work order       → POST /api/work-orders {assetId, scheduleId}
+//   • resolve deficiency     → POST /api/deficiencies/:id/resolve
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useState, useEffect, useCallback } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
+import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import Toast from '../components/Toast';
+import InfoTip from '../components/InfoTip';
+import {
+  EQUIPMENT_TYPE_LABELS,
+  CONDITION_META,
+  WO_STATUS_META,
+  SEVERITY_META,
+  DECAL_META,
+  assetLabel,
+  fmtDate,
+} from '../lib/equipment';
+
+const CONDITION_TIP =
+  'NFPA 70B:2023 condition of maintenance: three axes (physical / criticality / ' +
+  'environment), each C1 good, C2 fair, or C3 poor. The worst axis governs and ' +
+  'selects the maintenance interval for every task on this asset.';
+
+// Generic pill chip driven by a {label,color,bg} meta record.
+function MetaChip({ meta, fallback }) {
+  if (!meta) return <span className="text-muted">{fallback || '—'}</span>;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 9px', borderRadius: 20,
+      fontSize: 'var(--font-size-xs)', fontWeight: 700, letterSpacing: '0.03em',
+      background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+      whiteSpace: 'nowrap',
+    }}>
+      {meta.label}
+    </span>
+  );
+}
+
+function ServiceChip({ on, onLabel, offLabel }) {
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 9px', borderRadius: 20,
+      fontSize: 'var(--font-size-xs)', fontWeight: 600, whiteSpace: 'nowrap',
+      background: on ? 'var(--color-success-bg)' : 'var(--color-bg)',
+      color: on ? 'var(--color-success)' : 'var(--color-text-muted)',
+      border: `1px solid ${on ? 'var(--color-success)' : 'var(--color-border)'}`,
+    }}>
+      {on ? onLabel : offLabel}
+    </span>
+  );
+}
+
+// Effective interval (months) for a schedule given the asset's governing
+// condition, honoring the per-schedule conditionOverride.
+function effectiveIntervalMonths(schedule, asset) {
+  const cond = schedule.conditionOverride || asset.governingCondition || 'C2';
+  const td = schedule.taskDefinition || {};
+  const months = td[`interval${cond}Months`];
+  return { cond, months: months ?? null };
+}
+
+// Human line for one activity-log row.
+function activityText(log) {
+  const d = log.details || {};
+  switch (log.action) {
+    case 'asset_created':         return `Asset created (${EQUIPMENT_TYPE_LABELS[d.equipmentType] || d.equipmentType || 'equipment'}${d.siteName ? ` at ${d.siteName}` : ''})`;
+    case 'fields_updated':        return `Updated: ${Array.isArray(d.fields) ? d.fields.join(', ') : 'fields'}`;
+    case 'condition_changed':     return `Governing condition changed ${d.from || '?'} → ${d.to || '?'}`;
+    case 'asset_archived':        return 'Asset archived';
+    case 'asset_unarchived':      return 'Asset unarchived';
+    case 'maintenance_completed': return `Maintenance completed: ${d.taskName || d.taskCode || 'task'}${d.nextDueDate ? ` (next due ${fmtDate(d.nextDueDate)})` : ''}`;
+    case 'work_order_created':    return 'Work order created';
+    default:                      return log.action?.replace(/_/g, ' ') || 'activity';
+  }
+}
+
+// ── Inline edit form ──────────────────────────────────────────────────────────
+function EditAssetForm({ asset, onCancel, onSaved }) {
+  const [form, setForm] = useState({
+    equipmentType:        asset.equipmentType,
+    manufacturer:         asset.manufacturer || '',
+    model:                asset.model || '',
+    serialNumber:         asset.serialNumber || '',
+    installDate:          asset.installDate ? asset.installDate.slice(0, 10) : '',
+    lastCommissionedDate: asset.lastCommissionedDate ? asset.lastCommissionedDate.slice(0, 10) : '',
+    conditionPhysical:    asset.conditionPhysical || 'C2',
+    conditionCriticality: asset.conditionCriticality || 'C2',
+    conditionEnvironment: asset.conditionEnvironment || 'C2',
+    inService:            !!asset.inService,
+    isEnergized:          !!asset.isEnergized,
+    notes:                asset.notes || '',
+  });
+  const [nameplate, setNameplate] = useState(() => {
+    const entries = Object.entries(asset.nameplateData || {});
+    return entries.length > 0
+      ? entries.map(([key, value]) => ({ key, value: String(value ?? '') }))
+      : [{ key: '', value: '' }];
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
+
+  const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const nameplateData = {};
+    for (const { key, value } of nameplate) {
+      const k = key.trim();
+      if (k) nameplateData[k] = value;
+    }
+    setSaving(true); setError('');
+    try {
+      const res = await api.put(`/api/assets/${asset.id}`, {
+        equipmentType:        form.equipmentType,
+        manufacturer:         form.manufacturer.trim() || null,
+        model:                form.model.trim() || null,
+        serialNumber:         form.serialNumber.trim() || null,
+        installDate:          form.installDate || null,
+        lastCommissionedDate: form.lastCommissionedDate || null,
+        conditionPhysical:    form.conditionPhysical,
+        conditionCriticality: form.conditionCriticality,
+        conditionEnvironment: form.conditionEnvironment,
+        inService:            form.inService,
+        isEnergized:          form.isEnergized,
+        notes:                form.notes.trim() || null,
+        nameplateData:        Object.keys(nameplateData).length > 0 ? nameplateData : null,
+      });
+      onSaved(res.data.data.asset);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save changes.');
+      setSaving(false);
+    }
+  }
+
+  const conditionSelect = (field, label) => (
+    <div className="form-group">
+      <label className="form-label">{label}</label>
+      <select aria-label={label} className="form-control" value={form[field]} onChange={e => setF(field, e.target.value)}>
+        {Object.entries(CONDITION_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+      </select>
+    </div>
+  );
+
+  return (
+    <div className="card mb-16">
+      <div className="card-header"><div className="card-title">Edit Asset</div></div>
+      <div className="card-body">
+        {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Equipment Type</label>
+              <select aria-label="Equipment type" className="form-control" value={form.equipmentType} onChange={e => setF('equipmentType', e.target.value)}>
+                {Object.entries(EQUIPMENT_TYPE_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Manufacturer</label>
+              <input className="form-control" value={form.manufacturer} onChange={e => setF('manufacturer', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Model</label>
+              <input className="form-control" value={form.model} onChange={e => setF('model', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Serial Number</label>
+              <input className="form-control" value={form.serialNumber} onChange={e => setF('serialNumber', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Install Date</label>
+              <input type="date" className="form-control" aria-label="Install date" value={form.installDate} onChange={e => setF('installDate', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Last Commissioned</label>
+              <input type="date" className="form-control" aria-label="Last commissioned date" value={form.lastCommissionedDate} onChange={e => setF('lastCommissionedDate', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="form-row">
+            {conditionSelect('conditionPhysical', 'Physical Condition')}
+            {conditionSelect('conditionCriticality', 'Criticality')}
+            {conditionSelect('conditionEnvironment', 'Environment')}
+          </div>
+
+          <div className="checkbox-group">
+            <input id="edit-asset-in-service" type="checkbox" checked={form.inService} onChange={e => setF('inService', e.target.checked)} />
+            <label htmlFor="edit-asset-in-service" className="checkbox-label">In service</label>
+          </div>
+          <div className="checkbox-group">
+            <input id="edit-asset-energized" type="checkbox" checked={form.isEnergized} onChange={e => setF('isEnergized', e.target.checked)} />
+            <label htmlFor="edit-asset-energized" className="checkbox-label">Energized</label>
+          </div>
+
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label className="form-label">Nameplate Data</label>
+            {nameplate.map((pair, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                <input
+                  className="form-control" style={{ maxWidth: 200 }} placeholder="Key"
+                  aria-label={`Nameplate key ${idx + 1}`}
+                  value={pair.key}
+                  onChange={e => setNameplate(prev => prev.map((p, i) => i === idx ? { ...p, key: e.target.value } : p))}
+                />
+                <input
+                  className="form-control" style={{ maxWidth: 280 }} placeholder="Value"
+                  aria-label={`Nameplate value ${idx + 1}`}
+                  value={pair.value}
+                  onChange={e => setNameplate(prev => prev.map((p, i) => i === idx ? { ...p, value: e.target.value } : p))}
+                />
+                <button
+                  type="button" className="btn btn-secondary btn-sm"
+                  aria-label={`Remove nameplate pair ${idx + 1}`}
+                  onClick={() => setNameplate(prev => prev.length === 1 ? [{ key: '', value: '' }] : prev.filter((_, i) => i !== idx))}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setNameplate(prev => [...prev, { key: '', value: '' }])}>
+              + Add field
+            </button>
+          </div>
+
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label className="form-label">Notes</label>
+            <textarea className="form-control form-control-wide" aria-label="Notes" rows={3} value={form.notes} onChange={e => setF('notes', e.target.value)} />
+          </div>
+
+          {/* TODO(custom-fields): CustomFieldInputs (components/CustomFieldInputs.jsx)
+              loads definitions from GET /api/custom-fields, but the asset payload
+              from GET /api/assets/:id does not include customFieldValues and the
+              PUT /api/assets/:id zod schema is .strict() with no customFields key,
+              so values can neither hydrate nor persist yet. Wire this up once the
+              server includes customFieldValues on the asset detail payload and
+              accepts a customFields map on POST/PUT /api/assets. */}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function AssetDetail() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const confirm = useConfirm();
+  const { features } = useAuth();
+  // See AssetsList: assets_write with contracts_write fallback until the
+  // AuthContext flag catalog is retargeted.
+  const canWrite = features.assets_write ?? features.contracts_write;
+
+  const [asset, setAsset]     = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+  const [toast, setToast]     = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy]       = useState(false); // serializes row-level actions
+  const [activity, setActivity] = useState([]);
+
+  useDocumentTitle(asset ? assetLabel(asset) : 'Asset');
+
+  const fetchAsset = useCallback(() => {
+    return api.get(`/api/assets/${id}`)
+      .then(r => { setAsset(r.data.data.asset); setError(''); })
+      .catch(err => {
+        setError(err.response?.status === 404 ? 'Asset not found.' : 'Failed to load asset.');
+      });
+  }, [id]);
+
+  const fetchActivity = useCallback(() => {
+    return api.get(`/api/assets/${id}/activity`)
+      .then(r => setActivity(r.data.data.logs || []))
+      .catch(() => { /* feed is non-critical */ });
+  }, [id]);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([fetchAsset(), fetchActivity()]).finally(() => setLoading(false));
+  }, [fetchAsset, fetchActivity]);
+
+  const refetchAll = () => { fetchAsset(); fetchActivity(); };
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+  async function handleArchiveToggle() {
+    const archiving = !asset.archivedAt;
+    if (!await confirm({
+      title: archiving ? 'Archive this asset?' : 'Unarchive this asset?',
+      message: archiving
+        ? 'The asset disappears from the main register but its history (work orders, lab samples, deficiencies) stays intact. You can unarchive it any time from the Archived Assets page.'
+        : 'The asset returns to the main register and resumes appearing in compliance views.',
+      confirmLabel: archiving ? 'Archive' : 'Unarchive',
+      danger: archiving,
+    })) return;
+    try {
+      await api.post(`/api/assets/${id}/${archiving ? 'archive' : 'unarchive'}`);
+      setToast({ message: archiving ? 'Asset archived.' : 'Asset unarchived.', variant: 'success', duration: 4000 });
+      refetchAll();
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || 'Action failed.', variant: 'error' });
+    }
+  }
+
+  async function handleApplyTemplate() {
+    if (!await confirm({
+      title: 'Apply NFPA 70B schedule template?',
+      message: 'Pairs this asset with every standard NFPA 70B maintenance task for its equipment type. Existing schedules are kept — the operation is idempotent.',
+      confirmLabel: 'Apply template',
+    })) return;
+    try {
+      const res = await api.post('/api/schedules/bulk-apply', { assetId: id });
+      const created = res.data.data?.created ?? 0;
+      setToast({
+        message: created > 0
+          ? `${created} schedule${created !== 1 ? 's' : ''} added from the NFPA 70B template.`
+          : 'No new schedules to add — the template is already fully applied.',
+        variant: 'success',
+        duration: 5000,
+      });
+      refetchAll();
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || 'Failed to apply template.', variant: 'error' });
+    }
+  }
+
+  async function handleCompleteSchedule(schedule) {
+    if (busy) return;
+    if (!await confirm({
+      title: 'Mark task complete?',
+      message: `Records "${schedule.taskDefinition?.taskName || 'this task'}" as completed today and rolls the next due date forward by the condition-appropriate interval.`,
+      confirmLabel: 'Mark complete',
+    })) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/schedules/${schedule.id}/complete`, {});
+      setToast({ message: 'Maintenance completion recorded.', variant: 'success', duration: 4000 });
+      refetchAll();
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || 'Failed to record completion.', variant: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleNewWorkOrder(schedule) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await api.post('/api/work-orders', { assetId: id, scheduleId: schedule?.id || null });
+      navigate(`/work-orders/${res.data.data.workOrder.id}`);
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || 'Failed to create work order.', variant: 'error' });
+      setBusy(false);
+    }
+  }
+
+  async function handleResolveDeficiency(def) {
+    if (busy) return;
+    if (!await confirm({
+      title: 'Resolve deficiency?',
+      message: `Marks "${(def.description || '').slice(0, 120)}" as resolved.`,
+      confirmLabel: 'Resolve',
+    })) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/deficiencies/${def.id}/resolve`);
+      setToast({ message: 'Deficiency resolved.', variant: 'success', duration: 4000 });
+      refetchAll();
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || 'Failed to resolve deficiency.', variant: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  if (loading) {
+    return <div className="page-body"><div className="loading">Loading asset…</div></div>;
+  }
+  if (error && !asset) {
+    return (
+      <div className="page-body">
+        <div role="alert" className="alert alert-error mb-16">{error}</div>
+        <Link to="/assets" className="btn btn-secondary">← Back to Assets</Link>
+      </div>
+    );
+  }
+  if (!asset) return null;
+
+  const breadcrumb = [asset.site?.name, asset.building?.name, asset.area?.name,
+    asset.position ? (asset.position.code ? `${asset.position.code} — ${asset.position.name}` : asset.position.name) : null,
+  ].filter(Boolean).join(' › ');
+
+  const nameplateEntries = Object.entries(asset.nameplateData || {});
+  const schedules    = asset.schedules || [];
+  const workOrders   = asset.workOrders || [];
+  const deficiencies = asset.deficiencies || [];
+  const labSamples   = asset.labSamples || [];
+  const documents    = asset.documents || [];
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <Link to="/assets" className="back-link">← Assets</Link>
+          <h1 className="page-title">
+            {assetLabel(asset)}
+            {asset.archivedAt && (
+              <span className="badge badge-cancelled" style={{ marginLeft: 10, verticalAlign: 'middle' }}>Archived</span>
+            )}
+          </h1>
+          <div className="page-subtitle">
+            {EQUIPMENT_TYPE_LABELS[asset.equipmentType] || asset.equipmentType}
+            {breadcrumb && <> · {breadcrumb}</>}
+          </div>
+          <div className="contract-header-meta" style={{ marginTop: 8 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+              Condition <InfoTip content={CONDITION_TIP} />
+            </span>
+            <span title="Physical condition"><MetaChip meta={CONDITION_META[asset.conditionPhysical] && { ...CONDITION_META[asset.conditionPhysical], label: `Phys ${asset.conditionPhysical}` }} /></span>
+            <span title="Criticality"><MetaChip meta={CONDITION_META[asset.conditionCriticality] && { ...CONDITION_META[asset.conditionCriticality], label: `Crit ${asset.conditionCriticality}` }} /></span>
+            <span title="Operating environment"><MetaChip meta={CONDITION_META[asset.conditionEnvironment] && { ...CONDITION_META[asset.conditionEnvironment], label: `Env ${asset.conditionEnvironment}` }} /></span>
+            <span title="Governing condition (worst of the three axes)">
+              <MetaChip meta={CONDITION_META[asset.governingCondition] && { ...CONDITION_META[asset.governingCondition], label: `Governing: ${CONDITION_META[asset.governingCondition].label}` }} />
+            </span>
+            <ServiceChip on={!!asset.inService} onLabel="In service" offLabel="Out of service" />
+            <ServiceChip on={!!asset.isEnergized} onLabel="Energized" offLabel="De-energized" />
+          </div>
+        </div>
+        {canWrite && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'flex-start' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setEditing(v => !v)}>
+              {editing ? 'Close editor' : 'Edit'}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={handleApplyTemplate}>
+              Apply schedule template
+            </button>
+            <button
+              type="button"
+              className={asset.archivedAt ? 'btn btn-secondary' : 'btn btn-danger'}
+              onClick={handleArchiveToggle}
+            >
+              {asset.archivedAt ? 'Unarchive' : 'Archive'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="page-body">
+        {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
+
+        {editing && (
+          <EditAssetForm
+            asset={asset}
+            onCancel={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              setToast({ message: 'Asset updated.', variant: 'success', duration: 4000 });
+              refetchAll();
+            }}
+          />
+        )}
+
+        {/* ── Maintenance Schedules ─────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header">
+            <div className="card-title">Maintenance Schedules ({schedules.length})</div>
+          </div>
+          {schedules.length === 0 ? (
+            <div className="card-body">
+              <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+                No maintenance schedules yet.
+                {canWrite && ' Use "Apply schedule template" to pair this asset with the standard NFPA 70B task set for its equipment type.'}
+              </div>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>Standard Ref</th>
+                    <th>Interval</th>
+                    <th>Last Completed</th>
+                    <th>Next Due</th>
+                    {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedules.map(s => {
+                    const { cond, months } = effectiveIntervalMonths(s, asset);
+                    const overdue = s.nextDueDate && new Date(s.nextDueDate) < new Date();
+                    return (
+                      <tr key={s.id} style={!s.isActive ? { opacity: 0.55 } : undefined}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{s.taskDefinition?.taskName || '—'}</div>
+                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                            {[
+                              s.taskDefinition?.requiresOutage ? 'Requires outage' : null,
+                              s.conditionOverride ? `Override: ${s.conditionOverride}` : null,
+                              !s.isActive ? 'Inactive' : null,
+                            ].filter(Boolean).join(' · ')}
+                          </div>
+                        </td>
+                        <td className="td-muted">{s.taskDefinition?.standardRef || '—'}</td>
+                        <td>
+                          {months != null
+                            ? <span>{months} mo <span className="text-muted" style={{ fontSize: 'var(--font-size-xs)' }}>({cond})</span></span>
+                            : <span className="text-muted">—</span>}
+                        </td>
+                        <td>{fmtDate(s.lastCompletedDate)}</td>
+                        <td>
+                          <span style={overdue ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
+                            {fmtDate(s.nextDueDate)}{overdue ? ' · overdue' : ''}
+                          </span>
+                        </td>
+                        {canWrite && (
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleCompleteSchedule(s)}
+                                disabled={busy}
+                                title="Record a completion today and roll the recurrence forward"
+                              >
+                                Mark complete
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleNewWorkOrder(s)}
+                                disabled={busy}
+                                title="Create a work order for this task"
+                              >
+                                New work order
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── Work Orders ───────────────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header">
+            <div className="card-title">Work Orders {workOrders.length > 0 && `(latest ${workOrders.length})`}</div>
+          </div>
+          {workOrders.length === 0 ? (
+            <div className="card-body">
+              <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+                No work orders for this asset yet.
+              </div>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Scheduled</th>
+                    <th>Contractor</th>
+                    <th>Completed</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workOrders.map(wo => (
+                    <tr key={wo.id}>
+                      <td><MetaChip meta={WO_STATUS_META[wo.status]} fallback={wo.status} /></td>
+                      <td>{fmtDate(wo.scheduledDate)}</td>
+                      <td>
+                        {wo.contractor?.name || <span className="text-muted">Unassigned</span>}
+                        {wo.assignedTech?.name && (
+                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                            {wo.assignedTech.name}
+                          </div>
+                        )}
+                      </td>
+                      <td>{fmtDate(wo.completedDate)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link to={`/work-orders/${wo.id}`} className="btn btn-secondary btn-sm">Open</Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── Open Deficiencies ─────────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header">
+            <div className="card-title" style={deficiencies.length > 0 ? { color: 'var(--color-danger)' } : undefined}>
+              Open Deficiencies ({deficiencies.length})
+            </div>
+          </div>
+          {deficiencies.length === 0 ? (
+            <div className="card-body">
+              <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+                No open deficiencies — nothing outstanding on this asset.
+              </div>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>Description</th>
+                    <th>Logged</th>
+                    {canWrite && <th style={{ textAlign: 'right' }}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {deficiencies.map(def => (
+                    <tr key={def.id}>
+                      <td><MetaChip meta={SEVERITY_META[def.severity]} fallback={def.severity} /></td>
+                      <td>
+                        <div>{def.description}</div>
+                        {def.correctiveAction && (
+                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                            Corrective action: {def.correctiveAction}
+                          </div>
+                        )}
+                      </td>
+                      <td className="td-muted">{fmtDate(def.createdAt)}</td>
+                      {canWrite && (
+                        <td style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleResolveDeficiency(def)}
+                            disabled={busy}
+                          >
+                            Resolve
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── Lab Samples ───────────────────────────────────────────────────── */}
+        {labSamples.length > 0 && (
+          <div className="card mb-16">
+            <div className="card-header">
+              <div className="card-title">Lab Samples (latest {labSamples.length})</div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Sample Date</th>
+                    <th>Lab</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labSamples.map(ls => (
+                    <tr key={ls.id}>
+                      <td style={{ fontWeight: 600, textTransform: 'uppercase', fontSize: 'var(--font-size-sm)' }}>
+                        {(ls.sampleType || '').replace(/_/g, ' ')}
+                      </td>
+                      <td>{fmtDate(ls.sampleDate)}</td>
+                      <td className="td-muted">{ls.labName || '—'}</td>
+                      <td><MetaChip meta={DECAL_META[ls.resultRating]} fallback="Pending" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── Nameplate ─────────────────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header"><div className="card-title">Nameplate &amp; Details</div></div>
+          <div className="card-body">
+            <div className="detail-grid">
+              <div className="detail-item">
+                <div className="detail-label">Install Date</div>
+                <div className="detail-value">{fmtDate(asset.installDate)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Last Commissioned</div>
+                <div className="detail-value">{fmtDate(asset.lastCommissionedDate)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Serial Number</div>
+                <div className="detail-value">{asset.serialNumber || <span className="text-muted">—</span>}</div>
+              </div>
+              {nameplateEntries.map(([k, v]) => (
+                <div className="detail-item" key={k}>
+                  <div className="detail-label">{k}</div>
+                  <div className="detail-value">{String(v ?? '') || <span className="text-muted">—</span>}</div>
+                </div>
+              ))}
+            </div>
+            {asset.notes && (
+              <div style={{ marginTop: 16 }}>
+                <div className="detail-label">Notes</div>
+                <div className="detail-value" style={{ whiteSpace: 'pre-wrap' }}>{asset.notes}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Documents (compact) ───────────────────────────────────────────── */}
+        {documents.length > 0 && (
+          <div className="card mb-16">
+            <div className="card-header"><div className="card-title">Documents ({documents.length})</div></div>
+            <div className="card-body" style={{ padding: 0 }}>
+              {documents.map(doc => (
+                <div key={doc.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '10px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-ui)' }}>
+                  <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {doc.filename || doc.originalName || 'Document'}
+                  </span>
+                  <span className="text-muted" style={{ fontSize: 'var(--font-size-xs)', whiteSpace: 'nowrap' }}>
+                    {doc.uploader?.name ? `${doc.uploader.name} · ` : ''}{fmtDate(doc.uploadedAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Activity feed ─────────────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header"><div className="card-title">Activity</div></div>
+          <div className="card-body" style={{ padding: 0 }}>
+            {activity.length === 0 ? (
+              <div style={{ padding: 16, fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+                No activity recorded yet.
+              </div>
+            ) : (
+              activity.map(log => (
+                <div key={log.id} style={{ display: 'flex', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-ui)' }}>
+                  <div style={{ flex: 1 }}>
+                    <div>{activityText(log)}</div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                      {log.user?.name || 'System'} · {fmtDate(log.createdAt)}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+    </>
+  );
+}

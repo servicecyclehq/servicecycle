@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // VersionSkewDetector.jsx  (v0.90.4)
 //
-// Mounted once at the App root. Reads the <meta name="lapseiq-build-id">
+// Mounted once at the App root. Reads the <meta name="servicecycle-build-id">
 // stamped at build time, then polls /api/config every 60 seconds. When the
-// server's reported lapseiqVersion moves ahead of the loaded bundle, render
-// a non-dismissable banner asking the user to reload.
+// server's reported servicecycleVersion moves ahead of the loaded bundle,
+// render a non-dismissable banner asking the user to reload.
 //
 // Closes the residual stale-chunk window that `lazyWithReload` (v0.89.10)
 // doesn't catch — namely, users mid-form-fill whose currently-loaded
@@ -20,11 +20,11 @@
 import { useEffect, useState, useCallback } from 'react';
 
 const POLL_MS = 60 * 1000;
-const RELOAD_KEY = 'lapseiq_skew_reload_attempted_at';
+const RELOAD_KEY = 'servicecycle_skew_reload_attempted_at';
 
 function getBundleVersion() {
   if (typeof document === 'undefined') return null;
-  const el = document.querySelector('meta[name="lapseiq-build-id"]');
+  const el = document.querySelector('meta[name="servicecycle-build-id"]');
   if (!el) return null;
   const v = el.getAttribute('content');
   // Build-time substitution may have failed (dev server with no Vite plugin run).
@@ -40,7 +40,7 @@ export default function VersionSkewDetector() {
   const checkOnce = useCallback(async () => {
     try {
       const token = (typeof window !== 'undefined' && window.localStorage)
-        ? window.localStorage.getItem('lapseiq_token')
+        ? window.localStorage.getItem('servicecycle_token')
         : null;
       if (!token) return; // unauthenticated -> nothing to compare
       const res = await fetch('/api/config', {
@@ -49,7 +49,7 @@ export default function VersionSkewDetector() {
       });
       if (!res.ok) return;
       const json = await res.json();
-      const v = json && json.data && json.data.lapseiqVersion;
+      const v = json && json.data && json.data.servicecycleVersion;
       if (v) setServerVersion(v);
     } catch (_) {
       // Network errors are non-fatal — try again next interval.
@@ -107,7 +107,7 @@ export default function VersionSkewDetector() {
     >
       <span aria-hidden="true">⬆️</span>
       <span>
-        A new version of LapseIQ is available ({serverVersion}). Reload to update.
+        A new version of ServiceCycle is available ({serverVersion}). Reload to update.
       </span>
       <button
         type="button"

@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 // so we can disable feature checkboxes that the role doesn't support.
 // Server route at /api/users/permissions also enforces this; client gate is
 // belt-and-suspenders + clearer UX (no "toggle me, get 403 later" surprises).
+// Must stay in sync with server/lib/featureFlags.ts FEATURE_DEFAULTS.
 const FEATURE_DEFAULTS = {
-  admin:      { contracts_write: true,  vendors_write: true,  renewal_brief: true,  contract_flags: true,  communications: true,  export: true,  budget: true,  ingest: true,  alerts: true,  news: true  },
-  manager:    { contracts_write: true,  vendors_write: true,  renewal_brief: true,  contract_flags: true,  communications: true,  export: true,  budget: true,  ingest: true,  alerts: true,  news: true  },
-  viewer:     { contracts_write: false, vendors_write: false, renewal_brief: false, contract_flags: true,  communications: false, export: false, budget: false, ingest: false, alerts: true,  news: false },
-  consultant: { contracts_write: false, vendors_write: false, renewal_brief: true,  contract_flags: false, communications: false, export: true,  budget: true,  ingest: false, alerts: true,  news: false },
+  admin:      { assets_write: true,  contractors_write: true,  maintenance_brief: true,  communications: true,  export: true,  alerts: true },
+  manager:    { assets_write: true,  contractors_write: true,  maintenance_brief: true,  communications: true,  export: true,  alerts: true },
+  viewer:     { assets_write: false, contractors_write: false, maintenance_brief: false, communications: false, export: false, alerts: true },
+  consultant: { assets_write: false, contractors_write: false, maintenance_brief: true,  communications: false, export: false, alerts: true },
 };
 function roleAllows(role, feature) {
   return FEATURE_DEFAULTS[role]?.[feature] === true;
@@ -18,16 +19,12 @@ import api from '../api/client';
 
 // ── Feature display config ────────────────────────────────────────────────────
 const FEATURE_META = {
-  contracts_write: { label: 'Edit Contracts', icon: '📝', desc: 'Create & edit contracts' },
-  vendors_write:   { label: 'Edit Vendors',   icon: '🏢', desc: 'Add & manage vendors' },
-  renewal_brief:   { label: 'AI Brief',       icon: '✨', desc: 'AI renewal brief' },
-  contract_flags:  { label: 'Risk Flags',     icon: '🚩', desc: 'AI contract flags' },
-  communications:  { label: 'Log Comms',      icon: '💬', desc: 'Log communications' },
-  export:          { label: 'Export',         icon: '⬇️', desc: 'Export data to CSV' },
-  budget:          { label: 'Budget',         icon: '📊', desc: 'Budget forecast page' },
-  ingest:          { label: 'Upload',         icon: '⬆️', desc: 'AI doc ingestion' },
-  alerts:          { label: 'Alerts',         icon: '🔔', desc: 'Renewal alerts' },
-  news:            { label: 'News',           icon: '📰', desc: 'Vendor news feed' },
+  assets_write:      { label: 'Edit Assets',      icon: '📝', desc: 'Edit assets & schedules' },
+  contractors_write: { label: 'Edit Contractors', icon: '🏢', desc: 'Edit contractors' },
+  maintenance_brief: { label: 'AI Brief',         icon: '✨', desc: 'AI maintenance brief' },
+  communications:    { label: 'Log Comms',        icon: '💬', desc: 'Log & view communications' },
+  export:            { label: 'Export',           icon: '⬇️', desc: 'Export data to CSV' },
+  alerts:            { label: 'Alerts',           icon: '🔔', desc: 'Maintenance-due & overdue alerts' },
 };
 
 const ROLE_LABELS   = { admin: 'Admin', manager: 'Manager', viewer: 'Viewer', consultant: 'Consultant' };
@@ -147,13 +144,7 @@ export default function PermissionsPage() {
   function resetDefaults(userId) {
     const user = users.find(u => u.id === userId);
     if (!user) return;
-    const defaults = {
-      admin:   { contracts_write:true,  vendors_write:true,  renewal_brief:true,  contract_flags:true,  communications:true,  export:true,  budget:true,  ingest:true,  alerts:true,  news:true  },
-      manager: { contracts_write:true,  vendors_write:true,  renewal_brief:true,  contract_flags:true,  communications:true,  export:true,  budget:true,  ingest:true,  alerts:true,  news:true  },
-      viewer:  { contracts_write:false, vendors_write:false, renewal_brief:false, contract_flags:true,  communications:false, export:false, budget:false, ingest:false, alerts:true,  news:false },
-      consultant: { contracts_write:false, vendors_write:false, renewal_brief:true, contract_flags:true, communications:true, export:false, budget:false, ingest:false, alerts:true, news:true },
-    };
-    const d = defaults[user.role] || defaults.viewer;
+    const d = FEATURE_DEFAULTS[user.role] || FEATURE_DEFAULTS.viewer;
     setDirty(prev => ({ ...prev, [userId]: { ...d } }));
     setSaved(false);
   }

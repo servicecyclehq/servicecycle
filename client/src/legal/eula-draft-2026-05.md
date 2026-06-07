@@ -7,26 +7,26 @@
 > no representation that this draft is legally sufficient, complete, or
 > appropriate for any particular use.
 
-# LapseIQ — End-User License Agreement (EULA)
+# ServiceCycle — End-User License Agreement (EULA)
 
 **Effective Date:** *To be set on publication.*
 **Version:** Draft v1 — 2026-05-04
 **Licensor:** ForgeRift LLC, a Wisconsin limited liability company ("ForgeRift," "we," "us," "our").
-**Software:** The LapseIQ self-hosted contract-renewal management application, including the server, client, container images, scripts, and accompanying documentation distributed by ForgeRift (collectively, the "Software").
+**Software:** The ServiceCycle self-hosted contract-renewal management application, including the server, client, container images, scripts, and accompanying documentation distributed by ForgeRift (collectively, the "Software").
 
 ---
 
 ## How this differs from the Terms of Service
 
-The Terms of Service (ToS) at [lapseiq.com/terms](https://lapseiq.com/terms) govern your use of services that ForgeRift operates — the marketing site at lapseiq.com and the demo sandbox at demo.lapseiq.com. **This EULA governs your use of the Software you install on infrastructure you own or control.** You may be bound by both: the ToS while you're evaluating the demo, this EULA the moment you install. Where the two overlap, this EULA controls for the installed Software, and the ToS controls for the hosted services.
+The Terms of Service (ToS) at [servicecycle.com/terms](https://servicecycle.com/terms) govern your use of services that ForgeRift operates — the marketing site at servicecycle.com and the demo sandbox at demo.servicecycle.com. **This EULA governs your use of the Software you install on infrastructure you own or control.** You may be bound by both: the ToS while you're evaluating the demo, this EULA the moment you install. Where the two overlap, this EULA controls for the installed Software, and the ToS controls for the hosted services.
 
 ---
 
 ## 1. Acceptance
 
-You accept this EULA when you do any of the following: (a) run `scripts/install.sh` and answer "yes" to the EULA prompt; (b) start the LapseIQ first-run setup wizard at `/setup` and check the "I accept the EULA, Terms of Service, and Privacy Policy" box on the account-creation step (the setup wizard presents this EULA in a scrollable region and requires affirmative acknowledgment before the wizard can complete; ForgeRift records the timestamp and document-set version of acceptance on the User row); or (c) register a user account via the `/api/auth/register` API endpoint **with an explicit `acceptedEulaVersion` field in the request body**. Programmatic registrations without an `acceptedEulaVersion` field are rejected by the API as non-compliant electronic-signature events. If you do not agree, do not install or operate the Software.
+You accept this EULA when you do any of the following: (a) run `scripts/install.sh` and answer "yes" to the EULA prompt; (b) start the ServiceCycle first-run setup wizard at `/setup` and check the "I accept the EULA, Terms of Service, and Privacy Policy" box on the account-creation step (the setup wizard presents this EULA in a scrollable region and requires affirmative acknowledgment before the wizard can complete; ForgeRift records the timestamp and document-set version of acceptance on the User row); or (c) register a user account via the `/api/auth/register` API endpoint **with an explicit `acceptedEulaVersion` field in the request body**. Programmatic registrations without an `acceptedEulaVersion` field are rejected by the API as non-compliant electronic-signature events. If you do not agree, do not install or operate the Software.
 
-Earlier drafts of this EULA listed `docker pull` from GitHub Container Registry and `git clone` of the LapseIQ source repository as acceptance events. Those events have been removed because (1) `docker pull` does not reliably surface this EULA to the operator at the CLI, and (2) the source repository is private under Section 2; access to clone it is granted only under a separate written agreement.
+Earlier drafts of this EULA listed `docker pull` from GitHub Container Registry and `git clone` of the ServiceCycle source repository as acceptance events. Those events have been removed because (1) `docker pull` does not reliably surface this EULA to the operator at the CLI, and (2) the source repository is private under Section 2; access to clone it is granted only under a separate written agreement.
 
 If you are accepting on behalf of an organization, you represent that you have authority to bind that organization, and "you" refers both to you individually and to that organization.
 
@@ -53,7 +53,7 @@ You may not, and may not permit any third party to:
 - **Resell or sublicense.** Sublicense, sell, lease, rent, distribute, or otherwise make the Software available to any third party as a commercial offering, including under a "managed hosting" or "white-label" model.
 - **Affiliates and subcontractors.** You may permit (i) your affiliates that are under common ownership and control with you and (ii) third-party service providers acting solely on your behalf and bound by confidentiality obligations no less protective than this EULA, to access and use the Software solely to support your internal business operations. You remain fully responsible for their compliance with this EULA. This is not a permitted "managed hosting" or "white-label" arrangement under the preceding bullet.
 - **Reverse-engineer.** Reverse-engineer, disassemble, decompile, or otherwise attempt to derive the source code of the Software, except to the extent that applicable law expressly prohibits such restriction (e.g., interoperability rights under EU Directive 2009/24/EC).
-- **Build a competing product.** Use the Software's non-public features, performance characteristics, or confidential information disclosed by ForgeRift to develop, or to assist a third party in developing, a product that offers substantially similar functionality to the Software's core contract-renewal-management features, as described in the then-current LapseIQ documentation. This restriction does not prohibit ordinary internal benchmarking, learning from publicly documented features, or developing software that addresses adjacent or different use cases.
+- **Build a competing product.** Use the Software's non-public features, performance characteristics, or confidential information disclosed by ForgeRift to develop, or to assist a third party in developing, a product that offers substantially similar functionality to the Software's core contract-renewal-management features, as described in the then-current ServiceCycle documentation. This restriction does not prohibit ordinary internal benchmarking, learning from publicly documented features, or developing software that addresses adjacent or different use cases.
 - **Remove notices.** Remove, alter, or obscure any proprietary notices, copyright legends, brand marks, or third-party-license attributions in the Software, the Software's container images, or the SBOM shipped at `/app/sbom/` inside the runtime image.
 - **Run a benchmark.** Publish benchmarks, comparisons, or performance evaluations of the Software without our prior written consent. (You may run benchmarks for internal purposes.)
 - **Circumvent technical controls.** Circumvent any rate limit, license check, or security control implemented in the Software.
@@ -66,7 +66,7 @@ ForgeRift may release updates, patches, and new versions of the Software from ti
 
 Where an update materially changes the license terms (e.g., changes to Sections 3 or 5), the new license terms apply only to versions installed after the update; your existing installation continues to be governed by the version of this EULA that was in effect when you installed it.
 
-ForgeRift may discontinue the Software at any time on at least **90 days' written notice** (which may be by email to your registered admin address, by GitHub Release notes, or by a notice in the LapseIQ documentation site). Discontinuation does not retroactively revoke your license to operate any version of the Software installed before the notice date.
+ForgeRift may discontinue the Software at any time on at least **90 days' written notice** (which may be by email to your registered admin address, by GitHub Release notes, or by a notice in the ServiceCycle documentation site). Discontinuation does not retroactively revoke your license to operate any version of the Software installed before the notice date.
 
 ---
 
@@ -85,7 +85,7 @@ The following outbound calls happen **only when you opt in** by setting the corr
 
 The in-product feedback feature is **disabled by default on self-hosted installations** (`FEEDBACK_ENABLED=false`). To enable it, set `FEEDBACK_ENABLED=true` and configure `SUPPORT_EMAIL` to the address where you want feedback delivered. When enabled, feedback submissions are delivered to the address you configure — ForgeRift does not receive a copy unless the operator routes feedback to a ForgeRift-controlled address.
 
-**Email subject-line bypass disclosure.** The Software's email module contains a narrow debug bypass: emails whose subject line begins with `[LapseIQ Feedback]` will be transmitted via the configured email provider even when `EMAIL_MOCK=true` is set. This bypass is included to support feedback collection on managed demo environments where `EMAIL_MOCK=true` is otherwise the default. On self-hosted installations, this bypass has no effect unless (a) you have configured `EMAIL_MOCK=true`, AND (b) an in-product feedback feature is invoked with a subject containing the bypass prefix, AND (c) you have explicitly configured `SUPPORT_EMAIL` to a ForgeRift-controlled address. The Software does not preset `SUPPORT_EMAIL` to a ForgeRift-controlled address in any default configuration.
+**Email subject-line bypass disclosure.** The Software's email module contains a narrow debug bypass: emails whose subject line begins with `[ServiceCycle Feedback]` will be transmitted via the configured email provider even when `EMAIL_MOCK=true` is set. This bypass is included to support feedback collection on managed demo environments where `EMAIL_MOCK=true` is otherwise the default. On self-hosted installations, this bypass has no effect unless (a) you have configured `EMAIL_MOCK=true`, AND (b) an in-product feedback feature is invoked with a subject containing the bypass prefix, AND (c) you have explicitly configured `SUPPORT_EMAIL` to a ForgeRift-controlled address. The Software does not preset `SUPPORT_EMAIL` to a ForgeRift-controlled address in any default configuration.
 
 ForgeRift does not receive a copy of any data sent through any of the integrations above. If a future version of the Software introduces any outbound call to a ForgeRift-controlled endpoint, that change will be (a) opt-in by default, (b) called out explicitly in the release notes for the version that introduces it, *and (c) limited to operational telemetry that does not include customer-uploaded content, document text, or extracted contract data unless you separately and expressly opt in*.
 
@@ -105,7 +105,7 @@ ForgeRift is not a "processor" or "service provider" of any data you process thr
 
 ## 7. Third-party components
 
-The Software incorporates third-party open-source components, each of which is licensed under its own license terms. The complete list, with version numbers and license identifiers, is shipped inside every container image at `/app/sbom/` and is also available on request from support@lapseiq.com.
+The Software incorporates third-party open-source components, each of which is licensed under its own license terms. The complete list, with version numbers and license identifiers, is shipped inside every container image at `/app/sbom/` and is also available on request from support@servicecycle.com.
 
 Nothing in this EULA limits or restricts your rights under the licenses of any third-party open-source component, with respect to that component.
 
@@ -171,7 +171,7 @@ Your obligations under this Section 11(c) do not extend to claims to the extent 
 
 **Governing law.** This EULA is governed by the laws of the **State of Wisconsin, USA**, without regard to its conflict-of-laws principles. The United Nations Convention on Contracts for the International Sale of Goods does not apply.
 
-**Informal resolution required first.** Before commencing any arbitration or court proceeding, you and ForgeRift agree to attempt in good faith to resolve any dispute by sending a written notice describing the dispute, the relief sought, and your contact information to **support@lapseiq.com** (for notices to ForgeRift) or to the email address registered with your installation (for notices to you). The parties will attempt resolution for at least **30 days** before either party commences a formal proceeding. The 30-day period tolls any applicable limitations period.
+**Informal resolution required first.** Before commencing any arbitration or court proceeding, you and ForgeRift agree to attempt in good faith to resolve any dispute by sending a written notice describing the dispute, the relief sought, and your contact information to **support@servicecycle.com** (for notices to ForgeRift) or to the email address registered with your installation (for notices to you). The parties will attempt resolution for at least **30 days** before either party commences a formal proceeding. The 30-day period tolls any applicable limitations period.
 
 **Mandatory binding arbitration.** Except as provided in the "Carve-outs" paragraph below, any dispute, claim, or controversy arising out of or relating to this EULA, the Software, or the relationship between you and ForgeRift (a "Dispute") that is not resolved through the informal-resolution process will be resolved by **binding individual arbitration** administered by JAMS under its Streamlined Arbitration Rules and Procedures then in effect. The arbitration will be seated in **Milwaukee, Wisconsin**, conducted in English, and decided by a single arbitrator. The arbitrator's award is final and may be entered in any court of competent jurisdiction. **The Federal Arbitration Act, 9 U.S.C. §§ 1 et seq., governs the interpretation and enforcement of this arbitration agreement.**
 
@@ -189,6 +189,6 @@ Your obligations under this Section 11(c) do not extend to claims to the extent 
 
 **Entire agreement; severability; assignment; force majeure.** This EULA, together with the Privacy Policy (which governs the marketing site and demo sandbox only) and any separate written agreement between you and ForgeRift (including any Master Services Agreement and any signed order form), is the entire agreement between the parties regarding the Software. In the event of conflict, a signed Master Services Agreement controls over a signed order form, which controls over this EULA, which controls over the Privacy Policy with respect to the installed Software. If any provision is held unenforceable, the remaining provisions remain in effect. You may not assign this EULA without our prior written consent; we may assign freely. Neither party is liable for delay or failure caused by events beyond its reasonable control.
 
-**Notices.** Notices to ForgeRift may be sent to **support@lapseiq.com**. Notices to you may be sent to the email address you provided at install time or in any later support correspondence. The parties agree that electronic notices, including by email to the address each party most recently provided to the other, satisfy any legal-notice requirement under this EULA. A notice is effective on the date sent unless the sender receives a delivery-failure response, in which case the notice is effective only upon successful re-delivery to an updated address.
+**Notices.** Notices to ForgeRift may be sent to **support@servicecycle.com**. Notices to you may be sent to the email address you provided at install time or in any later support correspondence. The parties agree that electronic notices, including by email to the address each party most recently provided to the other, satisfy any legal-notice requirement under this EULA. A notice is effective on the date sent unless the sender receives a delivery-failure response, in which case the notice is effective only upon successful re-delivery to an updated address.
 
-**Contact.** Questions about this EULA? Email **support@lapseiq.com**.
+**Contact.** Questions about this EULA? Email **support@servicecycle.com**.

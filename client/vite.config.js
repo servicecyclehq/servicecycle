@@ -98,10 +98,10 @@ function routeModulePreloadPlugin() {
 function buildIdMetaPlugin() {
   const pkg = require('./package.json');
   return {
-    name: 'lapseiq-build-id-meta',
+    name: 'servicecycle-build-id-meta',
     transformIndexHtml(html) {
       return html
-        .replace('%LAPSEIQ_BUILD_ID%', 'v' + pkg.version)
+        .replace('%SERVICECYCLE_BUILD_ID%', 'v' + pkg.version)
         .split('%BOOTSTRAP_VER%').join(pkg.version);
     },
   };

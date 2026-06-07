@@ -1,11 +1,9 @@
 /**
  * xlsxExport.js — shared ExcelJS workbook builder + streamer.
  *
- * v0.58.0: extracted from routes/export.js so the new reports routes
- * (auto-renewal-exposure, vendor-concentration, non-saas-categories) can
- * reuse the same column-registry → workbook conversion without
- * duplicating the workbook formatting code or the column-type number-
- * format choices.
+ * v0.58.0: extracted from routes/export.js so report routes can reuse the
+ * same column-registry → workbook conversion without duplicating the
+ * workbook formatting code or the column-type number-format choices.
  *
  * Column def shape (columnDefs[i]):
  *   {
@@ -35,7 +33,7 @@ function dateOrNull(v) {
 
 async function sendXlsx(res, { sheetName, columnDefs, rows, filename }) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'LapseIQ';
+  wb.creator = 'ServiceCycle';
   wb.created = new Date();
   const ws = wb.addWorksheet(sheetName || 'Report');
 

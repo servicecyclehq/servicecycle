@@ -10,7 +10,7 @@ import axios from 'axios';
 // silently fell to the .catch() branch + the Register page showed
 // "Registration is closed on this instance" instead of the demo form.
 // '/api' resolves same-origin via the Caddy reverse proxy on demo
-// (lapseiq.com -> Caddy -> server container) and on self-host (whatever
+// (servicecycle.com -> Caddy -> server container) and on self-host (whatever
 // reverse-proxy the operator uses). Operators who need a cross-origin
 // API base can still set VITE_API_URL at build time to override.
 // v0.36.10: the v0.36.9 fix used '/api' as the fallback which double-
@@ -33,7 +33,7 @@ const api = axios.create({
 // (or covered by SESSION_KEY_PREFIXES). EVERY new key file-author wants to
 // keep across sessions MUST be explicitly listed in KEEP_KEYS below.
 //
-// Default-deny: clearAuthStorage() wipes every `lapseiq_*` key that isn't on
+// Default-deny: clearAuthStorage() wipes every `servicecycle_*` key that isn't on
 // the KEEP_KEYS allowlist. This is the v0.7.3 hardening — before this, any
 // new localStorage key had to be remembered by the author for both the
 // SESSION_KEYS clear path AND the audit; missing one quietly leaked state
@@ -45,62 +45,66 @@ const api = axios.create({
 // ---------------------------------------------------------------------------
 
 const SESSION_KEYS = [
-  'lapseiq_token',
-  'lapseiq_refresh_token',
-  'lapseiq_company',
+  'servicecycle_token',
+  'servicecycle_refresh_token',
+  'servicecycle_company',
   // OnboardingWizard saves the next-step index so navigation to a task page
   // doesn't lose the user's place. Must be wiped on logout/login or it
   // contaminates the next account in the same browser - first-time tenants
-  // got the wrong starting step (e.g. landed on "Add a contract" because the
-  // previous account had advanced past "Add a vendor"). Filed 2026-05-08.
-  'lapseiq_onboarding_step',
+  // got the wrong starting step (e.g. landed on "Add an asset" because the
+  // previous account had advanced past "Add a site"). Filed 2026-05-08.
+  'servicecycle_onboarding_step',
   // 2026-05-13: WelcomeTourPanel celebrate-flag persisted across nightly
   // demo resets and surfaced the tour before OnboardingWizard could run.
   // v0.7.2 gated the panel on onboardingDone; v0.7.3 also clears the key.
-  'lapseiq_welcome_pending',
+  'servicecycle_welcome_pending',
   // Per-account AI-consent acknowledgement. Account-scoped, must clear on
   // session change so a new sandbox user re-confirms consent.
-  'lapseiq_ai_consent_session',
+  'servicecycle_ai_consent_session',
   // Demo banner dismissal — per visit, not per persistent user.
-  'lapseiq_demo_banner_dismissed',
+  'servicecycle_demo_banner_dismissed',
   // Setup banner dismissal — lets sandbox visitors skip the onboarding
   // prompt without marking setup as done. Clears on logout so the next
   // visitor to the same browser gets the full guided flow.
-  'lapseiq_setup_banner_dismissed',
+  'servicecycle_setup_banner_dismissed',
   // Historical keys we no longer write but may still exist from earlier
   // versions; cleared so a logout from an upgraded client wipes them.
-  'lapseiq_user',
+  'servicecycle_user',
 ];
 
 // Prefix matches — for any key shaped `<prefix><uid>` or `<prefix>:<thing>`.
 // On clearAuthStorage we sweep every localStorage key starting with one of
-// these prefixes. Used for the per-user draft auto-save (NewContract.jsx
-// writes `lapseiq_draft_contract_new:<uid>`).
+// these prefixes. Used for the per-user draft auto-save (NewAsset.jsx
+// writes `servicecycle_draft_asset_new:<uid>`).
 const SESSION_KEY_PREFIXES = [
-  'lapseiq_draft_contract_new:',
+  'servicecycle_draft_asset_new:',
 ];
 
-// KEEP_KEYS — explicit allowlist of `lapseiq_*` keys that survive a session
-// change. ONLY user-facing preferences with no account-coupling go here. If
-// you need to add one, the bar is: would two prospects sharing a browser at
-// a kiosk both want this value? If no, it's session-scoped and doesn't
-// belong here.
+// KEEP_KEYS — explicit allowlist of `servicecycle_*` keys that survive a
+// session change. ONLY user-facing preferences with no account-coupling go
+// here. If you need to add one, the bar is: would two prospects sharing a
+// browser at a kiosk both want this value? If no, it's session-scoped and
+// doesn't belong here.
 const KEEP_KEYS = [
   // User's preferred light/dark theme. UX preference, no data coupling.
-  'lapseiq_theme',
+  'servicecycle_theme',
 ];
 
 export function clearAuthStorage() {
   // Explicit clear of the documented session keys (cheap; idempotent).
   for (const k of SESSION_KEYS) localStorage.removeItem(k);
 
-  // Default-deny sweep: any `lapseiq_*` key not on the KEEP allowlist gets
-  // wiped. Catches future-author-forgot-to-register-the-key bugs and any
+  // Default-deny sweep: any `servicecycle_*` key not on the KEEP allowlist
+  // gets wiped. Catches future-author-forgot-to-register-the-key bugs and any
   // prefix-shaped per-user keys. This is the load-bearing line of defense.
+  // Legacy `lapseiq_*` keys (pre-rebrand clients) are swept unconditionally
+  // so an upgraded client leaves no residue behind.
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
-      if (!key || !key.startsWith('lapseiq_')) continue;
+      if (!key) continue;
+      if (key.startsWith('lapseiq_')) { localStorage.removeItem(key); continue; }
+      if (!key.startsWith('servicecycle_')) continue;
       if (KEEP_KEYS.includes(key)) continue;
       // Already-removed explicit keys re-removing is a no-op; prefix-keys
       // get caught here. Belt and suspenders.
@@ -166,7 +170,7 @@ function isPublicPath(pathname) {
 // across browser restarts would mis-announce a fresh visit as an expiry.
 function markSessionExpired() {
   if (typeof window === 'undefined') return;
-  try { sessionStorage.setItem('lapseiq_session_expired', 'true'); } catch (_) { /* ignore */ }
+  try { sessionStorage.setItem('servicecycle_session_expired', 'true'); } catch (_) { /* ignore */ }
 }
 
 function redirectToLoginIfProtected() {
@@ -178,7 +182,7 @@ function redirectToLoginIfProtected() {
 
 // Attach access token to every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('lapseiq_token');
+  const token = localStorage.getItem('servicecycle_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -219,7 +223,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !isAuthEndpoint && !originalRequest._retried) {
       originalRequest._retried = true;
 
-      const refreshToken = localStorage.getItem('lapseiq_refresh_token');
+      const refreshToken = localStorage.getItem('servicecycle_refresh_token');
       if (refreshToken) {
         try {
           // Coalesce concurrent refresh attempts into one request
@@ -235,8 +239,8 @@ api.interceptors.response.use(
           const refreshRes = await _refreshPromise;
           const { token: newAccessToken, refreshToken: newRefreshToken } = refreshRes.data.data;
 
-          localStorage.setItem('lapseiq_token', newAccessToken);
-          if (newRefreshToken) localStorage.setItem('lapseiq_refresh_token', newRefreshToken);
+          localStorage.setItem('servicecycle_token', newAccessToken);
+          if (newRefreshToken) localStorage.setItem('servicecycle_refresh_token', newRefreshToken);
 
           // Retry original request with the new access token
           originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
@@ -283,8 +287,8 @@ api.interceptors.response.use(
     ) {
       // Fire a custom DOM event so any component can listen without coupling
       // to a global store. Layout.jsx picks this up and renders the banner.
-      window.dispatchEvent(new CustomEvent('lapseiq:demo-blocked', {
-        detail: { message: 'This action is disabled on the LapseIQ demo.' },
+      window.dispatchEvent(new CustomEvent('servicecycle:demo-blocked', {
+        detail: { message: 'This action is disabled on the ServiceCycle demo.' },
       }));
       // Still reject so the calling component's catch runs, but tag the
       // error so components can opt-out of showing their own error message.

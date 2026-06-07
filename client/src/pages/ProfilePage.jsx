@@ -4,12 +4,13 @@ import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import PasswordInput from '../components/PasswordInput';
 
-// Feature display config (must stay in sync with server/lib/featureFlags.js)
+// Feature display config (must stay in sync with server/lib/featureFlags.ts).
+// Only user-hideable features belong here — the "My View" card lets users
+// hide these from their own sidebar without changing admin-granted access.
 const FEATURE_META = {
-  news:   { label: 'Vendor News',     icon: '📰' },
-  budget: { label: 'Budget Forecast', icon: '📊' },
-  ingest: { label: 'Upload Contract', icon: '⬆️' },
-  alerts: { label: 'Alerts',          icon: '🔔' },
+  maintenance_brief: { label: 'AI Maintenance Brief', icon: '✨' },
+  export:            { label: 'Export',               icon: '⬇️' },
+  alerts:            { label: 'Alerts',               icon: '🔔' },
 };
 
 const ROLE_LABELS = {
@@ -274,7 +275,7 @@ function YourDataCard({ user }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `lapseiq-user-${user.id}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `servicecycle-user-${user.id}-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -300,7 +301,7 @@ function YourDataCard({ user }) {
       <h2>Your data</h2>
       <p style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', marginTop: -4, marginBottom: 12 }}>
         Exercise your data-protection rights. The export includes every row
-        in LapseIQ that references your account, in a single JSON file.
+        in ServiceCycle that references your account, in a single JSON file.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -309,7 +310,7 @@ function YourDataCard({ user }) {
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>
             GDPR Article 15 / CCPA right to know. Returns a JSON archive of
             your profile, activity log, refresh-token metadata, AI usage,
-            alert preferences, and any vendor communications you authored.
+            alert preferences, and any communications you authored.
           </p>
           <button className="btn btn-secondary btn-sm" onClick={downloadExport} disabled={exporting}>
             {exporting ? 'Preparing export…' : 'Download my data (JSON)'}
@@ -321,13 +322,13 @@ function YourDataCard({ user }) {
           <div style={{ fontSize: 'var(--font-size-ui)', fontWeight: 500, marginBottom: 4 }}>Delete my account</div>
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>
             GDPR Article 17 right to erasure. Removes your user record and
-            anonymizes references in the audit log + procurement history.
+            anonymizes references in the audit log + maintenance history.
             <strong> An admin in your account must perform this action </strong>
             — you cannot delete the account you're signed in as. Ask an
             admin to use the "Erase user" action on the Users page, or
             email{' '}
-            <a href="mailto:privacy@lapseiq.com" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
-              privacy@lapseiq.com
+            <a href="mailto:privacy@servicecycle.com" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+              privacy@servicecycle.com
             </a>{' '}
             if you're the only admin.
           </p>
@@ -527,10 +528,10 @@ function TwoFactorCard() {
 
   function downloadBackupCodes() {
     const text = backupCodes.join('\n');
-    const blob = new Blob([`LapseIQ 2FA Backup Codes\n========================\nSave these codes somewhere safe. Each code can only be used once.\n\n${text}\n`], { type: 'text/plain' });
+    const blob = new Blob([`ServiceCycle 2FA Backup Codes\n=============================\nSave these codes somewhere safe. Each code can only be used once.\n\n${text}\n`], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'lapseiq-backup-codes.txt';
+    a.download = 'servicecycle-backup-codes.txt';
     a.click();
   }
 

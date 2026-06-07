@@ -41,8 +41,8 @@ const SubmitSchema = z.object({
   website: z.string().optional().nullable(),  // honeypot — must be empty
 }).strict();
 
-const INSTALL_SCRIPT_URL = process.env.LAPSEIQ_INSTALL_URL || 'https://lapseiq.com/install.sh';
-const DEMO_URL           = process.env.LAPSEIQ_DEMO_URL    || 'https://demo.lapseiq.com';
+const INSTALL_SCRIPT_URL = process.env.SERVICECYCLE_INSTALL_URL || 'https://servicecycle.com/install.sh';
+const DEMO_URL           = process.env.SERVICECYCLE_DEMO_URL    || 'https://demo.servicecycle.com';
 
 // ── POST /api/early-access ──────────────────────────────────────────────────
 router.post('/', async (req, res) => {
@@ -79,7 +79,7 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     console.error('[earlyAccess] DB insert failed:', err);
-    return res.status(500).json({ success: false, error: 'Could not record your request — please email support@lapseiq.com directly.' });
+    return res.status(500).json({ success: false, error: 'Could not record your request — please email support@servicecycle.com directly.' });
   }
 
   // Fire both emails in parallel; neither blocks the response. Failures
@@ -90,7 +90,7 @@ router.post('/', async (req, res) => {
   Promise.allSettled([
     sendEmail({
       to:      row.email,
-      subject: 'LapseIQ — your early-access request',
+      subject: 'ServiceCycle — your early-access request',
       html:    earlyAccessReplyHtml({
         name: row.name,
         installScriptUrl: INSTALL_SCRIPT_URL,
@@ -99,7 +99,7 @@ router.post('/', async (req, res) => {
     }),
     process.env.SUPPORT_EMAIL ? sendEmail({
       to:      process.env.SUPPORT_EMAIL,
-      subject: `[LapseIQ Feedback] new lead — ${row.name} (${row.email})`,
+      subject: `[ServiceCycle Feedback] new lead — ${row.name} (${row.email})`,
       html:    earlyAccessNotificationHtml({
         name:        row.name,
         email:       row.email,

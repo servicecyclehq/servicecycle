@@ -144,7 +144,7 @@ async function runPgDump() {
   const os        = require('os');
   const fsp       = require('fs/promises');
   const pgEnv     = parseDatabaseUrl(process.env.DATABASE_URL);
-  const tmpDir    = await fsp.mkdtemp(path.join(os.tmpdir(), 'lapseiq-pgdump-'));
+  const tmpDir    = await fsp.mkdtemp(path.join(os.tmpdir(), 'servicecycle-pgdump-'));
   const tmpFile   = path.join(tmpDir, 'dump.pgcustom');
 
   await new Promise<void>((resolve, reject) => {
@@ -236,7 +236,7 @@ async function uploadToS3(buf, key) {
     Key:         key,
     Body:        buf,
     ContentType: 'application/gzip',
-    Metadata:    { 'backup-tool': 'lapseiq', 'backup-created': new Date().toISOString() },
+    Metadata:    { 'backup-tool': 'servicecycle', 'backup-created': new Date().toISOString() },
   }));
   return key;
 }
@@ -275,13 +275,13 @@ async function sendFailureEmail(accountId, error) {
     for (const admin of admins) {
       await sendEmail({
         to:      admin.email,
-        subject: '⚠️ LapseIQ backup failed',
+        subject: '⚠️ ServiceCycle backup failed',
         html: `
           <p>Hi ${admin.name || 'Admin'},</p>
-          <p>The automated database backup for your LapseIQ instance failed.</p>
+          <p>The automated database backup for your ServiceCycle instance failed.</p>
           <p><strong>Error:</strong> ${error}</p>
           <p>Check Settings → Backups for details, or review server logs.</p>
-          <p style="color:#6b7280;font-size:12px;margin-top:24px">LapseIQ automated message</p>
+          <p style="color:#6b7280;font-size:12px;margin-top:24px">ServiceCycle automated message</p>
         `,
       });
     }
@@ -320,7 +320,7 @@ async function runBackup(accountId, triggeredBy = 'cron') {
   // .enc suffix on encrypted files so operators can spot at a glance whether
   // a backup is plaintext or wrapped. The decrypt-backup CLI strips this
   // suffix and writes the plain .sql.gz alongside.
-  const filename  = willEncrypt ? `lapseiq-backup-${ts}.sql.gz.enc` : `lapseiq-backup-${ts}.sql.gz`;
+  const filename  = willEncrypt ? `servicecycle-backup-${ts}.sql.gz.enc` : `servicecycle-backup-${ts}.sql.gz`;
   const s3Key     = `backups/${filename}`;
 
   // S5-FN-11 (v0.74.0): per-account log prefix for grep-ability.

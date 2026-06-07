@@ -32,10 +32,8 @@ export const TOP_TABS = [WorkspaceTab, IntegrationsTab, SecurityTab];
 export const SUB_TAB_LABELS = {
   general:            'General',
   alerts:             'Alerts',
-  categories:         'Categories',
   ai:                 'AI & Extraction',
   access:             'Users & Roles',
-  imports:            'Imports',
   'api-keys':         'API Keys',
   webhooks:           'Webhooks',
   security:           'Security',
@@ -43,7 +41,6 @@ export const SUB_TAB_LABELS = {
   encryption:         'Encryption',
   customfields:       'Custom Fields',
   data:               'Account Data',
-  'template-feedback':'Template Feedback',
 };
 
 // Sub-tabs that require admin role. Non-admins won't see these in the
@@ -52,7 +49,6 @@ export const SUB_TAB_LABELS = {
 export const ADMIN_ONLY_SUB_TABS = new Set([
   'api-keys',
   'webhooks',
-  'template-feedback',
 ]);
 
 // Returns the top-tab descriptor that owns the given sub-tab id, or

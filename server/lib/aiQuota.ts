@@ -9,32 +9,18 @@
  *
  * Action names are free-form strings so caller routes can pick a granularity.
  * Today's catalogue + per-action demo defaults:
- *   - 'extract'        — PDF/image ingest + signature reading SHARED    (demo cap: 2/day)
- *   - 'ask'            — Ask LapseIQ in-product assistant (L14)         (demo cap: 6/day)
- *   - 'brief'          — Renewal brief generation (Phase 4 v0.4.0)      (demo cap: 1/day)
- *   - 'brief_search'   — Tavily web-search enrichment for brief (P4)    (demo cap: 1/day)
+ *   - 'ingest_extract'    — PDF/image extraction (test reports, nameplates) (demo cap: 3/day)
+ *   - 'ask'               — in-product assistant (L14)                      (demo cap: 5/day)
+ *   - 'maintenance_brief' — AI maintenance recommendation / NFPA compliance
+ *                           summary (placeholder until the brief route lands)(demo cap: 2/day)
+ *   - 'narrate'           — AI-narrated report summaries                    (demo cap: 2/day)
  *
- * Why PDF + signature share one bucket: this is what the published Demo
- * Sandbox Notice promises ("PDF extraction and signature reading share a
- * combined cap of 2 calls per day per user"). Routes/ingest.js and
- * routes/signature.js both call checkAndIncrement(userId, 'extract').
- *
- * Why brief + brief_search are separate buckets: brief generation costs
- * one LLM call; the optional Tavily web-search enrichment is a separate
- * outbound API hit with its own credit/rate exposure. Splitting buckets
- * lets us cap each independently and lets self-hosted operators disable
- * search (omit TAVILY_API_KEY) without affecting the brief budget. Both
- * default to 1/day on demo since brief output is high-value-per-call.
- * briefLimiter (30/hr burst control in routes/contracts.js) remains in
- * place as a second guardrail on top of the daily quota.
- *
- * Why Ask gets 6/day vs extract's 2: Ask is conversational — visitors
+ * Why Ask gets a larger cap than extract: Ask is conversational — visitors
  * naturally exchange 4-5 questions with an assistant before getting bored.
  * Extract is "demo this feature once" — a single PDF is enough to see how
  * AI extraction works. Cost protection on the larger Ask cap comes from
- * prompt caching on the AI Guide system prompt (server/routes/ask.js),
- * which collapses Ask per-call cost from ~$0.07 to ~$0.005 after the
- * first call in a session.
+ * prompt caching on the AI Guide system prompt, which collapses Ask
+ * per-call cost from ~$0.07 to ~$0.005 after the first call in a session.
  *
  * Day buckets are UTC ISO date strings (YYYY-MM-DD). All callers see the same
  * reset boundary regardless of where the server lives, which avoids the
@@ -60,19 +46,14 @@ const UNLIMITED = Number.POSITIVE_INFINITY;
 //   3. DEMO_DEFAULT_CAPS[action]              — only when DEMO_MODE=true
 //   4. UNLIMITED                              — self-host default
 //
-// 'extract' is the SHARED bucket for PDF/image ingest + signature reading.
-// Both routes/ingest.js and routes/signature.js call checkAndIncrement
-// with action='extract' so a user's combined daily budget is 2 (e.g.,
-// 1 PDF + 1 signature, or 2 PDFs, or 2 signatures — not 2 of each).
-// This matches the published Demo Sandbox Notice.
+// 'ingest_extract' is the bucket for AI extraction from uploaded documents
+// (contractor test reports, nameplate photos, legacy maintenance logs).
+// routes/ingest calls checkAndIncrement with action='ingest_extract'.
 //
-// 'brief' / 'brief_search' (Phase 4 v0.4.0): brief generation and the
-// optional Tavily web-search enrichment are tracked separately. Self-host
-// is unlimited (UNLIMITED short-circuit in checkAndIncrement); demo is
-// capped at 1/day each so a single demo visitor exercises the feature
-// once without exhausting the shared Anthropic/Tavily key budget. The
-// Demo Sandbox Notice copy in docs/legal/demo-sandbox-notice.md reflects
-// this — keep it in sync when these caps change.
+// 'maintenance_brief' is the placeholder bucket for AI maintenance
+// recommendation / compliance summary generation; the route wiring lands
+// with the assets adaptation. Self-host is unlimited (UNLIMITED
+// short-circuit in checkAndIncrement).
 // 2026-05-17 (v0.32.4): demo AI provider switched from Anthropic Haiku to
 // Google Gemini 2.0 Flash. Gemini Flash's free tier offers 1500 requests/
 // day per API key at zero marginal cost, which lets us bump per-user
@@ -80,14 +61,12 @@ const UNLIMITED = Number.POSITIVE_INFINITY;
 // ForgeRift's bill at risk.
 //
 // Demo per-user, per-action, per-UTC-day caps:
-//   - extract:      3 (PDF + signature combined; one PDF + retry + alt format)
-//   - ask:          5 (real Q&A turns, not a single shot)
-//   - brief:        2 (generate + regenerate to see output variance)
-//   - brief_search: 2 (Tavily web-search enrichment; matches brief)
+//   - ingest_extract:    3 (one PDF + retry + alt format)
+//   - ask:               5 (real Q&A turns, not a single shot)
+//   - maintenance_brief: 2 (generate + regenerate to see output variance)
 //
-// Per-active-user worst case: 10 Gemini calls/day. Realistic average:
-// 4-6 since most visitors do not max every action. brief_search uses
-// Tavily, not Gemini, so it doesn't count toward the Gemini cap budget.
+// Per-active-user worst case stays comfortably under aiBudgetGuard's
+// global daily fuse since most visitors do not max every action.
 //
 // Global-day safety net: see aiBudgetGuard.js (v0.32.4) — a separate
 // process-wide counter caps total Gemini calls per UTC day at
@@ -100,24 +79,16 @@ const UNLIMITED = Number.POSITIVE_INFINITY;
 // Self-host installs are UNLIMITED (DEMO_MODE !== 'true' short-circuit
 // in getDailyCap). Operators bring their own AI provider key.
 const DEMO_DEFAULT_CAPS = {
-  extract:      3,
-  ask:          5,
-  brief:        2,
-  brief_search: 2,
+  ingest_extract:    3,
+  ask:               5,
+  maintenance_brief: 2,
   // v0.61.0: AI-narrated reports. Light per-call cost (~600 input +
-  // 320 output tokens, ~30 CF Neurons each) but the cap matches `brief`
-  // at 2/day because narrative regeneration is conceptually adjacent to
-  // brief generation and should share the same trust budget. With 50
-  // visitors/day x 3 narrate-eligible reports x cap=2 the worst-case load
-  // is 300 calls/day, comfortably under aiBudgetGuard's 1300/day fuse.
-  // Self-host stays UNLIMITED via the DEMO_MODE short-circuit above.
-  narrate:      2,
-  // v0.78.0: negotiation recommendations -- same cost profile as brief
-  negotiate:    2,
-  // v0.79.0: full adversarial debate engine (5 AI calls: 4 personas +
-  // synthesis director). Most expensive action; cap=1/day on demo.
-  // Self-host stays UNLIMITED via the DEMO_MODE short-circuit.
-  'negotiation-analysis': 1,
+  // 320 output tokens, ~30 CF Neurons each); the cap matches
+  // maintenance_brief at 2/day because narrative regeneration is
+  // conceptually adjacent to brief generation and should share the same
+  // trust budget. Self-host stays UNLIMITED via the DEMO_MODE
+  // short-circuit above.
+  narrate:           2,
 };
 
 // v0.66.0 — per-role daily-total caps (sum across all actions for the user today).
@@ -253,9 +224,8 @@ function getDailyCap(action) {
       return DEMO_DEFAULT_CAPS[action];
     }
     // Unknown action under DEMO_MODE — fall back to the most restrictive
-    // catalogued cap (currently 1/day after Phase 4 added brief +
-    // brief_search at 1 each). Safer than UNLIMITED on a shared key,
-    // tracks tighter as new high-cost actions are enrolled.
+    // catalogued cap. Safer than UNLIMITED on a shared key, tracks
+    // tighter as new high-cost actions are enrolled.
     return Math.min(...Object.values(DEMO_DEFAULT_CAPS));
   }
   return UNLIMITED;
@@ -269,7 +239,7 @@ function getDailyCap(action) {
  * env-var / demo-default path via getDailyCap).
  *
  * Stored as AccountSetting keys, e.g.:
- *   ai_cap_extract, ai_cap_ask, ai_cap_brief, ai_cap_brief_search
+ *   ai_cap_ingest_extract, ai_cap_ask, ai_cap_maintenance_brief
  *
  * A value of "0" means "block all" (cap = 0). A value of "-1" or "" means
  * "remove override" — treated as null so the env-var/demo path takes over.

@@ -42,7 +42,7 @@ const SETTING_KEYS = [
   'AI_INGEST_LIMIT',   // admin-overridable per-account limit (default 10)
   // Account preferences
   'FISCAL_YEAR_START_MONTH', // 1-12; 1 = January (calendar year default)
-  // #12: roles permitted to reveal contract license keys. JSON array string.
+  // #12: roles permitted to reveal sensitive field values. JSON array string.
   // Default ["admin","manager"]; admin can never be removed (server-enforced).
   'LICENSE_REVEAL_ROLES',
   // #28: per-account evaluation lead-time model (value-tier breakpoints +
@@ -202,11 +202,11 @@ router.get('/', requireAdmin, async (req, res) => {
     const hasDbKey  = !!(dbRows['AI_API_KEY'] && dbRows['AI_API_KEY'].length > 0);
     const hasEnvKey = !!(process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || (process.env.CF_WORKERS_AI_API_KEY && process.env.CF_WORKERS_AI_ACCOUNT_ID) || process.env.GROQ_API_KEY || process.env.HF_TOKEN);
 
-    // Phase 4: aiBriefEnabled is a real Account column, not a KV
-    // setting. Fetch it alongside the AccountSetting rows so the AI
-    // tab can render the toggle. Surface as camelCase `aiBriefEnabled`
-    // to make clear it's NOT one of the SETTING_KEYS (env-overridable
-    // string KV values).
+    // aiBriefEnabled is a real Account column, not a KV setting (gates the
+    // AI maintenance recommendation + NFPA compliance summary features).
+    // Fetch it alongside the AccountSetting rows so the AI tab can render
+    // the toggle. Surface as camelCase `aiBriefEnabled` to make clear it's
+    // NOT one of the SETTING_KEYS (env-overridable string KV values).
     const accountRow = await prisma.account.findUnique({
       where:  { id: req.user.accountId },
       select: { aiBriefEnabled: true, fteCount: true },
@@ -261,7 +261,7 @@ router.get('/', requireAdmin, async (req, res) => {
         _teamsPreview:     plaintextTeams ? teamsUrlPreview(plaintextTeams) : null,
         _teamsSet:         hasDbTeams || hasEnvTeams,
         _teamsConfigured:  (merged.TEAMS_ENABLED === 'true') && (hasDbTeams || hasEnvTeams),
-        // Phase 4: per-account AI renewal-brief toggle (real Account column,
+        // Per-account AI maintenance-brief toggle (real Account column,
         // not a KV setting). Default false on self-host; demo seed flips
         // this to true.
         aiBriefEnabled,
@@ -421,7 +421,7 @@ router.put('/', async (req, res) => {
     // Only runs when the body included a value AND the caller is admin
     // (the earlier filter sets aiBriefEnabledUpdate=null otherwise).
     // Audited via Activity Log so a toggle change is traceable (mirrors
-    // the category/customField pattern called out in roadmap §6.5).
+    // the customField audit pattern).
     if (aiBriefEnabledUpdate !== null) {
       const before = await prisma.account.findUnique({
         where:  { id: req.user.accountId },
@@ -571,7 +571,7 @@ router.post('/slack/test', requireAdmin, async (req, res) => {
     });
 
     const { text, blocks } = buildTestMessage({
-      accountName: account?.companyName || 'LapseIQ',
+      accountName: account?.companyName || 'ServiceCycle',
       byUserName:  req.user.name || req.user.email || 'an admin',
     });
 
@@ -621,7 +621,7 @@ router.post('/teams/test', requireAdmin, async (req, res) => {
     });
 
     const card = buildTestMessage({
-      accountName: account?.companyName || 'LapseIQ',
+      accountName: account?.companyName || 'ServiceCycle',
       byUserName:  req.user.name || req.user.email || 'an admin',
     });
 
@@ -642,7 +642,7 @@ router.post('/teams/test', requireAdmin, async (req, res) => {
 
 // ── GET /api/settings/public — no admin required ─────────────────────────────
 // Returns non-sensitive account preferences that any authenticated user needs
-// (e.g. fiscal year start month for calendar views on the contracts page).
+// (e.g. fiscal year start month for calendar views on the assets page).
 
 router.get('/public', async (req, res) => {
   try {
@@ -667,11 +667,11 @@ router.get('/public', async (req, res) => {
 
 // ── GET /api/settings/export — full account data ZIP (admin only) ─────────────
 // Streams a ZIP containing:
-//   contracts.csv      — all contracts in spreadsheet-ready format
-//   contracts.json     — full contract data with vendor/tag info
-//   vendors.json       — all vendors
+//   assets.csv         — all assets in spreadsheet-ready format
+//   assets.json        — full asset data with site/schedule info
+//   contractors.json   — all contractors
 //   activity_log.json  — last 5,000 activity entries
-//   documents.json     — document manifest (filenames, sizes, types — not the files themselves)
+//   documents.json     — document manifest (filenames, types — not the files themselves)
 //   export_info.json   — account metadata and export timestamp
 
 const archiver = require('archiver');
@@ -683,37 +683,39 @@ router.get('/export', requireAdmin, async (req, res) => {
     const dateSlug = exportedAt.split('T')[0];
 
     // ── Fetch all account data in parallel ─────────────────────────────────
-    const [account, contracts, vendors, activityLogs, documents] = await Promise.all([
+    const [account, assets, contractors, activityLogs, documents] = await Promise.all([
       prisma.account.findUnique({
         where: { id: accountId },
-        select: { id: true, name: true, planType: true, createdAt: true },
+        select: { id: true, companyName: true, planType: true, createdAt: true },
       }),
-      prisma.contract.findMany({
+      prisma.asset.findMany({
         where:   { accountId },
-        orderBy: { endDate: 'asc' },
+        orderBy: { createdAt: 'asc' },
         include: {
-          vendor:   { select: { id: true, name: true } },
-          tags:     { select: { tag: true } },
-          paymentSchedule: { include: { installments: { orderBy: { yearNumber: 'asc' } } } },
+          site:     { select: { id: true, name: true } },
+          position: { select: { id: true, name: true, code: true } },
+          schedules: {
+            where:   { isActive: true },
+            select:  {
+              id: true, nextDueDate: true, lastCompletedDate: true,
+              taskDefinition: { select: { taskName: true, taskCode: true } },
+            },
+            orderBy: { nextDueDate: 'asc' },
+          },
         },
       }),
-      prisma.vendor.findMany({
+      prisma.contractor.findMany({
         where:   { accountId },
         orderBy: { name: 'asc' },
-        // Field names must match the actual Vendor schema. Earlier versions
-        // selected `website`, `accountManagerName`, `accountManagerEmail`,
-        // and `upliftPercent` — none of which exist on the model — so this
-        // entire endpoint threw on every call.
         select: {
-          id: true, name: true,
+          id: true, name: true, netaAccredited: true,
           supportEmail: true, supportPhone: true, supportPortalUrl: true,
-          budgetUpliftPercent: true,
-          cotermComplexity: true, cotermNotes: true, notes: true,
-          createdAt: true,
+          portalUrl: true, scoreSupport: true, scoreSatisfaction: true,
+          notes: true, createdAt: true,
         },
       }),
       prisma.activityLog.findMany({
-        where:   { user: { accountId } },
+        where:   { accountId },
         orderBy: { createdAt: 'desc' },
         take:    5000,
         include: { user: { select: { name: true, email: true } } },
@@ -721,29 +723,18 @@ router.get('/export', requireAdmin, async (req, res) => {
       prisma.document.findMany({
         where:   { accountId },
         orderBy: { uploadedAt: 'desc' },
-        // Same fix shape — earlier select used `fileName`/`fileSize`/`mimeType`/
-        // `createdAt`; the schema fields are `filename`/`fileType`/`uploadedAt`
-        // and there is no fileSize column. Switch to `accountId` for the
-        // where clause too — `contract: { accountId }` filtered out
-        // documents whose contractId is null (orphaned uploads from
-        // ingestion sessions) and was strictly less correct than direct
-        // accountId filtering.
         select: {
           id: true, filename: true, fileType: true, encrypted: true,
-          uploadedBy: true, uploadedAt: true, contractId: true,
+          uploadedBy: true, uploadedAt: true, assetId: true, workOrderId: true,
         },
       }),
     ]);
 
-    // ── Build CSV for contracts ─────────────────────────────────────────────
+    // ── Build CSV for assets ────────────────────────────────────────────────
     const CSV_HEADERS = [
-      'Vendor','Product','Contract #','Customer #','Status',
-      'Start Date','End Date','Evaluate By','Cancel By',
-      'Quantity','Cost Per License','Total Value',
-      'Auto Renewal','Notice Days','PO Number','Invoice Number',
-      'Department','Team','Cost Center','Requestor',
-      'Reseller','Internal Owner','Tags','Payment Type',
-      'Notes',
+      'Site','Equipment Type','Manufacturer','Model','Serial Number',
+      'Position','Governing Condition','Physical','Criticality','Environment',
+      'In Service','Energized','Install Date','Next Due','Notes',
     ];
 
     function csvVal(v) {
@@ -757,76 +748,82 @@ router.get('/export', requireAdmin, async (req, res) => {
     }
     function fmtDate(d) { return d ? new Date(d).toISOString().split('T')[0] : ''; }
 
-    const csvRows = contracts.map(c => [
-      c.vendor?.name,
-      c.product,
-      c.contractNumber,
-      c.customerNumber,
-      c.status,
-      fmtDate(c.startDate),
-      fmtDate(c.endDate),
-      fmtDate(c.evaluationStartByDate),
-      fmtDate(c.cancelByDate),
-      c.quantity,
-      c.costPerLicense,
-      c.quantity && c.costPerLicense ? (parseFloat(String(c.costPerLicense)) * c.quantity).toFixed(2) : '',
-      c.autoRenewal ? 'Yes' : 'No',
-      c.autoRenewalNoticeDays,
-      c.poNumber,
-      c.invoiceNumber,
-      c.department,
-      c.team,
-      c.costCenter,
-      c.requestor,
-      c.resellerName,
-      null, // internalOwner — omit for brevity in CSV
-      (c.tags || []).map(t => t.tag).join('; '),
-      c.paymentSchedule?.scheduleType || '',
-      c.notes,
+    // Earliest active-schedule due date = the asset's "next due" for list views.
+    function earliestNextDue(a) {
+      const dates = (a.schedules || [])
+        .map(s => s.nextDueDate)
+        .filter(Boolean)
+        .map(d => new Date(d).getTime())
+        .filter(t => !Number.isNaN(t));
+      return dates.length > 0 ? new Date(Math.min(...dates)) : null;
+    }
+
+    const csvRows = assets.map(a => [
+      a.site?.name,
+      a.equipmentType,
+      a.manufacturer,
+      a.model,
+      a.serialNumber,
+      a.position?.code || a.position?.name,
+      a.governingCondition,
+      a.conditionPhysical,
+      a.conditionCriticality,
+      a.conditionEnvironment,
+      a.inService ? 'Yes' : 'No',
+      a.isEnergized ? 'Yes' : 'No',
+      fmtDate(a.installDate),
+      fmtDate(earliestNextDue(a)),
+      a.notes,
     ].map(csvVal).join(','));
 
-    const contractsCsv = [CSV_HEADERS.join(','), ...csvRows].join('\n');
+    const assetsCsv = [CSV_HEADERS.join(','), ...csvRows].join('\n');
 
     // ── Strip sensitive fields from JSON exports ────────────────────────────
-    const contractsJson = contracts.map(c => ({
-      id: c.id, product: c.product, status: c.status,
-      vendor: c.vendor, contractNumber: c.contractNumber, customerNumber: c.customerNumber,
-      quantity: c.quantity, costPerLicense: c.costPerLicense,
-      startDate: c.startDate, endDate: c.endDate,
-      evaluationStartByDate: c.evaluationStartByDate, cancelByDate: c.cancelByDate,
-      autoRenewal: c.autoRenewal, autoRenewalNoticeDays: c.autoRenewalNoticeDays,
-      poNumber: c.poNumber, invoiceNumber: c.invoiceNumber,
-      department: c.department, team: c.team, costCenter: c.costCenter,
-      requestor: c.requestor, deliveryEmail: c.deliveryEmail,
-      resellerName: c.resellerName, resellerAccountNumber: c.resellerAccountNumber,
-      notes: c.notes, tags: (c.tags || []).map(t => t.tag),
-      paymentSchedule: c.paymentSchedule || null,
-      createdAt: c.createdAt, updatedAt: c.updatedAt,
+    const assetsJson = assets.map(a => ({
+      id: a.id, equipmentType: a.equipmentType,
+      site: a.site, position: a.position,
+      manufacturer: a.manufacturer, model: a.model, serialNumber: a.serialNumber,
+      nameplateData: a.nameplateData,
+      installDate: a.installDate, lastCommissionedDate: a.lastCommissionedDate,
+      conditionPhysical: a.conditionPhysical,
+      conditionCriticality: a.conditionCriticality,
+      conditionEnvironment: a.conditionEnvironment,
+      governingCondition: a.governingCondition,
+      inService: a.inService, isEnergized: a.isEnergized,
+      nextDueDate: earliestNextDue(a),
+      schedules: (a.schedules || []).map(s => ({
+        id: s.id,
+        task: s.taskDefinition?.taskName || s.taskDefinition?.taskCode || null,
+        lastCompletedDate: s.lastCompletedDate,
+        nextDueDate: s.nextDueDate,
+      })),
+      notes: a.notes, archivedAt: a.archivedAt,
+      createdAt: a.createdAt, updatedAt: a.updatedAt,
     }));
 
     const activityJson = activityLogs.map(l => ({
       id: l.id, action: l.action, details: l.details,
       user: l.user ? { name: l.user.name, email: l.user.email } : null,
-      contractId: l.contractId, createdAt: l.createdAt,
+      assetId: l.assetId, createdAt: l.createdAt,
     }));
 
     const exportInfo: any = {
       exportedAt,
       accountId: account?.id,
-      accountName: account?.name,
+      accountName: account?.companyName,
       planType: account?.planType,
       accountCreatedAt: account?.createdAt,
       counts: {
-        contracts: contracts.length,
-        vendors:   vendors.length,
-        documents: documents.length,
+        assets:      assets.length,
+        contractors: contractors.length,
+        documents:   documents.length,
         activityLog: activityLogs.length,
       },
-      note: 'This export contains your LapseIQ account data as of the exportedAt timestamp. Document files are not included — see documents.json for a manifest.',
+      note: 'This export contains your ServiceCycle account data as of the exportedAt timestamp. Document files are not included — see documents.json for a manifest.',
     };
 
     // ── Stream ZIP response ─────────────────────────────────────────────────
-    const filename = `lapseiq-export-${dateSlug}.zip`;
+    const filename = `servicecycle-export-${dateSlug}.zip`;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
@@ -834,12 +831,12 @@ router.get('/export', requireAdmin, async (req, res) => {
     archive.on('error', err => { console.error('Export archive error:', err); });
     archive.pipe(res);
 
-    archive.append(contractsCsv,                           { name: 'contracts.csv' });
-    archive.append(JSON.stringify(contractsJson, null, 2), { name: 'contracts.json' });
-    archive.append(JSON.stringify(vendors,       null, 2), { name: 'vendors.json' });
-    archive.append(JSON.stringify(activityJson,  null, 2), { name: 'activity_log.json' });
-    archive.append(JSON.stringify(documents,     null, 2), { name: 'documents.json' });
-    archive.append(JSON.stringify(exportInfo,    null, 2), { name: 'export_info.json' });
+    archive.append(assetsCsv,                              { name: 'assets.csv' });
+    archive.append(JSON.stringify(assetsJson,   null, 2),  { name: 'assets.json' });
+    archive.append(JSON.stringify(contractors,  null, 2),  { name: 'contractors.json' });
+    archive.append(JSON.stringify(activityJson, null, 2),  { name: 'activity_log.json' });
+    archive.append(JSON.stringify(documents,    null, 2),  { name: 'documents.json' });
+    archive.append(JSON.stringify(exportInfo,   null, 2),  { name: 'export_info.json' });
 
     await archive.finalize();
   } catch (err) {

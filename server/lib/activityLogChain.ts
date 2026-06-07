@@ -11,7 +11,7 @@
  *
  *   Each ActivityLog row stores `rowHash = sha256(prevHash || canonical(row))`
  *   where `canonical(row)` is a stable JSON serialization of the
- *   audit-relevant fields (id, accountId, contractId, userId, action,
+ *   audit-relevant fields (id, accountId, assetId, action,
  *   details, createdAt). The chain is per-account (accountId column),
  *   with a single "global" chain for cross-tenant events keyed by
  *   `accountId IS NULL` (e.g. failed-login for unknown emails).
@@ -21,7 +21,7 @@
  *   `rowHash IS NULL` every ~30 seconds and computes the chain in
  *   creation order. Decoupling write from chain compute means routes
  *   that bypass writeLog (direct prisma.activityLog.create calls in
- *   contracts.js, ingest.js, etc.) still get chained.
+ *   route files) still get chained.
  *
  *   A nightly verifier (verifyAllChains) recomputes each chain end-to-end
  *   and flags breaks by inserting an `audit_chain_break` ActivityLog
@@ -53,14 +53,16 @@ const crypto = require('crypto');
 // changed the canonical payload for every row that user touched, causing
 // the verifier to fire audit_chain_break on all those rows. Fix: drop
 // userId from the payload. The chain still covers id, accountId,
-// contractId, action, details, createdAt — all compliance-relevant fields.
-// Migration 20260522210000 nulls existing rowHashes so the settler
-// recomputes the entire chain with the new canonical form.
+// assetId, action, details, createdAt — all compliance-relevant fields.
+// ServiceCycle conversion note: contractId became assetId, which changes
+// the canonical form. This shipped together with the schema reset, so no
+// rowHash backfill is needed — fresh databases chain from genesis with the
+// new form.
 function canonical(row) {
   const obj = {
     id:         row.id,
     accountId:  row.accountId === undefined ? null : row.accountId,
-    contractId: row.contractId === undefined ? null : row.contractId,
+    assetId:    row.assetId === undefined ? null : row.assetId,
     // userId intentionally omitted — see comment above (audit-2 CR-1)
     action:     row.action,
     details:    row.details === undefined ? null : row.details,
@@ -123,7 +125,7 @@ async function settleAccount(prisma, accountId) {
     where:   { accountId: accountId, rowHash: null },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     select:  {
-      id: true, accountId: true, contractId: true, userId: true,
+      id: true, accountId: true, assetId: true, userId: true,
       action: true, details: true, createdAt: true,
     },
     take: SETTLE_BATCH,
@@ -197,7 +199,7 @@ async function verifyAccount(prisma, accountId) {
     where:   { accountId: accountId, rowHash: { not: null } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     select:  {
-      id: true, accountId: true, contractId: true, userId: true,
+      id: true, accountId: true, assetId: true, userId: true,
       action: true, details: true, createdAt: true,
       prevHash: true, rowHash: true,
     },

@@ -6,7 +6,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
  * AdminMetrics — audit 3.2.6 / 6.3.3 / 6.4.1 / 6.4.2.
  *
  * Six metric groups on one page, no charts (yet): totals, signups-by-day,
- * contracts-by-day, DAU, retention cohort, top actions. Each renders as a
+ * assets-by-day, DAU, retention cohort, top actions. Each renders as a
  * small table; the page is intentionally low-design so adding a chart
  * layer later is a styling change, not a refactor.
  *
@@ -14,7 +14,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
  * (/api/admin/metrics/overview) also requires admin role server-side.
  */
 export default function AdminMetrics() {
-  useDocumentTitle('Metrics — LapseIQ');
+  useDocumentTitle('Metrics — ServiceCycle');
   const [data, setData] = useState(null);
   const [err, setErr]   = useState('');
   const [loading, setLoading] = useState(true);
@@ -65,8 +65,8 @@ export default function AdminMetrics() {
           <tbody>
             <tr><td style={cellStyle}>Users</td><td style={{ ...cellStyle, textAlign: 'right' }}>{data.totals.users.toLocaleString()}</td></tr>
             <tr><td style={cellStyle}>Accounts</td><td style={{ ...cellStyle, textAlign: 'right' }}>{data.totals.accounts.toLocaleString()}</td></tr>
-            <tr><td style={cellStyle}>Contracts (active)</td><td style={{ ...cellStyle, textAlign: 'right' }}>{data.totals.contractsActive.toLocaleString()}</td></tr>
-            <tr><td style={cellStyle}>Contracts (archived)</td><td style={{ ...cellStyle, textAlign: 'right' }}>{data.totals.contractsArchived.toLocaleString()}</td></tr>
+            <tr><td style={cellStyle}>Assets (active)</td><td style={{ ...cellStyle, textAlign: 'right' }}>{data.totals.assetsActive.toLocaleString()}</td></tr>
+            <tr><td style={cellStyle}>Assets (archived)</td><td style={{ ...cellStyle, textAlign: 'right' }}>{data.totals.assetsArchived.toLocaleString()}</td></tr>
           </tbody>
         </table>
       </section>
@@ -77,8 +77,8 @@ export default function AdminMetrics() {
       </section>
 
       <section style={cardStyle}>
-        <h3 style={h3}>Contracts created — last 30 days ({data.contractsByDay.reduce((a, r) => a + r.count, 0)} total)</h3>
-        <DayCountTable rows={data.contractsByDay} thStyle={thStyle} cellStyle={cellStyle} tableStyle={tableStyle} />
+        <h3 style={h3}>Assets created — last 30 days ({data.assetsByDay.reduce((a, r) => a + r.count, 0)} total)</h3>
+        <DayCountTable rows={data.assetsByDay} thStyle={thStyle} cellStyle={cellStyle} tableStyle={tableStyle} />
       </section>
 
       <section style={cardStyle}>

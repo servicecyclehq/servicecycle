@@ -45,10 +45,10 @@ export default function CustomFieldsSection({ isAdmin }) {
     setLoading(true);
     Promise.all([
       fetch(`${API}/custom-fields`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}` },
       }).then(r => r.json()),
       fetch(`${API}/categories`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}` },
       }).then(r => r.json()),
     ]).then(([fd, cd]) => {
       if (fd.success) setFields(fd.data.fields);
@@ -78,7 +78,7 @@ export default function CustomFieldsSection({ isAdmin }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(body),
       });
@@ -103,7 +103,7 @@ export default function CustomFieldsSection({ isAdmin }) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(body),
       });
@@ -120,7 +120,7 @@ export default function CustomFieldsSection({ isAdmin }) {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify({ archived }),
       });

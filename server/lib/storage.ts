@@ -3,7 +3,8 @@
 /**
  * lib/storage.js
  * --------------
- * Storage abstraction for contract documents (PDFs, Word files, images).
+ * Storage abstraction for asset documents (test reports, nameplate photos,
+ * PDFs, Word files, images).
  * Replaces the previous Supabase-only implementation with a local-first,
  * self-hosted design.
  *
@@ -67,13 +68,13 @@ function getConfig() {
 }
 
 // ── Storage key ───────────────────────────────────────────────────────────────
-// Format: '{accountId}/{contractId|misc}/{timestamp}_{sanitizedFilename}'
+// Format: '{accountId}/{assetId|misc}/{timestamp}_{sanitizedFilename}'
 // This is the canonical identifier stored in Document.filePath.
 
-function buildStorageKey(accountId, filename, contractId = null) {
+function buildStorageKey(accountId, filename, assetId = null) {
   const ts     = Date.now();
   const safe   = filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-  const folder = contractId ? `${accountId}/${contractId}` : `${accountId}/misc`;
+  const folder = assetId ? `${accountId}/${assetId}` : `${accountId}/misc`;
   return `${folder}/${ts}_${safe}`;
 }
 
@@ -104,14 +105,14 @@ function getS3Client() {
  * Upload a file buffer to the configured storage destination.
  *
  * @param {string}  accountId   — account that owns the file
- * @param {string|null} contractId — optional; used to scope storage path
+ * @param {string|null} assetId — optional; used to scope storage path
  * @param {string}  filename    — original filename (used in storage key)
  * @param {Buffer}  buffer      — file bytes (already encrypted if opt-in enabled)
  * @param {string}  mimeType    — MIME type
  * @returns {{ storageKey: string, sizeBytes: number }}
  */
-async function uploadFile(accountId, contractId, filename, buffer, mimeType) {
-  const key  = buildStorageKey(accountId, filename, contractId);
+async function uploadFile(accountId, assetId, filename, buffer, mimeType) {
+  const key  = buildStorageKey(accountId, filename, assetId);
   const dest = getDest();
 
   if (dest === 's3') {

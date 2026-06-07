@@ -49,8 +49,8 @@ export default function FeedbackModal({ onClose }) {
       lineHeight: 1.5,
       color: 'var(--color-text-secondary, #4a5568)',
     }}>
-      <strong>Demo notice:</strong> this is the LapseIQ demo. Feedback you
-      submit here is forwarded to the LapseIQ team to improve the product.
+      <strong>Demo notice:</strong> this is the ServiceCycle demo. Feedback you
+      submit here is forwarded to the ServiceCycle team to improve the product.
       See the <a href="/legal/demo-sandbox-notice" target="_blank" rel="noreferrer">Demo Sandbox Notice</a> for full details.
     </div>
   ) : null;

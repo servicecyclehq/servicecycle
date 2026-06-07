@@ -143,14 +143,17 @@ router.post('/dlq/:id/retry', async (req, res) => {
     const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
     // Replay through deliverWebhook with a synthetic alertItem derived from
-    // the persisted payload. The payload's `contractId` may point to a
-    // contract that's been deleted/archived since the original failure —
-    // the receiving end will see the same payload it would have seen
-    // before, which is the right semantic for "retry the original delivery".
+    // the persisted payload. The payload's asset id may point to an asset
+    // that's been deleted/archived since the original failure — the
+    // receiving end will see the same payload it would have seen before,
+    // which is the right semantic for "retry the original delivery".
+    // NOTE: the alertItem shape below mirrors lib/webhook.js#buildPayload's
+    // current input; keep the two in sync when the asset-shaped payload
+    // lands there. payload.contractId is the legacy DLQ-row spelling.
     const payload: any = row.payload || {};
     const alertItem: any = {
       contract: {
-        id:           payload.contractId || row.deliveryId,
+        id:           payload.assetId || payload.contractId || row.deliveryId,
         product:      payload.product || null,
         vendor:       payload.vendor ? { name: payload.vendor } : null,
         endDate:      payload.endDate || null,
@@ -402,7 +405,7 @@ router.post('/:id/test', async (req, res) => {
     const appUrl    = process.env.CLIENT_URL || 'http://localhost:5173';
 
     // H4 (audit High, 2026-05-22): test endpoint now signs with the SAME
-    // timestamped HMAC + X-LapseIQ-Timestamp header that production
+    // timestamped HMAC + X-ServiceCycle-Timestamp header that production
     // deliveries use (see lib/webhook.js postOnce). Before this, the test
     // produced signatures matching a pre-W5 contract that production no
     // longer uses -- integrators who built a verifier against this test
@@ -426,9 +429,9 @@ router.post('/:id/test', async (req, res) => {
         redirect: 'error',
         headers:  {
           'Content-Type':        'application/json',
-          'X-LapseIQ-Signature': signature,
-          'X-LapseIQ-Timestamp': timestamp,    // H4: parity with production deliveries
-          'User-Agent':          'LapseIQ-Webhook/1.0',
+          'X-ServiceCycle-Signature': signature,
+          'X-ServiceCycle-Timestamp': timestamp,    // H4: parity with production deliveries
+          'User-Agent':               'ServiceCycle-Webhook/1.0',
         },
         body,
         signal: controller.signal,

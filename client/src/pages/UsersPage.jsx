@@ -126,15 +126,15 @@ function EditUserModal({ user, onClose, onSaved }) {
             <div className="form-group">
               <label className="form-label">Role</label>
               <select aria-label="User role" className="form-control" value={role} onChange={e => setRole(e.target.value)}>
-                <option value="admin">Admin — full access including user management and financial fields</option>
-                <option value="manager">Manager — create/edit contracts and vendors</option>
+                <option value="admin">Admin — full access including user management and settings</option>
+                <option value="manager">Manager — create/edit assets, schedules, and contractors</option>
                 <option value="viewer">Viewer — read-only access</option>
-                <option value="consultant">Consultant — external access, same as manager, logged and revocable</option>
+                <option value="consultant">Consultant — external read access, logged and revocable</option>
               </select>
             </div>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 16, padding: '8px 10px', background: 'var(--color-surface)', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}>
-              <strong>Admin</strong> — manages users, resets passwords, and edits contract financials.<br />
-              <strong>Manager</strong> — creates and edits contracts and vendors. Cannot edit cost/quantity.<br />
+              <strong>Admin</strong> — manages users, resets passwords, and edits account settings.<br />
+              <strong>Manager</strong> — creates and edits assets, maintenance schedules, and contractors.<br />
               <strong>Viewer</strong> — read-only. Cannot create or edit anything.
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -209,55 +209,32 @@ export default function UsersPage() {
     }
   }
 
-  async function handleDeactivate(u, reassignToUserId) {
-    // v0.67.12 (audit H5 follow-up): two-step deactivate. First call
-    // omits reassignToUserId; if target owns contracts the server
-    // returns 400 with ownedCount + we show a follow-up confirm that
-    // unassigns (reassignToUserId=null) on accept. A future iteration
-    // wires a proper picker; this is the safe minimum.
-    if (reassignToUserId === undefined) {
-      if (!await confirm({
-        title: 'Deactivate user',
-        message: `Deactivate ${u.name}? They will no longer be able to log in.`,
-        confirmLabel: 'Deactivate',
-        danger: true,
-      })) return;
-    }
+  async function handleDeactivate(u) {
+    if (!await confirm({
+      title: 'Deactivate user',
+      message: `Deactivate ${u.name}? They will no longer be able to log in.`,
+      confirmLabel: 'Deactivate',
+      danger: true,
+    })) return;
+
     // Audit 6.4.6 — capture optional churn reason on deactivate so we
-    // learn why users are leaving. Skipped on the contracts-reassign
-    // follow-up call (reassignToUserId !== undefined) since the prompt
-    // already fired on the first attempt.
-    let reason = null;
-    if (reassignToUserId === undefined) {
-      // window.prompt is the right tool for a one-off optional text input.
-      // Cancel returns null which we explicitly accept as "skipped".
-      reason = window.prompt(
-        `Why is ${u.name} being deactivated? (Optional — helps us understand churn. Leave blank or hit Cancel to skip.)`,
-        ''
-      );
-      if (reason !== null) reason = reason.trim().slice(0, 500);
-    }
+    // learn why users are leaving.
+    // window.prompt is the right tool for a one-off optional text input.
+    // Cancel returns null which we explicitly accept as "skipped".
+    let reason = window.prompt(
+      `Why is ${u.name} being deactivated? (Optional — helps us understand churn. Leave blank or hit Cancel to skip.)`,
+      ''
+    );
+    if (reason !== null) reason = reason.trim().slice(0, 500);
 
     try {
       const body = {};
-      if (reassignToUserId !== undefined) body.reassignToUserId = reassignToUserId;
       if (reason) body.reason = reason;
       await api.put(`/api/users/${u.id}/deactivate`, body);
       fetchUsers();
       showToast(`${u.name} has been deactivated.`);
     } catch (err) {
-      const data = err.response?.data;
-      if (err.response?.status === 400 && typeof data?.data?.ownedCount === 'number') {
-        const proceed = await confirm({
-          title: `Reassign ${data.data.ownedCount} contracts?`,
-          message: `${u.name} owns ${data.data.ownedCount} active contracts. Click Reassign to unassign them and deactivate the user. A future release will add an explicit picker; for now they will be unassigned.`,
-          confirmLabel: 'Reassign + deactivate',
-          danger: true,
-        });
-        if (proceed) return handleDeactivate(u, null);
-        return;
-      }
-      setError(data?.error || 'Failed to deactivate user.');
+      setError(err.response?.data?.error || 'Failed to deactivate user.');
     }
   }
 
@@ -286,13 +263,13 @@ export default function UsersPage() {
     // support free-text input today (queued for a follow-up).
     if (!await confirm({
       title: 'Erase user (GDPR Article 17)',
-      message: `Erasing  () will: (1) delete their account and revoke all sessions, (2) anonymize their activity-log entries (userId nulled, email scrubbed), (3) anonymize communications they authored, (4) delete any early-access form submissions tied to their email. Contracts they created remain. You will be asked to type the email address to confirm. This cannot be undone.`,
+      message: `Erasing ${u.name} (${u.email}) will: (1) delete their account and revoke all sessions, (2) anonymize their activity-log entries (userId nulled, email scrubbed), (3) anonymize communications they authored, (4) delete any early-access form submissions tied to their email. Assets and maintenance records they created remain. You will be asked to type the email address to confirm. This cannot be undone.`,
       confirmLabel: 'Proceed',
       danger: true,
     })) return;
     const typed = window.prompt(
       `Permanently erase ${u.name} (${u.email})?\n\n` +
-      'GDPR Art. 17 erasure scope:\n  - Account deleted; all active sessions revoked\n  - Activity-log entries anonymized (userId removed, email scrubbed)\n  - Communications authored anonymized\n  - Early-access form submissions for this email deleted\n  - Contracts remain (account-owned, not erased)\n\n' +
+      'GDPR Art. 17 erasure scope:\n  - Account deleted; all active sessions revoked\n  - Activity-log entries anonymized (userId removed, email scrubbed)\n  - Communications authored anonymized\n  - Early-access form submissions for this email deleted\n  - Assets and maintenance records remain (account-owned, not erased)\n\n' +
       `Type the email "${u.email}" below to confirm.`
     );
     if (typed == null) return; // cancelled
@@ -310,11 +287,11 @@ export default function UsersPage() {
   }
 
   async function handleToggleScope(u) {
-    const newRestricted = !u.contractScopeRestricted;
+    const newRestricted = !u.assetScopeRestricted;
     const action = newRestricted ? 'restrict' : 'expand';
     const msg = newRestricted
-      ? `Restrict ${u.name} to only see contracts assigned to them?`
-      : `Expand ${u.name}'s access to see all contracts?`;
+      ? `Restrict ${u.name} to their assigned sites? (Site-level scoping ships in a later release.)`
+      : `Expand ${u.name}'s access to see all sites and assets?`;
     if (!await confirm({
       title: newRestricted ? 'Restrict access' : 'Expand access',
       message: msg,
@@ -399,10 +376,10 @@ export default function UsersPage() {
                       <option value="consultant">Consultant</option>
                     </select>
                     <div className="form-hint" style={{ marginTop: 6 }}>
-                      {form.role === 'admin' && <><strong>Admin</strong> — full access: manages users, resets passwords, and edits contract financials.</>}
-                      {form.role === 'manager' && <><strong>Manager</strong> — creates and edits contracts and vendors. Cannot edit cost or quantity fields.</>}
-                      {form.role === 'viewer' && <><strong>Viewer</strong> — read-only access. Cannot create or edit any records. New viewers start with restricted access — they can only see contracts assigned to them as internal owner. An admin can expand this from the Users page.</>}
-                      {form.role === 'consultant' && <><strong>Consultant</strong> — external access equivalent to Manager. Must be explicitly granted and can be revoked by an admin at any time from Settings. A consultant access record is automatically created when they accept the invite.</>}
+                      {form.role === 'admin' && <><strong>Admin</strong> — full access: manages users, resets passwords, and edits account settings.</>}
+                      {form.role === 'manager' && <><strong>Manager</strong> — creates and edits assets, maintenance schedules, and contractors.</>}
+                      {form.role === 'viewer' && <><strong>Viewer</strong> — read-only access. Cannot create or edit any records. New viewers start with restricted access to their assigned sites (site-level scoping ships in a later release). An admin can expand this from the Users page.</>}
+                      {form.role === 'consultant' && <><strong>Consultant</strong> — external read access. Must be explicitly granted and can be revoked by an admin at any time from Settings. A consultant access record is automatically created when they accept the invite.</>}
                     </div>
                   </div>
                 </div>
@@ -446,9 +423,9 @@ export default function UsersPage() {
                       <td>
                         <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                           <span className={`badge ${ROLE_COLORS[u.role]}`}>{ROLE_LABELS[u.role]}</span>
-                          {u.role === 'viewer' && u.contractScopeRestricted && (
+                          {u.role === 'viewer' && u.assetScopeRestricted && (
                             <span
-                              title="This viewer only sees contracts assigned to them"
+                              title="Restricted to assigned sites (site-level scoping ships in a later release)"
                               style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: '1px solid #fde68a', cursor: 'default' }}
                             >
                               Restricted
@@ -463,9 +440,9 @@ export default function UsersPage() {
                             <button
                               className="btn btn-secondary btn-sm"
                               onClick={() => handleToggleScope(u)}
-                              title={u.contractScopeRestricted ? 'Expand access to all contracts' : 'Restrict to assigned contracts only'}
+                              title={u.assetScopeRestricted ? 'Expand access to all sites and assets' : 'Restrict to assigned sites (site-level scoping ships in a later release)'}
                             >
-                              {u.contractScopeRestricted ? '🔓 Expand' : '🔒 Restrict'}
+                              {u.assetScopeRestricted ? '🔓 Expand' : '🔒 Restrict'}
                             </button>
                           )}
                           <button className="btn btn-secondary btn-sm" onClick={() => setEditTarget(u)}>Edit</button>

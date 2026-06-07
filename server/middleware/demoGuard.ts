@@ -13,7 +13,9 @@
  *   1. ANY DELETE                                — wipes data
  *   2. PATCH/PUT with body { status: 'archived' | 'cancelled' }
  *                                                — soft-archive equivalent
- *   3. POST /api/contracts/:id/archive equivalents — covered by rule 2
+ *   3. POST/PATCH /api/assets/:id/archive equivalents — covered by rule 2
+ *      for body-borne status writes; the URL-pattern match below catches
+ *      dedicated archive subroutes that carry no status in the payload
  *   4. (L5: REMOVED) PUT /api/users/me/password is now ALLOWED in demo.
  *      Showing the feature works as intended is more valuable than the
  *      lockout protection — the legacy 4-user account re-bcrypts its
@@ -32,17 +34,6 @@
  *                                                  ignores the field, but a
  *                                                  future expansion shouldn't
  *                                                  silently weaken the demo)
- *   7. PUT/PATCH /api/budget/*                   — Budget Forecast bulk-edit
- *                                                  (added 2026-05-02 session 4)
- *                                                  persists uplift % per vendor
- *                                                  + needed qty per contract.
- *                                                  Visitors can play with the
- *                                                  values and watch the
- *                                                  projections recalc live in
- *                                                  the SPA, but the SaveAll
- *                                                  round-trip stays a no-op so
- *                                                  the next visitor lands on
- *                                                  pristine seed data.
  *
  * Exception: POST /api/admin/reset-demo MUST still work — that's the
  * operator-triggered reset. Mount this AFTER the admin router or whitelist
@@ -97,10 +88,12 @@ function demoWriteGuard(req, res, next) {
     }
   }
 
-  // Rule 3 — archive subroutes (e.g. PATCH /api/contracts/:id/archive).
+  // Rule 3 — archive subroutes (e.g. POST /api/assets/:id/archive).
   // Match on the URL pattern rather than the body so we still catch calls
-  // that don't carry { status: 'archived' } in the payload.
-  if (req.method === 'PATCH' && /\/archive(\/|$)/.test(fullPath)) {
+  // that don't carry { status: 'archived' } in the payload. Both POST and
+  // PATCH shapes are gated — the asset routes use POST for the archive
+  // action; PATCH stays covered for any route that keeps the older shape.
+  if ((req.method === 'POST' || req.method === 'PATCH') && /\/archive(\/|$)/.test(fullPath)) {
     return _denied(res, 'archive_disabled');
   }
 
@@ -119,13 +112,10 @@ function demoWriteGuard(req, res, next) {
     return _denied(res, 'email_change_disabled');
   }
 
-  // Rule 7 (REMOVED 2026-06-01) — Budget Forecast saves are now ALLOWED in
-  // demo. Per-visitor sandboxes are isolated accounts (wiped on the nightly
-  // reset / inactivity prune) and the budget save endpoints are account-scoped
-  // (findFirst by accountId), so a visitor's uplift / needed-qty edits only
-  // touch their OWN sandbox -- the next visitor still lands on fresh seed data.
-  // This mirrors Renewal Planning (contract line-items), which already persists
-  // per-account in demo. Showing the feature actually save beats the old guard.
+  // Rule 7 (REMOVED) — the legacy /api/budget bulk-edit guard is gone along
+  // with the Budget Forecast feature itself; ordinary asset/schedule writes
+  // are account-scoped and per-visitor sandboxes isolate them, so no
+  // replacement rule is needed.
 
   // Rule 8 (2026-06-02) — block outbound-webhook creation / modification / test
   // in demo. A public sandbox shouldn't let anonymous visitors register

@@ -23,7 +23,7 @@ const { peek: peekAiBudget } = require('../lib/aiBudgetGuard');
 
 const router = express.Router();
 
-const ACTIONS = ['extract', 'ask', 'brief', 'brief_search'];
+const ACTIONS = ['ingest_extract', 'ask', 'maintenance_brief', 'narrate'];
 
 router.get('/me', async (req, res) => {
   try {

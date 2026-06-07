@@ -14,7 +14,7 @@
  *   The seed script is idempotent (pinned DEMO_ACCOUNT_ID) and the cron at
  *   03:30 calls the same code path. This endpoint is just a way to skip the
  *   wait when a demo session has been polluted (e.g. someone deleted half
- *   the contracts before we shipped the demoWriteGuard).
+ *   the assets before we shipped the demoWriteGuard).
  *
  *   The path is whitelisted in middleware/demoGuard.js — without that, the
  *   demoWriteGuard would 403 every POST under /api/admin/reset-demo's same
@@ -24,12 +24,10 @@
  */
 
 const express = require('express');
-const { z }   = require('zod');
 import prisma from '../lib/prisma';
 const { requireAdmin } = require('../middleware/roles');
 const earlyAccessRouter = require('./earlyAccess');  // (L7)
 const { getDailyCap, getAccountCapOverride, UNLIMITED } = require('../lib/aiQuota');
-const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const router = express.Router();
 
@@ -118,9 +116,9 @@ router.use('/early-access', requireAdmin, denyOnDemo, earlyAccessRouter);
 //   N = null|'' removes the override; N >= 0 sets it; N = 0 blocks entirely.
 
 const AI_CAP_ACTIONS = [
-  { action: 'extract',      label: 'PDF & Signature Extraction (shared)' },
-  { action: 'ask',          label: 'Ask LapseIQ Assistant' },
-  { action: 'brief',        label: 'Renewal Brief Generation' },
+  { action: 'extract',      label: 'PDF & Nameplate Extraction (shared)' },
+  { action: 'ask',          label: 'Ask ServiceCycle Assistant' },
+  { action: 'brief',        label: 'Maintenance Brief Generation' },
   { action: 'brief_search', label: 'Brief Web-Search Enrichment (Tavily)' },
   { action: 'narrate',      label: 'AI Report Narration' },  // v0.68.0 (audit Medium)
 ];
@@ -219,12 +217,12 @@ router.put('/ai-caps', requireAdmin, async (req, res) => {
 
 // ── GET /api/admin/notification-log ─────────────────────────────────────────
 // S5-FN-07 (v0.75.x): Returns the most recent alert notification send records
-// for this account. Operators use this to confirm "did contract X renewal alert
-// actually fire and reach the recipient?" without parsing server logs.
+// for this account. Operators use this to confirm "did asset X maintenance
+// alert actually fire and reach the recipient?" without parsing server logs.
 //
 // Query params:
 //   ?limit=N       (default 100, max 500)
-//   ?contractId=   (filter to one contract)
+//   ?assetId=      (filter to one asset)
 //   ?channel=      (email|slack|teams|webhook)
 //   ?status=       (sent|failed|skipped)
 router.get('/notification-log', requireAdmin, async (req, res) => {
@@ -232,20 +230,21 @@ router.get('/notification-log', requireAdmin, async (req, res) => {
     const accountId = req.user.accountId;
     const limit  = Math.min(parseInt(req.query.limit  || '100', 10), 500);
     const where: any = { accountId };
-    if (req.query.contractId) where.contractId = req.query.contractId;
-    if (req.query.channel)    where.channel    = req.query.channel;
-    if (req.query.status)     where.status     = req.query.status;
+    if (req.query.assetId)  where.assetId = req.query.assetId;
+    if (req.query.channel)  where.channel = req.query.channel;
+    if (req.query.status)   where.status  = req.query.status;
 
     const rows = await prisma.notificationLog.findMany({
       where,
       orderBy: { sentAt: 'desc' },
       take: limit,
+      // NotificationLog.assetId is a bare column (no relation) — the asset
+      // may be deleted after the send, and the log row must survive that.
       select: {
         id: true, channel: true, template: true, recipient: true,
         providerMessageId: true, status: true, errorMessage: true,
-        alertCount: true, sentAt: true, contractId: true, userId: true,
+        alertCount: true, sentAt: true, assetId: true, userId: true,
         user: { select: { id: true, name: true, email: true } },
-        contract: { select: { id: true, product: true } },
       },
     });
     res.json({ success: true, data: { rows, count: rows.length } });
@@ -255,61 +254,12 @@ router.get('/notification-log', requireAdmin, async (req, res) => {
   }
 });
 
-// ── POST /api/admin/co-term-groups/rename ────────────────────────────────────
-// T2-N1 (Pass-6 audit): Atomic bulk-rename of all contracts in a co-term group.
-// Renames coTermGroup = oldName → newName across all contracts in the caller's
-// account in a single transaction so the rename is never partially applied.
-// Audit-logged so admins can see who renamed which group and when.
-const CoTermRenameSchema = z.object({
-  oldName: z.string().min(1).max(200).trim(),
-  newName: z.string().min(1).max(200).trim(),
-});
-
-router.post('/co-term-groups/rename', requireAdmin, async (req, res) => {
-  const parsed = CoTermRenameSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      success: false,
-      error: 'Validation failed',
-      details: parsed.error.flatten().fieldErrors,
-    });
-  }
-  const { oldName, newName } = parsed.data;
-  if (oldName === newName) {
-    return res.status(400).json({ success: false, error: 'New name must differ from old name.' });
-  }
-  const accountId = req.user.accountId;
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      const updated = await tx.contract.updateMany({
-        where: { accountId, coTermGroup: oldName },
-        data:  { coTermGroup: newName },
-      });
-      // (TS migration) removed tx.auditLog.create(...): no AuditLog model exists in the
-      // schema, so this threw and rolled back the rename transaction on every call.
-      // The audit event is recorded by writeActivityLog() immediately after the txn.
-      return updated;
-    });
-    // Best-effort activity log (non-transactional mirror for the ActivityLog UI).
-    writeActivityLog({
-      userId:    req.user.id,
-      accountId,
-      action:    'co_term_group_renamed',
-      details:   { oldName, newName, contractCount: result.count },
-    });
-    return res.json({ success: true, data: { renamedCount: result.count, oldName, newName } });
-  } catch (err) {
-    console.error('[admin] co-term-groups/rename error:', err.message);
-    return res.status(500).json({ success: false, error: 'Rename failed.' });
-  }
-});
-
 // GET /api/admin/metrics/overview
 // Audit 3.2.6 + 6.3.3 + 6.4.1 + 6.4.2 - the business metrics dashboard the
 // post-launch monitoring cluster needed. One round-trip, five groups:
-//   1. totals: users / accounts / contracts (active + archived)
+//   1. totals: users / accounts / assets (active + archived)
 //   2. signups_by_day  (last 30 days)
-//   3. contracts_by_day (last 30 days)
+//   3. assets_by_day   (last 30 days)
 //   4. dau_by_day      (last 7 days - distinct login_success users)
 //   5. retention       (one cohort, registered 8-15 days ago,
 //                       pct with any login on day 1 / day 3 / day 7)
@@ -323,8 +273,8 @@ router.get('/metrics/overview', requireAdmin, async (req, res) => {
     const [totalUsers, totalAccounts, totalActive, totalArchived] = await Promise.all([
       prisma.user.count(),
       prisma.account.count(),
-      prisma.contract.count({ where: { archivedAt: null } }),
-      prisma.contract.count({ where: { archivedAt: { not: null } } }),
+      prisma.asset.count({ where: { archivedAt: null } }),
+      prisma.asset.count({ where: { archivedAt: { not: null } } }),
     ]);
 
     const signupsByDayRows = await prisma.$queryRawUnsafe(
@@ -335,10 +285,10 @@ router.get('/metrics/overview', requireAdmin, async (req, res) => {
        GROUP BY 1 ORDER BY 1`
     );
 
-    const contractsByDayRows = await prisma.$queryRawUnsafe(
+    const assetsByDayRows = await prisma.$queryRawUnsafe(
       `SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
               COUNT(*)::int AS count
-       FROM contracts
+       FROM assets
        WHERE "createdAt" >= NOW() - INTERVAL '30 days'
        GROUP BY 1 ORDER BY 1`
     );
@@ -394,11 +344,11 @@ router.get('/metrics/overview', requireAdmin, async (req, res) => {
         totals: {
           users: totalUsers,
           accounts: totalAccounts,
-          contractsActive: totalActive,
-          contractsArchived: totalArchived,
+          assetsActive: totalActive,
+          assetsArchived: totalArchived,
         },
-        signupsByDay:   ((signupsByDayRows as any[]) || []).map(r => ({ day: r.day, count: Number(r.count) })),
-        contractsByDay: ((contractsByDayRows as any[]) || []).map(r => ({ day: r.day, count: Number(r.count) })),
+        signupsByDay: ((signupsByDayRows as any[]) || []).map(r => ({ day: r.day, count: Number(r.count) })),
+        assetsByDay:  ((assetsByDayRows as any[]) || []).map(r => ({ day: r.day, count: Number(r.count) })),
         dauByDay:       ((dauByDayRows as any[]) || []).map(r => ({ day: r.day, count: Number(r.count) })),
         retention: {
           cohortWindow: 'registered 8-15 days ago',
@@ -423,7 +373,7 @@ router.get('/metrics/overview', requireAdmin, async (req, res) => {
 //   { success: true, data: { total: 4, active: 1, idle: 3, idleInTx: 0, max: 100, utilizationPct: 4 } }
 router.get('/db-pool-health', requireAdmin, async (req, res) => {
   try {
-    // datname filter scopes to the lapseiq database; postgres role excluded
+    // datname filter scopes to the servicecycle database; postgres role excluded
     // so internal autovacuum / replication connections don't inflate the count.
     const rows = await prisma.$queryRawUnsafe(`
       SELECT

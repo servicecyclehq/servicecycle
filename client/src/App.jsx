@@ -23,11 +23,9 @@ function RequireRole({ roles, children, denyOnDemo = false }) {
   return children;
 }
 
-// W6 (audit Cluster B P0): code-splitting. Every route is now a dynamic
+// W6 (audit Cluster B P0): code-splitting. Every route is a dynamic
 // import so the initial JS bundle only contains the shell + the route
-// the visitor actually lands on. Pre-fix, all 41 page components shipped
-// on every page including /login (1.5 MB / 395 KB gzip — parses to about
-// 600ms on a mid-tier mobile, blocking LCP).
+// the visitor actually lands on.
 //
 // Vite emits one chunk per lazy() call and HTTP/2-multiplexes them as
 // React requests them. The Suspense boundary below shows a brief
@@ -44,14 +42,13 @@ import VersionSkewDetector from './components/VersionSkewDetector';
 // v0.89.10: chunk-load-error auto-recovery. Every deploy invalidates Vite's
 // content-hashed chunk names. A user mid-session with the old index.js
 // cached will try to fetch a chunk filename that no longer exists and the
-// lazy import rejects. Without this helper the affected route silently fails
-// -- see the v0.89.7 -> v0.89.9 incident where /contracts became unreachable
-// after a deploy. Recovery: detect the chunk-load error pattern, set a
-// short-lived sessionStorage timestamp (30s self-expiry), and reload the
-// page. The timestamp prevents an infinite reload loop if the failure is
-// something else (network down, server actually 500). All lazy() route
-// imports below use lazyWithReload so this applies app-wide.
-const CHUNK_RELOAD_KEY = 'lapseiq_chunk_reload';
+// lazy import rejects. Without this helper the affected route silently fails.
+// Recovery: detect the chunk-load error pattern, set a short-lived
+// sessionStorage timestamp (30s self-expiry), and reload the page. The
+// timestamp prevents an infinite reload loop if the failure is something
+// else (network down, server actually 500). All lazy() route imports below
+// use lazyWithReload so this applies app-wide.
+const CHUNK_RELOAD_KEY = 'servicecycle_chunk_reload';
 const CHUNK_RELOAD_WINDOW_MS = 30_000;
 function lazyWithReload(importFn) {
   return lazy(() =>
@@ -76,9 +73,8 @@ function lazyWithReload(importFn) {
 }
 
 // v0.37.1 W5 MT-023: HelpDrawer is lazy-imported and mounted once at
-// the App root (under AppRoutes, next to <AiConsentModal />). Previously
-// mounted inside <Layout />, which made the drawer's docstring claim
-// "works on the login screen" untrue — public routes never rendered it.
+// the App root (under AppRoutes, next to <AiConsentModal />) so public
+// routes (Login, Register, Legal) get a working Help drawer too.
 // Lazy because react-markdown + remark-gfm add ~25KB gzip that we don't
 // want in the initial chunk; the drawer is hydrated the first time the
 // user clicks Help, not on first paint.
@@ -91,60 +87,27 @@ const ForgotPassword          = lazyWithReload(() => import('./pages/ForgotPassw
 const ResetPassword           = lazyWithReload(() => import('./pages/ResetPassword'));
 const AcceptInvite            = lazyWithReload(() => import('./pages/AcceptInvite'));
 const Dashboard               = lazyWithReload(() => import('./pages/Dashboard'));
-const ContractsList           = lazyWithReload(() => import('./pages/ContractsList'));
-const ContractDetail          = lazyWithReload(() => import('./pages/ContractDetail'));
-const NewContract             = lazyWithReload(() => import('./pages/NewContract'));
-const VendorsList             = lazyWithReload(() => import('./pages/VendorsList'));
-const VendorDetail            = lazyWithReload(() => import('./pages/VendorDetail'));
-const BudgetForecast          = lazyWithReload(() => import('./pages/BudgetForecast'));
-const IngestReview            = lazyWithReload(() => import('./pages/IngestReview'));
+// ServiceCycle core domain pages
+const AssetsList              = lazyWithReload(() => import('./pages/AssetsList'));
+const AssetDetail             = lazyWithReload(() => import('./pages/AssetDetail'));
+const NewAsset                = lazyWithReload(() => import('./pages/NewAsset'));
+const ArchivedAssets          = lazyWithReload(() => import('./pages/ArchivedAssets'));
+const SitesList               = lazyWithReload(() => import('./pages/SitesList'));
+const SiteDetail              = lazyWithReload(() => import('./pages/SiteDetail'));
+const ContractorsList         = lazyWithReload(() => import('./pages/ContractorsList'));
+const ContractorDetail        = lazyWithReload(() => import('./pages/ContractorDetail'));
+const WorkOrdersList          = lazyWithReload(() => import('./pages/WorkOrdersList'));
+const WorkOrderDetail         = lazyWithReload(() => import('./pages/WorkOrderDetail'));
+const ComplianceCalendar      = lazyWithReload(() => import('./pages/ComplianceCalendar'));
+// Shared / admin pages
 const UsersPage               = lazyWithReload(() => import('./pages/UsersPage'));
 const AdminMetrics            = lazyWithReload(() => import('./pages/AdminMetrics')); // audit 3.2.6
 const PermissionsPage         = lazyWithReload(() => import('./pages/PermissionsPage'));
 const AlertsPage              = lazyWithReload(() => import('./pages/AlertsPage'));
-const NewsPage                = lazyWithReload(() => import('./pages/NewsPage'));
 const ProfilePage             = lazyWithReload(() => import('./pages/ProfilePage'));
-const SettingsPage            = lazyWithReload(() => import('./pages/SettingsPage'));      // 4233-line page — biggest single chunk win
+const SettingsPage            = lazyWithReload(() => import('./pages/SettingsPage'));
 const ActivityLogPage         = lazyWithReload(() => import('./pages/ActivityLogPage'));
-const ArchivedContracts       = lazyWithReload(() => import('./pages/ArchivedContracts'));
-const ExecutiveSpendReport    = lazyWithReload(() => import('./pages/ExecutiveSpendReport'));
 const ReportsHub              = lazyWithReload(() => import('./pages/ReportsHub'));
-const RenewalHorizonReport    = lazyWithReload(() => import('./pages/RenewalHorizonReport'));
-const RiskRadarReport         = lazyWithReload(() => import('./pages/RiskRadarReport'));
-const SavingsLedgerReport     = lazyWithReload(() => import('./pages/SavingsLedgerReport'));
-const LicenseWastageReport    = lazyWithReload(() => import('./pages/LicenseWastageReport'));
-const SpendLedgerReport       = lazyWithReload(() => import('./pages/SpendLedgerReport'));
-// v0.58.0: new Tier-1 white-space reports
-const AutoRenewalExposureReport = lazyWithReload(() => import('./pages/AutoRenewalExposureReport'));
-const VendorConcentrationReport = lazyWithReload(() => import('./pages/VendorConcentrationReport'));
-const NonSaaSCategoryReport     = lazyWithReload(() => import('./pages/NonSaaSCategoryReport'));
-// v0.59.0: stubs converted to real reports (4 of 4 Tier-1+ placeholders closed)
-const CoTerminationOpportunityReport  = lazyWithReload(() => import('./pages/CoTerminationOpportunityReport'));
-const RenewalCommitmentForecastReport = lazyWithReload(() => import('./pages/RenewalCommitmentForecastReport'));
-const VendorPortfolioHeatMapReport    = lazyWithReload(() => import('./pages/VendorPortfolioHeatMapReport'));
-const AuditEvidencePackReport         = lazyWithReload(() => import('./pages/AuditEvidencePackReport'));
-// v0.60.0: Tier-2 new report
-const ApplicationOverlapReport        = lazyWithReload(() => import('./pages/ApplicationOverlapReport'));
-const M365OverlapReport               = lazyWithReload(() => import('./pages/M365OverlapReport'));
-// v0.84.0: Budget Shock Simulator
-const BudgetShockSimulator            = lazyWithReload(() => import('./pages/BudgetShockSimulator'));
-// v0.85.0: Phase 3 Tier A reports
-const TotalAddressableWasteReport         = lazyWithReload(() => import('./pages/TotalAddressableWasteReport'));
-const TerminationWindowViolationsReport   = lazyWithReload(() => import('./pages/TerminationWindowViolationsReport'));
-const LicenseReclamationRoiReport         = lazyWithReload(() => import('./pages/LicenseReclamationRoiReport'));
-const CostPerActiveUserReport             = lazyWithReload(() => import('./pages/CostPerActiveUserReport'));
-const NegotiationEffectivenessByOwnerReport = lazyWithReload(() => import('./pages/NegotiationEffectivenessByOwnerReport'));
-const VendorNegotiationDifficultyReport   = lazyWithReload(() => import('./pages/VendorNegotiationDifficultyReport'));
-const PriceEscalationRadarReport          = lazyWithReload(() => import('./pages/PriceEscalationRadarReport'));
-const MultiYearCommitmentRiskReport       = lazyWithReload(() => import('./pages/MultiYearCommitmentRiskReport'));
-const ContractHealthScoreReport           = lazyWithReload(() => import('./pages/ContractHealthScoreReport'));
-const DepartmentBudgetAllocationReport    = lazyWithReload(() => import('./pages/DepartmentBudgetAllocationReport'));
-const PricePerSeatBenchmarkReport         = lazyWithReload(() => import('./pages/PricePerSeatBenchmarkReport'));
-const GlCodeSpendReport                   = lazyWithReload(() => import('./pages/GlCodeSpendReport'));
-const WalkawayCalculatorReport            = lazyWithReload(() => import('./pages/WalkawayCalculatorReport'));
-const PortfolioDecisionDashboardReport    = lazyWithReload(() => import('./pages/PortfolioDecisionDashboardReport'));
-const RenewalWinRateReport                = lazyWithReload(() => import('./pages/RenewalWinRateReport'));
-const ContractOwnershipReport             = lazyWithReload(() => import('./pages/ContractOwnershipReport'));
 
 const SetupWizardPage         = lazyWithReload(() => import('./pages/SetupWizardPage'));   // (S8) first-run operator wizard
 const PrivacyPage             = lazyWithReload(() => import('./pages/PrivacyPage'));       // (A2) public, mounted outside Layout shell
@@ -171,7 +134,7 @@ function RouteFallback() {
 }
 
 function AppRoutes() {
-  const { user, loading, aiEnabled, aiConfigured, onboardingDone, features } = useAuth();
+  const { user, loading, onboardingDone, features } = useAuth();
   const location = useLocation(); // H2-4 (v0.76.7): feed currentPath to HelpDrawer
   // H5-5 (v0.76.8): online/offline detection
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -190,14 +153,11 @@ function AppRoutes() {
   // v0.47 perf: with ProtectedRoute now soft-gated, the route element is
   // mounted DURING the auth probe (user=null, loading=true). Feature flags
   // are computed from `user`, which means `features.<key>` is false in the
-  // loading window. Without this guard, /alerts, /news, /budget and /ingest
-  // would all false-redirect to /dashboard before /api/auth/me even returns.
+  // loading window. Without this guard, feature-gated routes (/alerts)
+  // would false-redirect to /dashboard before /api/auth/me even returns.
   //
   // Wait for loading=false before evaluating the feature gate — render the
-  // same Suspense fallback for visual parity with the route's own chunk
-  // load. The savings from the soft-gate apply to /contracts (the priority
-  // for v0.47); feature-gated routes still see a brief Loading… during
-  // auth hydration, which matches their pre-v0.47 behavior.
+  // same Suspense fallback for visual parity with the route's own chunk load.
   const featureGated = (key, el) =>
     loading ? <RouteFallback /> : (features[key] ? el : <Navigate to="/dashboard" replace />);
 
@@ -226,8 +186,8 @@ function AppRoutes() {
           dismissed it yet. Renders on top of whatever page is currently active.
           Audit Cluster D P0: only show to writers (admin + manager). Viewers
           and consultants previously hit a wizard that recommended actions
-          (Add your first vendor, Add your first contract) that 403'd on
-          submit. The wizard is admin/manager onboarding by design. */}
+          (Add your first site, Add your first asset) that 403'd on submit.
+          The wizard is admin/manager onboarding by design. */}
       {user && !onboardingDone && ['admin', 'manager'].includes(user.role) && <OnboardingWizard />}
 
       <Suspense fallback={<RouteFallback />}>
@@ -278,200 +238,38 @@ function AppRoutes() {
           >
             {/* Always-visible core pages */}
             <Route path="dashboard"          element={<Dashboard />} />
-            <Route path="contracts"          element={<ContractsList />} />
-            <Route path="contracts/new"      element={
+            <Route path="assets"             element={<AssetsList />} />
+            <Route path="assets/new"         element={
               <RequireRole roles={['admin', 'manager']}>
-                <NewContract />
+                <NewAsset />
               </RequireRole>
             } />
-            <Route path="contracts/archived" element={<ArchivedContracts />} />
-            <Route path="contracts/:id"      element={<ContractDetail />} />
-            <Route path="vendors"            element={<VendorsList />} />
-            <Route path="vendors/:id"        element={<VendorDetail />} />
+            <Route path="assets/archived"    element={<ArchivedAssets />} />
+            <Route path="assets/:id"         element={<AssetDetail />} />
+            <Route path="sites"              element={<SitesList />} />
+            <Route path="sites/:id"          element={<SiteDetail />} />
+            <Route path="contractors"        element={<ContractorsList />} />
+            <Route path="contractors/:id"    element={<ContractorDetail />} />
+            <Route path="work-orders"        element={<WorkOrdersList />} />
+            <Route path="work-orders/:id"    element={<WorkOrderDetail />} />
+            <Route path="calendar"           element={<ComplianceCalendar />} />
             <Route path="profile"            element={<ProfilePage />} />
 
-            {/* Feature-gated pages — redirect to dashboard if not enabled */}
-            <Route path="budget"  element={featureGated('budget', <BudgetForecast />)} />
-            {/* Reports hub + all canned report pages — manager / admin only.
-                /reports → hub card grid; sub-paths → individual reports.
-                The legacy /reports/executive-spend path is kept for backward
-                compatibility (bookmarks, Loom walkthrough links). */}
+            {/* Legacy LapseIQ paths — old bookmarks and emails land on the
+                nearest ServiceCycle equivalent instead of the in-shell 404. */}
+            <Route path="contracts/*"        element={<Navigate to="/assets" replace />} />
+            <Route path="vendors/*"          element={<Navigate to="/contractors" replace />} />
+
+            {/* Reports hub — manager / admin only. Individual report pages
+                are launched from the hub itself. */}
             <Route path="reports" element={
               <RequireRole roles={['admin', 'manager']}>
                 <ReportsHub />
               </RequireRole>
             } />
-            <Route path="reports/renewal-horizon" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <RenewalHorizonReport />
-              </RequireRole>
-            } />
-            <Route path="reports/risk-radar" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <RiskRadarReport />
-              </RequireRole>
-            } />
-            <Route path="reports/savings-ledger" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <SavingsLedgerReport />
-              </RequireRole>
-            } />
-            <Route path="reports/license-wastage" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <LicenseWastageReport />
-              </RequireRole>
-            } />
-            <Route path="reports/spend-ledger" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <SpendLedgerReport />
-              </RequireRole>
-            } />
-            <Route path="reports/executive-spend" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <ExecutiveSpendReport />
-              </RequireRole>
-            } />
-            {/* v0.58.0: new Tier-1 reports */}
-            <Route path="reports/auto-renewal-exposure" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <AutoRenewalExposureReport />
-              </RequireRole>
-            } />
-            <Route path="reports/vendor-concentration" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <VendorConcentrationReport />
-              </RequireRole>
-            } />
-            <Route path="reports/non-saas-categories" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <NonSaaSCategoryReport />
-              </RequireRole>
-            } />
-            {/* v0.60.0: Tier-2 new report */}
-            <Route path="reports/application-overlap" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <ApplicationOverlapReport />
-              </RequireRole>
-            } />
-            <Route path="reports/m365-overlap" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <M365OverlapReport />
-              </RequireRole>
-            } />
-            {/* v0.84.0: Budget Shock Simulator */}
-            <Route path="reports/budget-shock-simulator" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <BudgetShockSimulator />
-              </RequireRole>
-            } />
-            {/* v0.85.0: Phase 3 Tier A reports */}
-            <Route path="reports/total-addressable-waste" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <TotalAddressableWasteReport />
-              </RequireRole>
-            } />
-            <Route path="reports/termination-window-violations" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <TerminationWindowViolationsReport />
-              </RequireRole>
-            } />
-            <Route path="reports/license-reclamation-roi" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <LicenseReclamationRoiReport />
-              </RequireRole>
-            } />
-            <Route path="reports/cost-per-active-user" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <CostPerActiveUserReport />
-              </RequireRole>
-            } />
-            <Route path="reports/negotiation-effectiveness-by-owner" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <NegotiationEffectivenessByOwnerReport />
-              </RequireRole>
-            } />
-            <Route path="reports/vendor-negotiation-difficulty" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <VendorNegotiationDifficultyReport />
-              </RequireRole>
-            } />
-            {/* v0.86.0: Phase-3 Tier B — converted from stubs */}
-            <Route path="reports/price-escalation-radar" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <PriceEscalationRadarReport />
-              </RequireRole>
-            } />
-            <Route path="reports/multi-year-commitment-risk" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <MultiYearCommitmentRiskReport />
-              </RequireRole>
-            } />
-            <Route path="reports/contract-health-score" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <ContractHealthScoreReport />
-              </RequireRole>
-            } />
-            <Route path="reports/department-budget-allocation" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <DepartmentBudgetAllocationReport />
-              </RequireRole>
-            } />
-            <Route path="reports/price-per-seat-benchmark" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <PricePerSeatBenchmarkReport />
-              </RequireRole>
-            } />
-            <Route path="reports/gl-code-spend" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <GlCodeSpendReport />
-              </RequireRole>
-            } />
-            <Route path="reports/walkaway-calculator" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <WalkawayCalculatorReport />
-              </RequireRole>
-            } />
-            <Route path="reports/portfolio-decision-dashboard" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <PortfolioDecisionDashboardReport />
-              </RequireRole>
-            } />
-            <Route path="reports/renewal-win-rate" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <RenewalWinRateReport />
-              </RequireRole>
-            } />
-            <Route path="reports/contract-ownership" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <ContractOwnershipReport />
-              </RequireRole>
-            } />
-            {/* v0.58.0: Phase-3 stub placeholders. Coming soon in v0.59+ */}
-            <Route path="reports/audit-evidence-pack" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <AuditEvidencePackReport />
-              </RequireRole>
-            } />
-            <Route path="reports/vendor-heat-map" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <VendorPortfolioHeatMapReport />
-              </RequireRole>
-            } />
-            <Route path="reports/co-term-opportunity" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <CoTerminationOpportunityReport />
-              </RequireRole>
-            } />
-            <Route path="reports/renewal-commitment-forecast" element={
-              <RequireRole roles={['admin', 'manager']}>
-                <RenewalCommitmentForecastReport />
-              </RequireRole>
-            } />
+
+            {/* Feature-gated pages — redirect to dashboard if not enabled */}
             <Route path="alerts"  element={featureGated('alerts', <AlertsPage />)} />
-            <Route path="news"    element={featureGated('news', <NewsPage />)} />
-            {aiEnabled && aiConfigured && (
-              <Route path="ingest" element={featureGated('ingest', <IngestReview />)} />
-            )}
 
             {/* Admin / manager pages — routes always exist so the Router never
                 hits the path="*" fallback during auth hydration; RequireRole
@@ -503,7 +301,7 @@ function AppRoutes() {
           out-of-band the first time the user clicks Help — public routes
           (Login, Register, Legal) now have a real working Help drawer.
           The drawer manages its own open state and listens for the global
-          lapseiq:open-help CustomEvent, so a null Suspense fallback is
+          servicecycle:open-help CustomEvent, so a null Suspense fallback is
           correct — there's nothing to render until the chunk lands AND
           the user has dispatched the open event. */}
       <Suspense fallback={null}>
@@ -523,7 +321,7 @@ function NotFoundInShell() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Page not found</h1>
-          <div className="page-subtitle">The URL you followed doesn't match a page in LapseIQ.</div>
+          <div className="page-subtitle">The URL you followed doesn't match a page in ServiceCycle.</div>
         </div>
       </div>
       <div className="page-body">
@@ -532,10 +330,11 @@ function NotFoundInShell() {
             Double-check the link, or jump to one of these:
           </p>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
-            <li><a href="/dashboard" style={{ color: 'var(--color-primary)' }}>→ Dashboard</a></li>
-            <li><a href="/contracts" style={{ color: 'var(--color-primary)' }}>→ Contracts</a></li>
-            <li><a href="/vendors"   style={{ color: 'var(--color-primary)' }}>→ Vendors</a></li>
-            <li><a href="/alerts"    style={{ color: 'var(--color-primary)' }}>→ Alerts</a></li>
+            <li><a href="/dashboard"   style={{ color: 'var(--color-primary)' }}>→ Dashboard</a></li>
+            <li><a href="/assets"      style={{ color: 'var(--color-primary)' }}>→ Assets</a></li>
+            <li><a href="/work-orders" style={{ color: 'var(--color-primary)' }}>→ Work Orders</a></li>
+            <li><a href="/contractors" style={{ color: 'var(--color-primary)' }}>→ Contractors</a></li>
+            <li><a href="/alerts"      style={{ color: 'var(--color-primary)' }}>→ Alerts</a></li>
           </ul>
         </div>
       </div>

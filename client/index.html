@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LapseIQ — Renewal management that respects your data</title>
-    <meta name="description" content="Self-hosted renewal management for IT, procurement, and operations. Track every contract, get AI-generated negotiation briefs per category, keep your data on your infrastructure." />
+    <title>ServiceCycle — Maintenance compliance that respects your data</title>
+    <meta name="description" content="Self-hosted electrical equipment maintenance compliance for facilities and operations teams. Track every asset, apply NFPA 70B schedules, manage work orders and contractors, keep your data on your infrastructure." />
     <meta name="theme-color" content="#0d4f6e" />
     <!-- v0.90.4: build identifier baked at build time. SPA polls /api/config
          every 60s; when the server version moves ahead of this value the
          app shows a 'New version available -- reload' toast. Closes the
          residual stale-chunk window that lazyWithReload doesn't catch
          (users mid-form-fill who haven't tried navigating yet). -->
-    <meta name="lapseiq-build-id" content="%LAPSEIQ_BUILD_ID%" />
+    <meta name="servicecycle-build-id" content="%SERVICECYCLE_BUILD_ID%" />
     <!-- Pass-3 audit MUST #4: demo SPA is operationally a sandbox + the
          application surface — never the marketing surface. We don't want
          Google indexing demo signup pages, contract data screenshots, or
@@ -30,7 +30,7 @@
     <script src="/theme-bootstrap.js?v=%BOOTSTRAP_VER%"></script>
         <!-- v0.92.3: bootstrap prefetch externalized to /bootstrap-prefetch.js
          (CSP script-src 'self'). Fires /api/bootstrap during head parse on
-         /contracts, before React mounts. -->
+         /assets, before React mounts. -->
     <script src="/bootstrap-prefetch.js?v=%BOOTSTRAP_VER%"></script>
   </head>
   <body>
@@ -38,7 +38,7 @@
     <noscript>
       <div style="max-width:560px;margin:48px auto;padding:24px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#0a0d12">
         <h1 style="font-size:20px;margin-bottom:12px">JavaScript required</h1>
-        <p style="line-height:1.5;color:#5b6373">LapseIQ runs as a single-page web app and needs JavaScript to render. Please enable JavaScript in your browser settings and reload this page.</p>
+        <p style="line-height:1.5;color:#5b6373">ServiceCycle runs as a single-page web app and needs JavaScript to render. Please enable JavaScript in your browser settings and reload this page.</p>
       </div>
     </noscript>
     <script type="module" src="/src/main.jsx"></script>

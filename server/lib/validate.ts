@@ -25,7 +25,7 @@
  *
  * We intentionally do NOT use zod everywhere — only on:
  *   - auth + password endpoints (untrusted, anonymous traffic)
- *   - the highest-traffic write endpoints (POST /contracts, PUT /contracts/:id)
+ *   - the highest-traffic write endpoints (POST /assets, PUT /assets/:id)
  *   - admin-only write endpoints that mutate identity (POST /users)
  *
  * Read endpoints and infrequent admin tools are deliberately not validated
@@ -73,7 +73,7 @@ const UuidStr = z
 /**
  * Preprocess that maps empty strings to `undefined` so `.optional()` matches.
  * The SPA serializes blank form inputs as `""`; without this, every optional
- * numeric/date field on a contract would need to be filled or the POST 400s.
+ * numeric/date field on an asset would need to be filled or the POST 400s.
  */
 const emptyToUndef = (v) => (v === '' ? undefined : v);
 

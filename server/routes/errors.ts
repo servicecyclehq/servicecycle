@@ -76,7 +76,7 @@ const CLIENT_KINDS = new Set(['render', 'uncaught', 'promise']);
 //   stack          string  — truncated to 4000 chars
 //   componentStack string  — React fiber stack (render-only)
 //   path           string  — location.pathname at crash time
-//   lapseiqVersion string  — from <meta name='lapseiq-build-id'>
+//   appVersion     string  — from the client build-id meta tag
 //
 // Auth: optional. If a valid bearer token is present, req.user is populated
 // upstream by middleware/auth.js and we pull userId/accountId from it.
@@ -115,7 +115,7 @@ router.post('/render', async (req, res) => {
         // v0.90.0: prefer server-side env over client-claimed version --
         // the server knows the deploy version with certainty; a stale client
         // bundle still reports the deploy that originally served its index.html.
-        lapseiqVersion: trunc(process.env.LAPSEIQ_VERSION || body.lapseiqVersion, 32),
+        appVersion:     trunc(process.env.SERVICECYCLE_VERSION || body.appVersion || body.lapseiqVersion, 32),
         ip:             trunc(ip, 64),
       },
     });

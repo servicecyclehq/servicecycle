@@ -1,12 +1,12 @@
 /**
- * Custom contract fields — admin-defined fields that show up on every
- * contract form.
+ * Custom asset fields — admin-defined fields that show up on every
+ * asset form.
  *
  * Endpoints
  *   GET    /api/custom-fields                — list all (active + archived)
  *                                              for this account; any
  *                                              authenticated user can read
- *                                              so the contract form renders.
+ *                                              so the asset form renders.
  *   POST   /api/custom-fields                — admin only; creates a new
  *                                              definition.
  *   PUT    /api/custom-fields/:id            — admin only; updates name,
@@ -19,7 +19,7 @@
  *   PATCH  /api/custom-fields/:id/archive    — admin only; toggles
  *                                              archivedAt. Soft-delete only;
  *                                              values stay readable on
- *                                              existing contracts so the
+ *                                              existing assets so the
  *                                              CSV export stays complete.
  *
  * Field types and validation:
@@ -30,10 +30,9 @@
  *   - checkbox  — 'true'|'false' (stored as string for column-uniformity)
  *   - select    — must match one of definition.options[].value
  *
- * v0.3.3 (2026-05-11): F-005 parity with categories.js — writeActivityLog
- * calls added on create/update/archive/restore. The original audit pass in
- * v0.3.1 fixed categories; this closes the same gap for custom fields so
- * any Settings-tab data mutation lands in the Activity Log.
+ * v0.3.3 (2026-05-11): F-005 — writeActivityLog calls added on
+ * create/update/archive/restore so any Settings-tab data mutation lands
+ * in the Activity Log.
  */
 
 'use strict';
@@ -91,7 +90,7 @@ function cleanSelectOptions(opts) {
  * string-form to store, or throws Error with a user-readable message.
  * Empty string / null returns null (which Prisma stores as NULL).
  *
- * Exported so the contract POST/PUT path can reuse the exact same rules.
+ * Exported so the asset POST/PUT path can reuse the exact same rules.
  */
 function validateValueForDefinition(definition, raw) {
   if (raw === '' || raw == null) return null;
@@ -145,7 +144,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', requireAdmin, async (req, res) => {
   try {
-    const { name, type, helpText, required, options, displayOrder, categoryId } = req.body || {};
+    const { name, type, helpText, required, options, displayOrder } = req.body || {};
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ success: false, error: 'name is required' });
     }
@@ -164,24 +163,12 @@ router.post('/', requireAdmin, async (req, res) => {
       catch (e) { return res.status(400).json({ success: false, error: e.message }); }
     }
 
-    // Cap total fields per account so the contract form stays usable.
+    // Cap total fields per account so the asset form stays usable.
     const count = await prisma.customFieldDefinition.count({
       where: { accountId: req.user.accountId, archivedAt: null },
     });
     if (count >= MAX_FIELDS_PER_ACCOUNT) {
       return res.status(400).json({ success: false, error: `Limit of ${MAX_FIELDS_PER_ACCOUNT} active custom fields reached. Archive an unused field first.` });
-    }
-
-    // Validate categoryId if provided — must belong to this account.
-    let resolvedCategoryId = null;
-    if (categoryId) {
-      const cat = await prisma.category.findFirst({
-        where: { id: categoryId, accountId: req.user.accountId, archivedAt: null },
-      });
-      if (!cat) {
-        return res.status(400).json({ success: false, error: 'Invalid or archived category' });
-      }
-      resolvedCategoryId = cat.id;
     }
 
     try {
@@ -196,7 +183,6 @@ router.post('/', requireAdmin, async (req, res) => {
           required:     !!required,
           options:      cleanOptions,
           displayOrder: Number.isFinite(displayOrder) ? parseInt(displayOrder, 10) : count,
-          categoryId:   resolvedCategoryId,
         },
       });
       // F-005 (v0.3.3): audit

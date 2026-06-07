@@ -11,17 +11,16 @@
 
 // ── Canonical feature list ─────────────────────────────────────────────────────
 // Order matters — this is the display order in the permissions matrix.
+// ServiceCycle conversion: contracts_write/vendors_write became
+// assets_write/contractors_write; renewal_brief became maintenance_brief;
+// contract_flags, budget, ingest, and news were removed with their features.
 const ALL_FEATURES = [
-  'contracts_write',  // Create & edit contracts
-  'vendors_write',    // Add & manage vendors
-  'renewal_brief',    // AI renewal brief generation
-  'contract_flags',   // AI-detected contract risk flags
-  'communications',   // Log & view communications
-  'export',           // Export data to CSV
-  'budget',           // Budget forecast page
-  'ingest',           // AI document upload & ingestion
-  'alerts',           // Renewal & billing alerts
-  'news',             // Vendor news feed
+  'assets_write',      // Create & edit assets, sites, and schedules
+  'contractors_write', // Add & manage contractors and their techs
+  'maintenance_brief', // AI maintenance recommendation / compliance summary
+  'communications',    // Log & view communications
+  'export',            // Export data to CSV
+  'alerts',            // Maintenance-due & overdue alerts
 ];
 
 // ── Role-based defaults ───────────────────────────────────────────────────────
@@ -29,59 +28,41 @@ const ALL_FEATURES = [
 // Admins always get full access (enforced in the permissions save route too).
 const FEATURE_DEFAULTS = {
   admin: {
-    contracts_write: true,
-    vendors_write:   true,
-    renewal_brief:   true,
-    contract_flags:  true,
-    communications:  true,
-    export:          true,
-    budget:          true,
-    ingest:          true,
-    alerts:          true,
-    news:            true,
+    assets_write:      true,
+    contractors_write: true,
+    maintenance_brief: true,
+    communications:    true,
+    export:            true,
+    alerts:            true,
   },
   manager: {
-    contracts_write: true,
-    vendors_write:   true,
-    renewal_brief:   true,
-    contract_flags:  true,
-    communications:  true,
-    export:          true,
-    budget:          true,
-    ingest:          true,
-    alerts:          true,
-    news:            true,
+    assets_write:      true,
+    contractors_write: true,
+    maintenance_brief: true,
+    communications:    true,
+    export:            true,
+    alerts:            true,
   },
   viewer: {
-    contracts_write: false,
-    vendors_write:   false,
-    renewal_brief:   false,
-    contract_flags:  true,   // can see flags, just can't act on them
-    communications:  false,
-    export:          false,
-    budget:          false,
-    ingest:          false,
-    alerts:          true,   // renewal alerts are useful for read-only users
-    news:            false,
+    assets_write:      false,
+    contractors_write: false,
+    maintenance_brief: false,
+    communications:    false,
+    export:            false,
+    alerts:            true,   // due/overdue alerts are useful for read-only users
   },
   consultant: {
     // Consultants are read-only-with-attribution per server/middleware/roles.js
     // header. The SPA "Consultant Access" amber banner promises read-only
     // behaviour and the server enforces it via requireManager on every
-    // mutating route. Audit Cluster D P0: this flag was previously `true`
-    // which made the SPA render write affordances (Log communication, Edit
-    // contract-flags) that 403'd on submit — visible-but-blocked is a worse
-    // UX than hidden. Aligning the flag with the route guard.
-    contracts_write: false,
-    vendors_write:   false,
-    renewal_brief:   true,   // brief is an *AI read*; the resulting cached fields are still gated by requireManager on regen
-    contract_flags:  false,  // was true; flag-edits hit requireManager
-    communications:  false,  // was true; comms-create hits requireManager
-    export:          false,
-    budget:          false,
-    ingest:          false,
-    alerts:          true,
-    news:            true,
+    // mutating route. Audit Cluster D P0 history: write affordances must not
+    // render for consultants — visible-but-blocked is a worse UX than hidden.
+    assets_write:      false,
+    contractors_write: false,
+    maintenance_brief: true,   // the brief is an *AI read*; regen stays gated by requireManager
+    communications:    false,  // comms-create hits requireManager
+    export:            false,
+    alerts:            true,
   },
 };
 

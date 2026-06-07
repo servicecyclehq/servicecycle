@@ -14,9 +14,9 @@ import React from 'react';
  *                     (ContractDetail's "AI Renewal Brief" card).
  *                     Amber tone with a stronger downstream-authority
  *                     pointer (SAM team / licensing consultant).
- *   - ask           : Ask LapseIQ Q&A modal. Slate (info) tone —
+ *   - ask           : Ask ServiceCycle Q&A modal. Slate (info) tone —
  *                     this surface is grounded in the curated
- *                     LapseIQ product guide (RAG-lite over an
+ *                     ServiceCycle product guide (RAG-lite over an
  *                     internal knowledge base, not free-form AI on
  *                     user content), so a strong amber warning would
  *                     overstate the risk and make the help system
@@ -63,7 +63,7 @@ const VARIANTS = {
     tone: 'amber',
   },
   ask: {
-    text: 'Answers come from the LapseIQ product guide — AI-generated. Refer to the docs if anything looks off.',
+    text: 'Answers come from the ServiceCycle product guide — AI-generated. Refer to the docs if anything looks off.',
     tone: 'slate',
   },
 };

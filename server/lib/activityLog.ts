@@ -5,9 +5,8 @@
  * triggered it. Every call swallows its own errors and console.errors them.
  *
  * Action conventions (string column, free-form). Existing values:
- *   contract_created, status_changed, owner_assigned, fields_updated,
- *   checklist_updated, contract_renewed, contract_cancelled, brief_generated,
- *   document_uploaded, user_created
+ *   asset_created, condition_changed, fields_updated, work_order_completed,
+ *   schedule_updated, brief_generated, document_uploaded, user_created
  *
  * Added by Sprint 5 audit pass:
  *   login_failed       — failed login attempt with IP and reason
@@ -27,7 +26,7 @@ import prisma from './prisma';
  * Write an activity-log row. Never throws.
  *
  * @param {object}   p
- * @param {string|null} p.contractId  - nullable; null for non-contract events
+ * @param {string|null} p.assetId     - nullable; null for non-asset events
  * @param {string|null} p.userId      - actor user id, or null for anonymous events (B4)
  * @param {string|null} [p.accountId] - tenant id; pass req.user.accountId so the
  *                                      activity route can filter directly (H8). Optional
@@ -36,7 +35,7 @@ import prisma from './prisma';
  * @param {string}   p.action         - one of the action strings above
  * @param {object|null} [p.details]   - optional JSON detail payload
  */
-async function writeLog({ contractId = null, userId = null, accountId = null, action, details = null }) {
+async function writeLog({ assetId = null, userId = null, accountId = null, action, details = null }) {
   if (!action) {
     // Silently skip — action is the only field that's still mandatory.
     return;
@@ -44,7 +43,7 @@ async function writeLog({ contractId = null, userId = null, accountId = null, ac
   try {
     await prisma.activityLog.create({
       data: {
-        contractId,
+        assetId,
         userId,
         accountId,
         action,

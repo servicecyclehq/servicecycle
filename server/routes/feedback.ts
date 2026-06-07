@@ -101,7 +101,7 @@ router.post('/', async (req, res) => {
 
     await sendEmail({
       to: supportEmail,
-      subject: `[LapseIQ Feedback] ${category} — ${req.user.name} (${req.user.role})`,
+      subject: `[ServiceCycle Feedback] ${category} — ${req.user.name} (${req.user.role})`,
       html: feedbackHtml({
         userName:    req.user.name,
         userEmail:   req.user.email,

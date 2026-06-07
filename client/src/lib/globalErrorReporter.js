@@ -10,7 +10,7 @@
 // with kind='uncaught' or kind='promise' so we can slice the render_errors
 // table by where the crash originated.
 //
-// Why DIY instead of GlitchTip / Sentry: LapseIQ's product philosophy is
+// Why DIY instead of GlitchTip / Sentry: ServiceCycle's product philosophy is
 // strictly self-hosted (see project_lapseiq_philosophy memory). The hosted
 // SaaS offerings violate that, and self-hosting GlitchTip on the demo
 // droplet adds 5+ containers for a feature that's a 60-line client module +
@@ -33,7 +33,7 @@ let installed = false;
 
 function getBundleVersion() {
   try {
-    const el = document.querySelector('meta[name="lapseiq-build-id"]');
+    const el = document.querySelector('meta[name="servicecycle-build-id"]');
     if (!el) return null;
     const v = el.getAttribute('content');
     if (!v || v.startsWith('%')) return null;
@@ -43,7 +43,7 @@ function getBundleVersion() {
 
 function getBearerToken() {
   try {
-    return (window.localStorage && window.localStorage.getItem('lapseiq_token')) || null;
+    return (window.localStorage && window.localStorage.getItem('servicecycle_token')) || null;
   } catch (_) { return null; }
 }
 
@@ -56,7 +56,7 @@ function makeErrorCode() {
 
 function isAlreadyPosted(errorCode) {
   try {
-    const k = 'lapseiq_runtime_posted_' + errorCode;
+    const k = 'servicecycle_runtime_posted_' + errorCode;
     if (window.sessionStorage && window.sessionStorage.getItem(k)) return true;
     if (window.sessionStorage) window.sessionStorage.setItem(k, '1');
   } catch (_) { /* private mode */ }
@@ -103,7 +103,7 @@ function handleErrorEvent(ev) {
       message:        (err && err.message) || ev.message || 'unknown uncaught error',
       stack:          (err && err.stack) || null,
       path:           (window.location && window.location.pathname) || null,
-      lapseiqVersion: getBundleVersion(),
+      appVersion: getBundleVersion(),
       // line + column + filename go into the message for now since the
       // server schema doesn't carry them as columns. Cheap context.
       at:             new Date().toISOString(),
@@ -134,7 +134,7 @@ function handleRejection(ev) {
       message:        msg || 'unknown rejection',
       stack:          isErr ? reason.stack : null,
       path:           (window.location && window.location.pathname) || null,
-      lapseiqVersion: getBundleVersion(),
+      appVersion: getBundleVersion(),
       at:             new Date().toISOString(),
     };
     postRuntimeError('promise', payload);

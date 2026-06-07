@@ -109,77 +109,48 @@ function filterToRequestedColumns(registry, columnsQuery) {
   return registry.filter(c => wanted.has(c.id));
 }
 
-// ── Vendor helpers ────────────────────────────────────────────────────────────
-
-/** Sum active-contract spend for a vendor row (from Prisma include). */
-function vendorSpend(v) {
-  return (v.contracts || []).reduce(
-    (s, c) => s + (c.costPerLicense && c.quantity
-      ? parseFloat(c.costPerLicense) * parseInt(c.quantity, 10)
-      : 0),
-    0,
-  );
-}
-
-/** Return the most-recent contact timestamp as a Date, or null. */
-function vendorLastContact(v) {
-  const commTs    = v.communications?.[0]?.createdAt
-    ? new Date(v.communications[0].createdAt).getTime() : 0;
-  const contactTs = v.contacts?.[0]?.lastContactedAt
-    ? new Date(v.contacts[0].lastContactedAt).getTime() : 0;
-  const t = Math.max(commTs, contactTs);
-  return t > 0 ? new Date(t) : null;
-}
-
-// ── Activity-log where-clause builder ────────────────────────────────────────
+// ── Asset helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Build a Prisma `where` object for activityLog.findMany from an Express
- * request object. Mirrors activity.js#buildWhere — kept here so export.js
- * stays standalone. Keep in sync with activity.js if it evolves.
- *
- * @param {{ user: { accountId: string }, query: Record<string,string> }} req
+ * Return the earliest nextDueDate across an asset's (included) maintenance
+ * schedules, or null when no schedule carries a due date. The asset list
+ * export includes only active schedules, so this is the same "Next Due"
+ * value the list page renders.
  */
-function buildActivityWhere(req) {
-  const q = req.query || {};
-  const where: any = { accountId: req.user.accountId };
+function earliestNextDue(a) {
+  const times = (a?.schedules || [])
+    .map(s => s?.nextDueDate)
+    .filter(Boolean)
+    .map(d => new Date(d).getTime())
+    .filter(t => !Number.isNaN(t));
+  return times.length > 0 ? new Date(Math.min(...times)) : null;
+}
 
-  const actionList = parseList(q.actionIn);
-  if (actionList.length > 0) where.action = { in: actionList };
-  else if (q.action) where.action = q.action;
+// ── CSV writer ────────────────────────────────────────────────────────────────
 
-  const userList = parseList(q.userIdIn);
-  if (userList.length > 0) {
-    const wantsBlank = userList.includes(BLANK_SENTINEL);
-    const real = userList.filter(v => v !== BLANK_SENTINEL);
-    if (real.length > 0 && wantsBlank) {
-      where.OR = [...(where.OR || []), { userId: { in: real } }, { userId: null }];
-    } else if (real.length > 0) {
-      where.userId = { in: real };
-    } else if (wantsBlank) {
-      where.userId = null;
-    }
-  } else if (q.userId) {
-    where.userId = q.userId;
+/** Escape a single CSV cell, with the H6 formula-injection guard. */
+function csvCell(v) {
+  if (v == null) return '';
+  let s = v instanceof Date ? v.toISOString().split('T')[0] : String(v);
+  if (/^\s*[=+\-@\t\r]/.test(s)) s = "'" + s; // H6: formula injection guard
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
   }
+  return s;
+}
 
-  if (q.contractId) where.contractId = q.contractId;
-
-  if (q.dateFrom || q.dateTo) {
-    where.createdAt = {};
-    if (q.dateFrom) {
-      const t = new Date(q.dateFrom);
-      if (!Number.isNaN(t.getTime())) where.createdAt.gte = t;
-    }
-    if (q.dateTo) {
-      const t = new Date(q.dateTo);
-      if (!Number.isNaN(t.getTime())) {
-        t.setUTCHours(23, 59, 59, 999);
-        where.createdAt.lte = t;
-      }
-    }
-  }
-  return where;
+/**
+ * Send rows as a CSV attachment using the same column-registry shape
+ * sendXlsx consumes ({ id, header, type, get }). Counterpart to
+ * lib/xlsxExport.js#sendXlsx for clients that want plain CSV.
+ */
+function sendCsv(res, { columnDefs, rows, filename }) {
+  const header = columnDefs.map(c => csvCell(c.header)).join(',');
+  const lines = rows.map(r => columnDefs.map(c => csvCell(c.get(r))).join(','));
+  const body = [header, ...lines].join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return res.send(body);
 }
 
 module.exports = {
@@ -193,9 +164,9 @@ module.exports = {
   parseNum,
   parseList,
   filterToRequestedColumns,
-  vendorSpend,
-  vendorLastContact,
-  buildActivityWhere,
+  earliestNextDue,
+  csvCell,
+  sendCsv,
 };
 
 export {};

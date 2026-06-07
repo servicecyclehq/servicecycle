@@ -115,10 +115,10 @@ export default function WebhooksSection() {
           <h3 style={{ margin: 0, fontSize: 'var(--font-size-base)', fontWeight: 600 }}>Webhook Endpoints</h3>
           {/* v0.68.6 webhook 2xx delivery contract help -- audit M-tier */}
           <p style={{ fontSize: 'var(--font-size-sm)', color: "var(--color-text-secondary)", margin: "6px 0 0", lineHeight: 1.5 }}>
-            <strong>Delivery contract:</strong> LapseIQ treats any HTTP 2xx response as a successful delivery. If your receiver wants to reject a delivery, return a 4xx with a descriptive body -- a 200 OK with an error in the body still counts as delivered.
+            <strong>Delivery contract:</strong> ServiceCycle treats any HTTP 2xx response as a successful delivery. If your receiver wants to reject a delivery, return a 4xx with a descriptive body -- a 200 OK with an error in the body still counts as delivered.
           </p>
           <p style={{ margin: '4px 0 0', fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', maxWidth: 520 }}>
-            LapseIQ POSTs a signed JSON event to each enabled endpoint when an alert fires.
+            ServiceCycle POSTs a signed JSON event to each enabled endpoint when an alert fires.
             Use these to trigger Zapier, n8n, Make, or any custom HTTP listener.
             Up to 5 endpoints per account.
           </p>
@@ -136,7 +136,7 @@ export default function WebhooksSection() {
         <strong style={{ color: 'var(--color-text)' }}>How it works:</strong> Each alert fires one POST per contract per threshold hit.
         The body is a JSON object with <code style={{ fontSize: 'var(--font-size-sm)' }}>alertType</code>, <code style={{ fontSize: 'var(--font-size-sm)' }}>daysUntil</code>,
         and contract details. Every request includes an{' '}
-        <code style={{ fontSize: 'var(--font-size-sm)' }}>X-LapseIQ-Signature: sha256=…</code> header so you can verify authenticity using your HMAC secret.
+        <code style={{ fontSize: 'var(--font-size-sm)' }}>X-ServiceCycle-Signature: sha256=…</code> header so you can verify authenticity using your HMAC secret.
         Thresholds fire at <strong>60, 30, and 7 days</strong> before renewal or auto-renew cancellation deadlines.
       </div>
 
@@ -179,7 +179,7 @@ export default function WebhooksSection() {
             <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>Endpoint Added — Copy Your Secret Now</h3>
             <p style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', marginBottom: 8 }}>
               This HMAC signing secret will <strong>not</strong> be shown again.
-              Paste it into your receiving app to verify the <code style={{ fontSize: 'var(--font-size-sm)' }}>X-LapseIQ-Signature</code> header.
+              Paste it into your receiving app to verify the <code style={{ fontSize: 'var(--font-size-sm)' }}>X-ServiceCycle-Signature</code> header.
             </p>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
               Sending to: <strong>{revealed.urlMasked}</strong>
@@ -192,7 +192,7 @@ export default function WebhooksSection() {
               <code style={{ fontSize: 'var(--font-size-xs)', display: 'block', marginTop: 4, whiteSpace: 'pre-wrap', background: 'var(--color-surface)', padding: '6px 8px', borderRadius: 4 }}>
 {`const sig = crypto.createHmac('sha256', SECRET)
   .update(rawBody, 'utf8').digest('hex');
-if ('sha256=' + sig !== req.headers['x-lapseiq-signature'])
+if ('sha256=' + sig !== req.headers['x-servicecycle-signature'])
   return res.status(401).send('Bad signature');`}
               </code>
             </div>

@@ -7,14 +7,14 @@
 > no representation that this draft is legally sufficient, complete, or
 > appropriate for any particular use.
 
-# LapseIQ Terms of Service
+# ServiceCycle Terms of Service
 
 **Effective Date:** *To be set on publication.*
 **Version:** Draft v1 — 2026-05-04
 **Provider:** ForgeRift LLC, a Wisconsin limited liability company ("ForgeRift," "we," "us," "our").
-**Service:** LapseIQ — software-asset and contract-renewal management software, distributed in self-hosted form and made available in a public sandbox at demo.lapseiq.com (the "Service").
+**Service:** ServiceCycle — software-asset and contract-renewal management software, distributed in self-hosted form and made available in a public sandbox at demo.servicecycle.com (the "Service").
 
-These Terms of Service (the "Terms") govern your access to and use of the Service. By accessing the Service, downloading the Service software, or completing the LapseIQ first-run setup wizard on your own infrastructure, you agree to be bound by these Terms. If you do not agree, do not access or install the Service.
+These Terms of Service (the "Terms") govern your access to and use of the Service. By accessing the Service, downloading the Service software, or completing the ServiceCycle first-run setup wizard on your own infrastructure, you agree to be bound by these Terms. If you do not agree, do not access or install the Service.
 
 If you are accepting these Terms on behalf of an organization, you represent that you have authority to bind that organization, and "you" refers both to you individually and to that organization.
 
@@ -28,7 +28,7 @@ THE SERVICE AND ALL SOFTWARE, DOCUMENTATION, AND CONTENT MADE AVAILABLE THROUGH 
 
 > **AI-output notice — read before relying on AI features.**
 >
-> The Service's optional AI features — including but not limited to PDF extraction, signature reading, renewal-brief generation, and the "Ask LapseIQ" chat — produce outputs from probabilistic models. **AI-generated outputs may be inaccurate, incomplete, fabricated, or misleading.** They are estimates, not authoritative determinations. You agree that you will independently verify any AI-generated output before relying on it for any business decision, contract action, regulatory filing, or other consequential purpose. ForgeRift is not responsible for any decision, action, or omission you take in reliance on an AI-generated output. This notice is in addition to the warranty disclaimers in Sections 1 and 8.
+> The Service's optional AI features — including but not limited to PDF extraction, signature reading, renewal-brief generation, and the "Ask ServiceCycle" chat — produce outputs from probabilistic models. **AI-generated outputs may be inaccurate, incomplete, fabricated, or misleading.** They are estimates, not authoritative determinations. You agree that you will independently verify any AI-generated output before relying on it for any business decision, contract action, regulatory filing, or other consequential purpose. ForgeRift is not responsible for any decision, action, or omission you take in reliance on an AI-generated output. This notice is in addition to the warranty disclaimers in Sections 1 and 8.
 
 ---
 
@@ -46,7 +46,7 @@ You may not, and may not permit any third party to: (a) sublicense, sell, lease,
 
 ### 3.1 Account responsibility
 
-You are responsible for all activity that occurs under your installation of the Service, including the activity of users you grant access to. You agree to (a) keep credentials, encryption keys (including the LapseIQ `MASTER_KEY`), and API tokens confidential; (b) promptly notify us if you discover any unauthorized access; and (c) maintain accurate registration information.
+You are responsible for all activity that occurs under your installation of the Service, including the activity of users you grant access to. You agree to (a) keep credentials, encryption keys (including the ServiceCycle `MASTER_KEY`), and API tokens confidential; (b) promptly notify us if you discover any unauthorized access; and (c) maintain accurate registration information.
 
 ### 3.2 Your data, your responsibility
 
@@ -54,13 +54,13 @@ The Service runs on infrastructure that you own or control. ForgeRift does not h
 
 ### 3.3 IP ownership
 
-You retain all right, title, and interest in and to Your Data. ForgeRift retains all right, title, and interest in and to the Service, the LapseIQ software, the LapseIQ name and brand, and all underlying technology and intellectual property. No rights are granted to you except as expressly set out in Section 2.
+You retain all right, title, and interest in and to Your Data. ForgeRift retains all right, title, and interest in and to the Service, the ServiceCycle software, the ServiceCycle name and brand, and all underlying technology and intellectual property. No rights are granted to you except as expressly set out in Section 2.
 
 ---
 
-## 4. Demo sandbox at demo.lapseiq.com
+## 4. Demo sandbox at demo.servicecycle.com
 
-The Service includes a publicly accessible demo sandbox hosted at `demo.lapseiq.com` (the "Demo"). The Demo is provided **for evaluation purposes only**.
+The Service includes a publicly accessible demo sandbox hosted at `demo.servicecycle.com` (the "Demo"). The Demo is provided **for evaluation purposes only**.
 
 ### 4.1 No real data
 
@@ -99,9 +99,9 @@ We reserve the right to suspend or terminate access for any user or installation
 
 ## 6. Sub-processors and third-party services
 
-The canonical, version-controlled list of sub-processors that ForgeRift engages on its operated services (the marketing site at `lapseiq.com` and the demo sandbox at `demo.lapseiq.com`) is published at **https://lapseiq.com/sub-processors** and is incorporated into these Terms by reference. The list there is the authoritative source; previous versions of these Terms included an inline table that could drift from the canonical list and that table has been removed in favor of the single source of truth.
+The canonical, version-controlled list of sub-processors that ForgeRift engages on its operated services (the marketing site at `servicecycle.com` and the demo sandbox at `demo.servicecycle.com`) is published at **https://servicecycle.com/sub-processors** and is incorporated into these Terms by reference. The list there is the authoritative source; previous versions of these Terms included an inline table that could drift from the canonical list and that table has been removed in favor of the single source of truth.
 
-On a self-hosted installation, the Service transmits data to optional third-party providers (AI providers, email providers, storage providers, news feeds) **only when you opt in** by setting the corresponding environment variable. ForgeRift never receives a copy of data transmitted through those optional integrations. The opt-in providers are also listed at https://lapseiq.com/sub-processors as "Tier 2" so an operator evaluating which integrations to enable has a single place to review them.
+On a self-hosted installation, the Service transmits data to optional third-party providers (AI providers, email providers, storage providers, news feeds) **only when you opt in** by setting the corresponding environment variable. ForgeRift never receives a copy of data transmitted through those optional integrations. The opt-in providers are also listed at https://servicecycle.com/sub-processors as "Tier 2" so an operator evaluating which integrations to enable has a single place to review them.
 
 **Sub-processor changes.** ForgeRift may add, remove, or replace sub-processors from time to time. ForgeRift will provide at least **30 days' prior notice** of any addition or replacement of a sub-processor that processes personal data on your behalf, by updating the table above and notifying registered admin contacts via email or in-product notice. A shorter notice period may apply where a change is required for security, legal, or operational continuity reasons. If you object to a new sub-processor on reasonable grounds, your sole remedy is to terminate these Terms under Section 7. **ForgeRift is not responsible for outages, errors, or other failures of any third-party sub-processor or integration provider listed above.**
 
@@ -115,7 +115,7 @@ We may terminate or suspend your right to access the Service at any time, with o
 
 **For paid customers under a separate written agreement** with ForgeRift, ForgeRift will provide at least **30 days' written notice** before discontinuing access to the Service for convenience-of-the-provider reasons (as opposed to breach, security, or legal-compliance reasons).
 
-**Run-out license on full Service discontinuation.** If ForgeRift permanently discontinues the Service in its entirety, paid customers in good standing as of the discontinuation notice retain a perpetual, non-exclusive, royalty-free right under Section 2 to continue running the most recent version of the LapseIQ on-premises Software then-distributed to them, on their own infrastructure, for their internal business purposes, AS-IS and without any continuing right to support, updates, patches, hosted services, or third-party integrations. This run-out license is subject to all license restrictions in Section 2 and all surviving obligations under these Terms.
+**Run-out license on full Service discontinuation.** If ForgeRift permanently discontinues the Service in its entirety, paid customers in good standing as of the discontinuation notice retain a perpetual, non-exclusive, royalty-free right under Section 2 to continue running the most recent version of the ServiceCycle on-premises Software then-distributed to them, on their own infrastructure, for their internal business purposes, AS-IS and without any continuing right to support, updates, patches, hosted services, or third-party integrations. This run-out license is subject to all license restrictions in Section 2 and all surviving obligations under these Terms.
 
 Upon termination, the licenses granted in Section 2 (other than any run-out license under this Section 7) immediately terminate. Sections 1, 2 (license restrictions), 3.3, 4.1, 5, 7, 8, 9, and 10–13 survive termination.
 
@@ -159,7 +159,7 @@ ForgeRift provides no reciprocal indemnity to you during the public beta. Any in
 
 **(a) Governing law.** These Terms are governed by the laws of the State of Wisconsin, USA, without regard to its conflict-of-laws principles. The United Nations Convention on Contracts for the International Sale of Goods does not apply.
 
-**(b) Informal resolution required first.** Before commencing any arbitration or court proceeding, you and ForgeRift agree to attempt in good faith to resolve any dispute by sending a written notice describing the dispute, the relief sought, and your contact information to **support@lapseiq.com** (for notices to ForgeRift) or to the email address registered with your installation (for notices to you). The parties will attempt resolution for at least **30 days** before either party commences a formal proceeding. The 30-day period tolls any applicable limitations period.
+**(b) Informal resolution required first.** Before commencing any arbitration or court proceeding, you and ForgeRift agree to attempt in good faith to resolve any dispute by sending a written notice describing the dispute, the relief sought, and your contact information to **support@servicecycle.com** (for notices to ForgeRift) or to the email address registered with your installation (for notices to you). The parties will attempt resolution for at least **30 days** before either party commences a formal proceeding. The 30-day period tolls any applicable limitations period.
 
 **(c) Mandatory binding arbitration.** Except as provided in subsection (e), any dispute, claim, or controversy arising out of or relating to these Terms, the Service, or the relationship between you and ForgeRift (a "Dispute") that is not resolved through the informal-resolution process will be resolved by **binding individual arbitration** administered by JAMS under its Streamlined Arbitration Rules and Procedures then in effect. The arbitration will be seated in **Milwaukee, Wisconsin**, conducted in English, and decided by a single arbitrator. The arbitrator's award is final and may be entered in any court of competent jurisdiction. **The Federal Arbitration Act, 9 U.S.C. §§1 et seq., governs the interpretation and enforcement of this arbitration agreement.**
 
@@ -171,7 +171,7 @@ ForgeRift provides no reciprocal indemnity to you during the public beta. Any in
 
 **(g) EU/UK consumer carve-out.** If you are a consumer (as defined under the consumer-protection laws of your country of habitual residence) resident in the European Union, the European Economic Area, the United Kingdom, or Switzerland: (i) the arbitration agreement in subsections (c)–(d) does not apply to you; (ii) you may bring a claim in the courts of your country of habitual residence as permitted by mandatory consumer-protection law; and (iii) nothing in these Terms limits any non-waivable rights granted to you by mandatory consumer-protection law of your country of habitual residence. In addition, the AS-IS warranty disclaimers in Sections 1 and 8 and the liability cap and exclusions in Section 9 apply only to the maximum extent permitted by mandatory consumer-protection law of your country of habitual residence; nothing in these Terms is intended to exclude or limit any non-waivable statutory warranty, remedy, or liability that applies to you as a consumer. Notices of material changes under Section 12 will be provided to you by email or in-product notice with a reasonable opportunity to reject the change before it takes effect, where required by mandatory consumer-protection law.
 
-**(h) Export and territory.** The Service is controlled and operated from the United States and is offered to US-based businesses only. We do not market, target, or otherwise direct the Service to data subjects or businesses in the European Union, European Economic Area, United Kingdom, or Switzerland. The demo sandbox at demo.lapseiq.com includes a country gate restricting new account creation to US-based businesses. If you access the Service from outside the United States, you do so on your own initiative and are responsible for compliance with local laws. ForgeRift will revisit this geographic scope when it has confirmed paying customers in EU/UK/Swiss jurisdictions and the corresponding compliance investments (Article 27 representative appointments, expanded sub-processor DPA flow-downs, jurisdictional accountability infrastructure) are appropriate.
+**(h) Export and territory.** The Service is controlled and operated from the United States and is offered to US-based businesses only. We do not market, target, or otherwise direct the Service to data subjects or businesses in the European Union, European Economic Area, United Kingdom, or Switzerland. The demo sandbox at demo.servicecycle.com includes a country gate restricting new account creation to US-based businesses. If you access the Service from outside the United States, you do so on your own initiative and are responsible for compliance with local laws. ForgeRift will revisit this geographic scope when it has confirmed paying customers in EU/UK/Swiss jurisdictions and the corresponding compliance investments (Article 27 representative appointments, expanded sub-processor DPA flow-downs, jurisdictional accountability infrastructure) are appropriate.
 
 ---
 
@@ -191,6 +191,6 @@ We may update these Terms from time to time. When we make material changes, we w
 
 **Force majeure.** Neither party will be liable for any failure or delay in performance due to causes beyond its reasonable control.
 
-**Notices.** Notices to ForgeRift may be sent to **support@lapseiq.com**. Notices to you may be sent to the email address registered with your installation or, in the case of the Demo, to the address used to create your demo account.
+**Notices.** Notices to ForgeRift may be sent to **support@servicecycle.com**. Notices to you may be sent to the email address registered with your installation or, in the case of the Demo, to the address used to create your demo account.
 
-**Contact.** Questions about these Terms? Email **support@lapseiq.com**.
+**Contact.** Questions about these Terms? Email **support@servicecycle.com**.

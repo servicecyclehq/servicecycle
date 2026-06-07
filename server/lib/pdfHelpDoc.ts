@@ -1,9 +1,8 @@
 /**
  * pdfHelpDoc.js -- Stream a per-module help doc as a PDF.
  *
- * Reuses the same pdfkit + color-palette approach as lib/pdfReport.js so
- * the visual identity matches the rest of LapseIQ's PDF surfaces (board
- * pack, daily digest email).
+ * pdfkit + the marketing color palette so the visual identity matches the
+ * rest of ServiceCycle's PDF surfaces.
  *
  * Markdown -> pdfkit walker: handles the subset we actually use in the
  * help docs:
@@ -170,7 +169,7 @@ function drawHeaderBand(doc, title) {
   const top = doc.y;
   doc.rect(0, top - 12, doc.page.width, 56).fill(COLORS.bgDark);
   doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(18)
-     .text('LapseIQ Help', PAGE.margin, top, { align: 'left' });
+     .text('ServiceCycle Help', PAGE.margin, top, { align: 'left' });
   doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(10)
      .text(title, PAGE.margin, top + 22, { align: 'left' });
 
@@ -202,7 +201,7 @@ function drawFooter(doc) {
     doc.moveTo(PAGE.margin, y).lineTo(doc.page.width - PAGE.margin, y)
        .strokeColor(COLORS.border).lineWidth(0.5).stroke();
     doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
-       .text('lapseiq.com - generated help reference', PAGE.margin, y + 4, { align: 'left', lineBreak: false });
+       .text('servicecycle.com - generated help reference', PAGE.margin, y + 4, { align: 'left', lineBreak: false });
     doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
        .text(`Page ${doc.bufferedPageRange().start + doc.page.number}`, PAGE.margin, y + 4, { align: 'right', lineBreak: false });
   } finally {
@@ -239,10 +238,10 @@ function streamHelpDocPdf(res, { slug, title, markdown }) {
     size: 'LETTER',
     margins: { top: PAGE.margin, bottom: PAGE.margin, left: PAGE.margin, right: PAGE.margin },
     info: {
-      Title:    `LapseIQ Help - ${title || slug}`,
-      Author:   'LapseIQ',
+      Title:    `ServiceCycle Help - ${title || slug}`,
+      Author:   'ServiceCycle',
       Subject:  'Per-module help reference',
-      Creator:  'LapseIQ help engine',
+      Creator:  'ServiceCycle help engine',
     },
   });
 

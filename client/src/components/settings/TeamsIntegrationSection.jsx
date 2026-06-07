@@ -25,7 +25,7 @@ export default function TeamsIntegrationSection() {
 
   useEffect(() => {
     fetch(`${API}/settings`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}` },
+      headers: { Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}` },
     })
       .then(r => r.json())
       .then(d => {
@@ -59,7 +59,7 @@ export default function TeamsIntegrationSection() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(payload),
       });
@@ -92,7 +92,7 @@ export default function TeamsIntegrationSection() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(body),
       });

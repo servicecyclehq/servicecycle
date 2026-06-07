@@ -13,7 +13,7 @@
  * cleanup of the other on-demand UI bits.
  *
  * If you find yourself wanting a per-page help affordance, dispatch the
- * `lapseiq:open-help` CustomEvent directly with `{ detail: { moduleSlug
+ * `servicecycle:open-help` CustomEvent directly with `{ detail: { moduleSlug
  * } }`. HelpDrawer (mounted at App root since v0.37.1) listens globally
  * and opens itself.
  */
@@ -21,7 +21,7 @@
 export default function HelpButton() {
   throw new Error(
     'HelpButton is deprecated as of v0.37.1 (MT-117). ' +
-    'Dispatch a `lapseiq:open-help` CustomEvent instead, ' +
+    'Dispatch a `servicecycle:open-help` CustomEvent instead, ' +
     'or open the standalone Help button in the sidebar.'
   );
 }

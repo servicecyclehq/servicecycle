@@ -33,7 +33,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getPreference, setPreference } from '../api/preferences';
 
-const CACHE_PREFIX = 'lapseiq_pref_';
+const CACHE_PREFIX = 'servicecycle_pref_';
 const DEBOUNCE_MS  = 250;
 
 function readCache(key, fallback) {

@@ -21,7 +21,7 @@ const { verifyToken } = require('./lib/jwtSecrets');
       JWT_PLACEHOLDER,                                     // .env.example value
       'changeme', 'changeme123', 'change-me',              // common copy-paste
       'secret', 'secretsecret', 'jwtsecret',
-      'lapseiq', 'lapseiq-secret', 'lapseiq123',
+      'servicecycle', 'servicecycle-secret', 'servicecycle123',
       'password', 'password123', 'Admin1234',
       'admin', 'adminadmin',
       'a'.repeat(32), '0'.repeat(32),                      // padding tricks to bypass length
@@ -171,24 +171,23 @@ const jwt     = require('jsonwebtoken'); // W4: rate-limiter verifies token sign
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit'); // (S5) ipKeyGenerator normalizes IPv6 to /64 prefix
 
 const authRoutes            = require('./routes/auth');
-const contractRoutes        = require('./routes/contracts');
-const contractsImportRoutes = require('./routes/contractsImport'); // v0.6.0 CSV bulk import
-const vendorRoutes          = require('./routes/vendors');
-const budgetRoutes          = require('./routes/budget');
+// ── ServiceCycle equipment-model routes (2026-06-07 rewire) ─────────────────
+const assetRoutes           = require('./routes/assets');       // was routes/contracts
+const siteRoutes            = require('./routes/sites');        // asset hierarchy
+const contractorRoutes      = require('./routes/contractors');  // was routes/vendors
+const scheduleRoutes        = require('./routes/schedules');    // maintenance schedules
+const workOrderRoutes       = require('./routes/workOrders');   // execution
+const deficiencyRoutes      = require('./routes/deficiencies'); // findings
+const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
 const dashboardRoutes       = require('./routes/dashboard');
-const ingestRoutes          = require('./routes/ingest');
-const signatureRoutes       = require('./routes/signature');
 const userRoutes            = require('./routes/users');
 const preferencesRoutes     = require('./routes/preferences'); // v0.42 per-user key/value prefs
 const bootstrapRoutes       = require('./routes/bootstrap');   // v0.47 single-RT mount-time bundle
-const lineItemsRoutes       = require('./routes/lineItems');   // v0.55 per-SKU renewal planning
 const alertRoutes           = require('./routes/alerts');
-const exportRoutes          = require('./routes/export'); // v0.40 Phase 4 Export-current-view
+const exportRoutes          = require('./routes/export'); // Export-current-view (assets / work orders)
 const settingsRoutes        = require('./routes/settings');
 const consultantRoutes      = require('./routes/consultant');
-const newsRoutes            = require('./routes/news');
 const feedbackRoutes        = require('./routes/feedback');
-const cloudConnectorRoutes  = require('./routes/cloudConnectors');
 const activityRoutes        = require('./routes/activity');
 const errorsRoutes          = require('./routes/errors'); // v0.90.0 render-crash telemetry
 const { router: twoFactorRoutes } = require('./routes/twoFactor');
@@ -197,18 +196,14 @@ const documentRoutes            = require('./routes/documents');
 const setupRoutes               = require('./routes/setup'); // (S8) first-run wizard
 const adminRoutes               = require('./routes/admin'); // (A4) demo reset endpoint
 const adminAuditChainRoutes     = require('./routes/adminAuditChain'); // Pass-6 W4 MT-127 chain verify endpoint
-const reportRoutes              = require('./routes/reports'); // executive spend reports
-const customFieldRoutes         = require('./routes/customFields'); // admin-defined contract fields
-const categoryRoutes            = require('./routes/categories');   // (Phase 2) non-SaaS contract categories
+const reportRoutes              = require('./routes/reports'); // compliance reports (stub — later session)
+const customFieldRoutes         = require('./routes/customFields'); // admin-defined asset fields
 const earlyAccessRoutes         = require('./routes/earlyAccess');  // (L7) public lead-capture POST
 const helpRoutes                = require('./routes/help');           // v0.36.0 per-module in-app help
 const aiUsageRoutes             = require('./routes/aiUsage');      // v0.32.4: per-user AI quota state for UI helper text
-const askRoutes                 = require('./routes/ask');          // (L14) Ask LapseIQ in-product assistant
-const templateFeedbackRoutes    = require('./routes/templateFeedback'); // (Phase 4) per-section AI brief feedback
 // v0.20.0: Public REST API — versioned read-only routes (API key auth)
-const v1ContractRoutes  = require('./routes/v1/contracts');
-const v1VendorRoutes    = require('./routes/v1/vendors');
-const v1ReportRoutes    = require('./routes/v1/reports');
+const v1AssetRoutes      = require('./routes/v1/assets');
+const v1ContractorRoutes = require('./routes/v1/contractors');
 const apiKeyRoutes      = require('./routes/apiKeys');
 const webhookRoutes     = require('./routes/webhooks');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
@@ -221,13 +216,11 @@ const { gpcMiddleware }     = require('./middleware/gpc'); // (Pass-6 W3 MT-027)
 const { countryGate }       = require('./middleware/countryGate'); // (Pass-6 W3 MT-026) US-only registration gate
 const { getInstanceConfig } = require('./lib/instanceConfig'); // (S8) setup gate
 const { runAlertEngine }    = require('./lib/alertEngine');
-const { runNewsScanner }    = require('./lib/newsScanner');
 const { runBackup }         = require('./lib/backup');
 const { pruneActivityLog }  = require('./lib/activityLogPrune'); // (B2) retention
 const { pruneBackupLog }    = require('./lib/backupLogPrune');   // (B1 5/02) retention
 const { pruneWebhookDlq }   = require('./lib/dlqPrune');         // v0.37.1 W5 MT-132
 const { pruneDocumentOrphans } = require('./lib/documentOrphanPrune'); // S4-FN-04 (v0.74.1)
-const { runNightlySync }    = require('./lib/cron/nightlySync'); // cloud marketplace auto-sync
 const { pingHeartbeat }     = require('./lib/heartbeat'); // (Pass-5 Tier 4 / Agent 5 G10) per-cron healthchecks.io ping
 
 // ── Demo mode (S9) ───────────────────────────────────────────────────────────
@@ -784,14 +777,14 @@ const exportLimiter = rateLimit({
 [
   [authRoutes,             '/api/auth'],
   [twoFactorRoutes,        '/api/auth/2fa'],
-  [contractRoutes,         '/api/contracts'],
-  [contractsImportRoutes,  '/api/contracts/import'],
-  [lineItemsRoutes,        '/api/contracts/:contractId/line-items'],
-  [vendorRoutes,           '/api/vendors'],
-  [budgetRoutes,           '/api/budget'],
+  [assetRoutes,            '/api/assets'],
+  [siteRoutes,             '/api/sites'],
+  [contractorRoutes,       '/api/contractors'],
+  [scheduleRoutes,         '/api/schedules'],
+  [workOrderRoutes,        '/api/work-orders'],
+  [deficiencyRoutes,       '/api/deficiencies'],
+  [standardsRoutes,        '/api/standards'],
   [dashboardRoutes,        '/api/dashboard'],
-  [ingestRoutes,           '/api/ingest'],
-  [signatureRoutes,        '/api/signature'],
   [userRoutes,             '/api/users'],
   [require('./routes/accounts'), '/api/accounts'],
   [preferencesRoutes,      '/api/preferences'],
@@ -800,9 +793,7 @@ const exportLimiter = rateLimit({
   [exportRoutes,           '/api/export'],
   [settingsRoutes,         '/api/settings'],
   [consultantRoutes,       '/api/consultant-access'],
-  [newsRoutes,             '/api/news'],
   [feedbackRoutes,         '/api/feedback'],
-  [cloudConnectorRoutes,   '/api/cloud-connectors'],
   [activityRoutes,         '/api/activity'],
   [errorsRoutes,           '/api/errors'],
   [backupRoutes,           '/api/backup'],
@@ -812,17 +803,13 @@ const exportLimiter = rateLimit({
   [adminAuditChainRoutes,  '/api/admin/audit-chain'],
   [reportRoutes,           '/api/reports'],
   [customFieldRoutes,      '/api/custom-fields'],
-  [categoryRoutes,         '/api/categories'],
   [earlyAccessRoutes,      '/api/early-access'],
   [helpRoutes,             '/api/help'],
   [aiUsageRoutes,          '/api/ai/usage'],
-  [askRoutes,              '/api/ask'],
-  [templateFeedbackRoutes, '/api/template-feedback'],
   [apiKeyRoutes,           '/api/settings/api-keys'],
   [webhookRoutes,          '/api/webhooks'],
-  [v1ContractRoutes,       '/api/v1/contracts'],
-  [v1VendorRoutes,         '/api/v1/vendors'],
-  [v1ReportRoutes,         '/api/v1/reports'],
+  [v1AssetRoutes,          '/api/v1/assets'],
+  [v1ContractorRoutes,     '/api/v1/contractors'],
 ].forEach(([r, base]) => { try { installValidation(r, base); } catch (e) { console.error('[validation] install failed for', base, e && e.message); } });
 
 app.use('/api/', apiLimiter);
@@ -923,11 +910,11 @@ try {
 } catch (e) {
   console.warn('[health] could not read package.json version:', e.message);
 }
-// Prefer the deployment-pinned LAPSEIQ_VERSION (compose injects it as a server
-// env var) so /api/health reflects the LIVE deployed tag, not the baked-in
-// package.json (stale on client-only retag deploys). Strip the leading 'v'.
-if (process.env.LAPSEIQ_VERSION) {
-  _serviceVersion = process.env.LAPSEIQ_VERSION.replace(/^v/, '');
+// Prefer the deployment-pinned SERVICECYCLE_VERSION (compose injects it as a
+// server env var) so /api/health reflects the LIVE deployed tag, not the
+// baked-in package.json (stale on client-only retag deploys). Strip the 'v'.
+if (process.env.SERVICECYCLE_VERSION) {
+  _serviceVersion = process.env.SERVICECYCLE_VERSION.replace(/^v/, '');
 }
 
 // Pass-6 W4 task #9: capture process start time once, expose via /api/health
@@ -1040,13 +1027,11 @@ app.get('/.well-known/security.txt', (req, res) => {
   res.set('Content-Type', 'text/plain; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=86400');
   res.send([
-    'Contact: mailto:security@lapseiq.com',
-    'Contact: mailto:founder@lapseiq.com',
+    'Contact: mailto:security@servicecycle.com',
     'Preferred-Languages: en',
-    'Canonical: https://demo.lapseiq.com/.well-known/security.txt',
     // 90-day disclosure window per SECURITY.md.
-    'Policy: https://github.com/forgerift/lapseiq/blob/main/SECURITY.md',
-    'Expires: 2027-05-16T00:00:00.000Z',
+    'Policy: https://github.com/servicecyclehq/servicecycle/blob/main/SECURITY.md',
+    'Expires: 2027-06-06T00:00:00.000Z',
     '',
   ].join('\n'));
 });
@@ -1080,7 +1065,7 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
         aiConfigured: !!(process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || (process.env.CF_WORKERS_AI_API_KEY && process.env.CF_WORKERS_AI_ACCOUNT_ID) || process.env.GROQ_API_KEY || process.env.HF_TOKEN) || dbKeyConfigured, // (N3)
         // v0.90.4: surface server's deployed version so the client can detect skew
         // between its baked-in build-id meta and reality. SPA polls this every 60s.
-        lapseiqVersion: process.env.LAPSEIQ_VERSION || null,
+        servicecycleVersion: process.env.SERVICECYCLE_VERSION || null,
       },
     };
     res.json(validateResponse('/api/config', configSchema, payload, req));
@@ -1091,25 +1076,20 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
 });
 
 // ── Protected Routes (JWT required) ───────────────────────────────────────────
-// v0.6.0 CSV import — mounted at the sub-path BEFORE the general /api/contracts
-// router so POST /api/contracts/import lands on the import handler, not the
-// generic POST / handler. (Express matches in mount order.)
-app.use('/api/contracts/import', authenticateToken, contractsImportRoutes);
-// v0.55 — line item sub-resource. Mounted before /api/contracts so
-// :contractId/line-items doesn't get swallowed by the contracts.js
-// catch-all on /:id. mergeParams: true in the router gives the handlers
-// access to req.params.contractId.
-app.use('/api/contracts/:contractId/line-items', authenticateToken, lineItemsRoutes);
-app.use('/api/contracts',       authenticateToken, contractRoutes);
-app.use('/api/vendors',         authenticateToken, vendorRoutes);
-app.use('/api/budget',          authenticateToken, budgetRoutes);
+// ServiceCycle equipment-model surface. The asset hierarchy + execution
+// routers all apply role middleware internally; tenancy scoping (accountId)
+// is enforced inside every handler.
+app.use('/api/assets',          authenticateToken, assetRoutes);
+app.use('/api/sites',           authenticateToken, siteRoutes);
+app.use('/api/contractors',     authenticateToken, contractorRoutes);
+app.use('/api/schedules',       authenticateToken, scheduleRoutes);
+app.use('/api/work-orders',     authenticateToken, workOrderRoutes);
+app.use('/api/deficiencies',    authenticateToken, deficiencyRoutes);
+app.use('/api/standards',       authenticateToken, standardsRoutes);
 app.use('/api/dashboard',       authenticateToken, dashboardRoutes);
 // v0.32.4: per-user AI quota state for in-UI helper text. Authenticated;
 // no limiter — read-only inspection of the quota counters.
 app.use('/api/ai/usage',        authenticateToken, aiUsageRoutes);
-app.use('/api/ingest',          authenticateToken, aiIpLimiter, ingestLimiter, ingestRoutes); // v0.67.10: per-IP stack
-// N4: reuse ingestLimiter on /api/signature — same AI-credit cost profile as ingest.
-app.use('/api/signature',       authenticateToken, aiIpLimiter, ingestLimiter, signatureRoutes); // (N4) + v0.67.10: per-IP stack
 app.use('/api/users',           authenticateToken, userRoutes);
 app.use('/api/accounts',        authenticateToken, require('./routes/accounts')); // H1 (audit): mfaRequiredForAdmins + future account-level security policy
 app.use('/api/preferences',     authenticateToken, preferencesRoutes); // v0.42 — per-user key/value
@@ -1119,12 +1099,10 @@ app.use('/api/preferences',     authenticateToken, preferencesRoutes); // v0.42 
 // for the where-clause/orderBy logic — kept in sync with /api/contracts.
 app.use('/api/bootstrap',       authenticateToken, bootstrapRoutes);
 app.use('/api/alerts',          authenticateToken, alertRoutes);
-app.use('/api/export',          authenticateToken, exportLimiter, exportRoutes); // v0.40 Phase 4 + v0.41 limiter: GET /contracts + /alerts → XLSX (10/min/user)
+app.use('/api/export',          authenticateToken, exportLimiter, exportRoutes); // XLSX/CSV export: assets + work orders (10/min/user)
 app.use('/api/settings',        authenticateToken, settingsRoutes);
-app.use('/api/news',            authenticateToken, newsRoutes);
 // feedbackLimiter after authenticateToken so keyGenerator can use req.user.id (M10)
 app.use('/api/feedback',        authenticateToken, feedbackLimiter, feedbackRoutes);
-app.use('/api/cloud-connectors',authenticateToken, cloudConnectorRoutes);
 // H5: authenticateToken added at mount level; consultant.js also retains its
 // internal router.use(authenticateToken) for defense-in-depth.
 app.use('/api/consultant-access', authenticateToken, consultantRoutes);
@@ -1162,18 +1140,6 @@ app.post('/api/admin/restore-test/deep', authenticateToken, async (req, res) => 
 });
 app.use('/api/reports',           authenticateToken, reportRoutes);
 app.use('/api/custom-fields',     authenticateToken, customFieldRoutes);
-app.use('/api/categories',        authenticateToken, categoryRoutes);
-// (L14) Ask LapseIQ — in-product assistant. authenticateToken at mount keeps
-// the assistant inside the logged-in surface; the route file layers a 30/hr
-// askLimiter, the aiQuota 'ask' action, a 4000-char zod cap on the question,
-// and a max_tokens cap on the AI response so a hostile burst can't burn the
-// shared demo key faster than the demoMode 2/user/day quota allows.
-app.use('/api/ask',               authenticateToken, aiIpLimiter, askRoutes); // v0.69.1: per-IP stack
-// (Phase 4) Template Feedback — per-section thumbs+freetext feedback on AI
-// renewal briefs. Local-only in v0.4.0 (rows stay in customer DB). v0.4.1
-// adds opt-in upstream sync to a CF Worker. POST is open to any user;
-// GET is admin-gated inside the router.
-app.use('/api/template-feedback', authenticateToken, templateFeedbackRoutes);
 
 // ── v0.20.0: Public REST API (v1) — API key auth ─────────────────────────────
 // All /api/v1/* routes are authenticated with machine-to-machine API keys
@@ -1193,9 +1159,8 @@ openapiRoute.register(app);
 // see which version they hit. Single source of truth - when v2 lands, copy
 // this for /api/v2 and add Deprecation/Sunset to the v1 middleware.
 const v1VersionTag = (req, res, next) => { res.set('API-Version', '1'); next(); };
-app.use('/api/v1/contracts', v1VersionTag, requestId, authenticateApiKey, apiKeyLimiter, v1ContractRoutes);
-app.use('/api/v1/vendors',   v1VersionTag, requestId, authenticateApiKey, apiKeyLimiter, v1VendorRoutes);
-app.use('/api/v1/reports',   v1VersionTag, requestId, authenticateApiKey, apiKeyLimiter, v1ReportRoutes);
+app.use('/api/v1/assets',      v1VersionTag, requestId, authenticateApiKey, apiKeyLimiter, v1AssetRoutes);
+app.use('/api/v1/contractors', v1VersionTag, requestId, authenticateApiKey, apiKeyLimiter, v1ContractorRoutes);
 
 // ── v0.20.0: API key management — admin only, uses JWT auth ──────────────────
 // Mounted under /api/settings so it inherits the settings-page UX convention.
@@ -1319,7 +1284,7 @@ app.use((err, req, res, next) => {
           userId:         req.user && req.user.id        ? req.user.id        : null,
           accountId:      req.user && req.user.accountId ? req.user.accountId : null,
           userAgent:      trunc(req.headers['user-agent'], 500),
-          lapseiqVersion: trunc(process.env.LAPSEIQ_VERSION, 32),
+          appVersion:     trunc(process.env.SERVICECYCLE_VERSION, 32),
           ip:             trunc(ip, 64),
         },
       }).catch((persistErr) => {
@@ -1337,21 +1302,13 @@ app.use((err, req, res, next) => {
 });
 
 const httpServer = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`LapseIQ API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+  console.log(`ServiceCycle API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
 
   // ── Nightly alert cron (runs at 7:00 AM server time) ──────────────────────
   // Set EMAIL_MOCK=true in .env to log emails to console without sending
   try {
     const cron = require('node-cron');
 
-    // -- Report self-check cron (every 6h) -----------------------------------
-    // Verifies every report endpoint (+ core endpoints) still responds on real
-    // data; emails REPORT_HEALTH_ALERT_EMAIL on failure. See lib/reportSelfCheck.
-    const { reportSelfCheckCron } = require('./lib/reportSelfCheck');
-    cron.schedule('30 */6 * * *', () => runOnce('reportSelfCheck', async () => {
-      await reportSelfCheckCron();
-    }), { timezone: 'UTC' });
-    console.log('[Cron] Report self-check scheduled -- runs every 6 hours');
     // S2-FN-01 (v0.75.x): per-account alert engine. Mirrors the nightly backup
     // pattern (index.js:1265). A single large-contract account no longer holds
     // other tenants behind one global take:1000 query. runAlertEngine() already
@@ -1375,14 +1332,6 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
       console.log('[Cron] Alert engine complete:', accounts.length, 'account(s) processed');
     }), { timezone: 'UTC' });
     console.log('[Cron] Alert engine scheduled (per-account) -- runs daily at 07:00')
-
-    // ── News scanner cron (runs every 6 hours) ──────────────────────────────
-    cron.schedule('0 */6 * * *', () => runOnce('newsScanner', async () => {
-      console.log('[Cron] Running vendor news scanner...');
-      try { await runNewsScanner(); }
-      catch (e) { console.error('[Cron] News scanner error:', e.message); }
-    }), { timezone: 'UTC' });
-    console.log('[Cron] News scanner scheduled — runs every 6 hours');
 
     // -- Cloudflare Workers AI monthly budget reset (v0.35.0) --------
     // The aiBudgetGuard tracks Cloudflare spend + Neuron count per
@@ -1422,16 +1371,6 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
       }
     }), { timezone: 'UTC' });
     console.log('[Cron] Backup scheduled — runs daily at 02:00');
-
-    // ── Cloud marketplace nightly sync — runs at 02:30 AM server time ───────
-    // Syncs all connected cloud connectors (AWS / Azure / GCP) into contracts.
-    // Slotted after the 02:00 backup so both jobs don't compete for DB writes.
-    cron.schedule('30 2 * * *', () => runOnce('nightlySync', async () => {
-      console.log('[Cron] Running cloud marketplace nightly sync...');
-      try { await runNightlySync(); }
-      catch (e) { console.error('[Cron] Nightly sync error:', e.message); }
-    }), { timezone: 'UTC' });
-    console.log('[Cron] Cloud marketplace sync scheduled — runs daily at 02:30');
 
     // ── ActivityLog retention prune (B2) — runs at 03:00 AM server time ────
     // Deletes activity_logs rows older than ACTIVITY_LOG_RETENTION_DAYS
@@ -1564,23 +1503,6 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
     // Deletes refresh_tokens rows where expiresAt < (NOW - 30 days).
     // The 30-day grace window ensures we can still detect reuse-attacks on
     // recently-expired tokens. Rows older than that are fully dead weight.
-    // v0.68.0 (audit Medium, 2026-05-22): autoExpireContracts lifted from
-    // per-list-fetch (write amplification + audit-log noise) to a single
-    // daily cron at 04:35 UTC. Iterates every account; the existing
-    // updateMany is idempotent + fast. The per-list inline call sites
-    // stay (graceful for self-hosters running >24hr without a cron
-    // restart) but the redundancy is intentional and cheap.
-    cron.schedule('35 4 * * *', () => runOnce('autoExpireContracts', async () => {
-      const { autoExpireContracts } = require('./routes/contracts');
-      const accounts = await prisma.account.findMany({ select: { id: true } });
-      let total = 0;
-      for (const a of accounts) {
-        try { await autoExpireContracts(a.id); total++; } catch (e) { console.error('autoExpireContracts', a.id, e.message); }
-      }
-      console.log(`[Cron] autoExpireContracts: visited ${total} accounts`);
-      return { accounts: total };
-    }), { timezone: 'UTC' });
-
     // CR-3 (audit-2): refreshTokenPrune now stands alone. The three crons that
     // were nested inside its callback (webhookDlqAlarm, webhookDlqRetry,
     // restoreTest) are registered at boot below — they were silently never

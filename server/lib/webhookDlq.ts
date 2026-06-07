@@ -78,7 +78,7 @@ async function persistFailedDelivery({
 
 /**
  * Delete DLQ rows older than the given cutoff. Used by the nightly prune
- * cron in lib/cron/dlqPrune.js (no accountId — global prune). Tests + a
+ * cron in lib/dlqPrune.js (no accountId — global prune). Tests + a
  * future per-account admin "purge old DLQ" action can pass an accountId
  * to scope the delete to one tenant. Returns the number of rows deleted.
  *

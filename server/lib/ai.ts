@@ -144,7 +144,7 @@ function _breakerRecordSuccess(name) {
 
 function _resolveCascadeChain(provider, task) {
   // v0.38.3: previously only `ask` and `classify` cascaded. That meant
-  // a CF Workers AI timeout on a renewal brief surfaced as a user-facing
+  // a CF Workers AI timeout on a maintenance brief surfaced as a user-facing
   // "Failed to generate" error — the exact opposite of what the cascade
   // architecture was built for. Per the silent-failure design rule
   // (see memory feedback_ai_cascade_silent_failure.md), brief + extract
@@ -243,7 +243,7 @@ async function _cascadeComplete(args, chain) {
 // is sent as a single ephemeral cached block. Anthropic charges:
 //   - +25% input tokens on the cache-write call (first call in a session)
 //   - 10%  input tokens on cache-read calls (subsequent calls within 5 min TTL)
-// Used by Ask LapseIQ where the AI Guide system prompt is ~50K tokens — the
+// Used by the Ask assistant where the AI Guide system prompt is ~50K tokens — the
 // per-call cost drops ~12x on warm-cache calls (effective $0.005 vs $0.062
 // on Haiku 4.5). Other providers ignore the flag — they don't expose
 // equivalent per-block caching primitives, so we accept the larger first-call
@@ -281,7 +281,7 @@ async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSy
 // Returns { text: string }
 //
 // Cloudflare Workers AI does not expose a unified vision OpenAI-compat path
-// for the Mistral / Llama text models LapseIQ currently uses, so when
+// for the Mistral / Llama text models ServiceCycle currently uses, so when
 // AI_PROVIDER=cloudflare we route images through the existing Anthropic
 // fallback (requires ANTHROPIC_API_KEY to be set in addition to the CF
 // credentials). Operators who don't want any Anthropic dependency on the

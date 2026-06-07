@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
-  FileText, Briefcase, BarChart2, BarChart3, Sparkles, Bell, HelpCircle,
-  Newspaper, ScrollText, Settings as SettingsIcon,
+  Zap, MapPin, ClipboardList, Calendar, Briefcase, Bell,
+  BarChart2, ScrollText, Settings as SettingsIcon,
   PartyPopper, X as XIcon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -15,18 +15,17 @@ import { useAuth } from '../context/AuthContext';
  * dashboard after completing the OnboardingWizard, OR on demand when
  * they click "Show welcome tour" in the sidebar Resources & Feedback menu.
  *
- * Reads the lapseiq_welcome_pending key the wizard sets in
+ * Reads the servicecycle_welcome_pending key the wizard sets in
  * dismiss({ celebrate: true }); the menu item sets the same key.
  * Clearing the key when the user dismisses makes this strict
  * one-shot per trigger.
  *
  * Cards are feature-gated against AuthContext.features so we don't
- * point users at /budget or /alerts if those flags are off in the
- * current self-host configuration. AI Upload card requires both the
- * ingest feature flag AND the runtime aiEnabled+aiConfigured signal.
+ * point users at /alerts if that flag is off in the current self-host
+ * configuration.
  */
 
-const WELCOME_PENDING_KEY = 'lapseiq_welcome_pending';
+const WELCOME_PENDING_KEY = 'servicecycle_welcome_pending';
 
 function FeatureRow({ icon: Icon, title, body, useFor, ctaLabel, onClick }) {
   return (
@@ -81,7 +80,7 @@ function FeatureRow({ icon: Icon, title, body, useFor, ctaLabel, onClick }) {
 
 export default function WelcomeTourPanel() {
   const navigate = useNavigate();
-  const { features, aiEnabled, aiConfigured, onboardingDone, user, demoMode } = useAuth();
+  const { features, onboardingDone, user, demoMode } = useAuth();
   const [open, setOpen] = useState(() => {
     try { return localStorage.getItem(WELCOME_PENDING_KEY) === '1'; }
     catch (_) { return false; }
@@ -93,7 +92,7 @@ export default function WelcomeTourPanel() {
   // v0.7.0 bugfix: when the OnboardingWizard's final-step "Take the tour ->"
   // button (or the Sidebar's "Show welcome tour" menu item) is clicked, the
   // caller sets WELCOME_PENDING_KEY in localStorage and dispatches a
-  // 'lapseiq:welcome-trigger' custom event. The localStorage write alone
+  // 'servicecycle:welcome-trigger' custom event. The localStorage write alone
   // isn't enough: if WelcomeTourPanel was already mounted (user already on
   // /dashboard) it would never re-read the key. The 'storage' event only
   // fires across tabs, not in-tab. The custom event closes that gap.
@@ -103,12 +102,12 @@ export default function WelcomeTourPanel() {
         if (localStorage.getItem(WELCOME_PENDING_KEY) === '1') setOpen(true);
       } catch (_) { /* ignore */ }
     }
-    window.addEventListener('lapseiq:welcome-trigger', onTrigger);
-    return () => window.removeEventListener('lapseiq:welcome-trigger', onTrigger);
+    window.addEventListener('servicecycle:welcome-trigger', onTrigger);
+    return () => window.removeEventListener('servicecycle:welcome-trigger', onTrigger);
   }, []);
 
   // #4 demo decoupling: a fresh demo sandbox has ONBOARDING_COMPLETE pre-set
-  // (so the add-first-vendor wizard is skipped), which previously also meant
+  // (so the add-first-site wizard is skipped), which previously also meant
   // the wizard never fired the welcome-tour trigger, so the tour never showed.
   // Surface the tour once per fresh demo account. Account-keyed one-shot so a
   // stale localStorage flag from a prior sandbox can't suppress a new one.
@@ -117,7 +116,7 @@ export default function WelcomeTourPanel() {
     const acct = user?.accountId ?? user?.account?.id;
     if (!acct) return;
     try {
-      if (localStorage.getItem(`lapseiq_welcome_seen_${acct}`) === '1') return;
+      if (localStorage.getItem(`servicecycle_welcome_seen_${acct}`) === '1') return;
       localStorage.setItem(WELCOME_PENDING_KEY, '1');
       setOpen(true);
     } catch (_) { /* ignore */ }
@@ -139,7 +138,7 @@ export default function WelcomeTourPanel() {
     try {
       localStorage.removeItem(WELCOME_PENDING_KEY);
       const acct = user?.accountId ?? user?.account?.id;
-      if (acct) localStorage.setItem(`lapseiq_welcome_seen_${acct}`, '1');
+      if (acct) localStorage.setItem(`servicecycle_welcome_seen_${acct}`, '1');
     } catch (_) { /* ignore */ }
     setOpen(false);
   }
@@ -149,101 +148,89 @@ export default function WelcomeTourPanel() {
     navigate(path);
   }
 
-  // Feature cards in sidebar order: Contracts, Reports, Vendors, Alerts,
-  // Vendor News, Activity Log, Settings \u2014 plus feature-gated extras and Ask LapseIQ.
+  // Feature cards in sidebar order: Assets, Sites, Work Orders, Compliance
+  // Calendar, Contractors, Alerts (gated), Reports, Activity Log, Settings.
   const features_list = [];
   features_list.push({
-    icon: FileText,
-    title: 'Track every contract in one place',
-    body: 'Browse, search, and filter your full portfolio. Vendor leads every all-up view, so "show me all VMware" is two clicks. Click any row to drill into renewal terms, savings, owner, and the AI renewal brief.',
-    useFor: 'Daily reviews, cancel-by audits, vendor-by-vendor portfolio walks.',
-    ctaLabel: 'Open Contracts',
-    path: '/contracts',
+    icon: Zap,
+    title: 'Track every asset in one place',
+    body: 'Browse, search, and filter your full equipment inventory — transformers, switchgear, generators, panels, and more. Click any row to drill into condition, maintenance history, applied schedules, and upcoming due dates.',
+    useFor: 'Daily reviews, overdue-maintenance audits, site-by-site equipment walks.',
+    ctaLabel: 'Open Assets',
+    path: '/assets',
   });
   features_list.push({
-    icon: BarChart2,
-    title: '30+ built-in reports, AI summary on each',
-    body: 'The Reports hub covers Renewal Horizon, Auto-Renewal Exposure, Vendor Concentration, License Wastage, Savings Ledger, and 26 more. Every report has a one-click AI executive summary \u2014 click-to-generate so you only spend AI budget on things you actually look at.',
-    useFor: 'Quarterly business reviews, board prep, contract audit evidence, budget justification.',
-    ctaLabel: 'Open Reports',
-    path: '/reports',
+    icon: MapPin,
+    title: 'Sites — the anchor of your portfolio',
+    body: 'Each site is the parent of every asset installed there. Track addresses, site contacts, and notes your contractors need before they roll a truck. Site detail shows compliance posture at a glance.',
+    useFor: 'Answering "what equipment is at the Lakeside plant and what\'s overdue?" in one click.',
+    ctaLabel: 'Open Sites',
+    path: '/sites',
+  });
+  features_list.push({
+    icon: ClipboardList,
+    title: 'Work orders from creation to closeout',
+    body: 'Create work orders for due maintenance, assign them to contractors, and track status through completion. Completed work feeds straight back into each asset\'s compliance record.',
+    useFor: 'Dispatching maintenance, tracking open jobs, documenting completed service for audits.',
+    ctaLabel: 'Open Work Orders',
+    path: '/work-orders',
+  });
+  features_list.push({
+    icon: Calendar,
+    title: 'Compliance calendar — see what\'s due when',
+    body: 'Every scheduled maintenance task across all sites and assets on one calendar, driven by the NFPA 70B intervals you applied. Overdue items surface in red so nothing slips quietly.',
+    useFor: 'Monthly planning, budgeting contractor visits, spotting clusters of due work to batch into one dispatch.',
+    ctaLabel: 'Open Calendar',
+    path: '/calendar',
   });
   features_list.push({
     icon: Briefcase,
-    title: 'Manage vendors as the anchor of your portfolio',
-    body: 'Each vendor is the parent of every contract you have with them. Track support contacts, portal URLs, support phone, co-term complexity, and free-form notes. Use the Add-from-email-signature flow to populate contacts in one paste.',
-    useFor: 'Storing the "who do I email at Microsoft for renewals?" answer once instead of in fifteen different places.',
-    ctaLabel: 'Open Vendors',
-    path: '/vendors',
+    title: 'Manage contractors and their work',
+    body: 'Each contractor record tracks contacts, certifications, and the work orders you\'ve assigned them. Store the "who do I call for switchgear testing?" answer once instead of in fifteen places.',
+    useFor: 'Picking the right shop for a job; reviewing a vendor\'s history before renewing their service agreement.',
+    ctaLabel: 'Open Contractors',
+    path: '/contractors',
   });
   if (features?.alerts) {
     features_list.push({
       icon: Bell,
-      title: 'Email alerts before renewals fire',
-      body: 'Tiered email reminders at 90, 60, and 30 days before each renewal/cancel-by date. Adjust the windows, add custom rules, or include team members on specific tiers \u2014 all in alerts settings.',
-      useFor: 'Catching auto-renewal exposures; making sure the right person sees a renewal far enough out to actually negotiate.',
+      title: 'Alerts before maintenance lapses',
+      body: 'ServiceCycle surfaces overdue maintenance, upcoming due dates, and compliance gaps on the Alerts page and by email. Tune the lead-time windows in Settings when you are ready.',
+      useFor: 'Catching overdue tasks; making sure the right person sees due maintenance far enough out to schedule a contractor.',
       ctaLabel: 'Open Alerts',
       path: '/alerts',
     });
   }
   features_list.push({
-    icon: Newspaper,
-    title: 'Vendor News \u2014 stay ahead of market moves',
-    body: 'Real-time headlines from your vendor list, filtered by AI to surface acquisitions, price changes, security incidents, and executive moves that affect your contracts. Check it before a negotiation or renewal call.',
-    useFor: 'Negotiation prep, staying ahead of vendor acquisitions, spotting security incidents before they become support calls.',
-    ctaLabel: 'Open Vendor News',
-    path: '/news',
+    icon: BarChart2,
+    title: 'Reports — compliance evidence on demand',
+    body: 'The Reports hub turns your maintenance records into compliance summaries, overdue-work rollups, and audit-ready evidence. Export for insurers, AHJs, or management review.',
+    useFor: 'Insurance audits, management reviews, demonstrating NFPA 70B program compliance.',
+    ctaLabel: 'Open Reports',
+    path: '/reports',
   });
   features_list.push({
     icon: ScrollText,
-    title: 'Activity Log \u2014 full audit trail',
-    body: 'Every change in your account \u2014 contract edits, alert acknowledgements, AI calls, user logins \u2014 timestamped and attributable. Filter by user, entity type, or date range. Export for compliance or SOC 2 evidence.',
-    useFor: 'Compliance audits, tracking down who changed a renewal date, verifying alert delivery.',
+    title: 'Activity Log — full audit trail',
+    body: 'Every change in your account — asset edits, work order updates, alert acknowledgements, user logins — timestamped and attributable. Filter by user, entity type, or date range. Export for compliance evidence.',
+    useFor: 'Compliance audits, tracking down who changed a maintenance date, verifying alert delivery.',
     ctaLabel: 'Open Activity Log',
     path: '/activity',
   });
   features_list.push({
     icon: SettingsIcon,
-    title: 'Settings \u2014 configure and customize',
-    body: 'Manage alert windows and thresholds, user accounts and roles, cloud marketplace sync (AWS / Azure / GCP), API keys, webhooks, and integrations. Admins can reset demo data and set the fiscal year anchor here.',
-    useFor: 'Onboarding teammates, tuning alert timing, wiring up cloud spend sync, setting fiscal year.',
+    title: 'Settings — configure and customize',
+    body: 'Manage alert windows and thresholds, user accounts and roles, equipment type defaults, API keys, webhooks, and integrations. Admins can reset demo data here.',
+    useFor: 'Onboarding teammates, tuning alert timing, wiring up integrations.',
     ctaLabel: 'Open Settings',
     path: '/settings',
-  });
-  if (features?.budget) {
-    features_list.push({
-      icon: BarChart3,
-      title: 'Forecast 12 months of renewal spend',
-      body: 'Projects upcoming renewal cost across vendors, departments, and cost centers based on your actual contract data. Apply per-vendor uplift assumptions for budget conservatism. Export to Excel for finance review.',
-      useFor: 'Building next-year IT budget; making the case for consolidation; defending unexpected renewal increases.',
-      ctaLabel: 'Open Budget Forecast',
-      path: '/budget',
-    });
-  }
-  if (features?.ingest && aiEnabled && aiConfigured) {
-    features_list.push({
-      icon: Sparkles,
-      title: 'Upload a PDF \u2014 AI fills in the contract',
-      body: 'Drop in a contract PDF and Claude extracts vendor, product, dates, costs, auto-renewal clauses, notice periods, and more. You review every field with confidence-score dots, edit anything that looks off, and approve.',
-      useFor: 'Onboarding old contracts you have stored as PDFs; processing freshly-signed renewals; bulk loading at the start of a year.',
-      ctaLabel: 'Upload a contract',
-      path: '/ingest',
-    });
-  }
-  features_list.push({
-    icon: HelpCircle,
-    title: 'Ask LapseIQ \u2014 your in-product help',
-    body: 'Click the Resources & Feedback menu in the sidebar and pick "Ask LapseIQ". Answers questions about the platform from the docs \u2014 ask how to find a feature, set up a workflow, or get renewal-management practice advice.',
-    useFor: 'Skipping the Google search when you forget where a feature lives; getting a second opinion on a vendor approach.',
-    ctaLabel: 'Got it',
-    path: null,
   });
   return (
     <div
       ref={dialogRef}
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome to LapseIQ"
+      aria-label="Welcome to ServiceCycle"
       style={{
         position: 'fixed', inset: 0,
         background: 'rgba(15, 23, 42, 0.55)',
@@ -289,7 +276,7 @@ export default function WelcomeTourPanel() {
             fontSize: 'var(--font-size-xl)', fontWeight: 700,
             color: 'var(--color-text, #0a0d12)',
           }}>
-            Welcome to LapseIQ
+            Welcome to ServiceCycle
           </h2>
         </div>
         <p style={{
@@ -316,7 +303,7 @@ export default function WelcomeTourPanel() {
 
         <div style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary, #5b6373)' }}>
-            Tip: every all-up view leads with the vendor &mdash; that&rsquo;s the natural anchor for renewal work.
+            Tip: every all-up view leads with the site &mdash; that&rsquo;s the natural anchor for maintenance work.
           </span>
           <button
             type="button"

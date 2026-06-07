@@ -26,8 +26,8 @@ const FEATURES = [
         <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
       </svg>
     ),
-    title: 'Catch auto-renewal exposures before they fire',
-    body: 'Tiered email alerts at 90, 60, and 30 days surface tracked cancel-by dates and notice-period clauses well before the window closes.',
+    title: 'Catch overdue maintenance before the auditor does',
+    body: 'Tiered alerts at 180, 120, 90, 60, 30, and 7 days before each task is due — then automatic overdue and escalation tiers if nothing gets completed. Nothing slips into a regulatory breach silently.',
   },
   {
     icon: (
@@ -37,8 +37,8 @@ const FEATURES = [
         <path d="M2 12 L12 17 L22 12"/>
       </svg>
     ),
-    title: 'Per-category renewal brief — not a generic chatbot',
-    body: 'Nine AI brief templates — one for each major contract type. SaaS, telecom, insurance, lease, hardware, services, utilities, supplies, plus a generic fallback. Each encodes category-specific renewal expertise: a telecom brief covers USF surcharges and auto-renewal exposures; an insurance brief covers loss-ratio posture; a lease brief covers CAM caps and TI allowances.',
+    title: 'Condition-based intervals, straight from NFPA 70B',
+    body: 'Every asset carries a governing condition (1, 2, or 3) and ServiceCycle derives the maintenance interval the standard prescribes — transformers, switchgear, breakers, panelboards, MCCs, UPS systems, and more. Change the condition after an assessment and every schedule recalculates.',
   },
   {
     icon: (
@@ -48,8 +48,8 @@ const FEATURES = [
         <circle cx="5" cy="19" r="1.5"/>
       </svg>
     ),
-    title: 'Vendor news scanner — early warning, not after-the-fact',
-    body: 'Pulls from ~30 RSS feeds (TechCrunch, BleepingComputer, industry trades) and matches stories to your stored vendors. AI-categorizes by relevance: security incident, outage, acquisition, pricing change, EOL announcement, legal news. Surfaces "your vendor just got acquired by a PE firm" before your account manager calls you with the talking points.',
+    title: 'NETA test records, attached to the asset',
+    body: 'Store acceptance and maintenance test results — insulation resistance, contact resistance, trip timing — against the asset that produced them. The decal trail and measurement history are ready when the AHJ or your insurer asks.',
   },
   {
     icon: (
@@ -59,8 +59,8 @@ const FEATURES = [
         <line x1="6" y1="20" x2="6" y2="16"/>
       </svg>
     ),
-    title: 'Track every dollar you negotiate back',
-    body: 'Capture original ask vs. final price on every renewal. Dashboard rolls up cumulative savings so finance sees what your team delivers.',
+    title: 'Work orders that close the loop',
+    body: 'Generate work orders from due schedules, assign them to your contractor, and record completion with measurements and deficiencies. Completing the work order advances the schedule automatically.',
   },
   {
     icon: (
@@ -69,8 +69,8 @@ const FEATURES = [
         <circle cx="12" cy="7" r="4"/>
       </svg>
     ),
-    title: 'License utilization for SaaS, at a glance',
-    body: 'On SaaS contracts, track seats licensed vs. seats actively in use. Spot the shelfware before your next true-up so you can downsize the seat count with confidence — instead of paying for ghosts.',
+    title: 'Contractors and NETA accreditation, tracked',
+    body: 'Keep your electrical testing contractors, their technicians, and their NETA accreditation status in one place — and know who performed every task on every asset.',
   },
   {
     icon: (
@@ -79,8 +79,8 @@ const FEATURES = [
         <polyline points="12 6 12 12 16 14"/>
       </svg>
     ),
-    title: 'AI extraction from contract PDFs',
-    body: 'Drop in a PDF and the AI pulls dates, costs, auto-renewal clauses, and notice periods. Review and confirm before anything lands in the database — extraction is a first draft, not a commit.',
+    title: 'AI extraction from nameplates and test reports',
+    body: 'Drop in a nameplate photo or a test-report PDF and the AI pulls manufacturer, model, serial, ratings, and measurements. Review and confirm before anything lands in the database — extraction is a first draft, not a commit.',
   },
   {
     icon: (
@@ -90,8 +90,8 @@ const FEATURES = [
         <line x1="12" y1="17" x2="12" y2="21"/>
       </svg>
     ),
-    title: 'Budget forecast by month and dept',
-    body: 'Project the next twelve months of renewal spend across vendors, departments, and cost centers. Export to Excel for the finance review.',
+    title: 'Compliance calendar by site and month',
+    body: 'See every scheduled task across all your sites on one calendar — what is due, what is overdue, and what requires an outage window to perform.',
   },
   {
     icon: (
@@ -103,7 +103,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Roles, scoped viewers, and consultants',
-    body: 'Admins, managers, and full or scope-restricted viewers. Invite an outside consultant for a specific renewal cycle and revoke access in one click.',
+    body: 'Admins, managers, and read-only viewers. Invite an outside consultant or testing contractor for a specific program review and revoke access in one click.',
   },
   {
     icon: (
@@ -113,7 +113,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Built-in audit log',
-    body: 'Every login, contract change, document access, and permission denial is recorded with the user, IP, and timestamp. Visible to admins, exportable on demand.',
+    body: 'Every login, asset change, document access, and permission denial is recorded with the user, IP, and timestamp. Visible to admins, exportable on demand — evidence for OSHA, your insurer, or the AHJ.',
   },
   {
     icon: (
@@ -125,8 +125,8 @@ const FEATURES = [
         <path d="M16.5 8 L13 15"/>
       </svg>
     ),
-    title: 'Bring your own AI — your data, your vendor contract',
-    body: 'Choose Anthropic Claude, OpenAI, Azure OpenAI, or Google Gemini. Use your existing enterprise agreement, your existing data-residency region, your existing AI governance. No LapseIQ-controlled data path, no markup on per-call cost, no new vendor relationship to onboard.',
+    title: 'Bring your own AI — your data, your provider',
+    body: 'Choose Anthropic Claude, OpenAI, Azure OpenAI, or Google Gemini. Use your existing enterprise agreement, your existing data-residency region, your existing AI governance. No ServiceCycle-controlled data path, no markup on per-call cost, no new vendor relationship to onboard.',
   },
   {
     icon: (
@@ -138,7 +138,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Your data, your audit trail, your export',
-    body: 'Every contract, vendor record, communication, savings entry, and audit log line exports cleanly to CSV — anytime, no enterprise-tier gating, no "request export" form. If you ever want to leave, you walk away with the complete record. We hold nothing of yours hostage.',
+    body: 'Every asset, test record, work order, and audit log line exports cleanly to CSV or XLSX — anytime, no enterprise-tier gating, no "request export" form. If you ever want to leave, you walk away with the complete maintenance record. We hold nothing of yours hostage.',
   },
   {
     icon: (
@@ -148,18 +148,18 @@ const FEATURES = [
       </svg>
     ),
     title: 'Self-hosted, telemetry-free',
-    body: 'Runs on your own VM via Docker. Optional AES-256 document encryption, opt-in S3 backups, no phone-home. Your contracts stay on your server.',
+    body: 'Runs on your own VM via Docker. Optional AES-256 document encryption, opt-in S3 backups, no phone-home. Your equipment data stays on your server.',
   },
 ];
 
 const STEPS = [
-  { num: '01', title: 'Add vendors & ingest contracts', body: 'Drop in a PDF and AI pulls dates, costs, and clauses. Or import a CSV. Or add manually — whatever your team already has works.' },
-  { num: '02', title: 'Set the alerts your team needs', body: 'Per-user thresholds at 90, 60, and 30 days. One daily digest per person, not one email per contract per cadence.' },
-  { num: '03', title: 'Walk into every renewal prepared', body: 'AI generates a tailored brief from the contract terms and your negotiation log. Track original ask vs. final price across the year.' },
+  { num: '01', title: 'Add your sites & equipment', body: 'Add a site, then its electrical assets — drop in a nameplate photo and AI pulls the details, or import a CSV, or add manually. Set each asset’s governing condition.' },
+  { num: '02', title: 'Let the schedules build themselves', body: 'ServiceCycle derives NFPA 70B task intervals from equipment type and condition. Tiered alerts fire at 180 down to 7 days before due — one daily digest per person.' },
+  { num: '03', title: 'Complete work, capture evidence', body: 'Issue work orders to your contractor, record NETA test measurements and deficiencies, and build the audit-ready compliance record as a by-product of doing the work.' },
 ];
 
 // ── Early-access form (L7) ────────────────────────────────────────────────────
-// Replaces the pre-L7 mailto:hello@lapseiq.com CTAs with a real form that
+// Replaces the pre-L7 mailto:hello@servicecycle.com CTAs with a real form that
 // hits POST /api/early-access. Honeypot field "website" is hidden — humans
 // don't fill it; bots do.
 
@@ -193,12 +193,12 @@ function EarlyAccessForm() {
       if (!res.ok || !data?.success) {
         const msg = data?.issues?.[0]?.msg
           || data?.error
-          || `Submission failed (HTTP ${res.status}). Please email support@lapseiq.com directly.`;
+          || `Submission failed (HTTP ${res.status}). Please email support@servicecycle.com directly.`;
         throw new Error(msg);
       }
       setDone(true);
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again or email support@lapseiq.com.');
+      setError(err.message || 'Something went wrong. Please try again or email support@servicecycle.com.');
     } finally {
       setSubmitting(false);
     }
@@ -211,7 +211,7 @@ function EarlyAccessForm() {
         <h3 style={s.formDoneH3}>You're on the list.</h3>
         <p style={s.formDoneP}>
           Check your inbox in the next minute — there's a one-line install command
-          waiting for you. If it doesn't arrive, ping <a href="mailto:support@lapseiq.com" style={{ color: '#0d4f6e' }}>support@lapseiq.com</a> directly.
+          waiting for you. If it doesn't arrive, ping <a href="mailto:support@servicecycle.com" style={{ color: '#0d4f6e' }}>support@servicecycle.com</a> directly.
         </p>
       </div>
     );
@@ -309,7 +309,7 @@ export default function LandingPage() {
               <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
               <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
             </svg>
-            <span style={s.logoText}>lapseiq</span>
+            <span style={s.logoText}>servicecycle</span>
           </div>
           <nav style={s.navLinks}>
             <a href="#features" style={s.navLink}>Features</a>
@@ -323,43 +323,45 @@ export default function LandingPage() {
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
       <section style={s.hero}>
         <div style={s.heroInner}>
-          <div style={s.badge}>Renewal management for every contract you sign</div>
+          <div style={s.badge}>NFPA 70B electrical maintenance compliance</div>
           <h1 style={s.heroH1}>
-            Stop letting contracts<br />
-            <span style={{ color: '#0d4f6e' }}>renew on the vendor's terms</span>
+            NFPA 70B is mandatory.<br />
+            <span style={{ color: '#0d4f6e' }}>Most facilities aren't compliant.</span>
           </h1>
           <p style={s.heroSub}>
-            LapseIQ tracks renewal dates, auto-renewal clauses, and negotiated savings across your
-            entire contract portfolio &mdash; SaaS, hardware, telecom, insurance, lease, services,
-            and more &mdash; then alerts your team in time to act. Self-hosted, telemetry-free,
-            and built for the people who actually own the renewal.
+            Electrical equipment maintenance became a requirement &mdash; not a recommendation &mdash;
+            when NFPA 70B became a standard in 2023, and roughly 84% of facilities still aren't
+            compliant. ServiceCycle tracks condition-based maintenance intervals, NETA test records,
+            and work orders across every transformer, switchgear lineup, and panelboard you own
+            &mdash; then alerts your team in time to act. Self-hosted, telemetry-free, and built
+            for the people who actually own the maintenance program.
           </p>
           <div style={s.heroCtas}>
             {/* L7: above-the-fold CTA scrolls to the inline early-access
-                form (was a mailto:hello@lapseiq.com pre-L7). */}
+                form (was a mailto:hello@servicecycle.com pre-L7). */}
             <a href="#early-access" style={s.ctaPrimary}>
               Request access →
             </a>
             <a href="#how-it-works" style={s.ctaSecondary}>See how it works</a>
           </div>
-          <p style={s.heroSmall}>Beta &nbsp;·&nbsp; Self-hosted &nbsp;·&nbsp; Built for procurement, IT, finance, and ops</p>
+          <p style={s.heroSmall}>Beta &nbsp;·&nbsp; Self-hosted &nbsp;·&nbsp; Built for facility managers, plant engineers, and testing contractors</p>
         </div>
 
-        {/* Decorative dashboard preview — mixed-category renewal lineup.
-            Shows hardware lease, insurance, SaaS, telecom to signal breadth
-            without targeting any specific buyer. Days color-coded by urgency. */}
+        {/* Decorative dashboard preview — mixed equipment maintenance lineup.
+            Shows transformer, switchgear, breaker, UPS to signal breadth.
+            Days color-coded by urgency. */}
         <div style={s.heroArt}>
           <div style={s.artCard}>
             <div style={s.artHeader}>
-              <div style={s.artHeaderTitle}>Upcoming renewals</div>
-              <div style={s.artHeaderMeta}>4 contracts &middot; <span style={s.artMono}>$119,400</span> at stake</div>
+              <div style={s.artHeaderTitle}>Upcoming maintenance</div>
+              <div style={s.artHeaderMeta}>4 tasks &middot; <span style={s.artMono}>NFPA 70B</span> intervals</div>
             </div>
             <div style={s.artDivider} />
             {[
-              { vendor: 'Cisco Meraki',     product: 'Branch network lease',         cat: 'Hardware',  days: 18, amount: '$34,200', urgency: 'urgent' },
-              { vendor: 'The Hartford',     product: 'Commercial liability + cyber', cat: 'Insurance', days: 42, amount: '$14,400', urgency: 'warning' },
-              { vendor: 'Salesforce',       product: 'Sales Cloud Enterprise',       cat: 'SaaS',      days: 65, amount: '$42,000', urgency: 'ok' },
-              { vendor: 'Verizon Business', product: 'Fleet wireless plan',          cat: 'Telecom',   days: 89, amount: '$28,800', urgency: 'ok' },
+              { vendor: 'TX-01 · Eaton',        product: 'Infrared scan + oil sample',     cat: 'Transformer', days: 12, amount: 'Condition 2', urgency: 'urgent' },
+              { vendor: 'SWGR-A · Square D',    product: 'Insulation resistance test',     cat: 'Switchgear',  days: 38, amount: 'Condition 1', urgency: 'warning' },
+              { vendor: 'CB-12 · ABB',          product: 'Trip-unit timing test',          cat: 'Breaker',     days: 64, amount: 'Condition 2', urgency: 'ok' },
+              { vendor: 'UPS-02 · Vertiv',      product: 'Battery impedance check',        cat: 'UPS',         days: 87, amount: 'Condition 1', urgency: 'ok' },
             ].map((row) => {
               const daysColor = row.urgency === 'urgent' ? '#b91c1c' : row.urgency === 'warning' ? '#b45309' : '#0d4f6e';
               return (
@@ -386,10 +388,10 @@ export default function LandingPage() {
       <section id="features" style={s.section}>
         <div style={s.sectionInner}>
           <div style={s.sectionLabel}>Everything you need</div>
-          <h2 style={s.sectionH2}>Built for the team that owns the renewals</h2>
+          <h2 style={s.sectionH2}>Built for the team that owns the maintenance program</h2>
           <p style={s.sectionSub}>
-            From IT to procurement to finance — everyone gets the visibility they need without
-            drowning in email threads or shared spreadsheets.
+            From facility management to plant engineering to your testing contractor — everyone
+            gets the visibility they need without drowning in binders or shared spreadsheets.
           </p>
           <div style={s.featureGrid}>
             {FEATURES.map((f) => (
@@ -432,7 +434,7 @@ export default function LandingPage() {
           <div style={s.sectionLabel}>Pricing</div>
           <h2 style={s.sectionH2}>Free during beta. Honest about what comes next.</h2>
           <p style={s.sectionSub}>
-            LapseIQ is in beta &mdash; feature set still evolving, we're giving away unlimited
+            ServiceCycle is in beta &mdash; feature set still evolving, we're giving away unlimited
             use on your own infrastructure in exchange for honest feedback while we validate
             the product and land on a sustainable price point.
           </p>
@@ -445,8 +447,8 @@ export default function LandingPage() {
               <div style={s.planNote}>Unlimited on your infrastructure</div>
               <ul style={s.planFeatures}>
                 {[
-                  'Unlimited contracts, vendors, users',
-                  'Every feature unlocked — no LapseIQ-imposed metering',
+                  'Unlimited sites, assets, users',
+                  'Every feature unlocked — no ServiceCycle-imposed metering',
                   'Runs on your own VM via Docker',
                   'AI features use your own provider keys (Anthropic, OpenAI, Azure, Google)',
                   'Daily backups + AES-256 document encryption (optional)',
@@ -471,8 +473,8 @@ export default function LandingPage() {
               <p style={s.pricingHonestyBody}>
                 <strong>Your data is yours &mdash; you can always take it with you.</strong>
                 {' '}AI features run against your own provider keys, so your AI costs flow
-                through your existing contract with Anthropic / OpenAI / Azure / Google.
-                No LapseIQ markup on per-call costs.
+                through your existing agreement with Anthropic / OpenAI / Azure / Google.
+                No ServiceCycle markup on per-call costs.
               </p>
             </div>
           </div>
@@ -485,11 +487,11 @@ export default function LandingPage() {
           Help & Share menu in DEMO_MODE. Replaces the mailto-based CTA
           banner that lived here pre-L7. */}
       <section id="early-access" style={s.ctaBanner}>
-        <h2 style={s.ctaBannerH2}>Ready to take back control of your renewals?</h2>
+        <h2 style={s.ctaBannerH2}>Ready to get ahead of NFPA 70B?</h2>
         <p style={s.ctaBannerSub}>
           Tell us where to send the install instructions. Self-host on your
-          infrastructure, no LapseIQ-managed cloud — your contracts never
-          leave your network.
+          infrastructure, no ServiceCycle-managed cloud — your equipment data
+          never leaves your network.
         </p>
         <div style={s.formWrap}>
           <EarlyAccessForm />
@@ -504,7 +506,7 @@ export default function LandingPage() {
               <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
               <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981"/>
             </svg>
-            <span style={{ ...s.logoText, color: '#9aa3b2' }}>lapseiq</span>
+            <span style={{ ...s.logoText, color: '#9aa3b2' }}>servicecycle</span>
           </div>
           <div style={s.footerLinks}>
             <Link to="/login" style={s.footerLink}>Sign in</Link>
@@ -516,7 +518,7 @@ export default function LandingPage() {
             <Link to="/sub-processors" style={s.footerLink}>Sub-processors</Link>
           </div>
           <div style={s.footerCopy}>
-            © {new Date().getFullYear()} LapseIQ. All rights reserved.
+            © {new Date().getFullYear()} ServiceCycle. All rights reserved.
           </div>
         </div>
       </footer>

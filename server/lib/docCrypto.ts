@@ -3,7 +3,7 @@
 /**
  * lib/docCrypto.js
  * ----------------
- * AES-256-GCM document encryption for LapseIQ at-rest document storage.
+ * AES-256-GCM document encryption for ServiceCycle at-rest document storage.
  *
  * ENCRYPTION IS OPT-IN. It is NOT enabled by default.
  * Admins must explicitly enable it in Settings → Security after completing
@@ -19,13 +19,18 @@
  *   - Backups of the storage volume landing in the wrong hands
  *
  * It does NOT protect against an attacker who has:
- *   - Full access to the running LapseIQ server process
+ *   - Full access to the running ServiceCycle server process
  *   - Access to the .env file (which contains MASTER_KEY)
  *   - Control of the host OS
  *
  * ── Key derivation ────────────────────────────────────────────────────────────
  * A unique AES-256 key is derived for each document using HKDF-SHA256:
  *   key = HKDF(MASTER_KEY, salt=documentId, info='lapseiq-doc-v1', length=32)
+ *
+ * NOTE (ServiceCycle conversion): the HKDF `info` string is part of the key
+ * derivation and MUST stay byte-identical ('lapseiq-doc-v1') — changing it
+ * would silently re-key every document and make existing encrypted blobs
+ * undecryptable. It is a version tag, not branding.
  *
  * This means:
  *   - Each document is encrypted with a distinct key
@@ -123,7 +128,7 @@ function decrypt(cipherBlob, documentId) {
 
   const version = cipherBlob[0];
   if (version !== VERSION) {
-    throw new Error(`Unknown document encryption version: ${version}. This blob may have been created by a newer version of LapseIQ.`);
+    throw new Error(`Unknown document encryption version: ${version}. This blob may have been created by a newer version of ServiceCycle.`);
   }
 
   const iv         = cipherBlob.slice(1, 1 + IV_LEN);

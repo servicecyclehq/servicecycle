@@ -6,7 +6,7 @@
 // + sort}. Click a view to apply; click ✕ to delete.
 //
 // Props:
-//   • storageKey     — e.g. 'lapseiq:contracts-list:saved-views'
+//   • storageKey     — e.g. 'servicecycle:assets-list:saved-views'
 //   • currentState   — opaque object captured when user clicks "Save current
 //                      view as…". The page owns this — the menu just hands
 //                      it back when applying.

@@ -151,19 +151,19 @@ export default function AiConsentModal() {
                       <li>PDF/image extraction: <strong>{usage.actions.extract.cap}/day</strong></li>
                     )}
                     {usage.actions.ask?.cap != null && (
-                      <li>Ask LapseIQ questions: <strong>{usage.actions.ask.cap}/day</strong></li>
+                      <li>Ask ServiceCycle questions: <strong>{usage.actions.ask.cap}/day</strong></li>
                     )}
                     {usage.actions.brief?.cap != null && (
                       <li>Renewal brief generations: <strong>{usage.actions.brief.cap}/day</strong></li>
                     )}
                   </ul>
                   <a
-                    href="https://lapseiq.com/install"
+                    href="https://servicecycle.com/install"
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: 'var(--color-primary, #0d4f6e)', textDecoration: 'underline', fontWeight: 600 }}
                   >
-                    Self-host LapseIQ to remove these caps and use your own AI key →
+                    Self-host ServiceCycle to remove these caps and use your own AI key →
                   </a>
                 </div>
               )}

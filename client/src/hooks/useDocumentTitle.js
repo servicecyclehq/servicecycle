@@ -1,6 +1,6 @@
 // Pass-3 audit LOW #2 (2026-05-17): per-route document.title in the SPA.
 //
-// Pre-fix every page rendered with the static "LapseIQ — Renewal management
+// Pre-fix every page rendered with the static "ServiceCycle — Renewal management
 // that respects your data" title from client/index.html. That hurt browser-
 // tab discrimination ("which tab was the dashboard?"), screen-reader page
 // announcements, and history-stack navigation. The demo SPA is noindex
@@ -12,11 +12,11 @@
 //     useDocumentTitle('Dashboard');
 //     return ...;
 //   }
-// produces document.title = "Dashboard · LapseIQ".
+// produces document.title = "Dashboard · ServiceCycle".
 
 import { useEffect } from 'react';
 
-const SUFFIX = ' · LapseIQ';
+const SUFFIX = ' · ServiceCycle';
 
 export function useDocumentTitle(title) {
   useEffect(() => {

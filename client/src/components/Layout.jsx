@@ -11,22 +11,22 @@ import { useAuth } from '../context/AuthContext';
 // signing up" untrue — the drawer never rendered for unauthenticated
 // routes (Login, Register, Forgot, Legal pages). Moved to App.jsx
 // (next to <AiConsentModal />) so it sits at the BrowserRouter root and
-// every route — auth-gated or not — can listen to lapseiq:open-help.
+// every route — auth-gated or not — can listen to servicecycle:open-help.
 
 // ContinueSetupBanner — non-blocking pill at the top of every authenticated
 // page (other than /dashboard, where the OnboardingWizard takes over) that
 // gives the user a single click back to where they left off in setup.
 //
-// Without this, a user who clicked "Add a vendor" lands on /vendors, does
+// Without this, a user who clicked "Add a site" lands on /sites, does
 // the task, and then has no visible signal that setup is still in progress.
 // The wizard intentionally renders only on /dashboard so it doesn't overlay
 // the task pages, but that left a UX gap before this banner.
 //
-// Reads the same localStorage key (lapseiq_onboarding_step) that the wizard
-// persists to. Steps 1-4 are 0-indexed in the wizard, so saved step value
-// equals the count of steps already advanced past.
+// Reads the same localStorage key (servicecycle_onboarding_step) that the
+// wizard persists to. Steps 1-4 are 0-indexed in the wizard, so saved step
+// value equals the count of steps already advanced past.
 //
-// "Skip setup" dismiss: sets lapseiq_setup_banner_dismissed in localStorage
+// "Skip setup" dismiss: sets servicecycle_setup_banner_dismissed in localStorage
 // (session-scoped — cleared on logout via SESSION_KEYS in api/client.js) so
 // sandbox visitors who just want to explore the pre-seeded data aren't
 // nagged on every page. Dismissing does NOT mark onboarding done; the
@@ -39,7 +39,7 @@ function ContinueSetupBanner() {
 
   useEffect(() => {
     try {
-      if (localStorage.getItem('lapseiq_setup_banner_dismissed') === 'true') {
+      if (localStorage.getItem('servicecycle_setup_banner_dismissed') === 'true') {
         setDismissed(true);
       }
     } catch (_) { /* ignore */ }
@@ -50,13 +50,13 @@ function ContinueSetupBanner() {
 
   let savedStep = 0;
   try {
-    const raw = parseInt(localStorage.getItem('lapseiq_onboarding_step') ?? '0', 10);
+    const raw = parseInt(localStorage.getItem('servicecycle_onboarding_step') ?? '0', 10);
     if (!Number.isNaN(raw)) savedStep = Math.max(0, Math.min(4, raw));
   } catch (_) { /* ignore */ }
 
   function handleDismiss(e) {
     e.stopPropagation();
-    try { localStorage.setItem('lapseiq_setup_banner_dismissed', 'true'); } catch (_) { /* ignore */ }
+    try { localStorage.setItem('servicecycle_setup_banner_dismissed', 'true'); } catch (_) { /* ignore */ }
     setDismissed(true);
   }
 
@@ -116,12 +116,12 @@ function DemoBlockedToast() {
   const [message, setMessage] = useState('');
   useEffect(() => {
     function handler(e) {
-      setMessage(e.detail?.message || 'This action is disabled on the LapseIQ demo.');
+      setMessage(e.detail?.message || 'This action is disabled on the ServiceCycle demo.');
       setVisible(true);
       setTimeout(() => setVisible(false), 4000);
     }
-    window.addEventListener('lapseiq:demo-blocked', handler);
-    return () => window.removeEventListener('lapseiq:demo-blocked', handler);
+    window.addEventListener('servicecycle:demo-blocked', handler);
+    return () => window.removeEventListener('servicecycle:demo-blocked', handler);
   }, []);
   if (!visible) return null;
   return (

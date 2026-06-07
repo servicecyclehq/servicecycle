@@ -2,13 +2,13 @@
  * lib/documentOrphanPrune.js
  *
  * S4-FN-04 (v0.74.1): weekly cron job that deletes Document rows whose
- * contractId no longer exists (FK orphans produced when contracts are
- * hard-deleted without cascading to their documents).
+ * assetId (or workOrderId) no longer exists (FK orphans produced when
+ * assets / work orders are hard-deleted without cascading to documents).
  *
  * How orphans arise:
  *   Prisma's onDelete default is Restrict, not Cascade. A raw SQL delete or
  *   an admin hard-delete that bypasses the ORM can leave Document rows
- *   referencing a contractId that no longer exists in the Contract table.
+ *   referencing an assetId that no longer exists in the assets table.
  *   Those rows are invisible in the UI but still consume R2 / local disk
  *   space and bloat backup sizes.
  *
@@ -32,19 +32,25 @@ async function pruneDocumentOrphans() {
   let totalDeleted = 0;
 
   try {
-    // Find all distinct contractIds referenced by Document rows, then check
-    // which ones are missing from the Contract table. We do this in a single
-    // query rather than a raw NOT IN to keep it ORM-idiomatic and safe.
+    // Find Document rows whose assetId or workOrderId points at a parent
+    // row that no longer exists. Table names use the @@map'd snake_case
+    // identifiers from the Prisma schema (documents / assets / work_orders).
     //
-    // The subquery approach (deleteMany where contractId NOT IN (SELECT id...))
-    // is straightforward for small tables; if Document ever grows > 100k rows
-    // replace with a chunked cursor scan.
+    // Conservative rule: a document is an orphan only when EVERY non-null
+    // parent reference is dangling. A doc with a dead workOrderId but a
+    // live assetId is still reachable from the asset page and must survive.
+    //
+    // The join approach is straightforward for small tables; if documents
+    // ever grows > 100k rows replace with a chunked cursor scan.
     const orphanRows = await prisma.$queryRaw<{ id: string }[]>`
       SELECT d.id
-      FROM "Document" d
-      LEFT JOIN "Contract" c ON d."contractId" = c.id
-      WHERE d."contractId" IS NOT NULL
-        AND c.id IS NULL
+      FROM "documents" d
+      LEFT JOIN "assets"      a ON d."assetId"     = a.id
+      LEFT JOIN "work_orders" w ON d."workOrderId" = w.id
+      WHERE (d."assetId" IS NOT NULL OR d."workOrderId" IS NOT NULL)
+        AND (d."assetId"     IS NULL OR a.id IS NULL)
+        AND (d."workOrderId" IS NULL OR w.id IS NULL)
+        AND NOT (d."assetId" IS NULL AND d."workOrderId" IS NULL)
       LIMIT 10000
     `;
 

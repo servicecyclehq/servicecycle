@@ -30,7 +30,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import { useAuth } from './AuthContext';
 
 const API = import.meta.env.VITE_API_URL || '/api';
-const SESSION_KEY = 'lapseiq_ai_consent_session';
+const SESSION_KEY = 'servicecycle_ai_consent_session';
 
 const AiConsentContext = createContext(null);
 
@@ -70,7 +70,7 @@ export function AiConsentProvider({ children }) {
         fetch(`${API}/auth/ai-consent`, {
           method:  'POST',
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+            Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ version: aiConsentVersion, provider: aiProvider }),
@@ -95,7 +95,7 @@ export function AiConsentProvider({ children }) {
       await fetch(`${API}/auth/ai-consent`, {
         method:  'POST',
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
           'Content-Type': 'application/json',
         },
         // Pass-4 audit L3-07/L3-08: send the version+provider we showed

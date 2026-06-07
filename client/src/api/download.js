@@ -8,11 +8,11 @@
 //
 // Returns { filename, blob } so callers can chain follow-up behavior — most
 // importantly the v0.40 Phase 5 mailto handoff, which needs the filename to
-// pre-fill the email body ("Please find attached Contracts-2026-05-20.xlsx").
+// pre-fill the email body ("Please find attached Assets-2026-05-20.xlsx").
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function downloadAuthedFile(url, fallbackFilename) {
-  const token = localStorage.getItem('lapseiq_token');
+  const token = localStorage.getItem('servicecycle_token');
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -29,7 +29,7 @@ export async function downloadAuthedFile(url, fallbackFilename) {
   const blob = await res.blob();
 
   // Parse filename from Content-Disposition. Server sends:
-  //   Content-Disposition: attachment; filename="Contracts-2026-05-20.xlsx"
+  //   Content-Disposition: attachment; filename="Assets-2026-05-20.xlsx"
   // The match supports both quoted and unquoted forms.
   const cd = res.headers.get('content-disposition') || '';
   const m  = cd.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);

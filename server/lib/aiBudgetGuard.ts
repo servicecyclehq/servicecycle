@@ -464,8 +464,8 @@ async function _fireDailyExhaustionEmail({ service, callsToday, budget, day }) {
   // Pass-6 W4 task #9: HF / Groq / Gemini / Tavily / Brevo daily-budget
   // exhaustion alert. Operator sees this so they can either raise the
   // budget or accept the soft-stop until 00:00 UTC.
-  const to = process.env.BUDGET_GUARD_ALERT_EMAIL || process.env.SUPPORT_EMAIL || 'demofeedback@lapseiq.com';
-  const subject = `[LapseIQ Demo] ${service} daily budget exhausted (${callsToday}/${budget}) for ${day}`;
+  const to = process.env.BUDGET_GUARD_ALERT_EMAIL || process.env.SUPPORT_EMAIL || 'demofeedback@servicecycle.com';
+  const subject = `[ServiceCycle Demo] ${service} daily budget exhausted (${callsToday}/${budget}) for ${day}`;
   const html = `<div style="font-family:system-ui,sans-serif;padding:16px;border-left:4px solid #dc2626;background:#fef2f2">
   <h2 style="margin:0 0 12px;font-size:16px;color:#991b1b">${service} daily budget exhausted</h2>
   <p style="margin:0 0 8px">The shared demo <b>${service}</b> service has hit its daily call budget.</p>
@@ -484,10 +484,10 @@ async function _fireDailyExhaustionEmail({ service, callsToday, budget, day }) {
 async function _fireBudgetAlertEmail({ month, usdCost, usdBudget, neurons, pctConsumed, hardstopPct, tier }) {
   // T6-N5 (audit-2): on self-host (DEMO_MODE !== 'true'), require an explicit
   // BUDGET_GUARD_ALERT_EMAIL. If absent, skip rather than forward to the
-  // vendor inbox (demofeedback@lapseiq.com) — that was leaking AI-spend data.
+  // vendor inbox (demofeedback@servicecycle.com) — that was leaking AI-spend data.
   let to;
   if (process.env.DEMO_MODE === 'true') {
-    to = process.env.BUDGET_GUARD_ALERT_EMAIL || process.env.SUPPORT_EMAIL || 'demofeedback@lapseiq.com';
+    to = process.env.BUDGET_GUARD_ALERT_EMAIL || process.env.SUPPORT_EMAIL || 'demofeedback@servicecycle.com';
   } else {
     to = process.env.BUDGET_GUARD_ALERT_EMAIL || process.env.SUPPORT_EMAIL;
     if (!to) {
@@ -496,7 +496,7 @@ async function _fireBudgetAlertEmail({ month, usdCost, usdBudget, neurons, pctCo
       return;
     }
   }
-  const subject = `[LapseIQ Demo] Cloudflare AI budget at ${pctConsumed.toFixed(1)}% for ${month}`;
+  const subject = `[ServiceCycle Demo] Cloudflare AI budget at ${pctConsumed.toFixed(1)}% for ${month}`;
   const html = `<div style="font-family:system-ui,sans-serif;padding:16px;border-left:4px solid #f59e0b;background:#fffbeb">
   <h2 style="margin:0 0 12px;font-size:16px;color:#92400e">Cloudflare Workers AI budget alert</h2>
   <p style="margin:0 0 8px">Demo instance has consumed <b>$${usdCost.toFixed(2)} of $${usdBudget}</b> (${pctConsumed.toFixed(1)}%) for ${month}.</p>
@@ -578,11 +578,11 @@ function ensureAiBudget(req, res, service) {
 
   let friendly;
   if (svc === 'cloudflare') {
-    friendly = 'The shared demo AI monthly budget is exhausted. Demo AI features will return at 00:00 UTC on the 1st of next month. To remove all caps, self-host LapseIQ with your own AI key — https://lapseiq.com/install';
+    friendly = 'The shared demo AI monthly budget is exhausted. Demo AI features will return at 00:00 UTC on the 1st of next month. To remove all caps, self-host ServiceCycle with your own AI key — https://servicecycle.com/install';
   } else if (svc === 'gemini') {
-    friendly = 'The shared demo AI budget is exhausted for today. Demo AI features will return at 00:00 UTC. To keep going right now, self-host LapseIQ on your own infrastructure — install instructions at https://lapseiq.com/install.';
+    friendly = 'The shared demo AI budget is exhausted for today. Demo AI features will return at 00:00 UTC. To keep going right now, self-host ServiceCycle on your own infrastructure — install instructions at https://servicecycle.com/install.';
   } else {
-    friendly = `The shared demo ${svc} budget is exhausted for today. It will return at 00:00 UTC. To keep going right now, self-host LapseIQ on your own infrastructure — install instructions at https://lapseiq.com/install.`;
+    friendly = `The shared demo ${svc} budget is exhausted for today. It will return at 00:00 UTC. To keep going right now, self-host ServiceCycle on your own infrastructure — install instructions at https://servicecycle.com/install.`;
   }
 
   const resetAt = svc === 'cloudflare'

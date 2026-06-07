@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ActivityLogPage.jsx — v0.70.1 canonical-pattern propagation
 //
-// Inherits the /contracts canonical list-page filter behavior (per
+// Inherits the canonical list-page filter behavior (per
 // docs/design/list-page-canonical-pattern.md Section 4.3) onto a feed-style
 // page. Activity is chronological by design, so it stays a feed not a table —
 // the propagation is about the filter primitives + URL sync + saved views,
@@ -9,13 +9,13 @@
 //
 // What landed in v0.70.1:
 //   • ColumnFilterDropdown for Action (multiselect) + User (multiselect) — the
-//     same Excel-style typeahead-checkbox primitive used on /contracts and
+//     same Excel-style typeahead-checkbox primitive used on /assets and
 //     /alerts.
 //   • ColumnDateRangeButton for Date (single-button popover replaces the
 //     pair of plain <select> filters from the legacy chrome).
 //   • URL-synced filter state via f_<columnId>=<JSON> keys (so back-button
 //     + share-links round-trip).
-//   • Cross-device saved views via useUserPreference('lapseiq:activity-log:
+//   • Cross-device saved views via useUserPreference('servicecycle:activity-log:
 //     saved-views').
 //   • Server-side distinct values via GET /api/activity/distinct/:column with
 //     Excel narrowing semantics (the requested column's own filter is dropped
@@ -26,14 +26,14 @@
 //   • Inline column-filter count + Clear link in page subtitle.
 //
 // Preserved verbatim from pre-v0.70:
-//   • Feed layout (avatar + action badge + user + contract link + relative
+//   • Feed layout (avatar + action badge + user + asset link + relative
 //     time) — this is the page's primary affordance and works well.
-//   • ?contractId= deep-link from "View all →" on the contract detail page.
+//   • ?assetId= deep-link from "View all →" on the asset detail page.
 //   • Server-side pagination at 50 rows per page.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Download, Mail, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
@@ -42,19 +42,18 @@ import { useUserPreference } from '../hooks/useUserPreference';
 import ColumnFilterDropdown from '../components/ColumnFilterDropdown';
 import ColumnDateRangeButton from '../components/ColumnDateRangeButton';
 import SavedViewsMenu from '../components/SavedViewsMenu';
-import ActionDropdown from '../components/ActionDropdown';
 import Toast from '../components/Toast';
-import { downloadAuthedFile } from '../api/download';
 import EmptyState from '../components/EmptyState';
 import { ClipboardList } from 'lucide-react';
+import { assetLabel, CONDITION_META } from '../lib/equipment';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const ACTIVITY_SAVED_VIEWS_KEY = 'lapseiq:activity-log:saved-views';
+const ACTIVITY_SAVED_VIEWS_KEY = 'servicecycle:activity-log:saved-views';
 const BLANK_SENTINEL = '__BLANK__';
 
 // Filter column registry — drives the URL-sync round-trip and the saved-view
-// payload shape. Mirrors the meta block on /contracts + /alerts columns.
+// payload shape. Mirrors the meta block on /assets + /alerts columns.
 const FILTER_COLUMNS = [
   { id: 'action', label: 'Action', filterType: 'multiselect', filterParam: 'actionIn' },
   { id: 'user',   label: 'User',   filterType: 'multiselect', filterParam: 'userIdIn' },
@@ -63,39 +62,40 @@ const FILTER_COLUMNS = [
 ];
 
 const ACTION_META = {
-  contract_created:     { label: 'Contract added',          color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
-  status_changed:       { label: 'Status changed',          color: 'var(--color-primary)',  bg: 'var(--color-primary-light)' },
-  owner_assigned:       { label: 'Owner assigned',          color: 'var(--color-renewal-text)',               bg: 'var(--color-renewal-bg)' },
-  fields_updated:       { label: 'Fields updated',          color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  checklist_updated:    { label: 'Checklist updated',       color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  contract_renewed:     { label: 'Contract renewed',        color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
-  contract_cancelled:   { label: 'Contract cancelled',      color: 'var(--color-danger)',   bg: 'var(--color-danger-bg)' },
-  brief_generated:      { label: 'Renewal brief generated', color: 'var(--color-renewal-text)',               bg: 'var(--color-renewal-bg)' },
-  document_uploaded:    { label: 'Document uploaded',       color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  user_created:         { label: 'User added',              color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
-  login_failed:         { label: 'Failed login attempt',    color: 'var(--color-danger)',   bg: 'var(--color-danger-bg)' },
-  permission_denied:    { label: 'Permission denied',       color: 'var(--color-danger)',   bg: 'var(--color-danger-bg)' },
-  document_accessed:    { label: 'Document accessed',       color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  admin_password_reset: { label: 'Admin password reset',    color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
-  account_created:      { label: 'Account created',         color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
-  login_success:        { label: 'Signed in',               color: 'var(--color-text-secondary)', bg: 'var(--color-bg)' },
-  category_created:     { label: 'Category created',        color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  category_updated:     { label: 'Category updated',        color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  category_archived:    { label: 'Category archived',       color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
-  category_restored:    { label: 'Category restored',       color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
-  custom_field_created: { label: 'Custom field created',    color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  custom_field_updated: { label: 'Custom field updated',    color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
-  custom_field_archived:{ label: 'Custom field archived',   color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
-  custom_field_restored:{ label: 'Custom field restored',   color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  asset_created:             { label: 'Asset added',                  color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  fields_updated:            { label: 'Fields updated',               color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  condition_changed:         { label: 'Condition changed',            color: 'var(--color-primary)',  bg: 'var(--color-primary-light)' },
+  asset_archived:            { label: 'Asset archived',               color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
+  asset_unarchived:          { label: 'Asset restored',               color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  site_created:              { label: 'Site added',                   color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  site_updated:              { label: 'Site updated',                 color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  site_archived:             { label: 'Site archived',                color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
+  maintenance_completed:     { label: 'Maintenance completed',        color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  work_order_created:        { label: 'Work order created',           color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  work_order_completed:      { label: 'Work order completed',         color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  work_order_cancelled:      { label: 'Work order cancelled',         color: 'var(--color-danger)',   bg: 'var(--color-danger-bg)' },
+  deficiency_resolved:       { label: 'Deficiency resolved',          color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  deficiency_reopened:       { label: 'Deficiency reopened',          color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
+  regulatory_breach_flagged: { label: 'Regulatory breach flagged',    color: 'var(--color-danger)',   bg: 'var(--color-danger-bg)' },
+  brief_generated:           { label: 'Maintenance brief generated',  color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  document_uploaded:         { label: 'Document uploaded',            color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  document_accessed:         { label: 'Document accessed',            color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  user_created:              { label: 'User added',                   color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  user_deactivated:          { label: 'User deactivated',             color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
+  login_failed:              { label: 'Failed login attempt',         color: 'var(--color-danger)',   bg: 'var(--color-danger-bg)' },
+  permission_denied:         { label: 'Permission denied',            color: 'var(--color-danger)',   bg: 'var(--color-danger-bg)' },
+  admin_password_reset:      { label: 'Admin password reset',         color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
+  account_created:           { label: 'Account created',              color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
+  login_success:             { label: 'Signed in',                    color: 'var(--color-text-secondary)', bg: 'var(--color-bg)' },
+  custom_field_created:      { label: 'Custom field created',         color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  custom_field_updated:      { label: 'Custom field updated',         color: 'var(--color-info)',     bg: 'var(--color-info-bg)' },
+  custom_field_archived:     { label: 'Custom field archived',        color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' },
+  custom_field_restored:     { label: 'Custom field restored',        color: 'var(--color-success)',  bg: 'var(--color-success-bg)' },
 };
 
-const STATUS_LABELS = {
-  active:       'Active',
-  under_review: 'Under review',
-  pending:      'Pending',
-  expired:      'Expired',
-  cancelled:    'Cancelled',
-};
+function conditionLabel(v) {
+  return CONDITION_META?.[v]?.label || v;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -123,28 +123,26 @@ function fmtRelative(iso) {
 function detailSummary(action, details) {
   if (!details) return null;
   switch (action) {
-    case 'contract_created':
-      return details.vendorName
-        ? `${details.product || 'New contract'} · ${details.vendorName}`
-        : details.clonedFrom ? 'Cloned from renewal' : null;
-    case 'status_changed':
-      return `${STATUS_LABELS[details.from] || details.from} → ${STATUS_LABELS[details.to] || details.to}`;
+    case 'asset_created':
+      return [details.equipmentType, details.manufacturer, details.model]
+        .filter(Boolean).join(' · ') || null;
+    case 'condition_changed':
+      return (details.from || details.to)
+        ? `${conditionLabel(details.from) || '—'} → ${conditionLabel(details.to) || '—'}`
+        : null;
     case 'fields_updated':
       if (!Array.isArray(details.fields) || details.fields.length === 0) return null;
       return details.fields.slice(0, 4).join(', ')
         + (details.fields.length > 4 ? ` +${details.fields.length - 4} more` : '');
-    case 'checklist_updated': {
-      const added   = details.checked?.length   || 0;
-      const removed = details.unchecked?.length || 0;
-      const parts   = [];
-      if (added)   parts.push(`${added} item${added   !== 1 ? 's' : ''} checked`);
-      if (removed) parts.push(`${removed} item${removed !== 1 ? 's' : ''} unchecked`);
-      return parts.join(', ') || null;
-    }
-    case 'contract_renewed':
-      return 'Renewal contract created';
-    case 'contract_cancelled':
-      return details.from ? `Was ${STATUS_LABELS[details.from] || details.from}` : null;
+    case 'maintenance_completed':
+      return details.taskName || null;
+    case 'work_order_created':
+    case 'work_order_completed':
+    case 'work_order_cancelled':
+      return details.title || details.taskName || null;
+    case 'deficiency_resolved':
+    case 'deficiency_reopened':
+      return details.severity ? `Severity: ${details.severity}` : null;
     case 'brief_generated':
       return details.refresh ? 'Refreshed' : 'Generated';
     default:
@@ -196,18 +194,6 @@ function appendColumnFilterParam(params, col, value) {
   }
 }
 
-// v0.71.0: build the URL query for /api/export/activity mirroring the active
-// filter state. Used by the toolbar Export ▼ dropdown.
-function buildActivityExportParams({ columnFilters, contractId }) {
-  const params = new URLSearchParams();
-  const record = columnFiltersToRecord(columnFilters);
-  for (const col of FILTER_COLUMNS) {
-    appendColumnFilterParam(params, col, record[col.id]);
-  }
-  if (contractId) params.set('contractId', contractId);
-  return params;
-}
-
 // ── Main page ───────────────────────────────────────────────────────────────
 
 export default function ActivityLogPage() {
@@ -215,9 +201,9 @@ export default function ActivityLogPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Optional ?contractId= narrows the log to a single contract. Sourced from
-  // URL so deep-links from the contract detail "View all →" work.
-  const contractId = searchParams.get('contractId') || '';
+  // Optional ?assetId= narrows the log to a single asset. Sourced from
+  // URL so deep-links from the asset detail "View all →" work.
+  const assetId = searchParams.get('assetId') || '';
 
   const [logs,       setLogs]       = useState([]);
   const [users,      setUsers]      = useState([]);
@@ -225,9 +211,8 @@ export default function ActivityLogPage() {
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 50 });
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
-  const [contractContext, setContractContext] = useState(null);
+  const [assetContext, setAssetContext] = useState(null);
   const [page,       setPage]       = useState(1);
-  const [exporting,  setExporting]  = useState(false);
   const [verifying,  setVerifying]  = useState(false);
   const [toast,      setToast]      = useState(null);
 
@@ -273,7 +258,7 @@ export default function ActivityLogPage() {
     setError(null);
     try {
       const params = new URLSearchParams({ page: String(page), limit: '50' });
-      if (contractId) params.set('contractId', contractId);
+      if (assetId) params.set('assetId', assetId);
       const record = columnFiltersToRecord(columnFilters);
       for (const col of FILTER_COLUMNS) {
         appendColumnFilterParam(params, col, record[col.id]);
@@ -291,14 +276,14 @@ export default function ActivityLogPage() {
           return next;
         });
       }
-      const firstWithContract = d.data.logs?.find(l => l.contract);
-      if (firstWithContract) setContractContext(firstWithContract.contract);
+      const firstWithAsset = d.data.logs?.find(l => l.asset);
+      if (firstWithAsset) setAssetContext(firstWithAsset.asset);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [page, contractId, columnFilters]);
+  }, [page, assetId, columnFilters]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -310,7 +295,7 @@ export default function ActivityLogPage() {
       if (col.id === columnId) continue; // Excel narrowing: drop the requested column's own filter
       appendColumnFilterParam(params, col, record[col.id]);
     }
-    if (contractId) params.set('contractId', contractId);
+    if (assetId) params.set('assetId', assetId);
     const url = '/api/activity/distinct/' + columnId + (params.toString() ? '?' + params.toString() : '');
     const res = await api.get(url);
     if (res.data?.labels) {
@@ -319,7 +304,7 @@ export default function ActivityLogPage() {
       setUserLabels(prev => ({ ...prev, ...res.data.labels }));
     }
     return res.data?.values || [];
-  }, [columnFilters, contractId]);
+  }, [columnFilters, assetId]);
 
   // ── Saved-view state ─────────────────────────────────────────────────────
   const currentViewState = useMemo(() => ({ columnFilters }), [columnFilters]);
@@ -333,56 +318,12 @@ export default function ActivityLogPage() {
     setColumnFilters([]);
   }, []);
 
-  // ── Export handlers (v0.71.0) ─────────────────────────────────────────────
-  async function handleExportView() {
-    if (exporting) return;
-    setExporting(true);
-    try {
-      const params = buildActivityExportParams({ columnFilters, contractId });
-      const url = `${import.meta.env.VITE_API_URL ?? ''}/api/export/activity?${params}`;
-      await downloadAuthedFile(url, `Activity-${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (e) {
-      setError(e.message || 'Export failed.');
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  async function handleEmailView() {
-    if (exporting) return;
-    setExporting(true);
-    try {
-      const params = buildActivityExportParams({ columnFilters, contractId });
-      const url = `${import.meta.env.VITE_API_URL ?? ''}/api/export/activity?${params}`;
-      setToast({ title: 'Preparing export…', message: 'Building your file — this may take a moment.', variant: 'info', duration: 5000 });
-      const { filename } = await downloadAuthedFile(url, `Activity-${new Date().toISOString().split('T')[0]}.xlsx`);
-      const subject = `Activity log — ${new Date().toISOString().split('T')[0]}`;
-      const body =
-        `Please find attached the activity log (${filename}).\n\n` +
-        `Drag the file from your Downloads folder onto this email to attach it ` +
-        `(or find it in your Downloads folder).`;
-      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      setTimeout(() => {
-        setToast({
-          title: 'Email draft opened',
-          message: `Your file (${filename}) is downloading. Find it in your Downloads folder, then drag it into your email draft to attach.`,
-          variant: 'info',
-          duration: 12000,
-        });
-      }, 200);
-    } catch (e) {
-      setError(e.message || 'Email export failed.');
-    } finally {
-      setExporting(false);
-    }
-  }
-
   // ── Render derivations ──────────────────────────────────────────────────
   async function handleVerifyChain() {
     if (verifying) return;
     setVerifying(true);
     try {
-      const res = await api.get('/admin/audit-chain/verify');
+      const res = await api.get('/api/admin/audit-chain/verify');
       const { ok, total, breakAt, verifiedAt } = res.data?.data ?? {};
       if (ok) {
         setToast({
@@ -432,7 +373,7 @@ export default function ActivityLogPage() {
             {loading
               ? 'Loading…'
               : pagination.total === 0
-                ? 'No activity found' + (hasFilters || contractId ? ' matching these filters' : '')
+                ? 'No activity found' + (hasFilters || assetId ? ' matching these filters' : '')
                 : `${pagination.total.toLocaleString()} event${pagination.total !== 1 ? 's' : ''}`}
             {hasFilters && !loading && (
               <>
@@ -454,16 +395,16 @@ export default function ActivityLogPage() {
                 </button>
               </>
             )}
-            {contractId && contractContext && (
+            {assetId && assetContext && (
               <>
                 {' · '}Filtered to{' '}
                 <Link
-                  to={`/contracts/${contractId}`}
+                  to={`/assets/${assetId}`}
                   style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 600 }}
                 >
-                  {contractContext.product || 'this contract'}
-                  {contractContext.vendor?.name && (
-                    <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}> · {contractContext.vendor.name}</span>
+                  {assetLabel(assetContext) || 'this asset'}
+                  {assetContext.site?.name && (
+                    <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}> · {assetContext.site.name}</span>
                   )}
                 </Link>
                 {' '}·{' '}
@@ -471,7 +412,7 @@ export default function ActivityLogPage() {
                   type="button"
                   onClick={() => {
                     const next = new URLSearchParams(searchParams);
-                    next.delete('contractId');
+                    next.delete('assetId');
                     setSearchParams(next, { replace: true });
                     setPage(1);
                   }}
@@ -481,7 +422,7 @@ export default function ActivityLogPage() {
                     fontSize: 'inherit',
                   }}
                 >
-                  Clear contract filter
+                  Clear asset filter
                 </button>
               </>
             )}
@@ -507,29 +448,6 @@ export default function ActivityLogPage() {
             currentState={currentViewState}
             onApply={applyView}
           />
-          {!loading && pagination.total > 0 && (
-            <ActionDropdown
-              label="Export"
-              icon={Download}
-              title="Export activity log"
-              items={[
-                {
-                  label: 'Download view as XLSX',
-                  icon: Download,
-                  onClick: handleExportView,
-                  disabled: exporting,
-                  title: 'Download an XLSX of the activity log matching the active filters',
-                },
-                {
-                  label: 'Email view',
-                  icon: Mail,
-                  onClick: handleEmailView,
-                  disabled: exporting,
-                  title: 'Download an XLSX and open your default mail client with a draft. Drag the file from the download bar onto the draft to attach.',
-                },
-              ]}
-            />
-          )}
           {user?.role === 'admin' && (
             <button
               type="button"
@@ -588,10 +506,10 @@ export default function ActivityLogPage() {
         ) : logs.length === 0 ? (
           <EmptyState
             icon={ClipboardList}
-            title={hasFilters || contractId ? 'No activity matching these filters' : 'No activity yet'}
-            sub={hasFilters || contractId ? 'Try adjusting or clearing your filters to see more entries.' : 'Activity log entries appear here as contracts are created, updated, and accessed.'}
-            ctaLabel={hasFilters || contractId ? 'Clear filters' : undefined}
-            ctaOnClick={hasFilters || contractId ? () => setSearchParams(new URLSearchParams()) : undefined}
+            title={hasFilters || assetId ? 'No activity matching these filters' : 'No activity yet'}
+            sub={hasFilters || assetId ? 'Try adjusting or clearing your filters to see more entries.' : 'Activity log entries appear here as assets are created, updated, and maintained.'}
+            ctaLabel={hasFilters || assetId ? 'Clear filters' : undefined}
+            ctaOnClick={hasFilters || assetId ? () => setSearchParams(new URLSearchParams()) : undefined}
           />
         ) : (
           <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden', background: 'var(--color-surface)' }}>
@@ -627,19 +545,19 @@ export default function ActivityLogPage() {
                       <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text)' }}>
                         {log.user?.name || 'System / deleted user'}
                       </span>
-                      {log.contract && (
+                      {log.asset && (
                         <>
                           <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.78rem' }}>on</span>
                           <Link
-                            to={`/contracts/${log.contract.id}`}
+                            to={`/assets/${log.asset.id}`}
                             style={{ fontSize: '0.82rem', color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}
                             onMouseEnter={e => e.target.style.textDecoration = 'underline'}
                             onMouseLeave={e => e.target.style.textDecoration = 'none'}
                           >
-                            {log.contract.product}
-                            {log.contract.vendor?.name && (
+                            {assetLabel(log.asset)}
+                            {log.asset.site?.name && (
                               <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>
-                                {' '}· {log.contract.vendor.name}
+                                {' '}· {log.asset.site.name}
                               </span>
                             )}
                           </Link>

@@ -36,7 +36,7 @@ export default class ErrorBoundary extends Component {
       stack:          error && error.stack,
       componentStack: info && info.componentStack,
       path:           typeof window !== 'undefined' && window.location ? window.location.pathname : null,
-      lapseiqVersion: (typeof document !== 'undefined' && document.querySelector('meta[name="lapseiq-build-id"]') && document.querySelector('meta[name="lapseiq-build-id"]').getAttribute('content')) || null,
+      appVersion: (typeof document !== 'undefined' && document.querySelector('meta[name="servicecycle-build-id"]') && document.querySelector('meta[name="servicecycle-build-id"]').getAttribute('content')) || null,
       at:             new Date().toISOString(),
     };
     try { window.__lastBoundaryError = payload; } catch (_) {}
@@ -45,11 +45,11 @@ export default class ErrorBoundary extends Component {
     // here are silent so a broken telemetry path never cascades.
     try {
       var ses = window.sessionStorage;
-      var seenKey = 'lapseiq_boundary_posted_' + errorCode;
+      var seenKey = 'servicecycle_boundary_posted_' + errorCode;
       if (!ses || !ses.getItem(seenKey)) {
         if (ses) { try { ses.setItem(seenKey, '1'); } catch (_) {} }
         var token = null;
-        try { token = window.localStorage && window.localStorage.getItem('lapseiq_token'); } catch (_) {}
+        try { token = window.localStorage && window.localStorage.getItem('servicecycle_token'); } catch (_) {}
         var headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
         fetch('/api/errors/render', {
@@ -102,7 +102,7 @@ export default class ErrorBoundary extends Component {
           Something went wrong
         </h1>
         <p style={{ fontSize: 'var(--font-size-data)', color: 'var(--color-text-secondary, #6b7280)', maxWidth: 420, lineHeight: 1.6, marginBottom: 24 }}>
-          LapseIQ hit an unexpected error on this page. Your data is safe — this
+          ServiceCycle hit an unexpected error on this page. Your data is safe — this
           is a display issue. Try reloading the section or navigating away.
         </p>
 
@@ -134,8 +134,8 @@ export default class ErrorBoundary extends Component {
         {/* Support blurb with error code */}
         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary, #6b7280)', maxWidth: 380, lineHeight: 1.6 }}>
           Still stuck? Email{' '}
-          <a href="mailto:support@lapseiq.com" style={{ color: 'inherit' }}>
-            support@lapseiq.com
+          <a href="mailto:support@servicecycle.com" style={{ color: 'inherit' }}>
+            support@servicecycle.com
           </a>
           {errorCode && (
             <> and include error code: <strong>{errorCode}</strong></>

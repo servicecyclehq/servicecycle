@@ -4,11 +4,11 @@
  * Two modes:
  *   1. Picker — opened without a slug. Renders a grid of module cards;
  *      clicking one loads that module's content.
- *   2. Content — opened with a slug (`{ detail: { moduleSlug: 'contracts' } }`)
+ *   2. Content — opened with a slug (`{ detail: { moduleSlug: 'assets' } }`)
  *      OR after the user clicks a module card. Renders title, TOC,
- *      markdown body, "Back to all modules", "Export PDF", "Ask LapseIQ".
+ *      markdown body, "Back to all modules", "Export PDF", "Contact support".
  *
- * Listens for the global `lapseiq:open-help` CustomEvent. Fired by
+ * Listens for the global `servicecycle:open-help` CustomEvent. Fired by
  *   - the sidebar "Help" entry (opens picker)
  *   - any future page-context HelpButton (opens directly to a module)
  *
@@ -23,7 +23,7 @@
  * (W5 MT-023) the drawer is mounted at the App root (next to
  * <AiConsentModal />) instead of inside <Layout />, so the docstring
  * claim is real — public routes (Login, Register, Forgot, Legal pages)
- * can fire the `lapseiq:open-help` event and the drawer responds.
+ * can fire the `servicecycle:open-help` event and the drawer responds.
  *
  * v0.37.1 W5 MT-025: markdown rendering switched from a hand-rolled
  * dangerouslySetInnerHTML pipeline to react-markdown + remark-gfm
@@ -77,17 +77,17 @@ function headingId(children) {
 
 // H2-4/H4-4 (v0.76.7): route → module slug map for context-sensitive open
 const ROUTE_MODULE_MAP = {
-  '/dashboard':  'dashboard',
-  '/contracts':  'contracts',
-  '/alerts':     'alerts',
-  '/reports':    'reports',
-  '/vendors':    'vendors',
-  '/settings':   'settings',
-  '/users':      'settings',
-  '/activity':   'settings',
-  '/news':       'vendors',
-  '/budget':     'budget',
-  '/ingest':     'ingest',
+  '/dashboard':   'dashboard',
+  '/assets':      'assets',
+  '/sites':       'sites',
+  '/work-orders': 'work-orders',
+  '/calendar':    'calendar',
+  '/contractors': 'contractors',
+  '/alerts':      'alerts',
+  '/reports':     'reports',
+  '/settings':    'settings',
+  '/users':       'settings',
+  '/activity':    'settings',
 };
 function slugForPath(p) {
   if (!p) return null;
@@ -123,8 +123,8 @@ export default function HelpDrawer({ currentPath = '' }) {
       setSlug(s);
       setOpen(true);
     }
-    window.addEventListener('lapseiq:open-help', handler);
-    return () => window.removeEventListener('lapseiq:open-help', handler);
+    window.addEventListener('servicecycle:open-help', handler);
+    return () => window.removeEventListener('servicecycle:open-help', handler);
   }, []);
 
   // Fetch the module list once on first open (cached after).
@@ -192,27 +192,6 @@ export default function HelpDrawer({ currentPath = '' }) {
   function handlePdfExport() {
     if (!slug) return;
     window.open(`/api/help/modules/${encodeURIComponent(slug)}/pdf`, '_blank', 'noopener');
-  }
-
-  function handleAskLapseIQ() {
-    setOpen(false);
-    // v0.37.4 Pass-3 MF-C2: defer the open dispatch by one tick so
-    // HelpDrawer fully unmounts before AskModal mounts. Pre-fix, the
-    // synchronous dispatch raced with useFocusTrap's setTimeout(0) inside
-    // AskModal — useFocusTrap snapshotted document.activeElement at a
-    // moment when the HelpDrawer's "Ask LapseIQ" button was about to be
-    // removed, then tried to restore focus to a dead node on close. The
-    // setTimeout(0) here gives React a tick to flush the close + remove
-    // the button from the DOM, so AskModal's focus trap captures the
-    // outer page's focus (typically the sidebar's standalone Help button)
-    // instead and can restore there on close.
-    setTimeout(() => {
-      try {
-        window.dispatchEvent(new CustomEvent('lapseiq:open-ask', {
-          detail: { contextModule: slug },
-        }));
-      } catch (_) { /* ignore */ }
-    }, 0);
   }
 
   function handleJump(sectionSlug) {
@@ -496,9 +475,8 @@ export default function HelpDrawer({ currentPath = '' }) {
           <span style={{ color: 'var(--color-text-secondary, #64748b)' }}>
             Still confused?
           </span>
-          <button
-            type="button"
-            onClick={handleAskLapseIQ}
+          <a
+            href="mailto:support@servicecycle.com"
             style={{
               background: 'var(--color-primary, #0d4f6e)',
               color: 'var(--color-surface, #fff)',
@@ -508,10 +486,11 @@ export default function HelpDrawer({ currentPath = '' }) {
               fontSize: 'var(--font-size-sm)',
               fontWeight: 600,
               cursor: 'pointer',
+              textDecoration: 'none',
             }}
           >
-            Ask LapseIQ &rarr;
-          </button>
+            Contact support &rarr;
+          </a>
         </div>
       )}
     </aside>

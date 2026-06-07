@@ -8,7 +8,7 @@ import { sectionHeading, sectionDesc, btnPrimary, btnSecondary } from './sharedS
 
 const ENCRYPTION_ACKNOWLEDGE_TEXT =
   'I understand that document encryption uses my server\'s MASTER_KEY. ' +
-  'If that key is lost or changed, every encrypted document stored in LapseIQ ' +
+  'If that key is lost or changed, every encrypted document stored in ServiceCycle ' +
   'becomes permanently and irrecoverably unreadable — including by ForgeRift LLC. ' +
   'I have backed up my MASTER_KEY in a secure location separate from this server ' +
   'before enabling this feature.';
@@ -157,7 +157,7 @@ export default function EncryptionSection() {
     <section style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--color-border)' }}>
       <h2 className={sectionHeading}>Document Encryption at Rest</h2>
       <p className={sectionDesc}>
-        When enabled, every document uploaded to LapseIQ is encrypted with AES-256-GCM
+        When enabled, every document uploaded to ServiceCycle is encrypted with AES-256-GCM
         before being written to disk or cloud storage. This protects contract documents
         against unauthorized access at the storage layer — disk theft, unauthorized
         filesystem access, or a storage bucket being accessed without permission.

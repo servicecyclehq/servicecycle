@@ -3,12 +3,12 @@
  * GET /api/activity/distinct/:column
  *
  * Account-wide activity log — returns paginated activity records for all
- * contracts and users that belong to the requesting user's account.
+ * assets and users that belong to the requesting user's account.
  * Accessible to admin and manager roles only.
  *
  * v0.70.1 (2026-05-22): canonical list-page pattern propagation.
  *   • Added multi-value filter params: actionIn, userIdIn (comma-separated
- *     CSV, mirrors /api/alerts and /api/contracts shape).
+ *     CSV, mirrors /api/alerts and /api/assets shape).
  *   • Added date-range filter params: dateFrom, dateTo (YYYY-MM-DD, both
  *     inclusive — `dateTo` extends to 23:59:59.999 of the chosen day).
  *   • Legacy `action` / `userId` single-value params kept for backwards
@@ -25,7 +25,7 @@
  *   actionIn    (CSV string — multi-value, v0.70.1+)
  *   userId      (string — single-value, legacy)
  *   userIdIn    (CSV string — multi-value, v0.70.1+)
- *   contractId  (string — filter to one contract)
+ *   assetId     (string — filter to one asset)
  *   dateFrom    (YYYY-MM-DD, v0.70.1+)
  *   dateTo      (YYYY-MM-DD, v0.70.1+)
  */
@@ -41,16 +41,13 @@ const BLANK_SENTINEL = '__BLANK__';
 
 // ── Human-readable labels for action types ────────────────────────────────────
 const ACTION_LABELS: any = {
-  contract_created:   'Contract added',
-  status_changed:     'Status changed',
-  owner_assigned:     'Owner assigned',
-  fields_updated:     'Fields updated',
-  checklist_updated:  'Checklist updated',
-  contract_renewed:   'Contract renewed',
-  contract_cancelled: 'Contract cancelled',
-  brief_generated:    'Renewal brief generated',
-  document_uploaded:  'Document uploaded',
-  user_created:       'User added',
+  asset_created:        'Asset added',
+  condition_changed:    'Condition changed',
+  fields_updated:       'Fields updated',
+  work_order_completed: 'Work order completed',
+  brief_generated:      'Maintenance brief generated',
+  document_uploaded:    'Document uploaded',
+  user_created:         'User added',
   // Sprint 5 (C1) — audit visibility additions
   login_failed:       'Failed login attempt',
   permission_denied:  'Permission denied',
@@ -61,12 +58,7 @@ const ACTION_LABELS: any = {
   // Activity Log so freshly-onboarded users don't see "No activity found".
   account_created:    'Account created',
   login_success:      'Signed in',
-  // 2026-05-11 v0.3.1 (F-005) — category management is now audited.
-  category_created:   'Category created',
-  category_updated:   'Category updated',
-  category_archived:  'Category archived',
-  category_restored:  'Category restored',
-  // 2026-05-11 v0.3.3 (F-005 parity) — custom field management is now audited.
+  // 2026-05-11 v0.3.3 (F-005 parity) — custom field management is audited.
   custom_field_created:  'Custom field created',
   custom_field_updated:  'Custom field updated',
   custom_field_archived: 'Custom field archived',
@@ -93,7 +85,7 @@ function buildWhere(req, excludeColumnId?) {
   const actionIn   = excludeColumnId === 'action' ? null : parseCsv(q.actionIn);
   const userId     = excludeColumnId === 'user'   ? null : (q.userId     || null);
   const userIdIn   = excludeColumnId === 'user'   ? null : parseCsv(q.userIdIn);
-  const contractId = q.contractId || null;
+  const assetId    = q.assetId || null;
   const dateFrom   = excludeColumnId === 'date'   ? null : (q.dateFrom   || null);
   const dateTo     = excludeColumnId === 'date'   ? null : (q.dateTo     || null);
 
@@ -132,7 +124,7 @@ function buildWhere(req, excludeColumnId?) {
     where.userId = userId;
   }
 
-  if (contractId) where.contractId = contractId;
+  if (assetId) where.assetId = assetId;
 
   if (dateFrom || dateTo) {
     where.createdAt = {};
@@ -160,18 +152,18 @@ router.get('/', requireManager, async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page  || '1',  10));
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit || '50', 10)));
     const skip  = (page - 1) * limit;
-    const contractId = req.query.contractId || null;
+    const assetId = req.query.assetId || null;
 
-    // Verify the contract belongs to this account before letting the filter
+    // Verify the asset belongs to this account before letting the filter
     // through; without this check the account-scope predicate below would
-    // still match user-authored rows on contracts in other accounts.
-    if (contractId) {
-      const ok = await prisma.contract.findFirst({
-        where: { id: contractId, accountId: req.user.accountId },
+    // still match user-authored rows on assets in other accounts.
+    if (assetId) {
+      const ok = await prisma.asset.findFirst({
+        where: { id: assetId, accountId: req.user.accountId },
         select: { id: true },
       });
       if (!ok) {
-        return res.status(404).json({ success: false, error: 'Contract not found' });
+        return res.status(404).json({ success: false, error: 'Asset not found' });
       }
     }
 
@@ -191,11 +183,11 @@ router.get('/', requireManager, async (req, res) => {
         skip,
         take: limit,
         include: {
-          user:     { select: { id: true, name: true, email: true, role: true } },
-          contract: {
+          user:  { select: { id: true, name: true, email: true, role: true } },
+          asset: {
             select: {
-              id: true, product: true,
-              vendor: { select: { name: true } },
+              id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true,
+              site: { select: { name: true } },
             },
           },
         },

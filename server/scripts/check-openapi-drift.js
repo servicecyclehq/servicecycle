@@ -51,7 +51,7 @@ function haveOasdiff() {
 }
 
 if (haveOasdiff()) {
-  const tmp = path.join(os.tmpdir(), 'lapseiq-openapi-current.json');
+  const tmp = path.join(os.tmpdir(), 'servicecycle-openapi-current.json');
   fs.writeFileSync(tmp, JSON.stringify(current, null, 2));
   console.log('oasdiff detected â€” running breaking-change checkâ€¦');
   const r = spawnSync('oasdiff', ['diff', OUT, tmp, '--fail-on', 'ERR', '--format', 'text'], { encoding: 'utf-8', stdio: 'inherit' });

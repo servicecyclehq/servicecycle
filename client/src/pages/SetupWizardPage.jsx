@@ -16,8 +16,8 @@ import { TERMS_VERSION_SELF_HOST as TERMS_VERSION } from '../legal/termsVersion'
  * pass the gate; the operator is redirected to /login.
  *
  * NOT to be confused with src/components/OnboardingWizard — that is the
- * post-login overlay that walks a new admin through their first vendor /
- * contract / alert. This page runs PRE-auth, before any User exists.
+ * post-login overlay that walks a new admin through their first site /
+ * asset / alert. This page runs PRE-auth, before any User exists.
  *
  * Steps:
  *   1. Account     — required (creates first Account + admin User)
@@ -128,7 +128,7 @@ export default function SetupWizardPage() {
     <div className="login-page">
       <div className="login-box" style={{ maxWidth: 520 }}>
         <div className="login-logo">
-          <div className="login-logo-name">LapseIQ Setup</div>
+          <div className="login-logo-name">ServiceCycle Setup</div>
           <div className="login-logo-tagline">First-run configuration</div>
         </div>
 
@@ -222,7 +222,7 @@ export default function SetupWizardPage() {
           <form onSubmit={submitEmail}>
             <h2 style={{ marginTop: 0 }}>Step 2 of 4 · Email delivery</h2>
             <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-data)' }}>
-              How should LapseIQ send password resets, alerts, and invites?
+              How should ServiceCycle send password resets, alerts, and invites?
             </p>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <input type="radio" checked={emailMock} onChange={() => setEmailMock(true)} />
@@ -246,7 +246,7 @@ export default function SetupWizardPage() {
                     id="setupwizard-from-address"
 
                     className="form-control"
-                    placeholder='LapseIQ <noreply@yourdomain.com>'
+                    placeholder='ServiceCycle <noreply@yourdomain.com>'
                     value={emailFrom}
                     onChange={(e) => setEmailFrom(e.target.value)}
                     required={!emailMock}
@@ -264,7 +264,7 @@ export default function SetupWizardPage() {
           <form onSubmit={submitAi}>
             <h2 style={{ marginTop: 0 }}>Step 3 of 4 · AI provider</h2>
             <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-data)' }}>
-              Powers contract field extraction and renewal briefs. Optional — you can add it later in Settings.
+              Powers nameplate &amp; test-report extraction and AI maintenance briefs. Optional — you can add it later in Settings.
             </p>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <input type="radio" checked={aiSkip} onChange={() => setAiSkip(true)} />
@@ -317,7 +317,7 @@ export default function SetupWizardPage() {
           <div>
             <h2 style={{ marginTop: 0 }}>✓ Setup complete</h2>
             <p style={{ color: 'var(--color-text-secondary)' }}>
-              Your LapseIQ instance is ready. You can now sign in as <strong>{email || 'your admin user'}</strong>.
+              Your ServiceCycle instance is ready. You can now sign in as <strong>{email || 'your admin user'}</strong>.
             </p>
 
             {completion?.completedSteps && (
@@ -367,12 +367,12 @@ export default function SetupWizardPage() {
               <p style={{ margin: '6px 0 8px' }}>
                 The <code>MASTER_KEY</code> in your <code>.env</code> file decrypts every
                 encrypted document, nightly backup blob, and cloud-connector credential
-                LapseIQ stores. Save it to a password manager (1Password, Bitwarden,
+                ServiceCycle stores. Save it to a password manager (1Password, Bitwarden,
                 Vaultwarden, etc.) — somewhere that is <em>not</em> on this host.
               </p>
               <p style={{ margin: '6px 0 0' }}>
-                If you lose this key, LapseIQ <strong>cannot</strong> recover that
-                data for you. There is no central key escrow — LapseIQ is self-hosted
+                If you lose this key, ServiceCycle <strong>cannot</strong> recover that
+                data for you. There is no central key escrow — ServiceCycle is self-hosted
                 by design. The same is true for <code>POSTGRES_PASSWORD</code>; save
                 that too while you're in the password manager.
               </p>
@@ -398,7 +398,7 @@ export default function SetupWizardPage() {
               />
               <span>
                 I have saved <code>MASTER_KEY</code> (and <code>POSTGRES_PASSWORD</code>)
-                from <code>.env</code> to a password manager. I understand LapseIQ cannot
+                from <code>.env</code> to a password manager. I understand ServiceCycle cannot
                 recover encrypted documents or backups if I lose this key.
               </span>
             </label>

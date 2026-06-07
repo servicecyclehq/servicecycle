@@ -5,7 +5,7 @@
  * start / success / fail ping so a silently-stopped scheduler (node-cron
  * crash, malformed timezone, container OOM-killed at the wrong moment)
  * alarms within minutes of the missed window instead of weeks later when
- * a customer notices the renewal alert never fired.
+ * a customer notices the maintenance-due alert never fired.
  *
  * Configuration (operator picks one — both forms can coexist; the per-check
  * override takes precedence):
@@ -31,9 +31,7 @@
  *
  *   2. Per-check full URL (override the project-key derivation):
  *        HEALTHCHECKS_URL_ALERTENGINE=https://hc-ping.com/<uuid>
- *        HEALTHCHECKS_URL_NEWSSCANNER=https://hc-ping.com/<uuid>
  *        HEALTHCHECKS_URL_BACKUP=https://hc-ping.com/<uuid>
- *        HEALTHCHECKS_URL_NIGHTLYSYNC=https://hc-ping.com/<uuid>
  *        HEALTHCHECKS_URL_ACTIVITYLOGPRUNE=https://hc-ping.com/<uuid>
  *        HEALTHCHECKS_URL_BACKUPLOGPRUNE=https://hc-ping.com/<uuid>
  *        HEALTHCHECKS_URL_REFRESHTOKENPRUNE=https://hc-ping.com/<uuid>
@@ -126,7 +124,7 @@ async function pingHeartbeat(name, signal = 'success', body = null) {
 
     const init: any = {
       method: 'POST',
-      headers: { 'User-Agent': 'LapseIQ-heartbeat/1.0' },
+      headers: { 'User-Agent': 'ServiceCycle-heartbeat/1.0' },
       signal: controller.signal,
     };
     if (body != null) {

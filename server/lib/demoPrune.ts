@@ -60,19 +60,21 @@ async function pruneAccount(accountId) {
   // dependency depth. Each `.catch(() => {})` swallows P2025 "not found"
   // so the chain is safe on accounts that had nothing of a given type.
   //
-  // v0.7.3 sandbox-isolation audit: explicitly drop rows in the
-  // child-of-child tables BEFORE their parent records get deleted. Most
-  // of these would cascade via Prisma's `onDelete: Cascade` declarations,
-  // but a few (VendorContact, ContractFlag, ActivityLog-with-null-FKs)
-  // were "no-action" and could orphan or trigger FK errors. Belt-and-
-  // suspenders: explicit deletes first; cascade handles the rest. Order
-  // matters within each block — deepest leaves first.
+  // v0.7.3 sandbox-isolation audit (carried into the asset model): explicitly
+  // drop rows in the child-of-child tables BEFORE their parent records get
+  // deleted. Most of these would cascade via Prisma's `onDelete: Cascade`
+  // declarations, but several required FKs are "no-action" (WorkOrder.assetId,
+  // Asset.siteId, ContractorTech.contractorId, Building/Area/Position.siteId)
+  // and would FK-error if the parent went first. Belt-and-suspenders:
+  // explicit deletes first; cascade handles the rest. Order matters within
+  // each block — deepest leaves first.
 
-  // ── Activity / audit (some rows have null contractId; cascade won't catch them)
+  // ── Activity / audit (some rows have null assetId; cascade won't catch them)
   await prisma.activityLog.deleteMany({
     where: {
       OR: [
-        { contract: { accountId } },
+        { accountId },
+        { asset: { accountId } },
         { user: { accountId } },
       ],
     },
@@ -83,40 +85,51 @@ async function pruneAccount(accountId) {
   await prisma.refreshToken.deleteMany({ where: { user: { accountId } } }).catch(() => {});
   await prisma.aiUsage.deleteMany({ where: { user: { accountId } } }).catch(() => {}); // L1 added
   await prisma.alertPreference.deleteMany({ where: { user: { accountId } } }).catch(() => {});
-  await prisma.userNewsWatch.deleteMany({ where: { user: { accountId } } }).catch(() => {});
-  const _acctUserIdsForNews = (await prisma.user.findMany({ where: { accountId }, select: { id: true } })).map(u => u.id);
-  await prisma.userNewsRead.deleteMany({ where: { userId: { in: _acctUserIdsForNews } } }).catch(() => {});
+  await prisma.userPreference.deleteMany({ where: { user: { accountId } } }).catch(() => {});
 
-  // ── Contract-scoped leaves (custom field values, payment schedules,
-  // contract flags, tags) — explicit deletes guard against any model
-  // whose Contract relation isn't Cascade.
-  await prisma.customFieldValue.deleteMany({ where: { contract: { accountId } } }).catch(() => {});
-  await prisma.paymentInstallment.deleteMany({ where: { paymentSchedule: { contract: { accountId } } } }).catch(() => {});
-  await prisma.paymentSchedule.deleteMany({ where: { contract: { accountId } } }).catch(() => {});
-  await prisma.contractFlag.deleteMany({ where: { contract: { accountId } } }).catch(() => {});
-  await prisma.contractTag.deleteMany({ where: { contract: { accountId } } }).catch(() => {});
-
-  // ── Vendor-scoped leaves (VendorContact is no-action cascade)
-  await prisma.vendorContact.deleteMany({ where: { vendor: { accountId } } }).catch(() => {});
-
-  // ── Account-scoped lookups (some cascade, all redundantly explicit here)
-  await prisma.customFieldDefinition.deleteMany({ where: filter }).catch(() => {});
-  await prisma.templateFeedback.deleteMany({ where: filter }).catch(() => {});
-  await prisma.category.deleteMany({ where: filter }).catch(() => {});
-
-  // ── Account-level rows already in the original chain
+  // ── Work-order / schedule leaves (TestMeasurement cascades from WorkOrder
+  // but is deleted explicitly so the chain order never matters)
+  await prisma.testMeasurement.deleteMany({ where: filter }).catch(() => {});
+  await prisma.deficiency.deleteMany({ where: filter }).catch(() => {});
+  await prisma.labSample.deleteMany({ where: filter }).catch(() => {});
   await prisma.alert.deleteMany({ where: filter }).catch(() => {});
+  await prisma.workOrder.deleteMany({ where: filter }).catch(() => {});       // BEFORE assets (assetId is no-action)
+  await prisma.maintenanceSchedule.deleteMany({ where: filter }).catch(() => {});
+  // Tenant custom task definitions only — global seed rows have accountId NULL
+  // and are shared by every sandbox, so the accountId filter must never widen.
+  await prisma.maintenanceTaskDefinition.deleteMany({ where: filter }).catch(() => {});
+
+  // ── Asset-scoped leaves
+  await prisma.customFieldValue.deleteMany({ where: { asset: { accountId } } }).catch(() => {});
   await prisma.communication.deleteMany({ where: filter }).catch(() => {});
-  await prisma.document.deleteMany({ where: filter }).catch(() => {});
   await prisma.ingestionSession.deleteMany({ where: filter }).catch(() => {});
-  await prisma.contract.deleteMany({ where: filter }).catch(() => {});
+  await prisma.document.deleteMany({ where: filter }).catch(() => {});
+
+  // ── Assets, then the site hierarchy bottom-up (all required site FKs are
+  // no-action, so children must go before sites)
+  await prisma.asset.deleteMany({ where: filter }).catch(() => {});
+  await prisma.equipmentPosition.deleteMany({ where: filter }).catch(() => {});
+  await prisma.area.deleteMany({ where: filter }).catch(() => {});
+  await prisma.building.deleteMany({ where: filter }).catch(() => {});
+  await prisma.arcFlashStudy.deleteMany({ where: filter }).catch(() => {});
+  await prisma.blackoutWindow.deleteMany({ where: filter }).catch(() => {});
+  await prisma.site.deleteMany({ where: filter }).catch(() => {});
+
+  // ── Contractor-scoped leaves (ContractorTech.contractorId is no-action)
+  await prisma.contractorTech.deleteMany({ where: { contractor: { accountId } } }).catch(() => {});
+  await prisma.contractor.deleteMany({ where: filter }).catch(() => {});
+
+  // ── Account-scoped lookups + integration surfaces
+  await prisma.standardRevisionAlert.deleteMany({ where: filter }).catch(() => {});
+  await prisma.customFieldDefinition.deleteMany({ where: filter }).catch(() => {});
+  await prisma.notificationLog.deleteMany({ where: filter }).catch(() => {});
+  await prisma.outboundWebhookDLQ.deleteMany({ where: filter }).catch(() => {});
+  await prisma.webhookEndpoint.deleteMany({ where: filter }).catch(() => {});
+  await prisma.apiKey.deleteMany({ where: filter }).catch(() => {});
   await prisma.consultantAccess.deleteMany({ where: filter }).catch(() => {});
   await prisma.userInvite.deleteMany({ where: filter }).catch(() => {});
-  await prisma.vendorNews.deleteMany({ where: filter }).catch(() => {});
   await prisma.accountSetting.deleteMany({ where: filter }).catch(() => {});
-  await prisma.cloudConnector.deleteMany({ where: filter }).catch(() => {});
   await prisma.backupLog.deleteMany({ where: filter }).catch(() => {});
-  await prisma.vendor.deleteMany({ where: filter }).catch(() => {});
   await prisma.user.deleteMany({ where: filter }).catch(() => {});
 
   try {

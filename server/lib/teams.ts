@@ -122,60 +122,65 @@ async function sendTeamsMessage({ webhookUrl, card, timeoutMs = DEFAULT_TIMEOUT_
 // ── MessageCard builders ──────────────────────────────────────────────────────
 
 const TYPE_LABEL = {
-  cancel_by:   'Cancel window',
-  review_by:   'Review due',
-  renewal:     'Renewal approaching',
-  payment_due: 'Payment due',
+  maintenance_due:   'Maintenance due',
+  overdue:           'Overdue',
+  escalation:        'Escalation',
+  regulatory_breach: 'Regulatory breach',
 };
 
 // Hex without the leading # — MessageCard's themeColor format.
 const TYPE_COLOR = {
-  cancel_by:   'DC2626', // red-600
-  review_by:   '2563EB', // blue-600
-  renewal:     '7C3AED', // violet-600
-  payment_due: 'D97706', // amber-600
+  maintenance_due:   '2563EB', // blue-600
+  overdue:           'D97706', // amber-600
+  escalation:        'DC2626', // red-600
+  regulatory_breach: '7F1D1D', // red-900
 };
 
 function fmtDays(days) {
   if (days === 0) return 'today';
-  if (days < 0) return 'overdue';
+  if (days < 0) return `${Math.abs(days)}d overdue`;
   return `in ${days}d`;
 }
 
-function fmtMoney(amount) {
-  if (amount == null) return null;
-  const n = parseFloat(amount);
-  if (!Number.isFinite(n)) return null;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+// Human label for an asset: manufacturer + model + serial when available,
+// equipment type as the fallback. Mirrors lib/email.js assetDisplayName.
+function assetLabel(asset) {
+  if (!asset || typeof asset !== 'object') return 'Asset';
+  const parts = [asset.manufacturer, asset.model].filter(Boolean);
+  if (asset.serialNumber) parts.push(`S/N ${asset.serialNumber}`);
+  if (parts.length > 0) return parts.join(' ');
+  return asset.equipmentType ? String(asset.equipmentType).replace(/_/g, ' ') : 'Asset';
 }
 
 /**
  * Build a Teams MessageCard for a per-account digest.
  *
  * @param {object[]} alertItems — same shape used in alertEngine.js:
- *   { contract, alertType, daysUntil, paymentAmount? }
+ *   { schedule, asset, alertType, daysUntil, leadDays? }
+ *   schedule: { id, nextDueDate?, taskDefinition?: { taskName } }
+ *   asset:    { id, equipmentType?, manufacturer?, model?, serialNumber?, site?: { name } }
  * @param {object}   meta
  * @param {string}   meta.accountName
  * @param {string}   meta.appUrl
  * @returns {object}  MessageCard JSON (POST body)
  */
 function buildAlertDigest(alertItems, { accountName, appUrl }) {
-  const contractIds = new Set(alertItems.map(a => a.contract.id));
-  const contractCount = contractIds.size;
+  const assetIds = new Set(alertItems.map(a => a.asset.id));
+  const assetCount = assetIds.size;
   const alertCount = alertItems.length;
 
-  const headerText = `${contractCount} contract${contractCount !== 1 ? 's' : ''} need${contractCount === 1 ? 's' : ''} attention`;
+  const headerText = `${assetCount} asset${assetCount !== 1 ? 's' : ''} need${assetCount === 1 ? 's' : ''} attention`;
 
-  // Group by contract so a contract with three alert types renders once.
-  const byContract = new Map();
+  // Group by asset so an asset with three due tasks renders once.
+  const byAsset = new Map();
   for (const item of alertItems) {
-    const id = item.contract.id;
-    if (!byContract.has(id)) byContract.set(id, { contract: item.contract, items: [] });
-    byContract.get(id).items.push(item);
+    const id = item.asset.id;
+    if (!byAsset.has(id)) byAsset.set(id, { asset: item.asset, items: [] });
+    byAsset.get(id).items.push(item);
   }
 
-  // Sort: most urgent contract first.
-  const groups = [...byContract.values()].sort((a, b) => {
+  // Sort: most urgent asset first.
+  const groups = [...byAsset.values()].sort((a, b) => {
     const aMin = Math.min(...a.items.map(x => x.daysUntil));
     const bMin = Math.min(...b.items.map(x => x.daysUntil));
     return aMin - bMin;
@@ -190,17 +195,12 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
 
   // Highest-priority alert across the digest drives the theme color so the
   // user gets an at-a-glance signal in their channel feed.
-  const priorityOrder = ['cancel_by', 'payment_due', 'review_by', 'renewal'];
-  const highestType = priorityOrder.find(t => alertItems.some(a => a.alertType === t)) || 'renewal';
+  const priorityOrder = ['regulatory_breach', 'escalation', 'overdue', 'maintenance_due'];
+  const highestType = priorityOrder.find(t => alertItems.some(a => a.alertType === t)) || 'maintenance_due';
 
-  const sections: any[] = visible.map(({ contract, items }) => {
-    const vendor = contract.vendor?.name || '—';
-    const value = fmtMoney(
-      contract.costPerLicense && contract.quantity
-        ? parseFloat(contract.costPerLicense) * parseInt(contract.quantity, 10)
-        : null
-    );
-    const url = `${appUrl}/contracts/${contract.id}`;
+  const sections: any[] = visible.map(({ asset, items }) => {
+    const site = asset.site?.name || '—';
+    const url = `${appUrl}/assets/${asset.id}`;
 
     items.sort((a, b) => a.daysUntil - b.daysUntil);
 
@@ -208,18 +208,14 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
       name: TYPE_LABEL[it.alertType] || it.alertType,
       value: (() => {
         const days = fmtDays(it.daysUntil);
-        if (it.alertType === 'payment_due' && it.paymentAmount) {
-          return `${fmtMoney(it.paymentAmount)} · ${days}`;
-        }
-        return days;
+        const task = it.schedule?.taskDefinition?.taskName;
+        return task ? `${escapeMarkdown(task)} · ${days}` : days;
       })(),
     }));
 
-    const subtitle = value ? `${escapeMarkdown(vendor)} · ${value}` : escapeMarkdown(vendor);
-
     return {
-      activityTitle:    `[${escapeMarkdown(contract.product || 'Contract')}](${url})`,
-      activitySubtitle: subtitle,
+      activityTitle:    `[${escapeMarkdown(assetLabel(asset))}](${url})`,
+      activitySubtitle: escapeMarkdown(site),
       facts,
       markdown: true,
     };
@@ -227,7 +223,7 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
 
   if (overflow > 0) {
     sections.push({
-      text: `…and ${overflow} more contract${overflow !== 1 ? 's' : ''}. Open LapseIQ to see the rest.`,
+      text: `…and ${overflow} more asset${overflow !== 1 ? 's' : ''}. Open ServiceCycle to see the rest.`,
       markdown: true,
     });
   }
@@ -235,7 +231,7 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
   return {
     '@type':      'MessageCard',
     '@context':   'http://schema.org/extensions',
-    summary:      `LapseIQ: ${headerText}`,
+    summary:      `ServiceCycle: ${headerText}`,
     themeColor:   TYPE_COLOR[highestType],
     title:        headerText,
     text:         `**${escapeMarkdown(accountName)}** · ${alertCount} active alert${alertCount !== 1 ? 's' : ''}`,
@@ -243,8 +239,8 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
     potentialAction: [
       {
         '@type': 'OpenUri',
-        name:    'Open LapseIQ',
-        targets: [{ os: 'default', uri: `${appUrl}/contracts` }],
+        name:    'Open ServiceCycle',
+        targets: [{ os: 'default', uri: `${appUrl}/assets` }],
       },
     ],
   };
@@ -272,13 +268,13 @@ function buildTestMessage({ accountName, byUserName }) {
   return {
     '@type':    'MessageCard',
     '@context': 'http://schema.org/extensions',
-    summary:    `LapseIQ Teams test from ${accountName}`,
+    summary:    `ServiceCycle Teams test from ${accountName}`,
     themeColor: '0F172A',
-    title:      'LapseIQ Teams integration test',
+    title:      'ServiceCycle Teams integration test',
     text:       `Webhook for **${escapeMarkdown(accountName)}** is wired up.\n\nSent by **${escapeMarkdown(byUserName)}** at ${new Date().toLocaleString('en-US')}.`,
     sections: [
       {
-        text: 'You will receive renewal / cancel / payment digests in this channel as alerts fire.',
+        text: 'You will receive maintenance-due / overdue digests in this channel as alerts fire.',
         markdown: true,
       },
     ],

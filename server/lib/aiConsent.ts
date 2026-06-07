@@ -18,7 +18,7 @@
  *     active AI_PROVIDER diverges from the recorded one.
  *
  * Server-side rule (per roadmap §6.1 + Pass-4 audit L3-07/L3-08):
- *   AI endpoints (brief, ingest, signature, ask) MUST call ensureAiConsent
+ *   AI endpoints (maintenance brief, ingest, ask) MUST call ensureAiConsent
  *   and 403 on failure REGARDLESS of client state. The first-ever AI call
  *   for a user 403s with `ai_consent_required`; the client renders the
  *   AI consent modal, posts the acknowledgment to /api/auth/ai-consent

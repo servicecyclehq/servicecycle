@@ -16,15 +16,11 @@ const IntegrationsTab = {
   id: 'integrations',
   label: 'Integrations',
   // 'ai' bundles AI Features + AI Provider + Azure OpenAI + AI caps.
-  // 'imports' is the Cloud Marketplace Connectors sub-tab.
   // 'api-keys' and 'webhooks' are admin-only; the router filters them
   // out for non-admin users.
-  // Slack/Teams (currently inside the 'alerts' tab) and Consultant
-  // Access (currently inside 'access') will be promoted to Integrations
-  // in Phase 1b once the sections are extracted into focused files.
+  // Slack/Teams currently live inside the 'alerts' tab (Security group).
   subTabIds: [
     'ai',         // AI Features + Provider + Azure
-    'imports',    // Cloud Marketplace Connectors
     'api-keys',   // API Keys (admin)
     'webhooks',   // Webhooks (admin)
   ],

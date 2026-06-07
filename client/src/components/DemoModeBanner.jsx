@@ -19,7 +19,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-const DISMISS_KEY = 'lapseiq_demo_banner_dismissed';
+const DISMISS_KEY = 'servicecycle_demo_banner_dismissed';
 
 export default function DemoModeBanner() {
   const { demoMode } = useAuth();

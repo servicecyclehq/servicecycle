@@ -3,42 +3,34 @@ import api, { clearAuthStorage } from '../api/client';
 
 const AuthContext = createContext(null);
 
-// ── Role-based defaults (mirrors server/lib/featureFlags.js) ──────────────────
+// ── Role-based defaults (mirrors server/lib/featureFlags.ts) ──────────────────
 // Used as fallback when featureFlags hasn't been set on older user records.
 const ROLE_FEATURE_DEFAULTS = {
   admin: {
-    contracts_write: true,  vendors_write: true,  renewal_brief: true,  contract_flags: true,
-    communications:  true,  export:        true,  budget:        true,  ingest:         true,
-    alerts:          true,  news:          true,
+    assets_write: true,  contractors_write: true,  maintenance_brief: true,
+    communications: true, export: true, alerts: true,
   },
   manager: {
-    contracts_write: true,  vendors_write: true,  renewal_brief: true,  contract_flags: true,
-    communications:  true,  export:        true,  budget:        true,  ingest:         true,
-    alerts:          true,  news:          true,
+    assets_write: true,  contractors_write: true,  maintenance_brief: true,
+    communications: true, export: true, alerts: true,
   },
   viewer: {
-    // Pass-2 audit (2026-05-17): contract_flags flipped to false to match
-    // the server-side requireManager gate on flag-edit routes. Viewer
-    // tier is read-only by design (see server/middleware/roles.js header).
-    contracts_write: false, vendors_write: false, renewal_brief: false, contract_flags: false,
-    communications:  false, export:        false, budget:        false, ingest:         false,
-    alerts:          true,  news:          false,
+    // Viewer tier is read-only by design (see server middleware roles header).
+    assets_write: false, contractors_write: false, maintenance_brief: false,
+    communications: false, export: false, alerts: true,
   },
   consultant: {
-    // Pass-2 audit (2026-05-17): mirroring the W5 server-side flip in
-    // server/lib/featureFlags.js. communications + contract_flags both
-    // route through requireManager on the server; pre-fix the SPA's
-    // client-side defaults still said true and rendered write affordances
-    // that 403'd on submit — exactly the UX bug W5 was meant to close.
-    contracts_write: false, vendors_write: false, renewal_brief: true,  contract_flags: false,
-    communications:  false, export:        false, budget:        false, ingest:         false,
-    alerts:          true,  news:          true,
+    // Maintenance-vendor account managers can read briefs but all write
+    // affordances route through requireManager on the server; client-side
+    // defaults must agree or we render buttons that 403 on submit.
+    assets_write: false, contractors_write: false, maintenance_brief: true,
+    communications: false, export: false, alerts: true,
   },
 };
 
 const ALL_FEATURE_KEYS = [
-  'contracts_write', 'vendors_write', 'renewal_brief', 'contract_flags',
-  'communications', 'export', 'budget', 'ingest', 'alerts', 'news',
+  'assets_write', 'contractors_write', 'maintenance_brief',
+  'communications', 'export', 'alerts',
 ];
 
 /**
@@ -136,7 +128,7 @@ export function AuthProvider({ children }) {
   // On mount: verify stored access token; if valid, restore session + fetch settings.
   // /api/config is now auth-gated so it's fetched inside fetchAccountSettings (post-login only).
   useEffect(() => {
-    const token = localStorage.getItem('lapseiq_token');
+    const token = localStorage.getItem('servicecycle_token');
     if (!token) {
       setLoading(false);
       return;
@@ -153,13 +145,13 @@ export function AuthProvider({ children }) {
         setAiProvider(res.data.data.aiProvider || 'anthropic');
         // Pass-4 audit L3-07: surface the current consent text version.
         if (res.data.data.aiConsentVersion) setAiConsentVersion(res.data.data.aiConsentVersion);
-        if (u?.account?.companyName) localStorage.setItem('lapseiq_company', u.account.companyName);
+        if (u?.account?.companyName) localStorage.setItem('servicecycle_company', u.account.companyName);
         fetchAccountSettings(u);
       })
       .catch(() => {
         // Token rejected (expired, revoked, or wrong signing key after a
         // server JWT_SECRET rotation). Wipe ALL session state, including
-        // lapseiq_company — otherwise the prior tenant's company name
+        // servicecycle_company — otherwise the prior tenant's company name
         // bleeds into the sidebar of the next tenant that registers in
         // this same browser session (F022 audit observation, 2026-05-07).
         clearAuthStorage();
@@ -179,9 +171,9 @@ export function AuthProvider({ children }) {
     // otherwise the "if companyName present" guards below leave stale
     // values in place when the new payload is partial. (F022 fix.)
     clearAuthStorage();
-    localStorage.setItem('lapseiq_token', token);
-    if (refreshToken) localStorage.setItem('lapseiq_refresh_token', refreshToken);
-    if (userData?.account?.companyName) localStorage.setItem('lapseiq_company', userData.account.companyName);
+    localStorage.setItem('servicecycle_token', token);
+    if (refreshToken) localStorage.setItem('servicecycle_refresh_token', refreshToken);
+    if (userData?.account?.companyName) localStorage.setItem('servicecycle_company', userData.account.companyName);
     setUser(userData);
     if (provider) setAiProvider(provider);
     await fetchAccountSettings(userData);
@@ -192,10 +184,10 @@ export function AuthProvider({ children }) {
     const res = await api.post('/api/auth/2fa/verify-login', { twoFactorToken, code });
     const { token, refreshToken, user: userData, aiProvider: provider } = res.data.data;
     clearAuthStorage();
-    localStorage.setItem('lapseiq_token', token);
-    if (refreshToken) localStorage.setItem('lapseiq_refresh_token', refreshToken);
+    localStorage.setItem('servicecycle_token', token);
+    if (refreshToken) localStorage.setItem('servicecycle_refresh_token', refreshToken);
     if (provider) setAiProvider(provider);
-    if (userData?.account?.companyName) localStorage.setItem('lapseiq_company', userData.account.companyName);
+    if (userData?.account?.companyName) localStorage.setItem('servicecycle_company', userData.account.companyName);
     setUser(userData);
     await fetchAccountSettings(userData);
     return res.data.data; // caller can check for warning about low backup codes
@@ -214,12 +206,12 @@ export function AuthProvider({ children }) {
       userData = refreshTokenOrUser;
     }
     // Same clear-then-write pattern as login()/verify2fa() so register and
-    // accept-invite flows don't inherit stale lapseiq_company / lapseiq_user
-    // from a prior session in this browser. (F022 fix.)
+    // accept-invite flows don't inherit stale servicecycle_company /
+    // servicecycle_user from a prior session in this browser. (F022 fix.)
     clearAuthStorage();
-    localStorage.setItem('lapseiq_token', token);
-    if (refreshToken) localStorage.setItem('lapseiq_refresh_token', refreshToken);
-    if (userData?.account?.companyName) localStorage.setItem('lapseiq_company', userData.account.companyName);
+    localStorage.setItem('servicecycle_token', token);
+    if (refreshToken) localStorage.setItem('servicecycle_refresh_token', refreshToken);
+    if (userData?.account?.companyName) localStorage.setItem('servicecycle_company', userData.account.companyName);
     setUser(userData);
     fetchAccountSettings(userData);
   };
@@ -241,7 +233,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     // Best-effort server-side refresh token revocation
-    const rt = localStorage.getItem('lapseiq_refresh_token');
+    const rt = localStorage.getItem('servicecycle_refresh_token');
     if (rt) {
       try { await api.post('/api/auth/logout', { refreshToken: rt }); } catch { /* ignore */ }
     }

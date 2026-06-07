@@ -1,9 +1,8 @@
 /**
  * helpRegistry.js — Per-module help-doc index for the in-app Help drawer.
  *
- * Mirrors the lib/guideRetrieval.js pattern that powers Ask LapseIQ. Source
- * of truth: 12 markdown files under `docs/help/*.md` (repo root) synced into
- * `server/data/help/*.txt` at build time. The .txt suffix dodges the
+ * Source of truth: markdown files under `docs/help/*.md` (repo root) synced
+ * into `server/data/help/*.txt` at build time. The .txt suffix dodges the
  * server/.dockerignore `*.md` exclusion same way the AI Guide does.
  *
  * Adding or renaming a module:
@@ -25,59 +24,56 @@ const path = require('path');
 const MODULE_INDEX = Object.freeze([
   // v0.37.1 W5 MT-024: surface the onboarding module first — it is the
   // first thing a new admin reads after landing on the dashboard, before
-  // they have any contracts or vendors yet.
+  // they have any sites or assets yet.
   {
     slug:         'onboarding',
     title:        'Onboarding',
-    description:  'Fresh-install /setup wizard, in-app new-user wizard, and the path from zero to a working renewal calendar.',
+    description:  'Fresh-install /setup wizard, in-app new-user wizard, and the path from zero to a working compliance calendar.',
   },
   {
     slug:         'dashboard',
     title:        'Dashboard',
-    description:  'The morning-coffee view: what needs attention today, what is coming this week, and the 12-month renewal pipeline.',
+    description:  'The morning-coffee view: what is due or overdue today, open deficiencies by severity, and the maintenance pipeline ahead.',
   },
   {
-    slug:         'contracts',
-    title:        'Contracts',
-    description:  'The operating unit: the three dates that matter, lifecycle, bulk operations, and how data lands on a contract record.',
+    slug:         'assets',
+    title:        'Assets',
+    description:  'The operating unit: equipment records, nameplate data, NFPA 70B condition ratings, and how data lands on an asset.',
   },
   {
-    slug:         'vendors',
-    title:        'Vendors',
-    description:  'Vendor records, the name normalizer, contacts, vendor news, and co-term complexity.',
+    slug:         'sites',
+    title:        'Sites & Locations',
+    description:  'The site → building → area → position hierarchy, on-site contacts, blackout windows, and arc-flash studies.',
   },
   {
-    slug:         'ingest',
-    title:        'AI Document Ingest',
-    description:  'Drag-and-drop PDF / Word / image extraction. Confidence color-coding, vendor matching, batch approval.',
+    slug:         'contractors',
+    title:        'Contractors',
+    description:  'NETA-certified testing contractors, field technicians and their certification levels, and assignment rules.',
   },
-  // v0.37.1 W5 MT-024: positioned after ingest because the two paths
-  // (CSV + AI ingest) converge at the same Contract records — readers
-  // tend to land on one and want the comparison context of the other.
+  {
+    slug:         'schedules',
+    title:        'Maintenance Schedules',
+    description:  'Task definitions, condition-based intervals (C1/C2/C3), next-due computation, and per-schedule overrides.',
+  },
+  {
+    slug:         'work-orders',
+    title:        'Work Orders',
+    description:  'Scheduling, as-found / as-left condition capture, test measurements, deficiencies, and NETA decals.',
+  },
   {
     slug:         'imports',
     title:        'Imports',
-    description:  'CSV uploads, saved column-mapping profiles, the three import paths (CSV / AI / API), and the dedup model.',
+    description:  'CSV uploads, saved column-mapping profiles, the import paths (CSV / API), and the dedup model.',
   },
   {
     slug:         'alerts',
     title:        'Alerts',
-    description:  'Daily digest, alert types, per-user preferences, optional Slack and Teams channels.',
-  },
-  {
-    slug:         'renewal-workflow',
-    title:        'Renewal Workflow',
-    description:  'The five-stage checklist, the AI renewal brief, negotiation log, and savings tracker.',
-  },
-  {
-    slug:         'budget',
-    title:        'Budget Forecast',
-    description:  'Forward-looking spend projection with department and fiscal-year roll-ups. Multi-year contract handling.',
+    description:  'Daily digest, maintenance-due lead-time tiers, overdue escalation, per-user preferences, optional Slack and Teams channels.',
   },
   {
     slug:         'reports',
     title:        'Reports',
-    description:  'The six canned reports: Renewal Horizon, Risk Radar, Savings Ledger, License Wastage, Spend Ledger, Executive Spend.',
+    description:  'Canned compliance reports: due/overdue horizon, deficiency ledger, test history, and executive summaries.',
   },
   {
     slug:         'settings',
@@ -85,12 +81,12 @@ const MODULE_INDEX = Object.freeze([
     description:  'Admin control plane: AI provider, security, storage, encryption, custom fields, users and roles, and account data.',
   },
   // v0.37.1 W5 MT-024: last item because the audience is integrators and
-  // ops admins, not the day-to-day renewal operator. Surfacing it after
+  // ops admins, not the day-to-day maintenance operator. Surfacing it after
   // Settings matches the "Settings -> API & Integrations" UI grouping.
   {
     slug:         'api-and-integrations',
     title:        'API & Integrations',
-    description:  'Public REST API, webhook endpoints, AWS / Azure / GCP cloud connectors, and the OpenAPI spec.',
+    description:  'Public REST API, webhook endpoints, and the OpenAPI spec.',
   },
 ]);
 

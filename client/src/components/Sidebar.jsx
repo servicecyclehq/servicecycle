@@ -1,49 +1,40 @@
-import { NavLink, useNavigate, useLocation, Link } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef, useLayoutEffect, Suspense, lazy } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
-// v0.37.2 W6 MT-135: lazy-load AskModal + FeedbackModal — both are
-// on-demand UI never visible on first paint. Lazy lets Vite split them
-// into their own chunks so the sidebar's initial bundle drops by ~6KB
-// gzip. Same pattern HelpDrawer used in W5 MT-023.
+import { assetLabel } from '../lib/equipment';
+// v0.37.2 W6 MT-135: lazy-load FeedbackModal — on-demand UI never visible
+// on first paint. Lazy lets Vite split it into its own chunk so the
+// sidebar's initial bundle stays small. Same pattern HelpDrawer used in
+// W5 MT-023. (AskModal was removed in the ServiceCycle conversion — the
+// in-product AI assistant feature did not carry over.)
 const FeedbackModal = lazy(() => import('./FeedbackModal'));
-const AskModal      = lazy(() => import('./AskModal'));
 import ThemeToggle from './ThemeToggle';
 // v0.7.0: Lucide icon system. Named imports so Vite tree-shakes everything
-// we don't reference. Original inline-SVG `Icons` map kept the same key
-// names (`dashboard`, `contracts`, …) so consumers below don't change.
+// we don't reference.
 import {
-  LayoutGrid, FileText, Briefcase, BarChart3, Upload,
-  Calendar, Bell, Newspaper, Users, Settings, PieChart,
-  Archive, TrendingUp,
+  LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
+  Archive, MapPin, ClipboardList,
 } from 'lucide-react';
 
-// v0.37.1 W5 MT-117: removed the import of HelpButton — the 6 per-NavLink
-// `?`-icons have been dropped. Pass-3 catalogued the sidebar entry-point
-// sprawl (standalone Help + 6 per-NavLink icons + Help & Share -> Docs +
-// Help & Share -> Ask LapseIQ) across three passes; W5 executes Pass-3's
-// recommendation to keep the standalone Help button and the Help & Share
-// menu, and drop the per-NavLink icons. Side benefit: closes Pass-3
-// MUST-FIX D1 — the wrapping `.nav-item-row` divs were truncating the
-// active-state background on Dashboard / Reports / Vendors / Alerts /
-// Settings (~28px short of the right edge); removing the wrappers
-// restores the wall-to-wall active stripe automatically.
+// v0.37.1 W5 MT-117: per-NavLink HelpButton icons were dropped — the
+// standalone Help button + the Resources & Feedback footer menu are the
+// two help entry points.
 
 // All sidebar icons share the same size + stroke for visual consistency.
 const ICON_PROPS = { size: 16, strokeWidth: 1.75, className: 'nav-icon' };
 const Icons = {
-  dashboard: <LayoutGrid  {...ICON_PROPS} />,
-  contracts: <FileText    {...ICON_PROPS} />,
-  archive:   <Archive     {...ICON_PROPS} />,
-  budget:    <TrendingUp  {...ICON_PROPS} />,
-  vendors:   <Briefcase   {...ICON_PROPS} />,
-  ingest:    <Upload      {...ICON_PROPS} />,
-  calendar:  <Calendar    {...ICON_PROPS} />,
-  alerts:    <Bell        {...ICON_PROPS} />,
-  news:      <Newspaper   {...ICON_PROPS} />,
-  users:     <Users       {...ICON_PROPS} />,
-  settings:  <Settings    {...ICON_PROPS} />,
-  reports:   <PieChart    {...ICON_PROPS} />,
+  dashboard:   <LayoutGrid    {...ICON_PROPS} />,
+  assets:      <Zap           {...ICON_PROPS} />,
+  archive:     <Archive       {...ICON_PROPS} />,
+  sites:       <MapPin        {...ICON_PROPS} />,
+  workOrders:  <ClipboardList {...ICON_PROPS} />,
+  calendar:    <Calendar      {...ICON_PROPS} />,
+  contractors: <Briefcase     {...ICON_PROPS} />,
+  alerts:      <Bell          {...ICON_PROPS} />,
+  users:       <Users         {...ICON_PROPS} />,
+  settings:    <Settings      {...ICON_PROPS} />,
+  reports:     <PieChart      {...ICON_PROPS} />,
 };
 
 function GlobalSearch() {
@@ -68,8 +59,8 @@ function GlobalSearch() {
     timerRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await api.get('/api/contracts', { params: { search: query.trim(), limit: 6, sort: 'endDate', sortDir: 'asc' } });
-        setResults(res.data.data?.contracts || []);
+        const res = await api.get('/api/assets', { params: { search: query.trim(), limit: 6 } });
+        setResults(res.data.data?.assets || []);
         setOpen(true);
       } catch { setResults([]); }
       finally { setLoading(false); }
@@ -82,13 +73,13 @@ function GlobalSearch() {
     if (!query.trim()) return;
     setOpen(false);
     setQuery('');
-    navigate(`/contracts?search=${encodeURIComponent(query.trim())}`);
+    navigate(`/assets?search=${encodeURIComponent(query.trim())}`);
   }
 
   function pick(id) {
     setOpen(false);
     setQuery('');
-    navigate(`/contracts/${id}`);
+    navigate(`/assets/${id}`);
   }
 
   return (
@@ -104,8 +95,8 @@ function GlobalSearch() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Escape' && (setOpen(false), setQuery(''))}
-            placeholder="Search contracts…"
-            aria-label="Search contracts"
+            placeholder="Search assets…"
+            aria-label="Search assets"
             style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 26, paddingRight: 8, paddingTop: 5, paddingBottom: 5, fontSize: 'var(--font-size-sm)', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius)', background: 'var(--color-surface)', color: 'var(--color-text)', outline: 'none' }}
           />
         </div>
@@ -116,14 +107,14 @@ function GlobalSearch() {
         // when the dropdown opens. aria-label gives the listbox a name.
         <div
           role="listbox"
-          aria-label="Contract search results"
+          aria-label="Asset search results"
           style={{ position: 'absolute', top: '100%', left: 12, right: 12, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', boxShadow: '0 6px 20px rgba(0,0,0,0.12)', zIndex: 600, overflow: 'hidden' }}
         >
           {loading && <div style={{ padding: '10px 12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Searching…</div>}
           {!loading && results.length === 0 && (
             <div style={{ padding: '10px 12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>No matches</div>
           )}
-          {!loading && results.map(c => (
+          {!loading && results.map(a => (
             // Audit Cluster B P0 (WCAG 2.1.1 + 4.1.2): div+onClick is not
             // keyboard-reachable. <button type="button"> activates natively
             // on Enter/Space and ships into the tab order. role="option"
@@ -131,14 +122,14 @@ function GlobalSearch() {
             // announce the result list shape correctly.
             <button
               type="button"
-              key={c.id}
+              key={a.id}
               role="option"
-              onClick={() => pick(c.id)}
+              onClick={() => pick(a.id)}
               className="search-result-row"
               style={{ all: 'unset', display: 'block', padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--color-border)', width: '100%', textAlign: 'left' }}
             >
-              <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.product}</div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{c.vendor?.name}</div>
+              <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assetLabel(a)}</div>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{a.site?.name}</div>
             </button>
           ))}
           {!loading && results.length > 0 && (
@@ -220,14 +211,14 @@ function ConsultantBanner() {
       color: 'rgb(234, 179, 8)',
       lineHeight: 1.4,
     }}>
-      <strong>Consultant Access</strong><br />
-      You are viewing this account as a consultant. Changes are logged.
+      <strong>Vendor Access</strong><br />
+      You are viewing this account as a maintenance vendor account manager. Changes are logged.
     </div>
   );
 }
 
 // 2026-05-10 v0.2.30 (role-tier walk N5): viewer is fully read-only but had
-// no in-app indication of that — empty action-button areas on contract detail
+// no in-app indication of that — empty action-button areas on asset detail
 // just looked broken. Mirrors ConsultantBanner styling but in slate so it
 // reads as a status note rather than a "logged" warning.
 function ViewerBanner() {
@@ -243,43 +234,25 @@ function ViewerBanner() {
       lineHeight: 1.4,
     }}>
       <strong>View-Only Access</strong><br />
-      You can read contracts and reports but can't make changes. Ask an admin to edit.
+      You can view equipment and reports but can't make changes. Ask an admin to edit.
     </div>
   );
 }
 
-function useNewsUnreadCount() {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    function fetchCount() {
-      api.get('/api/news/summary')
-        .then(r => {
-          const counts = r.data.data?.counts || {};
-          setCount(Object.values(counts).reduce((a, b) => a + b, 0));
-        })
-        .catch(() => {});
-    }
-    fetchCount();
-    const id = setInterval(fetchCount, 10 * 60 * 1000); // refresh every 10 min
-    return () => clearInterval(id);
-  }, []);
-  return count;
-}
-
 // L9: Help / Share menu — collapsible footer block above the user chip.
 // Items:
-//   - Docs                      external link
-//   - Get LapseIQ for your team external link to the L7 marketing form
-//   - Share LapseIQ             prefilled mailto, lets visitors forward to a colleague
-//   - Send feedback             opens existing FeedbackModal
-//   - Contact support           mailto:support@lapseiq.com
+//   - Docs                            external link
+//   - Get ServiceCycle for your team  external link to the L7 marketing form
+//   - Share ServiceCycle              prefilled mailto, lets visitors forward to a colleague
+//   - Send feedback                   opens existing FeedbackModal
+//   - Contact support                 mailto:support@servicecycle.com
 //
 // Visible to all roles in DEMO_MODE (the whole demo crowd is the audience for
 // "share / get this for your team" prompts). On non-demo installs we show only
 // the in-app actions (feedback + support) — the marketing prompts there would
 // be either redundant ("get this for your team" — they already have it) or
 // inappropriate (asking the customer to share their proprietary install).
-function HelpShareMenu({ demoMode, onSendFeedback, onAsk }) {
+function HelpShareMenu({ demoMode, onSendFeedback }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const btnRef = useRef(null);
@@ -312,39 +285,28 @@ function HelpShareMenu({ demoMode, onSendFeedback, onAsk }) {
   }, [open]);
 
   const SHARE_BODY = encodeURIComponent(
-    'Hey — thought you might find this useful for renewal management.\n' +
-    'It’s called LapseIQ — self-hosted contract renewal tracker built for ' +
-    'small / mid-market teams that don’t have a dedicated SAM tool.\n\n' +
-    'Public demo: https://demo.lapseiq.com\n' +
-    'Install guide: https://lapseiq.com/install.sh\n\n' +
-    'Worth a look if your renewal calendar still lives in a spreadsheet.\n'
+    'Hey — thought you might find this useful for maintenance compliance.\n' +
+    'It’s called ServiceCycle — self-hosted electrical equipment maintenance ' +
+    'compliance tracker built for facilities teams that need NFPA 70B ' +
+    'schedules without an enterprise CMMS.\n\n' +
+    'Public demo: https://demo.servicecycle.com\n' +
+    'Install guide: https://servicecycle.com/install.sh\n\n' +
+    'Worth a look if your maintenance calendar still lives in a spreadsheet.\n'
   );
-  const SHARE_SUBJECT = encodeURIComponent('LapseIQ — renewal management worth a look');
+  const SHARE_SUBJECT = encodeURIComponent('ServiceCycle — maintenance compliance worth a look');
   const SHARE_MAILTO  = `mailto:?subject=${SHARE_SUBJECT}&body=${SHARE_BODY}`;
 
   // Items array drives both render + screen-reader order.
   const items = [
-    // L14: Ask LapseIQ — in-product assistant. Top of the menu because the
-    // single most useful help action is "ask the assistant" before docs or
-    // support email. The route is gated by authenticateToken at the server,
-    // so the menu item is always visible to logged-in users (the only
-    // audience the sidebar renders for in the first place).
-    {
-      key: 'ask',
-      label: 'Ask LapseIQ',
-      sub:   'Product help and renewal-management practice',
-      onClick: () => { setOpen(false); onAsk(); },
-      showIn: 'all',
-    },
     {
       key: 'docs',
       label: 'Documentation',
       sub:   'Setup guide, API reference, runbooks',
-      href:  'https://lapseiq.com/docs',
+      href:  'https://servicecycle.com/docs',
       target: '_blank',
       showIn: 'all',
     },
-    // Re-launchable welcome tour. Sets the same lapseiq_welcome_pending
+    // Re-launchable welcome tour. Sets the same servicecycle_welcome_pending
     // key the OnboardingWizard sets on completion, then sends the user
     // to /dashboard where WelcomeTourPanel reads the flag and renders.
     // Useful for: visitors who dismissed the celebration and want it
@@ -356,27 +318,27 @@ function HelpShareMenu({ demoMode, onSendFeedback, onAsk }) {
       sub:   'Re-open the quick-start panel with feature shortcuts',
       onClick: () => {
         setOpen(false);
-        try { localStorage.setItem('lapseiq_welcome_pending', '1'); } catch (_) { /* ignore */ }
+        try { localStorage.setItem('servicecycle_welcome_pending', '1'); } catch (_) { /* ignore */ }
         navigate('/dashboard');
         // v0.7.0: covers the "user is already on /dashboard" case where the
         // navigate() is a no-op and WelcomeTourPanel wouldn't otherwise see
         // the localStorage change. Safe to fire either way.
-        try { window.dispatchEvent(new Event('lapseiq:welcome-trigger')); }
+        try { window.dispatchEvent(new Event('servicecycle:welcome-trigger')); }
         catch (_) { /* ignore */ }
       },
       showIn: 'all',
     },
     {
       key: 'team',
-      label: 'Get LapseIQ for your team →',
+      label: 'Get ServiceCycle for your team →',
       sub:   'Self-hosted on your own infrastructure',
-      href:  'https://lapseiq.com/#early-access',
+      href:  'https://servicecycle.com/#early-access',
       target: '_blank',
       showIn: 'demo',  // only meaningful for visitors who don't already have an install
     },
     {
       key: 'share',
-      label: 'Share LapseIQ',
+      label: 'Share ServiceCycle',
       sub:   'Send a colleague a quick intro',
       href:  SHARE_MAILTO,
       showIn: 'demo',
@@ -391,8 +353,8 @@ function HelpShareMenu({ demoMode, onSendFeedback, onAsk }) {
     {
       key: 'support',
       label: 'Contact support',
-      sub:   'support@lapseiq.com',
-      href:  'mailto:support@lapseiq.com',
+      sub:   'support@servicecycle.com',
+      href:  'mailto:support@servicecycle.com',
       showIn: 'all',
     },
     // ── Legal links — always visible ───────────────────────────────────────
@@ -536,31 +498,10 @@ function HelpShareMenu({ demoMode, onSendFeedback, onAsk }) {
 }
 
 export default function Sidebar() {
-  const { user, logout, aiEnabled, aiConfigured, features, demoMode } = useAuth();
+  const { user, logout, features, demoMode } = useAuth();
   const navigate = useNavigate();
   const sidebarLocation = useLocation();
-  const newsUnread = useNewsUnreadCount();
   const [showFeedback, setShowFeedback] = useState(false);
-  const [showAsk, setShowAsk] = useState(false);
-  // v0.78.0: carries { briefContext, contractName } when opened from brief card
-  const [askContext, setAskContext] = useState({ briefContext: null, contractName: null });
-
-  // Pass 6 P0-B1 / P0-D-02: HelpDrawer footer's "Ask LapseIQ →" button
-  // dispatches lapseiq:open-ask. Before this listener it had no handler
-  // anywhere in the SPA — the button closed the drawer and did nothing
-  // else. Listen here so AskModal opens regardless of which surface
-  // requested it. detail.contextModule is not consumed yet; AskModal does
-  // not accept a prefill prop today, so this is open-the-modal only.
-  useEffect(() => {
-    const handler = (e) => {
-      // v0.78.0: event.detail may carry { briefContext, contractName } from the brief card
-      const detail = e?.detail || {};
-      setAskContext({ briefContext: detail.briefContext || null, contractName: detail.contractName || null });
-      setShowAsk(true);
-    };
-    window.addEventListener('lapseiq:open-ask', handler);
-    return () => window.removeEventListener('lapseiq:open-ask', handler);
-  }, []);
 
   const handleLogout = () => {
     logout();
@@ -575,9 +516,9 @@ export default function Sidebar() {
             <rect x="2" y="9" width="36" height="6" rx="3" fill="#0d4f6e"/>
             <rect x="26" y="3" width="3" height="18" rx="1.5" fill="#10b981" className="lapseiq-tick"/>
           </svg>
-          <span className="sidebar-logo-text">lapseiq</span>
+          <span className="sidebar-logo-text">servicecycle</span>
         </div>
-        <div className="sidebar-logo-sub">{user?.account?.companyName || localStorage.getItem('lapseiq_company') || 'Renewal Management'}</div>
+        <div className="sidebar-logo-sub">{user?.account?.companyName || localStorage.getItem('servicecycle_company') || 'Maintenance Compliance'}</div>
       </div>
 
       {user?.role === 'consultant' && <ConsultantBanner />}
@@ -586,10 +527,9 @@ export default function Sidebar() {
 
       <nav className="sidebar-nav">
         <div className="nav-section-label">Workspace</div>
-        {/* v0.37.1 W5 MT-117: dropped the .nav-item-row wrapper + per-NavLink
-            HelpButton. Restores the full-width active background paint that
-            Pass-3 MUST-FIX D1 flagged (active stripe was truncating ~28px
-            short on Dashboard / Reports / Vendors / Alerts / Settings). */}
+        {/* v0.37.1 W5 MT-117: no .nav-item-row wrappers except the quick-add
+            row — restores the full-width active background paint that
+            Pass-3 MUST-FIX D1 flagged. */}
         <NavLink
           to="/dashboard"
           className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
@@ -598,38 +538,37 @@ export default function Sidebar() {
           Dashboard
         </NavLink>
 
-        {/* Contracts + quick-add button. This row keeps the .nav-item-row
+        {/* Assets + quick-add button. This row keeps the .nav-item-row
             wrapper because of the inline `+` quick-add button — without
             the wrapper the button would be a sibling of the NavLink, not
-            visually grouped with it. The HelpButton that used to sit
-            after the `+` icon was dropped per MT-117. */}
+            visually grouped with it. */}
         <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
           <NavLink
-            to="/contracts"
+            to="/assets"
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
             style={{ flex: 1 }}
             onClick={(e) => {
               e.preventDefault();
-              // v0.53.1: if user is already on /contracts and there are any
-              // filters in the URL, signal ContractsList to clear them. Using
+              // v0.53.1: if user is already on /assets and there are any
+              // filters in the URL, signal AssetsList to clear them. Using
               // Date.now() as the state value guarantees a fresh reference on
               // every click so the consuming effect re-fires.
-              const onContracts = sidebarLocation.pathname === '/contracts';
+              const onAssets = sidebarLocation.pathname === '/assets';
               const hasQuery = (sidebarLocation.search || '').length > 1;
-              if (onContracts && hasQuery) {
-                navigate('/contracts', { replace: true, state: { clearFilters: Date.now() } });
+              if (onAssets && hasQuery) {
+                navigate('/assets', { replace: true, state: { clearFilters: Date.now() } });
               } else {
-                navigate('/contracts');
+                navigate('/assets');
               }
             }}
           >
-            {Icons.contracts}
-            Contracts
+            {Icons.assets}
+            Assets
           </NavLink>
-          {features.contracts_write && (
+          {features.assets_write && (
             <button
-              onClick={() => navigate('/contracts/new')}
-              title="Add contract"
+              onClick={() => navigate('/assets/new')}
+              title="Add asset"
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
                 padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
@@ -649,7 +588,7 @@ export default function Sidebar() {
         </div>
 
         <NavLink
-          to="/contracts/archived"
+          to="/assets/archived"
           className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
           style={{ fontSize: '0.82rem', paddingLeft: 28 }}
         >
@@ -657,49 +596,36 @@ export default function Sidebar() {
           Archive
         </NavLink>
 
-        {features.budget && (
-          <NavLink
-            to="/budget"
-            className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
-            style={{ fontSize: '0.82rem', paddingLeft: 28 }}
-          >
-            {Icons.budget}
-            Budget Forecast
-          </NavLink>
-        )}
-
-        {/* Upload Contract: only shown when AI is configured AND user has ingest access.
-            Positioned directly under the Contracts group so it's contextually obvious. */}
-        {aiEnabled && aiConfigured && features.ingest && (
-          <NavLink
-            to="/ingest"
-            className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
-            style={{ fontSize: '0.82rem', paddingLeft: 28 }}
-          >
-            {Icons.ingest}
-            Upload Contract
-          </NavLink>
-        )}
-
-        {/* Reports hub — manager / admin only. Top-level nav item; links to
-            /reports which shows the hub card grid (Renewal Horizon, Risk Radar,
-            Savings Ledger, License Wastage, Spend Ledger, Executive Spend). */}
-        {(user?.role === 'admin' || user?.role === 'manager') && (
-          <NavLink
-            to="/reports"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            {Icons.reports}
-            Reports
-          </NavLink>
-        )}
-
         <NavLink
-          to="/vendors"
+          to="/sites"
           className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
         >
-          {Icons.vendors}
-          Vendors
+          {Icons.sites}
+          Sites
+        </NavLink>
+
+        <NavLink
+          to="/work-orders"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.workOrders}
+          Work Orders
+        </NavLink>
+
+        <NavLink
+          to="/calendar"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.calendar}
+          Compliance Calendar
+        </NavLink>
+
+        <NavLink
+          to="/contractors"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.contractors}
+          Contractors
         </NavLink>
 
         {features.alerts && (
@@ -712,35 +638,15 @@ export default function Sidebar() {
           </NavLink>
         )}
 
-        {features.news && (
+        {/* Reports hub — manager / admin only. Top-level nav item; links to
+            /reports which shows the hub card grid. */}
+        {(user?.role === 'admin' || user?.role === 'manager') && (
           <NavLink
-            to="/news"
+            to="/reports"
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            style={{ position: 'relative' }}
-            title="Recent industry news for your active vendors — automatically curated by LapseIQ"
-            onClick={(e) => {
-              // v0.89.14: mirror /contracts sidebar pattern. If user clicks Vendor News
-              // while already on /news, push location.state.clearFilters so NewsPage
-              // wipes its filter state. Date.now() guarantees a fresh ref each click.
-              if (sidebarLocation.pathname === '/news') {
-                e.preventDefault();
-                navigate('/news', { replace: true, state: { clearFilters: Date.now() } });
-              }
-            }}
           >
-            {Icons.news}
-            Vendor News
-            {newsUnread > 0 && (
-              <span style={{
-                marginLeft: 'auto', background: 'var(--color-primary-light)', color: 'var(--color-primary)',
-                borderRadius: 10, fontSize: 'var(--font-size-xs)', fontWeight: 700,
-                minWidth: 16, height: 16, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', padding: '0 3px', flexShrink: 0,
-                fontVariantNumeric: 'tabular-nums',
-              }}>
-                {newsUnread > 99 ? '99+' : newsUnread}
-              </span>
-            )}
+            {Icons.reports}
+            Reports
           </NavLink>
         )}
 
@@ -748,7 +654,7 @@ export default function Sidebar() {
           type="button"
           onClick={() => {
             try {
-              window.dispatchEvent(new CustomEvent('lapseiq:open-help', { detail: { moduleSlug: null } }));
+              window.dispatchEvent(new CustomEvent('servicecycle:open-help', { detail: { moduleSlug: null } }));
             } catch (_) { /* ignore */ }
           }}
           className="nav-item"
@@ -794,11 +700,10 @@ export default function Sidebar() {
             {user?.role === 'admin' && (
               <>
                 {/* L7: lead-form submissions inbox.
-                    2026-05-10 review B1 fix: hide on DEMO_MODE. The previous
-                    `{demoMode && (` predicate was inverted — every sandbox
+                    2026-05-10 review B1 fix: hide on DEMO_MODE. Every sandbox
                     user is auto-provisioned with role='admin', so showing
-                    this link on demo exposed real production leads to anyone
-                    who registered. Real ops admins see leads on the
+                    this link on demo would expose real production leads to
+                    anyone who registered. Real ops admins see leads on the
                     non-DEMO_MODE deployment (the same one that fronts the
                     marketing form). */}
                 {!demoMode && (
@@ -826,34 +731,27 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* L9: Help & Share menu — replaces the standalone Feedback button.
-          Contains all the outbound + meta actions (docs, share, feedback,
-          support, "get this for your team") so visitors aren't hunting
-          across the chrome for the right outlet. */}
+      {/* L9: Help & Share menu — contains all the outbound + meta actions
+          (docs, share, feedback, support, "get this for your team") so
+          visitors aren't hunting across the chrome for the right outlet. */}
       <div style={{ padding: '8px 10px 4px', borderTop: '1px solid var(--color-border)', marginTop: 'auto' }}>
         <HelpShareMenu
           demoMode={demoMode}
           onSendFeedback={() => setShowFeedback(true)}
-          onAsk={() => setShowAsk(true)}
         />
         {/* v0.7.0: dark/light theme toggle. Sits right under Help & Share so
             the chrome's two "meta" actions live together in the footer. */}
         <ThemeToggle />
       </div>
 
-      {/* v0.37.2 W6 MT-135: Suspense fallback is null because these modals
-          are on-demand surfaces — the user clicked something to open them,
-          so a brief blank during the chunk fetch (typically <100ms warm) is
-          fine. The conditional `&&` guards mean we don't even mount the
-          Suspense boundary until the user has triggered the modal. */}
+      {/* v0.37.2 W6 MT-135: Suspense fallback is null because the modal is
+          an on-demand surface — the user clicked something to open it, so a
+          brief blank during the chunk fetch (typically <100ms warm) is fine.
+          The conditional `&&` guard means we don't even mount the Suspense
+          boundary until the user has triggered the modal. */}
       {showFeedback && (
         <Suspense fallback={null}>
           <FeedbackModal onClose={() => setShowFeedback(false)} />
-        </Suspense>
-      )}
-      {showAsk && (
-        <Suspense fallback={null}>
-          <AskModal onClose={() => { setShowAsk(false); setAskContext({ briefContext: null, contractName: null }); }} briefContext={askContext.briefContext} contractName={askContext.contractName} />
         </Suspense>
       )}
 

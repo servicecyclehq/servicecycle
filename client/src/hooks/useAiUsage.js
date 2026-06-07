@@ -2,7 +2,7 @@
  * useAiUsage — small hook for the demo AI quota helper line.
  *
  * v0.32.4. Reads GET /api/ai/usage/me on mount and exposes:
- *   - usage: { demoMode, actions: { extract, ask, brief, brief_search }, budget }
+ *   - usage: { demoMode, actions: { ingest_extract, ask, maintenance_brief, narrate } }
  *   - loading, error
  *   - refresh() — manual re-fetch (e.g. after a successful AI call so the
  *     helper line ticks down without a page reload)

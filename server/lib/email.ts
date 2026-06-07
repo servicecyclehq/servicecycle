@@ -5,7 +5,7 @@
  * Why Brevo (not Resend)?
  *   The free Resend tier allows only one verified domain per account, which
  *   is consumed by forgerift.io's MCP product line. Brevo's free tier covers
- *   lapseiq.com. Both DKIM (brevo1/2._domainkey CNAMEs) and SPF
+ *   the ServiceCycle domain. Both DKIM (brevo1/2._domainkey CNAMEs) and SPF
  *   (include:spf.brevo.com) are published; mail passes DMARC alignment via
  *   either path.
  *
@@ -36,7 +36,7 @@ let _runtimeBrevoKey = null;
 function setRuntimeBrevoKey(key) { _runtimeBrevoKey = (typeof key === 'string' && key) ? key : null; }
 
 // EMAIL_FROM must be set in .env to match your verified sender domain.
-// Example: EMAIL_FROM="LapseIQ <noreply@yourdomain.com>"
+// Example: EMAIL_FROM="ServiceCycle <noreply@yourdomain.com>"
 // If not set, email sending is skipped with a warning.
 //
 // Read at call time (not at module load) so tests can flip env vars between
@@ -46,25 +46,26 @@ function getFrom() { return process.env.EMAIL_FROM || null; }
 
 async function sendEmail({ to, subject, html }) {
   // L4: feedback bypass for EMAIL_MOCK.
-  // Subjects starting with '[LapseIQ Feedback]' bypass the mock so operator
-  // feedback always reaches the inbox even on the demo box. The bypass still
-  // requires BREVO_API_KEY + EMAIL_FROM; it just skips the EMAIL_MOCK gate.
-  const isFeedback = typeof subject === 'string' && subject.startsWith('[LapseIQ Feedback]');
+  // Subjects starting with '[ServiceCycle Feedback]' bypass the mock so
+  // operator feedback always reaches the inbox even on the demo box. The
+  // bypass still requires BREVO_API_KEY + EMAIL_FROM; it just skips the
+  // EMAIL_MOCK gate. NOTE: routes/feedback must emit this exact prefix.
+  const isFeedback = typeof subject === 'string' && subject.startsWith('[ServiceCycle Feedback]');
 
   // 2026-05-11 (v0.3.2): early-access bypass for EMAIL_MOCK. The marketing
-  // landing page at lapseiq.com 301s to demo.lapseiq.com, so every real
-  // prospect who fills out the "Request early access" form on the demo box
-  // needs to receive the install-instructions reply and the ops
-  // notification. Without this carve-out the form silently records to the
-  // database but emails nothing — prospects are left waiting indefinitely
-  // and the operator never gets pinged.
+  // landing page 301s to the public demo, so every real prospect who fills
+  // out the "Request early access" form on the demo box needs to receive
+  // the install-instructions reply and the ops notification. Without this
+  // carve-out the form silently records to the database but emails
+  // nothing — prospects are left waiting indefinitely and the operator
+  // never gets pinged.
   //
   // Matched via prefix on the canonical subjects emitted in
   // routes/earlyAccess.js. Same fail-safe shape as the feedback bypass:
   // still requires BREVO_API_KEY + EMAIL_FROM; just skips the EMAIL_MOCK gate.
   const isEarlyAccess = typeof subject === 'string' && (
-    subject.startsWith('LapseIQ — your early-access') ||
-    subject.startsWith('[LapseIQ Early Access]')
+    subject.startsWith('ServiceCycle — your early-access') ||
+    subject.startsWith('[ServiceCycle Early Access]')
   );
 
   if (!isFeedback && !isEarlyAccess && process.env.EMAIL_MOCK === 'true') {
@@ -77,7 +78,7 @@ async function sendEmail({ to, subject, html }) {
   // sending nothing.
   if (process.env.RESEND_API_KEY && !process.env.BREVO_API_KEY && !_resendDeprecationWarned) {
     _resendDeprecationWarned = true;
-    console.warn('[email] RESEND_API_KEY is set but BREVO_API_KEY is not. LapseIQ no longer uses Resend - rename to BREVO_API_KEY (and use a Brevo API key, not your old Resend key) to enable email sending. See docs/install.md.');
+    console.warn('[email] RESEND_API_KEY is set but BREVO_API_KEY is not. ServiceCycle no longer uses Resend - rename to BREVO_API_KEY (and use a Brevo API key, not your old Resend key) to enable email sending. See docs/install.md.');
   }
 
   const brevoKey = _runtimeBrevoKey || process.env.BREVO_API_KEY;
@@ -137,6 +138,22 @@ async function sendEmail({ to, subject, html }) {
   }
 }
 
+// ── Display helpers ───────────────────────────────────────────────────────────
+
+// Canonical human label for an asset in outbound notifications (email /
+// Slack / Teams digests). Electrical equipment rarely has a friendly name,
+// so the convention is manufacturer + model + serial when available,
+// falling back to the equipment type ("SWITCHGEAR", "TRANSFORMER_DRY", ...).
+// Exported so alertEngine's digest builder renders the same label the
+// Slack/Teams builders do.
+function assetDisplayName(asset) {
+  if (!asset || typeof asset !== 'object') return 'Asset';
+  const parts = [asset.manufacturer, asset.model].filter(Boolean);
+  if (asset.serialNumber) parts.push(`S/N ${asset.serialNumber}`);
+  if (parts.length > 0) return parts.join(' ');
+  return asset.equipmentType ? String(asset.equipmentType).replace(/_/g, ' ') : 'Asset';
+}
+
 // ── Email templates ───────────────────────────────────────────────────────────
 
 // Audit 6.1.1 — welcome email sent after register() succeeds. Demo runs
@@ -147,20 +164,20 @@ async function sendEmail({ to, subject, html }) {
 function welcomeHtml({ name, companyName, appUrl }) {
   const safeName = name || 'there';
   const safeCompany = companyName || 'your team';
-  const safeUrl = appUrl || 'https://demo.lapseiq.com';
+  const safeUrl = appUrl || 'https://demo.servicecycle.com';
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:24px;">
-    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">LapseIQ</span>
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Welcome to LapseIQ, ${safeName}.</h2>
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Welcome to ServiceCycle, ${safeName}.</h2>
   <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
     Your ${safeCompany} workspace is ready. Three things worth doing in your first 10 minutes:
   </p>
   <ol style="margin:0 0 24px;padding-left:22px;color:#94a3b8;font-size:14px;line-height:1.7;">
-    <li>Add your first contract (or import a CSV from Vendors page).</li>
-    <li>Set up renewal alerts so we ping you before anything auto-renews.</li>
-    <li>Invite a teammate so you're not the only person who knows when something expires.</li>
+    <li>Add your first site and equipment assets (or import a CSV).</li>
+    <li>Set up maintenance alerts so we ping you before anything goes overdue.</li>
+    <li>Invite a teammate so you're not the only person who knows when the next test is due.</li>
   </ol>
   <a href="${safeUrl}/dashboard" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Open my dashboard
@@ -175,11 +192,11 @@ function passwordResetHtml({ link }) {
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:24px;">
-    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">LapseIQ</span>
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
   <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Reset your password</h2>
   <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    We received a request to reset the password for your LapseIQ account.
+    We received a request to reset the password for your ServiceCycle account.
     Click the button below to choose a new password. This link expires in <strong style="color:#e2e8f0;">1 hour</strong>.
   </p>
   <a href="${link}" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
@@ -197,12 +214,12 @@ function inviteHtml({ inviterName, companyName, role, link }) {
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:24px;">
-    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">LapseIQ</span>
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">You've been invited to join LapseIQ</h2>
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">You've been invited to join ServiceCycle</h2>
   <p style="margin:0 0 8px;color:#94a3b8;font-size:14px;line-height:1.6;">
     <strong style="color:#e2e8f0;">${inviterName}</strong> has invited you to join
-    <strong style="color:#e2e8f0;">${companyName}</strong> on LapseIQ as a
+    <strong style="color:#e2e8f0;">${companyName}</strong> on ServiceCycle as a
     <strong style="color:#e2e8f0;">${roleLabel}</strong>.
   </p>
   <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
@@ -223,7 +240,7 @@ function feedbackHtml({ userName, userEmail, userRole, companyName, category, me
   return `
 <div style="font-family:sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:20px;">
-    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">LapseIQ</span>
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
     <span style="margin-left:10px;font-size:12px;color:#475569;">User Feedback</span>
   </div>
 
@@ -249,31 +266,31 @@ function feedbackHtml({ userName, userEmail, userRole, companyName, category, me
     </table>
   </div>
 
-  <p style="margin:0;font-size:11px;color:#334155;">Sent from LapseIQ in-app feedback — reply directly to respond to this user.</p>
+  <p style="margin:0;font-size:11px;color:#334155;">Sent from ServiceCycle in-app feedback — reply directly to respond to this user.</p>
 </div>`;
 }
 
 // Sent to all admins when a scoped viewer accepts their invite and activates.
-function newViewerActivationHtml({ viewerName, viewerEmail, contractCount, settingsUrl }) {
+function newViewerActivationHtml({ viewerName, viewerEmail, assetCount, settingsUrl }) {
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:24px;">
-    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">LapseIQ</span>
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
   <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">New viewer activated</h2>
   <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    <strong style="color:#e2e8f0;">${viewerName}</strong> (${viewerEmail}) just activated their LapseIQ account.
+    <strong style="color:#e2e8f0;">${viewerName}</strong> (${viewerEmail}) just activated their ServiceCycle account.
   </p>
   <div style="background:#1e2330;border-radius:6px;padding:14px 18px;margin-bottom:20px;border-left:3px solid #f59e0b;">
     <p style="margin:0;font-size:14px;color:#fcd34d;font-weight:600;">
-      They can currently see <strong>${contractCount}</strong> contract${contractCount !== 1 ? 's' : ''} assigned to them.
+      They can currently see <strong>${assetCount}</strong> asset${assetCount !== 1 ? 's' : ''} assigned to them.
     </p>
     <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">
-      Their access is restricted to contracts where they are set as the internal owner.
+      Their access is restricted to assets at the sites they are assigned to.
     </p>
   </div>
   <p style="margin:0 0 20px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    To expand their permissions or assign additional contracts, visit the Users settings page.
+    To expand their permissions or assign additional sites, visit the Users settings page.
   </p>
   <a href="${settingsUrl}" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Go to Settings → Users
@@ -292,12 +309,13 @@ function earlyAccessReplyHtml({ name, installScriptUrl, demoUrl }) {
   return `
 <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:24px;">
-    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">LapseIQ</span>
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
   <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Thanks for the interest, ${safeName}.</h2>
   <p style="margin:0 0 18px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    LapseIQ is self-hosted — every install runs on your own infrastructure
-    and your contracts never leave your network. You can stand up an instance
+    ServiceCycle is self-hosted — every install runs on your own
+    infrastructure and your equipment and maintenance records never leave
+    your network. You can stand up an instance
     yourself with the one-line installer below; the demo at
     <a href="${demoUrl}" style="color:#a5b4fc;">${demoUrl}</a> shows the same
     UI populated with sample data if you'd rather try before installing.
@@ -330,8 +348,8 @@ bash install.sh</pre>
 
   <p style="margin:28px 0 0;font-size:11px;color:#475569;line-height:1.6;">
     You're receiving this because you submitted the early-access form at
-    lapseiq.com. We don't add anyone to a marketing list — this is a one-shot
-    transactional reply.
+    servicecycle.com. We don't add anyone to a marketing list — this is a
+    one-shot transactional reply.
   </p>
 </div>`;
 }
@@ -342,7 +360,7 @@ function earlyAccessNotificationHtml({ name, email, company, timing, ipAddress, 
   return `
 <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:20px;">
-    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">LapseIQ</span>
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
     <span style="margin-left:10px;font-size:12px;color:#475569;">New early-access request</span>
   </div>
   <table style="width:100%;border-collapse:collapse;background:#1e2330;border-radius:6px;padding:8px;">
@@ -359,6 +377,7 @@ function earlyAccessNotificationHtml({ name, email, company, timing, ipAddress, 
 
 module.exports = { setRuntimeBrevoKey,
   sendEmail,
+  assetDisplayName,
   welcomeHtml,
   passwordResetHtml,
   inviteHtml,

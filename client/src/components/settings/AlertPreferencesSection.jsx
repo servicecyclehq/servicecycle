@@ -4,35 +4,45 @@ import api from '../../api/client';
 import { sectionHeading, sectionDesc, toggle, toggleThumb, btnPrimary } from './sharedStyles';
 
 // ── Alert Preferences Section ────────────────────────────────────────────────
+//
+// ServiceCycle maintenance-alert preferences. Only `maintenance_due` lead-day
+// tiers are user-configurable (default 180/120/90/60/30/7 days before due).
+// The overdue / escalation / regulatory-breach tiers always fire at
+// -1 / -7 / -30 / -90 days — only their email delivery can be toggled.
 
 const ALERT_TYPE_META = {
-  cancel_by: {
-    label:         'Cancel Window',
-    desc:          'Alert when the auto-renewal cancellation deadline is approaching. Miss this window and the contract may auto-renew.',
-    color: 'var(--color-danger)',
-    bg: 'var(--color-danger-bg)',
-    border: 'var(--color-danger)',
-    availableDays: [30, 14, 7],
-  },
-  review_by: {
-    label:         'Contract Review',
-    desc:          'Alert when the internal review-by date is approaching. Triggers the review workflow for contracts under evaluation.',
-    color: 'var(--color-primary)',
-    bg: 'var(--color-primary-light)',
+  maintenance_due: {
+    label:  'Maintenance Due',
+    desc:   'Lead alerts before an NFPA 70B maintenance task is due. Choose which lead-day tiers fire for you.',
+    color:  'var(--color-primary)',
+    bg:     'var(--color-primary-light)',
     border: 'var(--color-info)',
-    availableDays: [30, 14],
+    availableDays: [180, 120, 90, 60, 30, 7],
   },
-  renewal: {
-    label:         'Renewal / End Date',
-    desc:          'Alert when a contract is approaching its end date. Core renewal planning window — allows time to negotiate pricing and quantities.',
-    color:         'var(--color-renewal-text)',
-    bg:            'var(--color-renewal-bg)',
-    border:        'var(--color-renewal-border)',
-    availableDays: [90, 60, 30],
+  overdue: {
+    label:  'Overdue',
+    desc:   'A scheduled maintenance task has passed its due date without a completed record.',
+    color:  'var(--color-warning)',
+    bg:     'var(--color-warning-bg)',
+    border: 'var(--color-warning)',
+  },
+  escalation: {
+    label:  'Escalation',
+    desc:   'An overdue task has remained open long enough to escalate to site and account managers.',
+    color:  'var(--color-danger)',
+    bg:     'var(--color-danger-bg)',
+    border: 'var(--color-danger)',
+  },
+  regulatory_breach: {
+    label:  'Regulatory Breach',
+    desc:   'Maintenance is overdue far enough to put the asset out of compliance with its governing standard.',
+    color:  '#7f1d1d',
+    bg:     'var(--color-danger-bg)',
+    border: '#7f1d1d',
   },
 };
 
-const ALERT_TYPE_ORDER = ['cancel_by', 'review_by', 'renewal'];
+const ALERT_TYPE_ORDER = ['maintenance_due', 'overdue', 'escalation', 'regulatory_breach'];
 
 export default function AlertPreferencesSection() {
   const [prefs,  setPrefs]  = useState(null);  // null = loading
@@ -47,7 +57,8 @@ export default function AlertPreferencesSection() {
   }, []);
 
   function getPref(alertType) {
-    return prefs?.find(p => p.alertType === alertType) || { alertType, daysBeforeList: '', emailEnabled: true };
+    return prefs?.find(p => p.alertType === alertType)
+      || { alertType, daysBeforeList: '', emailEnabled: true, configurable: alertType === 'maintenance_due' };
   }
 
   function getDays(pref) {
@@ -80,8 +91,6 @@ export default function AlertPreferencesSection() {
       const r = await api.put('/api/alerts/preferences', { preferences: prefs });
       if (r.data.success) {
         setSaved(true);
-        // M4 fix (2026-05-12): bumped 3s -> 5s. Save confirmations
-        // were getting missed; users need more reading time.
         setTimeout(() => setSaved(false), 5000);
       } else {
         setError(r.data.error || 'Failed to save preferences');
@@ -98,7 +107,7 @@ export default function AlertPreferencesSection() {
       <h2 className={sectionHeading}>Alert Preferences</h2>
       <p className={sectionDesc}>
         Control which alerts you receive and when. Settings are per-user — each team member can configure
-        their own thresholds and email preferences independently.
+        their own lead-day tiers and email preferences independently.
       </p>
 
       {prefs === null ? (
@@ -109,6 +118,7 @@ export default function AlertPreferencesSection() {
             {ALERT_TYPE_ORDER.map(alertType => {
               const meta = ALERT_TYPE_META[alertType];
               const pref = getPref(alertType);
+              const configurable = pref.configurable ?? (alertType === 'maintenance_due');
               const activeDays = getDays(pref);
 
               return (
@@ -152,33 +162,40 @@ export default function AlertPreferencesSection() {
                     </div>
                   </div>
 
-                  {/* Threshold checkboxes */}
-                  <div style={{ padding: '12px 16px', background: 'var(--color-surface)', display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                      Alert me at:
-                    </span>
-                    {meta.availableDays.map(day => {
-                      const checked = activeDays.includes(day);
-                      return (
-                        <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.8rem', color: 'var(--color-text)', userSelect: 'none' }}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleDay(alertType, day)}
-                            style={{ accentColor: meta.color, width: 15, height: 15, cursor: 'pointer' }}
-                          />
-                          <span style={{ fontWeight: checked ? 600 : 400, color: checked ? meta.color : 'var(--color-text-secondary)' }}>
-                            {day} days before
-                          </span>
-                        </label>
-                      );
-                    })}
-                    {activeDays.length === 0 && (
-                      <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', fontStyle: 'italic' }}>
-                        No thresholds selected — this alert type is effectively muted
+                  {/* Lead-day tier checkboxes (maintenance_due only) */}
+                  {configurable ? (
+                    <div style={{ padding: '12px 16px', background: 'var(--color-surface)', display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                        Alert me at:
                       </span>
-                    )}
-                  </div>
+                      {meta.availableDays.map(day => {
+                        const checked = activeDays.includes(day);
+                        return (
+                          <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.8rem', color: 'var(--color-text)', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDay(alertType, day)}
+                              style={{ accentColor: meta.color, width: 15, height: 15, cursor: 'pointer' }}
+                            />
+                            <span style={{ fontWeight: checked ? 600 : 400, color: checked ? meta.color : 'var(--color-text-secondary)' }}>
+                              {day} days before
+                            </span>
+                          </label>
+                        );
+                      })}
+                      {activeDays.length === 0 && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', fontStyle: 'italic' }}>
+                          No tiers selected — lead alerts for this type are effectively muted
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '10px 16px', background: 'var(--color-surface)', fontSize: '0.78rem', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                      Always on — overdue and escalation tiers fire automatically at 1, 7, 30, and 90 days
+                      overdue and cannot be suppressed. Only email delivery is configurable here.
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -204,7 +221,7 @@ export default function AlertPreferencesSection() {
 
           <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: '0.75rem', lineHeight: 1.5 }}>
             The digest email is sent once per day and consolidates all firing alerts for that day into a single message.
-            Adjusting thresholds here controls which alerts fire for you — your teammates' preferences are managed separately.
+            Adjusting tiers here controls which lead alerts fire for you — your teammates' preferences are managed separately.
           </p>
         </>
       )}

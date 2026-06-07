@@ -1,7 +1,7 @@
 /**
  * ThemeToggle — sun/moon button that flips the app between light and dark mode.
  *
- * Storage: `lapseiq_theme` in localStorage. Pre-React bootstrap in
+ * Storage: `servicecycle_theme` in localStorage. Pre-React bootstrap in
  * `index.html` reads the same key and applies the attribute before the SPA
  * mounts so dark-mode users don't see a flash of light theme on reload.
  *
@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
-const STORAGE_KEY = 'lapseiq_theme';
+const STORAGE_KEY = 'servicecycle_theme';
 
 function getInitialTheme() {
   if (typeof window === 'undefined') return 'light';

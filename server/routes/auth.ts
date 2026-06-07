@@ -360,7 +360,7 @@ router.post('/register', registrationLimiter, credentialLimiter, countryGate, as
         return res.status(503).json({
           success: false,
           error:   'demo_at_capacity',
-          message: 'The demo sandbox is at capacity right now. Inactive sandboxes are pruned nightly — please try again in a few hours, or self-host LapseIQ on your own infrastructure (free) to skip the queue.',
+          message: 'The demo sandbox is at capacity right now. Inactive sandboxes are pruned nightly — please try again in a few hours, or self-host ServiceCycle on your own infrastructure (free) to skip the queue.',
         });
       }
     }
@@ -380,10 +380,10 @@ router.post('/register', registrationLimiter, credentialLimiter, countryGate, as
           // intent. Operators on demo see fresh registrations get a full TTL
           // window even if the visitor never logs back in.
           lastActiveAt: new Date(),
-          // Phase 4: per-visitor demo accounts on demo.lapseiq.com get the
-          // AI renewal brief turned on by default so the demo showcases
-          // the feature out of the box. Self-host registrations (DEMO_MODE
-          // false) keep the default OFF — operator opts in via Settings.
+          // Per-visitor demo accounts get the AI maintenance brief turned
+          // on by default so the demo showcases the feature out of the
+          // box. Self-host registrations (DEMO_MODE false) keep the
+          // default OFF — operator opts in via Settings.
           aiBriefEnabled: process.env.DEMO_MODE === 'true',
         },
       });
@@ -418,12 +418,12 @@ router.post('/register', registrationLimiter, credentialLimiter, countryGate, as
       return { account, user };
     });
 
-    // L3: in DEMO_MODE, seed the visitor's brand-new account with the same
-    // canned 12-vendor / 30-contract demo data set the legacy 4-user account
-    // gets. This is what makes per-visitor sandboxes look populated on the
-    // very first dashboard load instead of an empty-state stare. Fail-open:
-    // if seeding errors, the registration still succeeds — the visitor lands
-    // in an empty workspace they can populate themselves.
+    // L3: in DEMO_MODE, seed the visitor's brand-new account with the canned
+    // demo data set (sites, assets, schedules, work orders). This is what
+    // makes per-visitor sandboxes look populated on the very first dashboard
+    // load instead of an empty-state stare. Fail-open: if seeding errors,
+    // the registration still succeeds — the visitor lands in an empty
+    // workspace they can populate themselves.
     if (process.env.DEMO_MODE === 'true') {
       try {
         const { seedAccountForUser } = require('../scripts/seed-demo');
@@ -433,41 +433,11 @@ router.post('/register', registrationLimiter, credentialLimiter, countryGate, as
       }
     }
 
-    // 2026-05-10 Phase 1 (non-SaaS categories): seed the 9 default categories
-    // and backfill any contracts created above (demo seed) to the "saas"
-    // category. Runs for BOTH demo per-visitor sandboxes (where contracts
-    // were just seeded above) and self-host fresh registrations (where there
-    // are no contracts yet — backfill is a no-op).
-    // Fail-open like the demo seed: if this errors, registration still
-    // succeeds; the account starts without categories and the next ops pass
-    // can run `node server/scripts/seed-categories.js <accountId>` manually.
-    try {
-      const { seedAndBackfill: seedCategoriesAndBackfill } = require('../scripts/seed-categories');
-      await seedCategoriesAndBackfill(result.user.accountId);
-    } catch (catErr) {
-      console.error('[categories] seedCategoriesAndBackfill failed for new registration:', catErr.message);
-    }
-
-    // Phase 4 v0.4.1 (#3): on demo signups, after the 9 default categories
-    // exist + base SaaS-flavoured contracts have been backfilled to
-    // 'saas', layer in 7 non-SaaS showcase contracts (one per non-SaaS
-    // category) so visitors can exercise the Phase 4 per-category brief
-    // templates without needing to manually re-categorise anything.
-    // Self-host signups skip this (their workspace starts empty).
-    if (process.env.DEMO_MODE === 'true') {
-      try {
-        const { seedNonSaasShowcase } = require('../scripts/seed-demo');
-        await seedNonSaasShowcase(result.user.accountId, result.user.id);
-      } catch (showcaseErr) {
-        console.error('[demo] seedNonSaasShowcase failed for new registration:', showcaseErr.message);
-      }
-    }
-
     // 2026-05-10 review H5 fix: write an account_created row so the Activity
     // Log on a freshly-registered account isn't empty. Previously only
     // login_failed events were persisted; a brand-new user would see the
     // ominous "No activity found" on every Activity Log visit until the
-    // first contract write hit the log.
+    // first asset write hit the log.
     writeActivityLog({
       userId:  result.user.id,
       action:  'account_created',
@@ -481,7 +451,7 @@ router.post('/register', registrationLimiter, credentialLimiter, countryGate, as
       const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
       sendEmail({
         to:      result.user.email,
-        subject: 'Welcome to LapseIQ',
+        subject: 'Welcome to ServiceCycle',
         html:    welcomeHtml({
           name:        result.user.name,
           companyName: result.user.account?.companyName,
@@ -859,7 +829,7 @@ router.post('/forgot-password', credentialLimiter, async (req, res) => { // (M1)
         // S3-FN-01 (v0.75.1): fire-and-forget so Brevo hang cannot block response
         sendEmail({
           to:      user.email,
-          subject: 'Reset your LapseIQ password',
+          subject: 'Reset your ServiceCycle password',
           html:    passwordResetHtml({ link: `${appUrl}/reset-password/${token}` }),
         }).catch(e => console.error('[auth] forgot-password email failed:', e.message));
       }
@@ -1022,9 +992,10 @@ router.post('/invite/:token/accept', credentialLimiter, async (req, res) => { //
           role: invite.role,
           isActive: true,
           featureFlags: defaultFlagsForRole(invite.role),
-          // Viewers start with scope-restricted access — they only see contracts
-          // assigned to them. An admin can lift this in Settings → Users.
-          contractScopeRestricted: invite.role === 'viewer',
+          // Viewers start with scope-restricted access — they only see assets
+          // at sites assigned to them (scoping rewire lands with the routes
+          // adaptation). An admin can lift this in Settings → Users.
+          assetScopeRestricted: invite.role === 'viewer',
           // Pass-4 audit L1-03: capture consent on the invite-accept path
           // so this isn't the one signup path that doesn't satisfy GDPR
           // Art. 7(1) demonstrability.
@@ -1067,19 +1038,14 @@ router.post('/invite/:token/accept', credentialLimiter, async (req, res) => { //
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.accountId);
 
     // If the new user is a scoped viewer, notify all admins so they can assign
-    // contracts and/or expand permissions. Fire-and-forget — never block the response.
+    // sites and/or expand permissions. Fire-and-forget — never block the response.
     if (invite.role === 'viewer') {
       (async () => {
         try {
-          const [admins, contractCount] = await Promise.all([
-            prisma.user.findMany({
-              where: { accountId: invite.accountId, role: 'admin', isActive: true },
-              select: { email: true },
-            }),
-            prisma.contract.count({
-              where: { accountId: invite.accountId, internalOwnerId: user.id },
-            }),
-          ]);
+          const admins = await prisma.user.findMany({
+            where: { accountId: invite.accountId, role: 'admin', isActive: true },
+            select: { email: true },
+          });
 
           const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
           const settingsUrl = `${appUrl}/settings?tab=users`;
@@ -1087,11 +1053,14 @@ router.post('/invite/:token/accept', credentialLimiter, async (req, res) => { //
           for (const admin of admins) {
             await sendEmail({
               to: admin.email,
-              subject: `${user.name} just activated their LapseIQ account`,
+              subject: `${user.name} just activated their ServiceCycle account`,
               html: newViewerActivationHtml({
                 viewerName: user.name,
                 viewerEmail: user.email,
-                contractCount,
+                // Assets carry no per-user owner — site-scoped visibility
+                // lands with the scoping rewire, so until then a fresh
+                // scoped viewer sees 0 assigned items.
+                assetCount: 0,
                 settingsUrl,
               }),
             });

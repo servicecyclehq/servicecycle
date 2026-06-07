@@ -23,17 +23,14 @@ const WorkspaceTab = {
   label: 'Workspace',
   // Sub-tab IDs that belong under the Workspace top tab. Order = the
   // order they appear in the sub-pill row.
-  // Per spec §7, Workspace covers: Account preferences, Headcount,
-  // Users & roles, Categories, Custom Fields, Document Storage, Demo
-  // Mode reset, Template Feedback. The 'general' sub-tab today bundles
-  // Account preferences + Headcount; 'access' bundles Users + Roles +
-  // Consultant Access (Consultant Access moves to Integrations in 1b).
+  // Workspace covers: Company name, Account preferences, Headcount,
+  // Custom Fields, Users & roles. The 'general' sub-tab bundles
+  // Company + Account preferences + Headcount; 'access' bundles
+  // Users + Roles + Consultant Access.
   subTabIds: [
-    'general',          // Account preferences + Headcount
-    'categories',       // Category management
+    'general',          // Company + Account preferences + Headcount
     'customfields',     // Custom Fields
-    'access',           // Users & Roles (Consultant Access split out in 1b)
-    'template-feedback' // Admin-only template feedback
+    'access',           // Users & Roles
   ],
   // Default sub-tab when the top tab is first selected.
   defaultSubTab: 'general',

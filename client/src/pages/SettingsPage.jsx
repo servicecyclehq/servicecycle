@@ -1,29 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useConfirm } from '../context/ConfirmContext';
-import api from '../api/client';
-import RenewalBriefSectionsCard from '../components/RenewalBriefSectionsCard';
 import PasswordInput from '../components/PasswordInput';
 import DlqPanel from '../components/DlqPanel'; // v0.67.12 (audit H33): DLQ inspection panel
 import UsersPage from './UsersPage';
 import PermissionsPage from './PermissionsPage';
-import SettingsTemplateFeedback from './SettingsTemplateFeedback'; // Phase 4 v0.4.0
 import SettingsTabRouter from './settings/SettingsTabRouter.jsx'; // v0.91 Phase 1a
 import ApiKeysSection  from '../components/settings/ApiKeysSection.jsx';  // v0.91 Phase 1b
 import WebhooksSection from '../components/settings/WebhooksSection.jsx'; // v0.91 Phase 1b
-import NewsOutageRegionSection from '../components/settings/NewsOutageRegionSection.jsx'; // v0.91 Phase 1b cont'd
 import SlackIntegrationSection from '../components/settings/SlackIntegrationSection.jsx'; // v0.91 Phase 1b cont'd
 import TeamsIntegrationSection from '../components/settings/TeamsIntegrationSection.jsx'; // v0.91 Phase 1b cont'd
 import AlertPreferencesSection from '../components/settings/AlertPreferencesSection.jsx'; // v0.91 Phase 1b cont'd
-import CloudConnectorsSection from '../components/settings/CloudConnectorsSection.jsx'; // v0.91 Phase 1b cont'd
 import ConsultantAccessSection from '../components/settings/ConsultantAccessSection.jsx'; // v0.91 Phase 1b cont'd
 import AiCapsSection from '../components/settings/AiCapsSection.jsx'; // v0.91 Phase 1b cont'd
 import DemoResetSection from '../components/settings/DemoResetSection.jsx'; // v0.91 Phase 1b cont'd
 import BackupSection from '../components/settings/BackupSection.jsx'; // v0.91 Phase 1b cont'd
 import EncryptionSection from '../components/settings/EncryptionSection.jsx'; // v0.91 Phase 1b cont'd
 import CustomFieldsSection from '../components/settings/CustomFieldsSection.jsx'; // v0.91 Phase 1b cont'd
-import CategoriesSection from '../components/settings/CategoriesSection.jsx'; // v0.91 Phase 1b cont'd
-import EvaluationLeadTimesSection from '../components/settings/EvaluationLeadTimesSection.jsx'; // #28 configurable evaluation lead times
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const API = import.meta.env.VITE_API_URL || '/api';
@@ -48,51 +40,9 @@ const DEFAULT_MODELS = {
   gemini:       'gemini-1.5-flash',
 };
 
-// (Pass-6 W3 MT-035 + MT-030) Provider labels for the per-toggle AI
-// disclosure microcopy below. Mirrors AiConsentModal.PROVIDER_LABELS so
-// the same legally meaningful name shows in both surfaces. Keep in sync
-// when adding a provider to lib/ai.js.
-const SECTION_PROVIDER_LABELS = {
-  anthropic:    'Anthropic Claude',
-  openai:       'OpenAI',
-  azure_openai: 'Azure OpenAI (your Microsoft tenant)',
-  gemini:       'Google Gemini',
-  cloudflare:   'Cloudflare Workers AI',
-  huggingface:  'Hugging Face Inference API',
-  groq:         'Groq',
-};
-
-// (Pass-6 W3 MT-030) Per-section additional-data-categories disclosure.
-// The always-on brief sends: product, vendor, dates, pricing, contract
-// terms, notes, tags, renewal history (the AiConsentModal baseline).
-// Each opt-in section augments that baseline -- this map names what
-// additional fields leave the box when that toggle is enabled, so an
-// admin flipping the switch sees the data category before they consent
-// on behalf of their account.
-//
-// GDPR Art. 13(1)(c) + EU AI Act Art. 52 + Colorado AI Act SB24-205 all
-// require disclosure at the point of interaction. The one-time consent
-// modal is the user-level surface; this is the account-admin surface
-// for the per-section opt-ins.
-//
-// Anchor: audit/pass-6/p6-pass4-compliance/layer_2_data_governance.md
-// L2-P6-B2; layer_3_privacy_engineering.md B3-02.
-const SECTION_DATA_DISCLOSURES = {
-  recommended_strategy:
-    'Sends the always-on baseline (product, vendor, dates, pricing, notes, tags, renewal history). No additional fields.',
-  license_utilization_analysis:
-    'Adds licensed-seat count and active-seat count to the prompt context.',
-  coterm_opportunities:
-    'Adds vendor-scoped relationship notes (other active contracts with this vendor, their end-date proximity).',
-  quote_request_hygiene:
-    'Adds contract / customer / PO numbers to the prompt context (used to remind the team what to include in quote-request emails).',
-  internal_stakeholder_map:
-    'Adds department, contract owner name, and total contract value -- used to infer the likely sign-off ROLES (not named individuals). Output is suggestion-only.',
-};
-
 export default function SettingsPage() {
   useDocumentTitle('Settings');
-  const { user, demoMode, updateUser, aiProvider } = useAuth(); // (Pass-6 W3 MT-030) aiProvider drives per-toggle disclosure
+  const { user, demoMode, updateUser } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   const [loading, setLoading]   = useState(true);
@@ -122,7 +72,7 @@ export default function SettingsPage() {
     // server-side branch so it doesn't go through the accountSetting upsert.
     aiBriefEnabled:          false,
     // v0.18.0: opt-in upstream anonymous feedback sync (AccountSetting KV).
-    // Admin-only. When true, thumbs ratings are forwarded to feedback.lapseiq.com.
+    // Admin-only. When true, thumbs ratings are forwarded to the upstream feedback endpoint.
     aiFeedbackUpstreamEnabled: false,
     // Phase 4: per-user boolean column. "Don't ask me each session"
     // suppresses the AI consent modal entirely for THIS user.
@@ -142,14 +92,9 @@ export default function SettingsPage() {
   const [exporting,   setExporting]   = useState(false);
   const [activeTab,   setActiveTab]   = useState(() => { const _p = new URLSearchParams(window.location.search); return _p.get('tab') || 'general'; });
 
-  // v0.37.3 W6 followup MT-150: brief-sections state lives entirely
-  // inside <RenewalBriefSectionsCard /> now. The card auto-saves on toggle
-  // via its own api.put() — no out-of-band state up here, no shared
-  // save handler, no setTimeout cleanup the parent needs to manage.
-
   useEffect(() => {
     fetch(`${API}/settings`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}` },
+      headers: { Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}` },
     })
       .then(r => r.json())
       .then(d => {
@@ -197,12 +142,6 @@ export default function SettingsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // v0.37.3 W6 followup MT-150: catalog fetch + toggle handler +
-  // save handler all live inside <RenewalBriefSectionsCard />. The card
-  // handles loading state, optimistic updates, error reversion, and the
-  // setTimeout cleanup for the "Saved." fade — none of which the parent
-  // needs to know about.
-
   function set(key, val) {
     setForm(f => ({ ...f, [key]: val }));
     if (key === 'AI_API_KEY') setKeyIsMasked(false);
@@ -222,7 +161,7 @@ export default function SettingsPage() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(payload),
       });
@@ -234,8 +173,8 @@ export default function SettingsPage() {
         setTimeout(() => setSaved(false), 5000);
         // v0.4.1 round-2 fix (#11): refresh AuthContext so the cached
         // user.account.aiBriefEnabled flips immediately. Without this,
-        // toggling AI Renewal Brief OFF in Settings leaves the
-        // ContractDetail card-hide gate looking at stale state until
+        // toggling the AI Maintenance Brief OFF in Settings leaves the
+        // asset-detail card-hide gate looking at stale state until
         // the next page reload — the card stays visible.
         if (typeof updateUser === 'function') {
           const patches = {};
@@ -267,7 +206,7 @@ export default function SettingsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(payload),
       });
@@ -286,7 +225,7 @@ export default function SettingsPage() {
     setExporting(true);
     try {
       const r = await fetch(`${API}/settings/export`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}` },
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -298,7 +237,7 @@ export default function SettingsPage() {
       const a    = document.createElement('a');
       const date = new Date().toISOString().slice(0, 10);
       a.href     = url;
-      a.download = `lapseiq-export-${date}.zip`;
+      a.download = `servicecycle-export-${date}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -386,8 +325,8 @@ export default function SettingsPage() {
         <section style={{ marginBottom: '2rem' }}>
           <h2 style={sectionHeading}>AI Features</h2>
           <p style={sectionDesc}>
-            When disabled, no contract data is sent to any external AI service.
-            All uploads still work — AI extraction and negotiation briefs are simply turned off.
+            When disabled, no equipment or maintenance data is sent to any external AI service.
+            All uploads still work — AI extraction and maintenance briefs are simply turned off.
           </p>
 
           <label style={toggleRow}>
@@ -396,7 +335,7 @@ export default function SettingsPage() {
                 Enable AI features
               </div>
               <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem', marginTop: 2 }}>
-                Contract intelligence extraction and renewal brief generation
+                Test-report extraction and maintenance brief generation
               </div>
             </div>
             <div
@@ -419,17 +358,17 @@ export default function SettingsPage() {
             </div>
           </label>
 
-          {/* ── Phase 4 (v0.4.0): per-feature AI Renewal Brief toggle ───── */}
-          {/* Sits below the master toggle. Disabled (greyed) when AI is */}
-          {/* turned off globally — the brief endpoint also requires AI_ENABLED */}
-          {/* so flipping this on while AI_ENABLED is false has no effect. */}
+          {/* Per-feature AI Maintenance Brief toggle. Sits below the master
+              toggle. Disabled (greyed) when AI is turned off globally — the
+              brief endpoint also requires AI_ENABLED so flipping this on
+              while AI_ENABLED is false has no effect. */}
           <label style={{ ...toggleRow, opacity: form.AI_ENABLED === 'true' ? 1 : 0.5 }}>
             <div>
               <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                Enable AI Renewal Brief
+                Enable AI Maintenance Brief
               </div>
               <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem', marginTop: 2 }}>
-                Per-category renewal brief with structured 4-section output (Situation, Market, Tactics, Watch For).
+                Per-asset AI maintenance recommendation and compliance summary.
                 {' '}Off by default. When on, the brief endpoint also enforces the per-session AI consent prompt.
               </div>
             </div>
@@ -454,19 +393,19 @@ export default function SettingsPage() {
           </label>
 
           {/* ── v0.18.0: opt-in upstream anonymous feedback sync ─────────────── */}
-          {/* Admin-only. Only visible when AI Renewal Brief is on, since     */}
-          {/* feedback is generated by the brief feature. Sends anonymous     */}
-          {/* thumbs ratings to feedback.lapseiq.com; no PII leaves the       */}
-          {/* server — instanceId is a truncated SHA-256 hash of accountId.   */}
+          {/* Admin-only. Only visible when the AI Maintenance Brief is on,   */}
+          {/* since feedback is generated by the brief feature. Sends         */}
+          {/* anonymous thumbs ratings upstream; no PII leaves the server —   */}
+          {/* instanceId is a truncated SHA-256 hash of accountId.            */}
           {isAdmin && form.aiBriefEnabled && (
             <label style={{ ...toggleRow, opacity: form.AI_ENABLED === 'true' ? 1 : 0.5 }}>
               <div>
                 <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                  Help improve LapseIQ templates
+                  Help improve ServiceCycle templates
                 </div>
                 <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem', marginTop: 2 }}>
-                  Anonymously share thumbs-up/down ratings from AI renewal brief sections with ForgeRift.
-                  {' '}No account name, user identity, or contract data leaves your server — only an
+                  Anonymously share thumbs-up/down ratings from AI maintenance brief output with ForgeRift.
+                  {' '}No account name, user identity, or equipment data leaves your server — only an
                   {' '}anonymous instance ID and the rating. Free-text feedback is included only if provided.
                 </div>
               </div>
@@ -524,9 +463,9 @@ export default function SettingsPage() {
           </label>
 
           {/* ── v0.66.0: per-role daily AI-call caps ───────────────────────────── */}
-          {/* Admin-only. Sum across all AI actions (extract + ask + brief +
-              brief_search + narrate). Lowest cap wins between this and per-
-              action caps. Empty input = use built-in default (admin=unlimited,
+          {/* Admin-only. Sum across all AI actions (ingest_extract + ask +
+              maintenance_brief + narrate). Lowest cap wins between this and
+              per-action caps. Empty input = use built-in default (admin=unlimited,
               manager=100, consultant=50, viewer=20). Self-host operators
               can also pin via env AI_DAILY_CAP_PER_USER_ROLE_<ROLE>. */}
           {isAdmin && (
@@ -577,24 +516,11 @@ export default function SettingsPage() {
           )}
         </section>
 
-        {/* ── v0.36.0: Renewal Brief Sections — admin-toggleable opt-ins ────── */}
-        {/* v0.37.3 W6 followup MT-150: extracted to its own component. The
-            card auto-saves on toggle (no standalone Save button), uses the
-            shared api client (auth header + refresh-token interceptor),
-            and cleans up its setTimeout on unmount. disabled prop folds in
-            every gate that previously lived on each toggle: not-admin,
-            AI globally off, brief gen off at account level, or demo mode. */}
-        <RenewalBriefSectionsCard
-          disabled={!isAdmin || form.AI_ENABLED !== 'true' || !form.aiBriefEnabled || demoMode}
-          aiProvider={aiProvider}
-          demoMode={demoMode}
-        />
-
         {/* ── AI Provider ──────────────────────────────────────── */}
         <section style={{ marginBottom: '2rem' }}>
           <h2 style={sectionHeading}>AI Provider</h2>
           <p style={sectionDesc}>
-            Select which AI service processes your contract documents.
+            Select which AI service processes your uploaded documents and test reports.
             Each provider requires its own API key.
           </p>
 
@@ -706,7 +632,7 @@ export default function SettingsPage() {
         <section style={{ marginBottom: '2rem' }}>
           <h2 style={sectionHeading}>Document Storage</h2>
           <p style={sectionDesc}>
-            Where uploaded contract documents are stored on this instance.
+            Where uploaded documents and test reports are stored on this instance.
             <strong> Local</strong> stores files relative to the app install directory.
             <strong> Custom path</strong> lets you map any local, network share, or mounted cloud folder.
             <strong> S3-compatible</strong> uploads to any S3-compatible bucket (AWS S3, Backblaze B2, Wasabi, Cloudflare R2, or self-hosted MinIO).
@@ -733,12 +659,12 @@ export default function SettingsPage() {
                 <label style={fieldLabel}>
                   Storage path
                   <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400, marginLeft: 6 }}>
-                    (absolute path, e.g. /mnt/nas/lapseiq or C:\Storage\LapseIQ)
+                    (absolute path, e.g. /mnt/nas/servicecycle or C:\Storage\ServiceCycle)
                   </span>
                 </label>
                 <input
                   type="text"
-                  placeholder="/mnt/nas/lapseiq-docs"
+                  placeholder="/mnt/nas/servicecycle-docs"
                   value={form.STORAGE_PATH}
                   onChange={e => set('STORAGE_PATH', e.target.value)}
                   disabled={!isAdmin}
@@ -763,10 +689,28 @@ export default function SettingsPage() {
         {/* ── General tab ──────────────────────────────────────── */}
         <div style={{ display: activeTab === 'general' ? 'block' : 'none' }}>
         <section style={{ marginBottom: '2rem' }}>
+          <h2 style={sectionHeading}>Company</h2>
+          <p style={sectionDesc}>
+            The company name shown across this ServiceCycle instance. Set at registration.
+          </p>
+          <div style={{ maxWidth: 320 }}>
+            <label style={fieldLabel}>Company name</label>
+            <input
+              type="text"
+              style={fieldInput}
+              value={user?.account?.companyName || ''}
+              disabled
+              readOnly
+              aria-label="Company name"
+            />
+          </div>
+        </section>
+
+        <section style={{ marginBottom: '2rem' }}>
           <h2 style={sectionHeading}>Account Preferences</h2>
           <p style={sectionDesc}>
-            Set your fiscal year start month. This controls how contracts are grouped in the
-            Quarter and Fiscal Year calendar views, and how budget forecast roll-ups are calculated.
+            Set your fiscal year start month. This controls how maintenance schedules are grouped in the
+            Quarter and Fiscal Year calendar views.
           </p>
           <div style={{ maxWidth: 320 }}>
             <label style={fieldLabel}>Fiscal year starts in</label>
@@ -785,7 +729,7 @@ export default function SettingsPage() {
               ))}
             </select>
             <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: 6 }}>
-              Example: select July for a Jul 1 – Jun 30 fiscal year. Every grouped view and budget roll-up updates instantly.
+              Example: select July for a Jul 1 – Jun 30 fiscal year. Every grouped view updates instantly.
             </p>
           </div>
         </section>
@@ -793,7 +737,7 @@ export default function SettingsPage() {
         <section style={{ marginBottom: '2rem' }}>
           <h2 style={sectionHeading}>Headcount</h2>
           <p style={sectionDesc}>
-            Total headcount for this account. Drives cost-per-employee KPIs in reports.
+            Total headcount for this account. Drives per-employee KPIs in reports.
             Single value, not per-department. Admin-only.
           </p>
           <div style={{ maxWidth: 320 }}>
@@ -810,7 +754,7 @@ export default function SettingsPage() {
               disabled={!isAdmin}
             />
             <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: 6 }}>
-              Leave blank to hide cost-per-employee KPIs. Range: 0 - 1,000,000.
+              Leave blank to hide per-employee KPIs. Range: 0 - 1,000,000.
             </p>
           </div>
         </section>
@@ -951,7 +895,7 @@ export default function SettingsPage() {
         <div style={{ marginTop: '2rem' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>AI Ingestion Usage</h2>
           <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
-            Tracks how many AI contract extractions this account has used. The default free limit is 10.
+            Tracks how many AI document extractions this account has used. The default free limit is 10.
             Paid accounts can have this limit increased.
           </p>
           {(() => {
@@ -996,7 +940,6 @@ export default function SettingsPage() {
       )}
 
       {/* ── AI Daily Caps — AI tab, admin only ───────────────── */}
-      {isAdmin && activeTab === 'general' && <EvaluationLeadTimesSection />}
       {isAdmin && activeTab === 'ai' && <AiCapsSection />}
 
       {/* (A4) Demo Reset — only on demo instances, top of the data tab.
@@ -1009,8 +952,8 @@ export default function SettingsPage() {
         <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--color-border)' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Account Data Export</h2>
           <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
-            Download a complete export of your account data as a ZIP archive. Includes all contracts (CSV + JSON),
-            vendors, activity log, and a document manifest. Useful for backups, audits, or migrating to another instance.
+            Download a complete export of your account data as a ZIP archive. Includes all assets (CSV + JSON),
+            contractors, activity log, and a document manifest. Useful for backups, audits, or migrating to another instance.
           </p>
           <button
             type="button"
@@ -1040,7 +983,7 @@ export default function SettingsPage() {
             )}
           </button>
           <p style={{ fontSize: '0.775rem', color: 'var(--color-text-secondary)', marginTop: 8 }}>
-            Export includes contracts.csv, contracts.json, vendors.json, activity_log.json, documents.json
+            Export includes assets.csv, assets.json, contractors.json, activity_log.json, documents.json
           </p>
         </div>
       )}
@@ -1049,23 +992,13 @@ export default function SettingsPage() {
       {activeTab === 'alerts' && (
         <>
           <AlertPreferencesSection />
-          {isAdmin && <NewsOutageRegionSection />}
           {isAdmin && <SlackIntegrationSection />}
           {isAdmin && <TeamsIntegrationSection />}
         </>
       )}
 
-      {/* ── Cloud Marketplace Connectors — imports tab ────────── */}
-      {isAdmin && activeTab === 'imports' && <CloudConnectorsSection />}
-
       {/* ── Custom Fields — customfields tab ───────────────────── */}
       {activeTab === 'customfields' && <CustomFieldsSection isAdmin={isAdmin} />}
-
-      {/* ── Categories — categories tab (Phase 2 non-SaaS expansion) ───── */}
-      {activeTab === 'categories' && <CategoriesSection isAdmin={isAdmin} />}
-
-      {/* ── Template Feedback — admin-only (Phase 4 v0.4.0) ───────────── */}
-      {isAdmin && activeTab === 'template-feedback' && <SettingsTemplateFeedback />}
 
       {/* ── API Keys — admin-only (v0.20.0) ─────────────────────────────── */}
       {isAdmin && activeTab === 'api-keys' && <ApiKeysSection />}

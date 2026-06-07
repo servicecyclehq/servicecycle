@@ -7,11 +7,14 @@ import api from '../../api/client';
 // priority over the env-var / demo-default resolution in aiQuota.js.
 // null override = fall back to env-var/demo defaults.
 
+// Fallback labels — the server response includes a per-action `label`
+// which takes priority; this map only covers older server responses.
 const AI_CAP_LABELS = {
-  extract:      'PDF & Signature Extraction (shared)',
-  ask:          'Ask LapseIQ Assistant',
-  brief:        'Renewal Brief',
+  extract:      'PDF & Nameplate Extraction (shared)',
+  ask:          'Ask ServiceCycle Assistant',
+  brief:        'Maintenance Brief Generation',
   brief_search: 'Brief Web-Search Enrichment',
+  narrate:      'AI Report Narration',
 };
 
 export default function AiCapsSection() {
@@ -92,7 +95,7 @@ export default function AiCapsSection() {
               return (
                 <tr key={a.action} style={{ borderBottom: i < data.actions.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
                   <td style={{ padding: '8px 12px', fontWeight: 500 }}>
-                    {AI_CAP_LABELS[a.action] || a.action}
+                    {a.label || AI_CAP_LABELS[a.action] || a.action}
                   </td>
                   <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     {envDisplay}

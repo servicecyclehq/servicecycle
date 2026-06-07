@@ -123,7 +123,7 @@ router.post('/invite', requireAdmin, inviteLimiter, async (req, res) => {
 
     await sendEmail({
       to: normalizedEmail,
-      subject: `You've been invited to join ${account.companyName} on LapseIQ`,
+      subject: `You've been invited to join ${account.companyName} on ServiceCycle`,
       html: inviteHtml({ inviterName: req.user.name, companyName: account.companyName, role, link }),
     });
 
@@ -148,7 +148,7 @@ router.get('/', requireAdmin, async (req, res) => {
         isActive: true,
         lastLogin: true,
         featureFlags: true,
-        contractScopeRestricted: true,
+        assetScopeRestricted: true,
         createdAt: true,
       },
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
@@ -208,11 +208,11 @@ router.post('/', requireAdmin, async (req, res) => {
     });
 
     // M11: record direct-create in audit log (distinguishable from invite-accept)
-    // contractId is null — activity_logs.contractId is nullable for non-contract events.
+    // assetId is null — activity_logs.assetId is nullable for non-asset events.
     try {
       await prisma.activityLog.create({
         data: {
-          contractId: null,
+          assetId:    null,
           userId:     req.user.id,
           action:     'user_created', // (M11) noun-verb convention matching other audit actions
           details:    { newUserId: user.id, newUserEmail: user.email, role, byUserId: req.user.id },
@@ -467,42 +467,9 @@ router.put('/:id/deactivate', requireAdmin, async (req, res) => {
       }
     }
 
-    // H5 (audit High, 2026-05-22): block silent contract-owner orphaning.
-    // If target owns contracts, the admin must explicitly pass
-    // reassignToUserId in the body. Otherwise the alert engine + the
-    // dashboard "your contracts" surfaces silently lose those contracts.
-    // reassignToUserId === null is also accepted -- means "unassign +
-    // proceed", same as the old behaviour but now opt-in.
-    const ownedCount = await prisma.contract.count({
-      where: { internalOwnerId: target.id, archivedAt: null },
-    });
-    if (ownedCount > 0) {
-      if (!('reassignToUserId' in (req.body || {}))) {
-        return res.status(400).json({
-          success: false,
-          error: `Cannot deactivate -- target owns ${ownedCount} contracts. Pass reassignToUserId (a user id or null) in the body.`,
-          data: { ownedCount },
-        });
-      }
-      const reassignToUserId = req.body.reassignToUserId;
-      if (reassignToUserId !== null) {
-        // Validate the reassignment target lives in the same account.
-        const newOwner = await prisma.user.findFirst({
-          where:  { id: reassignToUserId, accountId: req.user.accountId, isActive: true },
-          select: { id: true },
-        });
-        if (!newOwner) {
-          return res.status(400).json({
-            success: false,
-            error: 'reassignToUserId is not a user in this account or is inactive',
-          });
-        }
-      }
-      await prisma.contract.updateMany({
-        where: { internalOwnerId: target.id, archivedAt: null },
-        data:  { internalOwnerId: reassignToUserId }, // null = unassign
-      });
-    }
+    // NOTE: the inherited contract-owner reassignment gate is gone — assets
+    // have no per-user owner column. Site-assignment cleanup for scoped
+    // viewers lands with the user↔site scoping rewire.
 
     await prisma.user.update({
       where: { id: req.params.id },
@@ -521,8 +488,6 @@ router.put('/:id/deactivate', requireAdmin, async (req, res) => {
         details: {
           targetUserId: target.id,
           reason,
-          reassignedTo: req.body?.reassignToUserId ?? null,
-          ownedContractsAtDeactivate: ownedCount,
         },
       });
     } catch (logErr) {
@@ -623,23 +588,18 @@ function _subProcessorsSnapshot() {
       { name: 'Stripe, Inc.',           role: 'Payment processing (provisioned, not yet active on demo)',              dataCategories: 'Payment-method data, billing details (when activated)' },
     ],
     tier2_ai_providers: [
-      { name: 'Cloudflare Workers AI',    role: 'Primary AI provider on demo',                                       dataCategoriesSent: 'Contract metadata; uploaded document text during extraction; Ask LapseIQ question text' },
-      { name: 'Hugging Face Inference',   role: 'Fallback AI provider (ask + classification only)',                  dataCategoriesSent: 'Ask LapseIQ question text; vendor-news classification prompts' },
-      { name: 'Groq',                     role: 'Fallback AI provider (ask + classification only)',                  dataCategoriesSent: 'Ask LapseIQ question text; vendor-news classification prompts' },
+      { name: 'Cloudflare Workers AI',    role: 'Primary AI provider on demo',                                       dataCategoriesSent: 'Asset metadata; uploaded document text during extraction; assistant question text' },
+      { name: 'Hugging Face Inference',   role: 'Fallback AI provider (ask only)',                                   dataCategoriesSent: 'Assistant question text' },
+      { name: 'Groq',                     role: 'Fallback AI provider (ask only)',                                   dataCategoriesSent: 'Assistant question text' },
       { name: 'Anthropic, PBC',           role: 'Self-host AI provider (operator opt-in)',                           dataCategoriesSent: 'Same as Cloudflare Workers AI when AI_PROVIDER=anthropic' },
       { name: 'OpenAI',                   role: 'Self-host AI provider (operator opt-in)',                           dataCategoriesSent: 'Same as Cloudflare Workers AI when AI_PROVIDER=openai' },
       { name: 'Azure OpenAI',             role: 'Self-host AI provider (operator opt-in; under operator Microsoft tenant)', dataCategoriesSent: 'Same as Cloudflare Workers AI when AI_PROVIDER=azure_openai' },
       { name: 'Google Gemini',            role: 'Self-host AI provider (operator opt-in)',                           dataCategoriesSent: 'Same as Cloudflare Workers AI when AI_PROVIDER=gemini' },
-      { name: 'Tavily',                   role: 'Optional web-search enrichment for renewal-brief category lookup',  dataCategoriesSent: 'Contract category slug + product name only (no vendor name, no customer data, no document text)' },
+      { name: 'Tavily',                   role: 'Optional web-search enrichment for maintenance-brief lookup',       dataCategoriesSent: 'Equipment type + manufacturer/model only (no customer data, no document text)' },
     ],
     tier3_monitoring: [
-      { name: 'Better Stack (Logtail)',  role: 'Log aggregation and uptime monitoring; receives structured server logs',        dataCategories: 'Server-side log payloads which may include user IDs, action names, and truncated request metadata. No raw contract content.' },
+      { name: 'Better Stack (Logtail)',  role: 'Log aggregation and uptime monitoring; receives structured server logs',        dataCategories: 'Server-side log payloads which may include user IDs, action names, and truncated request metadata. No raw document content.' },
       { name: 'Healthchecks.io',        role: 'Cron-job heartbeat monitoring (ping on each scheduled-job completion/failure)', dataCategories: 'Ping timestamp + optional status string only; no personal data transmitted' },
-    ],
-    tier4_cloud_marketplace: [
-      { name: 'Amazon Web Services (AWS)',    role: 'AWS License Manager sync (operator opt-in via cloud marketplace settings)', dataCategories: 'AWS account ID + product subscription metadata returned from License Manager API; no end-user personal data sent to AWS' },
-      { name: 'Microsoft Azure',             role: 'Azure Marketplace sync (operator opt-in)',                                  dataCategories: 'Azure subscription ID + SaaS entitlement metadata; no end-user personal data sent to Azure' },
-      { name: 'Google Cloud Platform (GCP)', role: 'GCP Marketplace sync (operator opt-in)',                                   dataCategories: 'GCP project ID + entitlement metadata; no end-user personal data sent to GCP' },
     ],
     perActivity: {
       authentication:                ['DigitalOcean (origin)', 'Cloudflare (TLS termination)'],
@@ -648,12 +608,10 @@ function _subProcessorsSnapshot() {
       ai_brief_always_on:            ['Configured AI provider (see Settings -> AI Provider)'],
       ai_brief_optin_supplementary:  ['Configured AI provider (same as always-on)'],
       ai_extraction:                 ['Configured AI provider'],
-      ai_ask_lapseiq:                ['Configured AI provider', 'Hugging Face / Groq (cascade fallback when primary fails)'],
+      ai_assistant:                  ['Configured AI provider', 'Hugging Face / Groq (cascade fallback when primary fails)'],
       web_search_enrichment:         ['Tavily (when enabled in Settings)'],
-      news_classification:           ['Configured AI provider', 'Hugging Face / Groq (cascade fallback)'],
       log_aggregation:               ['Better Stack (Logtail)'],
       cron_monitoring:               ['Healthchecks.io'],
-      cloud_marketplace_sync:        ['AWS (opt-in)', 'Azure (opt-in)', 'GCP (opt-in)'],
     },
   };
 }
@@ -685,7 +643,7 @@ router.get('/:id/export', async (req, res) => {
       select: {
         id: true, accountId: true, name: true, email: true, role: true,
         isActive: true, lastLogin: true, createdAt: true, updatedAt: true,
-        twoFactorEnabled: true, contractScopeRestricted: true,
+        twoFactorEnabled: true, assetScopeRestricted: true,
         acceptedTermsAt: true, acceptedTermsVersion: true,
         aiConsentDismissedAt: true, aiConsentSilenced: true,
         featureFlags: true, hiddenFeatures: true,
@@ -707,7 +665,7 @@ router.get('/:id/export', async (req, res) => {
     // Pass-4 audit L3-04: every findMany is capped at SECTION_CAP rows so
     // a single self-export of a long-lived account can't OOM the Node
     // process. If a section is truncated, the response records the cap so
-    // the user can email support@lapseiq.com for a full extract.
+    // the user can email support@servicecycle.app for a full extract.
     const SECTION_CAP = 50000;
     const cap: any = { take: SECTION_CAP };
     const truncations: any = {};
@@ -720,29 +678,22 @@ router.get('/:id/export', async (req, res) => {
     const archive: any = {
       generatedAt: new Date().toISOString(),
       generatedBy: req.user.id,
-      // (Pass-6 W3 MT-033) bump to /3: adds templateFeedback, apiKeysOnAccount
-      // (account-scoped, keyHash excluded), and a subProcessorsAtExportTime
-      // snapshot for Art. 15(1)(c) compliance.
-      schemaVersion: 'lapseiq-gdpr-export/3',
+      // (Pass-6 W3 MT-033) bump to /3: adds apiKeysOnAccount (account-scoped,
+      // keyHash excluded) and a subProcessorsAtExportTime snapshot for
+      // Art. 15(1)(c) compliance.
+      schemaVersion: 'servicecycle-gdpr-export/3',
       user,
       alertPreferences:    await capped('alertPreferences',    () => prisma.alertPreference.findMany({ where: { userId: targetId }, ...cap })),
       aiUsage:             await capped('aiUsage',             () => prisma.aiUsage.findMany({ where: { userId: targetId }, ...cap })),
       activityLog:         await capped('activityLog',         () => prisma.activityLog.findMany({ where: { userId: targetId }, orderBy: { createdAt: 'desc' }, ...cap })),
-      userNewsRead:        await capped('userNewsRead',        () => prisma.userNewsRead.findMany({ where: { userId: targetId }, ...cap })),
-      userNewsWatch:       await capped('userNewsWatch',       () => prisma.userNewsWatch.findMany({ where: { userId: targetId }, ...cap })),
-      refreshTokens:       await capped('refreshTokens',       () => prisma.refreshToken.findMany({ where: { userId: targetId }, select: { id: true, createdAt: true, expiresAt: true, revokedAt: true, replacedById: true, userAgent: true, ipAddress: true }, ...cap })),
+      refreshTokens:       await capped('refreshTokens',       () => prisma.refreshToken.findMany({ where: { userId: targetId }, select: { id: true, createdAt: true, expiresAt: true, revokedAt: true, replacedById: true }, ...cap })),
       communicationsAuthored: await capped('communicationsAuthored', () => prisma.communication.findMany({ where: { createdBy: targetId, accountId: req.user.accountId }, ...cap })), // Pass-2 P2 fix: tenant-scope
       // Pass-4 audit L3-02 / L3-03: complete the personal-data scope so
       // Article 15 returns every row referencing the data subject, not just
       // the user-rooted graph.
       earlyAccessRequests: await capped('earlyAccessRequests', () => prisma.earlyAccessRequest.findMany({ where: { email: user.email }, ...cap })),
       invitesReceived:     await capped('invitesReceived',     () => prisma.userInvite.findMany({ where: { email: user.email, accountId: req.user.accountId }, ...cap })),
-      invitesSent:         await capped('invitesSent',         () => prisma.userInvite.findMany({ where: { createdById: targetId, accountId: req.user.accountId }, ...cap })),
-      // (Pass-6 W3 MT-033) TemplateFeedback rows authored by the user.
-      // ratings + freeText are user-generated personal data; required by
-      // GDPR Art. 15(1)(a). Tenant-scoped so a cross-account leak is
-      // structurally impossible.
-      templateFeedback:    await capped('templateFeedback',    () => prisma.templateFeedback.findMany({ where: { userId: targetId, accountId: req.user.accountId }, ...cap }).catch(() => [])),
+      invitesSent:         await capped('invitesSent',         () => prisma.userInvite.findMany({ where: { invitedBy: targetId, accountId: req.user.accountId }, ...cap })),
       // (Pass-6 W3 MT-033) ApiKey metadata on the user's account. The
       // keyHash is deliberately excluded -- a data-subject access request
       // should not return material that could be replayed to authenticate.
@@ -756,7 +707,7 @@ router.get('/:id/export', async (req, res) => {
       // of export. Update when the canonical list changes.
       subProcessorsAtExportTime: _subProcessorsSnapshot(),
       truncations: Object.keys(truncations).length
-        ? { ...truncations, note: 'Some sections were truncated at ' + SECTION_CAP + ' rows. Email support@lapseiq.com if a full extract is needed.' }
+        ? { ...truncations, note: 'Some sections were truncated at ' + SECTION_CAP + ' rows. Email support@servicecycle.app if a full extract is needed.' }
         : null,
     };
 
@@ -767,7 +718,7 @@ router.get('/:id/export', async (req, res) => {
       details: { targetUserId: targetId, schemaVersion: archive.schemaVersion },
     }).catch(() => {});
 
-    const filename = `lapseiq-user-${targetId}-${new Date().toISOString().slice(0, 10)}.json`;
+    const filename = `servicecycle-user-${targetId}-${new Date().toISOString().slice(0, 10)}.json`;
     res.set('Content-Type', 'application/json; charset=utf-8');
     res.set('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(JSON.stringify(archive, null, 2));
@@ -830,13 +781,13 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       // would impair audit-trail integrity required for security investigations.
       // Personal data is scrubbed: userId is nulled here; email addresses are
       // removed from JSONB details below (T1-N7). Remaining fields
-      // (action, contractId, accountId, createdAt) carry no direct identifier.
+      // (action, assetId, accountId, createdAt) carry no direct identifier.
       await tx.activityLog.updateMany({
         where: { userId: targetId },
         data:  { userId: null },
       });
-      // Communications authored: keep the comm record (it's vendor-attached
-      // procurement context the account still needs) but null the author.
+      // Communications authored: keep the comm record (it's contractor-attached
+      // maintenance context the account still needs) but null the author.
       await tx.communication.updateMany({
         where: { createdBy: targetId },
         data:  { createdBy: null },
@@ -856,8 +807,8 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       await tx.$executeRaw`UPDATE "activity_logs" SET details = details - 'attemptedEmail' WHERE details->>'attemptedEmail' = ${target.email}`;
       // Per-user preference rows — these have onDelete: Cascade so the
       // user.delete below removes them. Listed here for code-grep
-      // discoverability: alertPreference, aiUsage, userNewsRead,
-      // userNewsWatch, userInvites (createdById).
+      // discoverability: alertPreference, aiUsage, userPreference,
+      // refreshToken.
       await tx.user.delete({ where: { id: targetId } });
     });
 
@@ -918,13 +869,13 @@ router.put('/:id/reset-password', requireAdmin, async (req, res) => {
     });
 
     // F010: audit the privileged action. Fire-and-forget — never blocks the
-    // response. contractId stays null because this is a user event, not a
-    // contract event. byUserId records who pulled the trigger; targetUserId
+    // response. assetId stays null because this is a user event, not an
+    // asset event. byUserId records who pulled the trigger; targetUserId
     // / targetUserEmail records who was hit.
     try {
       await prisma.activityLog.create({
         data: {
-          contractId: null,
+          assetId:    null,
           userId:     req.user.id,
           action:     'admin_password_reset',
           details: {
@@ -1023,7 +974,7 @@ router.put('/permissions', requireAdmin, async (req, res) => {
 });
 
 // ── PATCH /api/users/:id/scope-restriction ────────────────────────────────────
-// Toggle contractScopeRestricted for a viewer user.
+// Toggle assetScopeRestricted for a viewer user.
 // Only meaningful for viewers — admins and managers always see everything.
 router.patch('/:id/scope-restriction', requireAdmin, async (req, res) => {
   const { restricted } = req.body;
@@ -1046,10 +997,10 @@ router.patch('/:id/scope-restriction', requireAdmin, async (req, res) => {
 
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { contractScopeRestricted: restricted },
+      data: { assetScopeRestricted: restricted },
    select: {
         id: true, name: true, email: true, role: true, isActive: true,
-        lastLogin: true, featureFlags: true, contractScopeRestricted: true, createdAt: true,
+        lastLogin: true, featureFlags: true, assetScopeRestricted: true, createdAt: true,
       },
     });
 

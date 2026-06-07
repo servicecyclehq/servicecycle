@@ -1,7 +1,7 @@
 /**
  * server/lib/webhook.js
  *
- * Generic outbound webhook delivery for LapseIQ alert events.
+ * Generic outbound webhook delivery for ServiceCycle alert events.
  *
  * Each configured WebhookEndpoint receives a signed JSON POST whenever the
  * nightly alert engine fires. This enables Zapier, n8n, Make, custom HTTP
@@ -9,19 +9,25 @@
  *
  * Payload shape (stable; treat as public API contract):
  * {
- *   event:       "renewal_alert",          // always this string for now
- *   alertType:   "renewal" | "cancel_by" | "review_by" | "payment_due",
- *   daysUntil:   number,                   // days until the relevant date
- *   contractId:  string,
- *   product:     string,
- *   vendor:      string | null,
- *   endDate:     ISO-8601 | null,          // contract end / renewal date
- *   cancelByDate: ISO-8601 | null,         // auto-renew cancellation deadline
- *   appUrl:      string,                   // deep-link to contract in LapseIQ
+ *   event:       "maintenance.due" | "maintenance.overdue" |
+ *                "maintenance.escalation" | "maintenance.regulatory_breach",
+ *   alertType:   "maintenance_due" | "overdue" | "escalation" | "regulatory_breach",
+ *   daysUntil:   number,                   // days until nextDueDate (negative = overdue)
+ *   leadDays:    number | null,            // lead-time tier for maintenance_due rows
+ *   scheduleId:  string,
+ *   assetId:     string,
+ *   asset:       string,                   // display label (manufacturer model S/N or equipment type)
+ *   equipmentType: string | null,
+ *   siteName:    string | null,
+ *   taskName:    string | null,            // maintenance task this schedule tracks
+ *   nextDueDate: ISO-8601 | null,
+ *   appUrl:      string,                   // deep-link to asset in ServiceCycle
  *   sentAt:      ISO-8601,
- *   // payment_due only:
- *   paymentAmount: string | null,
  * }
+ *
+ * A "workorder.completed" event (same envelope, workOrderId instead of
+ * scheduleId) is reserved for the work-order route layer; EVENT_NAMES below
+ * is the canonical map.
  *
  * SSRF defense:
  *   - HTTPS required (no plain HTTP, no file://, no data://).
@@ -30,9 +36,9 @@
  *   - No redirects followed (redirect: 'error').
  *
  * Signing (v0.37.1 W5 MT-132 — timestamped):
- *   X-LapseIQ-Signature:   sha256=<hex-hmac-of-"timestamp.body">
- *   X-LapseIQ-Timestamp:   unix-seconds string (sender clock)
- *   X-LapseIQ-Delivery-Id: per-delivery UUID
+ *   X-ServiceCycle-Signature:   sha256=<hex-hmac-of-"timestamp.body">
+ *   X-ServiceCycle-Timestamp:   unix-seconds string (sender clock)
+ *   X-ServiceCycle-Delivery-Id: per-delivery UUID
  *
  *   The HMAC is now computed over `<timestamp>.<body>` (concatenated with
  *   a literal "."). Verifiers reject deliveries whose timestamp is more
@@ -189,23 +195,51 @@ function signPayload(body, timestampOrSecret, maybeSecret) {
 
 // ── Payload builder ───────────────────────────────────────────────────────────
 
+// Canonical alertType → event-name map. The dotted form is the public
+// contract integrators filter on; 'workorder.completed' is emitted by the
+// work-order completion route (not the alert engine) but lives here so the
+// names stay in one place.
+const EVENT_NAMES = Object.freeze({
+  maintenance_due:     'maintenance.due',
+  overdue:             'maintenance.overdue',
+  escalation:          'maintenance.escalation',
+  regulatory_breach:   'maintenance.regulatory_breach',
+  workorder_completed: 'workorder.completed',
+});
+
+// Human label for an asset: manufacturer + model + serial when available,
+// equipment type as the fallback. Mirrors lib/email.js assetDisplayName —
+// kept local so the delivery module stays prisma/email-free for unit tests.
+function assetLabel(asset) {
+  if (!asset || typeof asset !== 'object') return 'Asset';
+  const parts = [asset.manufacturer, asset.model].filter(Boolean);
+  if (asset.serialNumber) parts.push(`S/N ${asset.serialNumber}`);
+  if (parts.length > 0) return parts.join(' ');
+  return asset.equipmentType ? String(asset.equipmentType).replace(/_/g, ' ') : 'Asset';
+}
+
+/**
+ * @param {object} alertItem — { schedule, asset, alertType, daysUntil, leadDays? }
+ *   schedule: { id, nextDueDate?, taskDefinition?: { taskName } }
+ *   asset:    { id, equipmentType?, manufacturer?, model?, serialNumber?, site?: { name } }
+ */
 function buildPayload(alertItem, appUrl) {
-  const { contract, alertType, daysUntil, paymentAmount } = alertItem;
+  const { schedule, asset, alertType, daysUntil, leadDays } = alertItem;
   const payload: any = {
-    event:        'renewal_alert',
+    event:         EVENT_NAMES[alertType] || `maintenance.${alertType}`,
     alertType,
     daysUntil,
-    contractId:   contract.id,
-    product:      contract.product || null,
-    vendor:       contract.vendor?.name || null,
-    endDate:      contract.endDate ? new Date(contract.endDate).toISOString() : null,
-    cancelByDate: contract.cancelByDate ? new Date(contract.cancelByDate).toISOString() : null,
-    appUrl:       `${appUrl}/contracts/${contract.id}`,
-    sentAt:       new Date().toISOString(),
+    leadDays:      leadDays ?? null,
+    scheduleId:    schedule?.id || null,
+    assetId:       asset.id,
+    asset:         assetLabel(asset),
+    equipmentType: asset.equipmentType || null,
+    siteName:      asset.site?.name || null,
+    taskName:      schedule?.taskDefinition?.taskName || null,
+    nextDueDate:   schedule?.nextDueDate ? new Date(schedule.nextDueDate).toISOString() : null,
+    appUrl:        `${appUrl}/assets/${asset.id}`,
+    sentAt:        new Date().toISOString(),
   };
-  if (alertType === 'payment_due') {
-    payload.paymentAmount = paymentAmount || null;
-  }
   return JSON.stringify(payload);
 }
 
@@ -237,12 +271,12 @@ function pinnedLookup(addresses) {
 // 3xx cannot bounce the request to an internal target either.
 async function postOnce({ url, addresses, body, signature, timestamp, deliveryId, timeoutMs }) {
   const outHeaders = {
-    'Content-Type':           'application/json',
-    'Content-Length':         Buffer.byteLength(body),
-    'X-LapseIQ-Signature':    signature,
-    'X-LapseIQ-Timestamp':    timestamp,
-    'X-LapseIQ-Delivery-Id':  deliveryId,
-    'User-Agent':             'LapseIQ-Webhook/1.0',
+    'Content-Type':                'application/json',
+    'Content-Length':              Buffer.byteLength(body),
+    'X-ServiceCycle-Signature':    signature,
+    'X-ServiceCycle-Timestamp':    timestamp,
+    'X-ServiceCycle-Delivery-Id':  deliveryId,
+    'User-Agent':                  'ServiceCycle-Webhook/1.0',
   };
 
   let u;
@@ -381,15 +415,21 @@ async function deliverWebhook({
 // ── Test payload ──────────────────────────────────────────────────────────────
 
 function buildTestPayload(appUrl) {
-  const fakeContract = {
-    id:          'test-00000000-0000-0000-0000-000000000000',
-    product:     'Acme Enterprise Suite',
-    vendor:      { name: 'Acme Corp' },
-    endDate:     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    cancelByDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  const fakeAsset = {
+    id:            'test-00000000-0000-0000-0000-000000000000',
+    equipmentType: 'SWITCHGEAR',
+    manufacturer:  'Acme Electric',
+    model:         'SG-2000',
+    serialNumber:  'TEST-0001',
+    site:          { name: 'Main Plant' },
+  };
+  const fakeSchedule = {
+    id:             'test-00000000-0000-0000-0000-000000000001',
+    nextDueDate:    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    taskDefinition: { taskName: 'IR thermography scan' },
   };
   return buildPayload(
-    { contract: fakeContract, alertType: 'renewal', daysUntil: 30 },
+    { schedule: fakeSchedule, asset: fakeAsset, alertType: 'maintenance_due', daysUntil: 30, leadDays: 30 },
     appUrl
   );
 }
@@ -400,6 +440,7 @@ module.exports = {
   signPayload,
   buildPayload,
   buildTestPayload,
+  EVENT_NAMES,
   // v0.67.10: exposed for webhookRetry.js DLQ auto-retry
   postOnce,
   // F-SSRF-REBIND: exposed for unit tests

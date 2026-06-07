@@ -1,71 +1,63 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// alertsColumns.jsx — v0.40 Phase 1A + Phase 2 + v0.56.0 propagation
+// alertsColumns.jsx — ServiceCycle maintenance-alert column registry.
 //
-// Same shape as contractsColumns.jsx — column registry + cell helpers — but
-// for the flat-table rewrite of AlertsPage. v0.56.0 adds Excel-style
-// multi-select dropdowns on Vendor + Product (plus filterParam +
-// distinctColumn meta) and a multi-select-aware filterFn.
+// Row shape (straight from GET /api/alerts → data.alerts[]):
+//   { id, alertType, leadDays, status, scheduledAt, sentAt,
+//     asset:    { id, equipmentType, manufacturer, model, serialNumber,
+//                 governingCondition, site: { id, name } },
+//     schedule: { id, nextDueDate, lastCompletedDate,
+//                 taskDefinition: { taskName, taskCode, standardRef, requiresOutage } } }
 //
-// Row shape (normalized by AlertsPage from /api/alerts/all):
-//   { rowKey, alertId, alertType, contract, relevantDate, daysUntil, isDerived }
+// leadDays encodes the tier: positive (180/120/90/60/30/7) = days before due;
+// negative (-1/-7/-30/-90) = days overdue (overdue/escalation/breach tiers).
 //
-// Actions column (Dismiss / em-dash) is rendered OUTSIDE this registry —
-// it's always visible and not user-hidable.
+// The Acknowledge action column is rendered OUTSIDE this registry by
+// AlertsPage — it's always visible and not user-hidable.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { Link } from 'react-router-dom';
 import { createColumnHelper } from '@tanstack/react-table';
+import { assetLabel, fmtDate } from '../lib/equipment';
 
 export const ALERT_TYPE_LABELS = {
-  cancel_by:   'Cancel Window',
-  review_by:   'Review Due',
-  renewal:     'Renewal',
-  billing_60:  'Billing (60 days)',
-  billing_30:  'Billing (30 days)',
-  billing_48:  'Billing (48 hours)',
-  payment_due: 'Payment Due',
+  maintenance_due:   'Maintenance Due',
+  overdue:           'Overdue',
+  escalation:        'Escalation',
+  regulatory_breach: 'Regulatory Breach',
 };
 
+// Maintenance Due = slate-blue, Overdue = amber, Escalation = red,
+// Regulatory Breach = dark red.
 export const ALERT_COLOR = {
-  cancel_by:   { bg: 'var(--color-danger-bg)',     text: 'var(--color-danger)',  border: 'var(--color-danger)' },
-  review_by:   { bg: 'var(--color-primary-light)', text: 'var(--color-primary)', border: 'var(--color-info)' },
-  renewal:     { bg: 'var(--color-renewal-bg)',    text: 'var(--color-renewal-text)', border: 'var(--color-renewal-border)' },
-  billing_60:  { bg: 'var(--color-warning-bg)',    text: 'var(--color-warning)', border: 'var(--color-warning)' },
-  billing_30:  { bg: 'var(--color-warning-bg)',    text: 'var(--color-warning)', border: 'var(--color-warning)' },
-  billing_48:  { bg: 'var(--color-warning-bg)',    text: 'var(--color-warning)', border: 'var(--color-warning)' },
-  payment_due: { bg: 'var(--color-warning-bg)',    text: 'var(--color-warning)', border: 'var(--color-warning)' },
+  maintenance_due:   { bg: 'var(--color-primary-light)', text: 'var(--color-primary)', border: 'var(--color-info)' },
+  overdue:           { bg: 'var(--color-warning-bg)',    text: 'var(--color-warning)', border: 'var(--color-warning)' },
+  escalation:        { bg: 'var(--color-danger-bg)',     text: 'var(--color-danger)',  border: 'var(--color-danger)' },
+  regulatory_breach: { bg: 'var(--color-danger-bg)',     text: '#7f1d1d',              border: '#7f1d1d' },
 };
-
-// v0.56.0: shared sentinel between ColumnFilterDropdown + /api/alerts/distinct
-export const BLANK_SENTINEL = '__BLANK__';
-
-export function fmtDate(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
 
 export function daysUntil(d) {
   if (!d) return null;
   return Math.ceil((new Date(d) - new Date()) / (1000 * 60 * 60 * 24));
 }
 
-// v0.71.2 (audit Medium a11y): aria-label adds severity word to each variant
-// so screen readers announce "12 days, urgent" instead of just "In 12 days".
-export function DaysChip({ days }) {
-  if (days === null || days === undefined) return <span className="text-muted">—</span>;
-  if (days < 0)   return <span aria-label={`${Math.abs(days)} days, overdue`} style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-danger)' }}>Overdue by {Math.abs(days)}d</span>;
-  if (days === 0) return <span aria-label="Due today, urgent" style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-danger)' }}>Due today</span>;
-  if (days <= 7)  return <span aria-label={`${days} day${days !== 1 ? 's' : ''}, urgent`} style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-warning)' }}>In {days} day{days !== 1 ? 's' : ''}</span>;
-  return <span aria-label={`${days} days, upcoming`} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>In {days} days</span>;
+export function isPastDue(d) {
+  const n = daysUntil(d);
+  return typeof n === 'number' && n < 0;
 }
 
-export function TypeBadge({ alertType, daysUntil }) {
-  // v0.92.x: a review alert whose date has already passed reads "Past Due" in
-  // the danger palette rather than the neutral "Review Due" â€” it is overdue.
-  const isPastReview = alertType === 'review_by' && typeof daysUntil === 'number' && daysUntil < 0;
-  const colors = isPastReview
-    ? { bg: 'var(--alert-pastdue-bg)', text: 'var(--alert-pastdue-text)', border: 'var(--alert-pastdue-border)' }
-    : (ALERT_COLOR[alertType] || { bg: 'var(--color-bg)', text: '#6366f1', border: 'var(--color-border)' });
-  const label = isPastReview ? 'Past Due' : (ALERT_TYPE_LABELS[alertType] || alertType);
+// leadDays tier → human string. Positive = lead alert, negative = overdue.
+export function fmtTier(leadDays) {
+  if (leadDays == null) return '—';
+  const n = Number(leadDays);
+  if (Number.isNaN(n)) return '—';
+  if (n >= 0) return `${n} day${n !== 1 ? 's' : ''} before`;
+  const abs = Math.abs(n);
+  return `${abs} day${abs !== 1 ? 's' : ''} overdue`;
+}
+
+export function TypeBadge({ alertType }) {
+  const colors = ALERT_COLOR[alertType]
+    || { bg: 'var(--color-bg)', text: 'var(--color-text-secondary)', border: 'var(--color-border)' };
   return (
     <span style={{
       display: 'inline-block',
@@ -79,7 +71,7 @@ export function TypeBadge({ alertType, daysUntil }) {
       border: `1px solid ${colors.border}`,
       whiteSpace: 'nowrap',
     }}>
-      {label}
+      {ALERT_TYPE_LABELS[alertType] || alertType}
     </span>
   );
 }
@@ -90,15 +82,6 @@ function textContains(row, columnId, filterValue) {
   if (!filterValue) return true;
   const v = String(row.getValue(columnId) ?? '').toLowerCase();
   return v.includes(String(filterValue).toLowerCase());
-}
-
-// v0.56.0: Multi-select match. filterValue is a string[] from ColumnFilterDropdown.
-function multiSelectMatch(row, columnId, filterValue) {
-  if (!Array.isArray(filterValue) || filterValue.length === 0) return true;
-  const raw = row.getValue(columnId);
-  const isBlank = raw == null || raw === '';
-  if (isBlank) return filterValue.includes(BLANK_SENTINEL);
-  return filterValue.includes(String(raw));
 }
 
 function dateRange(row, columnId, filterValue) {
@@ -114,18 +97,7 @@ function dateRange(row, columnId, filterValue) {
   return true;
 }
 
-function numberRange(row, columnId, filterValue) {
-  if (!filterValue) return true;
-  const { min, max } = filterValue;
-  if (min == null && max == null) return true;
-  const v = row.getValue(columnId);
-  if (typeof v !== 'number' || v === Number.MAX_SAFE_INTEGER) return false;
-  if (min != null && v < Number(min)) return false;
-  if (max != null && v > Number(max)) return false;
-  return true;
-}
-
-export { textContains, multiSelectMatch, dateRange, numberRange };
+export { textContains, dateRange };
 
 // ── Column registry ──────────────────────────────────────────────────────────
 
@@ -135,76 +107,104 @@ export const ALERTS_COLUMNS = [
   ch.accessor(r => r.alertType ?? '', {
     id: 'type',
     header: 'Type',
-    cell: ({ row }) => <TypeBadge alertType={row.original.alertType} daysUntil={row.original.daysUntil} />,
-    meta: { widthPct: '14%', defaultVisible: true, label: 'Type', alignRight: false },
+    cell: ({ row }) => <TypeBadge alertType={row.original.alertType} />,
+    meta: { widthPct: '15%', defaultVisible: true, label: 'Type', alignRight: false },
   }),
 
-  ch.accessor(r => r.contract?.vendor?.name ?? '', {
-    id: 'vendor',
-    header: 'Vendor',
-    cell: ({ row }) => <span style={{ fontWeight: 600 }}>{row.original.contract?.vendor?.name || '—'}</span>,
-    filterFn: multiSelectMatch,
-    meta: {
-      widthPct: '20%',
-      defaultVisible: true,
-      label: 'Vendor',
-      alignRight: false,
-      filterType: 'multiselect',
-      filterParam: 'vendorIn',
-      distinctColumn: 'vendor',
+  ch.accessor(r => assetLabel(r.asset), {
+    id: 'asset',
+    header: 'Asset',
+    cell: ({ row }) => {
+      const asset = row.original.asset;
+      if (!asset?.id) return <span className="text-muted">—</span>;
+      return (
+        <Link
+          to={`/assets/${asset.id}`}
+          onClick={e => e.stopPropagation()}
+          style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}
+        >
+          {assetLabel(asset)}
+        </Link>
+      );
     },
+    filterFn: textContains,
+    meta: { widthPct: '22%', defaultVisible: true, label: 'Asset', alignRight: false, filterType: 'text' },
   }),
 
-  ch.accessor(r => r.contract?.product ?? '', {
-    id: 'product',
-    header: 'Product',
-    cell: ({ row }) => <span>{row.original.contract?.product || '—'}</span>,
-    filterFn: multiSelectMatch,
-    meta: {
-      widthPct: '24%',
-      defaultVisible: true,
-      label: 'Product',
-      alignRight: false,
-      filterType: 'multiselect',
-      filterParam: 'productIn',
-      distinctColumn: 'product',
+  ch.accessor(r => r.asset?.site?.name ?? '', {
+    id: 'site',
+    header: 'Site',
+    cell: ({ row }) => <span>{row.original.asset?.site?.name || '—'}</span>,
+    filterFn: textContains,
+    meta: { widthPct: '14%', defaultVisible: true, label: 'Site', alignRight: false, filterType: 'text' },
+  }),
+
+  ch.accessor(r => r.schedule?.taskDefinition?.taskName ?? '', {
+    id: 'task',
+    header: 'Task',
+    cell: ({ row }) => {
+      const td = row.original.schedule?.taskDefinition;
+      if (!td?.taskName) return <span className="text-muted">—</span>;
+      const tip = [
+        td.standardRef ? `Standard: ${td.standardRef}` : null,
+        td.taskCode ? `Code: ${td.taskCode}` : null,
+        td.requiresOutage ? 'Requires outage' : null,
+      ].filter(Boolean).join(' · ');
+      return (
+        <span title={tip || undefined} style={{ cursor: tip ? 'help' : 'default' }}>
+          {td.taskName}
+          {td.standardRef && (
+            <span style={{ marginLeft: 6, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+              {td.standardRef}
+            </span>
+          )}
+        </span>
+      );
     },
+    filterFn: textContains,
+    meta: { widthPct: '21%', defaultVisible: true, label: 'Task', alignRight: false, filterType: 'text' },
   }),
 
-  ch.accessor(r => r.relevantDate ?? '', {
-    id: 'date',
-    header: 'Date',
-    cell: ({ row }) => <span>{fmtDate(row.original.relevantDate)}</span>,
+  ch.accessor(r => r.schedule?.nextDueDate ?? '', {
+    id: 'dueDate',
+    header: 'Due Date',
+    cell: ({ row }) => {
+      const d = row.original.schedule?.nextDueDate;
+      const past = isPastDue(d);
+      return (
+        <span style={past ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
+          {fmtDate(d)}
+        </span>
+      );
+    },
     filterFn: dateRange,
-    meta: {
-      widthPct: '14%',
-      defaultVisible: true,
-      label: 'Date',
-      alignRight: true,
-      filterType: 'daterange',
-      filterParam: { from: 'dateFrom', to: 'dateTo' },
-    },
+    meta: { widthPct: '13%', defaultVisible: true, label: 'Due Date', alignRight: true, filterType: 'daterange' },
   }),
 
-  ch.accessor(r => r.daysUntil ?? Number.MAX_SAFE_INTEGER, {
-    id: 'daysUntil',
-    header: 'Days Until',
-    cell: ({ row }) => <DaysChip days={row.original.daysUntil} />,
-    filterFn: numberRange,
-    meta: {
-      widthPct: '14%',
-      defaultVisible: true,
-      label: 'Days Until',
-      alignRight: true,
-      filterType: 'numberrange',
-      filterParam: { min: 'daysMin', max: 'daysMax' },
+  ch.accessor(r => (r.leadDays == null ? Number.MAX_SAFE_INTEGER : Number(r.leadDays)), {
+    id: 'tier',
+    header: 'Tier',
+    cell: ({ row }) => {
+      const n = row.original.leadDays;
+      const overdue = typeof n === 'number' && n < 0;
+      return (
+        <span style={{
+          fontSize: 'var(--font-size-sm)',
+          fontWeight: overdue ? 600 : 400,
+          color: overdue ? 'var(--color-danger)' : 'var(--color-text-secondary)',
+          whiteSpace: 'nowrap',
+        }}>
+          {fmtTier(n)}
+        </span>
+      );
     },
+    meta: { widthPct: '12%', defaultVisible: true, label: 'Tier', alignRight: true },
   }),
 ];
 
 // ── Visibility helpers ───────────────────────────────────────────────────────
 
-export const ALERTS_VISIBILITY_KEY = 'lapseiq:alerts-list:visible-columns';
+export const ALERTS_VISIBILITY_KEY = 'servicecycle:alerts-list:visible-columns';
 
 export function defaultAlertsVisibility() {
   const v = {};
@@ -212,32 +212,4 @@ export function defaultAlertsVisibility() {
     v[col.id] = col.meta?.defaultVisible !== false;
   }
   return v;
-}
-
-export function loadAlertsVisibility() {
-  const def = defaultAlertsVisibility();
-  if (typeof window === 'undefined') return def;
-  try {
-    const raw = window.localStorage.getItem(ALERTS_VISIBILITY_KEY);
-    if (!raw) return def;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return def;
-    const known = new Set(ALERTS_COLUMNS.map(c => c.id));
-    const merged = { ...def };
-    for (const [id, vis] of Object.entries(parsed)) {
-      if (known.has(id) && typeof vis === 'boolean') merged[id] = vis;
-    }
-    return merged;
-  } catch {
-    return def;
-  }
-}
-
-export function saveAlertsVisibility(visibility) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(ALERTS_VISIBILITY_KEY, JSON.stringify(visibility));
-  } catch {
-    /* ignore */
-  }
 }

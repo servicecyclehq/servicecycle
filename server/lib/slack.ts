@@ -4,7 +4,7 @@
  * Slack incoming-webhook integration for the nightly alert digest.
  *
  * Why a separate module from email.js:
- *   - Email is per-recipient (admin / contract owner); Slack is per-account
+ *   - Email is per-recipient (admin / site contact); Slack is per-account
  *     (one channel, everyone who cares is in it).
  *   - Block Kit ≠ HTML, so the templating shape is different enough that
  *     mixing it into alertEngine.js made the engine harder to read.
@@ -61,7 +61,7 @@ async function sendSlackMessage({ webhookUrl, blocks, text, timeoutMs = DEFAULT_
 
   const body = JSON.stringify({
     // text is a fallback for screen readers / notifications; blocks render in-channel
-    text: text || 'LapseIQ alert',
+    text: text || 'ServiceCycle alert',
     blocks: Array.isArray(blocks) && blocks.length ? blocks : undefined,
   });
 
@@ -93,52 +93,57 @@ async function sendSlackMessage({ webhookUrl, blocks, text, timeoutMs = DEFAULT_
 // ── Block Kit builders ────────────────────────────────────────────────────────
 
 const TYPE_LABEL = {
-  cancel_by:   '🚨 Cancel window',
-  review_by:   '📋 Review due',
-  renewal:     '📅 Renewal approaching',
-  payment_due: '💳 Payment due',
+  maintenance_due:   '🔧 Maintenance due',
+  overdue:           '⚠️ Overdue',
+  escalation:        '🚨 Escalation',
+  regulatory_breach: '⛔ Regulatory breach',
 };
 
 function fmtDays(days) {
   if (days === 0) return 'today';
-  if (days < 0) return 'overdue';
+  if (days < 0) return `${Math.abs(days)}d overdue`;
   return `in ${days}d`;
 }
 
-function fmtMoney(amount) {
-  if (!amount) return null;
-  const n = parseFloat(amount);
-  if (!isFinite(n)) return null;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+// Human label for an asset: manufacturer + model + serial when available,
+// equipment type as the fallback. Mirrors lib/email.js assetDisplayName.
+function assetLabel(asset) {
+  if (!asset || typeof asset !== 'object') return 'Asset';
+  const parts = [asset.manufacturer, asset.model].filter(Boolean);
+  if (asset.serialNumber) parts.push(`S/N ${asset.serialNumber}`);
+  if (parts.length > 0) return parts.join(' ');
+  return asset.equipmentType ? String(asset.equipmentType).replace(/_/g, ' ') : 'Asset';
 }
 
 /**
  * Build Block Kit blocks for a per-account digest.
  *
  * @param {object[]} alertItems — same shape used in alertEngine.js:
- *   { contract, alertType, daysUntil, paymentAmount? }
+ *   { schedule, asset, alertType, daysUntil, leadDays? }
+ *   schedule: { id, nextDueDate?, taskDefinition?: { taskName } }
+ *   asset:    { id, equipmentType?, manufacturer?, model?, serialNumber?, site?: { name } }
  * @param {object}   meta
  * @param {string}   meta.accountName
- * @param {string}   meta.appUrl       — base URL for deep links to contract pages
+ * @param {string}   meta.appUrl       — base URL for deep links to asset pages
  * @returns {{ text: string, blocks: object[] }}
  */
 function buildAlertDigest(alertItems, { accountName, appUrl }) {
-  const contractIds = new Set(alertItems.map(a => a.contract.id));
-  const contractCount = contractIds.size;
+  const assetIds = new Set(alertItems.map(a => a.asset.id));
+  const assetCount = assetIds.size;
   const alertCount = alertItems.length;
 
-  const headerText = `${contractCount} contract${contractCount !== 1 ? 's' : ''} need${contractCount === 1 ? 's' : ''} attention`;
+  const headerText = `${assetCount} asset${assetCount !== 1 ? 's' : ''} need${assetCount === 1 ? 's' : ''} attention`;
 
-  // Group by contract so a single contract with three alert types renders once.
-  const byContract = new Map();
+  // Group by asset so a single asset with three due tasks renders once.
+  const byAsset = new Map();
   for (const item of alertItems) {
-    const id = item.contract.id;
-    if (!byContract.has(id)) byContract.set(id, { contract: item.contract, items: [] });
-    byContract.get(id).items.push(item);
+    const id = item.asset.id;
+    if (!byAsset.has(id)) byAsset.set(id, { asset: item.asset, items: [] });
+    byAsset.get(id).items.push(item);
   }
 
-  // Sort: most-urgent contract first (smallest daysUntil across its items).
-  const groups = [...byContract.values()].sort((a, b) => {
+  // Sort: most-urgent asset first (smallest daysUntil across its items).
+  const groups = [...byAsset.values()].sort((a, b) => {
     const aMin = Math.min(...a.items.map(x => x.daysUntil));
     const bMin = Math.min(...b.items.map(x => x.daysUntil));
     return aMin - bMin;
@@ -162,26 +167,21 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
   const MAX_GROUPS = 20;
   const visibleGroups = groups.slice(0, MAX_GROUPS);
 
-  for (const { contract, items } of visibleGroups) {
-    const vendor = contract.vendor?.name || '—';
-    const value = fmtMoney(
-      contract.costPerLicense && contract.quantity
-        ? parseFloat(contract.costPerLicense) * parseInt(contract.quantity, 10)
-        : null
-    );
-    const url = `${appUrl}/contracts/${contract.id}`;
+  for (const { asset, items } of visibleGroups) {
+    const site = asset.site?.name || '—';
+    const url = `${appUrl}/assets/${asset.id}`;
 
     items.sort((a, b) => a.daysUntil - b.daysUntil);
 
     const itemLines = items.map(it => {
       const label = TYPE_LABEL[it.alertType] || it.alertType;
-      const extra = it.alertType === 'payment_due' && it.paymentAmount
-        ? ` · ${fmtMoney(it.paymentAmount)}`
+      const task = it.schedule?.taskDefinition?.taskName
+        ? ` · ${escapeMrkdwn(it.schedule.taskDefinition.taskName)}`
         : '';
-      return `• ${label}${extra} — ${fmtDays(it.daysUntil)}`;
+      return `• ${label}${task} — ${fmtDays(it.daysUntil)}`;
     }).join('\n');
 
-    const headerLine = `*<${url}|${escapeMrkdwn(contract.product || 'Contract')}>* · ${escapeMrkdwn(vendor)}${value ? ` · ${value}` : ''}`;
+    const headerLine = `*<${url}|${escapeMrkdwn(assetLabel(asset))}>* · ${escapeMrkdwn(site)}`;
 
     blocks.push({
       type: 'section',
@@ -193,7 +193,7 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
     blocks.push({
       type: 'context',
       elements: [
-        { type: 'mrkdwn', text: `…and ${groups.length - MAX_GROUPS} more contract${groups.length - MAX_GROUPS !== 1 ? 's' : ''}. Open LapseIQ to see the rest.` },
+        { type: 'mrkdwn', text: `…and ${groups.length - MAX_GROUPS} more asset${groups.length - MAX_GROUPS !== 1 ? 's' : ''}. Open ServiceCycle to see the rest.` },
       ],
     });
   }
@@ -204,15 +204,15 @@ function buildAlertDigest(alertItems, { accountName, appUrl }) {
     elements: [
       {
         type: 'button',
-        text: { type: 'plain_text', text: 'Open LapseIQ', emoji: true },
-        url: `${appUrl}/contracts`,
+        text: { type: 'plain_text', text: 'Open ServiceCycle', emoji: true },
+        url: `${appUrl}/assets`,
         style: 'primary',
       },
     ],
   });
 
   return {
-    text: `LapseIQ: ${headerText}`,
+    text: `ServiceCycle: ${headerText}`,
     blocks,
   };
 }
@@ -231,11 +231,11 @@ function escapeMrkdwn(s) {
 /** Test message used by POST /api/settings/slack/test. */
 function buildTestMessage({ accountName, byUserName }) {
   return {
-    text: `LapseIQ Slack test from ${accountName}`,
+    text: `ServiceCycle Slack test from ${accountName}`,
     blocks: [
       {
         type: 'header',
-        text: { type: 'plain_text', text: '✅ LapseIQ Slack integration test', emoji: true },
+        text: { type: 'plain_text', text: '✅ ServiceCycle Slack integration test', emoji: true },
       },
       {
         type: 'section',
@@ -247,7 +247,7 @@ function buildTestMessage({ accountName, byUserName }) {
       {
         type: 'context',
         elements: [
-          { type: 'mrkdwn', text: 'You will receive renewal/cancel/payment digests in this channel as alerts fire.' },
+          { type: 'mrkdwn', text: 'You will receive maintenance-due / overdue digests in this channel as alerts fire.' },
         ],
       },
     ],

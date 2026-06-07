@@ -61,7 +61,7 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
           <div style={s.navInner}>
             <Link to="/" style={s.logo}>
               <span style={s.logoMark}>L</span>
-              <span style={s.logoText}>LapseIQ</span>
+              <span style={s.logoText}>ServiceCycle</span>
             </Link>
             <button style={s.navCta} onClick={() => navigate('/login')}>Sign in</button>
           </div>
@@ -76,7 +76,7 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
               available for public reading right now.</strong>
             </p>
             <p style={s.calloutP}>
-              ForgeRift LLC, the company behind LapseIQ, is in the middle
+              ForgeRift LLC, the company behind ServiceCycle, is in the middle
               of revising our public-facing legal documents — Terms of
               Service, Privacy Policy, End-User License Agreement, Demo
               Sandbox Notice, and Sub-processor List. While that revision
@@ -90,7 +90,7 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
               <code> /demo-sandbox-notice</code>) when the revision is
               complete. If you need a copy of any document for
               procurement, due-diligence, or regulatory purposes before
-              then, email <a style={s.link} href="mailto:privacy@lapseiq.com">privacy@lapseiq.com</a>
+              then, email <a style={s.link} href="mailto:privacy@servicecycle.com">privacy@servicecycle.com</a>
               {' '}and we will send the most recent draft along with the
               status of the revision.
             </p>
@@ -99,19 +99,19 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
               commitments described to you at the time you created your
               account. Personal-data export and deletion requests can be
               sent to{' '}
-              <a style={s.link} href="mailto:privacy@lapseiq.com">privacy@lapseiq.com</a>
+              <a style={s.link} href="mailto:privacy@servicecycle.com">privacy@servicecycle.com</a>
               {' '}and security-vulnerability reports to{' '}
-              <a style={s.link} href="mailto:security@lapseiq.com">security@lapseiq.com</a>.
+              <a style={s.link} href="mailto:security@servicecycle.com">security@servicecycle.com</a>.
             </p>
             <p style={{ ...s.calloutP, marginBottom: 0, color: '#5b6373', fontSize: 'var(--font-size-ui)' }}>
-              — ForgeRift LLC, the team behind LapseIQ
+              — ForgeRift LLC, the team behind ServiceCycle
             </p>
           </div>
 
           <div style={s.footerNav}>
             <Link to="/"      style={s.footerLink}>← Home</Link>
-            <a href="mailto:privacy@lapseiq.com" style={s.footerLink}>privacy@lapseiq.com</a>
-            <a href="mailto:security@lapseiq.com" style={s.footerLink}>security@lapseiq.com</a>
+            <a href="mailto:privacy@servicecycle.com" style={s.footerLink}>privacy@servicecycle.com</a>
+            <a href="mailto:security@servicecycle.com" style={s.footerLink}>security@servicecycle.com</a>
           </div>
         </main>
       </div>
@@ -153,7 +153,7 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
         <div style={s.navInner}>
           <Link to="/" style={s.logo}>
             <span style={s.logoMark}>L</span>
-            <span style={s.logoText}>LapseIQ</span>
+            <span style={s.logoText}>ServiceCycle</span>
           </Link>
           <button style={s.navCta} onClick={() => navigate('/login')}>Sign in</button>
         </div>

@@ -63,52 +63,24 @@ const configSchema = envelope(
   z.object({
     aiEnabled:      z.boolean(),
     aiConfigured:   z.boolean(),
-    // lapseiqVersion may legitimately be null if LAPSEIQ_VERSION env unset
+    // App version may legitimately be null if the version env var is unset
     // (rare but valid -- e.g. local dev). VersionSkewDetector handles null.
-    lapseiqVersion: z.string().nullable().optional(),
+    // Optional + passthrough so either key name passes during the rename
+    // from the inherited product.
+    servicecycleVersion: z.string().nullable().optional(),
   }).passthrough()
 );
 
 // â”€â”€ /api/bootstrap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Hit on /dashboard, /contracts, navigation between them. Renders the
-// contracts table, vendor dropdowns, owner picker, settings-driven fiscal
-// year start. The single highest-blast-radius shape in the app.
-const bootstrapSchema = envelope(
-  z.object({
-    contracts:       z.array(z.unknown()),  // shape is enormous; just verify it's an array
-    pagination: z.object({
-      page:  z.number(),
-      limit: z.number(),
-      total: z.number(),
-      pages: z.number(),
-    }).passthrough(),
-    scopeRestricted: z.boolean(),
-    members:         z.array(z.unknown()),
-    vendors:         z.array(z.unknown()),
-    categories:      z.array(z.unknown()),
-    settings: z.object({
-      fiscalYearStartMonth: z.number(),
-      onboardingComplete:   z.boolean(),
-      passwordMinLength:    z.number(),
-    }).passthrough(),
-  }).passthrough()
-);
-
-// â”€â”€ /api/news/summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Drives Navbar badge + NewsPage tab counts. Was the v0.89.7 cascade origin
-// (wrong Prisma relation name) -- exactly the bug class this layer catches.
-const newsSummarySchema = envelope(
-  z.object({
-    counts:           z.record(z.string(), z.number()),
-    unreadHeadlines:  z.number(),
-    unreadOutages:    z.number(),
-    newsOutageRegion: z.string(),
-  }).passthrough()
-);
+// Hit on /dashboard, /assets, navigation between them. The precise inherited
+// shape (contracts + vendors + categories arrays) is gone with the model
+// rework; a loose envelope keeps the registry compiling while the bootstrap
+// route is rebuilt around assets/sites. A later pass re-tightens this once
+// the new response shape settles.
+const bootstrapSchema = envelope(z.object({}).passthrough());
 
 module.exports = {
   authMeSchema,
   configSchema,
   bootstrapSchema,
-  newsSummarySchema,
 };

@@ -3,7 +3,7 @@
 /**
  * routes/documents.js
  * -------------------
- * Serves stored contract documents back to authenticated users.
+ * Serves stored equipment documents back to authenticated users.
  *
  * GET /api/documents/file?key=<storageKey>
  *   — Streams a locally stored file. Auth enforced at mount level +
@@ -175,25 +175,19 @@ router.get('/file', async (req, res) => {
     if (!key) return res.status(400).json({ success: false, error: 'Missing key parameter.' });
 
     // H5 (audit High, 2026-05-22): verify the document belongs to this
-    // account AND the contract isn't archived AND, when the caller is
-    // contractScopeRestricted, the contract is one they own. Without
-    // this, archived contracts' documents kept leaking through to
-    // viewers and restricted users could read documents on contracts
-    // outside their scope.
+    // account AND, for asset-pinned documents, the asset isn't archived.
+    // Without this, archived assets' documents kept leaking through to
+    // viewers. NOTE: assetScopeRestricted site-scoping (User column) is
+    // not yet enforceable here — the user↔site assignment rewire lands
+    // with the routes adaptation; accountId scoping remains the hard
+    // tenant boundary either way.
     const doc = await prisma.document.findFirst({
       where: {
         filePath: key,
         accountId: req.user.accountId,
         OR: [
-          { contractId: null },  // non-contract documents (vendor docs, etc.)
-          {
-            contract: {
-              archivedAt: null,
-              ...(req.user.contractScopeRestricted
-                ? { internalOwnerId: req.user.id }
-                : {}),
-            },
-          },
+          { assetId: null },  // non-asset documents (work-order reports, etc.)
+          { asset: { archivedAt: null } },
         ],
       },
     });
@@ -220,12 +214,12 @@ router.get('/file', async (req, res) => {
     res.set('Cache-Control',       'private, no-store');
 
     // C1: audit document access — fire-and-forget, never blocks the response.
-    // contractId may be null for non-contract uploads.
+    // assetId may be null for non-asset uploads.
     writeActivityLog({
-      contractId: doc.contractId || null,
-      userId:     req.user.id,
-      action:     'document_accessed',
-      details:    {
+      assetId:  doc.assetId || null,
+      userId:   req.user.id,
+      action:   'document_accessed',
+      details:  {
         documentId: doc.id,
         filename:   doc.filename,
         method:     'stream',
@@ -255,24 +249,17 @@ router.get('/file', async (req, res) => {
 
 router.get('/:documentId/url', async (req, res) => {
   try {
-    // H5 (audit High, 2026-05-22): same archived + contractScopeRestricted
-    // filter as /file above. The /url path returns either an API path
-    // (local storage) or a presigned S3 URL -- either way, leaking access
-    // to archived or out-of-scope contracts is the same bug as /file.
+    // H5 (audit High, 2026-05-22): same archived-asset filter as /file
+    // above. The /url path returns either an API path (local storage) or
+    // a presigned S3 URL -- either way, leaking access to archived assets'
+    // documents is the same bug as /file.
     const doc = await prisma.document.findFirst({
       where: {
         id: req.params.documentId,
         accountId: req.user.accountId,
         OR: [
-          { contractId: null },
-          {
-            contract: {
-              archivedAt: null,
-              ...(req.user.contractScopeRestricted
-                ? { internalOwnerId: req.user.id }
-                : {}),
-            },
-          },
+          { assetId: null },
+          { asset: { archivedAt: null } },
         ],
       },
     });
@@ -284,10 +271,10 @@ router.get('/:documentId/url', async (req, res) => {
     // For S3 deployments this is the actionable signal — the bytes flow direct
     // from S3 so the /file route never sees them.
     writeActivityLog({
-      contractId: doc.contractId || null,
-      userId:     req.user.id,
-      action:     'document_accessed',
-      details:    {
+      assetId:  doc.assetId || null,
+      userId:   req.user.id,
+      action:   'document_accessed',
+      details:  {
         documentId: doc.id,
         filename:   doc.filename,
         method:     'url',
@@ -317,8 +304,9 @@ router.get('/:documentId/url', async (req, res) => {
 //   - 20 MB cap (multer limits; rejected with 413)
 //
 // Body (multipart/form-data):
-//   file:        the binary upload (required)
-//   contractId:  optional UUID — if present, file is scoped to that contract
+//   file:         the binary upload (required)
+//   assetId:      optional UUID — if present, file is scoped to that asset
+//   workOrderId:  optional UUID — if present, file is pinned to that work order
 //
 // On success creates a Document row and returns its id + storage key. The
 // caller is responsible for any post-processing (e.g. text extraction).
@@ -339,34 +327,34 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
     // upload from ever executing/rendering in our origin.
 
     const { accountId, id: userId } = req.user;
-    let { contractId } = req.body || {};
-    const { poId } = req.body || {};
+    let { assetId } = req.body || {};
+    const { workOrderId } = req.body || {};
 
-    // If a contractId was given, verify it belongs to this account before
+    // If an assetId was given, verify it belongs to this account before
     // letting the upload pin to it (defence-in-depth — Document.accountId is
-    // the source of truth, but a stale contractId pollutes navigation).
-    if (contractId) {
-      const owns = await prisma.contract.findFirst({
-        where:  { id: contractId, accountId },
+    // the source of truth, but a stale assetId pollutes navigation).
+    if (assetId) {
+      const owns = await prisma.asset.findFirst({
+        where:  { id: assetId, accountId },
         select: { id: true },
       });
       if (!owns) {
-        return res.status(404).json({ success: false, error: 'Contract not found.' });
+        return res.status(404).json({ success: false, error: 'Asset not found.' });
       }
     }
 
-    // #10: if a poId is supplied, verify the PO belongs to a contract in this
-    // account, then pin the document to that PO (and to its parent contract so
-    // it still surfaces in the contract Documents panel tagged by PO #).
-    if (poId) {
-      const po = await prisma.purchaseOrder.findFirst({
-        where:  { id: poId, contract: { accountId } },
-        select: { id: true, contractId: true },
+    // #10: if a workOrderId is supplied, verify the work order belongs to
+    // this account, then pin the document to it (and to its parent asset so
+    // it still surfaces in the asset Documents panel tagged by work order).
+    if (workOrderId) {
+      const wo = await prisma.workOrder.findFirst({
+        where:  { id: workOrderId, accountId },
+        select: { id: true, assetId: true },
       });
-      if (!po) {
-        return res.status(404).json({ success: false, error: 'Purchase order not found.' });
+      if (!wo) {
+        return res.status(404).json({ success: false, error: 'Work order not found.' });
       }
-      if (!contractId) contractId = po.contractId;
+      if (!assetId) assetId = wo.assetId;
     }
 
     // Optional at-rest encryption gate (mirrors ingest.js behaviour)
@@ -382,13 +370,13 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
     const docRow = await prisma.document.create({
       data: {
         accountId,
-        contractId: contractId || null,
-        poId:       poId || null,
-        uploadedBy: userId,                       // schema field is `uploadedBy`, not `uploadedById`
-        filename:   req.file.originalname,
-        fileType:   req.file.mimetype,
-        filePath:   '__pending__',                // non-empty placeholder; updated after storage write
-        encrypted:  false,
+        assetId:     assetId || null,
+        workOrderId: workOrderId || null,
+        uploadedBy:  userId,                      // schema field is `uploadedBy`, not `uploadedById`
+        filename:    req.file.originalname,
+        fileType:    req.file.mimetype,
+        filePath:    '__pending__',               // non-empty placeholder; updated after storage write
+        encrypted:   false,
       },
       select: { id: true },
     });
@@ -400,7 +388,7 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
     }
 
     const { storageKey } = await uploadFile(
-      accountId, contractId || null, req.file.originalname, bytes, req.file.mimetype
+      accountId, assetId || null, req.file.originalname, bytes, req.file.mimetype
     );
 
     await prisma.document.update({

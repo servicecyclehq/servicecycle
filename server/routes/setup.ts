@@ -142,7 +142,7 @@ router.post('/account', credentialLimiter, async (req, res) => {
     }
 
     // EULA acceptance gate (matches /api/auth/register; required by the
-    // EULA §1(c) "first user account on a running LapseIQ instance"
+    // EULA §1(c) "first user account on a running ServiceCycle instance"
     // acceptance trigger). The wizard's UI step shows the EULA in a
     // scrollable region and binds an unchecked checkbox to acceptedTerms.
     if (acceptedTerms !== true) {
@@ -190,18 +190,6 @@ router.post('/account', credentialLimiter, async (req, res) => {
 
     _wizardState.accountId   = result.account.id;
     _wizardState.adminUserId = result.user.id;
-
-    // 2026-05-10 Phase 1 (non-SaaS categories): seed the 9 default categories
-    // for the new self-host account so the operator's first contract entry
-    // shows a populated picker instead of an empty dropdown. Fail-open: if
-    // this errors, setup wizard still succeeds and the operator can manually
-    // run `node server/scripts/seed-categories.js <accountId>` later.
-    try {
-      const { seedCategoriesForAccount } = require('../scripts/seed-categories');
-      await seedCategoriesForAccount(result.account.id);
-    } catch (catErr) {
-      console.error('[categories] seedCategoriesForAccount failed for setup wizard:', catErr.message);
-    }
 
     return res.status(201).json({
       success: true,

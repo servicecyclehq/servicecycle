@@ -8,7 +8,7 @@
 //
 // Storage shape under a given key:
 //   [
-//     { id: 'view_<uuid>', name: 'Q4 Renewals - Mine',
+//     { id: 'view_<uuid>', name: 'Overdue - My Sites',
 //       createdAt: '2026-05-20T03:00:00Z',
 //       state: { ... }            // opaque to these helpers
 //     },
@@ -16,7 +16,7 @@
 //   ]
 //
 // Why localStorage and not server-side?
-//   The roadmap (lapseiq-roadmap-table-control-export) calls out saved views
+//   The roadmap (roadmap: table-control-export) calls out saved views
 //   as a "pricing-tier candidate" and gates server-side persistence on a
 //   schema decision (UserPreference table vs JSON column on Account).
 //   v0.40 ships localStorage to deliver the user-facing value; v0.41 can

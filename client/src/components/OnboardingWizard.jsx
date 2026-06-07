@@ -2,10 +2,11 @@
  * OnboardingWizard
  *
  * First-login guided flow for new accounts. Shows as a full-screen overlay
- * with three optional steps:
- *   1. Add your first vendor
- *   2. Add your first contract
- *   3. Configure renewal alerts
+ * with optional steps:
+ *   1. Add your first site
+ *   2. Add your first asset
+ *   3. Apply NFPA 70B maintenance schedules (bulk-apply)
+ *   4. Invite your team
  *
  * Any step can be skipped. The wizard dismisses permanently once the user
  * clicks "Get started" on the final step or "Skip setup" at any point.
@@ -18,110 +19,71 @@ import { useAuth } from '../context/AuthContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import api from '../api/client';
 
-// New tour structure - v0.63.0 (2026-05-21)
-//
-// Refreshed from the v0.10-v0.20 era. The original 4-step flow (vendor ->
-// contract -> fiscal year -> done) was missing every major surface shipped
-// since: 14-report Reports hub with AI summaries (v0.58-v0.62), alerts page
-// (v0.4), renewal brief generator (v0.4), Ask LapseIQ (v0.14). New 7-step
-// flow folds those in as a mix of action steps (paths the user follows now)
-// and info steps (descriptive; "Continue" advances without nav). Info steps
-// are gated by isInfo=true and have primaryPath=null.
+// ServiceCycle tour structure — sites -> assets -> schedules -> team.
+// Mirrors the order the data model needs: assets belong to sites, schedules
+// attach to assets, and team invites only matter once there's something
+// to look at.
 
 const STEPS = [
   {
-    id: 'vendor',
+    id: 'site',
     icon: (
       <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 48, height: 48, color: 'var(--accent)' }}>
-        <rect x="4" y="20" width="40" height="22" rx="3"/>
-        <path d="M12 20V14a12 12 0 0 1 24 0v6"/>
-        <circle cx="24" cy="31" r="3" fill="currentColor" stroke="none"/>
+        <path d="M8 42V16l16-10 16 10v26"/>
+        <path d="M4 42h40"/>
+        <path d="M19 42v-12h10v12"/>
       </svg>
     ),
-    heading: 'Add your first vendor',
-    body: 'Vendors are the companies you buy software, services, telecom, hardware, leases, insurance, or anything else from. LapseIQ ships with 9 categories out of the box and you can add more.',
-    primaryLabel: 'Add a vendor',
-    primaryPath: '/vendors?new=1',
+    heading: 'Add your first site',
+    body: 'Sites are the buildings, plants, or campuses where your electrical equipment lives. Every asset belongs to a site, so this is the natural starting point. Add the address and any site-level notes your contractors will need.',
+    primaryLabel: 'Add a site',
+    primaryPath: '/sites?new=1',
     skipLabel: 'Skip this step',
   },
   {
-    id: 'contract',
+    id: 'asset',
     icon: (
       <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 48, height: 48, color: 'var(--accent)' }}>
-        <rect x="8" y="4" width="28" height="40" rx="3"/>
-        <line x1="15" y1="15" x2="29" y2="15"/>
-        <line x1="15" y1="22" x2="32" y2="22"/>
-        <line x1="15" y1="29" x2="26" y2="29"/>
+        <path d="M26 4 L12 28 h10 L22 44 L36 20 h-10 z"/>
       </svg>
     ),
-    heading: 'Add your first contract',
-    body: 'Enter renewal dates, value, auto-renewal terms, and cancel-by windows. LapseIQ alerts you before anything lapses and (optionally) generates an AI-drafted renewal brief when negotiation time comes around.',
-    primaryLabel: 'Add a contract',
-    primaryPath: '/contracts/new',
+    heading: 'Add your first asset',
+    body: 'Assets are the transformers, switchgear, generators, panels, and other electrical equipment you maintain. Record manufacturer, model, install date, and condition — ServiceCycle tracks the maintenance each one needs and when.',
+    primaryLabel: 'Add an asset',
+    primaryPath: '/assets/new',
     skipLabel: 'Skip this step',
   },
   {
-    id: 'reports',
-    icon: (
-      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 48, height: 48, color: 'var(--accent)' }}>
-        <rect x="6" y="6" width="36" height="36" rx="3"/>
-        <path d="M14 32V22M22 32V14M30 32V26M38 32V18"/>
-      </svg>
-    ),
-    heading: '30+ built-in reports, AI summary on each',
-    body: 'The Reports hub covers Renewal Horizon, Auto-Renewal Exposure, Vendor Concentration, License Wastage, Audit Evidence Pack, and 26 more. Every report has a one-click AI executive summary at the top -- click-to-generate so you only spend AI budget on things you actually look at.',
-    primaryLabel: 'Open Reports',
-    primaryPath: '/reports',
-    skipLabel: 'Skip this step',
-  },
-  {
-    id: 'alerts',
-    icon: (
-      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 48, height: 48, color: 'var(--accent)' }}>
-        <path d="M12 36V20a12 12 0 0 1 24 0v16"/>
-        <path d="M8 36h32"/>
-        <path d="M20 40a4 4 0 0 0 8 0"/>
-      </svg>
-    ),
-    heading: 'Alerts catch what you would miss',
-    body: 'Auto-renewal exposures, contracts past their cancel-by date, evaluations due -- LapseIQ surfaces them on the Alerts page with column filters and saved views. Defaults are 90 / 60 / 30 days; tune them in Settings -> Alerts when you are ready.',
-    primaryLabel: 'Continue ->',
-    primaryPath: null,
-    skipLabel: 'Skip this step',
-    isInfo: true,
-  },
-  {
-    id: 'ai',
-    icon: (
-      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 48, height: 48, color: 'var(--accent)' }}>
-        <path d="M24 6 l4 10 l10 4 l-10 4 l-4 10 l-4 -10 l-10 -4 l10 -4 z"/>
-        <circle cx="40" cy="14" r="2" fill="currentColor" stroke="none"/>
-        <circle cx="8" cy="40" r="2" fill="currentColor" stroke="none"/>
-      </svg>
-    ),
-    heading: 'AI does the heavy lifting (when you ask)',
-    body: 'Renewal Briefs draft negotiation talking points. Ask LapseIQ answers questions about the platform from the corner of every page. PDF extraction reads scanned contracts. Every AI surface is click-to-generate and your budget is yours -- self-host installs use whichever provider you configure.',
-    primaryLabel: 'Continue ->',
-    primaryPath: null,
-    skipLabel: 'Skip this step',
-    isInfo: true,
-  },
-  {
-    id: 'fiscal_year',
+    id: 'schedules',
     icon: (
       <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 48, height: 48, color: 'var(--accent)' }}>
         <rect x="6" y="10" width="36" height="32" rx="3"/>
         <path d="M6 18h36"/>
         <path d="M16 6v8M32 6v8"/>
-        <path d="M14 26h6M14 33h6M28 26h6M28 33h6"/>
+        <path d="M15 27 l5 5 l9 -9" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
-    heading: 'Set your fiscal year',
-    body: "When does your fiscal year start? This controls how contracts are grouped in calendar + budget views and the FY anchor on every executive report. Change it any time in Settings.",
-    primaryLabel: null,
-    primaryPath: null,
-    skipLabel: 'Skip -- use January',
-    isInline: true,
+    heading: 'Apply NFPA 70B schedules',
+    body: 'ServiceCycle ships with NFPA 70B-based maintenance intervals for every equipment type. Bulk-apply them across your assets in one action — each asset gets its recommended schedule based on type and condition, and the compliance calendar fills itself in.',
+    primaryLabel: 'Apply schedules',
+    primaryPath: '/assets?bulkSchedules=1',
+    skipLabel: 'Skip this step',
+  },
+  {
+    id: 'team',
+    icon: (
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 48, height: 48, color: 'var(--accent)' }}>
+        <circle cx="17" cy="16" r="7"/>
+        <path d="M4 42v-3a13 13 0 0 1 26 0v3"/>
+        <circle cx="35" cy="18" r="5"/>
+        <path d="M34 42v-2a10 10 0 0 0-5-8.7"/>
+      </svg>
+    ),
+    heading: 'Invite your team',
+    body: 'Bring in the people who do the work: managers who plan maintenance, viewers who need read-only visibility, and maintenance vendor account managers with consultant access. Everyone sees the same calendar and asset history.',
+    primaryLabel: 'Invite teammates',
+    primaryPath: '/users',
+    skipLabel: 'Skip this step',
   },
   {
     id: 'done',
@@ -132,7 +94,7 @@ const STEPS = [
       </svg>
     ),
     heading: 'You are all set',
-    body: 'Your renewal calendar is live. Press ? anywhere in the app to open the Help drawer, or click the AI assistant in the corner of any page if a question comes up.',
+    body: 'Your compliance calendar is live. Press ? anywhere in the app to open the Help drawer if a question comes up, and check the Alerts page for anything overdue.',
     primaryLabel: 'Take the tour ->',
     primaryPath: '/dashboard',
     skipLabel: 'Skip this step',
@@ -143,18 +105,18 @@ const STEPS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 // localStorage key for resuming the wizard at the saved step when the user
-// navigates away (e.g. clicks "Add a vendor" -> /vendors/new -> creates one
+// navigates away (e.g. clicks "Add a site" -> /sites -> creates one
 // -> comes back to /dashboard). Cleared whenever the wizard is dismissed
 // for real (final-step "Get started" or "Skip setup entirely"), so the
 // next user / next session starts fresh.
-const ONBOARDING_STEP_KEY = 'lapseiq_onboarding_step';
+const ONBOARDING_STEP_KEY = 'servicecycle_onboarding_step';
 
 // Set when the user successfully completes the wizard (final step's
 // primary or "Get started" - NOT the explicit "Skip setup entirely" link
 // which is the user telling us they want quiet). Read by Dashboard's
 // WelcomeTourPanel on the user's next /dashboard visit; the panel
 // clears the key when dismissed. Carries no user data.
-const WELCOME_PENDING_KEY = 'lapseiq_welcome_pending';
+const WELCOME_PENDING_KEY = 'servicecycle_welcome_pending';
 
 export default function OnboardingWizard() {
   const { dismissOnboarding, user } = useAuth();
@@ -171,9 +133,6 @@ export default function OnboardingWizard() {
     return Math.min(initial, STEPS.length - 1);
   });
   const [dismissing, setDismissing] = useState(false);
-  const [fyMonth, setFyMonth] = useState('1');
-  const [savingFy, setSavingFy] = useState(false);
-  const [fyError, setFyError] = useState('');
 
   // Pass-3 audit MUST #3 + LOW #5: trap focus + announce as dialog. Pre-fix
   // the wizard was a styled overlay with no role/aria-modal so SR users
@@ -188,7 +147,7 @@ export default function OnboardingWizard() {
   // The wizard is mounted at App-level (App.jsx renders it for every
   // authenticated route until dismissed). That means it would overlay
   // every page in the app and block the user from completing the very
-  // task each step asks them to do (Add a vendor, Add a contract, etc.).
+  // task each step asks them to do (Add a site, Add an asset, etc.).
   // Scope it to /dashboard only - clicking a primary action navigates
   // away to the task page, the wizard stops rendering, the user does
   // the task, and when they navigate back to /dashboard the wizard
@@ -222,46 +181,24 @@ export default function OnboardingWizard() {
     // synchronous custom event after dismissOnboarding() resolves so the
     // panel can flip itself open in-place.
     if (celebrate) {
-      try { window.dispatchEvent(new Event('lapseiq:welcome-trigger')); }
+      try { window.dispatchEvent(new Event('servicecycle:welcome-trigger')); }
       catch (_) { /* older browsers without Event constructor — skip */ }
     }
-  }
-
-  async function saveFyAndContinue() {
-    if (savingFy) return;
-    setFyError('');
-    setSavingFy(true);
-    try {
-      await api.put('/api/settings', { FISCAL_YEAR_START_MONTH: fyMonth });
-    } catch (_) {
-      // non-fatal — setting can be updated in Settings page later
-      setFyError('Could not save fiscal year start — you can update it later in Settings.');
-    } finally {
-      setSavingFy(false);
-    }
-    advanceTo(step + 1);
   }
 
   function handlePrimary() {
     // Advance to the next step BEFORE navigating away so when the user
     // comes back to /dashboard the wizard resumes at the next step rather
-    // than re-asking them to do the one they just did. Previously this
-    // function called dismiss() which permanently hid the wizard and
-    // stranded the user without the rest of setup.
+    // than re-asking them to do the one they just did.
     if (!isLast) {
       advanceTo(step + 1);
     }
-    // v0.63.0: info steps (isInfo=true) have primaryPath=null and just
-    // advance the wizard in place -- no navigation. Guard accordingly so
-    // we don't crash react-router by passing null to navigate().
     if (current.primaryPath) {
       navigate(current.primaryPath);
     }
-    // On the final step, the primary action is "Go to alerts settings";
-    // dismiss the wizard there since the user is heading off to finish
-    // up and won't be back in this flow. celebrate=true so the next
-    // time they hit /dashboard a welcome panel acknowledges they're set
-    // up and points at the main features.
+    // On the final step, dismiss the wizard with celebrate=true so the
+    // next time they hit /dashboard the welcome panel acknowledges
+    // they're set up and points at the main features.
     if (isLast) {
       dismiss({ celebrate: true });
     }
@@ -316,44 +253,11 @@ export default function OnboardingWizard() {
         {/* Body */}
         <p style={styles.body}>{current.body}</p>
 
-        {/* Inline fiscal year picker */}
-        {current.isInline && (
-          <div style={{ margin: '12px 0 4px', textAlign: 'left' }}>
-            <label style={{ fontSize: 'var(--font-size-ui)', fontWeight: 600, color: 'var(--color-text)', display: 'block', marginBottom: 6 }}>
-              Fiscal year starts in
-            </label>
-            <select
-              aria-label="Fiscal year starts in"
-              value={fyMonth}
-              onChange={e => setFyMonth(e.target.value)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--color-border)', fontSize: 'var(--font-size-data)', background: 'var(--color-surface)' }}
-            >
-              {['January','February','March','April','May','June',
-                'July','August','September','October','November','December'].map((name, i) => (
-                <option key={i + 1} value={String(i + 1)}>
-                  {name}{i === 0 ? ' (calendar year — most common)' : ''}
-                </option>
-              ))}
-            </select>
-            {fyError && (
-              <p role="alert" aria-live="polite" style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)', marginTop: 6 }}>
-                {fyError}
-              </p>
-            )}
-          </div>
-        )}
-
         {/* Actions */}
         <div style={styles.actions}>
-          {current.isInline ? (
-            <button style={styles.primary} onClick={saveFyAndContinue} disabled={savingFy}>
-              {savingFy ? 'Saving…' : 'Save & Continue →'}
-            </button>
-          ) : (
-            <button style={styles.primary} onClick={handlePrimary}>
-              {current.primaryLabel}
-            </button>
-          )}
+          <button style={styles.primary} onClick={handlePrimary}>
+            {current.primaryLabel}
+          </button>
           <button style={styles.skip} onClick={handleSkip}>
             {isLast ? 'Get started →' : current.skipLabel}
           </button>
@@ -440,9 +344,7 @@ const styles = {
     width: '100%',
   },
   primary: {
-    // Brand blue button. Was previously var(--accent) which evaluated to
-    // empty so the button rendered as the browser-default gray with white
-    // text invisible against it. --color-primary is the brand blue used
+    // Brand blue button. --color-primary is the brand blue used
     // throughout the rest of the app.
     background: 'var(--color-primary, #0d4f6e)',
     color: 'var(--color-surface)',

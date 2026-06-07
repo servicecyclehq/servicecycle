@@ -71,7 +71,7 @@ function getStripe() {
   }
   _stripeClient = new StripeCtor(process.env.STRIPE_SECRET_KEY, {
     apiVersion: '2024-11-20.acacia',
-    appInfo: { name: 'LapseIQ', version: 'sprint-6-prep' },
+    appInfo: { name: 'ServiceCycle', version: 'sprint-6-prep' },
     typescript: false,
   });
   return _stripeClient;
@@ -147,7 +147,9 @@ async function getOrCreateCustomer(account, prismaClient /* required */) {
   const stripe = getStripe();
   const customer = await stripe.customers.create({
     name: account.companyName,
-    metadata: { lapseiq_account_id: account.id },
+    // Metadata key consumed by the future Checkout webhook handler — keep
+    // in sync if that handler lands before this rename propagates.
+    metadata: { servicecycle_account_id: account.id },
   });
   await prismaClient.account.update({
     where: { id: account.id },
