@@ -18,7 +18,12 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const prisma = require('../lib/prisma');
+// NOTE: do NOT require('../lib/prisma') here — jest.config.js maps that
+// specifier to the no-op stub in tests/__mocks__/prisma.js. This suite needs
+// a real client (lib/aiQuota's own `./prisma` import escapes the mapper and
+// talks to the real DB, so the test must see the same rows).
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 const aiQuota = require('../lib/aiQuota');
 
 const TEST_ACCOUNT_ID  = '00000000-0000-0000-0000-aiqrefund0001';

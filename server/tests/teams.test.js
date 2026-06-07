@@ -101,38 +101,44 @@ describe('Teams MessageCard digest builder', () => {
   function fakeAlertItems() {
     return [
       {
-        contract: {
-          id: 'c-1',
-          product: 'Salesforce CRM',
-          vendor: { id: 'v-1', name: 'Salesforce' },
-          costPerLicense: '120',
-          quantity: 50,
+        schedule: { id: 's-1', nextDueDate: '2026-07-07', taskDefinition: { taskName: 'Annual oil analysis' } },
+        asset: {
+          id: 'a-1',
+          equipmentType: 'transformer',
+          manufacturer: 'Siemens',
+          model: 'TX-500',
+          serialNumber: 'SN-001',
+          site: { name: 'North Plant' },
         },
-        alertType: 'renewal',
+        alertType: 'maintenance_due',
         daysUntil: 30,
+        leadDays: 30,
       },
       {
-        contract: {
-          id: 'c-1',
-          product: 'Salesforce CRM',
-          vendor: { id: 'v-1', name: 'Salesforce' },
-          costPerLicense: '120',
-          quantity: 50,
+        schedule: { id: 's-2', nextDueDate: '2026-05-31', taskDefinition: { taskName: 'Infrared scan' } },
+        asset: {
+          id: 'a-1',
+          equipmentType: 'transformer',
+          manufacturer: 'Siemens',
+          model: 'TX-500',
+          serialNumber: 'SN-001',
+          site: { name: 'North Plant' },
         },
-        alertType: 'cancel_by',
-        daysUntil: 7,
+        alertType: 'escalation',
+        daysUntil: -7,
       },
       {
-        contract: {
-          id: 'c-2',
-          product: 'Atlassian Suite',
-          vendor: { id: 'v-2', name: 'Atlassian' },
-          costPerLicense: '90',
-          quantity: 100,
+        schedule: { id: 's-3', nextDueDate: '2026-06-05', taskDefinition: { taskName: 'Breaker trip test' } },
+        asset: {
+          id: 'a-2',
+          equipmentType: 'circuit_breaker',
+          manufacturer: 'ABB',
+          model: 'CB-200',
+          serialNumber: 'SN-002',
+          site: { name: 'South Plant' },
         },
-        alertType: 'payment_due',
-        daysUntil: 14,
-        paymentAmount: '9000',
+        alertType: 'overdue',
+        daysUntil: -2,
       },
     ];
   }
@@ -140,7 +146,7 @@ describe('Teams MessageCard digest builder', () => {
   test('returns a MessageCard envelope', () => {
     const card = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.lapseiq.com',
+      appUrl: 'https://demo.servicecycle.com',
     });
     expect(card['@type']).toBe('MessageCard');
     expect(card['@context']).toBe('http://schema.org/extensions');
@@ -149,64 +155,81 @@ describe('Teams MessageCard digest builder', () => {
     expect(Array.isArray(card.sections)).toBe(true);
   });
 
-  test('title reports correct contract count (groups by contract id)', () => {
+  test('title reports correct asset count (groups by asset id)', () => {
     const card = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.lapseiq.com',
+      appUrl: 'https://demo.servicecycle.com',
     });
-    expect(card.title).toMatch(/2 contracts/);
+    expect(card.title).toMatch(/2 assets/);
   });
 
-  test('contract sections deep-link to the right URLs', () => {
+  test('asset sections deep-link to the right /assets/:id URLs', () => {
     const card = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.lapseiq.com',
+      appUrl: 'https://demo.servicecycle.com',
     });
     const titles = card.sections.map(s => s.activityTitle).filter(Boolean).join(' ');
-    expect(titles).toContain('https://demo.lapseiq.com/contracts/c-1');
-    expect(titles).toContain('https://demo.lapseiq.com/contracts/c-2');
+    expect(titles).toContain('https://demo.servicecycle.com/assets/a-1');
+    expect(titles).toContain('https://demo.servicecycle.com/assets/a-2');
   });
 
-  test('cancel_by alerts drive the red theme color', () => {
+  test('escalation alerts drive the red theme color', () => {
     const card = buildAlertDigest(fakeAlertItems(), { accountName: 'A', appUrl: 'https://x' });
-    // cancel_by has highest priority in the digest — should pick its red.
+    // escalation is the highest-priority type in the fixture — red-600.
     expect(card.themeColor).toBe('DC2626');
   });
 
-  test('payment_due alerts surface the amount in the fact value', () => {
+  test('regulatory_breach outranks escalation for the theme color', () => {
+    const items = fakeAlertItems();
+    items.push({
+      schedule: { id: 's-4', taskDefinition: { taskName: 'Statutory inspection' } },
+      asset: { id: 'a-3', equipmentType: 'switchgear', manufacturer: 'Eaton', model: 'SG-1', site: { name: 'East Plant' } },
+      alertType: 'regulatory_breach',
+      daysUntil: -30,
+    });
+    const card = buildAlertDigest(items, { accountName: 'A', appUrl: 'https://x' });
+    expect(card.themeColor).toBe('7F1D1D');
+  });
+
+  test('facts surface the task name and due-in days', () => {
     const card = buildAlertDigest(fakeAlertItems(), { accountName: 'A', appUrl: 'https://x' });
     const allFacts = card.sections.flatMap(s => s.facts || []);
-    const payment = allFacts.find(f => f.name === 'Payment due');
-    expect(payment).toBeTruthy();
-    expect(payment.value).toMatch(/\$9,000/);
+    const due = allFacts.find(f => f.name === 'Maintenance due');
+    expect(due).toBeTruthy();
+    expect(due.value).toContain('Annual oil analysis');
+    expect(due.value).toMatch(/in 30d/);
+    const overdue = allFacts.find(f => f.name === 'Overdue');
+    expect(overdue.value).toMatch(/2d overdue/);
   });
 
   test('truncates long alert lists with an overflow text section', () => {
     const items = [];
     for (let i = 0; i < 35; i++) {
       items.push({
-        contract: { id: `c-${i}`, product: `Product ${i}`, vendor: { name: 'Vendor' } },
-        alertType: 'renewal',
+        schedule: { id: `s-${i}`, taskDefinition: { taskName: `Task ${i}` } },
+        asset: { id: `a-${i}`, equipmentType: 'transformer', manufacturer: 'M', model: `Model ${i}`, site: { name: 'Site' } },
+        alertType: 'maintenance_due',
         daysUntil: i,
       });
     }
     const card = buildAlertDigest(items, { accountName: 'A', appUrl: 'https://x' });
-    // 25 visible contract sections + 1 overflow text section = 26 total.
+    // 25 visible asset sections + 1 overflow text section = 26 total.
     const overflow = card.sections.find(s => typeof s.text === 'string' && s.text.startsWith('…and'));
     expect(overflow.text).toMatch(/and 10 more/);
   });
 
-  test('escapes markdown special chars in contract names', () => {
+  test('escapes markdown special chars in asset names', () => {
     const items = [{
-      contract: { id: 'c-x', product: '*Salesforce* [Pro]', vendor: { name: 'V_endor' } },
-      alertType: 'renewal',
+      schedule: { id: 's-x', taskDefinition: { taskName: 'Check' } },
+      asset: { id: 'a-x', manufacturer: '*Siemens*', model: '[Pro]', site: { name: 'North_Plant' } },
+      alertType: 'maintenance_due',
       daysUntil: 5,
     }];
     const card = buildAlertDigest(items, { accountName: 'A', appUrl: 'https://x' });
     const sec = card.sections[0];
-    expect(sec.activityTitle).toContain('\\*Salesforce\\*');
+    expect(sec.activityTitle).toContain('\\*Siemens\\*');
     expect(sec.activityTitle).toContain('\\[Pro\\]');
-    expect(sec.activitySubtitle).toContain('V\\_endor');
+    expect(sec.activitySubtitle).toContain('North\\_Plant');
   });
 });
 

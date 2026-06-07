@@ -278,22 +278,22 @@ describe('F015: signature.js MIME + magic-byte hardening (server/routes/signatur
 });
 
 describe('F010: admin_password_reset action label registered', () => {
-  test('activity.js ACTION_LABELS includes admin_password_reset', () => {
+  test('activity.ts ACTION_LABELS includes admin_password_reset', () => {
     const fs = require('fs');
     const path = require('path');
     const src = fs.readFileSync(
-      path.join(__dirname, '..', 'routes', 'activity.js'),
+      path.join(__dirname, '..', 'routes', 'activity.ts'),
       'utf8'
     );
     expect(src).toMatch(/admin_password_reset/);
     expect(src).toMatch(/Admin password reset/);
   });
 
-  test('users.js writes ActivityLog row on admin password reset', () => {
+  test('users.ts writes ActivityLog row on admin password reset', () => {
     const fs = require('fs');
     const path = require('path');
     const src = fs.readFileSync(
-      path.join(__dirname, '..', 'routes', 'users.js'),
+      path.join(__dirname, '..', 'routes', 'users.ts'),
       'utf8'
     );
     // The fix wires writeActivityLog (or prisma.activityLog.create) into

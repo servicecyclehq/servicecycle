@@ -37,6 +37,15 @@ jest.mock('@anthropic-ai/sdk', () => {
   }));
 });
 
+// lib/ai.ts requires './aiOutputGuard' (F-AI-LEAK scrub), but the module went
+// missing in the ServiceCycle conversion. Virtual-mock it as an identity
+// passthrough so this suite (which tests model resolution, not scrubbing)
+// can load lib/ai at all. KNOWN REGRESSION: lib/aiOutputGuard needs restoring
+// before lib/ai.ts can load outside jest.
+jest.mock('../lib/aiOutputGuard', () => ({
+  scrubPromptLeak: (text) => text,
+}), { virtual: true });
+
 const ai = require('../lib/ai');
 
 beforeEach(() => {

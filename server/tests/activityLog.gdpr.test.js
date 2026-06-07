@@ -29,15 +29,15 @@ maybe('ActivityLog GDPR anonymize-on-erase', () => {
     prisma = new PrismaClient();
 
     testAccount = await prisma.account.create({
-      data: { name: 'gdpr-test-account-' + Date.now() },
+      data: { companyName: 'gdpr-test-account-' + Date.now(), planType: 'licensed' },
     });
     testUser = await prisma.user.create({
       data: {
-        accountId: testAccount.id,
-        name:      'GDPR Test User',
-        email:     `gdpr-test-${Date.now()}@test.local`,
-        password:  'hashed-placeholder',
-        role:      'admin',
+        accountId:    testAccount.id,
+        name:         'GDPR Test User',
+        email:        `gdpr-test-${Date.now()}@test.local`,
+        passwordHash: 'hashed-placeholder',
+        role:         'admin',
       },
     });
   });
@@ -82,11 +82,11 @@ maybe('ActivityLog GDPR anonymize-on-erase', () => {
     // Create a second user and a log row for them.
     const otherUser = await prisma.user.create({
       data: {
-        accountId: testAccount.id,
-        name:      'Other User',
-        email:     `gdpr-other-${Date.now()}@test.local`,
-        password:  'hashed-placeholder',
-        role:      'member',
+        accountId:    testAccount.id,
+        name:         'Other User',
+        email:        `gdpr-other-${Date.now()}@test.local`,
+        passwordHash: 'hashed-placeholder',
+        role:         'viewer',
       },
     });
     const otherLog = await prisma.activityLog.create({
@@ -100,11 +100,11 @@ maybe('ActivityLog GDPR anonymize-on-erase', () => {
     // Create a third user and delete them — other's log should be unchanged.
     const deleteMe = await prisma.user.create({
       data: {
-        accountId: testAccount.id,
-        name:      'Delete Me',
-        email:     `gdpr-deleteme-${Date.now()}@test.local`,
-        password:  'hashed-placeholder',
-        role:      'member',
+        accountId:    testAccount.id,
+        name:         'Delete Me',
+        email:        `gdpr-deleteme-${Date.now()}@test.local`,
+        passwordHash: 'hashed-placeholder',
+        role:         'viewer',
       },
     });
     await prisma.user.delete({ where: { id: deleteMe.id } });

@@ -72,38 +72,44 @@ describe('Block Kit digest builder', () => {
   function fakeAlertItems() {
     return [
       {
-        contract: {
-          id: 'c-1',
-          product: 'Salesforce CRM',
-          vendor: { id: 'v-1', name: 'Salesforce' },
-          costPerLicense: '120',
-          quantity: 50,
+        schedule: { id: 's-1', nextDueDate: '2026-07-07', taskDefinition: { taskName: 'Annual oil analysis' } },
+        asset: {
+          id: 'a-1',
+          equipmentType: 'transformer',
+          manufacturer: 'Siemens',
+          model: 'TX-500',
+          serialNumber: 'SN-001',
+          site: { name: 'North Plant' },
         },
-        alertType: 'renewal',
+        alertType: 'maintenance_due',
         daysUntil: 30,
+        leadDays: 30,
       },
       {
-        contract: {
-          id: 'c-1',
-          product: 'Salesforce CRM',
-          vendor: { id: 'v-1', name: 'Salesforce' },
-          costPerLicense: '120',
-          quantity: 50,
+        schedule: { id: 's-2', nextDueDate: '2026-05-31', taskDefinition: { taskName: 'Infrared scan' } },
+        asset: {
+          id: 'a-1',
+          equipmentType: 'transformer',
+          manufacturer: 'Siemens',
+          model: 'TX-500',
+          serialNumber: 'SN-001',
+          site: { name: 'North Plant' },
         },
-        alertType: 'cancel_by',
-        daysUntil: 7,
+        alertType: 'escalation',
+        daysUntil: -7,
       },
       {
-        contract: {
-          id: 'c-2',
-          product: 'Atlassian Suite',
-          vendor: { id: 'v-2', name: 'Atlassian' },
-          costPerLicense: '90',
-          quantity: 100,
+        schedule: { id: 's-3', nextDueDate: '2026-06-05', taskDefinition: { taskName: 'Breaker trip test' } },
+        asset: {
+          id: 'a-2',
+          equipmentType: 'circuit_breaker',
+          manufacturer: 'ABB',
+          model: 'CB-200',
+          serialNumber: 'SN-002',
+          site: { name: 'South Plant' },
         },
-        alertType: 'payment_due',
-        daysUntil: 14,
-        paymentAmount: '9000',
+        alertType: 'overdue',
+        daysUntil: -2,
       },
     ];
   }
@@ -111,38 +117,51 @@ describe('Block Kit digest builder', () => {
   test('returns text fallback + block kit array', () => {
     const out = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.lapseiq.com',
+      appUrl: 'https://demo.servicecycle.com',
     });
     expect(typeof out.text).toBe('string');
     expect(Array.isArray(out.blocks)).toBe(true);
     expect(out.blocks.length).toBeGreaterThan(0);
   });
 
-  test('header reports correct contract count (groups by contract id)', () => {
+  test('header reports correct asset count (groups by asset id)', () => {
     const out = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.lapseiq.com',
+      appUrl: 'https://demo.servicecycle.com',
     });
     const header = out.blocks.find(b => b.type === 'header');
-    expect(header.text.text).toMatch(/2 contracts/);
+    expect(header.text.text).toMatch(/2 assets/);
   });
 
-  test('contract block links use the deep-link URL', () => {
+  test('asset block links use the /assets/:id deep-link URL', () => {
     const out = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.lapseiq.com',
+      appUrl: 'https://demo.servicecycle.com',
     });
     const sectionBlocks = out.blocks.filter(b => b.type === 'section');
-    expect(sectionBlocks.some(b => b.text.text.includes('https://demo.lapseiq.com/contracts/c-1'))).toBe(true);
-    expect(sectionBlocks.some(b => b.text.text.includes('https://demo.lapseiq.com/contracts/c-2'))).toBe(true);
+    expect(sectionBlocks.some(b => b.text.text.includes('https://demo.servicecycle.com/assets/a-1'))).toBe(true);
+    expect(sectionBlocks.some(b => b.text.text.includes('https://demo.servicecycle.com/assets/a-2'))).toBe(true);
+  });
+
+  test('section lines include the task name and alert-type label', () => {
+    const out = buildAlertDigest(fakeAlertItems(), {
+      accountName: 'Acme Co',
+      appUrl: 'https://demo.servicecycle.com',
+    });
+    const allText = out.blocks.filter(b => b.type === 'section').map(b => b.text.text).join('\n');
+    expect(allText).toContain('Annual oil analysis');
+    expect(allText).toContain('Breaker trip test');
+    expect(allText).toMatch(/Escalation/);
+    expect(allText).toMatch(/Overdue/);
   });
 
   test('truncates long alert lists with a "…and N more" footer', () => {
     const items = [];
     for (let i = 0; i < 30; i++) {
       items.push({
-        contract: { id: `c-${i}`, product: `Product ${i}`, vendor: { name: 'Vendor' } },
-        alertType: 'renewal',
+        schedule: { id: `s-${i}`, taskDefinition: { taskName: `Task ${i}` } },
+        asset: { id: `a-${i}`, equipmentType: 'transformer', manufacturer: 'M', model: `Model ${i}`, site: { name: 'Site' } },
+        alertType: 'maintenance_due',
         daysUntil: i,
       });
     }
@@ -151,10 +170,11 @@ describe('Block Kit digest builder', () => {
     expect(ctx).toMatch(/and 10 more/);
   });
 
-  test('mrkdwn-escapes contract names with angle brackets', () => {
+  test('mrkdwn-escapes asset names with angle brackets', () => {
     const items = [{
-      contract: { id: 'c-x', product: '<script>alert(1)</script>', vendor: { name: 'V' } },
-      alertType: 'renewal',
+      schedule: { id: 's-x', taskDefinition: { taskName: 'Check' } },
+      asset: { id: 'a-x', manufacturer: '<script>alert(1)</script>', model: 'M1', site: { name: 'S' } },
+      alertType: 'maintenance_due',
       daysUntil: 5,
     }];
     const out = buildAlertDigest(items, { accountName: 'A', appUrl: 'https://x' });

@@ -43,7 +43,7 @@ beforeEach(() => {
   globalThis.__mockFetchState.lastBody = null;
   process.env.EMAIL_MOCK     = 'true';
   process.env.BREVO_API_KEY  = 'xkeysib-test-fake';
-  process.env.EMAIL_FROM     = 'LapseIQ <noreply@example.test>';
+  process.env.EMAIL_FROM     = 'ServiceCycle <noreply@example.test>';
   delete process.env.RESEND_API_KEY;
 });
 
@@ -61,28 +61,28 @@ afterAll(() => {
 describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () => {
 
   test('non-feedback email is mocked when EMAIL_MOCK=true (no network call)', async () => {
-    await sendEmail({ to: 'a@x.test', subject: 'Welcome to LapseIQ', html: '<p>hi</p>' });
+    await sendEmail({ to: 'a@x.test', subject: 'Welcome to ServiceCycle', html: '<p>hi</p>' });
     expect(fetchCalls()).toBe(0);
   });
 
   test('feedback email bypasses the mock - actually fires the HTTP call', async () => {
     await sendEmail({
-      to:      'demofeedback@lapseiq.com',
-      subject: '[LapseIQ Feedback] bug - Demo Admin (admin)',
+      to:      'demofeedback@servicecycle.com',
+      subject: '[ServiceCycle Feedback] bug - Demo Admin (admin)',
       html:    '<p>thing is broken</p>',
     });
     expect(fetchCalls()).toBe(1);
     expect(lastUrl()).toBe('https://api.brevo.com/v3/smtp/email');
-    expect(lastBody().to[0].email).toBe('demofeedback@lapseiq.com');
-    expect(lastBody().subject).toMatch(/^\[LapseIQ Feedback\]/);
+    expect(lastBody().to[0].email).toBe('demofeedback@servicecycle.com');
+    expect(lastBody().subject).toMatch(/^\[ServiceCycle Feedback\]/);
     expect(lastBody().sender.email).toBe('noreply@example.test');
   });
 
   test('feedback bypass still respects EMAIL_MOCK=false (already a real send)', async () => {
     process.env.EMAIL_MOCK = 'false';
     await sendEmail({
-      to:      'demofeedback@lapseiq.com',
-      subject: '[LapseIQ Feedback] feature request',
+      to:      'demofeedback@servicecycle.com',
+      subject: '[ServiceCycle Feedback] feature request',
       html:    '<p>idea</p>',
     });
     expect(fetchCalls()).toBe(1);
@@ -92,8 +92,8 @@ describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () 
     delete process.env.BREVO_API_KEY;
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await sendEmail({
-      to:      'demofeedback@lapseiq.com',
-      subject: '[LapseIQ Feedback] bug',
+      to:      'demofeedback@servicecycle.com',
+      subject: '[ServiceCycle Feedback] bug',
       html:    '<p>hi</p>',
     });
     expect(fetchCalls()).toBe(0);
@@ -101,9 +101,9 @@ describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () 
     warnSpy.mockRestore();
   });
 
-  test('case-sensitivity: only the exact "[LapseIQ Feedback]" prefix bypasses', async () => {
-    await sendEmail({ to: 'a@x.test', subject: '[lapseiq feedback] lowercase', html: '<p>hi</p>' });
-    await sendEmail({ to: 'a@x.test', subject: 'Re: [LapseIQ Feedback] thread reply', html: '<p>hi</p>' });
+  test('case-sensitivity: only the exact "[ServiceCycle Feedback]" prefix bypasses', async () => {
+    await sendEmail({ to: 'a@x.test', subject: '[servicecycle feedback] lowercase', html: '<p>hi</p>' });
+    await sendEmail({ to: 'a@x.test', subject: 'Re: [ServiceCycle Feedback] thread reply', html: '<p>hi</p>' });
     expect(fetchCalls()).toBe(0); // both should mock - only true prefix bypasses
   });
 
@@ -112,8 +112,8 @@ describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () 
     process.env.RESEND_API_KEY = 're_legacy_xxxx';
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await sendEmail({
-      to:      'demofeedback@lapseiq.com',
-      subject: '[LapseIQ Feedback] still here',
+      to:      'demofeedback@servicecycle.com',
+      subject: '[ServiceCycle Feedback] still here',
       html:    '<p>hi</p>',
     });
     expect(fetchCalls()).toBe(0);

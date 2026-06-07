@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * L6: CSP allowlist for *.lapseiq.com on connect-src, img-src, font-src.
+ * L6: CSP allowlist for *.servicecycle.com on connect-src, img-src, font-src.
  *
- * Static-source assertion. The cspDirectives object lives in server/index.js
+ * Static-source assertion. The cspDirectives object lives in server/index.ts
  * which is the boot file (not safely require-able in a unit test because it
  * binds the port). We read the source and assert the literal allowlist
  * entries are present — same pattern as the F010 audit test in
@@ -16,9 +16,9 @@
 const fs = require('fs');
 const path = require('path');
 
-describe('L6: CSP allowlist *.lapseiq.com on connect-src / img-src / font-src', () => {
+describe('L6: CSP allowlist *.servicecycle.com on connect-src / img-src / font-src', () => {
   const src = fs.readFileSync(
-    path.join(__dirname, '..', 'index.js'),
+    path.join(__dirname, '..', 'index.ts'),
     'utf8',
   );
 
@@ -27,27 +27,31 @@ describe('L6: CSP allowlist *.lapseiq.com on connect-src / img-src / font-src', 
   const blockMatch = src.match(/const\s+cspDirectives\s*=\s*\{([\s\S]*?)\};/);
   const block = blockMatch ? blockMatch[1] : '';
 
-  test('cspDirectives block present in server/index.js', () => {
+  test('cspDirectives block present in server/index.ts', () => {
     expect(block.length).toBeGreaterThan(0);
   });
 
-  test('imgSrc includes https://*.lapseiq.com', () => {
-    expect(block).toMatch(/imgSrc[\s\S]*?'https:\/\/\*\.lapseiq\.com'/);
+  test('imgSrc includes https://*.servicecycle.com', () => {
+    expect(block).toMatch(/imgSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
   });
 
-  test('connectSrc includes https://*.lapseiq.com', () => {
-    expect(block).toMatch(/connectSrc[\s\S]*?'https:\/\/\*\.lapseiq\.com'/);
+  test('connectSrc includes https://*.servicecycle.com', () => {
+    expect(block).toMatch(/connectSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
   });
 
-  test('fontSrc includes https://*.lapseiq.com', () => {
-    expect(block).toMatch(/fontSrc[\s\S]*?'https:\/\/\*\.lapseiq\.com'/);
+  test('fontSrc includes https://*.servicecycle.com', () => {
+    expect(block).toMatch(/fontSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
   });
 
-  test("scriptSrc deliberately stays 'self' only — no LapseIQ marketing JS", () => {
+  test("scriptSrc deliberately stays 'self' only — no marketing JS", () => {
     // Pull just the scriptSrc line so a future addition to other directives
     // doesn't poison the assertion.
     const line = block.match(/scriptSrc[^\n]*/)[0];
     expect(line).toMatch(/'self'/);
-    expect(line).not.toMatch(/lapseiq\.com/);
+    expect(line).not.toMatch(/servicecycle\.com|lapseiq\.com/);
+  });
+
+  test('no stale lapseiq.com hosts survive in the CSP block', () => {
+    expect(block).not.toMatch(/lapseiq\.com/);
   });
 });

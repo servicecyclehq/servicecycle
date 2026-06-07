@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /**
  * tests/webhookDlq.test.js
@@ -16,7 +16,12 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const prisma = require('../lib/prisma');
+// NOTE: do NOT require('../lib/prisma') here — jest.config.js maps that
+// specifier to the no-op stub in tests/__mocks__/prisma.js. This suite needs
+// a real client (lib/webhookDlq's own `./prisma` import escapes the mapper
+// and talks to the real DB, so the test must see the same rows).
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 const { persistFailedDelivery, pruneOlderThan, maskUrl } = require('../lib/webhookDlq');
 
 const TEST_ACCOUNT_ID = '00000000-0000-0000-0000-dlqtest000001';
@@ -79,7 +84,7 @@ maybeDescribe('webhookDlq.persistFailedDelivery', () => {
     const row = await persistFailedDelivery({
       accountId:     TEST_ACCOUNT_ID,
       deliveryId:    '00000000-0000-0000-0000-deliver000001',
-      eventType:     'renewal_alert',
+      eventType:     'maintenance.overdue',
       targetUrl:     'https://hooks.zapier.com/x/y/z?token=secret',
       payload:       { foo: 'bar', n: 1 },
       attemptCount:  4,
@@ -103,7 +108,7 @@ maybeDescribe('webhookDlq.persistFailedDelivery', () => {
     const row = await persistFailedDelivery({
       accountId:     TEST_ACCOUNT_ID,
       deliveryId:    '00000000-0000-0000-0000-deliver000002',
-      eventType:     'renewal_alert',
+      eventType:     'maintenance.overdue',
       targetUrl:     'https://example.com/hook',
       payload:       {},
       attemptCount:  4,
@@ -120,7 +125,7 @@ maybeDescribe('webhookDlq.persistFailedDelivery', () => {
     const row = await persistFailedDelivery({
       accountId:     '00000000-0000-0000-0000-doesnotexist0',
       deliveryId:    '00000000-0000-0000-0000-deliver000003',
-      eventType:     'renewal_alert',
+      eventType:     'maintenance.overdue',
       targetUrl:     'https://example.com/hook',
       payload:       {},
       attemptCount:  4,
@@ -141,7 +146,7 @@ maybeDescribe('webhookDlq.pruneOlderThan', () => {
     const row1 = await persistFailedDelivery({
       accountId: TEST_ACCOUNT_ID,
       deliveryId: '00000000-0000-0000-0000-prune00ancient',
-      eventType: 'renewal_alert',
+      eventType: 'maintenance.overdue',
       targetUrl: 'https://example.com/a',
       payload:   {},
       attemptCount: 4,
@@ -156,7 +161,7 @@ maybeDescribe('webhookDlq.pruneOlderThan', () => {
     const row2 = await persistFailedDelivery({
       accountId: TEST_ACCOUNT_ID,
       deliveryId: '00000000-0000-0000-0000-prune000fresh1',
-      eventType: 'renewal_alert',
+      eventType: 'maintenance.overdue',
       targetUrl: 'https://example.com/b',
       payload:   {},
       attemptCount: 4,

@@ -12,7 +12,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-// Mock email so the route doesn't try to talk to Resend.
+// Mock email so the route doesn't try to talk to Brevo.
 globalThis.__mockSendEmailCalls = [];
 jest.mock('../lib/email', () => {
   const actual = jest.requireActual('../lib/email');
@@ -22,6 +22,18 @@ jest.mock('../lib/email', () => {
       globalThis.__mockSendEmailCalls.push(args);
     }),
   };
+});
+
+// jest.config.js maps '../lib/prisma' to the no-op stub in
+// tests/__mocks__/prisma.js, which would make the route's insert return null
+// and hang the handler. This suite's contract is "the row lands in the real
+// table", so override the mapped module with a real PrismaClient.
+jest.mock('../lib/prisma', () => {
+  const { PrismaClient } = require('@prisma/client');
+  const client = new PrismaClient();
+  // Cover both `require('../lib/prisma')` and esbuild's default-import interop.
+  client.default = client;
+  return client;
 });
 
 const express = require('express');

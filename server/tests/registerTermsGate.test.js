@@ -24,9 +24,35 @@ jest.mock('../scripts/seed-demo', () => ({
   DEMO_ACCOUNT_ID:    '11111111-1111-4111-8111-111111111111',
 }));
 
+// jest.config.js maps '../lib/prisma' to the no-op stub in
+// tests/__mocks__/prisma.js, which would null out the register transaction
+// (and this test's own queries). This suite's contract is the real
+// route-handler → User-row round trip, so override with a real client.
+jest.mock('../lib/prisma', () => {
+  const { PrismaClient } = require('@prisma/client');
+  const client = new PrismaClient();
+  // Cover both `require('../lib/prisma')` and esbuild's default-import interop.
+  client.default = client;
+  return client;
+});
+
 const express = require('express');
 const request = require('supertest');
 const prisma  = require('../lib/prisma');
+
+// /api/auth/register stacks registrationLimiter (3/hour/IP) on top of
+// credentialLimiter (10/15min/IP). This suite fires 4+ register calls, so
+// give each test its own limiter key the same way Cloudflare does in
+// production: CF-Connecting-IP + a well-formed CF-Ray header (see _credKey
+// in routes/auth.ts). The limiter logic itself stays fully enforced.
+let _cfIpCounter = 0;
+function cfHeaders() {
+  _cfIpCounter += 1;
+  return {
+    'CF-Connecting-IP': `203.0.113.${_cfIpCounter}`,
+    'CF-Ray':           '0123456789abcdef-SJC',
+  };
+}
 
 let app;
 const trackedAccountIds = new Set();
@@ -80,6 +106,7 @@ describe('POST /api/auth/register — terms acceptance gate', () => {
   test('rejects when acceptedTerms is missing', async () => {
     const res = await request(app)
       .post('/api/auth/register')
+      .set(cfHeaders())
       .send({ ...baseBody, email: 'gate-1@test.invalid' });
     expect(res.status).toBe(400);
   });
@@ -87,6 +114,7 @@ describe('POST /api/auth/register — terms acceptance gate', () => {
   test('rejects when acceptedTerms is false', async () => {
     const res = await request(app)
       .post('/api/auth/register')
+      .set(cfHeaders())
       .send({ ...baseBody, email: 'gate-2@test.invalid', acceptedTerms: false });
     expect(res.status).toBe(400);
   });
@@ -94,6 +122,7 @@ describe('POST /api/auth/register — terms acceptance gate', () => {
   test('accepts when acceptedTerms=true and stamps acceptedTermsAt + version', async () => {
     const res = await request(app)
       .post('/api/auth/register')
+      .set(cfHeaders())
       .send({
         ...baseBody, email: 'gate-3@test.invalid',
         acceptedTerms: true,
@@ -115,6 +144,7 @@ describe('POST /api/auth/register — terms acceptance gate', () => {
   test('defaults the version string when client omits it', async () => {
     const res = await request(app)
       .post('/api/auth/register')
+      .set(cfHeaders())
       .send({ ...baseBody, email: 'gate-4@test.invalid', acceptedTerms: true });
     expect(res.status).toBe(201);
     trackedUserEmails.add('gate-4@test.invalid');
