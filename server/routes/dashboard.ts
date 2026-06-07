@@ -1,318 +1,194 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// routes/dashboard.ts — ServiceCycle compliance dashboard aggregates.
+//
+// Replaces the renewal-countdown widget API with the KICKOFF Goal-3 set:
+//   - assets due in 30/60/90 days (active maintenance schedules)
+//   - overdue counts (schedules) + open deficiencies by severity
+//   - compliance rate by site (active schedules not overdue / total)
+//   - recent work orders
+//
+// GET /api/dashboard           → all widgets in one round-trip
+// GET /api/dashboard/calendar  → schedule due dates + blackout windows for
+//                                the Compliance Calendar page
+//                                (?from=YYYY-MM&months=1..12&siteId=)
+//
+// Auth: authenticateToken mounted upstream. Every query scoped to
+// req.user.accountId (tenancy/IDOR rule).
+// ─────────────────────────────────────────────────────────────────────────────
+
 const router = require('express').Router();
 import prisma from '../lib/prisma';
 
-async function autoExpireContracts(accountId) {
-  try {
-    await prisma.contract.updateMany({
-      where: {
-        accountId,
-        status: { in: ['active', 'under_review'] },
-        endDate: { lt: new Date() },
-      },
-      data: { status: 'expired' },
-    });
-  } catch (err) {
-    console.error('autoExpireContracts error:', err.message);
-  }
-}
+const DAY_MS = 86_400_000;
 
-// ─── GET /api/dashboard ───────────────────────────────────────────────────────
-// Single endpoint that returns everything the dashboard page needs.
 router.get('/', async (req, res) => {
   try {
     const accountId = req.user.accountId;
-    // S2-FN-08 (v0.74.0): fire-and-forget; dashboard render must not block on expiry sweep.
-    autoExpireContracts(accountId).catch(e => console.error('[dashboard] autoExpireContracts:', e.message));
+    const now  = new Date();
+    const in30 = new Date(now.getTime() + 30 * DAY_MS);
+    const in60 = new Date(now.getTime() + 60 * DAY_MS);
+    const in90 = new Date(now.getTime() + 90 * DAY_MS);
 
-    // Scope-restricted viewers see only contracts they own. The IDOR audit
-    // (2026-05-02) flagged that without this, a restricted viewer's
-    // dashboard counts/lists/aggregates were computed across the full
-    // account, leaking everything except the per-contract detail page.
-    // Spread `scope` into every contract query below.
-    const scope = req.user.contractScopeRestricted
-      ? { internalOwnerId: req.user.id }
-      : {};
-
-    const now = new Date();
-    const in14  = new Date(now.getTime() + 14  * 86_400_000);
-    const in30  = new Date(now.getTime() + 30  * 86_400_000);
-    const in60  = new Date(now.getTime() + 60  * 86_400_000);
-    const in90  = new Date(now.getTime() + 90  * 86_400_000);
-
-    const contractSelect: any = {
-      id: true,
-      product: true,
-      endDate: true,
-      evaluationStartByDate: true,
-      cancelByDate: true,
-      autoRenewal: true,
-      autoRenewalNoticeDays: true,
-      costPerLicense: true,
-      quantity: true,
-      status: true,
-      department: true,
-      vendor: { select: { id: true, name: true } },
+    const scheduleBase: any = {
+      accountId,
+      isActive: true,
+      nextDueDate: { not: null },
+      asset: { archivedAt: null },
     };
 
-    const in7 = new Date(now.getTime() + 7 * 86_400_000);
-
     const [
-      totalActive,
-      expiringIn90,
-      allActiveContracts,
-      needsReviewNow,
-      autoRenewalTraps,
-      upcomingRenewals,
-      cancelUrgent,
-      overdueReviews,
-      expiringThisMonth,
-      savingsAgg,
-      openAlertsCount,
+      due30, due60, due90,
+      overdueSchedules,
+      openDeficiencies,
+      siteRollup,
+      recentWorkOrders,
+      assetCount,
+      upcoming,
     ] = await Promise.all([
+      // Widget 1: due-in-N counts (cumulative forward windows; overdue is
+      // its own tile so the two never double-count).
+      prisma.maintenanceSchedule.count({ where: { ...scheduleBase, nextDueDate: { gte: now, lte: in30 } } }),
+      prisma.maintenanceSchedule.count({ where: { ...scheduleBase, nextDueDate: { gte: now, lte: in60 } } }),
+      prisma.maintenanceSchedule.count({ where: { ...scheduleBase, nextDueDate: { gte: now, lte: in90 } } }),
 
-      // Count of active contracts
-      prisma.contract.count({
-        where: { accountId, ...scope, status: 'active' },
+      // Widget 2a: overdue schedules
+      prisma.maintenanceSchedule.count({ where: { ...scheduleBase, nextDueDate: { lt: now } } }),
+
+      // Widget 2b: open deficiencies by severity
+      prisma.deficiency.groupBy({
+        by: ['severity'],
+        where: { accountId, resolvedAt: null },
+        _count: { _all: true },
       }),
 
-      // Contracts expiring within 90 days
-      prisma.contract.count({
-        where: {
-          accountId, ...scope,
-          status: 'active',
-          endDate: { gte: now, lte: in90 },
-        },
-      }),
-
-      // All active contracts — for spend charts + aggregations.
-      // Pass-5 / Agent 3: defensive take(1000). The chart-aggregation paths
-      // below (spend-by-vendor, spend-by-department, renewals-by-month) do
-      // a full in-process reduce over this array. Without a cap an account
-      // with 50k active contracts blocks the event loop for seconds per
-      // dashboard load. 1000 is well above any realistic real-world count
-      // (largest observed customer: ~600 active rows); if anyone legitimately
-      // exceeds it they'll hit it before they hit pathological perf.
-      prisma.contract.findMany({
-        where: { accountId, ...scope, status: 'active' },
+      // Widget 3: compliance rate by site. Slim projection aggregated in
+      // JS — site counts are bounded (tens, not thousands) and Prisma can't
+      // express the conditional ratio in one groupBy.
+      prisma.maintenanceSchedule.findMany({
+        where: scheduleBase,
         select: {
-          costPerLicense: true, quantity: true,
-          department: true, endDate: true,
-          vendor: { select: { id: true, name: true } },
+          nextDueDate: true,
+          asset: { select: { siteId: true, site: { select: { name: true } } } },
         },
-        take: 1000,
       }),
 
-      // Needs review NOW — evaluationStartByDate within 14 days
-      prisma.contract.findMany({
-        where: {
-          accountId, ...scope,
-          status: 'active',
-          evaluationStartByDate: { gte: now, lte: in14 },
-        },
-        select: contractSelect,
-        orderBy: { evaluationStartByDate: 'asc' },
-        take: 10,
-      }),
-
-      // Auto-renewal traps — cancel window closing within 30 days
-      // Includes under_review as well as active — a contract under review can
-      // still silently auto-renew if the cancel window is missed.
-      prisma.contract.findMany({
-        where: {
-          accountId, ...scope,
-          status: { in: ['active', 'under_review'] },
-          autoRenewal: true,
-          cancelByDate: { gte: now, lte: in30 },
-        },
-        select: contractSelect,
-        orderBy: { cancelByDate: 'asc' },
-        take: 50,
-      }),
-
-      // Upcoming renewals — next 8 active contracts by end date within 90 days
-      prisma.contract.findMany({
-        where: {
-          accountId, ...scope,
-          status: 'active',
-          endDate: { gte: now, lte: in90 },
-        },
-        select: contractSelect,
-        orderBy: { endDate: 'asc' },
+      // Widget 4: recent work orders
+      prisma.workOrder.findMany({
+        where: { accountId },
+        orderBy: { updatedAt: 'desc' },
         take: 8,
-      }),
-
-      // Cancel urgent — auto-renewal cancel window ≤7 days
-      prisma.contract.findMany({
-        where: {
-          accountId, ...scope,
-          status: { in: ['active', 'under_review'] },
-          autoRenewal: true,
-          cancelByDate: { gte: now, lte: in7 },
+        include: {
+          asset:      { select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, site: { select: { name: true } } } },
+          contractor: { select: { id: true, name: true } },
+          schedule:   { select: { taskDefinition: { select: { taskName: true } } } },
         },
-        select: contractSelect,
-        orderBy: { cancelByDate: 'asc' },
-        take: 20,
       }),
 
-      // Overdue reviews — evaluationStartByDate has passed, contract still actionable
-      prisma.contract.findMany({
-        where: {
-          accountId, ...scope,
-          status: { in: ['active', 'under_review'] },
-          evaluationStartByDate: { lt: now },
-        },
-        select: contractSelect,
-        orderBy: { evaluationStartByDate: 'asc' },
-        take: 20,
-      }),
+      prisma.asset.count({ where: { accountId, archivedAt: null } }),
 
-      // Expiring within the next 30 days (rolling)
-      prisma.contract.findMany({
-        where: {
-          accountId, ...scope,
-          status: 'active',
-          endDate: { gte: now, lte: in30 },
-        },
-        select: contractSelect,
-        orderBy: { endDate: 'asc' },
-        take: 20,
-      }),
-
-      // Savings aggregate — sum of (originalAsk - finalNegotiatedPrice) for contracts
-      // where both values are set. Gives a "total savings negotiated" dashboard figure.
-      prisma.contract.aggregate({
-        where: {
-          accountId, ...scope,
-          originalAsk: { not: null },
-          finalNegotiatedPrice: { not: null },
-        },
-        _sum: { originalAsk: true, finalNegotiatedPrice: true },
-      }),
-
-      // Open (unacknowledged) alerts for this account.
-      // v0.68.0 (audit Medium): when caller is contractScopeRestricted,
-      // count only alerts on contracts they own (mirrors the alert list
-      // scope from H1 v0.67.0). Without this, the dashboard counter
-      // side-channels the tenant-wide alert volume to restricted users.
-      prisma.alert.count({
-        where: {
-          accountId,
-          acknowledgedAt: null,
-          ...(req.user.contractScopeRestricted
-            ? { contract: { internalOwnerId: req.user.id } }
-            : {}),
+      // Next-up table: nearest due schedules (incl. overdue) under the tiles.
+      prisma.maintenanceSchedule.findMany({
+        where: { ...scheduleBase, nextDueDate: { lte: in90 } },
+        orderBy: { nextDueDate: 'asc' },
+        take: 10,
+        include: {
+          taskDefinition: { select: { taskName: true, standardRef: true, requiresOutage: true } },
+          asset: { select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, governingCondition: true, site: { select: { id: true, name: true } } } },
         },
       }),
     ]);
 
-    // ── Aggregate spend figures ───────────────────────────────────────────────
-    function contractVal(c) {
-      if (c.costPerLicense && c.quantity) {
-        return parseFloat(c.costPerLicense) * parseInt(c.quantity);
-      }
-      return 0;
+    // Compliance rate per site: % of active schedules NOT overdue.
+    const bySite = new Map();
+    for (const s of siteRollup) {
+      const key = s.asset.siteId;
+      if (!bySite.has(key)) bySite.set(key, { siteId: key, siteName: s.asset.site?.name || '—', total: 0, overdue: 0 });
+      const row = bySite.get(key);
+      row.total++;
+      if (s.nextDueDate && new Date(s.nextDueDate) < now) row.overdue++;
     }
+    const complianceBySite = [...bySite.values()]
+      .map(r => ({ ...r, complianceRate: r.total === 0 ? 100 : Math.round(((r.total - r.overdue) / r.total) * 100) }))
+      .sort((a, b) => a.complianceRate - b.complianceRate);
 
-    const totalAnnualSpend = allActiveContracts.reduce((s, c) => s + contractVal(c), 0);
+    const overallTotal   = siteRollup.length;
+    const overallOverdue = siteRollup.filter(s => s.nextDueDate && new Date(s.nextDueDate) < now).length;
 
-    // Total savings negotiated = sum(originalAsk) - sum(finalNegotiatedPrice)
-    const totalSavingsNegotiated = Math.max(0,
-      parseFloat(savingsAgg._sum.originalAsk?.toString() || '0') -
-      parseFloat(savingsAgg._sum.finalNegotiatedPrice?.toString() || '0')
-    );
+    const deficiencyBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
+    for (const g of openDeficiencies) deficiencyBySeverity[g.severity] = g._count._all;
 
-    // Spend at risk = spend from contracts expiring in 90 days
-    const spendAtRisk = upcomingRenewals.reduce((sum: number, c: any) => {
-      if (c.costPerLicense && c.quantity) {
-        return sum + parseFloat(c.costPerLicense) * parseInt(c.quantity);
-      }
-      return sum;
-    }, 0);
-
-    // ── Spend by vendor (top 8) ───────────────────────────────────────────────
-    const vendorMap: any = {};
-    for (const c of allActiveContracts) {
-      const name = c.vendor?.name || 'Unknown';
-      if (!vendorMap[name]) vendorMap[name] = { spend: 0, vendorId: c.vendor?.id || null };
-      vendorMap[name].spend += contractVal(c);
-    }
-    const spendByVendor = Object.entries<any>(vendorMap)
-      .map(([name, { spend, vendorId }]) => ({ name, spend, vendorId }))
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 8);
-
-    // ── Spend by department (top 8) ───────────────────────────────────────────
-    const deptMap: any = {};
-    for (const c of allActiveContracts) {
-      const dept = c.department?.trim() || 'Unassigned';
-      deptMap[dept] = (deptMap[dept] || 0) + contractVal(c);
-    }
-    const spendByDepartment = Object.entries<any>(deptMap)
-      .map(([name, spend]) => ({ name, spend }))
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 8);
-
-    // ── Renewals by month (next 12 months) ───────────────────────────────────
-    const monthBuckets: any = {};
-    const in365 = new Date(now.getTime() + 365 * 86_400_000);
-    for (const c of allActiveContracts) {
-      if (!c.endDate) continue;
-      const d = new Date(c.endDate);
-      if (d < now || d > in365) continue;
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      if (!monthBuckets[key]) monthBuckets[key] = { count: 0, value: 0 };
-      monthBuckets[key].count++;
-      monthBuckets[key].value += contractVal(c);
-    }
-    // Build a full 12-month array starting from current month
-    const renewalsByMonth = [];
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      renewalsByMonth.push({
-        month: key,
-        // 4-digit year to match the rest of the product's date formatting
-        // (UX review 2026-05-01: "May 26" was ambiguous — could be misread as
-        // May 26th instead of May 2026).
-        label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-        count: monthBuckets[key]?.count || 0,
-        value: monthBuckets[key]?.value || 0,
-      });
-    }
-
-    // H3-2 (v0.76.2): "Data as of" — proxy via most-recently-updated contract
-    const _lastSyncRow = await prisma.contract.findFirst({
-      where: { accountId, ...scope },
-      orderBy: { updatedAt: 'desc' },
-      select: { updatedAt: true },
-    });
-    const lastSyncAt = _lastSyncRow?.updatedAt || null;
-
-    res.json({
+    return res.json({
       success: true,
       data: {
-        summary: {
-          totalActive,
-          totalAnnualSpend,
-          expiringIn90Days: expiringIn90,
-          autoRenewalTraps: autoRenewalTraps.length,  // accurate — take: 50, same filter as /contracts?renewal=cancel30
-          spendAtRisk,
-          totalSavingsNegotiated,
-          openAlerts: openAlertsCount,
-        },
-        needsAttentionToday: { cancelUrgent, overdueReviews, expiringThisMonth },
-        needsReviewNow,
-        autoRenewalTraps,
-        upcomingRenewals,
-        spendByVendor,
-        spendByDepartment,
-        renewalsByMonth,
-        lastSyncAt,
+        dueCounts: { due30, due60, due90, overdue: overdueSchedules },
+        deficiencies: deficiencyBySeverity,
+        complianceBySite,
+        overallComplianceRate: overallTotal === 0 ? 100 : Math.round(((overallTotal - overallOverdue) / overallTotal) * 100),
+        recentWorkOrders,
+        upcoming,
+        assetCount,
+        scheduleCount: overallTotal,
       },
     });
   } catch (err) {
-    console.error('Dashboard error:', err);
-    res.status(500).json({ success: false, error: 'Failed to load dashboard' });
+    console.error('[dashboard] failed:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load dashboard data' });
+  }
+});
+
+// ── GET /api/dashboard/calendar ──────────────────────────────────────────────
+// Due dates + blackout windows for the Compliance Calendar. Blackouts ship in
+// the same payload so the calendar can render outage-work feasibility
+// (requiresOutage tasks should land inside isOutageWindow=true windows).
+router.get('/calendar', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const monthsRaw = parseInt(req.query.months, 10);
+    const months = isNaN(monthsRaw) ? 3 : Math.min(Math.max(monthsRaw, 1), 12);
+
+    let start;
+    if (typeof req.query.from === 'string' && /^\d{4}-\d{2}$/.test(req.query.from)) {
+      const [yr, mo] = req.query.from.split('-').map(Number);
+      start = new Date(yr, mo - 1, 1);
+    } else {
+      const now = new Date();
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    const end = new Date(start.getFullYear(), start.getMonth() + months, 1);
+
+    const assetWhere: any = { archivedAt: null };
+    if (req.query.siteId) assetWhere.siteId = String(req.query.siteId);
+
+    const [schedules, blackouts] = await Promise.all([
+      prisma.maintenanceSchedule.findMany({
+        where: {
+          accountId,
+          isActive: true,
+          nextDueDate: { gte: start, lt: end },
+          asset: assetWhere,
+        },
+        orderBy: { nextDueDate: 'asc' },
+        take: 1000,
+        include: {
+          taskDefinition: { select: { taskName: true, requiresOutage: true, standardRef: true } },
+          asset: { select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, site: { select: { id: true, name: true } } } },
+        },
+      }),
+      prisma.blackoutWindow.findMany({
+        where: {
+          accountId,
+          startsAt: { lt: end },
+          endsAt:   { gt: start },
+          ...(req.query.siteId ? { siteId: String(req.query.siteId) } : {}),
+        },
+        include: { site: { select: { id: true, name: true } } },
+      }),
+    ]);
+
+    return res.json({ success: true, data: { schedules, blackouts, range: { start, end } } });
+  } catch (err) {
+    console.error('[dashboard/calendar] failed:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load calendar data' });
   }
 });
 
