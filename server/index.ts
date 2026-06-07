@@ -423,9 +423,9 @@ const cspDirectives = {
   defaultSrc:    ["'none'"],
   scriptSrc:     ["'self'"],                                     // S3: same-origin scripts only
   styleSrc:      ["'self'"],                                     // S3: same-origin styles only
-  imgSrc:        ["'self'", 'data:', 'https://*.lapseiq.com'],   // L6: + LapseIQ marketing assets
-  connectSrc:    ["'self'", 'https://*.lapseiq.com'],            // L6: + sister subdomains for XHR/fetch
-  fontSrc:       ["'self'", 'https://*.lapseiq.com'],            // L6: + future marketing CDN fonts
+  imgSrc:        ["'self'", 'data:', 'https://*.servicecycle.com'],   // L6: + marketing assets
+  connectSrc:    ["'self'", 'https://*.servicecycle.com'],            // L6: + sister subdomains for XHR/fetch
+  fontSrc:       ["'self'", 'https://*.servicecycle.com'],            // L6: + future marketing CDN fonts
   objectSrc:     ["'none'"],
   baseUri:       ["'none'"],
   formAction:    ["'self'"],
