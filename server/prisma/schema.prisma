@@ -492,6 +492,13 @@ model Asset {
   // "equipment owner" answer auditors expect. Nullable — unowned assets
   // fall back to pure role routing.
   ownerId               String?
+  // Electrical topology: the asset this one is FED FROM (its upstream
+  // source). Self-relation forming the power-path graph — upstream chain =
+  // walk fedFrom links to the source; downstream = children of this node.
+  // Drives the Power Path card and outage-impact answers ("de-energize this
+  // switchgear → these N assets lose power"). Cycle prevention enforced at
+  // the route layer (a feed loop is always data-entry error).
+  fedFromAssetId        String?
   // Governing condition = worst of the three axes (C3 wins). Stored and
   // recomputed by the route layer on every condition write so list queries
   // and the scheduler never re-derive it. Drives interval selection on
@@ -510,6 +517,8 @@ model Asset {
   area              Area?                @relation(fields: [areaId], references: [id])
   position          EquipmentPosition?   @relation(fields: [positionId], references: [id])
   owner             User?                @relation("AssetOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  fedFrom           Asset?               @relation("PowerPath", fields: [fedFromAssetId], references: [id], onDelete: SetNull)
+  feedsDownstream   Asset[]              @relation("PowerPath")
   schedules         MaintenanceSchedule[]
   workOrders        WorkOrder[]
   deficiencies      Deficiency[]
@@ -525,6 +534,7 @@ model Asset {
   @@index([accountId, equipmentType])
   @@index([accountId, archivedAt])
   @@index([positionId])
+  @@index([fedFromAssetId])
   @@map("assets")
 }
 

@@ -89,6 +89,11 @@ const DEMO_DEFAULT_CAPS = {
   // trust budget. Self-host stays UNLIMITED via the DEMO_MODE
   // short-circuit above.
   narrate:           2,
+  // Photo inspection (vision AI). 3/day — one real nameplate shot plus a
+  // couple of retakes is a complete demo of the feature; vision calls are
+  // the priciest per-call action so the cap stays tight. Self-host stays
+  // UNLIMITED via the DEMO_MODE short-circuit above.
+  photo_inspect:     3,
 };
 
 // v0.66.0 — per-role daily-total caps (sum across all actions for the user today).

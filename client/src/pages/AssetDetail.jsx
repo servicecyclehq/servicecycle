@@ -31,6 +31,8 @@ import Toast from '../components/Toast';
 import InfoTip from '../components/InfoTip';
 import CustomFieldInputs from '../components/CustomFieldInputs';
 import MaintenanceBriefCard from '../components/MaintenanceBriefCard';
+import PhotoInspectCard from '../components/PhotoInspectCard';
+import PowerPathCard from '../components/PowerPathCard';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -704,6 +706,11 @@ export default function AssetDetail() {
           />
         )}
 
+        {/* ── Power Path ────────────────────────────────────────────────────── */}
+        {/* Upstream/downstream feed chain; refetches itself whenever the asset
+            object refreshes, and bumps the page on feed edits. */}
+        <PowerPathCard asset={asset} canWrite={canWrite} onChanged={refetchAll} />
+
         {/* ── Maintenance Schedules ─────────────────────────────────────────── */}
         <div className="card mb-16">
           <div className="card-header">
@@ -847,6 +854,11 @@ export default function AssetDetail() {
         {/* Self-gating: renders null unless AI is enabled+configured and the
             user's role carries the maintenance_brief feature. */}
         <MaintenanceBriefCard asset={asset} />
+
+        {/* ── AI Photo Inspection ───────────────────────────────────────────── */}
+        {/* Same self-gating as the brief card (maintenance_brief feature +
+            aiEnabled + aiConfigured). Apply actions refetch the asset. */}
+        <PhotoInspectCard asset={asset} onApplied={refetchAll} />
 
         {/* ── Work Orders ───────────────────────────────────────────────────── */}
         <div className="card mb-16">

@@ -12,14 +12,39 @@
 // click, then lands on /assets/:id.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
+import { useAiConsent } from '../context/AiConsentContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import InfoTip from '../components/InfoTip';
 import CustomFieldInputs from '../components/CustomFieldInputs';
+import Toast from '../components/Toast';
 import { EQUIPMENT_TYPE_LABELS, CONDITION_META } from '../lib/equipment';
+
+// ── "Start from a photo" helpers ─────────────────────────────────────────────
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const PHOTO_ACCEPT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Best-effort map of the model's free-text equipment guess onto our enum.
+function matchEquipmentType(guess) {
+  if (!guess) return null;
+  const raw = String(guess).trim();
+  if (EQUIPMENT_TYPE_LABELS[raw]) return raw;
+  const up = raw.toUpperCase().replace(/[\s/()-]+/g, '_').replace(/_+/g, '_');
+  if (EQUIPMENT_TYPE_LABELS[up]) return up;
+  const byLabel = Object.entries(EQUIPMENT_TYPE_LABELS)
+    .find(([, label]) => label.toLowerCase() === raw.toLowerCase());
+  return byLabel ? byLabel[0] : null;
+}
+
+// Normalize a suggested condition to C1/C2/C3 or null.
+function validCond(v) {
+  const c = String(v ?? '').trim().toUpperCase();
+  return /^C[123]$/.test(c) ? c : null;
+}
 
 const CONDITION_TIP =
   'NFPA 70B:2023 condition of maintenance. Each asset is rated C1 (good), ' +
@@ -32,6 +57,13 @@ export default function NewAsset() {
   useDocumentTitle('New Asset');
   const navigate = useNavigate();
   const confirm = useConfirm();
+  // AI photo-identify gating — exact mirror of MaintenanceBriefCard's gate
+  // (maintenance_brief feature + AI enabled + provider configured). The
+  // panel is hidden entirely when any leg is missing; the server enforces
+  // everything independently.
+  const { aiEnabled, aiConfigured, features } = useAuth();
+  const { requestConsent } = useAiConsent();
+  const photoPanelAvailable = !!(features?.maintenance_brief && aiEnabled && aiConfigured);
 
   const [sites, setSites]         = useState([]);
   const [siteTree, setSiteTree]   = useState(null); // GET /api/sites/:id payload
@@ -56,6 +88,22 @@ export default function NewAsset() {
   const [customFields, setCustomFields] = useState({});
   // Account members ({id, name}) for the optional owner picker.
   const [members, setMembers] = useState([]);
+
+  // "Start from a photo" panel — collapsed by default so the manual flow
+  // stays primary; only mounted at all when photoPanelAvailable.
+  const [photoOpen, setPhotoOpen]       = useState(false);
+  const [photoFile, setPhotoFile]       = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoBusy, setPhotoBusy]       = useState(false);
+  const [photoError, setPhotoError]     = useState(null);
+  // True once a photo analysis has pre-filled the form — drives the
+  // visual-only disclaimer under the condition selects.
+  const [photoApplied, setPhotoApplied] = useState(false);
+  const [toast, setToast]               = useState(null);
+  const photoInputRef = useRef(null);
+
+  // Revoke the preview object URL when replaced / on unmount.
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -109,6 +157,110 @@ export default function NewAsset() {
   function removeNameplatePair(idx) {
     setNameplate(prev => prev.length === 1 ? [{ key: '', value: '' }] : prev.filter((_, i) => i !== idx));
   }
+
+  // ── "Start from a photo" handlers ──────────────────────────────────────────
+  function handlePhotoFileChange(e) {
+    const f = e.target.files?.[0];
+    setPhotoError(null);
+    if (!f) { setPhotoFile(null); setPhotoPreview(null); return; }
+    if (!PHOTO_ACCEPT_TYPES.includes(f.type)) {
+      setPhotoFile(null); setPhotoPreview(null);
+      setPhotoError('Unsupported image type — please use a JPEG, PNG, or WebP photo.');
+      if (photoInputRef.current) photoInputRef.current.value = '';
+      return;
+    }
+    if (f.size > PHOTO_MAX_BYTES) {
+      setPhotoFile(null); setPhotoPreview(null);
+      setPhotoError(`Photo is too large (${(f.size / 1024 / 1024).toFixed(1)}MB) — the limit is 10MB.`);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+      return;
+    }
+    setPhotoFile(f);
+    setPhotoPreview(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(f);
+    });
+  }
+
+  const runPhotoInspect = async () => {
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', photoFile);
+      // No assetId — this is a pre-creation identify. Site context helps the
+      // server scope upstream-candidate matching when one is already chosen.
+      if (form.siteId) fd.append('siteId', form.siteId);
+      const res = await api.post('/api/assets/photo-inspect', fd);
+      const analysis = res.data?.data?.analysis || {};
+      const ident = analysis.identification || {};
+      const vis   = analysis.visibleCondition || {};
+
+      // Pre-fill only what the photo actually yielded; never blank a field
+      // the user already typed.
+      const typeKey = matchEquipmentType(ident.equipmentTypeGuess);
+      const sPhys = validCond(vis.suggestedConditionPhysical);
+      const sEnv  = validCond(vis.suggestedConditionEnvironment);
+      setForm(p => ({
+        ...p,
+        equipmentType: typeKey || p.equipmentType,
+        manufacturer:  String(ident.manufacturer || '').trim() || p.manufacturer,
+        model:         String(ident.model || '').trim() || p.model,
+        serialNumber:  String(ident.serialNumber || '').trim() || p.serialNumber,
+        conditionPhysical:    sPhys || p.conditionPhysical,
+        conditionEnvironment: sEnv || p.conditionEnvironment,
+      }));
+      // Nameplate rows: append photo-read pairs the user hasn't already keyed.
+      const photoPairs = Object.entries(ident.nameplate || {})
+        .filter(([k, v]) => k && v != null && String(v).trim() !== '')
+        .map(([key, value]) => ({ key, value: String(value) }));
+      if (photoPairs.length > 0) {
+        setNameplate(prev => {
+          const kept = prev.filter(p => p.key.trim());
+          const have = new Set(kept.map(p => p.key.trim().toLowerCase()));
+          const added = photoPairs.filter(p => !have.has(p.key.trim().toLowerCase()));
+          const next = [...kept, ...added];
+          return next.length > 0 ? next : [{ key: '', value: '' }];
+        });
+      }
+      setPhotoApplied(true);
+      setToast({
+        message: 'Form pre-filled from photo — review before saving',
+        variant: 'success',
+        duration: 6000,
+      });
+    } catch (err) {
+      // Error vocabulary copied from MaintenanceBriefCard — same server gates.
+      const status = err.response?.status;
+      const data   = err.response?.data;
+      if (status === 429 && data?.error === 'ai_daily_cap_reached') {
+        const { count, cap, resetAt } = data.data || {};
+        const resetStr = resetAt ? new Date(resetAt).toLocaleString() : 'midnight UTC';
+        setPhotoError(`Daily AI limit reached${cap ? ` (${count}/${cap})` : ''}. Resets at ${resetStr}.`);
+      } else if (status === 429) {
+        setPhotoError('Too many AI requests right now — please try again in a little while.');
+      } else if (data?.error === 'ai_consent_required' || data?.error === 'ai_consent_outdated') {
+        setPhotoError('AI consent needs to be re-acknowledged — please click Identify again and accept the consent dialog.');
+      } else if (status === 413) {
+        setPhotoError('The server rejected this photo as too large — try a smaller image.');
+      } else if (status === 503) {
+        setPhotoError(data?.message || 'AI is temporarily unavailable on this instance. Please try again later.');
+      } else if (err.demoBlocked) {
+        setPhotoError(null); // global demo banner already showed
+      } else {
+        setPhotoError(data?.message || data?.error || err.message || 'Failed to analyze photo.');
+      }
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handleIdentify = () => {
+    if (photoBusy || !photoFile) return;
+    // Same consent flow as the brief card: runs now if already acknowledged
+    // this session / silenced, else opens the app-level AiConsentModal first.
+    requestConsent(runPhotoInspect);
+  };
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -198,6 +350,113 @@ export default function NewAsset() {
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
 
         <form onSubmit={handleSubmit}>
+          {/* ── Start from a photo (AI, optional) ──────────────────────────── */}
+          {/* Hidden unless AI is enabled+configured and the user's role has
+              the maintenance_brief feature — and collapsed behind a button so
+              the manual flow stays primary. */}
+          {photoPanelAvailable && (
+            <div className="card mb-16">
+              {!photoOpen ? (
+                <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setPhotoOpen(true)}>
+                    📷 Start from a photo
+                  </button>
+                  <span style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+                    Optional — AI reads the nameplate and pre-fills the form below.
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="card-header"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
+                  >
+                    <div className="card-title">📷 Start from a Photo</div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setPhotoOpen(false)}
+                      disabled={photoBusy}
+                    >
+                      Hide
+                    </button>
+                  </div>
+                  <div className="card-body">
+                    <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+                      Snap or upload a photo of the equipment nameplate — AI identifies the type,
+                      manufacturer, model, serial, and nameplate ratings and pre-fills the form.
+                      Everything stays editable before you save.
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        capture="environment"
+                        aria-label="Equipment photo"
+                        onChange={handlePhotoFileChange}
+                        disabled={photoBusy}
+                        style={{ fontSize: 'var(--font-size-ui)' }}
+                      />
+                      {photoPreview && (
+                        <img
+                          src={photoPreview}
+                          alt="Selected equipment"
+                          style={{
+                            width: 72, height: 72, objectFit: 'cover',
+                            borderRadius: 8, border: '1px solid var(--color-border)', flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleIdentify}
+                        disabled={!photoFile || photoBusy}
+                      >
+                        Identify equipment
+                      </button>
+                    </div>
+                    {photoBusy && (
+                      <div
+                        role="status"
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10, marginTop: 10,
+                          fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)',
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 14, height: 14, flexShrink: 0,
+                            border: '2px solid var(--color-border)',
+                            borderTopColor: 'var(--color-primary, #2563eb)',
+                            borderRadius: '50%',
+                            animation: 'spin 0.9s linear infinite',
+                          }}
+                        />
+                        <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+                        Reading the nameplate and inspecting…
+                      </div>
+                    )}
+                    {photoError && !photoBusy && (
+                      <div
+                        role="alert"
+                        style={{
+                          marginTop: 10, padding: '8px 12px', borderRadius: 8,
+                          background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b',
+                          fontSize: 'var(--font-size-ui)',
+                        }}
+                      >
+                        {photoError}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="card mb-16">
             <div className="card-header"><div className="card-title">Location</div></div>
             <div className="card-body">
@@ -353,6 +612,14 @@ export default function NewAsset() {
               <div className="form-hint">
                 The worst of the three axes governs the asset’s maintenance intervals (C3 wins over C2 over C1).
               </div>
+              {photoApplied && (
+                <div style={{
+                  marginTop: 8, fontSize: 'var(--font-size-xs)', fontStyle: 'italic',
+                  color: 'var(--color-text-muted, var(--color-text-secondary))',
+                }}>
+                  Photo-suggested conditions are a visual assessment only — not a substitute for testing.
+                </div>
+              )}
             </div>
           </div>
 
@@ -437,6 +704,7 @@ export default function NewAsset() {
           </div>
         </form>
       </div>
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </>
   );
 }

@@ -181,6 +181,7 @@ const deficiencyRoutes      = require('./routes/deficiencies'); // findings
 const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
 const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
 const assetBriefRoutes      = require('./routes/assetBrief');   // AI maintenance brief
+const assetPhotoInspectRoutes = require('./routes/assetPhotoInspect'); // AI photo inspection (vision)
 const complianceRoutes      = require('./routes/compliance');   // per-standard reports + audit snapshots
 const auditRoutes           = require('./routes/audits');       // audit visits + recommendations (RECs)
 const newsRoutes            = require('./routes/news');         // regulatory/industry news feed (global)
@@ -1096,6 +1097,9 @@ app.use('/api/assets',          authenticateToken, assetRoutes);
 // applied INSIDE the router on the brief route only, so asset CRUD traffic
 // never burns the AI per-IP budget.
 app.use('/api/assets',          authenticateToken, assetBriefRoutes);
+// Photo inspection — vision AI on uploaded equipment photos. Same fall-
+// through mount pattern; gating (consent/quota/budget) lives in the router.
+app.use('/api/assets',          authenticateToken, assetPhotoInspectRoutes);
 app.use('/api/sites',           authenticateToken, siteRoutes);
 app.use('/api/contractors',     authenticateToken, contractorRoutes);
 app.use('/api/schedules',       authenticateToken, scheduleRoutes);

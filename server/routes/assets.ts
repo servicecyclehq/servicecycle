@@ -84,6 +84,7 @@ const TRACKED_FIELDS: any = {
   inService:            'In Service',
   isEnergized:          'Energized',
   notes:                'Notes',
+  fedFromAssetId:       'Fed From',
 };
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
@@ -124,6 +125,11 @@ const AssetWritableFields: any = {
   inService:            BoolLike,
   isEnergized:          BoolLike,
   notes:                Str,
+  // Power-path topology: the asset this one is FED FROM (upstream source).
+  // Must be a same-account asset, not the asset itself, and must not create
+  // a feed loop — validated in the handlers via resolveFeedSource.
+  // Null/'' clears the link.
+  fedFromAssetId:       OptUuid,
   // Admin-defined custom field values, keyed by CustomFieldDefinition id.
   // Zod only gates the container shape — per-type coercion happens against
   // the stored definitions in resolveCustomFields, which zod can't see.
@@ -260,6 +266,48 @@ async function resolveOwner(accountId, ownerId) {
     select: { id: true },
   });
   return owner ? null : 'Owner must be an active user on this account';
+}
+
+// ─── Feed-source validation (power-path topology) ─────────────────────────────
+// fedFromAssetId must name a same-account asset (unknown id and other-tenant
+// id are deliberately the same error), must not be the asset itself, and must
+// not create a feed loop. Cycle prevention: walk the NEW parent's fedFrom
+// chain (max 25 hops — deeper than any real electrical distribution tree);
+// if the walk reaches selfAssetId the link would close a loop. A feed loop
+// is always data-entry error — electricity has a source. selfAssetId is null
+// on create (a not-yet-existing asset can't appear in any chain, so only the
+// existence check applies). Returns null on success, error string otherwise.
+const FEED_CHAIN_MAX_HOPS = 25;
+
+async function resolveFeedSource(accountId, selfAssetId, fedFromAssetId) {
+  if (selfAssetId && fedFromAssetId === selfAssetId) {
+    return 'An asset cannot be fed from itself';
+  }
+
+  const parent = await prisma.asset.findFirst({
+    where:  { id: fedFromAssetId, accountId },
+    select: { id: true, fedFromAssetId: true },
+  });
+  if (!parent) return 'Fed-from asset not found';
+
+  if (!selfAssetId) return null; // create path — no loop possible yet
+
+  // Walk upstream from the new parent. Visited-set guards against a
+  // pre-existing loop in the data (shouldn't exist, but never hang on it).
+  const visited = new Set([parent.id]);
+  let cursorId = parent.fedFromAssetId;
+  for (let hop = 0; cursorId && hop < FEED_CHAIN_MAX_HOPS; hop++) {
+    if (cursorId === selfAssetId) return 'Feed loop detected';
+    if (visited.has(cursorId)) break; // existing cycle upstream — stop walking
+    visited.add(cursorId);
+    const node = await prisma.asset.findFirst({
+      where:  { id: cursorId, accountId },
+      select: { fedFromAssetId: true },
+    });
+    if (!node) break;
+    cursorId = node.fedFromAssetId;
+  }
+  return null;
 }
 
 // Shared include shape for single-row responses (create/update return the
@@ -459,6 +507,11 @@ router.get('/:id', async (req, res) => {
         // Detail view widens the shared include with the owner's email so the
         // page can render a mailto without a second fetch.
         owner: { select: { id: true, name: true, email: true } },
+        // Power-path context: immediate upstream source + how many assets
+        // this one directly feeds (the Power Path card's summary line; the
+        // full chain comes from GET /:id/power-path).
+        fedFrom: { select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true } },
+        _count:  { select: { feedsDownstream: true } },
         schedules: {
           orderBy: { nextDueDate: 'asc' },
           // standard {code, edition} rides along so the detail page can
@@ -530,7 +583,7 @@ router.post('/', requireManager, async (req, res) => {
       equipmentType, manufacturer, model, serialNumber, nameplateData,
       installDate, lastCommissionedDate,
       conditionPhysical, conditionCriticality, conditionEnvironment,
-      inService, isEnergized, notes,
+      inService, isEnergized, notes, fedFromAssetId,
     } = parsed;
 
     // Hierarchy ownership + chain consistency (tenancy: every level is
@@ -558,6 +611,16 @@ router.post('/', requireManager, async (req, res) => {
       const ownerErr = await resolveOwner(req.user.accountId, effOwnerId);
       if (ownerErr) {
         return res.status(400).json({ success: false, error: ownerErr });
+      }
+    }
+
+    // Feed source must be a same-account asset (no self/loop possible on
+    // create — the asset doesn't exist yet).
+    const effFedFromId = fedFromAssetId || null;
+    if (effFedFromId) {
+      const feedErr = await resolveFeedSource(req.user.accountId, null, effFedFromId);
+      if (feedErr) {
+        return res.status(400).json({ success: false, error: feedErr });
       }
     }
 
@@ -589,6 +652,7 @@ router.post('/', requireManager, async (req, res) => {
         inService:   inService !== undefined ? (inService === true || inService === 'true') : true,
         isEnergized: isEnergized !== undefined ? (isEnergized === true || isEnergized === 'true') : true,
         notes: notes || null,
+        fedFromAssetId: effFedFromId,
       },
       include: ASSET_INCLUDE,
     });
@@ -631,7 +695,7 @@ router.put('/:id', requireManager, async (req, res) => {
       equipmentType, manufacturer, model, serialNumber, nameplateData,
       installDate, lastCommissionedDate,
       conditionPhysical, conditionCriticality, conditionEnvironment,
-      inService, isEnergized, notes,
+      inService, isEnergized, notes, fedFromAssetId,
     } = parsed;
 
     // Resolve the EFFECTIVE hierarchy chain (incoming value when supplied,
@@ -682,6 +746,19 @@ router.put('/:id', requireManager, async (req, res) => {
         }
       }
       updateData.ownerId = effOwnerId;
+    }
+    // Feed source: '' / null clears; a non-null value must be a same-account
+    // asset, not this asset, and must not close a feed loop (cycle walk
+    // inside resolveFeedSource, max 25 hops).
+    if (fedFromAssetId !== undefined) {
+      const effFedFromId = fedFromAssetId || null;
+      if (effFedFromId) {
+        const feedErr = await resolveFeedSource(req.user.accountId, req.params.id, effFedFromId);
+        if (feedErr) {
+          return res.status(400).json({ success: false, error: feedErr });
+        }
+      }
+      updateData.fedFromAssetId = effFedFromId;
     }
     if (equipmentType !== undefined) updateData.equipmentType = equipmentType;
     if (manufacturer !== undefined)  updateData.manufacturer = manufacturer || null;
@@ -811,6 +888,94 @@ router.post('/:id/unarchive', requireManager, async (req, res) => {
   } catch (err) {
     console.error('Unarchive asset error:', err);
     res.status(500).json({ success: false, error: 'Failed to unarchive asset' });
+  }
+});
+
+// ─── GET /api/assets/:id/power-path ───────────────────────────────────────────
+// Electrical topology view for one asset:
+//   upstream:        ordered chain from the immediate parent to the source
+//                    (walks fedFrom links; visited-set + hop cap guard
+//                    against any pre-existing loop in the data)
+//   downstream:      direct children (assets fed FROM this one), each with
+//                    its own direct-downstream count
+//   totalDownstream: count of ALL transitive descendants — the outage-impact
+//                    number ("de-energize this switchgear → N assets lose
+//                    power"). BFS, capped at 500 nodes, cycle-guarded.
+// TENANCY: every query filters by req.user.accountId.
+const POWER_PATH_NODE_SELECT: any = {
+  id: true, equipmentType: true, manufacturer: true, model: true,
+  serialNumber: true, inService: true, governingCondition: true,
+};
+const POWER_PATH_MAX_UPSTREAM   = 50;
+const POWER_PATH_MAX_DOWNSTREAM = 500;
+
+router.get('/:id/power-path', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({
+      where:  { id: req.params.id, accountId },
+      select: { id: true, fedFromAssetId: true },
+    });
+    if (!asset) {
+      return res.status(404).json({ success: false, error: 'Asset not found' });
+    }
+
+    // ── Upstream chain: immediate parent → ... → source ──────────────────────
+    const upstream = [];
+    const seenUp = new Set([asset.id]);
+    let cursorId = asset.fedFromAssetId;
+    while (cursorId && upstream.length < POWER_PATH_MAX_UPSTREAM) {
+      if (seenUp.has(cursorId)) break; // loop in existing data — stop, never hang
+      seenUp.add(cursorId);
+      const node: any = await prisma.asset.findFirst({
+        where:  { id: cursorId, accountId },
+        select: { ...POWER_PATH_NODE_SELECT, fedFromAssetId: true },
+      });
+      if (!node) break; // dangling link (should be impossible — FK + SetNull)
+      const { fedFromAssetId: nextId, ...shape } = node;
+      upstream.push(shape);
+      cursorId = nextId;
+    }
+
+    // ── Direct children, each with its own downstream count ──────────────────
+    const children: any[] = await prisma.asset.findMany({
+      where:   { fedFromAssetId: asset.id, accountId },
+      orderBy: { createdAt: 'asc' },
+      select:  {
+        ...POWER_PATH_NODE_SELECT,
+        _count: { select: { feedsDownstream: true } },
+      },
+    });
+    const downstream = children.map((c) => {
+      const { _count, ...shape } = c;
+      return { ...shape, downstreamCount: _count?.feedsDownstream ?? 0 };
+    });
+
+    // ── Total transitive descendants (BFS, capped, cycle-guarded) ────────────
+    const visited = new Set([asset.id]);
+    let frontier = children.map((c) => c.id).filter((id) => !visited.has(id));
+    frontier.forEach((id) => visited.add(id));
+    let totalDownstream = frontier.length;
+
+    while (frontier.length > 0 && totalDownstream < POWER_PATH_MAX_DOWNSTREAM) {
+      const next = await prisma.asset.findMany({
+        where:  { fedFromAssetId: { in: frontier }, accountId },
+        select: { id: true },
+      });
+      frontier = [];
+      for (const row of next) {
+        if (visited.has(row.id)) continue; // cycle guard
+        visited.add(row.id);
+        frontier.push(row.id);
+        totalDownstream++;
+        if (totalDownstream >= POWER_PATH_MAX_DOWNSTREAM) break;
+      }
+    }
+
+    res.json({ success: true, data: { upstream, downstream, totalDownstream } });
+  } catch (err) {
+    console.error('Asset power-path error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch power path' });
   }
 });
 
