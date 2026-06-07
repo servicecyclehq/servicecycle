@@ -8,6 +8,8 @@
 //   - recent work orders
 //
 // GET /api/dashboard           → all widgets in one round-trip
+// GET /api/dashboard/priority  → risk-dimension priority tabs
+//                                (?tab=critical|value|volume&siteId=)
 // GET /api/dashboard/calendar  → schedule due dates + blackout windows for
 //                                the Compliance Calendar page
 //                                (?from=YYYY-MM&months=1..36&siteId=&density=1)
@@ -238,6 +240,253 @@ router.get('/calendar', async (req, res) => {
   } catch (err) {
     console.error('[dashboard/calendar] failed:', err);
     return res.status(500).json({ success: false, error: 'Failed to load calendar data' });
+  }
+});
+
+// ── GET /api/dashboard/priority ──────────────────────────────────────────────
+// Priority dashboard tabs over the 2026-06-07 risk dimensions
+// (criticalityScore / repairCostEstimate / spareLeadTimeWeeks /
+// redundancyStatus / requiresPredictiveMaintenance on Asset).
+//
+//   ?tab=critical — infrastructure-critical assets: criticalityScore >= 4 OR
+//                   life-safety/backbone equipment type. Ordered
+//                   criticalityScore desc nulls-last, then worst schedule
+//                   status (overdue → due ≤30d → due later → unscheduled).
+//   ?tab=value    — financial-exposure assets: repairCostEstimate >= $20k OR
+//                   spareLeadTimeWeeks >= 8 OR requiresPredictiveMaintenance.
+//                   Ordered repairCostEstimate desc nulls-last; rows add the
+//                   latest predictive signal (most recent labSample with an
+//                   IEEE C57.104 status).
+//   ?tab=volume   — operational workload by equipmentType: assetCount,
+//                   openScheduleCount (active), overdueCount, due30Count.
+//                   Ordered assetCount desc.
+//   ?siteId=      — optional uuid, narrows every tab to one site.
+//
+// All tabs: accountId-scoped, archived assets excluded, ≤50 rows.
+const PRIORITY_ROW_CAP = 50;
+// Life-safety / backbone types that belong on the critical tab regardless of
+// (possibly unscored) criticalityScore.
+const CRITICAL_EQUIPMENT_TYPES = [
+  'GENERATOR', 'TRANSFER_SWITCH', 'UPS_BATTERY',
+  'PROTECTION_RELAY', 'GROUNDING_SYSTEM', 'FIRE_PUMP_CONTROLLER',
+];
+
+// Slim asset projection shared by the critical/value tabs.
+const PRIORITY_ASSET_SELECT: any = {
+  id: true, equipmentType: true, manufacturer: true, model: true,
+  serialNumber: true, criticalityScore: true, redundancyStatus: true,
+  governingCondition: true, inService: true,
+  site:     { select: { id: true, name: true } },
+  position: { select: { id: true, name: true, code: true } },
+};
+
+// Roll active schedules up to the per-asset summary the tab rows carry:
+// nextDue (earliest dated active schedule + its task name), overdueCount,
+// lastCompletedDate (latest completion across schedules).
+function _rollupSchedules(schedules, now) {
+  let next = null;
+  let overdueCount = 0;
+  let lastCompletedDate = null;
+  for (const s of schedules || []) {
+    if (s.nextDueDate) {
+      const d = new Date(s.nextDueDate);
+      if (d < now) overdueCount++;
+      if (!next || d < next.date) {
+        next = { date: d, taskName: s.taskDefinition?.taskName ?? null };
+      }
+    }
+    if (s.lastCompletedDate) {
+      const c = new Date(s.lastCompletedDate);
+      if (!lastCompletedDate || c > lastCompletedDate) lastCompletedDate = c;
+    }
+  }
+  return {
+    nextDue: next ? { date: next.date, taskName: next.taskName } : null,
+    overdueCount,
+    lastCompletedDate,
+  };
+}
+
+// Schedule-status severity for the critical-tab tiebreak: overdue worst,
+// then due inside 30 days, then due later, then nothing scheduled.
+function _statusRank(rollup, now) {
+  if (rollup.overdueCount > 0) return 0;
+  if (rollup.nextDue) {
+    return rollup.nextDue.date.getTime() - now.getTime() <= 30 * DAY_MS ? 1 : 2;
+  }
+  return 3;
+}
+
+router.get('/priority', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const now = new Date();
+    const tab = String(req.query.tab || '');
+    if (!['critical', 'value', 'volume'].includes(tab)) {
+      return res.status(400).json({ success: false, error: 'tab must be critical, value, or volume' });
+    }
+
+    // Archived assets are excluded everywhere; optional siteId narrows.
+    const baseWhere: any = { accountId, archivedAt: null };
+    if (req.query.siteId) baseWhere.siteId = String(req.query.siteId);
+
+    // ── critical ──────────────────────────────────────────────────────────
+    if (tab === 'critical') {
+      const assets: any[] = await prisma.asset.findMany({
+        where: {
+          ...baseWhere,
+          OR: [
+            { criticalityScore: { gte: 4 } },
+            { equipmentType: { in: CRITICAL_EQUIPMENT_TYPES as any } },
+          ],
+        },
+        // DB pre-orders by score; the schedule-status tiebreak happens in JS
+        // below. 250-row headroom keeps the tiebreak correct well past the
+        // 50-row cap for any realistic tenant.
+        orderBy: { criticalityScore: { sort: 'desc', nulls: 'last' } },
+        take: 250,
+        select: {
+          ...PRIORITY_ASSET_SELECT,
+          schedules: {
+            where:  { isActive: true },
+            select: {
+              nextDueDate: true, lastCompletedDate: true,
+              taskDefinition: { select: { taskName: true } },
+            },
+          },
+          _count: { select: { deficiencies: { where: { resolvedAt: null } } } },
+        },
+      });
+
+      const rows = assets.map((a) => {
+        const { schedules, _count, ...slim } = a;
+        const rollup = _rollupSchedules(schedules, now);
+        return {
+          ...slim,
+          nextDue:             rollup.nextDue,
+          overdueCount:        rollup.overdueCount,
+          openDeficiencyCount: _count?.deficiencies ?? 0,
+          lastCompletedDate:   rollup.lastCompletedDate,
+          _rank:               _statusRank(rollup, now),
+        };
+      });
+      rows.sort((a, b) => {
+        const sa = a.criticalityScore, sb = b.criticalityScore;
+        if (sa !== sb) {
+          if (sa === null) return 1;  // nulls last
+          if (sb === null) return -1;
+          return sb - sa;             // score desc
+        }
+        return a._rank - b._rank;     // then worst schedule status first
+      });
+      const capped = rows.slice(0, PRIORITY_ROW_CAP).map(({ _rank, ...row }) => row);
+      return res.json({ success: true, data: { tab, rows: capped } });
+    }
+
+    // ── value ─────────────────────────────────────────────────────────────
+    if (tab === 'value') {
+      const assets: any[] = await prisma.asset.findMany({
+        where: {
+          ...baseWhere,
+          OR: [
+            { repairCostEstimate: { gte: 20000 } },
+            { spareLeadTimeWeeks: { gte: 8 } },
+            { requiresPredictiveMaintenance: true },
+          ],
+        },
+        orderBy: { repairCostEstimate: { sort: 'desc', nulls: 'last' } },
+        take: PRIORITY_ROW_CAP,
+        select: {
+          ...PRIORITY_ASSET_SELECT,
+          repairCostEstimate:            true,
+          spareLeadTimeWeeks:            true,
+          requiresPredictiveMaintenance: true,
+          schedules: {
+            where:  { isActive: true },
+            select: {
+              nextDueDate: true, lastCompletedDate: true,
+              taskDefinition: { select: { taskName: true } },
+            },
+          },
+          _count: { select: { deficiencies: { where: { resolvedAt: null } } } },
+          // Latest predictive signal: most recent lab sample carrying an
+          // IEEE C57.104 DGA status (null for assets without lab history).
+          labSamples: {
+            where:   { ieeeStatus: { not: null } },
+            orderBy: { sampleDate: 'desc' },
+            take:    1,
+            select:  { ieeeStatus: true, faultCode: true, sampleType: true, sampleDate: true },
+          },
+        },
+      });
+
+      const rows = assets.map((a) => {
+        const { schedules, _count, labSamples, ...slim } = a;
+        const rollup = _rollupSchedules(schedules, now);
+        return {
+          ...slim,
+          nextDue:                rollup.nextDue,
+          overdueCount:           rollup.overdueCount,
+          openDeficiencyCount:    _count?.deficiencies ?? 0,
+          lastCompletedDate:      rollup.lastCompletedDate,
+          latestPredictiveSignal: labSamples?.[0] ?? null,
+        };
+      });
+      return res.json({ success: true, data: { tab, rows } });
+    }
+
+    // ── volume ────────────────────────────────────────────────────────────
+    // Workload view by equipmentType. Schedule counts can't ride a relation
+    // groupBy, so: one asset groupBy + one slim active-schedule projection
+    // bucketed in JS (bounded by the account's schedule count, same approach
+    // as the compliance-by-site rollup above).
+    const in30 = new Date(now.getTime() + 30 * DAY_MS);
+    const [assetGroups, schedules] = await Promise.all([
+      prisma.asset.groupBy({
+        by: ['equipmentType'],
+        where: baseWhere,
+        _count: { _all: true },
+      }),
+      prisma.maintenanceSchedule.findMany({
+        where: {
+          accountId,
+          isActive: true,
+          asset: { archivedAt: null, ...(req.query.siteId ? { siteId: String(req.query.siteId) } : {}) },
+        },
+        select: {
+          nextDueDate: true,
+          asset: { select: { equipmentType: true } },
+        },
+      }),
+    ]);
+
+    const byType = new Map();
+    for (const g of assetGroups) {
+      byType.set(g.equipmentType, {
+        equipmentType:     g.equipmentType,
+        assetCount:        g._count._all,
+        openScheduleCount: 0,
+        overdueCount:      0,
+        due30Count:        0,
+      });
+    }
+    for (const s of schedules) {
+      const row = byType.get(s.asset.equipmentType);
+      if (!row) continue; // schedule on a type with zero unarchived assets — can't happen, but never throw
+      row.openScheduleCount++;
+      if (s.nextDueDate) {
+        const d = new Date(s.nextDueDate);
+        if (d < now) row.overdueCount++;
+        else if (d <= in30) row.due30Count++;
+      }
+    }
+    const rows = [...byType.values()]
+      .sort((a, b) => b.assetCount - a.assetCount)
+      .slice(0, PRIORITY_ROW_CAP);
+    return res.json({ success: true, data: { tab, rows } });
+  } catch (err) {
+    console.error('[dashboard/priority] failed:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load priority data' });
   }
 });
 

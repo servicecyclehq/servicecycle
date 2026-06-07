@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, Plus, Upload, Zap } from 'lucide-react';
 import api from '../api/client';
 import { downloadAuthedFile } from '../api/download';
@@ -23,7 +23,9 @@ import Toast from '../components/Toast';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
+  CRITICALITY_SCORE_META,
   fmtDate,
+  fmtMoney,
 } from '../lib/equipment';
 
 const PAGE_SIZE = 25;
@@ -45,6 +47,27 @@ export function ConditionBadge({ condition, compact }) {
       whiteSpace: 'nowrap',
     }}>
       {compact ? condition : meta.label}
+    </span>
+  );
+}
+
+// Compact numeric criticality badge (1–5) — full consequence label in the
+// tooltip; the table column stays narrow. Reused by Dashboard's priority card.
+export function CriticalityBadge({ score }) {
+  const meta = CRITICALITY_SCORE_META[score];
+  if (!meta) return <span className="text-muted">—</span>;
+  return (
+    <span
+      title={`Criticality ${score} — ${meta.label}`}
+      style={{
+        display: 'inline-block', minWidth: 26, textAlign: 'center',
+        padding: '2px 8px', borderRadius: 20,
+        fontSize: 'var(--font-size-xs)', fontWeight: 700,
+        background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {score}
     </span>
   );
 }
@@ -81,10 +104,14 @@ export default function AssetsList() {
   const [toast, setToast]     = useState(null);
   const [exporting, setExporting] = useState(false);
 
+  // Deep links (Dashboard's volume tab and elsewhere) pre-filter via
+  // /assets?equipmentType=X — read once on mount, then state owns the value.
+  const [searchParams] = useSearchParams();
+
   const [page, setPage]           = useState(1);
   const [search, setSearch]       = useState('');
   const [siteId, setSiteId]       = useState('');
-  const [equipmentType, setEquipmentType] = useState('');
+  const [equipmentType, setEquipmentType] = useState(() => searchParams.get('equipmentType') || '');
   const [condition, setCondition] = useState('');
   // Column-filter row (second toolbar row): responsible person, service
   // status, and due window. ownerId accepts a member uuid or the literal
@@ -92,6 +119,13 @@ export default function AssetsList() {
   const [ownerId, setOwnerId]         = useState('');
   const [inServiceF, setInServiceF]   = useState('');
   const [dueWithin, setDueWithin]     = useState('');
+  // Risk filters: minimum criticality score ('' | '3' | '4' | '5') and the
+  // predictive-maintenance-only toggle chip.
+  const [minCriticality, setMinCriticality] = useState('');
+  const [predictiveOnly, setPredictiveOnly] = useState(false);
+  // Server-side sort: '' (default order) | 'criticality' | 'repairCost',
+  // both descending server-side. Toggled by clicking the column headers.
+  const [sort, setSort] = useState('');
 
   // Debounce the search box so we don't hammer /api/bootstrap per keystroke.
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -100,12 +134,13 @@ export default function AssetsList() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset to page 1 whenever a filter changes (skip the initial mount).
+  // Reset to page 1 whenever a filter (or the sort) changes (skip the
+  // initial mount).
   const mounted = useRef(false);
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
     setPage(1);
-  }, [debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin]);
+  }, [debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin, minCriticality, predictiveOnly, sort]);
 
   function buildFilterParams() {
     const params = new URLSearchParams();
@@ -116,6 +151,8 @@ export default function AssetsList() {
     if (ownerId)         params.set('ownerId', ownerId);
     if (inServiceF)      params.set('inService', inServiceF);
     if (dueWithin)       params.set('dueWithin', dueWithin);
+    if (minCriticality)  params.set('minCriticality', minCriticality);
+    if (predictiveOnly)  params.set('requiresPredictiveMaintenance', 'true');
     return params;
   }
 
@@ -123,6 +160,7 @@ export default function AssetsList() {
     let cancelled = false;
     setLoading(true);
     const params = buildFilterParams();
+    if (sort) params.set('sort', sort);
     params.set('page', String(page));
     params.set('limit', String(PAGE_SIZE));
     api.get(`/api/bootstrap?${params}`)
@@ -142,15 +180,20 @@ export default function AssetsList() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin]);
+  }, [page, debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin, minCriticality, predictiveOnly, sort]);
 
-  const hasFilters = !!(debouncedSearch || siteId || equipmentType || condition || ownerId || inServiceF || dueWithin);
+  const hasFilters = !!(debouncedSearch || siteId || equipmentType || condition || ownerId || inServiceF || dueWithin || minCriticality || predictiveOnly);
   const { assets, pagination, sites, equipmentTypes, members } = data;
 
   function clearAllFilters() {
     setSearch(''); setSiteId(''); setEquipmentType(''); setCondition('');
     setOwnerId(''); setInServiceF(''); setDueWithin('');
+    setMinCriticality(''); setPredictiveOnly(false);
   }
+
+  // Column-header sort toggle: click to sort by this key (server default is
+  // descending), click again to return to the default order.
+  const toggleSort = (key) => setSort(s => (s === key ? '' : key));
 
   const DUE_WITHIN_LABELS = { overdue: 'Overdue', 30: 'Due ≤ 30 days', 60: 'Due ≤ 60 days', 90: 'Due ≤ 90 days' };
 
@@ -168,6 +211,8 @@ export default function AssetsList() {
   });
   if (inServiceF)      activeChips.push({ key: 'inservice', label: `In service: ${inServiceF === 'true' ? 'Yes' : 'No'}`, clear: () => setInServiceF('') });
   if (dueWithin)       activeChips.push({ key: 'due', label: DUE_WITHIN_LABELS[dueWithin] || dueWithin, clear: () => setDueWithin('') });
+  if (minCriticality)  activeChips.push({ key: 'crit', label: minCriticality === '5' ? 'Criticality: 5' : `Criticality: ${minCriticality}+`, clear: () => setMinCriticality('') });
+  if (predictiveOnly)  activeChips.push({ key: 'predictive', label: 'Predictive maintenance', clear: () => setPredictiveOnly(false) });
 
   async function handleExport() {
     if (exporting) return;
@@ -307,6 +352,34 @@ export default function AssetsList() {
             <option value="60">Due ≤ 60 days</option>
             <option value="90">Due ≤ 90 days</option>
           </select>
+          <select
+            className="filter-select"
+            aria-label="Filter by minimum criticality score"
+            value={minCriticality}
+            onChange={e => setMinCriticality(e.target.value)}
+          >
+            <option value="">Any criticality</option>
+            <option value="3">Criticality 3+</option>
+            <option value="4">Criticality 4+</option>
+            <option value="5">Criticality 5</option>
+          </select>
+          {/* Predictive-maintenance toggle chip — a binary filter, so a chip
+              button beats a 2-option dropdown. */}
+          <button
+            type="button"
+            aria-pressed={predictiveOnly}
+            title="Show only assets flagged for predictive maintenance"
+            onClick={() => setPredictiveOnly(v => !v)}
+            style={{
+              padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
+              fontSize: 'var(--font-size-xs)', fontWeight: 600, whiteSpace: 'nowrap',
+              background: predictiveOnly ? 'var(--color-primary-light, #eef6f6)' : 'var(--color-bg)',
+              color: predictiveOnly ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+              border: `1px solid ${predictiveOnly ? 'var(--color-primary)' : 'var(--color-border)'}`,
+            }}
+          >
+            {predictiveOnly ? '✓ ' : ''}Predictive maintenance
+          </button>
         </div>
 
         {/* Active-filter chips — one per filter, individually clearable, with
@@ -382,6 +455,26 @@ export default function AssetsList() {
                       <th>Location</th>
                       <th>Owner</th>
                       <th>Condition</th>
+                      <th
+                        role="button" tabIndex={0}
+                        aria-sort={sort === 'criticality' ? 'descending' : 'none'}
+                        title="Sort by criticality score (highest first)"
+                        onClick={() => toggleSort('criticality')}
+                        onKeyDown={kbdActivate(() => toggleSort('criticality'))}
+                        style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', color: sort === 'criticality' ? 'var(--color-primary)' : undefined }}
+                      >
+                        Criticality{sort === 'criticality' ? ' ▼' : ''}
+                      </th>
+                      <th
+                        role="button" tabIndex={0}
+                        aria-sort={sort === 'repairCost' ? 'descending' : 'none'}
+                        title="Sort by repair cost estimate (highest first)"
+                        onClick={() => toggleSort('repairCost')}
+                        onKeyDown={kbdActivate(() => toggleSort('repairCost'))}
+                        style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', textAlign: 'right', color: sort === 'repairCost' ? 'var(--color-primary)' : undefined }}
+                      >
+                        Repair Cost{sort === 'repairCost' ? ' ▼' : ''}
+                      </th>
                       <th>Next Due</th>
                       <th style={{ textAlign: 'right' }}>Open Def.</th>
                       <th>Service</th>
@@ -417,6 +510,10 @@ export default function AssetsList() {
                           </td>
                           <td className="td-muted">{a.owner?.name || '—'}</td>
                           <td><ConditionBadge condition={a.governingCondition} /></td>
+                          <td><CriticalityBadge score={a.criticalityScore} /></td>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className={a.repairCostEstimate == null ? 'td-muted' : undefined}>
+                            {fmtMoney(a.repairCostEstimate)}
+                          </td>
                           <td><NextDueCell schedule={a.schedules?.[0]} /></td>
                           <td style={{ textAlign: 'right' }}>
                             {openDefs > 0 ? (

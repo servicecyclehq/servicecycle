@@ -35,11 +35,9 @@ const express = require('express');
 const router  = express.Router();
 import prisma from '../lib/prisma';
 
-const EQUIPMENT_TYPES = [
-  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'GENERATOR',
-  'MOTOR', 'MCC', 'UPS_BATTERY', 'CIRCUIT_BREAKER', 'ARC_FLASH_PANEL',
-  'VFD', 'FIRE_PUMP_CONTROLLER',
-];
+// Canonical EquipmentType list — single source of truth in lib/equipmentTypes
+// (mirrors the Prisma enum; this file used to carry its own copy and drifted).
+const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
 
 // Query-param uuid gate for list filters. Same literal lives in
 // routes/assets.ts — keep them identical.
@@ -51,7 +49,7 @@ router.get('/', async (req, res) => {
     const {
       page = 1, limit = 25,
       search, siteId, equipmentType, governingCondition, inService,
-      ownerId, dueWithin,
+      ownerId, dueWithin, minCriticality, requiresPredictiveMaintenance,
       sort = 'createdAt', sortDir = 'desc',
     } = req.query;
 
@@ -94,6 +92,17 @@ router.get('/', async (req, res) => {
       where.schedules = { some: { isActive: true, nextDueDate: { gte: now, lte: horizon } } };
     }
 
+    // Risk filters. minCriticality narrows to scored assets at/above the
+    // threshold (SQL gte excludes nulls); requiresPredictiveMaintenance=true
+    // narrows to the predictive class. Bad values silently ignored.
+    // ⚠ Mirrored in routes/assets.ts — keep the two in sync.
+    if (['1', '2', '3', '4', '5'].includes(String(minCriticality))) {
+      where.criticalityScore = { gte: parseInt(String(minCriticality), 10) };
+    }
+    if (requiresPredictiveMaintenance === 'true') {
+      where.requiresPredictiveMaintenance = true;
+    }
+
     if (search) {
       where.OR = [
         { manufacturer: { contains: search, mode: 'insensitive' } },
@@ -104,12 +113,17 @@ router.get('/', async (req, res) => {
     }
 
     const dir = sortDir === 'desc' ? 'desc' : 'asc';
+    // Risk sorts default DESC (highest risk first) with unscored assets last.
+    // ⚠ criticality/repairCost entries mirrored in routes/assets.ts — keep in sync.
+    const riskDir = sortDir === 'asc' ? 'asc' : 'desc';
     const sortMap: any = {
       createdAt:     { createdAt: dir },
       equipmentType: { equipmentType: dir },
       site:          { site: { name: dir } },
       manufacturer:  { manufacturer: { sort: dir, nulls: 'last' } },
       condition:     { governingCondition: dir },
+      criticality:   { criticalityScore:   { sort: riskDir, nulls: 'last' } },
+      repairCost:    { repairCostEstimate: { sort: riskDir, nulls: 'last' } },
     };
     const orderBy = sortMap[sort] || { createdAt: 'desc' };
 

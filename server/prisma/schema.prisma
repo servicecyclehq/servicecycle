@@ -35,18 +35,38 @@ enum UserRole {
   consultant // Maintenance Vendor account manager — receives alerts in tandem
 }
 
-// NFPA 70B equipment types (Tier 1-3 PoC scope).
+// Equipment taxonomy. Expanded 2026-06-07 from the buyer-priority analysis
+// (most common / most expensive to repair / most infrastructure-critical):
+// the backbone distribution gear, protection/switching devices, cabling,
+// power quality, and safety systems that NFPA 70B / NETA MTS / NFPA 110/99
+// programs actually track. Postgres enums are append-only here — never
+// remove or rename a value without a data migration plan.
 enum EquipmentType {
   TRANSFORMER_LIQUID
   TRANSFORMER_DRY
   SWITCHGEAR
+  SWITCHBOARD
+  PANELBOARD
+  BUSWAY
   GENERATOR
   MOTOR
   MCC
-  UPS_BATTERY
-  CIRCUIT_BREAKER
-  ARC_FLASH_PANEL
   VFD
+  UPS_BATTERY
+  BATTERY_SYSTEM // stationary strings + chargers (switchgear control, telecom) — IEEE 450/1188
+  CIRCUIT_BREAKER
+  FUSE_GEAR // fusible switches/fuse cabinets — ratings verification + spares
+  DISCONNECT_SWITCH // air/oil/vacuum switches, load-break, pad-mounted
+  TRANSFER_SWITCH // ATS — life-safety critical, NFPA 110/99 monthly transfer tests
+  PROTECTION_RELAY // SEL/GE class — calibration vs coordination study
+  GROUND_FAULT_PROTECTION // NEC 230.95 performance testing
+  SURGE_ARRESTER
+  CABLE_LV // ≤600V feeders — IR testing history per run
+  CABLE_MV_HV // medium/high voltage — VLF/partial discharge class
+  CABLE_TRAY // structural supports — corrosion/loading inspection
+  GROUNDING_SYSTEM // fall-of-potential / point-to-point per IEEE 81
+  EMERGENCY_LIGHTING // egress/battery units — NFPA 101 monthly/annual tests
+  ARC_FLASH_PANEL
   FIRE_PUMP_CONTROLLER
 }
 
@@ -499,6 +519,20 @@ model Asset {
   // switchgear → these N assets lose power"). Cycle prevention enforced at
   // the route layer (a feed loop is always data-entry error).
   fedFromAssetId        String?
+  // ── Risk dimensions (2026-06-07 buyer-priority analysis) ──────────────────
+  // Three axes beyond the NFPA 70B condition assessment: infrastructure
+  // criticality (consequence of failure), financial exposure (repair cost +
+  // spare-parts lead time), and resilience posture. These drive the priority
+  // dashboard tabs (critical infrastructure / high-value / high-volume) and
+  // sorting on the asset list. All optional — unscored assets sort last.
+  // NOTE: criticalityScore (1=low … 5=failure means injury/shutdown/fines)
+  // is INFRASTRUCTURE criticality and deliberately separate from
+  // conditionCriticality (the NFPA 70B C1-C3 maintenance-interval axis).
+  criticalityScore      Int?
+  repairCostEstimate    Decimal? @db.Decimal(14, 2) // parts + labor + downtime, USD
+  spareLeadTimeWeeks    Int? // long-lead spares risk (transformers can be 50+ weeks)
+  redundancyStatus      String? // N | N_PLUS_1 | TWO_N
+  requiresPredictiveMaintenance Boolean @default(false) // oil/DGA, PD, vibration class
   // Governing condition = worst of the three axes (C3 wins). Stored and
   // recomputed by the route layer on every condition write so list queries
   // and the scheduler never re-derive it. Drives interval selection on

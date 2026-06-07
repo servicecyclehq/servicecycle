@@ -22,7 +22,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import InfoTip from '../components/InfoTip';
 import CustomFieldInputs from '../components/CustomFieldInputs';
 import Toast from '../components/Toast';
-import { EQUIPMENT_TYPE_LABELS, CONDITION_META } from '../lib/equipment';
+import { EQUIPMENT_TYPE_LABELS, CONDITION_META, REDUNDANCY_META, CRITICALITY_SCORE_META } from '../lib/equipment';
 
 // ── "Start from a photo" helpers ─────────────────────────────────────────────
 const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
@@ -79,6 +79,9 @@ export default function NewAsset() {
     conditionPhysical: 'C2', conditionCriticality: 'C2', conditionEnvironment: 'C2',
     inService: true, isEnergized: true,
     notes: '',
+    // Risk & criticality — '' in the selects/inputs means unset (sent as null).
+    criticalityScore: '', repairCostEstimate: '', spareLeadTimeWeeks: '',
+    redundancyStatus: '', requiresPredictiveMaintenance: false,
   });
   // Nameplate data as ordered key/value pairs; collapsed to an object on save.
   const [nameplate, setNameplate] = useState([{ key: '', value: '' }]);
@@ -293,6 +296,11 @@ export default function NewAsset() {
         inService:   form.inService,
         isEnergized: form.isEnergized,
         notes:       form.notes.trim() || null,
+        criticalityScore:   form.criticalityScore ? Number(form.criticalityScore) : null,
+        repairCostEstimate: form.repairCostEstimate.trim() || null,
+        spareLeadTimeWeeks: form.spareLeadTimeWeeks !== '' ? Number(form.spareLeadTimeWeeks) : null,
+        redundancyStatus:   form.redundancyStatus || null,
+        requiresPredictiveMaintenance: form.requiresPredictiveMaintenance,
         ...(Object.keys(nameplateData).length > 0 ? { nameplateData } : {}),
         // Empty strings are dropped server-side; only send when touched.
         ...(Object.keys(customFields).length > 0 ? { customFields } : {}),
@@ -620,6 +628,74 @@ export default function NewAsset() {
                   Photo-suggested conditions are a visual assessment only — not a substitute for testing.
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="card mb-16">
+            <div className="card-header"><div className="card-title">Risk &amp; Criticality</div></div>
+            <div className="card-body">
+              <div className="form-hint" style={{ marginBottom: 10 }}>
+                Optional — feeds the priority views on the dashboard. Score what failure of this asset would cost the business.
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Criticality Score</label>
+                  <select
+                    aria-label="Criticality score"
+                    className="form-control"
+                    value={form.criticalityScore}
+                    onChange={e => setF('criticalityScore', e.target.value)}
+                  >
+                    <option value="">— Not scored —</option>
+                    {[5, 4, 3, 2, 1].map(n => (
+                      <option key={n} value={n}>{n} — {CRITICALITY_SCORE_META[n].label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Repair Cost Estimate ($)</label>
+                  <input
+                    type="number" min="0" step="0.01" className="form-control"
+                    aria-label="Repair cost estimate in dollars" placeholder="e.g. 25000"
+                    value={form.repairCostEstimate}
+                    onChange={e => setF('repairCostEstimate', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Spare Lead Time (weeks)</label>
+                  <input
+                    type="number" min="0" step="1" className="form-control"
+                    aria-label="Spare lead time in weeks" placeholder="e.g. 12"
+                    value={form.spareLeadTimeWeeks}
+                    onChange={e => setF('spareLeadTimeWeeks', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Redundancy</label>
+                  <select
+                    aria-label="Redundancy status"
+                    className="form-control"
+                    value={form.redundancyStatus}
+                    onChange={e => setF('redundancyStatus', e.target.value)}
+                  >
+                    <option value="">— Unknown —</option>
+                    {Object.entries(REDUNDANCY_META).map(([k, m]) => (
+                      <option key={k} value={k}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="checkbox-group">
+                <input
+                  id="new-asset-predictive"
+                  type="checkbox"
+                  checked={form.requiresPredictiveMaintenance}
+                  onChange={e => setF('requiresPredictiveMaintenance', e.target.checked)}
+                />
+                <label htmlFor="new-asset-predictive" className="checkbox-label">
+                  Requires predictive maintenance (IR scans, oil analysis, partial discharge…)
+                </label>
+              </div>
             </div>
           </div>
 

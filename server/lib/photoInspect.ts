@@ -62,18 +62,18 @@ const FREE_TEXT_MAX = 200;
 // Max upstream candidates shipped to the model.
 const MAX_CANDIDATES = 40;
 
-// The 11 EquipmentType enum values — keep in sync with schema.prisma and
-// routes/assets.ts EQUIPMENT_TYPES.
-const EQUIPMENT_TYPES = [
-  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'GENERATOR',
-  'MOTOR', 'MCC', 'UPS_BATTERY', 'CIRCUIT_BREAKER', 'ARC_FLASH_PANEL',
-  'VFD', 'FIRE_PUMP_CONTROLLER',
-];
+// Canonical EquipmentType list — single source of truth in lib/equipmentTypes
+// (mirrors the Prisma enum).
+const { EQUIPMENT_TYPES } = require('./equipmentTypes');
 
 // Types that plausibly FEED other equipment — listed first in the candidate
 // set so the model sees the likely upstream sources even when the site has
-// more than MAX_CANDIDATES assets.
-const FEEDER_TYPES = ['SWITCHGEAR', 'MCC', 'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'GENERATOR'];
+// more than MAX_CANDIDATES assets. (Expanded with the 2026-06-07 taxonomy's
+// distribution-backbone types.)
+const FEEDER_TYPES = [
+  'SWITCHGEAR', 'SWITCHBOARD', 'PANELBOARD', 'BUSWAY', 'MCC',
+  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'GENERATOR', 'TRANSFER_SWITCH',
+];
 
 const CONDITION_VALUES = new Set(['C1', 'C2', 'C3']);
 const CONFIDENCE_VALUES = new Set(['high', 'medium', 'low']);

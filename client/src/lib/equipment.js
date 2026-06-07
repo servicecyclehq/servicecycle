@@ -12,18 +12,53 @@
 // the way a physical NETA decal would.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Mirrors the server's 26-value EquipmentType enum (prisma/schema.prisma),
+// in the same order. Every key must exist here — selects enumerate this map.
 export const EQUIPMENT_TYPE_LABELS = {
-  TRANSFORMER_LIQUID:   'Transformer (Liquid)',
-  TRANSFORMER_DRY:      'Transformer (Dry)',
-  SWITCHGEAR:           'Switchgear',
-  GENERATOR:            'Generator',
-  MOTOR:                'Motor',
-  MCC:                  'MCC',
-  UPS_BATTERY:          'UPS / Battery',
-  CIRCUIT_BREAKER:      'Circuit Breaker',
-  ARC_FLASH_PANEL:      'Arc Flash Panel',
-  VFD:                  'VFD',
-  FIRE_PUMP_CONTROLLER: 'Fire Pump Controller',
+  TRANSFORMER_LIQUID:      'Transformer (Liquid)',
+  TRANSFORMER_DRY:         'Transformer (Dry)',
+  SWITCHGEAR:              'Switchgear',
+  SWITCHBOARD:             'Switchboard',
+  PANELBOARD:              'Panelboard',
+  BUSWAY:                  'Busway / Bus Duct',
+  GENERATOR:               'Generator',
+  MOTOR:                   'Motor',
+  MCC:                     'MCC',
+  VFD:                     'VFD',
+  UPS_BATTERY:             'UPS / Battery',
+  BATTERY_SYSTEM:          'Battery System',
+  CIRCUIT_BREAKER:         'Circuit Breaker',
+  FUSE_GEAR:               'Fuse Gear',
+  DISCONNECT_SWITCH:       'Disconnect Switch',
+  TRANSFER_SWITCH:         'Transfer Switch (ATS)',
+  PROTECTION_RELAY:        'Protection Relay',
+  GROUND_FAULT_PROTECTION: 'Ground Fault Protection',
+  SURGE_ARRESTER:          'Surge Arrester',
+  CABLE_LV:                'Cable (LV)',
+  CABLE_MV_HV:             'Cable (MV/HV)',
+  CABLE_TRAY:              'Cable Tray',
+  GROUNDING_SYSTEM:        'Grounding System',
+  EMERGENCY_LIGHTING:      'Emergency Lighting',
+  ARC_FLASH_PANEL:         'Arc Flash Panel',
+  FIRE_PUMP_CONTROLLER:    'Fire Pump Controller',
+};
+
+// Power-path redundancy at the asset's position. N = single point of failure
+// (red), N+1 = one spare path (amber), 2N = fully duplicated (green).
+export const REDUNDANCY_META = {
+  N:        { label: 'N (no redundancy)', color: '#dc2626', bg: '#fef2f2' },
+  N_PLUS_1: { label: 'N+1',               color: '#d97706', bg: '#fffbeb' },
+  TWO_N:    { label: '2N',                color: '#16a34a', bg: '#f0fdf4' },
+};
+
+// Business-impact criticality score (1–5). Labels describe the consequence of
+// failure; colors escalate red-ward as the score climbs.
+export const CRITICALITY_SCORE_META = {
+  5: { label: 'Failure = injury / shutdown / fines',   color: '#dc2626', bg: '#fef2f2' },
+  4: { label: 'Major disruption to operations',        color: '#ea580c', bg: '#fff7ed' },
+  3: { label: 'Moderate disruption, workaround exists', color: '#d97706', bg: '#fffbeb' },
+  2: { label: 'Minor inconvenience',                   color: '#64748b', bg: '#f1f5f9' },
+  1: { label: 'Minimal impact',                        color: '#94a3b8', bg: '#f8fafc' },
 };
 
 // NFPA 70B:2023 condition of maintenance. The governing condition is the
@@ -83,6 +118,21 @@ export function assetLabel(asset) {
   let label = parts.join(' ');
   if (asset.serialNumber) label = label ? `${label} #${asset.serialNumber}` : `#${asset.serialNumber}`;
   return label || EQUIPMENT_TYPE_LABELS[asset.equipmentType] || asset.equipmentType || 'Asset';
+}
+
+/**
+ * House money format — "$12,500" (cents only when present); em-dash for
+ * blank/unparseable. Accepts the server's decimal strings or numbers.
+ */
+export function fmtMoney(v) {
+  if (v == null || v === '') return '—';
+  const n = Number(v);
+  if (Number.isNaN(n)) return '—';
+  return n.toLocaleString('en-US', {
+    style: 'currency', currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: n % 1 === 0 ? 0 : 2,
+  });
 }
 
 /** House date format — "Jan 5, 2026"; em-dash for blank. */

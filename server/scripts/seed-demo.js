@@ -31,15 +31,21 @@
  *         site (no buildings/areas), the small-facility shape
  *   - 2 NETA-accredited contractors with 5 field techs (ANSI/NETA ETT
  *     LEVEL_II..LEVEL_IV)
- *   - 14 assets across Tier 1 + gap types with per-type nameplateData JSON:
- *     3 liquid transformers, 4 switchgear, 2 generators (Tier 1 — global task
- *     defs exist) plus 2 dry transformers, 2 MCCs, 1 UPS/battery (Tier 2 —
- *     NO global task defs yet, deliberately demonstrating the matrix gap)
- *   - 48 maintenance schedules with lastCompletedDate values engineered so
+ *   - 18 assets with per-type nameplateData JSON: 3 liquid transformers,
+ *     4 switchgear, 2 generators, 2 dry transformers, 2 MCCs, 1 UPS/battery,
+ *     plus 4 taxonomy-expansion types (ATS fed from GEN-1, panelboard,
+ *     emergency lighting, switchgear-control battery system). Key assets
+ *     carry the 2026-06 risk dimensions (criticalityScore 1-5,
+ *     repairCostEstimate, spareLeadTimeWeeks, redundancyStatus,
+ *     requiresPredictiveMaintenance) so the priority dashboard tabs have a
+ *     story; the rest stay unscored to exercise nulls-last sorting
+ *   - maintenance schedules with lastCompletedDate values engineered so
  *     the dashboard tells a story on any reset day:
- *       3 OVERDUE  — one >90 days overdue on the C3 switchgear (regulatory-
- *                    breach alert tier), one ~25d, one ~9d
- *       4 due within 30 days
+ *       5 OVERDUE  — one >90 days overdue on the C3 switchgear (regulatory-
+ *                    breach alert tier), one ~25d, one ~9d, ATS IR ~18d,
+ *                    battery ohmic ~14d
+ *       6 due within 30 days (incl. CURRENT ATS monthly transfer test +
+ *                    emergency-lighting monthly functional)
  *       5 due within 60–90 days
  *       rest comfortably in the future
  *     nextDueDate is computed locally with the same NFPA 70B condition math
@@ -307,6 +313,16 @@ async function _createAsset(db, accountId, spec) {
       conditionCriticality: cc,
       conditionEnvironment: ce,
       governingCondition:   worstCondition(cp, cc, ce),
+      // Risk dimensions (2026-06-07): infrastructure criticality (1-5),
+      // financial exposure, resilience posture. All optional — unscored
+      // assets exercise the nulls-last sorting paths.
+      criticalityScore:              spec.criticalityScore ?? null,
+      repairCostEstimate:            spec.repairCostEstimate ?? null,
+      spareLeadTimeWeeks:            spec.spareLeadTimeWeeks ?? null,
+      redundancyStatus:              spec.redundancyStatus || null,
+      requiresPredictiveMaintenance: spec.requiresPredictiveMaintenance === true,
+      // Power-path link (resolved from fedFromKey by the caller's loop).
+      fedFromAssetId:       spec.fedFromAssetId || null,
       notes:                spec.notes || null,
     },
   });
@@ -481,6 +497,10 @@ async function _seedAccount() {
       ownerId: manager.id, // owner-aware alert routing demo
       manufacturer: 'Kestrel Power Apparatus', model: 'KPA-2500S', serialNumber: 'KPA-97-18254',
       installDate: new Date('1997-06-12'),
+      // Risk profile: single main transformer, no spare, 26-week replacement
+      // lead — the worst financial-exposure asset on the books.
+      criticalityScore: 5, repairCostEstimate: 850000, spareLeadTimeWeeks: 26,
+      redundancyStatus: 'N', requiresPredictiveMaintenance: true,
       nameplateData: { kVA: 2500, primaryVoltage: '13.8 kV delta', secondaryVoltage: '480Y/277 V', impedancePercent: 5.75, oilType: 'mineral', gallons: 690 },
       notes: 'Main plant transformer. Gasket weeping noted at NW radiator flange (open deficiency).' },
     { key: 'T-2', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
@@ -488,6 +508,7 @@ async function _seedAccount() {
       ownerId: manager.id,
       manufacturer: 'Kestrel Power Apparatus', model: 'KPA-1500S', serialNumber: 'KPA-14-90417',
       installDate: new Date('2014-03-28'),
+      criticalityScore: 3, // modest — refurbished, partial backup via T-1
       conditionPhysical: 'C1', // refurbished 2024 — physical axis upgraded; governing stays worst-of
       nameplateData: { kVA: 1500, primaryVoltage: '13.8 kV delta', secondaryVoltage: '480Y/277 V', impedancePercent: 5.5, oilType: 'mineral', gallons: 480 },
       notes: 'Re-gasketed and oil-processed during 2024 outage; physical condition assessed C1.' },
@@ -496,6 +517,9 @@ async function _seedAccount() {
       ownerId: admin.id,
       manufacturer: 'NorthStar Switchgear Co.', model: 'NS-MV15', serialNumber: 'NS-96-3311-1',
       installDate: new Date('1996-09-04'),
+      // Lead section of the SWGR-1A lineup — 1996 vintage, parts scarce.
+      criticalityScore: 4, repairCostEstimate: 250000, spareLeadTimeWeeks: 16,
+      requiresPredictiveMaintenance: true,
       nameplateData: { voltageClass: '15 kV', busRating: '1200 A', aic: '25 kA' } },
     { key: 'SWGR-1A-2', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
       positionId: rsPos.CUB2.id, equipmentType: 'SWITCHGEAR',
@@ -514,6 +538,7 @@ async function _seedAccount() {
       manufacturer: 'NorthStar Switchgear Co.', model: 'NS-LV600', serialNumber: 'NS-99-7702',
       installDate: new Date('1999-11-19'),
       conditionEnvironment: 'C3', // dusty mezzanine — governing condition C3
+      criticalityScore: 3, repairCostEstimate: 90000, // modest exposure
       nameplateData: { voltageClass: '600 V', busRating: '2000 A', aic: '65 kA' },
       notes: 'Mezzanine dust loading drives the C3 environment rating; IR scan compressed to 6-month interval. B-phase hot joint flagged IMMEDIATE.' },
     { key: 'MCC-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: mezzanine.id,
@@ -528,6 +553,9 @@ async function _seedAccount() {
       ownerId: manager.id,
       manufacturer: 'Calder Engine & Generator', model: 'CG-750D', serialNumber: 'CG-05-2210',
       installDate: new Date('2005-08-23'),
+      // Life-safety source — top criticality, sole standby unit.
+      criticalityScore: 5, repairCostEstimate: 120000, spareLeadTimeWeeks: 12,
+      redundancyStatus: 'N',
       nameplateData: { kw: 750, voltage: '480Y/277 V', rpm: 1800, fuelType: 'diesel', tankGallons: 1100 },
       notes: 'Emergency/standby unit for life safety + process ride-through. NFPA 110 monthly exercise mandate.' },
     { key: 'TXD-1', siteId: riverside.id, buildingId: mainProduction.id,
@@ -539,8 +567,42 @@ async function _seedAccount() {
       equipmentType: 'UPS_BATTERY',
       manufacturer: 'Stonebridge Power Systems', model: 'SB-80U', serialNumber: 'SB-18-0954',
       installDate: new Date('2018-10-30'),
+      criticalityScore: 4, repairCostEstimate: 60000, spareLeadTimeWeeks: 8,
+      redundancyStatus: 'N_PLUS_1', // second module carries the PLC load during service
       nameplateData: { kVA: 80, voltage: '480 V', batteryType: 'VRLA', strings: 2, cellsPerString: 40 },
       notes: 'Controls UPS for the stamping line PLCs.' },
+    // — Riverside: 2026-06 taxonomy-expansion assets (new equipment types) —
+    { key: 'ATS-1', siteId: riverside.id, buildingId: mainProduction.id,
+      equipmentType: 'TRANSFER_SWITCH',
+      ownerId: manager.id,
+      fedFromKey: 'GEN-1', // power path: ATS sits downstream of the standby generator
+      manufacturer: 'Sentry Transfer Systems', model: 'STS-800A', serialNumber: 'STS-05-1187',
+      installDate: new Date('2005-08-23'),
+      criticalityScore: 5, repairCostEstimate: 45000, spareLeadTimeWeeks: 10,
+      redundancyStatus: 'N',
+      nameplateData: { amps: 800, voltage: '480Y/277 V', poles: 4, transitionType: 'open' },
+      notes: 'Life-safety ATS between GEN-1 and the emergency distribution. NFPA 110 monthly transfer-test mandate.' },
+    { key: 'PNL-1', siteId: riverside.id, buildingId: mainProduction.id,
+      equipmentType: 'PANELBOARD',
+      manufacturer: 'Vantage Electric Works', model: 'VE-P42', serialNumber: 'VE-21-3308',
+      installDate: new Date('2021-04-15'),
+      criticalityScore: 2,
+      nameplateData: { voltage: '208Y/120 V', mainBreaker: '225 A', circuits: 42 },
+      notes: 'Office wing lighting/receptacle panel.' },
+    { key: 'ELTG-1', siteId: riverside.id, buildingId: mainProduction.id,
+      equipmentType: 'EMERGENCY_LIGHTING',
+      manufacturer: 'Beacon Safety Lighting', model: 'BSL-90', serialNumber: 'BSL-19-7724',
+      installDate: new Date('2019-06-03'),
+      criticalityScore: 4,
+      nameplateData: { heads: 24, batteryType: 'NiCd', runtimeMinutes: 90, circuits: 'egress corridors A-D' },
+      notes: 'Egress lighting bank, production floor exits. NFPA 101 monthly 30-second functional test.' },
+    { key: 'BATT-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'BATTERY_SYSTEM',
+      manufacturer: 'Stonebridge Power Systems', model: 'SB-125DC', serialNumber: 'SB-10-2241',
+      installDate: new Date('2010-09-08'),
+      criticalityScore: 4, repairCostEstimate: 28000, spareLeadTimeWeeks: 6,
+      nameplateData: { voltage: '125 V DC', batteryType: 'flooded lead-acid', cells: 60, chargerAmps: 25 },
+      notes: 'Switchgear control battery for Substation A breaker tripping — IEEE 450 quarterly ohmic program.' },
     // — Eastgate (flat hierarchy) —
     { key: 'T-E1', siteId: eastgate.id, positionId: egPos.DOCK.id,
       equipmentType: 'TRANSFORMER_LIQUID',
@@ -551,6 +613,7 @@ async function _seedAccount() {
       equipmentType: 'GENERATOR',
       manufacturer: 'Calder Engine & Generator', model: 'CG-350NG', serialNumber: 'CG-12-5524',
       installDate: new Date('2012-06-05'),
+      criticalityScore: 3, repairCostEstimate: 70000, // modest — DC ride-through only
       nameplateData: { kw: 350, voltage: '480Y/277 V', rpm: 1800, fuelType: 'natural gas' } },
     { key: 'TXD-E1', siteId: eastgate.id, positionId: egPos.MSB.id,
       equipmentType: 'TRANSFORMER_DRY',
@@ -566,6 +629,10 @@ async function _seedAccount() {
 
   const assets = {};
   for (const spec of assetSpecs) {
+    // Power-path links reference earlier specs by key (specs are created in
+    // array order, so the upstream asset always exists by the time its
+    // downstream spec resolves — ATS-1 is fed from GEN-1).
+    if (spec.fedFromKey) spec.fedFromAssetId = assets[spec.fedFromKey].id;
     assets[spec.key] = await _createAsset(prisma, account.id, spec);
   }
 
@@ -586,11 +653,15 @@ async function _seedAccount() {
     'SWGR-2M:SWGR_IR_THERMO':       { dueIn: -120 },
     'T-1:XFMR_OIL_QUALITY':         { dueIn: -25 },
     'GEN-1:GEN_LOAD_BANK':          { dueIn: -9 },
+    'ATS-1:ATS_IR_THERMO':          { dueIn: -18 },        // taxonomy-expansion: ATS scan slipped
+    'BATT-1:BATT_OHMIC_FLOAT':      { dueIn: -14 },        // quarterly ohmic ~2 weeks overdue
     // due within 30 days
     'GEN-1:GEN_MONTHLY_EXERCISE':   { completedAgo: 20 }, // due ≈ +10d; pairs with WO #1
     'T-2:XFMR_DGA':                 { dueIn: 22 },
     'SWGR-1A-2:SWGR_IR_THERMO':     { dueIn: 27 },
     'GEN-E1:GEN_MONTHLY_EXERCISE':  { dueIn: 6 },
+    'ATS-1:ATS_MONTHLY_TRANSFER':   { completedAgo: 12 }, // monthly transfer test CURRENT, due ≈ +18d
+    'ELTG-1:ELTG_MONTHLY_FUNCTIONAL': { completedAgo: 10 }, // monthly functional CURRENT, due ≈ +20d
     // due in 60–90 days
     'SWGR-1A-3:SWGR_IR_THERMO':     { dueIn: 64 },
     'GEN-E1:GEN_FUEL_ANALYSIS':     { dueIn: 70 },
@@ -859,14 +930,18 @@ async function _seedAccount() {
       workOrders: 5, testMeasurements: wo2Measurements.length,
       deficiencies: 4, labSamples: 1, systemStudies: 3,
       auditVisits: 1, auditRecommendations: 2,
-      assetsWithOwner: 5, blackoutWindows: 1,
+      assetsWithOwner: 6, blackoutWindows: 1,
       activityLogs: 3,
     },
     dashboardStory: {
-      overdue: 3, regulatoryBreachTier: 1,
-      dueWithin30Days: 4, due60To90Days: 5,
+      overdue: 5, regulatoryBreachTier: 1,
+      dueWithin30Days: 6, due60To90Days: 5,
       openDeficiencies: 3, immediateOpen: 1,
       arcFlashExpiringWithinMonths: 10,
+      // Priority-tab seeds (2026-06 risk dimensions): critical tab led by
+      // T-1/GEN-1/ATS-1 (score 5), value tab led by T-1 ($850k, 26wk lead),
+      // ATS monthly transfer current vs. ATS IR scan + battery ohmic overdue.
+      criticalityScored: 11, predictiveMaintenanceFlagged: 2,
     },
   };
 }

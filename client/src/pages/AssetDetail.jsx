@@ -40,8 +40,11 @@ import {
   SEVERITY_META,
   DECAL_META,
   IEEE_STATUS_META,
+  REDUNDANCY_META,
+  CRITICALITY_SCORE_META,
   assetLabel,
   fmtDate,
+  fmtMoney,
 } from '../lib/equipment';
 
 const CONDITION_TIP =
@@ -215,6 +218,12 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
     inService:            !!asset.inService,
     isEnergized:          !!asset.isEnergized,
     notes:                asset.notes || '',
+    // Risk & criticality — selects/inputs hold strings; '' means unset (null).
+    criticalityScore:     asset.criticalityScore != null ? String(asset.criticalityScore) : '',
+    repairCostEstimate:   asset.repairCostEstimate != null ? String(asset.repairCostEstimate) : '',
+    spareLeadTimeWeeks:   asset.spareLeadTimeWeeks != null ? String(asset.spareLeadTimeWeeks) : '',
+    redundancyStatus:     asset.redundancyStatus || '',
+    requiresPredictiveMaintenance: !!asset.requiresPredictiveMaintenance,
   });
   const [nameplate, setNameplate] = useState(() => {
     const entries = Object.entries(asset.nameplateData || {});
@@ -273,6 +282,11 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
         inService:            form.inService,
         isEnergized:          form.isEnergized,
         notes:                form.notes.trim() || null,
+        criticalityScore:     form.criticalityScore ? Number(form.criticalityScore) : null,
+        repairCostEstimate:   form.repairCostEstimate.trim() || null,
+        spareLeadTimeWeeks:   form.spareLeadTimeWeeks !== '' ? Number(form.spareLeadTimeWeeks) : null,
+        redundancyStatus:     form.redundancyStatus || null,
+        requiresPredictiveMaintenance: form.requiresPredictiveMaintenance,
         nameplateData:        Object.keys(nameplateData).length > 0 ? nameplateData : null,
         // Whole map every save — empty strings clear, server upserts the rest.
         ...(fieldDefs.length > 0 ? { customFields } : {}),
@@ -354,6 +368,57 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
           <div className="checkbox-group">
             <input id="edit-asset-energized" type="checkbox" checked={form.isEnergized} onChange={e => setF('isEnergized', e.target.checked)} />
             <label htmlFor="edit-asset-energized" className="checkbox-label">Energized</label>
+          </div>
+
+          {/* ── Risk & Criticality ────────────────────────────────────────── */}
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label className="form-label">Risk &amp; Criticality</label>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Criticality Score</label>
+                <select aria-label="Criticality score" className="form-control" value={form.criticalityScore} onChange={e => setF('criticalityScore', e.target.value)}>
+                  <option value="">— Not scored —</option>
+                  {[5, 4, 3, 2, 1].map(n => (
+                    <option key={n} value={n}>{n} — {CRITICALITY_SCORE_META[n].label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Repair Cost Estimate ($)</label>
+                <input
+                  type="number" min="0" step="0.01" className="form-control"
+                  aria-label="Repair cost estimate in dollars" placeholder="e.g. 25000"
+                  value={form.repairCostEstimate}
+                  onChange={e => setF('repairCostEstimate', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Spare Lead Time (weeks)</label>
+                <input
+                  type="number" min="0" step="1" className="form-control"
+                  aria-label="Spare lead time in weeks" placeholder="e.g. 12"
+                  value={form.spareLeadTimeWeeks}
+                  onChange={e => setF('spareLeadTimeWeeks', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Redundancy</label>
+                <select aria-label="Redundancy status" className="form-control" value={form.redundancyStatus} onChange={e => setF('redundancyStatus', e.target.value)}>
+                  <option value="">— Unknown —</option>
+                  {Object.entries(REDUNDANCY_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="checkbox-group">
+              <input
+                id="edit-asset-predictive" type="checkbox"
+                checked={form.requiresPredictiveMaintenance}
+                onChange={e => setF('requiresPredictiveMaintenance', e.target.checked)}
+              />
+              <label htmlFor="edit-asset-predictive" className="checkbox-label">
+                Requires predictive maintenance (IR scans, oil analysis, partial discharge…)
+              </label>
+            </div>
           </div>
 
           <div className="form-group" style={{ marginTop: 12 }}>
@@ -1009,6 +1074,55 @@ export default function AssetDetail() {
             </div>
           </div>
         )}
+
+        {/* ── Risk & Criticality ────────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header"><div className="card-title">Risk &amp; Criticality</div></div>
+          <div className="card-body">
+            <div className="detail-grid">
+              <div className="detail-item">
+                <div className="detail-label">Criticality Score</div>
+                <div className="detail-value">
+                  <MetaChip
+                    meta={CRITICALITY_SCORE_META[asset.criticalityScore] && {
+                      ...CRITICALITY_SCORE_META[asset.criticalityScore],
+                      label: `${asset.criticalityScore} — ${CRITICALITY_SCORE_META[asset.criticalityScore].label}`,
+                    }}
+                    fallback="Not scored"
+                  />
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Repair Cost Estimate</div>
+                <div className="detail-value">{fmtMoney(asset.repairCostEstimate)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Spare Lead Time</div>
+                <div className="detail-value">
+                  {asset.spareLeadTimeWeeks != null
+                    ? `${asset.spareLeadTimeWeeks} week${asset.spareLeadTimeWeeks !== 1 ? 's' : ''}`
+                    : <span className="text-muted">—</span>}
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Redundancy</div>
+                <div className="detail-value">
+                  <MetaChip meta={REDUNDANCY_META[asset.redundancyStatus]} fallback="Unknown" />
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Predictive Maintenance</div>
+                <div className="detail-value">
+                  <ServiceChip
+                    on={!!asset.requiresPredictiveMaintenance}
+                    onLabel="Predictive program"
+                    offLabel="Not required"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* ── Nameplate ─────────────────────────────────────────────────────── */}
         <div className="card mb-16">

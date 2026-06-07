@@ -18,8 +18,10 @@ import { useAuth } from '../context/AuthContext';
 import WelcomeTourPanel from '../components/WelcomeTourPanel';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { CriticalityBadge } from './AssetsList';
 import {
-  SEVERITY_META, WO_STATUS_META, assetLabel, fmtDate,
+  SEVERITY_META, WO_STATUS_META, REDUNDANCY_META, IEEE_STATUS_META,
+  EQUIPMENT_TYPE_LABELS, assetLabel, fmtDate, fmtMoney,
 } from '../lib/equipment';
 
 function isPast(dateStr) {
@@ -325,6 +327,273 @@ function MaintenanceHorizon({ navigate }) {
   );
 }
 
+// ── Priority assets ──────────────────────────────────────────────────────────
+// Three-tab risk triage card backed by GET /api/dashboard/priority?tab=…
+// Each tab fetches lazily on first activation and caches in state for the
+// life of the dashboard mount — switching back is instant.
+const PRIORITY_TABS = [
+  { key: 'critical', label: '🚨 Critical Infrastructure' },
+  { key: 'value',    label: '💸 High Value' },
+  { key: 'volume',   label: '📈 By Volume' },
+];
+
+// Pill chip from a {label,color,bg} meta record (Dashboard-local twin of
+// AssetDetail's MetaChip).
+function PillChip({ meta, fallback, title }) {
+  if (!meta) return <span className="text-muted">{fallback || '—'}</span>;
+  return (
+    <span title={title} style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: 999,
+      fontSize: 'var(--font-size-xs)', fontWeight: 700, whiteSpace: 'nowrap',
+      background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+    }}>
+      {meta.label}
+    </span>
+  );
+}
+
+// Red count pill (overdue / open deficiencies); muted zero.
+function DangerCount({ count }) {
+  if (!count) return <span className="text-muted">0</span>;
+  return (
+    <span style={{
+      display: 'inline-block', minWidth: 20, textAlign: 'center',
+      padding: '2px 7px', borderRadius: 20, fontWeight: 700,
+      fontSize: 'var(--font-size-xs)',
+      background: 'var(--color-danger-bg, #fef2f2)', color: 'var(--color-danger, #dc2626)',
+    }}>
+      {count}
+    </span>
+  );
+}
+
+// Latest predictive-test signal — IEEE C57.104 status colored amber/red when
+// 2/3, with the fault code and sample date alongside.
+function PredictiveSignalChip({ signal }) {
+  const m = IEEE_STATUS_META[signal?.ieeeStatus];
+  if (!m) return <span className="text-muted">—</span>;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+      <PillChip
+        meta={{ ...m, label: `IEEE ${signal.ieeeStatus} — ${m.label}${signal.faultCode ? ` · ${signal.faultCode}` : ''}` }}
+        title="Latest predictive test result (IEEE C57.104 DGA status)"
+      />
+      {signal.sampleDate && (
+        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+          {fmtDate(signal.sampleDate)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function AssetLinkCell({ asset }) {
+  return (
+    <>
+      <Link to={`/assets/${asset?.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+        {assetLabel(asset)}
+      </Link>
+      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+        {[EQUIPMENT_TYPE_LABELS[asset?.equipmentType] || asset?.equipmentType, asset?.site?.name].filter(Boolean).join(' · ') || '—'}
+      </div>
+    </>
+  );
+}
+
+function PriorityNextDue({ nextDue }) {
+  if (!nextDue?.date) return <span className="text-muted">—</span>;
+  const overdue = isPast(nextDue.date);
+  return (
+    <div>
+      <div style={{ fontWeight: overdue ? 700 : 400, color: overdue ? 'var(--color-danger)' : undefined, fontSize: 'var(--font-size-ui)' }}>
+        {fmtDate(nextDue.date)}{overdue ? ' · overdue' : ''}
+      </div>
+      {nextDue.taskName && (
+        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+          {nextDue.taskName}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PRIORITY_EMPTY = {
+  critical: 'No assets scored criticality 4–5 yet — set scores on the asset pages to populate this view.',
+  value:    'No repair-cost estimates recorded yet — add them under Risk & Criticality on the asset pages.',
+  volume:   'No assets registered yet.',
+};
+
+function PriorityAssetsCard({ navigate }) {
+  const [tab, setTab]       = useState('critical');
+  const [cache, setCache]   = useState({});  // tab key → rows[]
+  const [failed, setFailed] = useState({});  // tab key → true after a fetch error
+
+  useEffect(() => {
+    if (cache[tab] || failed[tab]) return;
+    let cancelled = false;
+    api.get('/api/dashboard/priority', { params: { tab } })
+      .then(res => {
+        if (cancelled) return;
+        // The server flattens asset fields onto each row (id, equipmentType,
+        // site, criticalityScore… at top level alongside nextDue/counts);
+        // normalize to the nested { asset, ...extras } shape the cells read,
+        // accepting both forms so neither side breaks the other.
+        const raw = res.data.data?.rows || [];
+        const rows = tab === 'volume' ? raw : raw.map(r => (r.asset ? r : { ...r, asset: r }));
+        setCache(p => ({ ...p, [tab]: rows }));
+      })
+      .catch(() => { if (!cancelled) setFailed(p => ({ ...p, [tab]: true })); });
+    return () => { cancelled = true; };
+  }, [tab, cache, failed]);
+
+  const rows = cache[tab];
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">Priority assets</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+            Where to spend the next maintenance dollar — by risk, replacement cost, or fleet volume
+          </div>
+        </div>
+      </div>
+      {/* Tab row */}
+      <div role="tablist" aria-label="Priority asset views" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 16px 0' }}>
+        {PRIORITY_TABS.map(t => {
+          const active = t.key === tab;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTab(t.key)}
+              style={{
+                padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+                fontSize: 'var(--font-size-sm)', fontWeight: active ? 700 : 500, whiteSpace: 'nowrap',
+                background: active ? 'var(--color-primary-light, #eef6f6)' : 'transparent',
+                color: active ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {failed[tab] ? (
+        <div style={{ padding: '20px 16px', fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          Couldn’t load this view.
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFailed(p => ({ ...p, [tab]: false }))}>
+            Retry
+          </button>
+        </div>
+      ) : rows == null ? (
+        <div style={{ padding: '20px 16px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+          Loading…
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-ui)' }}>
+          {PRIORITY_EMPTY[tab]}
+        </div>
+      ) : tab === 'critical' ? (
+        <div className="table-wrap" style={{ marginTop: 10 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Criticality</th>
+                <th>Redundancy</th>
+                <th>Next due</th>
+                <th style={{ textAlign: 'right' }}>Overdue</th>
+                <th style={{ textAlign: 'right' }}>Open def.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.asset?.id}>
+                  <td><AssetLinkCell asset={r.asset} /></td>
+                  <td><CriticalityBadge score={r.asset?.criticalityScore} /></td>
+                  <td><PillChip meta={REDUNDANCY_META[r.asset?.redundancyStatus]} fallback="—" title="Power-path redundancy" /></td>
+                  <td><PriorityNextDue nextDue={r.nextDue} /></td>
+                  <td style={{ textAlign: 'right' }}><DangerCount count={r.overdueCount} /></td>
+                  <td style={{ textAlign: 'right' }}><DangerCount count={r.openDeficiencyCount} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : tab === 'value' ? (
+        <div className="table-wrap" style={{ marginTop: 10 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th style={{ textAlign: 'right' }}>Repair cost</th>
+                <th style={{ textAlign: 'right' }}>Spare lead time</th>
+                <th>Predictive signal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.asset?.id}>
+                  <td><AssetLinkCell asset={r.asset} /></td>
+                  <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmtMoney(r.repairCostEstimate)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {r.spareLeadTimeWeeks != null
+                      ? `${r.spareLeadTimeWeeks} wk`
+                      : <span className="text-muted">—</span>}
+                  </td>
+                  <td><PredictiveSignalChip signal={r.latestPredictiveSignal} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-wrap" style={{ marginTop: 10 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Equipment type</th>
+                <th style={{ textAlign: 'right' }}>Assets</th>
+                <th style={{ textAlign: 'right' }}>Open schedules</th>
+                <th style={{ textAlign: 'right' }}>Overdue</th>
+                <th style={{ textAlign: 'right' }}>Due ≤ 30d</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const go = () => navigate(`/assets?equipmentType=${encodeURIComponent(r.equipmentType)}`);
+                return (
+                  <tr
+                    key={r.equipmentType}
+                    style={{ cursor: 'pointer' }}
+                    onClick={go} tabIndex={0} onKeyDown={kbdActivate(go)}
+                    title={`Open the asset register filtered to ${EQUIPMENT_TYPE_LABELS[r.equipmentType] || r.equipmentType}`}
+                  >
+                    <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
+                      {EQUIPMENT_TYPE_LABELS[r.equipmentType] || r.equipmentType}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>{r.assetCount ?? 0}</td>
+                    <td style={{ textAlign: 'right' }} className="td-muted">{r.openScheduleCount ?? 0}</td>
+                    <td style={{ textAlign: 'right' }}><DangerCount count={r.overdueCount} /></td>
+                    <td style={{ textAlign: 'right', fontWeight: r.due30Count > 0 ? 700 : 400, color: r.due30Count > 0 ? 'var(--color-warning, #b45309)' : 'var(--color-text-muted)' }}>
+                      {r.due30Count ?? 0}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   useDocumentTitle('Dashboard');
@@ -498,6 +767,9 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* ── Priority assets (critical / high value / by volume) ───── */}
+            <PriorityAssetsCard navigate={navigate} />
 
             {/* ── Next maintenance due ───────────────────────────────────── */}
             <div className="card" style={{ marginBottom: 20 }}>

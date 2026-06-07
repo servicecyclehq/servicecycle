@@ -33,13 +33,10 @@ const {
 } = require('../lib/maintenanceInterval');
 const prisma = require('../lib/prisma').default;
 
-// NFPA 70B equipment types (mirrors the EquipmentType Prisma enum) — guards
-// the bulk-apply filter so a bad string 400s instead of throwing in Prisma.
-const EQUIPMENT_TYPES = [
-  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'GENERATOR',
-  'MOTOR', 'MCC', 'UPS_BATTERY', 'CIRCUIT_BREAKER', 'ARC_FLASH_PANEL',
-  'VFD', 'FIRE_PUMP_CONTROLLER',
-];
+// Canonical EquipmentType list (single source of truth in lib/equipmentTypes)
+// — guards the bulk-apply filter so a bad string 400s instead of throwing in
+// Prisma.
+const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
 
 // ── zod schemas ──────────────────────────────────────────────────────────────
 const ConditionEnum = z.enum(['C1', 'C2', 'C3']);

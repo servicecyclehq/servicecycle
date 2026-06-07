@@ -44,11 +44,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const worstCondition = (a, b, c) =>
   ['C3', 'C2', 'C1'].find(v => [a, b, c].includes(v)) || 'C2';
 
-const EQUIPMENT_TYPES = [
-  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'GENERATOR',
-  'MOTOR', 'MCC', 'UPS_BATTERY', 'CIRCUIT_BREAKER', 'ARC_FLASH_PANEL',
-  'VFD', 'FIRE_PUMP_CONTROLLER',
-];
+// Canonical EquipmentType list — single source of truth in lib/equipmentTypes
+// (mirrors the Prisma enum; this file used to carry its own copy and drifted).
+const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
+
+// Redundancy posture vocabulary (Asset.redundancyStatus is a String column;
+// the route layer owns the enum).
+const REDUNDANCY_VALUES = ['N', 'N_PLUS_1', 'TWO_N'];
 
 // ─── Activity logging helper ──────────────────────────────────────────────────
 // Non-fatal fire-and-forget — a logging failure never blocks the response.
@@ -85,6 +87,13 @@ const TRACKED_FIELDS: any = {
   isEnergized:          'Energized',
   notes:                'Notes',
   fedFromAssetId:       'Fed From',
+  // Risk dimensions (2026-06-07): infrastructure criticality, financial
+  // exposure, resilience posture.
+  criticalityScore:              'Criticality Score',
+  repairCostEstimate:            'Repair Cost Estimate',
+  spareLeadTimeWeeks:            'Spare Lead Time (weeks)',
+  redundancyStatus:              'Redundancy Status',
+  requiresPredictiveMaintenance: 'Predictive Maintenance Required',
 };
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
@@ -98,6 +107,27 @@ const Str       = z.string().max(2000).nullable().optional();
 const ShortStr  = z.string().max(500).nullable().optional();
 const BoolLike  = z.union([z.boolean(), z.literal('true'), z.literal('false')]).optional();
 const OptUuid   = UuidStr.nullable().optional().or(z.literal(''));
+
+// ── Risk-field shapes ────────────────────────────────────────────────────────
+// All five are optional + nullable (unscored assets are legitimate); the SPA
+// sends '' from blank inputs, which emptyToUndef collapses to undefined.
+// criticalityScore: 1 (low) … 5 (failure = injury/shutdown/fines).
+const CriticalityLike = z.preprocess(emptyToUndef,
+  z.union([z.number().int().min(1).max(5), z.string().regex(/^[1-5]$/)]).nullable().optional());
+// Non-negative money value — number or numeric string ("850000", "850000.00").
+const MoneyLike = z.preprocess(emptyToUndef,
+  z.union([z.number().nonnegative().finite(), z.string().regex(/^\d{1,12}(\.\d{1,2})?$/)]).nullable().optional());
+// Non-negative integer weeks.
+const WeeksLike = z.preprocess(emptyToUndef,
+  z.union([z.number().int().nonnegative(), z.string().regex(/^\d{1,4}$/)]).nullable().optional());
+const RedundancyEnum = z.preprocess(emptyToUndef,
+  z.enum(REDUNDANCY_VALUES as any).nullable().optional());
+
+// Coercers for the validated risk shapes above (zod admits the string forms;
+// the DB columns are Int / Decimal / Boolean).
+const toIntOrNull   = (v) => (v === null || v === undefined ? null : parseInt(String(v), 10));
+const toMoneyOrNull = (v) => (v === null || v === undefined ? null : String(Number(v)));
+const toBool        = (v) => v === true || v === 'true';
 
 const AssetWritableFields: any = {
   siteId:               UuidStr.optional(),
@@ -130,6 +160,14 @@ const AssetWritableFields: any = {
   // a feed loop — validated in the handlers via resolveFeedSource.
   // Null/'' clears the link.
   fedFromAssetId:       OptUuid,
+  // ── Risk dimensions ─────────────────────────────────────────────────────
+  // Infrastructure criticality (1-5; deliberately separate from the NFPA 70B
+  // conditionCriticality C-axis), financial exposure, resilience posture.
+  criticalityScore:              CriticalityLike,
+  repairCostEstimate:            MoneyLike,
+  spareLeadTimeWeeks:            WeeksLike,
+  redundancyStatus:              RedundancyEnum,
+  requiresPredictiveMaintenance: BoolLike,
   // Admin-defined custom field values, keyed by CustomFieldDefinition id.
   // Zod only gates the container shape — per-type coercion happens against
   // the stored definitions in resolveCustomFields, which zod can't see.
@@ -349,16 +387,20 @@ const NEXT_DUE_SCHEDULES: any = {
 //   ?ownerId=                 — uuid (that owner) | 'unassigned' (no owner)
 //   ?dueWithin=               — 'overdue' | '30' | '60' | '90' — has an active
 //                               schedule overdue / due within N days
+//   ?minCriticality=          — 1..5 — criticalityScore >= N (unscored excluded)
+//   ?requiresPredictiveMaintenance=true — only predictive-class assets
 //   ?archived=true            — show ONLY archived assets (default excludes them)
-//   ?sort=createdAt|nextDue   — default nextDue (soonest maintenance first)
+//   ?sort=createdAt|nextDue|criticality|repairCost
+//                             — default nextDue (soonest maintenance first);
+//                               criticality/repairCost default DESC, nulls last
 //   ?sortDir=asc|desc
 router.get('/', async (req, res) => {
   try {
     const {
       page = 1, limit = 25,
       search, equipmentType, siteId, governingCondition, inService, archived,
-      ownerId, dueWithin,
-      sort = 'nextDue', sortDir = 'asc',
+      ownerId, dueWithin, minCriticality, requiresPredictiveMaintenance,
+      sort = 'nextDue', sortDir,
     } = req.query;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -402,6 +444,18 @@ router.get('/', async (req, res) => {
       const now = new Date();
       const horizon = new Date(now.getTime() + parseInt(String(dueWithin), 10) * 86_400_000);
       where.schedules = { some: { isActive: true, nextDueDate: { gte: now, lte: horizon } } };
+    }
+
+    // Risk filters. minCriticality narrows to scored assets at/above the
+    // threshold (SQL gte excludes nulls — unscored assets never match);
+    // requiresPredictiveMaintenance=true narrows to the predictive class.
+    // Bad values are silently ignored, consistent with the other filters.
+    // ⚠ Mirrored in routes/bootstrap.ts — keep the two in sync.
+    if (['1', '2', '3', '4', '5'].includes(String(minCriticality))) {
+      where.criticalityScore = { gte: parseInt(String(minCriticality), 10) };
+    }
+    if (requiresPredictiveMaintenance === 'true') {
+      where.requiresPredictiveMaintenance = true;
     }
 
     // Search across nameplate identity fields AND the parent site name —
@@ -461,12 +515,20 @@ router.get('/', async (req, res) => {
       const byId = new Map(rows.map(r => [r.id, r]));
       assets = pageIds.map(id => byId.get(id)).filter(Boolean);
     } else {
-      // createdAt sort goes straight through the DB.
+      // DB-side sorts. Risk sorts (criticality / repairCost) default DESC —
+      // highest-risk first — with unscored assets last in either direction.
+      // ⚠ sortMap mirrored in routes/bootstrap.ts — keep the two in sync.
+      const riskDir = sortDir === 'asc' ? 'asc' : 'desc';
+      const sortMap: any = {
+        createdAt:   { createdAt: dir },
+        criticality: { criticalityScore:   { sort: riskDir, nulls: 'last' } },
+        repairCost:  { repairCostEstimate: { sort: riskDir, nulls: 'last' } },
+      };
       assets = await prisma.asset.findMany({
         where,
         skip,
         take,
-        orderBy: { createdAt: dir },
+        orderBy: sortMap[sort] || { createdAt: dir },
         include,
       });
     }
@@ -584,6 +646,8 @@ router.post('/', requireManager, async (req, res) => {
       installDate, lastCommissionedDate,
       conditionPhysical, conditionCriticality, conditionEnvironment,
       inService, isEnergized, notes, fedFromAssetId,
+      criticalityScore, repairCostEstimate, spareLeadTimeWeeks,
+      redundancyStatus, requiresPredictiveMaintenance,
     } = parsed;
 
     // Hierarchy ownership + chain consistency (tenancy: every level is
@@ -653,6 +717,13 @@ router.post('/', requireManager, async (req, res) => {
         isEnergized: isEnergized !== undefined ? (isEnergized === true || isEnergized === 'true') : true,
         notes: notes || null,
         fedFromAssetId: effFedFromId,
+        // Risk dimensions — zod already validated shape; coerce string forms.
+        criticalityScore:              toIntOrNull(criticalityScore),
+        repairCostEstimate:            toMoneyOrNull(repairCostEstimate),
+        spareLeadTimeWeeks:            toIntOrNull(spareLeadTimeWeeks),
+        redundancyStatus:              redundancyStatus ?? null,
+        requiresPredictiveMaintenance: requiresPredictiveMaintenance !== undefined
+          ? toBool(requiresPredictiveMaintenance) : false,
       },
       include: ASSET_INCLUDE,
     });
@@ -696,6 +767,8 @@ router.put('/:id', requireManager, async (req, res) => {
       installDate, lastCommissionedDate,
       conditionPhysical, conditionCriticality, conditionEnvironment,
       inService, isEnergized, notes, fedFromAssetId,
+      criticalityScore, repairCostEstimate, spareLeadTimeWeeks,
+      redundancyStatus, requiresPredictiveMaintenance,
     } = parsed;
 
     // Resolve the EFFECTIVE hierarchy chain (incoming value when supplied,
@@ -772,6 +845,14 @@ router.put('/:id', requireManager, async (req, res) => {
     if (inService !== undefined)   updateData.inService = inService === true || inService === 'true';
     if (isEnergized !== undefined) updateData.isEnergized = isEnergized === true || isEnergized === 'true';
     if (notes !== undefined)       updateData.notes = notes || null;
+    // ── Risk dimensions (null clears; zod validated the shapes) ─────────────
+    if (criticalityScore !== undefined)   updateData.criticalityScore = toIntOrNull(criticalityScore);
+    if (repairCostEstimate !== undefined) updateData.repairCostEstimate = toMoneyOrNull(repairCostEstimate);
+    if (spareLeadTimeWeeks !== undefined) updateData.spareLeadTimeWeeks = toIntOrNull(spareLeadTimeWeeks);
+    if (redundancyStatus !== undefined)   updateData.redundancyStatus = redundancyStatus ?? null;
+    if (requiresPredictiveMaintenance !== undefined) {
+      updateData.requiresPredictiveMaintenance = toBool(requiresPredictiveMaintenance);
+    }
 
     // ── Condition axes + governing recompute ─────────────────────────────────
     const conditionTouched =

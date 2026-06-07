@@ -33,12 +33,8 @@ const { requireAdmin } = require('../middleware/roles');
 const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const prisma = require('../lib/prisma').default;
 
-// NFPA 70B equipment types (mirrors the EquipmentType Prisma enum).
-const EQUIPMENT_TYPES = [
-  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'GENERATOR',
-  'MOTOR', 'MCC', 'UPS_BATTERY', 'CIRCUIT_BREAKER', 'ARC_FLASH_PANEL',
-  'VFD', 'FIRE_PUMP_CONTROLLER',
-];
+// Canonical EquipmentType list — single source of truth in lib/equipmentTypes.
+const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
 const NETA_CERT_LEVELS = ['LEVEL_I', 'LEVEL_II', 'LEVEL_III', 'LEVEL_IV'];
 
 // Positive-int months, accepting numeric strings from the SPA form.

@@ -19,6 +19,8 @@
 
 const router = require('express').Router();
 const { z }  = require('zod');
+// Canonical EquipmentType list — single source of truth in lib/equipmentTypes.
+const { EQUIPMENT_TYPES } = require('../../lib/equipmentTypes');
 import prisma from '../../lib/prisma';
 
 // ── Zod query-param schema ────────────────────────────────────────────────────
@@ -27,11 +29,7 @@ import prisma from '../../lib/prisma';
 const ListQuerySchema = z.object({
   page:  z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-  equipmentType: z.enum([
-    'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'GENERATOR',
-    'MOTOR', 'MCC', 'UPS_BATTERY', 'CIRCUIT_BREAKER', 'ARC_FLASH_PANEL',
-    'VFD', 'FIRE_PUMP_CONTROLLER',
-  ]).optional(),
+  equipmentType: z.enum(EQUIPMENT_TYPES as any).optional(),
   siteId:             z.string().regex(/^[0-9a-f-]{36}$/i).optional(),
   governingCondition: z.enum(['C1', 'C2', 'C3']).optional(),
   inService:          z.enum(['true', 'false']).optional(),

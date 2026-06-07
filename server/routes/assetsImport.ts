@@ -35,8 +35,11 @@
  * case-insensitive), buildingName/areaName/positionName, manufacturer, model,
  * serialNumber, installDate (several formats), conditionPhysical/
  * Criticality/Environment (C1/C2/C3, default C2), inService (yes/no/true/
- * false), notes. governingCondition is computed as the worst axis, same rule
- * as routes/assets.ts.
+ * false), notes, plus the risk dimensions: criticalityScore (1-5),
+ * repairCostEstimate ($/commas/k-m suffixes accepted), spareLeadTimeWeeks,
+ * redundancyStatus (N / N+1 / 2N), requiresPredictiveMaintenance (yes/no).
+ * governingCondition is computed as the worst axis, same rule as
+ * routes/assets.ts.
  *
  * Caps: 500 data rows / 5MB file per request. Manager+ only. Every query
  * scoped accountId = req.user.accountId. Activity log: ONE `assets_imported`
@@ -136,23 +139,11 @@ async function parseUploadedFile(buffer, originalname) {
 }
 
 // ─── Equipment-type vocabulary ────────────────────────────────────────────────
-// Server-side mirror of client/src/lib/equipment.js EQUIPMENT_TYPE_LABELS —
-// keep in sync with the EquipmentType Prisma enum.
+// Canonical enum values + display labels come from lib/equipmentTypes (the
+// single source of truth mirroring the Prisma enum); this section owns only
+// the IMPORT-side fuzzy matching on top of them.
 
-const EQUIPMENT_TYPE_LABELS: any = {
-  TRANSFORMER_LIQUID:   'Transformer (Liquid)',
-  TRANSFORMER_DRY:      'Transformer (Dry)',
-  SWITCHGEAR:           'Switchgear',
-  GENERATOR:            'Generator',
-  MOTOR:                'Motor',
-  MCC:                  'MCC',
-  UPS_BATTERY:          'UPS / Battery',
-  CIRCUIT_BREAKER:      'Circuit Breaker',
-  ARC_FLASH_PANEL:      'Arc Flash Panel',
-  VFD:                  'VFD',
-  FIRE_PUMP_CONTROLLER: 'Fire Pump Controller',
-};
-const EQUIPMENT_TYPES = Object.keys(EQUIPMENT_TYPE_LABELS);
+const { EQUIPMENT_TYPES, EQUIPMENT_TYPE_LABELS } = require('../lib/equipmentTypes');
 
 // Fuzzy-match key: lowercase, strip everything non-alphanumeric so
 // "Transformer (Liquid)", "transformer liquid", and "TRANSFORMER_LIQUID"
@@ -167,18 +158,35 @@ const EQUIPMENT_TYPE_LOOKUP = (() => {
     m.set(normToken(val), val);
     m.set(normToken(label), val);
   }
-  // Conservative real-world aliases seen on facility spreadsheets.
+  // Conservative real-world aliases seen on facility spreadsheets. Exact
+  // (normalized) matches only — fuzzier contains-style rules live in
+  // matchEquipmentType below so their precedence is explicit.
   const aliases: any = {
-    TRANSFORMER_LIQUID:   ['liquid transformer', 'liquid-filled transformer', 'oil transformer', 'oil-filled transformer', 'wet transformer'],
-    TRANSFORMER_DRY:      ['dry transformer', 'dry-type transformer', 'cast coil transformer'],
-    SWITCHGEAR:           ['swgr', 'switch gear'],
-    GENERATOR:            ['genset', 'gen set', 'emergency generator', 'standby generator'],
-    MCC:                  ['motor control center', 'motor control centre'],
-    UPS_BATTERY:          ['ups', 'battery', 'ups system', 'battery string'],
-    CIRCUIT_BREAKER:      ['breaker', 'circuit brkr'],
-    ARC_FLASH_PANEL:      ['arc flash', 'panelboard'],
-    VFD:                  ['variable frequency drive', 'adjustable speed drive', 'vsd'],
-    FIRE_PUMP_CONTROLLER: ['fire pump', 'fire pump ctrl'],
+    TRANSFORMER_LIQUID:      ['liquid transformer', 'liquid-filled transformer', 'oil transformer', 'oil-filled transformer', 'wet transformer'],
+    TRANSFORMER_DRY:         ['dry transformer', 'dry-type transformer', 'cast coil transformer'],
+    SWITCHGEAR:              ['swgr', 'switch gear'],
+    SWITCHBOARD:             ['swbd', 'switch board', 'main switchboard', 'distribution switchboard'],
+    PANELBOARD:              ['panel', 'panel board', 'pnl', 'distribution panel', 'lighting panel', 'branch panel'],
+    BUSWAY:                  ['busway', 'bus duct', 'busduct', 'bus way', 'bus bar duct'],
+    GENERATOR:               ['genset', 'gen set', 'emergency generator', 'standby generator'],
+    MCC:                     ['motor control center', 'motor control centre'],
+    UPS_BATTERY:             ['ups', 'ups system', 'ups battery', 'uninterruptible power supply'],
+    BATTERY_SYSTEM:          ['battery', 'battery string', 'battery bank', 'station battery', 'stationary battery', 'battery charger', 'dc system'],
+    CIRCUIT_BREAKER:         ['breaker', 'circuit brkr'],
+    FUSE_GEAR:               ['fuse', 'fuses', 'fusible switch', 'fuse cabinet', 'fused switch'],
+    DISCONNECT_SWITCH:       ['disconnect', 'load break switch', 'load-break switch', 'safety switch', 'air switch', 'isolation switch'],
+    TRANSFER_SWITCH:         ['ats', 'transfer switch', 'automatic transfer switch', 'auto transfer switch', 'manual transfer switch'],
+    PROTECTION_RELAY:        ['relay', 'protective relay', 'protection relays', 'sel relay'],
+    GROUND_FAULT_PROTECTION: ['ground fault', 'ground fault protection', 'gfp', 'gf protection', 'ground fault relay'],
+    SURGE_ARRESTER:          ['surge arrestor', 'lightning arrester', 'lightning arrestor', 'tvss', 'spd', 'surge protective device'],
+    CABLE_LV:                ['lv cable', 'low voltage cable', 'lv feeder', '600v cable', 'cable lv'],
+    CABLE_MV_HV:             ['mv cable', 'hv cable', 'medium voltage cable', 'high voltage cable', 'mv feeder', 'cable mv', 'cable hv'],
+    CABLE_TRAY:              ['tray', 'cable trays', 'cable ladder'],
+    GROUNDING_SYSTEM:        ['ground', 'grounding', 'ground grid', 'grounding grid', 'ground system', 'earthing system', 'ground electrode'],
+    EMERGENCY_LIGHTING:      ['emergency light', 'emergency lights', 'egress', 'egress lighting', 'exit light', 'exit lighting', 'exit sign', 'em lighting'],
+    ARC_FLASH_PANEL:         ['arc flash'],
+    VFD:                     ['variable frequency drive', 'adjustable speed drive', 'vsd'],
+    FIRE_PUMP_CONTROLLER:    ['fire pump', 'fire pump ctrl'],
   };
   for (const [val, list] of Object.entries<any>(aliases)) {
     for (const a of list) {
@@ -188,6 +196,54 @@ const EQUIPMENT_TYPE_LOOKUP = (() => {
   }
   return m;
 })();
+
+// Heuristic fallback when the exact (normalized) lookup misses — handles
+// compound cell values like "Battery string — switchgear control" or
+// "15 kV MV feeder cable run 4". Rule ORDER is load-bearing:
+//   - 'arc flash' wins before the bare 'panel' rule
+//   - 'ground fault' wins before the bare 'ground' rule (GROUNDING_SYSTEM)
+//   - 'cable tray' wins before the cable LV-vs-MV/HV voltage split
+//   - 'transfer'/'disconnect' win before the bare switchboard/switchgear words
+//   - 'ups' wins over 'battery' (a UPS battery string is the UPS asset)
+function matchEquipmentType(rawCell) {
+  const exact = EQUIPMENT_TYPE_LOOKUP.get(normToken(rawCell));
+  if (exact) return exact;
+
+  const s = String(rawCell || '').toLowerCase();
+  const has = (...words) => words.some(w => s.includes(w));
+
+  if (has('arc flash'))                          return 'ARC_FLASH_PANEL';
+  if (has('fire pump'))                          return 'FIRE_PUMP_CONTROLLER';
+  if (/\bground\s*fault\b/.test(s) || /\bgfp\b/.test(s)) return 'GROUND_FAULT_PROTECTION';
+  // Word-boundary so "underground feeder cable" falls through to the cable rule.
+  if (/\bground(ing)?\b/.test(s) || has('earthing'))     return 'GROUNDING_SYSTEM';
+  if (has('emergency light', 'egress', 'exit light', 'exit sign')) return 'EMERGENCY_LIGHTING';
+  if (has('transfer switch') || /\bats\b/.test(s)) return 'TRANSFER_SWITCH';
+  if (has('busway', 'bus duct', 'busduct'))      return 'BUSWAY';
+  if (has('cable tray'))                         return 'CABLE_TRAY';
+  if (has('cable', 'feeder')) {
+    // Voltage hints decide LV vs MV/HV: explicit class words, or a kV figure
+    // (>0.6 kV ⇒ MV/HV), or a volt figure (>600 V ⇒ MV/HV). Default LV — the
+    // overwhelmingly common case on facility sheets.
+    if (has('mv', 'hv', 'medium voltage', 'high voltage')) return 'CABLE_MV_HV';
+    const kv = s.match(/(\d+(?:\.\d+)?)\s*kv\b/);
+    if (kv && parseFloat(kv[1]) > 0.6) return 'CABLE_MV_HV';
+    const v = s.match(/(\d+)\s*v(?:olts?)?\b/);
+    if (v && parseInt(v[1], 10) > 600) return 'CABLE_MV_HV';
+    return 'CABLE_LV';
+  }
+  if (has('relay'))                              return 'PROTECTION_RELAY';
+  if (has('disconnect', 'load break', 'load-break', 'safety switch')) return 'DISCONNECT_SWITCH';
+  if (has('switchboard', 'switch board'))        return 'SWITCHBOARD';
+  if (has('switchgear', 'switch gear'))          return 'SWITCHGEAR';
+  if (has('panelboard', 'panel'))                return 'PANELBOARD';
+  if (has('ups', 'uninterruptible'))             return 'UPS_BATTERY';
+  if (has('battery'))                            return 'BATTERY_SYSTEM';
+  if (has('surge', 'lightning arrest'))          return 'SURGE_ARRESTER';
+  if (has('fuse'))                               return 'FUSE_GEAR';
+
+  return null;
+}
 
 // ─── Column mapping: header aliases -> internal field keys ──────────────────
 
@@ -247,6 +303,33 @@ const HEADER_TO_FIELD: any = {
   'in-service':            'inService',
   'service status':        'inService',
   'status':                'inService',
+  // Risk dimensions. NOTE: the bare 'criticality' header keeps its historical
+  // mapping to the NFPA 70B conditionCriticality C-axis above — the 1-5
+  // infrastructure score needs an explicit "score"-flavored header.
+  'criticality score':     'criticalityScore',
+  'criticality (1-5)':     'criticalityScore',
+  'crit score':            'criticalityScore',
+  'risk score':            'criticalityScore',
+  'infrastructure criticality': 'criticalityScore',
+  'repair cost':           'repairCostEstimate',
+  'repair cost estimate':  'repairCostEstimate',
+  'estimated repair cost': 'repairCostEstimate',
+  'cost to repair':        'repairCostEstimate',
+  'replacement cost':      'repairCostEstimate',
+  'repair $':              'repairCostEstimate',
+  'lead time':             'spareLeadTimeWeeks',
+  'lead time (weeks)':     'spareLeadTimeWeeks',
+  'lead time weeks':       'spareLeadTimeWeeks',
+  'spare lead time':       'spareLeadTimeWeeks',
+  'spares lead time':      'spareLeadTimeWeeks',
+  'spare parts lead time': 'spareLeadTimeWeeks',
+  'redundancy':            'redundancyStatus',
+  'redundancy status':     'redundancyStatus',
+  'predictive':            'requiresPredictiveMaintenance',
+  'predictive maintenance': 'requiresPredictiveMaintenance',
+  'requires predictive maintenance': 'requiresPredictiveMaintenance',
+  'pdm':                   'requiresPredictiveMaintenance',
+  'condition monitoring':  'requiresPredictiveMaintenance',
   'notes':                 'notes',
   'comments':              'notes',
   'comment':               'notes',
@@ -269,6 +352,11 @@ const SCHEMA_FIELDS = [
   { key: 'conditionCriticality', label: 'Condition — Criticality', type: 'enum', options: ['C1', 'C2', 'C3'] },
   { key: 'conditionEnvironment', label: 'Condition — Environment', type: 'enum', options: ['C1', 'C2', 'C3'] },
   { key: 'inService',            label: 'In Service',             type: 'boolean' },
+  { key: 'criticalityScore',     label: 'Criticality Score (1-5)', type: 'number' },
+  { key: 'repairCostEstimate',   label: 'Repair Cost Estimate',   type: 'number' },
+  { key: 'spareLeadTimeWeeks',   label: 'Spare Lead Time (weeks)', type: 'number' },
+  { key: 'redundancyStatus',     label: 'Redundancy Status',      type: 'enum', options: ['N', 'N_PLUS_1', 'TWO_N'] },
+  { key: 'requiresPredictiveMaintenance', label: 'Predictive Maintenance Required', type: 'boolean' },
   { key: 'notes',                label: 'Notes',                  type: 'string' },
 ];
 const VALID_FIELD_KEYS = new Set(SCHEMA_FIELDS.map(f => f.key));
@@ -347,9 +435,51 @@ function coerce(field, raw) {
       return new Error(`Invalid in-service value: "${s}" (expected Yes/No)`);
     }
     case 'equipmentType': {
-      const match = EQUIPMENT_TYPE_LOOKUP.get(normToken(s));
+      const match = matchEquipmentType(s);
       if (!match) return new Error(`Unknown equipment type: "${s}"`);
       return match;
+    }
+    case 'criticalityScore': {
+      const n = Number(s);
+      if (!Number.isInteger(n) || n < 1 || n > 5) {
+        return new Error(`Invalid criticality score: "${s}" (expected an integer 1-5)`);
+      }
+      return n;
+    }
+    case 'repairCostEstimate': {
+      // Money cells arrive as "$850,000", "850000.00", "850k" — strip the
+      // currency dressing, expand a trailing k/m multiplier, require >= 0.
+      let t = s.replace(/[$,\s]/g, '').toLowerCase();
+      let mult = 1;
+      if (/k$/.test(t)) { mult = 1e3; t = t.slice(0, -1); }
+      else if (/m$/.test(t)) { mult = 1e6; t = t.slice(0, -1); }
+      const n = Number(t);
+      if (!Number.isFinite(n) || n < 0) {
+        return new Error(`Invalid repair cost: "${s}" (expected a non-negative amount)`);
+      }
+      return String(n * mult); // Prisma Decimal accepts the numeric string
+    }
+    case 'spareLeadTimeWeeks': {
+      // Accept "12", "12 weeks", "12 wk".
+      const t = s.toLowerCase().replace(/\s*(weeks?|wks?)\.?$/, '').trim();
+      const n = Number(t);
+      if (!Number.isInteger(n) || n < 0) {
+        return new Error(`Invalid spare lead time: "${s}" (expected a non-negative whole number of weeks)`);
+      }
+      return n;
+    }
+    case 'redundancyStatus': {
+      const v = s.toUpperCase().replace(/\s+/g, '');
+      if (['N', 'NONE'].includes(v))                              return 'N';
+      if (['N+1', 'N_PLUS_1', 'NPLUS1'].includes(v))              return 'N_PLUS_1';
+      if (['2N', 'TWO_N', 'TWON', 'N+N'].includes(v))             return 'TWO_N';
+      return new Error(`Invalid redundancy status: "${s}" (expected N, N+1, or 2N)`);
+    }
+    case 'requiresPredictiveMaintenance': {
+      const v = s.toLowerCase();
+      if (['yes', 'true', 'y', '1', 'required', 'x'].includes(v)) return true;
+      if (['no', 'false', 'n', '0', 'not required', ''].includes(v)) return false;
+      return new Error(`Invalid predictive-maintenance value: "${s}" (expected Yes/No)`);
     }
     case 'notes': {
       if (s.length > 2000) return new Error(`Notes exceeds 2000 characters`);
@@ -732,6 +862,12 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
               governingCondition:   worstCondition(physical, criticality, environment) as any,
               inService:            r.inService === null || r.inService === undefined ? true : r.inService,
               notes:                sanitizeFormulaPrefix(r.notes) || null,
+              // Risk dimensions — coerce() already validated/normalized.
+              criticalityScore:              r.criticalityScore ?? null,
+              repairCostEstimate:            r.repairCostEstimate ?? null,
+              spareLeadTimeWeeks:            r.spareLeadTimeWeeks ?? null,
+              redundancyStatus:              r.redundancyStatus ?? null,
+              requiresPredictiveMaintenance: r.requiresPredictiveMaintenance === true,
             },
             select: { id: true, equipmentType: true },
           });
