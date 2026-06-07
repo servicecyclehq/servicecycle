@@ -53,13 +53,14 @@ const VARIANTS = {
     text: 'AI can make mistakes — please verify each field before approving.',
     tone: 'amber',
   },
-  renewalBrief: {
-    // Phase 4 v0.4.0 copy: names the category-aware methodology + the
-    // optional live market data path. Honest framing — the methodology
-    // is veteran-led for SaaS and researched for non-SaaS (per roadmap
-    // §5 marketing-pitch positioning). Still amber: AI output is
-    // advisory, not professional legal/financial advice.
-    text: 'AI-generated, category-aware brief. Methodology is veteran-led for SaaS and research-based for other categories; when web search is enabled, live market data is cited in the Market section. Advisory only — consult your SAM team or licensing consultant before relying on these recommendations.',
+  maintenanceBrief: {
+    // AI maintenance recommendation + NFPA compliance summary. Strong
+    // amber framing: this output sits adjacent to electrical safety
+    // decisions, so the disclaimer must be unambiguous that it is not
+    // an engineering determination. Standard references are restricted
+    // server-side to refs present in the asset's own task definitions,
+    // but the interpretation is still model-generated.
+    text: 'AI-generated summary based on this asset’s recorded data only. It is not an engineering assessment — verify recommendations against the cited standards and consult a qualified electrical engineer or NETA-certified contractor before acting on them.',
     tone: 'amber',
   },
   ask: {

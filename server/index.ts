@@ -179,6 +179,8 @@ const scheduleRoutes        = require('./routes/schedules');    // maintenance s
 const workOrderRoutes       = require('./routes/workOrders');   // execution
 const deficiencyRoutes      = require('./routes/deficiencies'); // findings
 const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
+const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
+const assetBriefRoutes      = require('./routes/assetBrief');   // AI maintenance brief
 const dashboardRoutes       = require('./routes/dashboard');
 const userRoutes            = require('./routes/users');
 const preferencesRoutes     = require('./routes/preferences'); // v0.42 per-user key/value prefs
@@ -1079,7 +1081,18 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
 // ServiceCycle equipment-model surface. The asset hierarchy + execution
 // routers all apply role middleware internally; tenancy scoping (accountId)
 // is enforced inside every handler.
+// CSV/XLSX import — mounted at the sub-path BEFORE the general /api/assets
+// router so POST /api/assets/import/* lands on the import handler, not the
+// assets router's /:id param routes. (Express matches in mount order.)
+// ingestLimiter (20/min): file parsing is CPU-bound; same budget the old
+// document-ingest path used.
+app.use('/api/assets/import',   authenticateToken, ingestLimiter, assetsImportRoutes);
 app.use('/api/assets',          authenticateToken, assetRoutes);
+// AI maintenance brief — second router on the same mount; paths don't
+// collide (POST /:id/brief only), Express falls through. aiIpLimiter is
+// applied INSIDE the router on the brief route only, so asset CRUD traffic
+// never burns the AI per-IP budget.
+app.use('/api/assets',          authenticateToken, assetBriefRoutes);
 app.use('/api/sites',           authenticateToken, siteRoutes);
 app.use('/api/contractors',     authenticateToken, contractorRoutes);
 app.use('/api/schedules',       authenticateToken, scheduleRoutes);

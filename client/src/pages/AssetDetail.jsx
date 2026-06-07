@@ -3,8 +3,10 @@
 //
 // GET /api/assets/:id → asset with hierarchy context, maintenance schedules
 // (incl. task definitions), latest work orders, open deficiencies, recent lab
-// samples, and documents. Sections below mirror that payload; the activity
-// feed comes from GET /api/assets/:id/activity.
+// samples, documents, and customFieldValues (with definitions). Sections
+// below mirror that payload; the activity feed comes from
+// GET /api/assets/:id/activity, and the editable custom-field definitions
+// from GET /api/custom-fields (active only).
 //
 // Write actions (manager+, mirrored by the server's requireManager gates):
 //   • inline edit            → PUT  /api/assets/:id
@@ -23,6 +25,8 @@ import { useConfirm } from '../context/ConfirmContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import Toast from '../components/Toast';
 import InfoTip from '../components/InfoTip';
+import CustomFieldInputs from '../components/CustomFieldInputs';
+import MaintenanceBriefCard from '../components/MaintenanceBriefCard';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -91,8 +95,24 @@ function activityText(log) {
   }
 }
 
+// Display form of one stored custom-field value, per its definition's type.
+// Values are the server's canonical strings (checkbox 'true'/'false', date
+// 'YYYY-MM-DD', select option value) — this maps them back to human terms.
+function formatCustomValue(def, value) {
+  if (value == null || value === '') return null;
+  switch (def.type) {
+    case 'checkbox': return value === 'true' ? 'Yes' : 'No';
+    case 'date':     return fmtDate(value);
+    case 'select': {
+      const opt = (def.options || []).find(o => o.value === value);
+      return opt?.label || value;
+    }
+    default: return value;
+  }
+}
+
 // ── Inline edit form ──────────────────────────────────────────────────────────
-function EditAssetForm({ asset, onCancel, onSaved }) {
+function EditAssetForm({ asset, fieldDefs, onCancel, onSaved }) {
   const [form, setForm] = useState({
     equipmentType:        asset.equipmentType,
     manufacturer:         asset.manufacturer || '',
@@ -113,6 +133,29 @@ function EditAssetForm({ asset, onCancel, onSaved }) {
       ? entries.map(([key, value]) => ({ key, value: String(value ?? '') }))
       : [{ key: '', value: '' }];
   });
+  // Custom field values keyed by definitionId, seeded from the asset's
+  // stored customFieldValues. Only ACTIVE definitions are editable —
+  // archived ones stay read-only in the detail card and are never
+  // submitted (the server rejects writes against archived definitions).
+  const [customFields, setCustomFields] = useState(() => {
+    const stored = new Map((asset.customFieldValues || []).map(v => [v.definitionId, v.value]));
+    const map = {};
+    for (const def of fieldDefs) map[def.id] = stored.get(def.id) ?? '';
+    return map;
+  });
+  // If the definitions fetch resolves AFTER the form mounts, hydrate the
+  // late arrivals from the asset's stored values — but never clobber a key
+  // the user has already touched.
+  useEffect(() => {
+    const stored = new Map((asset.customFieldValues || []).map(v => [v.definitionId, v.value]));
+    setCustomFields(prev => {
+      const map = { ...prev };
+      for (const def of fieldDefs) {
+        if (!(def.id in map)) map[def.id] = stored.get(def.id) ?? '';
+      }
+      return map;
+    });
+  }, [fieldDefs, asset.customFieldValues]);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
@@ -141,6 +184,8 @@ function EditAssetForm({ asset, onCancel, onSaved }) {
         isEnergized:          form.isEnergized,
         notes:                form.notes.trim() || null,
         nameplateData:        Object.keys(nameplateData).length > 0 ? nameplateData : null,
+        // Whole map every save — empty strings clear, server upserts the rest.
+        ...(fieldDefs.length > 0 ? { customFields } : {}),
       });
       onSaved(res.data.data.asset);
     } catch (err) {
@@ -243,13 +288,17 @@ function EditAssetForm({ asset, onCancel, onSaved }) {
             <textarea className="form-control form-control-wide" aria-label="Notes" rows={3} value={form.notes} onChange={e => setF('notes', e.target.value)} />
           </div>
 
-          {/* TODO(custom-fields): CustomFieldInputs (components/CustomFieldInputs.jsx)
-              loads definitions from GET /api/custom-fields, but the asset payload
-              from GET /api/assets/:id does not include customFieldValues and the
-              PUT /api/assets/:id zod schema is .strict() with no customFields key,
-              so values can neither hydrate nor persist yet. Wire this up once the
-              server includes customFieldValues on the asset detail payload and
-              accepts a customFields map on POST/PUT /api/assets. */}
+          {fieldDefs.length > 0 && (
+            <div className="form-group" style={{ marginTop: 12 }}>
+              <label className="form-label">Custom Fields</label>
+              <CustomFieldInputs
+                definitions={fieldDefs}
+                values={customFields}
+                onChange={(id, v) => setCustomFields(p => ({ ...p, [id]: v }))}
+                disabled={saving}
+              />
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button type="submit" className="btn btn-primary" disabled={saving}>
@@ -280,6 +329,21 @@ export default function AssetDetail() {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy]       = useState(false); // serializes row-level actions
   const [activity, setActivity] = useState([]);
+  // Active custom field definitions (admin-defined in Settings). Drives the
+  // editable inputs in the edit form; archived definitions never appear here
+  // but their stored values still render read-only from the asset payload.
+  const [fieldDefs, setFieldDefs] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/api/custom-fields')
+      .then(r => {
+        if (cancelled) return;
+        setFieldDefs((r.data.data?.fields || []).filter(d => !d.archivedAt));
+      })
+      .catch(() => { /* section simply doesn't render */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useDocumentTitle(asset ? assetLabel(asset) : 'Asset');
 
@@ -421,6 +485,13 @@ export default function AssetDetail() {
   const labSamples   = asset.labSamples || [];
   const documents    = asset.documents || [];
 
+  // Custom fields: one row per ACTIVE definition (value or em-dash), plus
+  // stored values whose definition has since been archived — those stay
+  // visible (read-only) so retiring a field never erases what's recorded.
+  const customValueByDef = new Map((asset.customFieldValues || []).map(v => [v.definitionId, v.value]));
+  const archivedCustomValues = (asset.customFieldValues || [])
+    .filter(v => v.definition?.archivedAt && v.value != null && v.value !== '');
+
   return (
     <>
       <div className="page-header">
@@ -475,6 +546,7 @@ export default function AssetDetail() {
         {editing && (
           <EditAssetForm
             asset={asset}
+            fieldDefs={fieldDefs}
             onCancel={() => setEditing(false)}
             onSaved={() => {
               setEditing(false);
@@ -569,6 +641,11 @@ export default function AssetDetail() {
             </div>
           )}
         </div>
+
+        {/* ── AI Maintenance Brief ──────────────────────────────────────────── */}
+        {/* Self-gating: renders null unless AI is enabled+configured and the
+            user's role carries the maintenance_brief feature. */}
+        <MaintenanceBriefCard asset={asset} />
 
         {/* ── Work Orders ───────────────────────────────────────────────────── */}
         <div className="card mb-16">
@@ -740,6 +817,38 @@ export default function AssetDetail() {
             )}
           </div>
         </div>
+
+        {/* ── Custom Fields ─────────────────────────────────────────────────── */}
+        {(fieldDefs.length > 0 || archivedCustomValues.length > 0) && (
+          <div className="card mb-16">
+            <div className="card-header"><div className="card-title">Custom Fields</div></div>
+            <div className="card-body">
+              <div className="detail-grid">
+                {fieldDefs.map(def => (
+                  <div className="detail-item" key={def.id}>
+                    <div className="detail-label">{def.name}</div>
+                    <div className="detail-value">
+                      {formatCustomValue(def, customValueByDef.get(def.id)) ?? <span className="text-muted">—</span>}
+                    </div>
+                  </div>
+                ))}
+                {archivedCustomValues.map(v => (
+                  <div className="detail-item" key={v.definitionId}>
+                    <div className="detail-label">{v.definition.name} <span className="text-muted">(archived)</span></div>
+                    <div className="detail-value">
+                      {formatCustomValue(v.definition, v.value) ?? <span className="text-muted">—</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {canWrite && fieldDefs.length > 0 && (
+                <div className="form-hint" style={{ marginTop: 12 }}>
+                  Edit values via the Edit button above. Definitions are managed in Settings → Custom Fields.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Documents (compact) ───────────────────────────────────────────── */}
         {documents.length > 0 && (
