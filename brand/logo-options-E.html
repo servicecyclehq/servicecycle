@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ServiceCycle — Arc Gap (E) variations</title>
+<style>
+  :root { font-family: 'Segoe UI', Inter, -apple-system, sans-serif; }
+  body { margin: 0; background: #0b0f1a; color: #e2e8f0; padding: 36px; }
+  h1 { font-size: 22px; margin: 0 0 4px; color: #f8fafc; }
+  .sub { color: #94a3b8; font-size: 14px; margin-bottom: 30px; max-width: 880px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(490px, 1fr)); gap: 22px; }
+  .card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 22px; }
+  .card h2 { font-size: 15px; margin: 0 0 3px; color: #f1f5f9; }
+  .card .why { font-size: 12.5px; color: #94a3b8; margin: 0 0 16px; line-height: 1.5; }
+  .row { display: flex; gap: 12px; align-items: stretch; }
+  .swatch { flex: 1; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 20px 12px; gap: 14px; }
+  .lightbg { background: #f1f5f9; }
+  .darkbg  { background: radial-gradient(circle at 35% 25%, #141d38, #0a0e1a); }
+  .side  { background: #161e2e; width: 200px; flex: none; flex-direction: column; gap: 7px; padding: 16px 10px; border: 1px solid #1f2937; }
+  .side .mini { display: flex; align-items: center; gap: 9px; }
+  .side .mini span { color: #f1f5f9; font-size: 14.5px; font-weight: 700; letter-spacing: -0.025em; }
+  .side small { color: #64748b; font-size: 9.5px; }
+  .wm { font-size: 24px; letter-spacing: -0.04em; white-space: nowrap; font-weight: 750; }
+  .gtext { background-clip: text; -webkit-background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+  .tag { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.08em; color:#bfdbfe; background:#172554; border:1px solid #1e40af; border-radius:5px; padding:2px 8px; margin-bottom:10px; }
+</style>
+</head>
+<body>
+<h1>Arc Gap — eight variations</h1>
+<div class="sub">Direction E pushed around: terminal placement, arc weight, filament count, contained vs. open, and one where the ring itself is the broken circuit. Palette held to blue / purple / lime / yellow throughout.</div>
+<div class="grid">
+
+<!-- E1 REFINED ORIGINAL -->
+<div class="card"><span class="tag">E1</span><h2>Refined original — horizontal arc, twin filaments</h2>
+<p class="why">The round-four baseline, tuned: cleaner terminals, tighter shimmer, slightly stronger white core so the arc reads at distance.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e1g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="url(#e1g)" stroke-width="3.2"/>
+      <circle cx="13" cy="32" r="3.2" fill="#334155"/><circle cx="51" cy="32" r="3.2" fill="#334155"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M15 32 L21 27 L27 33 L33 26 L40 33 L46 28 L49 32" stroke="#3b82f6" stroke-width="4.6" stroke-opacity="0.28"/>
+        <path d="M15 32 L22 36 L28 31 L35 38 L41 32.5 L49 32" stroke="#a855f7" stroke-width="3.8" stroke-opacity="0.28"/>
+        <path d="M15 32 L21 27 L27 33 L33 26 L40 33 L46 28 L49 32" stroke="#2563eb" stroke-width="2.1"/>
+        <path d="M15 32 L22 36 L28 31 L35 38 L41 32.5 L49 32" stroke="#9333ea" stroke-width="1.7"/>
+        <path d="M15 32 L21 28.5 L27 32.5 L33 27.5 L40 32.5 L46 29.5 L49 32" stroke="#ffffff" stroke-width="1.2"/>
+      </g>
+      <circle cx="13" cy="32" r="5.6" fill="#facc15" fill-opacity="0.32"/><circle cx="51" cy="32" r="5.6" fill="#facc15" fill-opacity="0.32"/>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#2563eb,#7c3aed)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e1gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="url(#e1gd)" stroke-width="3.2"/>
+      <circle cx="13" cy="32" r="3.2" fill="#cbd5e1"/><circle cx="51" cy="32" r="3.2" fill="#cbd5e1"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M15 32 L21 27 L27 33 L33 26 L40 33 L46 28 L49 32" stroke="#60a5fa" stroke-width="4.6" stroke-opacity="0.38"/>
+        <path d="M15 32 L22 36 L28 31 L35 38 L41 32.5 L49 32" stroke="#c084fc" stroke-width="3.8" stroke-opacity="0.38"/>
+        <path d="M15 32 L21 27 L27 33 L33 26 L40 33 L46 28 L49 32" stroke="#93c5fd" stroke-width="2.1"/>
+        <path d="M15 32 L22 36 L28 31 L35 38 L41 32.5 L49 32" stroke="#e9d5ff" stroke-width="1.7"/>
+        <path d="M15 32 L21 28.5 L27 32.5 L33 27.5 L40 32.5 L46 29.5 L49 32" stroke="#ffffff" stroke-width="1.2"/>
+      </g>
+      <circle cx="13" cy="32" r="5.6" fill="#fde047" fill-opacity="0.38"/><circle cx="51" cy="32" r="5.6" fill="#fde047" fill-opacity="0.38"/>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#93c5fd,#e9d5ff)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="#60a5fa" stroke-width="4"/><circle cx="13" cy="32" r="4" fill="#cbd5e1"/><circle cx="51" cy="32" r="4" fill="#cbd5e1"/><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M15 32 L21 27 L27 33 L33 26 L40 33 L46 28 L49 32" stroke="#93c5fd" stroke-width="3.4"/><path d="M15 32 L22 36 L28 31 L35 38 L41 32.5 L49 32" stroke="#c084fc" stroke-width="2.6"/></g></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E2 JACOBS LADDER -->
+<div class="card"><span class="tag">E2</span><h2>Jacob's Ladder — vertical climb</h2>
+<p class="why">Terminals at the poles, arc climbing bottom-to-top the way a real ladder arc rises. Reads more dynamic; the vertical arc doubles as a subtle "S" gesture.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e2g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="url(#e2g)" stroke-width="3.2"/>
+      <circle cx="32" cy="13" r="3.2" fill="#334155"/><circle cx="32" cy="51" r="3.2" fill="#334155"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M32 49 L27 43 L33 37 L26 31 L33 24 L28 19 L32 15" stroke="#84cc16" stroke-width="4.6" stroke-opacity="0.3"/>
+        <path d="M32 49 L37 44 L31 38 L38 30 L31 23 L36 18 L32 15" stroke="#a855f7" stroke-width="3.8" stroke-opacity="0.3"/>
+        <path d="M32 49 L27 43 L33 37 L26 31 L33 24 L28 19 L32 15" stroke="#65a30d" stroke-width="2.1"/>
+        <path d="M32 49 L37 44 L31 38 L38 30 L31 23 L36 18 L32 15" stroke="#9333ea" stroke-width="1.7"/>
+        <path d="M32 49 L29 43.5 L32.5 37.5 L28.5 31 L33 24.5 L30 19.5 L32 15" stroke="#ffffff" stroke-width="1.2"/>
+      </g>
+      <circle cx="32" cy="13" r="5.6" fill="#facc15" fill-opacity="0.32"/><circle cx="32" cy="51" r="5.6" fill="#facc15" fill-opacity="0.32"/>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#65a30d,#9333ea)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e2gd" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="url(#e2gd)" stroke-width="3.2"/>
+      <circle cx="32" cy="13" r="3.2" fill="#cbd5e1"/><circle cx="32" cy="51" r="3.2" fill="#cbd5e1"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M32 49 L27 43 L33 37 L26 31 L33 24 L28 19 L32 15" stroke="#a3e635" stroke-width="4.6" stroke-opacity="0.4"/>
+        <path d="M32 49 L37 44 L31 38 L38 30 L31 23 L36 18 L32 15" stroke="#c084fc" stroke-width="3.8" stroke-opacity="0.4"/>
+        <path d="M32 49 L27 43 L33 37 L26 31 L33 24 L28 19 L32 15" stroke="#d9f99d" stroke-width="2.1"/>
+        <path d="M32 49 L37 44 L31 38 L38 30 L31 23 L36 18 L32 15" stroke="#e9d5ff" stroke-width="1.7"/>
+        <path d="M32 49 L29 43.5 L32.5 37.5 L28.5 31 L33 24.5 L30 19.5 L32 15" stroke="#ffffff" stroke-width="1.2"/>
+      </g>
+      <circle cx="32" cy="13" r="5.6" fill="#fde047" fill-opacity="0.4"/><circle cx="32" cy="51" r="5.6" fill="#fde047" fill-opacity="0.4"/>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#d9f99d,#e9d5ff)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="#60a5fa" stroke-width="4"/><circle cx="32" cy="13" r="4" fill="#cbd5e1"/><circle cx="32" cy="51" r="4" fill="#cbd5e1"/><path d="M32 49 L27 43 L33 37 L26 31 L33 24 L28 19 L32 15" stroke="#a3e635" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E3 CONTAINED ORB -->
+<div class="card"><span class="tag">E3</span><h2>Contained Orb — arc inside a solid night sphere</h2>
+<p class="why">Same arc, but inside a filled blue→purple globe — energy contained and managed rather than exposed. Most "product icon" of the set; the solid disc makes the strongest favicon.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><radialGradient id="e3g" cx="0.35" cy="0.25" r="1.05"><stop offset="0" stop-color="#1d4ed8"/><stop offset="0.6" stop-color="#312e81"/><stop offset="1" stop-color="#581c87"/></radialGradient><clipPath id="e3c"><circle cx="32" cy="32" r="26"/></clipPath></defs>
+      <circle cx="32" cy="32" r="26" fill="url(#e3g)"/>
+      <g clip-path="url(#e3c)">
+        <circle cx="11" cy="32" r="3" fill="#94a3b8"/><circle cx="53" cy="32" r="3" fill="#94a3b8"/>
+        <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M13 32 L20 26.5 L26 33 L33 25.5 L40 33 L46 27.5 L51 32" stroke="#22d3ee" stroke-width="4.6" stroke-opacity="0.35"/>
+          <path d="M13 32 L21 36.5 L28 31 L35 38 L42 32.5 L51 32" stroke="#a3e635" stroke-width="3.8" stroke-opacity="0.35"/>
+          <path d="M13 32 L20 26.5 L26 33 L33 25.5 L40 33 L46 27.5 L51 32" stroke="#67e8f9" stroke-width="2"/>
+          <path d="M13 32 L21 36.5 L28 31 L35 38 L42 32.5 L51 32" stroke="#d9f99d" stroke-width="1.6"/>
+          <path d="M13 32 L20 28.5 L26 32.5 L33 27.5 L40 32.5 L46 29.5 L51 32" stroke="#ffffff" stroke-width="1.2"/>
+        </g>
+        <circle cx="11" cy="32" r="6" fill="#fde047" fill-opacity="0.3"/><circle cx="53" cy="32" r="6" fill="#fde047" fill-opacity="0.3"/>
+      </g>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#4338ca,#7c3aed)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><radialGradient id="e3gd" cx="0.35" cy="0.25" r="1.05"><stop offset="0" stop-color="#2563eb"/><stop offset="0.6" stop-color="#4338ca"/><stop offset="1" stop-color="#6b21a8"/></radialGradient><clipPath id="e3cd"><circle cx="32" cy="32" r="26"/></clipPath></defs>
+      <circle cx="32" cy="32" r="26" fill="url(#e3gd)"/>
+      <g clip-path="url(#e3cd)">
+        <circle cx="11" cy="32" r="3" fill="#cbd5e1"/><circle cx="53" cy="32" r="3" fill="#cbd5e1"/>
+        <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M13 32 L20 26.5 L26 33 L33 25.5 L40 33 L46 27.5 L51 32" stroke="#67e8f9" stroke-width="4.6" stroke-opacity="0.4"/>
+          <path d="M13 32 L21 36.5 L28 31 L35 38 L42 32.5 L51 32" stroke="#bef264" stroke-width="3.8" stroke-opacity="0.4"/>
+          <path d="M13 32 L20 26.5 L26 33 L33 25.5 L40 33 L46 27.5 L51 32" stroke="#cffafe" stroke-width="2"/>
+          <path d="M13 32 L21 36.5 L28 31 L35 38 L42 32.5 L51 32" stroke="#ecfccb" stroke-width="1.6"/>
+          <path d="M13 32 L20 28.5 L26 32.5 L33 27.5 L40 32.5 L46 29.5 L51 32" stroke="#ffffff" stroke-width="1.2"/>
+        </g>
+        <circle cx="11" cy="32" r="6" fill="#fde047" fill-opacity="0.35"/><circle cx="53" cy="32" r="6" fill="#fde047" fill-opacity="0.35"/>
+      </g>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#818cf8,#c084fc)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><radialGradient id="e3gm" cx="0.35" cy="0.25" r="1.05"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#6b21a8"/></radialGradient><clipPath id="e3cm"><circle cx="32" cy="32" r="26"/></clipPath></defs><circle cx="32" cy="32" r="26" fill="url(#e3gm)"/><g clip-path="url(#e3cm)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M13 32 L20 26.5 L26 33 L33 25.5 L40 33 L46 27.5 L51 32" stroke="#67e8f9" stroke-width="3.6"/><path d="M13 32 L21 36.5 L28 31 L35 38 L42 32.5 L51 32" stroke="#bef264" stroke-width="2.8"/><path d="M13 32 L20 28.5 L26 32.5 L33 27.5 L40 32.5 L46 29.5 L51 32" stroke="#fff" stroke-width="1.6"/></g></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E4 HERO ARC -->
+<div class="card"><span class="tag">E4</span><h2>Hero Arc — one bold filament, minimal</h2>
+<p class="why">Strips it to one confident arc with a strong glow and gradient running along the path. The most "logo" of the set — fewest moving parts, biggest presence at small sizes.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e4g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2563eb"/><stop offset="0.5" stop-color="#7c3aed"/><stop offset="1" stop-color="#84cc16"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="#334155" stroke-width="3"/>
+      <circle cx="12" cy="32" r="3.6" fill="#334155"/><circle cx="52" cy="32" r="3.6" fill="#334155"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" stroke="url(#e4g)" stroke-width="7" stroke-opacity="0.3"/>
+        <path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" stroke="url(#e4g)" stroke-width="3.6"/>
+        <path d="M14 32 L22 26.5 L28 33 L35 25.5 L42 33 L50 32" stroke="#ffffff" stroke-width="1.4"/>
+      </g>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#2563eb,#84cc16)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e4gd" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="3"/>
+      <circle cx="12" cy="32" r="3.6" fill="#cbd5e1"/><circle cx="52" cy="32" r="3.6" fill="#cbd5e1"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" stroke="url(#e4gd)" stroke-width="7" stroke-opacity="0.4"/>
+        <path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" stroke="url(#e4gd)" stroke-width="3.6"/>
+        <path d="M14 32 L22 26.5 L28 33 L35 25.5 L42 33 L50 32" stroke="#ffffff" stroke-width="1.4"/>
+      </g>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#60a5fa,#a3e635)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><linearGradient id="e4gm" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#cbd5e1"/><circle cx="52" cy="32" r="4.4" fill="#cbd5e1"/><path d="M14 32 L22 25 L28 34 L35 24 L42 34 L50 32" stroke="url(#e4gm)" stroke-width="4.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E5 ARC + ESCAPING BOLT -->
+<div class="card"><span class="tag">E5</span><h2>Arc + Strike — the arc throws a bolt</h2>
+<p class="why">The horizontal arc jumps the gap, and a branched bolt escapes downward from its midpoint — sky lightning DNA grafted onto the electrical arc. Busiest, most energetic.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e5g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient><clipPath id="e5c"><circle cx="32" cy="32" r="25.2"/></clipPath></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="url(#e5g)" stroke-width="3.2"/>
+      <circle cx="13" cy="24" r="3.2" fill="#334155"/><circle cx="51" cy="24" r="3.2" fill="#334155"/>
+      <g clip-path="url(#e5c)" fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M15 24 L22 19.5 L28 25 L34 18.5 L41 25 L49 24" stroke="#3b82f6" stroke-width="4.4" stroke-opacity="0.3"/>
+        <path d="M15 24 L22 19.5 L28 25 L34 18.5 L41 25 L49 24" stroke="#2563eb" stroke-width="2"/>
+        <path d="M15 24 L22 20.5 L28 24 L34 19.5 L41 24 L49 24" stroke="#ffffff" stroke-width="1.1"/>
+        <path d="M31 22 L27 32 L33 36 L28 46 L33 50 L30 58" stroke="#f59e0b" stroke-width="5" stroke-opacity="0.3"/>
+        <path d="M33 36 L40 40 M28 46 L21 50" stroke="#f59e0b" stroke-width="3" stroke-opacity="0.3"/>
+        <path d="M31 22 L27 32 L33 36 L28 46 L33 50 L30 58" stroke="#facc15" stroke-width="2.6"/>
+        <path d="M33 36 L40 40 M28 46 L21 50" stroke="#facc15" stroke-width="1.6"/>
+        <path d="M31 22 L27 32 L33 36 L28 46 L33 50 L30 58" stroke="#fffbeb" stroke-width="1.1"/>
+      </g>
+      <circle cx="13" cy="24" r="5.4" fill="#a3e635" fill-opacity="0.35"/><circle cx="51" cy="24" r="5.4" fill="#a3e635" fill-opacity="0.35"/>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#d97706,#facc15)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e5gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient><clipPath id="e5cd"><circle cx="32" cy="32" r="25.2"/></clipPath></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="url(#e5gd)" stroke-width="3.2"/>
+      <circle cx="13" cy="24" r="3.2" fill="#cbd5e1"/><circle cx="51" cy="24" r="3.2" fill="#cbd5e1"/>
+      <g clip-path="url(#e5cd)" fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M15 24 L22 19.5 L28 25 L34 18.5 L41 25 L49 24" stroke="#60a5fa" stroke-width="4.4" stroke-opacity="0.4"/>
+        <path d="M15 24 L22 19.5 L28 25 L34 18.5 L41 25 L49 24" stroke="#93c5fd" stroke-width="2"/>
+        <path d="M15 24 L22 20.5 L28 24 L34 19.5 L41 24 L49 24" stroke="#ffffff" stroke-width="1.1"/>
+        <path d="M31 22 L27 32 L33 36 L28 46 L33 50 L30 58" stroke="#fbbf24" stroke-width="5" stroke-opacity="0.4"/>
+        <path d="M33 36 L40 40 M28 46 L21 50" stroke="#fbbf24" stroke-width="3" stroke-opacity="0.4"/>
+        <path d="M31 22 L27 32 L33 36 L28 46 L33 50 L30 58" stroke="#fde047" stroke-width="2.6"/>
+        <path d="M33 36 L40 40 M28 46 L21 50" stroke="#fde047" stroke-width="1.6"/>
+        <path d="M31 22 L27 32 L33 36 L28 46 L33 50 L30 58" stroke="#ffffff" stroke-width="1.1"/>
+      </g>
+      <circle cx="13" cy="24" r="5.4" fill="#a3e635" fill-opacity="0.4"/><circle cx="51" cy="24" r="5.4" fill="#a3e635" fill-opacity="0.4"/>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#fbbf24,#fde047)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><clipPath id="e5cm"><circle cx="32" cy="32" r="25.2"/></clipPath></defs><circle cx="32" cy="32" r="26" fill="none" stroke="#60a5fa" stroke-width="4"/><g clip-path="url(#e5cm)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M15 24 L22 19.5 L28 25 L34 18.5 L41 25 L49 24" stroke="#93c5fd" stroke-width="3"/><path d="M31 22 L27 32 L33 36 L28 46 L33 50 L30 58" stroke="#fde047" stroke-width="3.6"/></g></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E6 TRIPLE BRAID -->
+<div class="card"><span class="tag">E6</span><h2>Triple Braid — three-phase arc</h2>
+<p class="why">Three clearly separated filaments — blue, purple, lime — braiding across the gap like three-phase power. The electricians in the room will catch the reference; nobody else needs to.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e6g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#334155"/><stop offset="1" stop-color="#64748b"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="26" fill="none" stroke="url(#e6g)" stroke-width="3"/>
+      <circle cx="12" cy="32" r="3.6" fill="#facc15"/><circle cx="52" cy="32" r="3.6" fill="#facc15"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round" stroke-width="2.4">
+        <path d="M14 32 L21 26 L28 33 L35 25.5 L42 33 L50 32" stroke="#2563eb"/>
+        <path d="M14 32 L21 38 L28 31.5 L35 38.5 L42 31.5 L50 32" stroke="#9333ea"/>
+        <path d="M14 32 L22 30 L29 35.5 L36 29 L43 34 L50 32" stroke="#84cc16"/>
+      </g>
+      <path d="M14 32 L21 28.5 L28 32.5 L35 28 L42 32 L50 32" stroke="#ffffff" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#2563eb,#9333ea,#84cc16)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="3"/>
+      <circle cx="12" cy="32" r="3.6" fill="#fde047"/><circle cx="52" cy="32" r="3.6" fill="#fde047"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round" stroke-width="2.4">
+        <path d="M14 32 L21 26 L28 33 L35 25.5 L42 33 L50 32" stroke="#60a5fa"/>
+        <path d="M14 32 L21 38 L28 31.5 L35 38.5 L42 31.5 L50 32" stroke="#c084fc"/>
+        <path d="M14 32 L22 30 L29 35.5 L36 29 L43 34 L50 32" stroke="#a3e635"/>
+      </g>
+      <path d="M14 32 L21 28.5 L28 32.5 L35 28 L42 32 L50 32" stroke="#ffffff" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#60a5fa,#c084fc,#a3e635)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="#94a3b8" stroke-width="4"/><circle cx="12" cy="32" r="4.4" fill="#fde047"/><circle cx="52" cy="32" r="4.4" fill="#fde047"/><g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"><path d="M14 32 L21 26 L28 33 L35 25.5 L42 33 L50 32" stroke="#60a5fa"/><path d="M14 32 L21 38 L28 31.5 L35 38.5 L42 31.5 L50 32" stroke="#c084fc"/></g></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E7 BROKEN RING -->
+<div class="card"><span class="tag">E7</span><h2>Broken Ring — the arc completes the cycle</h2>
+<p class="why">The conceptual one: the ring itself is the circuit, broken open on the right — and the arc jumps the gap to close it. "The cycle completes through the work." Also quietly forms a C.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e7g" x1="0" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>
+      <path d="M54 19 A26 26 0 1 0 54 45" fill="none" stroke="url(#e7g)" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="54" cy="19" r="3" fill="#334155"/><circle cx="54" cy="45" r="3" fill="#334155"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M54 21 L49 26 L55 31 L49 37 L54 43" stroke="#84cc16" stroke-width="4.6" stroke-opacity="0.32"/>
+        <path d="M54 21 L49 26 L55 31 L49 37 L54 43" stroke="#65a30d" stroke-width="2.2"/>
+        <path d="M54 21 L50.5 26.5 L54.5 31 L50.5 36.5 L54 43" stroke="#ffffff" stroke-width="1.1"/>
+      </g>
+      <circle cx="54" cy="19" r="5.2" fill="#facc15" fill-opacity="0.35"/><circle cx="54" cy="45" r="5.2" fill="#facc15" fill-opacity="0.35"/>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#2563eb,#65a30d)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e7gd" x1="0" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+      <path d="M54 19 A26 26 0 1 0 54 45" fill="none" stroke="url(#e7gd)" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="54" cy="19" r="3" fill="#e2e8f0"/><circle cx="54" cy="45" r="3" fill="#e2e8f0"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M54 21 L49 26 L55 31 L49 37 L54 43" stroke="#a3e635" stroke-width="4.6" stroke-opacity="0.42"/>
+        <path d="M54 21 L49 26 L55 31 L49 37 L54 43" stroke="#d9f99d" stroke-width="2.2"/>
+        <path d="M54 21 L50.5 26.5 L54.5 31 L50.5 36.5 L54 43" stroke="#ffffff" stroke-width="1.1"/>
+      </g>
+      <circle cx="54" cy="19" r="5.2" fill="#fde047" fill-opacity="0.4"/><circle cx="54" cy="45" r="5.2" fill="#fde047" fill-opacity="0.4"/>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#60a5fa,#a3e635)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><path d="M54 19 A26 26 0 1 0 54 45" fill="none" stroke="#60a5fa" stroke-width="6" stroke-linecap="round"/><path d="M54 21 L49 26 L55 31 L49 37 L54 43" stroke="#a3e635" stroke-width="3.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+<!-- E8 APP TILE -->
+<div class="card"><span class="tag">E8</span><h2>App Tile — arc gap in a squircle</h2>
+<p class="why">E3's contained arc packaged as the app icon it will eventually need to be anyway: gradient squircle, terminals at the edges, arc across the middle. If a variant ships, this is its phone-icon form.</p>
+<div class="row">
+  <div class="swatch lightbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e8g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d4ed8"/><stop offset="1" stop-color="#6b21a8"/></linearGradient></defs>
+      <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#e8g)"/>
+      <circle cx="13" cy="32" r="2.8" fill="#cbd5e1"/><circle cx="51" cy="32" r="2.8" fill="#cbd5e1"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M15 32 L21 26.5 L27 33 L33 25.5 L40 33 L46 27.5 L49 32" stroke="#67e8f9" stroke-width="4.6" stroke-opacity="0.4"/>
+        <path d="M15 32 L21 26.5 L27 33 L33 25.5 L40 33 L46 27.5 L49 32" stroke="#a5f3fc" stroke-width="2.2"/>
+        <path d="M15 32 L21 28.5 L27 32.5 L33 27.5 L40 32.5 L46 29.5 L49 32" stroke="#ffffff" stroke-width="1.2"/>
+        <path d="M27 33 L24 40 M40 33 L43 40" stroke="#a3e635" stroke-width="1.6"/>
+      </g>
+      <circle cx="13" cy="32" r="5.2" fill="#fde047" fill-opacity="0.35"/><circle cx="51" cy="32" r="5.2" fill="#fde047" fill-opacity="0.35"/>
+    </svg>
+    <div class="wm" style="color:#1e293b">Service<span class="gtext" style="background-image:linear-gradient(120deg,#1d4ed8,#6b21a8)">Cycle</span></div>
+  </div>
+  <div class="swatch darkbg">
+    <svg width="58" height="58" viewBox="0 0 64 64"><defs><linearGradient id="e8gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+      <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#e8gd)"/>
+      <circle cx="13" cy="32" r="2.8" fill="#e2e8f0"/><circle cx="51" cy="32" r="2.8" fill="#e2e8f0"/>
+      <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M15 32 L21 26.5 L27 33 L33 25.5 L40 33 L46 27.5 L49 32" stroke="#a5f3fc" stroke-width="4.6" stroke-opacity="0.45"/>
+        <path d="M15 32 L21 26.5 L27 33 L33 25.5 L40 33 L46 27.5 L49 32" stroke="#cffafe" stroke-width="2.2"/>
+        <path d="M15 32 L21 28.5 L27 32.5 L33 27.5 L40 32.5 L46 29.5 L49 32" stroke="#ffffff" stroke-width="1.2"/>
+        <path d="M27 33 L24 40 M40 33 L43 40" stroke="#bef264" stroke-width="1.6"/>
+      </g>
+      <circle cx="13" cy="32" r="5.2" fill="#fde047" fill-opacity="0.4"/><circle cx="51" cy="32" r="5.2" fill="#fde047" fill-opacity="0.4"/>
+    </svg>
+    <div class="wm" style="color:#f1f5f9">Service<span class="gtext" style="background-image:linear-gradient(120deg,#93c5fd,#c4b5fd)">Cycle</span></div>
+  </div>
+  <div class="swatch side"><div class="mini">
+    <svg width="26" height="26" viewBox="0 0 64 64"><defs><linearGradient id="e8gm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><rect x="4" y="4" width="56" height="56" rx="15" fill="url(#e8gm)"/><path d="M15 32 L21 26.5 L27 33 L33 25.5 L40 33 L46 27.5 L49 32" stroke="#fff" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="32" r="3.4" fill="#fde047"/><circle cx="51" cy="32" r="3.4" fill="#fde047"/></svg>
+    <span>ServiceCycle</span></div><small>Maintenance Compliance</small>
+  </div>
+</div></div>
+
+</div>
+<p style="color:#64748b;font-size:12.5px;margin-top:26px">All eight share the same arc DNA, so the final mark can borrow across them — e.g. E7's broken ring with E6's three-phase filaments, or E3's contained orb using E4's single hero arc. Name a winner (or a combination) and I'll finalize it: tuned full-size mark, small-use variant, favicon, PWA icon, sidebar, login, landing, and PDF headers.</p>
+</body>
+</html>
