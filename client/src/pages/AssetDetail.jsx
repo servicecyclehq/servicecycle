@@ -35,6 +35,8 @@ import PhotoInspectCard from '../components/PhotoInspectCard';
 import PowerPathCard from '../components/PowerPathCard';
 import OutageConsolidationCard from '../components/OutageConsolidationCard';
 import QuoteRequestButton from '../components/QuoteRequestButton';
+import AssetLotoCard from '../components/AssetLotoCard';
+import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -938,6 +940,17 @@ export default function AssetDetail() {
             EMERGENCY mode when driver=down_now: rep phone displayed large
             with CALL NOW copy. PENDING BROTHER VALIDATION on question copy. */}
         <QuoteRequestButton asset={asset} />
+
+        {/* ── LOTO Procedures ───────────────────────────────────────────────── */}
+        {/* Structured lockout/tagout procedures (energy sources + steps).
+            Active procedure shown prominently; drafts editable; archived
+            collapsed. OSHA 29 CFR 1910.147 compliance anchor. */}
+        <AssetLotoCard asset={asset} canWrite={canWrite} />
+
+        {/* ── Documents & Procedures ────────────────────────────────────────── */}
+        {/* OEM manuals, wiring diagrams, test reports, warranty docs, and
+            PDF backups of LOTO procedures. Supports file upload and URL links. */}
+        <AssetDocumentsCard asset={asset} canWrite={canWrite} />
 
         {/* ── Work Orders ───────────────────────────────────────────────────── */}
         <div className="card mb-16">

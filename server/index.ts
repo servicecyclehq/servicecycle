@@ -216,6 +216,7 @@ const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
 const quoteRequestRoutes  = require('./routes/quoteRequests');
 const outagePlanRoutes    = require('./routes/outagePlan');
+const lotoRoutes          = require('./routes/loto');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
 const { requestId }                      = require('./middleware/requestId'); // v0.37.1 W5 MT-129
 const openapiRoute                       = require('./routes/openapi');        // v0.37.1 W5 MT-128
@@ -1220,6 +1221,9 @@ app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 
 // ── Outage Consolidation Planner — clustered task scheduling ─────────────────
 app.use('/api/assets/:assetId/outage-plan', authenticateToken, outagePlanRoutes);
+
+// ── LOTO — Lockout/Tagout procedures (asset-scoped) ──────────────────────────
+app.use('/api/assets/:assetId/loto', authenticateToken, lotoRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {

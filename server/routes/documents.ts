@@ -297,6 +297,118 @@ router.get('/:documentId/url', async (req, res) => {
   }
 });
 
+// ── GET /api/documents/asset/:assetId ───────────────────────────────────────
+// Returns all documents attached to a given asset, grouped by docType.
+// Includes external-URL-only docs (filePath = '__external__').
+router.get('/asset/:assetId', async (req, res) => {
+  try {
+    const { assetId } = req.params;
+    const accountId   = req.user.accountId;
+
+    // Verify asset ownership
+    const asset = await prisma.asset.findFirst({
+      where:  { id: assetId, accountId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const docs = await prisma.document.findMany({
+      where:   { assetId, accountId },
+      include: { uploader: { select: { id: true, name: true } } },
+      orderBy: [{ docType: 'asc' }, { uploadedAt: 'desc' }],
+    });
+
+    return res.json({ success: true, data: docs });
+  } catch (err) {
+    console.error('[documents GET /asset/:assetId]', err);
+    return res.status(500).json({ success: false, error: 'Failed to list documents' });
+  }
+});
+
+// ── POST /api/documents/link ──────────────────────────────────────────────────
+// Create a document record that is a URL link only (no upload).
+// Body: { assetId?, workOrderId?, url, filename, docType? }
+router.post('/link', requireManager, async (req, res) => {
+  try {
+    const { accountId, id: userId } = req.user;
+    const { url, filename, docType, assetId, workOrderId, notes } = req.body;
+
+    if (!url?.trim())      return res.status(400).json({ success: false, error: 'url required' });
+    if (!filename?.trim()) return res.status(400).json({ success: false, error: 'filename required' });
+
+    // Basic URL sanity check — must be http(s)
+    try { const u = new URL(url); if (!['http:', 'https:'].includes(u.protocol)) throw new Error(); }
+    catch { return res.status(400).json({ success: false, error: 'url must be a valid http(s) URL' }); }
+
+    if (assetId) {
+      const owns = await prisma.asset.findFirst({ where: { id: assetId, accountId }, select: { id: true } });
+      if (!owns) return res.status(404).json({ success: false, error: 'Asset not found' });
+    }
+
+    const doc = await prisma.document.create({
+      data: {
+        accountId,
+        assetId:     assetId     || null,
+        workOrderId: workOrderId || null,
+        uploadedBy:  userId,
+        filename:    filename.trim(),
+        fileType:    'text/uri-list',
+        filePath:    '__external__',
+        encrypted:   false,
+        externalUrl: url.trim(),
+        docType:     docType || null,
+      },
+    });
+
+    return res.status(201).json({ success: true, data: { id: doc.id, filename: doc.filename } });
+  } catch (err) {
+    console.error('[documents POST /link]', err);
+    return res.status(500).json({ success: false, error: 'Failed to save link' });
+  }
+});
+
+// ── PATCH /api/documents/:documentId ─────────────────────────────────────────
+// Update docType or filename (renaming) of an existing document.
+router.patch('/:documentId', requireManager, async (req, res) => {
+  try {
+    const { docType, filename } = req.body;
+    const doc = await prisma.document.findFirst({
+      where:  { id: req.params.documentId, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const updated = await prisma.document.update({
+      where: { id: req.params.documentId },
+      data:  {
+        ...(docType  !== undefined && { docType  }),
+        ...(filename !== undefined && { filename }),
+      },
+    });
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('[documents PATCH /:id]', err);
+    return res.status(500).json({ success: false, error: 'Failed to update document' });
+  }
+});
+
+// ── DELETE /api/documents/:documentId ────────────────────────────────────────
+router.delete('/:documentId', requireManager, async (req, res) => {
+  try {
+    const doc = await prisma.document.findFirst({
+      where:  { id: req.params.documentId, accountId: req.user.accountId },
+      select: { id: true, filePath: true },
+    });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    await prisma.document.delete({ where: { id: req.params.documentId } });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[documents DELETE /:id]', err);
+    return res.status(500).json({ success: false, error: 'Failed to delete document' });
+  }
+});
+
 // ── POST /api/documents/upload (S7) ──────────────────────────────────────────
 // Generic document upload endpoint. Validation:
 //   - allowed types: PDF, Word (.doc/.docx), any image/* (enforced in
@@ -328,7 +440,7 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
 
     const { accountId, id: userId } = req.user;
     let { assetId } = req.body || {};
-    const { workOrderId } = req.body || {};
+    const { workOrderId, docType } = req.body || {};
 
     // If an assetId was given, verify it belongs to this account before
     // letting the upload pin to it (defence-in-depth — Document.accountId is
@@ -377,6 +489,7 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
         fileType:    req.file.mimetype,
         filePath:    '__pending__',               // non-empty placeholder; updated after storage write
         encrypted:   false,
+        docType:     docType || null,
       },
       select: { id: true },
     });

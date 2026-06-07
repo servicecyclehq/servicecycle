@@ -970,6 +970,143 @@ async function _seedAccount() {
     createdAt: addDays(now, -95),
   } });
 
+  // ── LOTO Procedures ───────────────────────────────────────────────────────
+  // One active procedure on T-1 (most critical asset), one draft on GEN-1.
+
+  const lotoT1 = await prisma.lotoProc.create({ data: {
+    accountId: account.id,
+    assetId:   assets['T-1'].id,
+    title:     '15kV Main Transformer T-1 Lockout Procedure Rev 1',
+    status:    'active',
+    version:   1,
+    createdById:  admin.id,
+    approvedById: manager.id,
+    approvedAt:   addDays(now, -45),
+    notes: 'Applies to both primary (13.8kV) and secondary (480V) sides. Minimum 2-person crew required.',
+    energySources: { create: [
+      {
+        accountId: account.id, sortOrder: 0,
+        energyType: 'electrical',
+        description: '13.8kV utility feed from Riverside Plant main substation, breaker CB-101',
+        isolationPoint: 'CB-101 in main substation switchgear lineup',
+        isolationMethod: 'Open CB-101 using remote racking tool. Apply LOTO hasp to breaker and insert personal lock. Hang danger tag.',
+        verificationMethod: 'Test primary HV terminals with hotstick-mounted voltage indicator. Confirm absence of voltage reading.',
+      },
+      {
+        accountId: account.id, sortOrder: 1,
+        energyType: 'electrical',
+        description: '480V secondary output, bus tied to MCC-1 via T-1 secondary breaker CB-201',
+        isolationPoint: 'CB-201 in MCC-1 main switchboard',
+        isolationMethod: 'Open CB-201. Apply hasp and personal lock. Verify MCC-1 de-energised downstream.',
+        verificationMethod: 'Test 480V secondary terminals with Fluke T6 or equivalent. Confirm 0V at all phases.',
+      },
+      {
+        accountId: account.id, sortOrder: 2,
+        energyType: 'thermal',
+        description: 'Residual heat in transformer core and oil — core temperature may remain elevated for 2+ hours after de-energisation',
+        isolationPoint: 'N/A — time-based isolation',
+        isolationMethod: 'Allow minimum 2-hour cool-down after de-energisation before opening inspection covers.',
+        verificationMethod: 'Confirm oil temperature gauge reads below 40°C before opening access panels.',
+      },
+    ]},
+    steps: { create: [
+      { accountId: account.id, sortOrder: 0, category: 'shutdown', instruction: 'Notify operations supervisor and affected downstream loads. Obtain written permit to proceed.' },
+      { accountId: account.id, sortOrder: 1, category: 'shutdown', instruction: 'Transfer any downstream critical loads (ATS-1, UPS-1) to alternate source and confirm transfer complete.' },
+      { accountId: account.id, sortOrder: 2, category: 'isolation', instruction: 'Open primary breaker CB-101 at main substation using remote racking tool. Verify open indication on SCADA.' },
+      { accountId: account.id, sortOrder: 3, category: 'isolation', instruction: 'Open secondary breaker CB-201 at MCC-1 main switchboard.' },
+      { accountId: account.id, sortOrder: 4, category: 'lockout', instruction: 'Apply LOTO hasp to CB-101. Each crew member inserts personal lock. Attach Danger tag with name, date, and permit number.' },
+      { accountId: account.id, sortOrder: 5, category: 'lockout', instruction: 'Apply LOTO hasp to CB-201. Each crew member inserts personal lock.' },
+      { accountId: account.id, sortOrder: 6, category: 'verify', instruction: 'Test primary HV terminals with hotstick-mounted voltage indicator. Confirm absence of voltage on all phases.', requiresVerification: true },
+      { accountId: account.id, sortOrder: 7, category: 'verify', instruction: 'Test 480V secondary terminals at T-1 with Fluke T6. Confirm 0V on all phases.', requiresVerification: true },
+      { accountId: account.id, sortOrder: 8, category: 'verify', instruction: 'Attempt to re-close CB-101 via normal operating mechanism to confirm lock prevents operation (do not force).', requiresVerification: true },
+      { accountId: account.id, sortOrder: 9, category: 'verify', instruction: 'Confirm oil temperature gauge reads below 40°C before opening inspection covers.' },
+      { accountId: account.id, sortOrder: 10, category: 'lockout', instruction: 'Post "Equipment Under Maintenance" sign on transformer pad and install physical barrier tape.' },
+    ]},
+  }});
+
+  // Draft procedure on GEN-1
+  await prisma.lotoProc.create({ data: {
+    accountId: account.id,
+    assetId:   assets['GEN-1'].id,
+    title:     '1500kW Emergency Generator GEN-1 Lockout Procedure Draft',
+    status:    'draft',
+    version:   1,
+    createdById: manager.id,
+    notes: 'DRAFT — pending review. Mechanical (fuel/cooling) sources need verification with OEM service team.',
+    energySources: { create: [
+      {
+        accountId: account.id, sortOrder: 0,
+        energyType: 'electrical',
+        description: '480V generator output breaker GB-1 to emergency bus',
+        isolationPoint: 'GB-1 in emergency switchboard E-SWG-1',
+        isolationMethod: 'Open GB-1. Apply LOTO hasp and personal locks.',
+        verificationMethod: 'Test output terminals with Fluke T6. Confirm 0V.',
+      },
+      {
+        accountId: account.id, sortOrder: 1,
+        energyType: 'mechanical',
+        description: 'Engine starter motor and battery bank — engine can be inadvertently cranked',
+        isolationPoint: 'Battery disconnect switch on generator skid (red handle, left side)',
+        isolationMethod: 'Open battery disconnect switch. Apply lock.',
+        verificationMethod: 'Attempt to start engine via normal start button — confirm no crank.',
+      },
+      {
+        accountId: account.id, sortOrder: 2,
+        energyType: 'thermal',
+        description: 'Engine coolant and exhaust — residual heat after shutdown',
+        isolationPoint: 'N/A — time-based',
+        isolationMethod: 'Allow minimum 30-minute cool-down after engine shutdown.',
+        verificationMethod: 'Confirm exhaust temp gauge below 60°C before contacting engine block.',
+      },
+    ]},
+    steps: { create: [
+      { accountId: account.id, sortOrder: 0, category: 'shutdown', instruction: 'Confirm generator is not carrying load. If on automatic start, disable auto-start mode at controller.' },
+      { accountId: account.id, sortOrder: 1, category: 'shutdown', instruction: 'Perform normal engine shutdown via generator controller. Confirm engine stops and RPM reads 0.' },
+      { accountId: account.id, sortOrder: 2, category: 'isolation', instruction: 'Open output breaker GB-1 at emergency switchboard E-SWG-1.' },
+      { accountId: account.id, sortOrder: 3, category: 'isolation', instruction: 'Open battery disconnect switch on generator skid (red handle, left side).' },
+      { accountId: account.id, sortOrder: 4, category: 'lockout', instruction: 'Apply LOTO hasp to GB-1 and battery disconnect. Each crew member inserts personal lock.' },
+      { accountId: account.id, sortOrder: 5, category: 'verify', instruction: 'Test output terminals with Fluke T6. Confirm 0V on all phases.', requiresVerification: true },
+      { accountId: account.id, sortOrder: 6, category: 'verify', instruction: 'Attempt normal start via controller to confirm auto-start and manual start are both disabled.', requiresVerification: true },
+    ]},
+  }});
+
+  // ── Documents — OEM manual URL + test report ──────────────────────────────
+  await prisma.document.create({ data: {
+    accountId:   account.id,
+    assetId:     assets['T-1'].id,
+    uploadedBy:  admin.id,
+    filename:    'Eaton Cooper Power Transformer O&M Manual (Type VFI)',
+    fileType:    'text/uri-list',
+    filePath:    '__external__',
+    encrypted:   false,
+    docType:     'oem_manual',
+    externalUrl: 'https://www.cooperpowerseriesservice.com/documents/manual-vfi',
+  }});
+
+  await prisma.document.create({ data: {
+    accountId:   account.id,
+    assetId:     assets['T-1'].id,
+    uploadedBy:  admin.id,
+    filename:    'T-1 Wiring Diagram — Primary and Secondary One-Line',
+    fileType:    'text/uri-list',
+    filePath:    '__external__',
+    encrypted:   false,
+    docType:     'wiring_diagram',
+    externalUrl: 'https://internal.example-electrical.com/docs/t1-oneline',
+  }});
+
+  await prisma.document.create({ data: {
+    accountId:   account.id,
+    assetId:     assets['GEN-1'].id,
+    uploadedBy:  manager.id,
+    filename:    'Caterpillar C175 Generator Set Operation and Maintenance Manual',
+    fileType:    'text/uri-list',
+    filePath:    '__external__',
+    encrypted:   false,
+    docType:     'oem_manual',
+    externalUrl: 'https://www.cat.com/en_US/support/documentation/c175-generator-set.html',
+  }});
+
   // ── Activity log — so the Activity page isn't empty on first load ─────────
   await writeActivityLog({
     assetId: assets['T-1'].id, userId: admin.id, accountId: account.id,
@@ -1002,6 +1139,7 @@ async function _seedAccount() {
       auditVisits: 1, auditRecommendations: 2,
       assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4,
       activityLogs: 3,
+      lotoProcs: 2, documents: 3,
     },
     dashboardStory: {
       overdue: 5, regulatoryBreachTier: 1,

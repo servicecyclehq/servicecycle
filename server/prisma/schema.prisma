@@ -170,6 +170,39 @@ enum IngestionStatus {
   failed
 }
 
+// Document type classification — surfaces documents grouped by purpose on the
+// asset detail page. oem_manual + wiring_diagram cover vendor docs; loto_pdf
+// covers a scanned/printed LOTO procedure (vs. the structured LotoProc model);
+// the rest cover the usual facilities-compliance paper trail.
+enum DocType {
+  oem_manual             // Manufacturer operation + maintenance manual
+  wiring_diagram         // One-lines, schematics, as-built drawings
+  loto_pdf               // Scanned/printed LOTO procedure (PDF backup)
+  test_report            // NETA / contractor test report
+  inspection_report      // Insurance or regulatory inspection report
+  commissioning_report   // Initial energisation / SAT report
+  warranty               // Warranty certificate or service contract
+  other
+}
+
+// Lockout/Tagout procedure lifecycle.
+enum LotoStatus {
+  draft    // Being authored; not yet in use
+  active   // Current approved procedure for this asset
+  archived // Superseded by a newer revision
+}
+
+// OSHA 29 CFR 1910.147 energy source categories that require isolation.
+enum EnergyType {
+  electrical
+  pneumatic
+  hydraulic
+  mechanical
+  thermal
+  chemical
+  gravity
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model Account {
@@ -240,6 +273,9 @@ model Account {
   notificationLogs       NotificationLog[]
   complianceSnapshots    ComplianceSnapshot[]
   quoteRequests          QuoteRequest[]
+  lotoProcs              LotoProc[]
+  lotoEnergySources      LotoEnergySource[]
+  lotoSteps              LotoStep[]
 
   @@map("accounts")
 }
@@ -308,6 +344,8 @@ model User {
   ownedAssets              Asset[]                 @relation("AssetOwner")
   assignedRecommendations  AuditRecommendation[]   @relation("RecAssignee")
   quoteRequests            QuoteRequest[]          @relation("QuoteRequestCreator")
+  approvedLotoProcs        LotoProc[]              @relation("LotoProcApprover")
+  createdLotoProcs         LotoProc[]              @relation("LotoProcCreator")
 
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
@@ -598,6 +636,7 @@ model Asset {
   activityLogs      ActivityLog[]
   customFieldValues CustomFieldValue[]
   quoteRequests     QuoteRequest[]
+  lotoProcs         LotoProc[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -1123,12 +1162,19 @@ model Document {
   workOrderId String?
   accountId   String
   filename    String
-  filePath    String // storage key (path on disk or S3 object key)
+  filePath    String   // storage key (path on disk or S3 object key); '__external__' for URL-only docs
   fileType    String
   encrypted   Boolean  @default(false) // AES-256-GCM encrypted at upload time
   version     Int      @default(1)
   uploadedBy  String
   uploadedAt  DateTime @default(now())
+  // Document classification — drives the grouped display on asset detail.
+  // Null means pre-classification (legacy rows): shown under "Other".
+  docType     DocType?
+  // External URL: for OEM portals, shared drives, or vendor doc links where
+  // uploading a copy isn't practical. When set, filePath = '__external__' and
+  // the serve route redirects instead of streaming bytes.
+  externalUrl String?
 
   asset      Asset?             @relation(fields: [assetId], references: [id])
   workOrder  WorkOrder?         @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
@@ -1687,4 +1733,104 @@ model QuoteRequest {
   @@index([assetId])
   @@index([requestedById])
   @@map("quote_requests")
+}
+
+// ─── LOTO — Lockout / Tagout Procedures ──────────────────────────────────────
+//
+// OSHA 29 CFR 1910.147 requires a written, equipment-specific LOTO procedure
+// for every piece of equipment with more than one energy source or whose
+// complexity justifies a step-by-step record. This model stores the structured
+// procedure directly in the app — energy sources and isolation steps are first-
+// class rows, not a PDF upload. This enables:
+//   - auditable version history (each revision creates a new LotoProc row)
+//   - inline display on the asset detail page without opening a PDF
+//   - inclusion in the QuoteRequest dossier ("active LOTO procedure: yes/no")
+//   - future: digital sign-off / performed-by tracking on work orders
+//
+// A PDF backup (scanned procedure) can still be attached via Document with
+// docType = loto_pdf. Both can coexist on the same asset.
+//
+// Lifecycle: draft → active → archived
+//   Activating a procedure auto-archives any previously active one for this asset.
+
+model LotoProc {
+  id           String     @id @default(uuid())
+  accountId    String
+  assetId      String
+  // Human-readable title: e.g. "480V MCC-1 Lockout Procedure Rev 3"
+  title        String
+  status       LotoStatus @default(draft)
+  // Monotonically incrementing revision counter. Server increments on each PUT.
+  version      Int        @default(1)
+  // Approval fields — the person who reviewed and activated this revision.
+  // Nullable: draft procedures don't need approval; field teams can still read them.
+  approvedById String?
+  approvedAt   DateTime?
+  // Freeform notes: reason for revision, scope limitations, special conditions.
+  notes        String?
+  createdById  String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  account       Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  asset         Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  approvedBy    User?              @relation("LotoProcApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  createdBy     User               @relation("LotoProcCreator", fields: [createdById], references: [id])
+  energySources LotoEnergySource[]
+  steps         LotoStep[]
+
+  @@index([accountId])
+  @@index([assetId])
+  @@index([accountId, status])
+  @@map("loto_procs")
+}
+
+// One row per energy source that must be isolated before work begins.
+// Ordering controlled by sortOrder (0-based). OSHA expects all energy sources
+// enumerated — the procedure is incomplete until every source is listed.
+model LotoEnergySource {
+  id                 String     @id @default(uuid())
+  lotoId             String
+  accountId          String
+  energyType         EnergyType
+  // Human description: e.g. "480V feed from MCC-1, breaker 14"
+  description        String
+  // Physical location of the isolation device
+  isolationPoint     String
+  // How to isolate: e.g. "Open breaker 14 and apply LOTO hasp + personal lock"
+  isolationMethod    String
+  // How to verify zero-energy state: e.g. "Test load terminals with fluke T6 — confirm 0V"
+  verificationMethod String
+  sortOrder          Int        @default(0)
+
+  loto    LotoProc @relation(fields: [lotoId], references: [id], onDelete: Cascade)
+  account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([lotoId])
+  @@index([accountId])
+  @@map("loto_energy_sources")
+}
+
+// Ordered procedural steps: shutdown → isolation → lockout → verify → release.
+// Category drives the colour-coding in the step list (red for lockout, green
+// for verify, etc.) and lets auditors quickly scan the procedure structure.
+model LotoStep {
+  id                   String  @id @default(uuid())
+  lotoId               String
+  accountId            String
+  sortOrder            Int
+  instruction          String
+  // shutdown | isolation | lockout | verify | restore | release
+  // Stored as String so we can add categories without a migration.
+  category             String  @default("lockout")
+  // When true, the field worker must record a physical reading or tick a box
+  // before proceeding. UI renders a checkbox-style row for these steps.
+  requiresVerification Boolean @default(false)
+
+  loto    LotoProc @relation(fields: [lotoId], references: [id], onDelete: Cascade)
+  account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([lotoId])
+  @@index([accountId])
+  @@map("loto_steps")
 }

@@ -101,6 +101,14 @@ async function buildDossier(assetId: string, accountId: string) {
     s.nextDueDate && new Date(s.nextDueDate) < now
   );
 
+  // Active LOTO procedure — included so the service rep knows whether a formal
+  // isolation procedure exists before quoting service work on this asset.
+  const activeLoto = await prisma.lotoProc.findFirst({
+    where:   { assetId, accountId, status: 'active' },
+    select:  { id: true, title: true, version: true, approvedAt: true,
+                _count: { select: { energySources: true, steps: true } } },
+  });
+
   return {
     assetId:          asset.id,
     name:             assetLabel(asset),
@@ -140,6 +148,14 @@ async function buildDossier(assetId: string, accountId: string) {
       requiresOutage: s.taskDefinition?.requiresOutage ?? false,
       nextDueDate:    s.nextDueDate,
     })),
+    loto: activeLoto ? {
+      id:            activeLoto.id,
+      title:         activeLoto.title,
+      version:       activeLoto.version,
+      approvedAt:    activeLoto.approvedAt,
+      energySourceCount: activeLoto._count.energySources,
+      stepCount:         activeLoto._count.steps,
+    } : null,
     snapshotAt: now.toISOString(),
   };
 }
