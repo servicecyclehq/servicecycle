@@ -1,4 +1,21 @@
-﻿# ServiceCycle â€” New Session Kickoff
+﻿## VERIFY YOU ARE IN THE RIGHT REPO â€” RUN THIS FIRST
+
+Before touching any file, run this and confirm all three lines match:
+
+```powershell
+cd "C:\Users\ddeni\Desktop\ServiceCycle"
+git remote -v          # must show: servicecyclehq/servicecycle
+git config user.email  # must show: servicecyclehq@gmail.com
+git log --oneline -1   # must NOT show any LapseIQ commit messages
+```
+
+**NEVER touch:** `C:\Users\ddeni\Desktop\claudedussy\LapseIQ`
+That is a completely separate product (LapseIQ) on a different GitHub account (forgerift).
+All PowerShell commands in this session must use `C:\Users\ddeni\Desktop\ServiceCycle` as the
+working directory. If you are unsure which repo you are in, run the check above before proceeding.
+
+---
+# ServiceCycle â€” New Session Kickoff
 
 ## Who you are working with
 Dustin â€” founder of ForgeRift LLC, 14-year renewal management expert, building ServiceCycle as a
