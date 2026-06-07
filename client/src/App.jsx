@@ -109,6 +109,10 @@ const ProfilePage             = lazyWithReload(() => import('./pages/ProfilePage
 const SettingsPage            = lazyWithReload(() => import('./pages/SettingsPage'));
 const ActivityLogPage         = lazyWithReload(() => import('./pages/ActivityLogPage'));
 const ReportsHub              = lazyWithReload(() => import('./pages/ReportsHub'));
+// Per-standard compliance suite (launched from the Reports hub)
+const ComplianceStandardsReport      = lazyWithReload(() => import('./pages/ComplianceStandardsReport'));
+const ComplianceStandardDetailReport = lazyWithReload(() => import('./pages/ComplianceStandardDetailReport'));
+const AuditSnapshotsPage             = lazyWithReload(() => import('./pages/AuditSnapshotsPage'));
 
 const SetupWizardPage         = lazyWithReload(() => import('./pages/SetupWizardPage'));   // (S8) first-run operator wizard
 const PrivacyPage             = lazyWithReload(() => import('./pages/PrivacyPage'));       // (A2) public, mounted outside Layout shell
@@ -271,6 +275,23 @@ function AppRoutes() {
             <Route path="reports" element={
               <RequireRole roles={['admin', 'manager']}>
                 <ReportsHub />
+              </RequireRole>
+            } />
+            {/* Per-standard compliance suite — same admin/manager gate as the
+                hub so a viewer can't deep-link past the hub's role check. */}
+            <Route path="reports/compliance" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <ComplianceStandardsReport />
+              </RequireRole>
+            } />
+            <Route path="reports/compliance/:standardCode" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <ComplianceStandardDetailReport />
+              </RequireRole>
+            } />
+            <Route path="reports/snapshots" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <AuditSnapshotsPage />
               </RequireRole>
             } />
 

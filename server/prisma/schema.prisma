@@ -183,6 +183,7 @@ model Account {
   outboundWebhookDlq     OutboundWebhookDLQ[]
   activityLogs           ActivityLog[]
   notificationLogs       NotificationLog[]
+  complianceSnapshots    ComplianceSnapshot[]
 
   @@map("accounts")
 }
@@ -247,6 +248,7 @@ model User {
   notificationLogs         NotificationLog[]
   acknowledgedRevisions    StandardRevisionAlert[] @relation("RevisionAcknowledger")
   resolvedDeficiencies     Deficiency[]            @relation("DeficiencyResolver")
+  complianceSnapshots      ComplianceSnapshot[]    @relation("SnapshotGenerator")
 
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
@@ -358,13 +360,14 @@ model Site {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  account         Account          @relation(fields: [accountId], references: [id])
-  buildings       Building[]
-  areas           Area[]
-  positions       EquipmentPosition[]
-  assets          Asset[]
-  arcFlashStudies ArcFlashStudy[]
-  blackoutWindows BlackoutWindow[]
+  account             Account              @relation(fields: [accountId], references: [id])
+  buildings           Building[]
+  areas               Area[]
+  positions           EquipmentPosition[]
+  assets              Asset[]
+  arcFlashStudies     ArcFlashStudy[]
+  blackoutWindows     BlackoutWindow[]
+  complianceSnapshots ComplianceSnapshot[]
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -835,6 +838,37 @@ model StandardRevisionAlert {
   @@index([accountId, acknowledgedAt])
   @@index([standardId])
   @@map("standard_revision_alerts")
+}
+
+// ─── Compliance Snapshots ─────────────────────────────────────────────────────
+// Point-in-time audit evidence packs. A snapshot is GENERATED AND STORED —
+// never regenerated from live data — so "show me your compliance posture
+// from March" has a real answer. The PDF's SHA-256 is recorded both here and
+// in an ActivityLog row (action compliance_snapshot_generated), which the
+// per-account tamper-evident hash chain then covers: the snapshot's
+// existence-at-date and integrity are cryptographically provable to an
+// auditor or insurance carrier. The file itself lives in document storage
+// (filePath is the storage key, same convention as Document.filePath).
+
+model ComplianceSnapshot {
+  id            String   @id @default(uuid())
+  accountId     String
+  siteId        String?  // null = all sites in the account
+  standardCode  String?  // e.g. "NFPA 70B"; null = all standards
+  generatedById String?
+  filename      String
+  filePath      String   // storage key (path on disk or S3 object key)
+  sizeBytes     Int?
+  sha256        String   // integrity hash; also in the audit-log row's details
+  stats         Json?    // counts at generation time { assets, schedules, current, overdue, openDeficiencies }
+  createdAt     DateTime @default(now())
+
+  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  site        Site?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  generatedBy User?   @relation("SnapshotGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt(sort: Desc)])
+  @@map("compliance_snapshots")
 }
 
 // ─── Documents ────────────────────────────────────────────────────────────────

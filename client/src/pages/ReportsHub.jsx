@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReportsHub.jsx — ServiceCycle compliance reports hub ("coming soon" state).
+// ReportsHub.jsx — ServiceCycle compliance reports hub.
 //
 // The contract-renewal report grid was removed in the ServiceCycle conversion.
-// This hub renders the planned compliance report suite as disabled cards
-// (NFPA 70B Compliance Rate by Site, Overdue Maintenance by Severity, Audit
-// Evidence Pack) plus one ACTIVE card that downloads the asset register via
-// GET /api/export/xlsx?view=assets.
+// This hub renders the compliance report suite: ACTIVE cards either navigate
+// to an in-app report route (`to`: Compliance by Standard, Audit Evidence
+// Snapshots) or download an export (`exportView`: asset register via
+// GET /api/export/xlsx?view=assets). Remaining planned reports show as
+// disabled cards.
 //
 // The registry (client/src/tables/reportsRegistry.js) is the single source of
 // truth for the cards. When a planned report ships, flip `planned: false` and
@@ -13,7 +14,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react';
-import { Download } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, Download } from 'lucide-react';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { downloadAuthedFile } from '../api/download';
 import Toast from '../components/Toast';
@@ -97,8 +99,17 @@ function ReportCard({ report, onActivate, busy }) {
             gap: 4,
             fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)',
           }}>
-            <Download size={14} />
-            {busy ? 'Preparing download…' : 'Download XLSX'}
+            {report.to ? (
+              <>
+                Open report
+                <ArrowRight size={14} />
+              </>
+            ) : (
+              <>
+                <Download size={14} />
+                {busy ? 'Preparing download…' : 'Download XLSX'}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -108,10 +119,16 @@ function ReportCard({ report, onActivate, busy }) {
 
 export default function ReportsHub() {
   useDocumentTitle('Reports');
+  const navigate = useNavigate();
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState(null);
 
   async function handleActivate(report) {
+    // In-app report routes navigate; export cards download.
+    if (report.to) {
+      navigate(report.to);
+      return;
+    }
     if (!report.exportView || exporting) return;
     setExporting(true);
     setToast({ title: 'Preparing export…', message: 'Building your file — this may take a moment.', variant: 'info', duration: 5000 });
@@ -132,7 +149,7 @@ export default function ReportsHub() {
         <div>
           <h1 className="page-title">Reports</h1>
           <div className="page-subtitle">
-            The compliance report suite is on the way. Until it ships, you can export the asset register below.
+            Per-standard compliance reporting, audit evidence snapshots, and data exports.
           </div>
         </div>
       </div>
@@ -149,9 +166,10 @@ export default function ReportsHub() {
             borderLeft: '3px solid var(--color-primary)',
           }}
         >
-          <strong style={{ color: 'var(--color-text)' }}>Coming soon.</strong>{' '}
-          Compliance reports are planned for an upcoming release — NFPA 70B compliance rate by site,
-          overdue maintenance by severity, and an audit evidence pack for insurance and OSHA documentation.
+          <strong style={{ color: 'var(--color-text)' }}>What's here.</strong>{' '}
+          Compliance by Standard rolls maintenance status up per governing standard with a drill-down
+          evidence table; Audit Evidence Snapshots produce immutable, hash-anchored PDFs for insurers and
+          AHJs. Overdue maintenance by severity is still planned.
         </div>
 
         <div style={{

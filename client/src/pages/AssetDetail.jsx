@@ -2,9 +2,12 @@
 // AssetDetail.jsx — single-asset compliance hub (ServiceCycle Assets v1).
 //
 // GET /api/assets/:id → asset with hierarchy context, maintenance schedules
-// (incl. task definitions), latest work orders, open deficiencies, recent lab
-// samples, documents, and customFieldValues (with definitions). Sections
-// below mirror that payload; the activity feed comes from
+// (incl. task definitions + their governing standard {code, edition}; null →
+// account-defined custom task), latest work orders, open deficiencies, recent
+// lab samples, documents, and customFieldValues (with definitions). Sections
+// below mirror that payload; the schedules card groups rows per standard with
+// a compliance badge and a link into /reports/compliance/:standardCode; the
+// activity feed comes from
 // GET /api/assets/:id/activity, and the editable custom-field definitions
 // from GET /api/custom-fields (active only).
 //
@@ -19,6 +22,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -78,6 +82,34 @@ function effectiveIntervalMonths(schedule, asset) {
   const td = schedule.taskDefinition || {};
   const months = td[`interval${cond}Months`];
   return { cond, months: months ?? null };
+}
+
+// ── Per-standard schedule grouping ────────────────────────────────────────────
+// Schedules group by taskDefinition.standard ({code, edition}); a null
+// standard means an account-defined custom task. Group collapse state is
+// persisted per browser profile under the servicecycle_ localStorage prefix.
+const ACCOUNT_DEFINED = 'Account-defined';
+const STDGROUPS_KEY = 'servicecycle_asset_stdgroups';
+
+// Client-side schedule status, mirroring the server's compliance vocabulary
+// (current | overdue | unbaselined | inactive).
+function scheduleStatus(s) {
+  if (!s.isActive) return 'inactive';
+  if (!s.nextDueDate) return 'unbaselined';
+  return new Date(s.nextDueDate) < new Date() ? 'overdue' : 'current';
+}
+
+// Group badge: 'N of M current'. Red when anything is overdue, amber when
+// anything is unbaselined, green when every schedule is current.
+function GroupComplianceBadge({ items }) {
+  const statuses = items.map(scheduleStatus);
+  const current = statuses.filter(st => st === 'current').length;
+  const palette = statuses.includes('overdue')
+    ? { color: '#dc2626', bg: '#fef2f2' }
+    : statuses.includes('unbaselined')
+      ? { color: '#d97706', bg: '#fffbeb' }
+      : { color: '#16a34a', bg: '#f0fdf4' };
+  return <MetaChip meta={{ ...palette, label: `${current} of ${items.length} current` }} />;
 }
 
 // Human line for one activity-log row.
@@ -317,10 +349,13 @@ export default function AssetDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const { features } = useAuth();
+  const { user, features } = useAuth();
   // See AssetsList: assets_write with contracts_write fallback until the
   // AuthContext flag catalog is retargeted.
   const canWrite = features.assets_write ?? features.contracts_write;
+  // Compliance report pages are admin/manager-gated (same as /reports) — only
+  // show the per-group 'Report →' links to roles that can actually open them.
+  const canViewReports = ['admin', 'manager'].includes(user?.role);
 
   const [asset, setAsset]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -333,6 +368,20 @@ export default function AssetDetail() {
   // editable inputs in the edit form; archived definitions never appear here
   // but their stored values still render read-only from the asset payload.
   const [fieldDefs, setFieldDefs] = useState([]);
+  // Collapsed per-standard schedule groups, keyed by standard code (or
+  // 'Account-defined'). Default expanded; collapse choices persist across
+  // sessions via localStorage. Map values are `true` when collapsed.
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(STDGROUPS_KEY) || '{}') || {}; } catch { return {}; }
+  });
+  const toggleGroup = (code) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev };
+      if (next[code]) delete next[code]; else next[code] = true;
+      try { localStorage.setItem(STDGROUPS_KEY, JSON.stringify(next)); } catch { /* persistence is best-effort */ }
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -480,6 +529,22 @@ export default function AssetDetail() {
 
   const nameplateEntries = Object.entries(asset.nameplateData || {});
   const schedules    = asset.schedules || [];
+  // Group schedules by governing standard. Standards sort alphabetically;
+  // account-defined custom tasks always sink to the bottom.
+  const scheduleGroups = (() => {
+    const map = new Map();
+    for (const s of schedules) {
+      const std = s.taskDefinition?.standard || null;
+      const code = std?.code || ACCOUNT_DEFINED;
+      if (!map.has(code)) map.set(code, { code, edition: std?.edition || null, items: [] });
+      map.get(code).items.push(s);
+    }
+    return [...map.values()].sort((a, b) => {
+      if (a.code === ACCOUNT_DEFINED) return 1;
+      if (b.code === ACCOUNT_DEFINED) return -1;
+      return a.code.localeCompare(b.code);
+    });
+  })();
   const workOrders   = asset.workOrders || [];
   const deficiencies = asset.deficiencies || [];
   const labSamples   = asset.labSamples || [];
@@ -569,76 +634,129 @@ export default function AssetDetail() {
               </div>
             </div>
           ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Task</th>
-                    <th>Standard Ref</th>
-                    <th>Interval</th>
-                    <th>Last Completed</th>
-                    <th>Next Due</th>
-                    {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedules.map(s => {
-                    const { cond, months } = effectiveIntervalMonths(s, asset);
-                    const overdue = s.nextDueDate && new Date(s.nextDueDate) < new Date();
-                    return (
-                      <tr key={s.id} style={!s.isActive ? { opacity: 0.55 } : undefined}>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{s.taskDefinition?.taskName || '—'}</div>
-                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                            {[
-                              s.taskDefinition?.requiresOutage ? 'Requires outage' : null,
-                              s.conditionOverride ? `Override: ${s.conditionOverride}` : null,
-                              !s.isActive ? 'Inactive' : null,
-                            ].filter(Boolean).join(' · ')}
-                          </div>
-                        </td>
-                        <td className="td-muted">{s.taskDefinition?.standardRef || '—'}</td>
-                        <td>
-                          {months != null
-                            ? <span>{months} mo <span className="text-muted" style={{ fontSize: 'var(--font-size-xs)' }}>({cond})</span></span>
-                            : <span className="text-muted">—</span>}
-                        </td>
-                        <td>{fmtDate(s.lastCompletedDate)}</td>
-                        <td>
-                          <span style={overdue ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
-                            {fmtDate(s.nextDueDate)}{overdue ? ' · overdue' : ''}
-                          </span>
-                        </td>
-                        {canWrite && (
-                          <td style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => handleCompleteSchedule(s)}
-                                disabled={busy}
-                                title="Record a completion today and roll the recurrence forward"
-                              >
-                                Mark complete
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => handleNewWorkOrder(s)}
-                                disabled={busy}
-                                title="Create a work order for this task"
-                              >
-                                New work order
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            // One section per governing standard. The header row (code +
+            // edition + compliance badge) always renders — collapsing a group
+            // hides only its schedule rows, never the group itself.
+            scheduleGroups.map(group => {
+              const collapsed = !!collapsedGroups[group.code];
+              const Chevron = collapsed ? ChevronRight : ChevronDown;
+              return (
+                <div key={group.code} style={{ borderTop: '1px solid var(--color-border)' }}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={!collapsed}
+                    aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${group.code} schedules`}
+                    onClick={() => toggleGroup(group.code)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(group.code); }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                      padding: '10px 16px', cursor: 'pointer', userSelect: 'none',
+                      background: 'var(--color-bg)',
+                    }}
+                  >
+                    <Chevron size={15} color="var(--color-text-secondary)" strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0 }} />
+                    <span style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+                      {group.code}
+                      {group.edition && (
+                        <span className="text-muted" style={{ fontWeight: 400, marginLeft: 6, fontSize: 'var(--font-size-xs)' }}>
+                          {group.edition}
+                        </span>
+                      )}
+                    </span>
+                    <GroupComplianceBadge items={group.items} />
+                    <span style={{ flex: 1 }} />
+                    {canViewReports && (
+                      <Link
+                        to={`/reports/compliance/${encodeURIComponent(group.code)}`}
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                          fontSize: 'var(--font-size-xs)', fontWeight: 600,
+                          color: 'var(--color-primary)', whiteSpace: 'nowrap', textDecoration: 'none',
+                        }}
+                        title={`Open the ${group.code} compliance report`}
+                      >
+                        Report →
+                      </Link>
+                    )}
+                  </div>
+                  {!collapsed && (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Task</th>
+                            <th>Standard Ref</th>
+                            <th>Interval</th>
+                            <th>Last Completed</th>
+                            <th>Next Due</th>
+                            {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.items.map(s => {
+                            const { cond, months } = effectiveIntervalMonths(s, asset);
+                            const overdue = s.nextDueDate && new Date(s.nextDueDate) < new Date();
+                            return (
+                              <tr key={s.id} style={!s.isActive ? { opacity: 0.55 } : undefined}>
+                                <td>
+                                  <div style={{ fontWeight: 600 }}>{s.taskDefinition?.taskName || '—'}</div>
+                                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                                    {[
+                                      s.taskDefinition?.requiresOutage ? 'Requires outage' : null,
+                                      s.conditionOverride ? `Override: ${s.conditionOverride}` : null,
+                                      !s.isActive ? 'Inactive' : null,
+                                    ].filter(Boolean).join(' · ')}
+                                  </div>
+                                </td>
+                                <td className="td-muted">{s.taskDefinition?.standardRef || '—'}</td>
+                                <td>
+                                  {months != null
+                                    ? <span>{months} mo <span className="text-muted" style={{ fontSize: 'var(--font-size-xs)' }}>({cond})</span></span>
+                                    : <span className="text-muted">—</span>}
+                                </td>
+                                <td>{fmtDate(s.lastCompletedDate)}</td>
+                                <td>
+                                  <span style={overdue ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>
+                                    {fmtDate(s.nextDueDate)}{overdue ? ' · overdue' : ''}
+                                  </span>
+                                </td>
+                                {canWrite && (
+                                  <td style={{ textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => handleCompleteSchedule(s)}
+                                        disabled={busy}
+                                        title="Record a completion today and roll the recurrence forward"
+                                      >
+                                        Mark complete
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => handleNewWorkOrder(s)}
+                                        disabled={busy}
+                                        title="Create a work order for this task"
+                                      >
+                                        New work order
+                                      </button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 

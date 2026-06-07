@@ -406,7 +406,15 @@ router.get('/:id', async (req, res) => {
         ...ASSET_INCLUDE,
         schedules: {
           orderBy: { nextDueDate: 'asc' },
-          include: { taskDefinition: true },
+          // standard {code, edition} rides along so the detail page can
+          // group schedules by governing standard (per-standard compliance
+          // proof) without a second fetch. Null standard = account-defined
+          // custom task.
+          include: {
+            taskDefinition: {
+              include: { standard: { select: { id: true, code: true, edition: true, title: true } } },
+            },
+          },
         },
         workOrders: {
           orderBy: { createdAt: 'desc' },

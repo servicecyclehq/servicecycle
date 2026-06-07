@@ -181,6 +181,7 @@ const deficiencyRoutes      = require('./routes/deficiencies'); // findings
 const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
 const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
 const assetBriefRoutes      = require('./routes/assetBrief');   // AI maintenance brief
+const complianceRoutes      = require('./routes/compliance');   // per-standard reports + audit snapshots
 const dashboardRoutes       = require('./routes/dashboard');
 const userRoutes            = require('./routes/users');
 const preferencesRoutes     = require('./routes/preferences'); // v0.42 per-user key/value prefs
@@ -1099,6 +1100,11 @@ app.use('/api/schedules',       authenticateToken, scheduleRoutes);
 app.use('/api/work-orders',     authenticateToken, workOrderRoutes);
 app.use('/api/deficiencies',    authenticateToken, deficiencyRoutes);
 app.use('/api/standards',       authenticateToken, standardsRoutes);
+// Per-standard compliance proof: summary/report reads for any role,
+// snapshot generation requireManager inside the router. Snapshot PDFs are
+// immutable stored evidence — their SHA-256 is anchored into the
+// tamper-evident activity-log hash chain at generation time.
+app.use('/api/compliance',      authenticateToken, complianceRoutes);
 app.use('/api/dashboard',       authenticateToken, dashboardRoutes);
 // v0.32.4: per-user AI quota state for in-UI helper text. Authenticated;
 // no limiter — read-only inspection of the quota counters.

@@ -2,11 +2,13 @@
 // reportsRegistry.js — single source of truth for the ServiceCycle Reports hub.
 //
 // The inherited contract-renewal report suite was removed in the ServiceCycle
-// conversion. The compliance report suite is planned (server /api/reports is
-// currently a stub returning an empty list). Until those land, the hub shows
-// three planned report cards plus one active export action.
+// conversion. The per-standard compliance suite is now live: Compliance by
+// Standard (/reports/compliance, GET /api/compliance/summary) and Audit
+// Evidence Snapshots (/reports/snapshots, /api/compliance/snapshots). The
+// overdue-by-severity report remains planned.
 //
 // Set `planned: true` for "Planned" placeholders that are not navigable.
+// Set `to` for active cards that navigate to an in-app report route.
 // Set `exportView` for active cards that download via GET /api/export/xlsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -14,11 +16,12 @@ import { BarChart3, AlertTriangle, FileCheck2, Download } from 'lucide-react';
 
 export const REPORTS = [
   {
-    id: 'nfpa-70b-compliance-rate',
-    name: 'NFPA 70B Compliance Rate by Site',
-    description: 'Scheduled maintenance completed on time vs. overdue, rolled up per site and account-wide. The headline number for your compliance program.',
+    id: 'compliance-by-standard',
+    name: 'Compliance by Standard',
+    description: 'Maintenance compliance rolled up per governing standard — NFPA 70B and every other standard in your task library, with asset counts, compliance rate, and a drill-down evidence table per standard.',
     icon: BarChart3,
-    planned: true,
+    planned: false,
+    to: '/reports/compliance',
   },
   {
     id: 'overdue-maintenance-by-severity',
@@ -28,11 +31,12 @@ export const REPORTS = [
     planned: true,
   },
   {
-    id: 'audit-evidence-pack',
-    name: 'Audit Evidence Pack',
-    description: 'Insurance / OSHA documentation bundle: work-order history, test measurements, and the NETA decal trail for a site and date range — exportable for an AHJ, insurer, or auditor.',
+    id: 'audit-evidence-snapshots',
+    name: 'Audit Evidence Snapshots',
+    description: 'Generate immutable point-in-time PDF compliance reports with SHA-256 integrity hashes anchored in the tamper-evident audit log — evidence for an AHJ, insurer, or auditor.',
     icon: FileCheck2,
-    planned: true,
+    planned: false,
+    to: '/reports/snapshots',
   },
   {
     id: 'export-asset-register',
