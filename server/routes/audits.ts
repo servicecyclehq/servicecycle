@@ -151,7 +151,12 @@ router.get('/', async (req, res) => {
       }
       where.outcome = o;
     }
-    if (req.query.siteId) where.siteId = String(req.query.siteId);
+    if (req.query.siteId) {
+      const sid = String(req.query.siteId);
+      const site = await prisma.site.findFirst({ where: { id: sid, accountId: req.user.accountId } });
+      if (!site) return res.status(400).json({ success: false, error: 'siteId not found' });
+      where.siteId = sid;
+    }
 
     const [rows, total] = await Promise.all([
       prisma.auditVisit.findMany({
