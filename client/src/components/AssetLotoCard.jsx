@@ -20,6 +20,7 @@ import LotoProcForm from './LotoProcForm';
 export default function AssetLotoCard({ asset, canWrite }) {
   const [procs,         setProcs]        = useState([]);
   const [loading,       setLoading]      = useState(false);
+  const [err,           setErr]          = useState(null);
   const [toast,         setToast]        = useState(null);
   const [editing,       setEditing]      = useState(null); // proc to edit, or 'new'
   const [showArchived,  setShowArchived] = useState(false);
@@ -27,10 +28,16 @@ export default function AssetLotoCard({ asset, canWrite }) {
   const fetchProcs = useCallback(async () => {
     if (!asset?.id) return;
     setLoading(true);
+    setErr(null);
     try {
       const { data } = await api.get(`/api/assets/${asset.id}/loto`);
       setProcs(data.data || []);
-    } catch { /* silent */ }
+    } catch (e) {
+      // Surface the failure instead of silently showing the empty state — a
+      // dropped fetch must not read as "no LOTO procedure on file" for a
+      // compliance-critical card.
+      setErr(e?.response?.data?.error || 'Failed to load LOTO procedures.');
+    }
     finally { setLoading(false); }
   }, [asset?.id]);
 
@@ -89,8 +96,23 @@ export default function AssetLotoCard({ asset, canWrite }) {
           <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>Loading…</div>
         )}
 
+        {/* ── Error ─────────────────────────────────────────────────────────── */}
+        {!loading && err && (
+          <div role="alert" style={{ color: '#991b1b', fontSize: 'var(--font-size-sm)' }}>
+            {err}{' '}
+            <button
+              type="button"
+              onClick={fetchProcs}
+              style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+                color: 'var(--color-primary)', textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* ── Empty state ───────────────────────────────────────────────────── */}
-        {!loading && procs.length === 0 && !editing && (
+        {!loading && !err && procs.length === 0 && !editing && (
           <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
             No LOTO procedure on file for this asset.
             {canWrite
