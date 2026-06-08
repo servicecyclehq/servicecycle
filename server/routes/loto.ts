@@ -122,7 +122,10 @@ router.get('/:id', async (req, res) => {
 
 // ── POST /api/assets/:assetId/loto ────────────────────────────────────────────
 // Creates a new draft procedure. Does NOT auto-activate.
-router.post('/', async (req, res) => {
+// Manager+ only — LOTO procedures are OSHA-compliance documents; viewers and
+// consultants are read-only (matches the canWrite gate on AssetLotoCard and
+// the requireManager gate on PATCH/DELETE below).
+router.post('/', requireManager, async (req, res) => {
   try {
     const { assetId } = req.params;
     const accountId   = req.user.accountId;
@@ -183,7 +186,8 @@ router.post('/', async (req, res) => {
 // ── PUT /api/assets/:assetId/loto/:id ─────────────────────────────────────────
 // Full replace of title, notes, energySources, and steps.
 // Increments version and resets status to draft (re-approval required).
-router.put('/:id', async (req, res) => {
+// Manager+ only (see POST above).
+router.put('/:id', requireManager, async (req, res) => {
   try {
     const { assetId } = req.params;
     const accountId   = req.user.accountId;

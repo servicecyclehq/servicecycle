@@ -20,6 +20,7 @@
  */
 
 const router = require('express').Router({ mergeParams: true });
+const { requireManager } = require('../middleware/roles');
 const prisma  = require('../lib/prisma').default;
 
 const WINDOW_DAYS = 90; // task-clustering lookahead/lookbehind
@@ -247,7 +248,9 @@ router.get('/', async (req, res) => {
 // ── POST /api/assets/:assetId/outage-plan/work-order ──────────────────────
 // Generate a consolidated work order for all outage tasks in the plan.
 // Body: { scheduledDate, notes, contractorId?, scheduleIds[] }
-router.post('/work-order', async (req, res) => {
+// Manager+ only — creates a WorkOrder, matching requireManager on
+// POST /api/work-orders and the canWrite gate on OutageConsolidationCard.
+router.post('/work-order', requireManager, async (req, res) => {
   try {
     const { assetId }    = req.params;
     const accountId      = req.user.accountId;
