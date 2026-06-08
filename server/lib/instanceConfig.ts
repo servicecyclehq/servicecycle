@@ -66,6 +66,10 @@ async function getInstanceConfig() {
   // months before the upsert creates the row -> admin.createdAt <
   // config.createdAt -> auto-mark fires once and is sticky thereafter.
   if (!_cached.setupCompletedAt) {
+    // Intentional cross-tenant query: singleton bootstrap detection only.
+    // InstanceConfig has no accountId — we need the globally oldest admin to
+    // determine if this is a legacy instance being migrated (admin pre-dates
+    // the config row) vs. a fresh install (admin created after). Not a data leak.
     const firstAdmin = await prisma.user.findFirst({
       where:   { role: 'admin' },
       orderBy: { createdAt: 'asc' },

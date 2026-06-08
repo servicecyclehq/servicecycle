@@ -85,11 +85,15 @@ beforeAll(async () => {
     .post('/api/auth/register')
     .set(CF)
     .send({
-    name:          'Hostile Tenant',
-    email:         B_EMAIL,
-    password:      B_PASS,
-    companyName:   'Account B Industrial',
-    acceptedTerms: true,
+    name:           'Hostile Tenant',
+    email:          B_EMAIL,
+    password:       B_PASS,
+    companyName:    'Account B Industrial',
+    acceptedTerms:  true,
+    // DEMO_MODE register gate (routes/auth.ts) requires the US-scope
+    // attestation; without it registration 400s with US_SCOPE_REQUIRED and
+    // the whole suite fails in beforeAll.
+    acceptedUsScope: true,
   });
   expect([200, 201]).toContain(reg.status);
   tokenB = reg.body?.data?.token || (await login(B_EMAIL, B_PASS));

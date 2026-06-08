@@ -20,6 +20,7 @@
  */
 
 const router = require('express').Router({ mergeParams: true });
+const { requireManager } = require('../middleware/roles');
 const prisma  = require('../lib/prisma').default;
 
 const WINDOW_DAYS = 90; // task-clustering lookahead/lookbehind
@@ -45,20 +46,34 @@ function computeStatus(nextDueDate: Date | null | undefined): 'overdue' | 'due' 
 
 // ── Walk the feed graph downward from a root asset ─────────────────────────
 // Returns the flat set of all asset IDs reachable via feedsDownstream (BFS).
+//
+// N+1 fix (Area 6): previously this issued one findMany PER node visited, so a
+// deep/wide power path meant dozens of DB round trips — and this helper runs
+// TWICE per outage-plan request (GET + POST /work-order). We now load the
+// account's feed edges (id + parent) in a SINGLE query and walk the tree in
+// memory, turning O(nodes) round trips into exactly one. The two selected
+// columns are tiny, so loading the account's edge set is far cheaper than the
+// per-node round trips it replaces.
 async function getDownstreamIds(rootId: string, accountId: string): Promise<string[]> {
+  const all = await prisma.asset.findMany({
+    where:  { accountId },
+    select: { id: true, fedFromAssetId: true },
+  });
+  const childrenByParent = new Map<string, string[]>();
+  for (const a of all) {
+    if (!a.fedFromAssetId) continue;
+    const bucket = childrenByParent.get(a.fedFromAssetId);
+    if (bucket) bucket.push(a.id);
+    else childrenByParent.set(a.fedFromAssetId, [a.id]);
+  }
+
   const visited = new Set<string>();
   const queue   = [rootId];
-
   while (queue.length > 0) {
     const current = queue.shift()!;
     if (visited.has(current)) continue;
     visited.add(current);
-
-    const children = await prisma.asset.findMany({
-      where:  { fedFromAssetId: current, accountId },
-      select: { id: true },
-    });
-    for (const c of children) queue.push(c.id);
+    for (const childId of childrenByParent.get(current) || []) queue.push(childId);
   }
 
   visited.delete(rootId); // caller handles root separately
@@ -247,13 +262,22 @@ router.get('/', async (req, res) => {
 // ── POST /api/assets/:assetId/outage-plan/work-order ──────────────────────
 // Generate a consolidated work order for all outage tasks in the plan.
 // Body: { scheduledDate, notes, contractorId?, scheduleIds[] }
-router.post('/work-order', async (req, res) => {
+// Manager+ only — creates a WorkOrder, matching requireManager on
+// POST /api/work-orders and the canWrite gate on OutageConsolidationCard.
+router.post('/work-order', requireManager, async (req, res) => {
   try {
     const { assetId }    = req.params;
     const accountId      = req.user.accountId;
     const { scheduledDate, notes, contractorId, scheduleIds } = req.body;
 
     if (!scheduledDate) return res.status(400).json({ success: false, error: 'scheduledDate required' });
+    // Validate the date is parseable BEFORE it reaches Prisma — an
+    // unparseable string would otherwise create an Invalid Date and surface
+    // as a 500 instead of a clean 400 (mirrors POST /api/work-orders).
+    const when = new Date(scheduledDate);
+    if (Number.isNaN(when.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid scheduledDate' });
+    }
     if (!Array.isArray(scheduleIds) || scheduleIds.length === 0) {
       return res.status(400).json({ success: false, error: 'scheduleIds (array) required' });
     }
@@ -269,6 +293,20 @@ router.post('/work-order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid schedules found for this account/asset group' });
     }
 
+    // IDOR: a contractorId from the request body must belong to this account
+    // before it can be pinned to the work order. Without this check a caller
+    // could attach another tenant's contractor (mirrors validateContractor in
+    // routes/workOrders.ts).
+    if (contractorId) {
+      const contractor = await prisma.contractor.findFirst({
+        where:  { id: contractorId, accountId },
+        select: { id: true },
+      });
+      if (!contractor) {
+        return res.status(404).json({ success: false, error: 'Contractor not found' });
+      }
+    }
+
     // Build combined task description in notes (WorkOrder has no description field)
     const taskNames = [...new Set(schedules.map((s: any) => s.taskDefinition?.taskName).filter(Boolean))];
     const combinedNotes = `Consolidated Outage Work Order — ${schedules.length} task(s): ${taskNames.join(', ')}` +
@@ -281,7 +319,7 @@ router.post('/work-order', async (req, res) => {
         accountId,
         assetId,
         status:        'SCHEDULED',
-        scheduledDate: new Date(scheduledDate),
+        scheduledDate: when,
         notes:         combinedNotes,
         contractorId:  contractorId || null,
       },

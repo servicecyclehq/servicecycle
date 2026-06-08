@@ -73,6 +73,7 @@ export default function QuoteRequestButton({ asset }) {
   const [open,       setOpen]       = useState(false);
   const [history,    setHistory]    = useState([]);
   const [histLoading,setHistLoading]= useState(false);
+  const [histError,  setHistError]  = useState(null);
   const [serviceRep, setServiceRep] = useState(null);
 
   // Form state
@@ -92,10 +93,14 @@ export default function QuoteRequestButton({ asset }) {
   const fetchHistory = useCallback(async () => {
     if (!asset?.id) return;
     setHistLoading(true);
+    setHistError(null);
     try {
       const { data } = await api.get(`/api/quote-requests/asset/${asset.id}`);
       setHistory(data.data || []);
-    } catch { setHistory([]); } finally { setHistLoading(false); }
+    } catch (e) {
+      setHistory([]);
+      setHistError(e?.response?.data?.error || 'Failed to load request history.');
+    } finally { setHistLoading(false); }
   }, [asset?.id]);
 
   const fetchServiceRep = useCallback(async () => {
@@ -402,8 +407,23 @@ export default function QuoteRequestButton({ asset }) {
         </div>
       )}
 
+      {/* ── History load error ──────────────────────────────────────────────── */}
+      {!open && histError && (
+        <div className="card-body" role="alert" style={{ color: '#991b1b', fontSize: 'var(--font-size-sm)' }}>
+          {histError}{' '}
+          <button
+            type="button"
+            onClick={fetchHistory}
+            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+              color: 'var(--color-primary)', textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* ── Empty state ─────────────────────────────────────────────────────── */}
-      {!open && history.length === 0 && !histLoading && (
+      {!open && !histError && history.length === 0 && !histLoading && (
         <div className="card-body" style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
           No quote requests yet for this asset.
           {serviceRep?.serviceRepName && (

@@ -70,7 +70,20 @@ function _resetWizardState() {
 // Guard: every endpoint runs this first. Returns true if it short-circuited
 // the response (caller should `return`); false if the request may proceed.
 async function _rejectIfConfigured(res) {
-  if (await isInstanceConfigured()) {
+  let configured;
+  try {
+    configured = await isInstanceConfigured();
+  } catch (err) {
+    // DB unreachable while reading setup state. This guard runs ahead of each
+    // handler's own try/catch, so an uncaught rejection here would otherwise
+    // escape as an unhandled rejection and hang the request to the 60s
+    // timeout. Fail closed: never run a setup mutation against an
+    // indeterminate config state. (Area 3 error-handling sweep.)
+    console.error('[setup] config check failed:', err && err.message);
+    res.status(503).json({ success: false, error: 'Configuration state unavailable. Please retry.' });
+    return true;
+  }
+  if (configured) {
     res.status(409).json({ success: false, error: 'Instance is already configured.' });
     return true;
   }
