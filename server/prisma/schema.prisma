@@ -276,6 +276,7 @@ model Account {
   lotoProcs              LotoProc[]
   lotoEnergySources      LotoEnergySource[]
   lotoSteps              LotoStep[]
+  disasterEvents         DisasterEvent[]
 
   @@map("accounts")
 }
@@ -346,6 +347,7 @@ model User {
   quoteRequests            QuoteRequest[]          @relation("QuoteRequestCreator")
   approvedLotoProcs        LotoProc[]              @relation("LotoProcApprover")
   createdLotoProcs         LotoProc[]              @relation("LotoProcCreator")
+  declaredDisasters        DisasterEvent[]         @relation("DisasterDeclarer")
 
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
@@ -1833,4 +1835,56 @@ model LotoStep {
   @@index([lotoId])
   @@index([accountId])
   @@map("loto_steps")
+}
+
+// ─── Disaster Response ────────────────────────────────────────────────────────
+// Tracks regional weather events detected via NWS / FEMA feeds AND customer
+// emergency declarations. Regional (system-detected) events have accountId=null
+// and represent events that affect sites across multiple tenant accounts.
+// Customer declarations have accountId set — the customer is asserting that
+// they are in an emergency and need to jump the service queue.
+//
+// affectedSiteIds: for system events, all Site.ids whose state/region matches
+// the NWS alert zone; for declarations, the sites selected by the customer.
+// affectedStates: 2-letter state codes parsed from NWS UGC geocodes, used to
+// query which accounts have sites in the impact zone without lat/lng.
+
+model DisasterEvent {
+  id              String    @id @default(cuid())
+  // null  = system-detected regional event (NWS / FEMA scanner)
+  // set   = customer emergency declaration (POST /api/disaster-events/declare)
+  accountId       String?
+  // hurricane | tornado | ice_storm | blizzard | flash_flood |
+  // severe_thunderstorm | wildfire | extreme_heat | grid_failure | earthquake | manual
+  eventType       String
+  // watch | warning | emergency
+  severity        String
+  // Human-readable title — NWS event name or customer-provided summary.
+  title           String
+  // Affected region description (NWS areaDesc or free-text from customer).
+  region          String
+  // 2-letter state abbreviations extracted from NWS UGC codes.
+  affectedStates  String[]
+  // Site.id values whose state is in affectedStates (system events) or
+  // sites explicitly selected by the declaring customer.
+  affectedSiteIds String[]
+  // NWS alert ID (@id field in NWS API response) — used for idempotent upsert
+  // so the scanner never duplicates an in-progress alert across runs.
+  nwsAlertId      String?
+  // userId of the customer who clicked "Declare Emergency" — null for system events.
+  declaredBy      String?
+  // nws | fema | manual
+  source          String    @default("system")
+  declaredAt      DateTime  @default(now())
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  account  Account? @relation(fields: [accountId],  references: [id], onDelete: SetNull)
+  declarer User?    @relation("DisasterDeclarer", fields: [declaredBy], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([resolvedAt])
+  @@index([nwsAlertId])
+  @@map("disaster_events")
 }

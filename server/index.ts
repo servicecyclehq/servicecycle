@@ -214,9 +214,10 @@ const v1AssetRoutes      = require('./routes/v1/assets');
 const v1ContractorRoutes = require('./routes/v1/contractors');
 const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
-const quoteRequestRoutes  = require('./routes/quoteRequests');
-const outagePlanRoutes    = require('./routes/outagePlan');
-const lotoRoutes          = require('./routes/loto');
+const quoteRequestRoutes    = require('./routes/quoteRequests');
+const outagePlanRoutes      = require('./routes/outagePlan');
+const lotoRoutes            = require('./routes/loto');
+const disasterEventRoutes   = require('./routes/disasterEvents');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
 const { requestId }                      = require('./middleware/requestId'); // v0.37.1 W5 MT-129
 const openapiRoute                       = require('./routes/openapi');        // v0.37.1 W5 MT-128
@@ -1225,6 +1226,9 @@ app.use('/api/assets/:assetId/outage-plan', authenticateToken, outagePlanRoutes)
 // ── LOTO — Lockout/Tagout procedures (asset-scoped) ──────────────────────────
 app.use('/api/assets/:assetId/loto', authenticateToken, lotoRoutes);
 
+// ── Disaster Response Mode — weather alerts + emergency declarations ──────────
+app.use('/api/disaster-events', authenticateToken, disasterEventRoutes);
+
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, error: 'Route not found' });
@@ -1396,6 +1400,20 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
       console.log('[Cron] News scanner:', JSON.stringify(summary));
     }), { timezone: 'UTC' });
     console.log('[Cron] News scanner scheduled — every 6 hours');
+
+    // ── Weather / disaster scanner (every 15 minutes) ────────────────────────
+    // Polls NWS active alerts API for Extreme/Severe weather events, matches
+    // affected states against customer site locations, creates/resolves
+    // DisasterEvent records, and notifies affected accounts.
+    // WEATHER_SCANNER_ENABLED=false disables for air-gapped installs.
+    cron.schedule('*/15 * * * *', () => runOnce('weatherScanner', async () => {
+      const { runWeatherScanner } = require('./lib/weatherScanner');
+      const summary = await runWeatherScanner();
+      if (summary.created > 0 || summary.resolved > 0) {
+        console.log('[Cron] Weather scanner:', JSON.stringify(summary));
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Weather scanner scheduled — every 15 minutes');
 
     // -- Cloudflare Workers AI monthly budget reset (v0.35.0) --------
     // The aiBudgetGuard tracks Cloudflare spend + Neuron count per

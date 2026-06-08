@@ -20,6 +20,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { kbdActivate } from '../lib/a11y';
 import EmptyState from '../components/EmptyState';
 import Toast from '../components/Toast';
+import ColumnPicker from '../components/ColumnPicker';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -126,6 +127,31 @@ export default function AssetsList() {
   // Server-side sort: '' (default order) | 'criticality' | 'repairCost',
   // both descending server-side. Toggled by clicking the column headers.
   const [sort, setSort] = useState('');
+
+  // ─── Column visibility (ColumnPicker) ──────────────────────────────────────
+  // Columns that can be toggled. 'equipment', 'condition', 'nextDue' are
+  // considered essential and are on by default. 'address' is the new column
+  // that surfaces whether a site's address is filled in.
+  const COLUMNS = [
+    { id: 'equipment',    label: 'Equipment' },
+    { id: 'mfgModel',     label: 'Manufacturer / Model' },
+    { id: 'serial',       label: 'Serial #' },
+    { id: 'location',     label: 'Location' },
+    { id: 'address',      label: 'Address' },
+    { id: 'owner',        label: 'Owner' },
+    { id: 'condition',    label: 'Condition' },
+    { id: 'criticality',  label: 'Criticality' },
+    { id: 'repairCost',   label: 'Repair Cost' },
+    { id: 'nextDue',      label: 'Next Due' },
+    { id: 'openDef',      label: 'Open Def.' },
+    { id: 'service',      label: 'Service' },
+  ];
+  const DEFAULT_VISIBILITY = {
+    equipment: true, mfgModel: true, serial: true, location: true,
+    address: true, owner: true, condition: true, criticality: true,
+    repairCost: false, nextDue: true, openDef: true, service: true,
+  };
+  const [colVis, setColVis] = useState(DEFAULT_VISIBILITY);
 
   // Debounce the search box so we don't hammer /api/bootstrap per keystroke.
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -242,7 +268,13 @@ export default function AssetsList() {
               : `${pagination.total} asset${pagination.total !== 1 ? 's' : ''}${hasFilters ? ' matching filters' : ' under maintenance management'}`}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <ColumnPicker
+            columns={COLUMNS}
+            visibility={colVis}
+            onChange={setColVis}
+            defaults={DEFAULT_VISIBILITY}
+          />
           <button
             type="button"
             className="btn btn-secondary"
@@ -449,40 +481,50 @@ export default function AssetsList() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Equipment</th>
-                      <th>Manufacturer / Model</th>
-                      <th>Serial #</th>
-                      <th>Location</th>
-                      <th>Owner</th>
-                      <th>Condition</th>
-                      <th
-                        role="button" tabIndex={0}
-                        aria-sort={sort === 'criticality' ? 'descending' : 'none'}
-                        title="Sort by criticality score (highest first)"
-                        onClick={() => toggleSort('criticality')}
-                        onKeyDown={kbdActivate(() => toggleSort('criticality'))}
-                        style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', color: sort === 'criticality' ? 'var(--color-primary)' : undefined }}
-                      >
-                        Criticality{sort === 'criticality' ? ' ▼' : ''}
-                      </th>
-                      <th
-                        role="button" tabIndex={0}
-                        aria-sort={sort === 'repairCost' ? 'descending' : 'none'}
-                        title="Sort by repair cost estimate (highest first)"
-                        onClick={() => toggleSort('repairCost')}
-                        onKeyDown={kbdActivate(() => toggleSort('repairCost'))}
-                        style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', textAlign: 'right', color: sort === 'repairCost' ? 'var(--color-primary)' : undefined }}
-                      >
-                        Repair Cost{sort === 'repairCost' ? ' ▼' : ''}
-                      </th>
-                      <th>Next Due</th>
-                      <th style={{ textAlign: 'right' }}>Open Def.</th>
-                      <th>Service</th>
+                      {colVis.equipment   && <th>Equipment</th>}
+                      {colVis.mfgModel    && <th>Manufacturer / Model</th>}
+                      {colVis.serial      && <th>Serial #</th>}
+                      {colVis.location    && <th>Location</th>}
+                      {colVis.address     && (
+                        <th title="Whether this asset's site has a street address on record">Address</th>
+                      )}
+                      {colVis.owner       && <th>Owner</th>}
+                      {colVis.condition   && <th>Condition</th>}
+                      {colVis.criticality && (
+                        <th
+                          role="button" tabIndex={0}
+                          aria-sort={sort === 'criticality' ? 'descending' : 'none'}
+                          title="Sort by criticality score (highest first)"
+                          onClick={() => toggleSort('criticality')}
+                          onKeyDown={kbdActivate(() => toggleSort('criticality'))}
+                          style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', color: sort === 'criticality' ? 'var(--color-primary)' : undefined }}
+                        >
+                          Criticality{sort === 'criticality' ? ' ▼' : ''}
+                        </th>
+                      )}
+                      {colVis.repairCost  && (
+                        <th
+                          role="button" tabIndex={0}
+                          aria-sort={sort === 'repairCost' ? 'descending' : 'none'}
+                          title="Sort by repair cost estimate (highest first)"
+                          onClick={() => toggleSort('repairCost')}
+                          onKeyDown={kbdActivate(() => toggleSort('repairCost'))}
+                          style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', textAlign: 'right', color: sort === 'repairCost' ? 'var(--color-primary)' : undefined }}
+                        >
+                          Repair Cost{sort === 'repairCost' ? ' ▼' : ''}
+                        </th>
+                      )}
+                      {colVis.nextDue     && <th>Next Due</th>}
+                      {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Def.</th>}
+                      {colVis.service     && <th>Service</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {assets.map(a => {
                       const openDefs = a._count?.deficiencies ?? 0;
+                      // Address completeness: site has at least a street address
+                      // OR city+state, so the geo-matching engine can work with it.
+                      const hasAddress = !!(a.site?.address || (a.site?.city && a.site?.state));
                       return (
                         <tr
                           key={a.id}
@@ -491,56 +533,87 @@ export default function AssetsList() {
                           tabIndex={0}
                           onKeyDown={kbdActivate(() => navigate(`/assets/${a.id}`))}
                         >
-                          <td style={{ fontWeight: 600 }}>
-                            {EQUIPMENT_TYPE_LABELS[a.equipmentType] || a.equipmentType}
-                          </td>
-                          <td>
-                            {(a.manufacturer || a.model)
-                              ? [a.manufacturer, a.model].filter(Boolean).join(' ')
-                              : <span className="text-muted">—</span>}
-                          </td>
-                          <td className="td-muted">{a.serialNumber || '—'}</td>
-                          <td>
-                            <div>{a.site?.name || '—'}</div>
-                            {a.position?.name && (
-                              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                                {a.position.name}
-                              </div>
-                            )}
-                          </td>
-                          <td className="td-muted">{a.owner?.name || '—'}</td>
-                          <td><ConditionBadge condition={a.governingCondition} /></td>
-                          <td><CriticalityBadge score={a.criticalityScore} /></td>
-                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className={a.repairCostEstimate == null ? 'td-muted' : undefined}>
-                            {fmtMoney(a.repairCostEstimate)}
-                          </td>
-                          <td><NextDueCell schedule={a.schedules?.[0]} /></td>
-                          <td style={{ textAlign: 'right' }}>
-                            {openDefs > 0 ? (
-                              <span style={{
-                                display: 'inline-block', minWidth: 20, textAlign: 'center',
-                                padding: '2px 7px', borderRadius: 20, fontWeight: 700,
-                                fontSize: 'var(--font-size-xs)',
-                                background: 'var(--color-danger-bg)', color: 'var(--color-danger)',
-                              }}>
-                                {openDefs}
+                          {colVis.equipment   && (
+                            <td style={{ fontWeight: 600 }}>
+                              {EQUIPMENT_TYPE_LABELS[a.equipmentType] || a.equipmentType}
+                            </td>
+                          )}
+                          {colVis.mfgModel    && (
+                            <td>
+                              {(a.manufacturer || a.model)
+                                ? [a.manufacturer, a.model].filter(Boolean).join(' ')
+                                : <span className="text-muted">—</span>}
+                            </td>
+                          )}
+                          {colVis.serial      && <td className="td-muted">{a.serialNumber || '—'}</td>}
+                          {colVis.location    && (
+                            <td>
+                              <div>{a.site?.name || '—'}</div>
+                              {a.position?.name && (
+                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                                  {a.position.name}
+                                </div>
+                              )}
+                            </td>
+                          )}
+                          {colVis.address     && (
+                            <td title={hasAddress
+                              ? `${[a.site?.address, a.site?.city, a.site?.state, a.site?.postalCode].filter(Boolean).join(', ')}`
+                              : 'No address on file — add one in Site settings to enable disaster alerts'
+                            }>
+                              {a.site
+                                ? (
+                                  <span style={{
+                                    fontWeight: 700,
+                                    fontSize: 'var(--font-size-xs)',
+                                    color: hasAddress ? 'var(--color-success)' : 'var(--color-danger)',
+                                  }}>
+                                    {hasAddress ? '✓' : '✗'}
+                                  </span>
+                                )
+                                : <span className="text-muted">—</span>
+                              }
+                            </td>
+                          )}
+                          {colVis.owner       && <td className="td-muted">{a.owner?.name || '—'}</td>}
+                          {colVis.condition   && <td><ConditionBadge condition={a.governingCondition} /></td>}
+                          {colVis.criticality && <td><CriticalityBadge score={a.criticalityScore} /></td>}
+                          {colVis.repairCost  && (
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className={a.repairCostEstimate == null ? 'td-muted' : undefined}>
+                              {fmtMoney(a.repairCostEstimate)}
+                            </td>
+                          )}
+                          {colVis.nextDue     && <td><NextDueCell schedule={a.schedules?.[0]} /></td>}
+                          {colVis.openDef     && (
+                            <td style={{ textAlign: 'right' }}>
+                              {openDefs > 0 ? (
+                                <span style={{
+                                  display: 'inline-block', minWidth: 20, textAlign: 'center',
+                                  padding: '2px 7px', borderRadius: 20, fontWeight: 700,
+                                  fontSize: 'var(--font-size-xs)',
+                                  background: 'var(--color-danger-bg)', color: 'var(--color-danger)',
+                                }}>
+                                  {openDefs}
+                                </span>
+                              ) : (
+                                <span className="text-muted">0</span>
+                              )}
+                            </td>
+                          )}
+                          {colVis.service     && (
+                            <td>
+                              <span
+                                title={a.inService ? 'In service' : 'Out of service'}
+                                style={{
+                                  fontSize: 'var(--font-size-xs)', fontWeight: 600,
+                                  color: a.inService ? 'var(--color-success)' : 'var(--color-text-muted)',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                ● {a.inService ? 'In service' : 'Out'}
                               </span>
-                            ) : (
-                              <span className="text-muted">0</span>
-                            )}
-                          </td>
-                          <td>
-                            <span
-                              title={a.inService ? 'In service' : 'Out of service'}
-                              style={{
-                                fontSize: 'var(--font-size-xs)', fontWeight: 600,
-                                color: a.inService ? 'var(--color-success)' : 'var(--color-text-muted)',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              ● {a.inService ? 'In service' : 'Out'}
-                            </span>
-                          </td>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

@@ -4,6 +4,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import DemoModeBanner from './DemoModeBanner';
 import OfflineBanner from './OfflineBanner';
+import DisasterBanner from './DisasterBanner';
 import { useAuth } from '../context/AuthContext';
 
 // v0.37.1 W5 MT-023: <HelpDrawer /> used to mount HERE inside the
@@ -211,6 +212,7 @@ export default function Layout() {
           with nothing to announce. See src/components/OfflineBanner.jsx. */}
       <OfflineBanner />
       <DemoModeBanner />
+      <DisasterBanner />
       <ContinueSetupBanner />
       <div
         ref={sidebarRef}

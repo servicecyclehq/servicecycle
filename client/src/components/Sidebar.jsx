@@ -15,7 +15,7 @@ import ThemeToggle from './ThemeToggle';
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
-  Smartphone, QrCode,
+  Smartphone, QrCode, ShieldAlert,
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
@@ -40,6 +40,7 @@ const Icons = {
   audits:      <ClipboardCheck {...ICON_PROPS} />,
   contractors: <Briefcase     {...ICON_PROPS} />,
   alerts:      <Bell          {...ICON_PROPS} />,
+  disaster:    <ShieldAlert   {...ICON_PROPS} />,
   users:       <Users         {...ICON_PROPS} />,
   settings:    <Settings      {...ICON_PROPS} />,
   reports:     <PieChart      {...ICON_PROPS} />,
@@ -711,6 +712,15 @@ export default function Sidebar() {
             Alerts
           </NavLink>
         )}
+
+        {/* Disaster Response — all roles can see and declare emergencies. */}
+        <NavLink
+          to="/disaster-response"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.disaster}
+          Disaster Response
+        </NavLink>
 
         {/* Industry news feed — all roles. */}
         <NavLink

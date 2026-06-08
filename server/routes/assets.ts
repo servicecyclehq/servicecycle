@@ -352,7 +352,7 @@ async function resolveFeedSource(accountId, selfAssetId, fedFromAssetId) {
 // same hierarchy context the list and detail views need). owner is the
 // responsible-person User (detail view widens this with email).
 const ASSET_INCLUDE: any = {
-  site:     { select: { id: true, name: true } },
+  site:     { select: { id: true, name: true, address: true, city: true, state: true, postalCode: true } },
   building: { select: { id: true, name: true } },
   area:     { select: { id: true, name: true } },
   position: { select: { id: true, name: true, code: true } },

@@ -107,6 +107,7 @@ const UsersPage               = lazyWithReload(() => import('./pages/UsersPage')
 const AdminMetrics            = lazyWithReload(() => import('./pages/AdminMetrics')); // audit 3.2.6
 const PermissionsPage         = lazyWithReload(() => import('./pages/PermissionsPage'));
 const AlertsPage              = lazyWithReload(() => import('./pages/AlertsPage'));
+const DisasterResponsePage    = lazyWithReload(() => import('./pages/DisasterResponsePage')); // disaster response mode
 const ProfilePage             = lazyWithReload(() => import('./pages/ProfilePage'));
 const SettingsPage            = lazyWithReload(() => import('./pages/SettingsPage'));
 const ActivityLogPage         = lazyWithReload(() => import('./pages/ActivityLogPage'));
@@ -348,6 +349,7 @@ function AppRoutes() {
 
             {/* Feature-gated pages — redirect to dashboard if not enabled */}
             <Route path="alerts"  element={featureGated('alerts', <AlertsPage />)} />
+            <Route path="disaster-response" element={<DisasterResponsePage />} />
 
             {/* Admin / manager pages — routes always exist so the Router never
                 hits the path="*" fallback during auth hydration; RequireRole
