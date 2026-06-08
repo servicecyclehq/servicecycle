@@ -178,6 +178,54 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ─── GET /api/work-orders/priority-queue ─────────────────────────────────────
+// Top 10 un-archived assets ranked by DPS (priorityScore DESC) that have no
+// open (SCHEDULED or IN_PROGRESS) work order. Used by the Priority Queue panel
+// on the Work Orders page. Must be defined BEFORE /:id so Express doesn't
+// capture "priority-queue" as an id param.
+router.get('/priority-queue', async (req, res) => {
+  try {
+    // Collect all assetIds that already have an open work order (one query).
+    const openRows = await prisma.workOrder.findMany({
+      where: {
+        accountId: req.user.accountId,
+        status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+      },
+      select: { assetId: true },
+      distinct: ['assetId'],
+    });
+    const excludeIds = openRows.map((r: any) => r.assetId);
+
+    const assets = await prisma.asset.findMany({
+      where: {
+        accountId:    req.user.accountId,
+        archivedAt:   null,
+        priorityScore: { not: null },
+        ...(excludeIds.length > 0 ? { NOT: { id: { in: excludeIds } } } : {}),
+      },
+      orderBy: { priorityScore: 'desc' },
+      take: 10,
+      select: {
+        id:               true,
+        equipmentType:    true,
+        manufacturer:     true,
+        model:            true,
+        serialNumber:     true,
+        priorityScore:    true,
+        conditionScore:   true,
+        criticalityScore: true,
+        inService:        true,
+        site: { select: { id: true, name: true } },
+      },
+    });
+
+    res.json({ success: true, data: { assets } });
+  } catch (err) {
+    console.error('Priority queue error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch priority queue' });
+  }
+});
+
 // ─── GET /api/work-orders/:id ─────────────────────────────────────────────────
 // Full job record: measurements, deficiencies, lab samples, attached documents.
 router.get('/:id', async (req, res) => {

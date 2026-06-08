@@ -239,6 +239,11 @@ model Account {
   // Per-tenant total headcount — drives cost-per-employee KPI tiles.
   // Nullable so existing accounts continue to work.
   fteCount                 Int?
+  // Import webhook — single per-account endpoint for assets.imported events.
+  // URL and secret stored encrypted (same AES-256-GCM path as webhookEndpoints).
+  // Secret is generated server-side and shown once; never re-surfaced.
+  importWebhookUrl         String? // HTTPS URL; stored encrypted
+  importWebhookSecret      String? // 32-byte hex; stored encrypted; HMAC-SHA256 signing key
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -269,6 +274,7 @@ model Account {
   apiKeys                ApiKey[]
   webhookEndpoints       WebhookEndpoint[]
   outboundWebhookDlq     OutboundWebhookDLQ[]
+  webhookDeliveries      WebhookDelivery[]
   activityLogs           ActivityLog[]
   notificationLogs       NotificationLog[]
   complianceSnapshots    ComplianceSnapshot[]
@@ -604,6 +610,16 @@ model Asset {
   // is INFRASTRUCTURE criticality and deliberately separate from
   // conditionCriticality (the NFPA 70B C1-C3 maintenance-interval axis).
   criticalityScore      Int?
+  // Degradation score (1=good … 5=severe) on the physical-condition axis.
+  // Distinct from conditionPhysical/conditionCriticality/conditionEnvironment
+  // (those are NFPA 70B C1-C3 maintenance-interval ratings). This integer
+  // enables the Degradation Priority Score: DPS = conditionScore × criticalityScore
+  // (range 1–25, higher = more urgent service needed).
+  conditionScore        Int?
+  // Stored DPS: conditionScore × criticalityScore. Recomputed by the route
+  // layer whenever either input changes so list queries can ORDER BY without
+  // a computed expression. NULL when either factor is NULL.
+  priorityScore         Int?
   repairCostEstimate    Decimal? @db.Decimal(14, 2) // parts + labor + downtime, USD
   spareLeadTimeWeeks    Int? // long-lead spares risk (transformers can be 50+ weeks)
   redundancyStatus      String? // N | N_PLUS_1 | TWO_N
@@ -1718,6 +1734,10 @@ model QuoteRequest {
   // always sees the state of the asset when the request was submitted.
   dossierSnapshot Json?
   notes           String?  // free-text from the requester
+  // DPS-derived priority: emergency | high | normal | low.
+  // Auto-set at creation time from the asset's priorityScore
+  // (DPS >= 20 -> emergency, 16-19 -> high, 10-15 -> normal, <10 -> low).
+  priority        String?
   // Rep response fields
   quotedAt        DateTime?
   quoteNotes      String?
@@ -1887,4 +1907,27 @@ model DisasterEvent {
   @@index([resolvedAt])
   @@index([nwsAlertId])
   @@map("disaster_events")
+}
+
+// --- Import Webhook Delivery Log -----------------------------------------------
+// Records every attempt to deliver an assets.imported webhook event so
+// admins can see what fired, when, and whether it succeeded. Rows older
+// than 30 days are pruned by the nightly dlq prune cron.
+
+model WebhookDelivery {
+  id         String   @id @default(uuid())
+  accountId  String
+  event      String   // e.g. "assets.imported"
+  deliveryId String   // per-delivery UUID sent in X-ServiceCycle-Delivery-Id
+  status     String   // "delivered" | "failed"
+  statusCode Int?     // HTTP response code, null on network error
+  responseMs Int?     // round-trip milliseconds
+  error      String?  // error message on failure (max 1000 chars)
+  payload    Json     // the full payload that was sent
+  createdAt  DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@map("webhook_deliveries")
 }

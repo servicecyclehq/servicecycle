@@ -124,8 +124,10 @@ export default function AssetsList() {
   // predictive-maintenance-only toggle chip.
   const [minCriticality, setMinCriticality] = useState('');
   const [predictiveOnly, setPredictiveOnly] = useState(false);
-  // Server-side sort: '' (default order) | 'criticality' | 'repairCost',
-  // both descending server-side. Toggled by clicking the column headers.
+  // High Priority filter: DPS >= 16 (priorityScore >= 16)
+  const [highPriority,   setHighPriority]   = useState(false);
+  // Server-side sort: '' (default order) | 'criticality' | 'repairCost' | 'priorityScore',
+  // all descending server-side. Toggled by clicking the column headers.
   const [sort, setSort] = useState('');
 
   // ─── Column visibility (ColumnPicker) ──────────────────────────────────────
@@ -141,15 +143,16 @@ export default function AssetsList() {
     { id: 'owner',        label: 'Owner' },
     { id: 'condition',    label: 'Condition' },
     { id: 'criticality',  label: 'Criticality' },
-    { id: 'repairCost',   label: 'Repair Cost' },
-    { id: 'nextDue',      label: 'Next Due' },
+    { id: 'repairCost',    label: 'Repair Cost' },
+    { id: 'priorityScore', label: 'Priority Score' },
+    { id: 'nextDue',       label: 'Next Due' },
     { id: 'openDef',      label: 'Open Def.' },
     { id: 'service',      label: 'Service' },
   ];
   const DEFAULT_VISIBILITY = {
     equipment: true, mfgModel: true, serial: true, location: true,
     address: true, owner: true, condition: true, criticality: true,
-    repairCost: false, nextDue: true, openDef: true, service: true,
+    repairCost: false, priorityScore: false, nextDue: true, openDef: true, service: true,
   };
   const [colVis, setColVis] = useState(DEFAULT_VISIBILITY);
 
@@ -166,7 +169,7 @@ export default function AssetsList() {
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
     setPage(1);
-  }, [debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin, minCriticality, predictiveOnly, sort]);
+  }, [debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin, minCriticality, predictiveOnly, highPriority, sort]);
 
   function buildFilterParams() {
     const params = new URLSearchParams();
@@ -179,6 +182,7 @@ export default function AssetsList() {
     if (dueWithin)       params.set('dueWithin', dueWithin);
     if (minCriticality)  params.set('minCriticality', minCriticality);
     if (predictiveOnly)  params.set('requiresPredictiveMaintenance', 'true');
+    if (highPriority)    params.set('minPriorityScore', '16');
     return params;
   }
 
@@ -206,9 +210,9 @@ export default function AssetsList() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin, minCriticality, predictiveOnly, sort]);
+  }, [page, debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin, minCriticality, predictiveOnly, highPriority, sort]);
 
-  const hasFilters = !!(debouncedSearch || siteId || equipmentType || condition || ownerId || inServiceF || dueWithin || minCriticality || predictiveOnly);
+  const hasFilters = !!(debouncedSearch || siteId || equipmentType || condition || ownerId || inServiceF || dueWithin || minCriticality || predictiveOnly || highPriority);
   const { assets, pagination, sites, equipmentTypes, members } = data;
 
   function clearAllFilters() {
@@ -239,6 +243,7 @@ export default function AssetsList() {
   if (dueWithin)       activeChips.push({ key: 'due', label: DUE_WITHIN_LABELS[dueWithin] || dueWithin, clear: () => setDueWithin('') });
   if (minCriticality)  activeChips.push({ key: 'crit', label: minCriticality === '5' ? 'Criticality: 5' : `Criticality: ${minCriticality}+`, clear: () => setMinCriticality('') });
   if (predictiveOnly)  activeChips.push({ key: 'predictive', label: 'Predictive maintenance', clear: () => setPredictiveOnly(false) });
+  if (highPriority)    activeChips.push({ key: 'highpriority', label: 'High Priority (DPS ≥16)', clear: () => setHighPriority(false) });
 
   async function handleExport() {
     if (exporting) return;
@@ -412,6 +417,22 @@ export default function AssetsList() {
           >
             {predictiveOnly ? '✓ ' : ''}Predictive maintenance
           </button>
+          {/* High Priority toggle chip — shows assets with DPS (priorityScore) >= 16. */}
+          <button
+            type="button"
+            aria-pressed={highPriority}
+            title="Show only high-priority assets (Degradation Priority Score ≥ 16)"
+            onClick={() => setHighPriority(v => !v)}
+            style={{
+              padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
+              fontSize: 'var(--font-size-xs)', fontWeight: 600, whiteSpace: 'nowrap',
+              background: highPriority ? '#fff3e0' : 'var(--color-bg)',
+              color: highPriority ? '#e65100' : 'var(--color-text-secondary)',
+              border: `1px solid ${highPriority ? '#e65100' : 'var(--color-border)'}`,
+            }}
+          >
+            {highPriority ? '✓ ' : ''}High Priority
+          </button>
         </div>
 
         {/* Active-filter chips — one per filter, individually clearable, with
@@ -514,6 +535,18 @@ export default function AssetsList() {
                           Repair Cost{sort === 'repairCost' ? ' ▼' : ''}
                         </th>
                       )}
+                      {colVis.priorityScore && (
+                        <th
+                          role="button" tabIndex={0}
+                          aria-sort={sort === 'priorityScore' ? 'descending' : 'none'}
+                          title="Sort by Degradation Priority Score (DPS = conditionScore × criticalityScore, highest first)"
+                          onClick={() => toggleSort('priorityScore')}
+                          onKeyDown={kbdActivate(() => toggleSort('priorityScore'))}
+                          style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', textAlign: 'right', color: sort === 'priorityScore' ? 'var(--color-primary)' : undefined }}
+                        >
+                          Priority Score{sort === 'priorityScore' ? ' ▼' : ''}
+                        </th>
+                      )}
                       {colVis.nextDue     && <th>Next Due</th>}
                       {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Def.</th>}
                       {colVis.service     && <th>Service</th>}
@@ -581,6 +614,21 @@ export default function AssetsList() {
                           {colVis.repairCost  && (
                             <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className={a.repairCostEstimate == null ? 'td-muted' : undefined}>
                               {fmtMoney(a.repairCostEstimate)}
+                            </td>
+                          )}
+                          {colVis.priorityScore && (
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              {a.priorityScore != null ? (
+                                <span style={{
+                                  fontWeight: 600,
+                                  color: a.priorityScore >= 20 ? '#c62828'
+                                       : a.priorityScore >= 16 ? '#e65100'
+                                       : a.priorityScore >= 10 ? 'var(--color-text)'
+                                       : 'var(--color-text-secondary)',
+                                }}>
+                                  {a.priorityScore}
+                                </span>
+                              ) : <span className="td-muted">—</span>}
                             </td>
                           )}
                           {colVis.nextDue     && <td><NextDueCell schedule={a.schedules?.[0]} /></td>}

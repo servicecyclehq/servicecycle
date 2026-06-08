@@ -60,6 +60,7 @@ const ExcelJS = require('exceljs');
 const { requireManager } = require('../middleware/roles');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const prisma = require('../lib/prisma').default;
+const { fireImportWebhook } = require('../lib/webhookImport');
 
 const MAX_IMPORT_ROWS  = 500;
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -844,6 +845,12 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
           const criticality = r.conditionCriticality || 'C2';
           const environment = r.conditionEnvironment || 'C2';
 
+          const conditionScore  = r.conditionScore  ?? null;
+          const criticalityScore = r.criticalityScore ?? null;
+          const priorityScore = (conditionScore != null && criticalityScore != null)
+            ? conditionScore * criticalityScore
+            : null;
+
           const asset = await tx.asset.create({
             data: {
               accountId,
@@ -863,13 +870,15 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
               inService:            r.inService === null || r.inService === undefined ? true : r.inService,
               notes:                sanitizeFormulaPrefix(r.notes) || null,
               // Risk dimensions — coerce() already validated/normalized.
-              criticalityScore:              r.criticalityScore ?? null,
+              conditionScore,
+              criticalityScore,
+              priorityScore,
               repairCostEstimate:            r.repairCostEstimate ?? null,
               spareLeadTimeWeeks:            r.spareLeadTimeWeeks ?? null,
               redundancyStatus:              r.redundancyStatus ?? null,
               requiresPredictiveMaintenance: r.requiresPredictiveMaintenance === true,
             },
-            select: { id: true, equipmentType: true },
+            select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, siteId: true },
           });
           createdAssets.push(asset);
           created++;
@@ -906,31 +915,34 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
           }
         }
 
-        return { created, sitesCreated, schedulesCreated };
+        return { created, sitesCreated, schedulesCreated, createdAssets };
       }, { timeout: 60000 });
     } catch (txErr) {
       console.error('POST /api/assets/import/commit — transaction failed:', txErr);
       return res.status(500).json({ success: false, error: `Import failed: ${txErr.message}` });
     }
 
-    const { created, sitesCreated, schedulesCreated } = txResult;
+    const { created, sitesCreated, schedulesCreated, createdAssets } = txResult;
     const skipped = skippedRows.length;
     const failed  = errorRows.length;
 
-    // Activity log — ONE row for the whole batch, fire-and-forget.
-    writeActivityLog({
-      assetId:   null,
-      userId:    req.user.id,
-      accountId: req.user.accountId,
-      action:    'assets_imported',
-      details: {
-        filename:  req.file.originalname,
-        totalRows: ctx.rows.length,
-        created, skipped, failed,
-        sitesCreated, schedulesCreated,
-        createMissingSites, autoApplySchedules,
-      },
-    });
+    // Fire import webhook — fire-and-forget, never blocks the response.
+    if (created > 0) {
+      const assetSummaries = createdAssets.map((a: any) => ({
+        id:           a.id,
+        name:         [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || 'Asset',
+        serialNumber: a.serialNumber ?? null,
+        siteId:       a.siteId,
+      }));
+      fireImportWebhook(req.user.accountId, {
+        event:         'assets.imported',
+        accountId:     req.user.accountId,
+        importedCount: created,
+        failedCount:   failed,
+        timestamp:     new Date().toISOString(),
+        assets:        assetSummaries,
+      }).catch(() => {}); // swallow — already handled inside fireImportWebhook
+    }
 
     return res.json({
       success: true,

@@ -1002,6 +1002,104 @@ router.put('/service-rep', requireAdmin, async (req, res) => {
   }
 });
 
+// ── GET /api/settings/import-webhook ─────────────────────────────────────────
+// Returns current import webhook config (URL masked, secret never returned).
+router.get('/import-webhook', requireAdmin, async (req, res) => {
+  try {
+    const account = await prisma.account.findUnique({
+      where:  { id: req.user.accountId },
+      select: { importWebhookUrl: true, importWebhookSecret: true },
+    });
+    const { decryptIfEncrypted } = require('../lib/crypto');
+    const { maskUrl } = require('../lib/webhookDlq');
+    const rawUrl = account?.importWebhookUrl ? decryptIfEncrypted(account.importWebhookUrl) : null;
+    return res.json({
+      success: true,
+      data: {
+        configured: !!(rawUrl && account?.importWebhookSecret),
+        urlMasked:  rawUrl ? maskUrl(rawUrl) : null,
+        secretSet:  !!(account?.importWebhookSecret),
+      },
+    });
+  } catch (err) {
+    console.error('[settings/import-webhook GET]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load import webhook' });
+  }
+});
+
+// ── PUT /api/settings/import-webhook ─────────────────────────────────────────
+// Set (or rotate) the import webhook URL + generate a new HMAC secret.
+// The secret is returned ONCE on this response — it is never surfaced again.
+router.put('/import-webhook', requireAdmin, async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ success: false, error: 'url is required' });
+    }
+    const { validateWebhookUrl } = require('../lib/webhook');
+    const { valid, reason } = await validateWebhookUrl(url.trim());
+    if (!valid) {
+      return res.status(400).json({ success: false, error: `Invalid webhook URL: ${reason}` });
+    }
+    const crypto = require('crypto');
+    const { encryptIfNeeded } = require('../lib/crypto');
+    const { maskUrl } = require('../lib/webhookDlq');
+    const newSecret = crypto.randomBytes(32).toString('hex');
+    await prisma.account.update({
+      where: { id: req.user.accountId },
+      data:  {
+        importWebhookUrl:    encryptIfNeeded(url.trim()),
+        importWebhookSecret: encryptIfNeeded(newSecret),
+      },
+    });
+    return res.json({
+      success: true,
+      data: {
+        urlMasked:      maskUrl(url.trim()),
+        hmacSecretOnce: newSecret, // shown only this once
+      },
+    });
+  } catch (err) {
+    console.error('[settings/import-webhook PUT]', err);
+    return res.status(500).json({ success: false, error: 'Failed to save import webhook' });
+  }
+});
+
+// ── DELETE /api/settings/import-webhook ──────────────────────────────────────
+// Remove the import webhook configuration entirely.
+router.delete('/import-webhook', requireAdmin, async (req, res) => {
+  try {
+    await prisma.account.update({
+      where: { id: req.user.accountId },
+      data:  { importWebhookUrl: null, importWebhookSecret: null },
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[settings/import-webhook DELETE]', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove import webhook' });
+  }
+});
+
+// ── GET /api/settings/import-webhook/deliveries ───────────────────────────────
+// Recent import webhook delivery history for the account (last 50 rows).
+router.get('/import-webhook/deliveries', requireAdmin, async (req, res) => {
+  try {
+    const deliveries = await prisma.webhookDelivery.findMany({
+      where:   { accountId: req.user.accountId },
+      orderBy: { createdAt: 'desc' },
+      take:    50,
+      select: {
+        id: true, event: true, deliveryId: true, status: true,
+        statusCode: true, responseMs: true, error: true, createdAt: true,
+      },
+    });
+    return res.json({ success: true, data: deliveries });
+  } catch (err) {
+    console.error('[settings/import-webhook/deliveries GET]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load delivery history' });
+  }
+});
+
 module.exports = router;
 
 export {};

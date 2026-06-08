@@ -7,6 +7,7 @@ import PermissionsPage from './PermissionsPage';
 import SettingsTabRouter from './settings/SettingsTabRouter.jsx'; // v0.91 Phase 1a
 import ApiKeysSection  from '../components/settings/ApiKeysSection.jsx';  // v0.91 Phase 1b
 import WebhooksSection from '../components/settings/WebhooksSection.jsx'; // v0.91 Phase 1b
+import ImportWebhookSection from '../components/settings/ImportWebhookSection.jsx'; // import event webhook
 import SlackIntegrationSection from '../components/settings/SlackIntegrationSection.jsx'; // v0.91 Phase 1b cont'd
 import TeamsIntegrationSection from '../components/settings/TeamsIntegrationSection.jsx'; // v0.91 Phase 1b cont'd
 import AlertPreferencesSection from '../components/settings/AlertPreferencesSection.jsx'; // v0.91 Phase 1b cont'd
@@ -1010,7 +1011,7 @@ export default function SettingsPage() {
       {isAdmin && activeTab === 'api-keys' && <ApiKeysSection />}
 
       {/* ── Webhooks — admin-only (v0.24.0) ────────────────────────────── */}
-      {isAdmin && activeTab === 'webhooks' && <><WebhooksSection /><DlqPanel /></>}
+      {isAdmin && activeTab === 'webhooks' && <><WebhooksSection /><ImportWebhookSection /><DlqPanel /></>}
 
       {/* ── Users & Roles — access tab ────────────────────────── */}
       {/* Per UX review 2026-05-01: Team Members + Permissions + Consultant

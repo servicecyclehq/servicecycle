@@ -90,6 +90,7 @@ const TRACKED_FIELDS: any = {
   // Risk dimensions (2026-06-07): infrastructure criticality, financial
   // exposure, resilience posture.
   criticalityScore:              'Criticality Score',
+  conditionScore:                'Condition Score (DPS)',
   repairCostEstimate:            'Repair Cost Estimate',
   spareLeadTimeWeeks:            'Spare Lead Time (weeks)',
   redundancyStatus:              'Redundancy Status',
@@ -164,6 +165,9 @@ const AssetWritableFields: any = {
   // Infrastructure criticality (1-5; deliberately separate from the NFPA 70B
   // conditionCriticality C-axis), financial exposure, resilience posture.
   criticalityScore:              CriticalityLike,
+  // DPS conditionScore: 1 (good) … 5 (severe) on the degradation axis.
+  // DPS = conditionScore × criticalityScore (stored as priorityScore).
+  conditionScore:                CriticalityLike,
   repairCostEstimate:            MoneyLike,
   spareLeadTimeWeeks:            WeeksLike,
   redundancyStatus:              RedundancyEnum,
@@ -399,7 +403,7 @@ router.get('/', async (req, res) => {
     const {
       page = 1, limit = 25,
       search, equipmentType, siteId, governingCondition, inService, archived,
-      ownerId, dueWithin, minCriticality, requiresPredictiveMaintenance,
+      ownerId, dueWithin, minCriticality, requiresPredictiveMaintenance, minPriorityScore,
       sort = 'nextDue', sortDir,
     } = req.query;
 
@@ -456,6 +460,14 @@ router.get('/', async (req, res) => {
     }
     if (requiresPredictiveMaintenance === 'true') {
       where.requiresPredictiveMaintenance = true;
+    }
+    // High-Priority filter: DPS >= N (e.g. ?minPriorityScore=16 for the
+    // "High Priority" badge — nulls excluded, consistent with minCriticality).
+    if (minPriorityScore) {
+      const minDps = parseInt(String(minPriorityScore), 10);
+      if (!isNaN(minDps) && minDps >= 1 && minDps <= 25) {
+        where.priorityScore = { gte: minDps };
+      }
     }
 
     // Search across nameplate identity fields AND the parent site name —
@@ -520,9 +532,10 @@ router.get('/', async (req, res) => {
       // ⚠ sortMap mirrored in routes/bootstrap.ts — keep the two in sync.
       const riskDir = sortDir === 'asc' ? 'asc' : 'desc';
       const sortMap: any = {
-        createdAt:   { createdAt: dir },
-        criticality: { criticalityScore:   { sort: riskDir, nulls: 'last' } },
-        repairCost:  { repairCostEstimate: { sort: riskDir, nulls: 'last' } },
+        createdAt:     { createdAt: dir },
+        criticality:   { criticalityScore:   { sort: riskDir, nulls: 'last' } },
+        repairCost:    { repairCostEstimate: { sort: riskDir, nulls: 'last' } },
+        priorityScore: { priorityScore:      { sort: riskDir, nulls: 'last' } },
       };
       assets = await prisma.asset.findMany({
         where,
@@ -719,6 +732,11 @@ router.post('/', requireManager, async (req, res) => {
         fedFromAssetId: effFedFromId,
         // Risk dimensions — zod already validated shape; coerce string forms.
         criticalityScore:              toIntOrNull(criticalityScore),
+        conditionScore:                toIntOrNull(parsed.conditionScore),
+        // DPS = conditionScore × criticalityScore (null if either unset).
+        priorityScore: (parsed.conditionScore != null && criticalityScore != null)
+          ? toIntOrNull(parsed.conditionScore)! * toIntOrNull(criticalityScore)!
+          : null,
         repairCostEstimate:            toMoneyOrNull(repairCostEstimate),
         spareLeadTimeWeeks:            toIntOrNull(spareLeadTimeWeeks),
         redundancyStatus:              redundancyStatus ?? null,
@@ -847,11 +865,23 @@ router.put('/:id', requireManager, async (req, res) => {
     if (notes !== undefined)       updateData.notes = notes || null;
     // ── Risk dimensions (null clears; zod validated the shapes) ─────────────
     if (criticalityScore !== undefined)   updateData.criticalityScore = toIntOrNull(criticalityScore);
+    if (parsed.conditionScore !== undefined) updateData.conditionScore = toIntOrNull(parsed.conditionScore);
     if (repairCostEstimate !== undefined) updateData.repairCostEstimate = toMoneyOrNull(repairCostEstimate);
     if (spareLeadTimeWeeks !== undefined) updateData.spareLeadTimeWeeks = toIntOrNull(spareLeadTimeWeeks);
     if (redundancyStatus !== undefined)   updateData.redundancyStatus = redundancyStatus ?? null;
     if (requiresPredictiveMaintenance !== undefined) {
       updateData.requiresPredictiveMaintenance = toBool(requiresPredictiveMaintenance);
+    }
+    // ── DPS recompute: priorityScore = conditionScore × criticalityScore ─────
+    // Recompute whenever either factor changes; resolve effective values from
+    // the in-flight updateData first (just set above), then fall back to the
+    // existing row so a partial update still produces the correct product.
+    if (parsed.conditionScore !== undefined || criticalityScore !== undefined) {
+      const effCondition   = 'conditionScore'   in updateData ? updateData.conditionScore   : existing.conditionScore;
+      const effCriticality = 'criticalityScore' in updateData ? updateData.criticalityScore : existing.criticalityScore;
+      updateData.priorityScore = (effCondition != null && effCriticality != null)
+        ? effCondition * effCriticality
+        : null;
     }
 
     // ── Condition axes + governing recompute ─────────────────────────────────
@@ -1046,7 +1076,6 @@ router.get('/:id/power-path', async (req, res) => {
       frontier = [];
       for (const row of next) {
         if (visited.has(row.id)) continue; // cycle guard
-        visited.add(row.id);
         frontier.push(row.id);
         totalDownstream++;
         if (totalDownstream >= POWER_PATH_MAX_DOWNSTREAM) break;

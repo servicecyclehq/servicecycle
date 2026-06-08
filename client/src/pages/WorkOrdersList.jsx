@@ -45,14 +45,14 @@ function Chip({ meta, fallback }) {
 }
 
 // ── New work order modal ─────────────────────────────────────────────────────
-function NewWorkOrderModal({ contractors, onClose, onCreated }) {
+function NewWorkOrderModal({ contractors, onClose, onCreated, initialAssetId = '' }) {
   const [assetSearch, setAssetSearch] = useState('');
   const [assets, setAssets] = useState([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [techs, setTechs] = useState([]);
   const [form, setForm] = useState({
-    assetId: '', scheduleId: '', contractorId: '', assignedTechId: '',
+    assetId: initialAssetId, scheduleId: '', contractorId: '', assignedTechId: '',
     netaCertLevel: '', scheduledDate: '', notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -268,7 +268,14 @@ export default function WorkOrdersList() {
   const [sites, setSites] = useState([]);
   const [showNew, setShowNew] = useState(false);
 
-  // Filter sources (one-shot).
+  // ── Priority Queue ──────────────────────────────────────────────────────────
+  const [pqAssets, setPqAssets]   = useState([]);
+  const [pqLoading, setPqLoading] = useState(true);
+  const [pqError,   setPqError]   = useState('');
+  // Pre-fill for NewWorkOrderModal when launched from a priority queue row.
+  const [newWoAssetId, setNewWoAssetId] = useState(null);
+
+  // Filter sources + priority queue (one-shot).
   useEffect(() => {
     api.get('/api/contractors')
       .then(r => setContractors(r.data?.data?.contractors || []))
@@ -276,6 +283,11 @@ export default function WorkOrdersList() {
     api.get('/api/sites')
       .then(r => setSites(r.data?.data?.sites || []))
       .catch(() => {});
+    // Priority queue — top 10 scored assets with no open work order.
+    api.get('/api/work-orders/priority-queue')
+      .then(r => setPqAssets(r.data?.data?.assets || []))
+      .catch(() => setPqError('Failed to load priority queue.'))
+      .finally(() => setPqLoading(false));
   }, []);
 
   useEffect(() => {
@@ -347,6 +359,67 @@ export default function WorkOrdersList() {
             </button>
           )}
         </div>
+
+        {/* ── Priority Queue ───────────────────────────────────────────────── */}
+        {(pqLoading || pqError || pqAssets.length > 0) && (
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 'var(--font-size-base)', fontWeight: 600 }}>Priority Queue</h2>
+                <p style={{ margin: '2px 0 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                  Top scored assets (DPS = condition × criticality) with no open work order.
+                </p>
+              </div>
+            </div>
+            {pqError && <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-danger)' }}>{pqError}</div>}
+            {pqLoading && !pqError && <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>Loading…</div>}
+            {!pqLoading && !pqError && pqAssets.length > 0 && (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Asset</th>
+                      <th>Site</th>
+                      <th style={{ textAlign: 'right' }}>DPS</th>
+                      <th style={{ textAlign: 'right' }}>Condition</th>
+                      <th style={{ textAlign: 'right' }}>Criticality</th>
+                      {canWrite && <th />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pqAssets.map(a => {
+                      const name = [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || 'Asset';
+                      const dps = a.priorityScore;
+                      const dpsColor = dps >= 20 ? '#c62828' : dps >= 16 ? '#e65100' : 'var(--color-text)';
+                      return (
+                        <tr key={a.id}>
+                          <td>
+                            <Link to={`/assets/${a.id}`} style={{ fontWeight: 500 }}>{name}</Link>
+                            {a.serialNumber && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginLeft: 6 }}>#{a.serialNumber}</span>}
+                          </td>
+                          <td className="td-muted">{a.site?.name || '—'}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: dpsColor }}>{dps}</td>
+                          <td style={{ textAlign: 'right', color: 'var(--color-text-secondary)' }}>{a.conditionScore ?? '—'}</td>
+                          <td style={{ textAlign: 'right', color: 'var(--color-text-secondary)' }}>{a.criticalityScore ?? '—'}</td>
+                          {canWrite && (
+                            <td style={{ textAlign: 'right' }}>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => { setNewWoAssetId(a.id); setShowNew(true); }}
+                              >
+                                Create work order
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {loading && <div className="loading">Loading work orders…</div>}
 
@@ -441,9 +514,11 @@ export default function WorkOrdersList() {
       {showNew && (
         <NewWorkOrderModal
           contractors={contractors}
-          onClose={() => setShowNew(false)}
+          initialAssetId={newWoAssetId || ''}
+          onClose={() => { setShowNew(false); setNewWoAssetId(null); }}
           onCreated={(wo) => {
             setShowNew(false);
+            setNewWoAssetId(null);
             if (wo?.id) navigate(`/work-orders/${wo.id}`);
           }}
         />

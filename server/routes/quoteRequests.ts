@@ -265,14 +265,25 @@ router.post('/', async (req, res) => {
     if (!VALID_DRIVERS.includes(driver))     return res.status(400).json({ success: false, error: 'invalid driver' });
     if (!VALID_TIMELINES.includes(timeline)) return res.status(400).json({ success: false, error: 'invalid timeline' });
 
-    // Verify asset belongs to this account
+    // Verify asset belongs to this account; also fetch priorityScore for DPS auto-priority
     const asset = await prisma.asset.findFirst({
       where:  { id: assetId, accountId: req.user.accountId },
-      select: { id: true },
+      select: { id: true, priorityScore: true },
     });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
     const emergencyMode = driver === 'down_now';
+
+    // Auto-derive quote priority from asset DPS (priorityScore = conditionScore × criticalityScore).
+    // emergency mode always maps to 'emergency' regardless of DPS.
+    function dpsToPriority(dps: number | null): string | null {
+      if (dps === null) return null;
+      if (dps >= 20) return 'emergency';
+      if (dps >= 16) return 'high';
+      if (dps >= 10) return 'normal';
+      return 'low';
+    }
+    const priority = emergencyMode ? 'emergency' : dpsToPriority(asset.priorityScore);
 
     // Assemble full dossier snapshot
     const dossierSnapshot = await buildDossier(assetId, req.user.accountId);
@@ -291,6 +302,7 @@ router.post('/', async (req, res) => {
         attachmentNotes: attachmentNotes ? String(attachmentNotes) : null,
         notes:           notes           ? String(notes)           : null,
         emergencyMode,
+        priority:        priority ?? undefined,
         dossierSnapshot,
       },
       include: {
