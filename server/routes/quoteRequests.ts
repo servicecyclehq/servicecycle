@@ -187,7 +187,16 @@ router.get('/', async (req, res) => {
       prisma.quoteRequest.count({ where }),
     ]);
 
-    return res.json({ success: true, data: items, pagination: { total, page: parseInt(page as string) || 1, limit: take } });
+    // Match the canonical paginated-list shape used by assets/work-orders/
+    // deficiencies: the collection and pagination both live INSIDE data, and
+    // pagination carries page/limit/total/pages. (Area 4 response-shape sweep.)
+    return res.json({
+      success: true,
+      data: {
+        quoteRequests: items,
+        pagination: { page: parseInt(page as string) || 1, limit: take, total, pages: Math.ceil(total / take) },
+      },
+    });
   } catch (err) {
     console.error('[quoteRequests GET /]', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });

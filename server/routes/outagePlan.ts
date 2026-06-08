@@ -257,6 +257,13 @@ router.post('/work-order', requireManager, async (req, res) => {
     const { scheduledDate, notes, contractorId, scheduleIds } = req.body;
 
     if (!scheduledDate) return res.status(400).json({ success: false, error: 'scheduledDate required' });
+    // Validate the date is parseable BEFORE it reaches Prisma — an
+    // unparseable string would otherwise create an Invalid Date and surface
+    // as a 500 instead of a clean 400 (mirrors POST /api/work-orders).
+    const when = new Date(scheduledDate);
+    if (Number.isNaN(when.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid scheduledDate' });
+    }
     if (!Array.isArray(scheduleIds) || scheduleIds.length === 0) {
       return res.status(400).json({ success: false, error: 'scheduleIds (array) required' });
     }
@@ -298,7 +305,7 @@ router.post('/work-order', requireManager, async (req, res) => {
         accountId,
         assetId,
         status:        'SCHEDULED',
-        scheduledDate: new Date(scheduledDate),
+        scheduledDate: when,
         notes:         combinedNotes,
         contractorId:  contractorId || null,
       },
