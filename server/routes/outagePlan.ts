@@ -269,6 +269,20 @@ router.post('/work-order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid schedules found for this account/asset group' });
     }
 
+    // IDOR: a contractorId from the request body must belong to this account
+    // before it can be pinned to the work order. Without this check a caller
+    // could attach another tenant's contractor (mirrors validateContractor in
+    // routes/workOrders.ts).
+    if (contractorId) {
+      const contractor = await prisma.contractor.findFirst({
+        where:  { id: contractorId, accountId },
+        select: { id: true },
+      });
+      if (!contractor) {
+        return res.status(404).json({ success: false, error: 'Contractor not found' });
+      }
+    }
+
     // Build combined task description in notes (WorkOrder has no description field)
     const taskNames = [...new Set(schedules.map((s: any) => s.taskDefinition?.taskName).filter(Boolean))];
     const combinedNotes = `Consolidated Outage Work Order — ${schedules.length} task(s): ${taskNames.join(', ')}` +

@@ -685,7 +685,7 @@ router.get('/:id/export', async (req, res) => {
       user,
       alertPreferences:    await capped('alertPreferences',    () => prisma.alertPreference.findMany({ where: { userId: targetId }, ...cap })),
       aiUsage:             await capped('aiUsage',             () => prisma.aiUsage.findMany({ where: { userId: targetId }, ...cap })),
-      activityLog:         await capped('activityLog',         () => prisma.activityLog.findMany({ where: { userId: targetId }, orderBy: { createdAt: 'desc' }, ...cap })),
+      activityLog:         await capped('activityLog',         () => prisma.activityLog.findMany({ where: { userId: targetId, accountId: req.user.accountId }, orderBy: { createdAt: 'desc' }, ...cap })),
       refreshTokens:       await capped('refreshTokens',       () => prisma.refreshToken.findMany({ where: { userId: targetId }, select: { id: true, createdAt: true, expiresAt: true, revokedAt: true, replacedById: true }, ...cap })),
       communicationsAuthored: await capped('communicationsAuthored', () => prisma.communication.findMany({ where: { createdBy: targetId, accountId: req.user.accountId }, ...cap })), // Pass-2 P2 fix: tenant-scope
       // Pass-4 audit L3-02 / L3-03: complete the personal-data scope so
