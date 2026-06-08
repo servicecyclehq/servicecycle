@@ -15,7 +15,7 @@ import ThemeToggle from './ThemeToggle';
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
-  Smartphone, QrCode, ShieldAlert,
+  Smartphone, QrCode, ShieldAlert, Layers, Bolt,
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
@@ -44,6 +44,8 @@ const Icons = {
   users:       <Users         {...ICON_PROPS} />,
   settings:    <Settings      {...ICON_PROPS} />,
   reports:     <PieChart      {...ICON_PROPS} />,
+  templates:   <Layers        {...ICON_PROPS} />,
+  outagePlan:  <Bolt          {...ICON_PROPS} />,
 };
 
 function GlobalSearch() {
@@ -729,6 +731,24 @@ export default function Sidebar() {
         >
           {Icons.news}
           Industry News
+        </NavLink>
+
+        {/* Equipment Template Library — all roles can browse; managers+ can create. */}
+        <NavLink
+          to="/equipment-templates"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.templates}
+          Equipment Templates
+        </NavLink>
+
+        {/* Outage Consolidation Planner — account-wide view of assets needing outage work. */}
+        <NavLink
+          to="/outage-planner"
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+        >
+          {Icons.outagePlan}
+          Outage Planner
         </NavLink>
 
         {/* Reports hub — manager / admin only. Top-level nav item; links to

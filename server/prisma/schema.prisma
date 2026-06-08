@@ -283,6 +283,7 @@ model Account {
   lotoEnergySources      LotoEnergySource[]
   lotoSteps              LotoStep[]
   disasterEvents         DisasterEvent[]
+  assetTemplates         AssetTemplate[]
 
   @@map("accounts")
 }
@@ -726,9 +727,10 @@ model MaintenanceTaskDefinition {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
-  account   Account?            @relation(fields: [accountId], references: [id])
-  standard  ComplianceStandard? @relation(fields: [standardId], references: [id])
-  schedules MaintenanceSchedule[]
+  account       Account?            @relation(fields: [accountId], references: [id])
+  standard      ComplianceStandard? @relation(fields: [standardId], references: [id])
+  schedules     MaintenanceSchedule[]
+  templateTasks AssetTemplateTask[]
 
   @@unique([accountId, equipmentType, taskCode])
   @@index([equipmentType])
@@ -1930,4 +1932,47 @@ model WebhookDelivery {
 
   @@index([accountId, createdAt])
   @@map("webhook_deliveries")
+}
+
+// --- Equipment Template Library -----------------------------------------------
+// Pre-built equipment profiles that pre-fill asset fields and auto-apply
+// a curated task list when creating an asset from a template.
+//
+// Global rows (accountId = NULL) are seeded by the platform. Account-custom
+// rows let facilities define their own profiles. AssetTemplateTask is the
+// join table to MaintenanceTaskDefinitions auto-scheduled on asset creation.
+
+model AssetTemplate {
+  id                                   String        @id @default(uuid())
+  accountId                            String?       // NULL = global seed; set = account-custom
+  name                                 String        // "Pad-Mount Transformer 500 kVA"
+  description                          String?
+  equipmentType                        EquipmentType
+  // Default values pre-filled on the New Asset form
+  defaultCriticalityScore              Int?          // 1-5
+  defaultRedundancyStatus              String?       // N | N_PLUS_1 | TWO_N
+  defaultRequiresPredictiveMaintenance Boolean       @default(false)
+  // Suggested nameplate key/value hints pre-populating the nameplate editor.
+  nameplateDefaults                    Json?         // { "kVA": "", "primaryVoltage": "", ... }
+  createdAt                            DateTime      @default(now())
+  updatedAt                            DateTime      @updatedAt
+
+  account         Account?              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  taskDefinitions AssetTemplateTask[]
+
+  @@index([accountId])
+  @@index([equipmentType])
+  @@map("asset_templates")
+}
+
+model AssetTemplateTask {
+  id               String @id @default(uuid())
+  templateId       String
+  taskDefinitionId String
+
+  template       AssetTemplate             @relation(fields: [templateId],       references: [id], onDelete: Cascade)
+  taskDefinition MaintenanceTaskDefinition @relation(fields: [taskDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, taskDefinitionId])
+  @@map("asset_template_tasks")
 }

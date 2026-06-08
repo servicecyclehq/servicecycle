@@ -13,7 +13,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Layers } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -56,6 +57,7 @@ const CONDITION_TIP =
 export default function NewAsset() {
   useDocumentTitle('New Asset');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const confirm = useConfirm();
   // AI photo-identify gating — exact mirror of MaintenanceBriefCard's gate
   // (maintenance_brief feature + AI enabled + provider configured). The
@@ -92,6 +94,10 @@ export default function NewAsset() {
   // Account members ({id, name}) for the optional owner picker.
   const [members, setMembers] = useState([]);
 
+  // "Start from template" panel
+  const [templateApplied, setTemplateApplied] = useState(null); // { id, name } of applied template
+  const [templateTaskIds, setTemplateTaskIds] = useState([]);   // task def IDs to bulk-apply
+
   // "Start from a photo" panel — collapsed by default so the manual flow
   // stays primary; only mounted at all when photoPanelAvailable.
   const [photoOpen, setPhotoOpen]       = useState(false);
@@ -120,6 +126,35 @@ export default function NewAsset() {
     api.get('/api/bootstrap?limit=1')
       .then(r => setMembers(r.data.data?.members || []))
       .catch(() => { /* non-fatal — owner picker renders empty */ });
+
+    // If ?templateId= is in the URL, fetch the template and pre-fill the form.
+    const templateId = searchParams.get('templateId');
+    if (templateId) {
+      api.get(`/api/asset-templates/${templateId}`)
+        .then(r => {
+          const t = r.data.data?.template;
+          if (!t) return;
+          setForm(f => ({
+            ...f,
+            equipmentType:               t.equipmentType || f.equipmentType,
+            criticalityScore:            t.defaultCriticalityScore != null ? String(t.defaultCriticalityScore) : f.criticalityScore,
+            redundancyStatus:            t.defaultRedundancyStatus || f.redundancyStatus,
+            requiresPredictiveMaintenance: t.defaultRequiresPredictiveMaintenance ?? f.requiresPredictiveMaintenance,
+          }));
+          // Pre-populate nameplate from template hints
+          if (t.nameplateDefaults && Object.keys(t.nameplateDefaults).length) {
+            setNameplate(
+              Object.entries(t.nameplateDefaults).map(([key, value]) => ({ key, value: String(value) }))
+            );
+          }
+          // Stash task definition IDs for bulk-apply after creation
+          if (t.taskDefinitions?.length) {
+            setTemplateTaskIds(t.taskDefinitions.map(td => td.id));
+          }
+          setTemplateApplied({ id: t.id, name: t.name });
+        })
+        .catch(() => { /* silently skip — form still usable */ });
+    }
   }, []);
 
   // Cascade: fetching the hierarchy tree whenever the site changes, and
@@ -308,9 +343,26 @@ export default function NewAsset() {
       const res = await api.post('/api/assets', body);
       const asset = res.data.data.asset;
 
+      // If the user started from an equipment template, its tasks are applied first
+      // (silent — template tasks are a curated subset of the full NFPA 70B matrix).
+      if (templateTaskIds.length > 0) {
+        try {
+          await api.post('/api/schedules/bulk-apply', {
+            assetId: asset.id,
+            taskDefinitionIds: templateTaskIds,
+          });
+        } catch {
+          // Non-fatal — schedules can be applied from the detail page.
+        }
+      }
+
       const applyTemplate = await confirm({
-        title: 'Apply NFPA 70B schedule template?',
-        message: 'This pairs the asset with every standard NFPA 70B maintenance task for its equipment type. You can add or remove individual schedules later. Re-running is safe — existing pairings are kept.',
+        title: templateApplied
+          ? `Apply the full NFPA 70B matrix too?`
+          : 'Apply NFPA 70B schedule template?',
+        message: templateApplied
+          ? `The template "${templateApplied.name}" has already applied ${templateTaskIds.length} task(s). Apply the full NFPA 70B matrix for this equipment type on top?`
+          : 'This pairs the asset with every standard NFPA 70B maintenance task for its equipment type. You can add or remove individual schedules later. Re-running is safe — existing pairings are kept.',
         confirmLabel: 'Apply template',
         cancelLabel: 'Skip for now',
       });
@@ -358,6 +410,45 @@ export default function NewAsset() {
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
 
         <form onSubmit={handleSubmit}>
+          {/* ── Template applied banner ──────────────────────────────────────── */}
+          {templateApplied && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+              padding: '10px 14px', borderRadius: 8,
+              background: '#eff6ff', border: '1px solid #bfdbfe',
+            }}>
+              <Layers size={16} color="#1d4ed8" />
+              <span style={{ fontSize: 'var(--font-size-sm)', color: '#1e40af' }}>
+                <strong>Template applied:</strong> {templateApplied.name} — fields and nameplate pre-filled.{' '}
+                {templateTaskIds.length > 0 && `${templateTaskIds.length} tasks will be scheduled after creation.`}
+              </span>
+              <button
+                type="button"
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#1d4ed8', fontSize: 12, padding: 4 }}
+                onClick={() => { setTemplateApplied(null); setTemplateTaskIds([]); }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
+          {/* Template picker (when no template applied yet) */}
+          {!templateApplied && (
+            <div className="card mb-16">
+              <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-secondary"
+                  onClick={() => navigate('/equipment-templates')}>
+                  <Layers size={14} style={{ marginRight: 6 }} />
+                  Start from a template
+                </button>
+                <span style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+                  Optional — pick an equipment profile to pre-fill fields and auto-schedule its task list.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* ── Start from a photo (AI, optional) ──────────────────────────── */}
           {/* Hidden unless AI is enabled+configured and the user's role has
               the maintenance_brief feature — and collapsed behind a button so

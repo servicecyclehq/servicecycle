@@ -119,6 +119,8 @@ const AuditSnapshotsPage             = lazyWithReload(() => import('./pages/Audi
 const OverdueReport                  = lazyWithReload(() => import('./pages/OverdueReport'));    // overdue maintenance report (admin/manager)
 const StandardsLibrary               = lazyWithReload(() => import('./pages/StandardsLibrary')); // standards reference library (admin/manager)
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
+const EquipmentTemplates             = lazyWithReload(() => import('./pages/EquipmentTemplates')); // equipment template library
+const OutagePlannerPage              = lazyWithReload(() => import('./pages/OutagePlannerPage')); // account-wide outage consolidation planner
 
 // Field Mode — phone-first technician surface. Own chrome (FieldLayout, no
 // sidebar), mounted behind ProtectedRoute but OUTSIDE the desktop Layout.
@@ -346,6 +348,12 @@ function AppRoutes() {
                 <AuditsPage />
               </RequireRole>
             } />
+
+            {/* Equipment Template Library — open to all authenticated roles */}
+            <Route path="equipment-templates" element={<EquipmentTemplates />} />
+
+            {/* Outage Consolidation Planner — account-wide view */}
+            <Route path="outage-planner" element={<OutagePlannerPage />} />
 
             {/* Feature-gated pages — redirect to dashboard if not enabled */}
             <Route path="alerts"  element={featureGated('alerts', <AlertsPage />)} />

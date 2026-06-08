@@ -216,6 +216,8 @@ const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
 const quoteRequestRoutes    = require('./routes/quoteRequests');
 const outagePlanRoutes      = require('./routes/outagePlan');
+const assetTemplateRoutes   = require('./routes/assetTemplates');
+const outagePlannerRoutes   = require('./routes/outagePlanner');
 const lotoRoutes            = require('./routes/loto');
 const disasterEventRoutes   = require('./routes/disasterEvents');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
@@ -1222,6 +1224,12 @@ app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 
 // ── Outage Consolidation Planner — clustered task scheduling ─────────────────
 app.use('/api/assets/:assetId/outage-plan', authenticateToken, outagePlanRoutes);
+
+// ── Equipment Template Library ────────────────────────────────────────────────
+app.use('/api/asset-templates', authenticateToken, assetTemplateRoutes);
+
+// ── Account-wide Outage Planner ───────────────────────────────────────────────
+app.use('/api/outage-planner', authenticateToken, outagePlannerRoutes);
 
 // ── LOTO — Lockout/Tagout procedures (asset-scoped) ──────────────────────────
 app.use('/api/assets/:assetId/loto', authenticateToken, lotoRoutes);
