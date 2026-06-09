@@ -103,6 +103,19 @@ function requireViewer(req, res, next) {
   next();
 }
 
-module.exports = { requireAdmin, requireManager, requireViewer };
+/**
+ * Requires oem_admin role.
+ * Use for: fleet dashboard, cross-account OEM reporting routes.
+ * Logs permission_denied to the activity log on failure (matches requireAdmin pattern).
+ */
+function requireOemAdmin(req, res, next) {
+  if (req.user.role !== 'oem_admin') {
+    _logDenied(req, 'oem_admin');
+    return res.status(403).json({ success: false, error: 'OEM admin access required' });
+  }
+  next();
+}
+
+module.exports = { requireAdmin, requireManager, requireViewer, requireOemAdmin };
 
 export {};

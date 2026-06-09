@@ -60,6 +60,18 @@ function cellStr(v: any): string {
   return String(v);
 }
 
+/**
+ * CWE-1236 formula-injection guard.
+ * Strips leading formula-trigger characters from free-text values so that
+ * preview sampleRows reflected back to the client cannot become spreadsheet
+ * formulas if the user pastes them into Excel/LibreOffice.
+ * Characters: = + - @ (and tab/newline variants per OWASP CSV spec).
+ */
+function sanitizeFormulaPrefix(s: string): string {
+  if (!s) return s;
+  return s.replace(/^[=+\-@\t\r\n]+/, '');
+}
+
 async function parseFile(buffer: Buffer, originalname: string) {
   if (/\.(xlsx|xls)$/i.test(originalname || '')) {
     const wb = new ExcelJS.Workbook();
@@ -280,12 +292,20 @@ router.post('/preview', requireManager, handleUpload, async (req: any, res: any)
   try {
     const ctx = await prepare(req);
     if (ctx.error) return res.status(ctx.error.status).json(ctx.error.body);
+    // CWE-1236: sanitize free-text cells in the preview sample before reflecting to client.
+    const safeSample = ctx.rows.slice(0, 10).map((row: any) => {
+      const safe: any = {};
+      for (const [k, v] of Object.entries(row)) {
+        safe[k] = typeof v === 'string' ? sanitizeFormulaPrefix(v) : v;
+      }
+      return safe;
+    });
     return res.json({
       success: true,
       data: {
         step: 'preview', totalRows: ctx.rows.length,
         headers: ctx.headers, suggestedMapping: ctx.mapping, schemaFields: SCHEMA_FIELDS,
-        sampleRows: ctx.rows.slice(0, 10), validationErrors: ctx.validationErrors,
+        sampleRows: safeSample, validationErrors: ctx.validationErrors,
         unmatchedSerials: ctx.unmatchedSerials, platform: ctx.platform, maxRows: MAX_ROWS,
       },
     });

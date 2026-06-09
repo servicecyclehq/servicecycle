@@ -26,10 +26,12 @@ function daysAgo(dateStr) {
 }
 
 function RiskBadge({ score }) {
-  if (score === 0) return <span style={styles.badge.green}>Healthy</span>;
+  // Liability note (security audit 2026-06-09): avoid deterministic "Healthy" — replaced with
+  // "No Issues Flagged" to signal model-based observation, not a guarantee of equipment condition.
+  if (score === 0) return <span style={styles.badge.green}>No Issues Flagged</span>;
   if (score < 10) return <span style={styles.badge.yellow}>Monitor</span>;
   if (score < 25) return <span style={styles.badge.orange}>At Risk</span>;
-  return <span style={styles.badge.red}>Critical</span>;
+  return <span style={styles.badge.red}>Action Required</span>;
 }
 
 function MetricTile({ label, value, accent, sub }) {
@@ -349,8 +351,12 @@ export default function FleetDashboard() {
       <div style={styles.forecastSection}>
         <h2 style={styles.forecastTitle}>Fleet Modernization Forecast — 3-Year Rolling CapEx Exposure</h2>
         <p style={styles.forecastNote}>
-          Figures are platform benchmarks derived from IEEE/NFPA/NETA asset life models and published service rate ranges.
-          They are not binding quotes.
+          <strong>Budget planning estimates only.</strong> Figures are probabilistic ranges derived from
+          IEEE/NFPA/NETA equipment-life models, customer-provided condition ratings, and published service
+          rate benchmarks. Actual costs vary by site, equipment configuration, labor market, and factors
+          not captured in this model. These estimates are <strong>not formal quotes, engineering assessments,
+          or guarantees of equipment condition or remaining useful life.</strong> Consult a licensed
+          electrical engineer before making capital replacement decisions.
         </p>
         {forecastLoading && <div style={styles.forecastLoading}>Loading forecast…</div>}
         {!forecastLoading && forecast && forecast.length === 0 && (

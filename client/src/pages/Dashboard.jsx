@@ -625,12 +625,16 @@ function CapExForecastPanel() {
           Estimated Electrical CapEx Exposure
         </h3>
         <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
-          Platform benchmarks — not binding quotes
+          Budget planning estimates only — not binding quotes
         </span>
       </div>
       <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-        Assets approaching end-of-life based on IEEE/NFPA/NETA life models. Use these ranges for
-        CapEx planning with your CFO or facilities budget team.
+        Assets approaching end-of-life based on IEEE/NFPA/NETA equipment-life models and
+        condition ratings recorded in the system. Cost ranges reflect published service benchmarks
+        and will vary by site, equipment configuration, and local labor. <strong>These figures
+        are for budget planning only and do not constitute a formal quote, engineering assessment,
+        or guarantee of equipment condition.</strong> Consult a licensed electrical engineer
+        before making capital replacement decisions.
       </p>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         {forecast.filter((f) => f.assetCount > 0).map((f) => (

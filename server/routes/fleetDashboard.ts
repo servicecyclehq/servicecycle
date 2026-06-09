@@ -12,21 +12,19 @@
 
 const router = require('express').Router();
 import prisma from '../lib/prisma';
+const { requireOemAdmin } = require('../middleware/roles');
 
 const DAY_MS = 86_400_000;
 
 // ── Role guard ────────────────────────────────────────────────────────────────
 // account-forecast is customer-facing (any authenticated user); all other
 // /api/fleet/* endpoints require oem_admin role.
-function requireOemAdmin(req, res, next) {
-  if (req.path === '/account-forecast') return next(); // customer-facing, no OEM role needed
-  if (req.user?.role !== 'oem_admin') {
-    return res.status(403).json({ error: 'OEM admin role required' });
-  }
-  next();
-}
-
-router.use(requireOemAdmin);
+// Use canonical requireOemAdmin (with permission_denied logging) from roles.ts,
+// carving out the customer-facing /account-forecast route.
+router.use((req, res, next) => {
+  if (req.path === '/account-forecast') return next();
+  return requireOemAdmin(req, res, next);
+});
 
 // ── GET /api/fleet/dashboard ──────────────────────────────────────────────────
 router.get('/dashboard', async (req, res) => {

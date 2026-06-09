@@ -789,6 +789,17 @@ const exportLimiter = rateLimit({
   message: { success: false, error: 'Too many exports — please wait a moment before trying again.' },
 });
 
+// CPU-bound PDF generation for leave-behind documents. 20/hr per user keeps
+// a busy tech from hammering pdfkit; authenticated so user-keyed rate is accurate.
+const leaveBehindLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator: (req) => `user:${req.user?.id || req.ip}`,
+  message: { success: false, error: 'Too many PDF requests — please wait before generating another leave-behind.' },
+});
+
 // â”€â”€ Item 2: central request validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Swap each router's handlers for a wrapper that validates params/query/body
 // against schemas/registry BEFORE the handler. Routers are fully populated at
@@ -1247,8 +1258,8 @@ app.use('/api/assets/:assetId/loto', authenticateToken, lotoRoutes);
 
 // ── Leave-Behind PDF — inspection close leave-behind (Task 28) ───────────────
 // Mounted at both the canonical work-orders path and the inspections alias.
-app.use('/api/work-orders/:id/leave-behind-pdf', authenticateToken, leaveBehindRoutes);
-app.use('/api/inspections/:id/leave-behind-pdf', authenticateToken, leaveBehindRoutes);
+app.use('/api/work-orders/:id/leave-behind-pdf', authenticateToken, leaveBehindLimiter, leaveBehindRoutes);
+app.use('/api/inspections/:id/leave-behind-pdf', authenticateToken, leaveBehindLimiter, leaveBehindRoutes);
 
 // ── Disaster Response Mode — weather alerts + emergency declarations ──────────
 app.use('/api/disaster-events', authenticateToken, disasterEventRoutes);
