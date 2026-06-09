@@ -15,7 +15,7 @@ import ThemeToggle from './ThemeToggle';
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
-  Smartphone, QrCode, ShieldAlert, Layers, Bolt,
+  Smartphone, QrCode, ShieldAlert, Layers, Bolt, UploadCloud,
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
@@ -46,6 +46,8 @@ const Icons = {
   reports:     <PieChart      {...ICON_PROPS} />,
   templates:   <Layers        {...ICON_PROPS} />,
   outagePlan:  <Bolt          {...ICON_PROPS} />,
+  cmmsImport:  <UploadCloud   {...ICON_PROPS} />,
+  fleetView:   <LayoutGrid    {...ICON_PROPS} />,
 };
 
 function GlobalSearch() {
@@ -750,6 +752,28 @@ export default function Sidebar() {
           {Icons.outagePlan}
           Outage Planner
         </NavLink>
+
+        {/* CMMS Import Hub — migrate data from Maximo / SAP PM / Oracle EAM. */}
+        {(user?.role === 'admin' || user?.role === 'manager') && (
+          <NavLink
+            to="/import"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.cmmsImport}
+            Import Data
+          </NavLink>
+        )}
+
+        {/* Fleet Dashboard — OEM cross-account view. oem_admin role only. */}
+        {user?.role === 'oem_admin' && (
+          <NavLink
+            to="/fleet"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.fleetView}
+            Fleet View
+          </NavLink>
+        )}
 
         {/* Reports hub — manager / admin only. Top-level nav item; links to
             /reports which shows the hub card grid. */}

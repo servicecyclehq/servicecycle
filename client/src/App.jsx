@@ -121,6 +121,8 @@ const StandardsLibrary               = lazyWithReload(() => import('./pages/Stan
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 const EquipmentTemplates             = lazyWithReload(() => import('./pages/EquipmentTemplates')); // equipment template library
 const OutagePlannerPage              = lazyWithReload(() => import('./pages/OutagePlannerPage')); // account-wide outage consolidation planner
+const CmmsImport                     = lazyWithReload(() => import('./pages/CmmsImport'));         // CMMS bulk import hub
+const FleetDashboard                 = lazyWithReload(() => import('./pages/FleetDashboard'));     // OEM fleet dashboard (oem_admin)
 
 // Field Mode — phone-first technician surface. Own chrome (FieldLayout, no
 // sidebar), mounted behind ProtectedRoute but OUTSIDE the desktop Layout.
@@ -354,6 +356,20 @@ function AppRoutes() {
 
             {/* Outage Consolidation Planner — account-wide view */}
             <Route path="outage-planner" element={<OutagePlannerPage />} />
+
+            {/* CMMS bulk import hub — admin / manager only */}
+            <Route path="import" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <CmmsImport />
+              </RequireRole>
+            } />
+
+            {/* OEM fleet dashboard — oem_admin only */}
+            <Route path="fleet" element={
+              <RequireRole roles={['oem_admin']}>
+                <FleetDashboard />
+              </RequireRole>
+            } />
 
             {/* Feature-gated pages — redirect to dashboard if not enabled */}
             <Route path="alerts"  element={featureGated('alerts', <AlertsPage />)} />

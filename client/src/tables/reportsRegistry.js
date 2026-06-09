@@ -14,14 +14,24 @@
 // Set `planned: true` for "Planned" placeholders that are not navigable.
 // Set `to` for active cards that navigate to an in-app report route.
 // Set `exportView` for active cards that download via GET /api/export/xlsx.
+// Set `empDownload: true` for cards that POST-generate and download an EMP PDF.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
   BarChart3, AlertTriangle, FileCheck2, Download, BookOpen,
-  ClipboardList, TrendingUp,
+  ClipboardList, TrendingUp, ShieldCheck,
 } from 'lucide-react';
 
 export const REPORTS = [
+  {
+    id: 'emp-document',
+    name: 'Export EMP Document',
+    description: 'Download your formal Electrical Maintenance Program (NFPA 70B §4.2) as a PDF — asset inventory, maintenance intervals, 24-month work-order history, condition ratings, open deficiencies, and personnel qualifications. Required by insurance carriers at policy renewal.',
+    icon: ShieldCheck,
+    planned: false,
+    empDownload: true,
+    empMonths: 24,
+  },
   {
     id: 'compliance-by-standard',
     name: 'Compliance by Standard',

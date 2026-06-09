@@ -18,6 +18,7 @@ import BackupSection from '../components/settings/BackupSection.jsx'; // v0.91 P
 import EncryptionSection from '../components/settings/EncryptionSection.jsx'; // v0.91 Phase 1b cont'd
 import CustomFieldsSection from '../components/settings/CustomFieldsSection.jsx'; // v0.91 Phase 1b cont'd
 import EmpSection from '../components/settings/EmpSection.jsx'; // EMP / NFPA 70B §4.2 program settings
+import BrandingSection from '../components/settings/BrandingSection.jsx'; // white-label branding
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const API = import.meta.env.VITE_API_URL || '/api';
@@ -1006,6 +1007,9 @@ export default function SettingsPage() {
       {/* NFPA 70B:2023 §4.2 written-EMP settings: coordinator, retention
           policy, review interval, and document generation. */}
       {activeTab === 'emp' && <EmpSection isAdmin={isAdmin} />}
+
+      {/* ── White-label branding ─────────────────────────────────────────── */}
+      {activeTab === 'branding' && <BrandingSection isAdmin={isAdmin} />}
 
       {/* ── API Keys — admin-only (v0.20.0) ─────────────────────────────── */}
       {isAdmin && activeTab === 'api-keys' && <ApiKeysSection />}

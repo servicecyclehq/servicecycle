@@ -61,6 +61,7 @@ enum UserRole {
   manager
   viewer
   consultant // Maintenance Vendor account manager — receives alerts in tandem
+  oem_admin  // OEM service org fleet manager — cross-account read-only view
 }
 
 // Equipment taxonomy. Expanded 2026-06-07 from the buyer-priority analysis
@@ -236,6 +237,9 @@ model Account {
   serviceRepName           String?
   serviceRepEmail          String?
   serviceRepPhone          String?
+  // OEM partner linkage -- links this customer account to a PartnerOrganization
+  // for fleet-level visibility by oem_admin users.
+  partnerOrgId             String?
   // Per-tenant total headcount — drives cost-per-employee KPI tiles.
   // Nullable so existing accounts continue to work.
   fteCount                 Int?
@@ -285,7 +289,27 @@ model Account {
   disasterEvents         DisasterEvent[]
   assetTemplates         AssetTemplate[]
 
+  partnerOrg             PartnerOrganization? @relation(fields: [partnerOrgId], references: [id], onDelete: SetNull)
+
   @@map("accounts")
+}
+
+// ─── OEM Partner Organizations ───────────────────────────────────────────────
+// Represents an OEM service organization (Eaton, Schneider, ABB, etc.).
+// Customer accounts are linked via partnerOrgId.  Users with role oem_admin
+// on any account in the same partner org get cross-account fleet visibility.
+model PartnerOrganization {
+  id           String    @id @default(uuid())
+  name         String
+  logoUrl      String?
+  primaryColor String?   // hex, e.g. "#0057b8"
+  website      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  accounts Account[]
+
+  @@map("partner_organizations")
 }
 
 model User {

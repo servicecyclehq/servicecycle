@@ -77,6 +77,17 @@ function SectionCard({ title, children, accent }) {
   );
 }
 
+const mFldLabel = {
+  display: 'block', fontSize: 11, fontWeight: 700,
+  textTransform: 'uppercase', letterSpacing: '0.05em',
+  color: 'var(--color-text-secondary)', marginBottom: 4,
+};
+const mFldCtrl = {
+  width: '100%', padding: '10px 10px', borderRadius: 10, fontSize: 15,
+  border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)',
+  color: 'var(--color-text)', boxSizing: 'border-box',
+};
+
 const fatBtn = {
   boxSizing: 'border-box', width: '100%', minHeight: 56,
   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -120,6 +131,24 @@ export default function FieldAsset() {
   const [defDesc, setDefDesc] = useState('');
   const [defBusy, setDefBusy] = useState(false);
 
+  // (d) Test measurement state
+  const [measWoId,       setMeasWoId]       = useState('');
+  const [measType,       setMeasType]       = useState('insulation_resistance');
+  const [measPhase,      setMeasPhase]      = useState('A');
+  const [measAfValue,    setMeasAfValue]    = useState('');
+  const [measAfUnit,     setMeasAfUnit]     = useState('MΩ');
+  const [measAlValue,    setMeasAlValue]    = useState('');
+  const [measAlUnit,     setMeasAlUnit]     = useState('MΩ');
+  const [measPassFail,   setMeasPassFail]   = useState(null); // 'pass' | 'fail'
+  const [measBusy,       setMeasBusy]       = useState(false);
+
+  // ── Nameplate OCR state ────────────────────────────────────────────────────
+  const ocrInputRef = useRef(null);
+  const [ocrBusy,    setOcrBusy]    = useState(false);
+  const [ocrResult,  setOcrResult]  = useState(null);  // extracted fields object
+  const [ocrError,   setOcrError]   = useState(null);
+  const [ocrApplied, setOcrApplied] = useState(false);
+
   const fetchData = useCallback(() => {
     api.get(`/api/field/asset/${id}`)
       .then(r => { setData(r.data?.data || null); setError(null); })
@@ -137,6 +166,12 @@ export default function FieldAsset() {
   const schedules = data?.activeSchedules || [];
   const openDefs = data?.openDeficiencies || [];
   const openWOs = data?.openWorkOrders || [];
+  // Auto-select the only WO when there's exactly one
+  useEffect(() => {
+    if (openWOs.length === 1 && !measWoId) {
+      setMeasWoId(openWOs[0].id);
+    }
+  }, [openWOs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── (a) Complete flow ───────────────────────────────────────────────────────
   async function handleComplete() {
@@ -226,6 +261,107 @@ export default function FieldAsset() {
       }
     } finally {
       setPhotoBusy(false);
+    }
+  }
+
+
+
+  // ── Nameplate OCR ────────────────────────────────────────────────────────────
+  function handleOcrPick(e) {
+    const f = e.target.files?.[0];
+    if (ocrInputRef.current) ocrInputRef.current.value = '';
+    if (!f) return;
+    setOcrError(null);
+    setOcrResult(null);
+    setOcrApplied(false);
+    if (!PHOTO_TYPES.includes(f.type)) {
+      setOcrError('Use a JPEG, PNG, or WebP photo.');
+      return;
+    }
+    if (f.size > MAX_PHOTO_BYTES) {
+      setOcrError(`Photo too large (${(f.size / 1024 / 1024).toFixed(1)}MB) — limit is 10MB.`);
+      return;
+    }
+    runOcrNameplate(f);
+  }
+
+  async function runOcrNameplate(file) {
+    if (!navigator.onLine) {
+      setOcrError('Nameplate scan needs a connection.');
+      return;
+    }
+    setOcrBusy(true);
+    setOcrError(null);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      if (id) fd.append('assetId', id);
+      const res = await api.post('/api/assets/ocr-nameplate', fd);
+      setOcrResult(res.data?.data || null);
+    } catch (err) {
+      const d = err.response?.data;
+      const status = err.response?.status;
+      if (status === 503) setOcrError(d?.message || 'AI unavailable on this instance.');
+      else if (status === 403) setOcrError('AI consent needed — re-open and accept the dialog.');
+      else if (!err.response) setOcrError('Connection dropped — try again online.');
+      else setOcrError(d?.error || err.message || 'Failed to read nameplate.');
+    } finally {
+      setOcrBusy(false);
+    }
+  }
+
+  async function applyOcrToAsset() {
+    if (!ocrResult || !id) return;
+    const patch = {};
+    if (ocrResult.manufacturer) patch.manufacturer = ocrResult.manufacturer;
+    if (ocrResult.model)         patch.model        = ocrResult.model;
+    if (ocrResult.serialNumber)  patch.serialNumber = ocrResult.serialNumber;
+    if (!Object.keys(patch).length) return;
+    try {
+      await api.put(`/api/assets/${id}`, patch);
+      setOcrApplied(true);
+      setToast({ message: 'Asset updated from nameplate', type: 'success' });
+      setTimeout(fetchData, 800);
+    } catch {
+      setToast({ message: 'Could not save — try again', type: 'error' });
+    }
+  }
+
+  // ── (d) Add test measurement ────────────────────────────────────────────────
+  async function handleAddMeasurement() {
+    if (measBusy || !measWoId || !measAfValue.trim()) return;
+    setMeasBusy(true);
+    try {
+      const payload = {
+        measurementType: measType,
+        phase:           measPhase,
+        asFoundValue:    measAfValue.trim(),
+        asFoundUnit:     measAfUnit,
+        asLeftValue:     measAlValue.trim() || null,
+        asLeftUnit:      measAlValue.trim() ? measAlUnit : null,
+        passFail:        measPassFail,
+      };
+      const result = await fieldMutate({
+        url:    `/api/work-orders/${measWoId}/measurements`,
+        method: 'POST',
+        body:   payload,
+        meta:   { label: `Measurement (${measType})`, assetId: id },
+      });
+      if (result !== 'queued') {
+        setMeasAfValue(''); setMeasAlValue(''); setMeasPassFail(null);
+        setToast({ message: 'Measurement recorded.', type: 'success' });
+        fetchData();
+      } else {
+        setToast({ message: 'Saved offline — will sync when online.', type: 'info' });
+        setMeasAfValue(''); setMeasAlValue(''); setMeasPassFail(null);
+      }
+    } catch (err) {
+      setToast({
+        message: err.response?.data?.error || err.message || 'Failed to save measurement.',
+        type: 'error',
+      });
+    } finally {
+      setMeasBusy(false);
     }
   }
 
@@ -619,6 +755,125 @@ export default function FieldAsset() {
         </SectionCard>
       )}
 
+      {/* ── (d) Test measurements — only shown when open WOs exist ─────── */}
+      {openWOs.length > 0 && (
+        <SectionCard title="Record measurement" accent="var(--color-primary)">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '6px 0' }}>
+            {openWOs.length > 1 && (
+              <div>
+                <label style={mFldLabel}>Work Order</label>
+                <select
+                  value={measWoId}
+                  onChange={(e) => setMeasWoId(e.target.value)}
+                  style={mFldCtrl}
+                >
+                  <option value="">Select work order…</option>
+                  {openWOs.map((wo) => (
+                    <option key={wo.id} value={wo.id}>{wo.taskName || wo.id}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={mFldLabel}>Type</label>
+                <select value={measType} onChange={(e) => setMeasType(e.target.value)} style={mFldCtrl}>
+                  <option value="insulation_resistance">Insulation Resistance</option>
+                  <option value="contact_resistance">Contact Resistance</option>
+                  <option value="power_factor">Power Factor / Tan δ</option>
+                  <option value="load_current">Load Current</option>
+                  <option value="voltage">Voltage</option>
+                  <option value="temperature">Temperature (IR)</option>
+                  <option value="timing">Timing</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label style={mFldLabel}>Phase</label>
+                <select value={measPhase} onChange={(e) => setMeasPhase(e.target.value)} style={mFldCtrl}>
+                  {['A','B','C','A-B','B-C','A-C','3-phase','N/A'].map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
+              <div>
+                <label style={mFldLabel}>As-Found Value</label>
+                <input
+                  type="number" inputMode="decimal"
+                  value={measAfValue} onChange={(e) => setMeasAfValue(e.target.value)}
+                  placeholder="e.g. 1200" style={mFldCtrl}
+                />
+              </div>
+              <div>
+                <label style={mFldLabel}>Unit</label>
+                <select value={measAfUnit} onChange={(e) => setMeasAfUnit(e.target.value)} style={mFldCtrl}>
+                  {['MΩ','kΩ','Ω','μΩ','A','kV','V','ms','°C','%','W','kVA'].map(u => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
+              <div>
+                <label style={mFldLabel}>As-Left Value <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                <input
+                  type="number" inputMode="decimal"
+                  value={measAlValue} onChange={(e) => setMeasAlValue(e.target.value)}
+                  placeholder="After service" style={mFldCtrl}
+                />
+              </div>
+              <div>
+                <label style={mFldLabel}>Unit</label>
+                <select value={measAlUnit} onChange={(e) => setMeasAlUnit(e.target.value)} style={mFldCtrl}>
+                  {['MΩ','kΩ','Ω','μΩ','A','kV','V','ms','°C','%','W','kVA'].map(u => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={mFldLabel}>Pass / Fail</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['pass', 'fail'].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setMeasPassFail(measPassFail === v ? null : v)}
+                    style={{
+                      flex: 1, padding: '10px 0', borderRadius: 10, fontWeight: 700,
+                      fontSize: 15, border: 'none', cursor: 'pointer',
+                      background: measPassFail === v
+                        ? (v === 'pass' ? '#16a34a' : '#dc2626')
+                        : 'var(--color-border)',
+                      color: measPassFail === v ? '#fff' : 'var(--color-text-secondary)',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    {v === 'pass' ? '✓ Pass' : '✗ Fail'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={handleAddMeasurement}
+              disabled={measBusy || !measWoId || !measAfValue.trim()}
+              style={{
+                ...fatBtn,
+                background: (!measWoId || !measAfValue.trim()) ? 'var(--color-border)' : 'var(--color-primary)',
+                color: (!measWoId || !measAfValue.trim()) ? 'var(--color-text-secondary)' : '#fff',
+                cursor: (measBusy || !measWoId || !measAfValue.trim()) ? 'default' : 'pointer',
+                marginTop: 4,
+              }}
+            >
+              {measBusy ? 'Saving…' : 'Save Measurement'}
+            </button>
+          </div>
+        </SectionCard>
+      )}
+
       <Link
         to="/field"
         style={{
@@ -628,6 +883,104 @@ export default function FieldAsset() {
       >
         ← Back to My Day
       </Link>
+
+      {/* ── (e) Nameplate OCR ────────────────────────────────────────────────── */}
+      <SectionCard title="Scan nameplate" accent="#7c3aed">
+        <input
+          ref={ocrInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          capture="environment"
+          onChange={handleOcrPick}
+          disabled={ocrBusy}
+          style={{ display: 'none' }}
+          aria-label="Nameplate photo"
+        />
+
+        {!ocrBusy && !ocrResult && (
+          <button
+            type="button"
+            onClick={() => ocrInputRef.current?.click()}
+            style={{ ...fatBtn, background: '#7c3aed', color: '#fff', border: 'none' }}
+          >
+            📷 Scan nameplate
+          </button>
+        )}
+
+        {ocrBusy && (
+          <div role="status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 56, fontSize: 14.5, fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+            <span aria-hidden="true" style={{
+              width: 16, height: 16, border: '2.5px solid var(--color-border)',
+              borderTopColor: '#7c3aed', borderRadius: '50%',
+              animation: 'fieldspin2 0.9s linear infinite',
+            }} />
+            Reading nameplate…
+          </div>
+        )}
+
+        {ocrError && !ocrBusy && (
+          <div role="alert" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 13.5 }}>
+            {ocrError}
+            <button type="button" onClick={() => { setOcrError(null); ocrInputRef.current?.click(); }}
+              style={{ marginLeft: 10, fontSize: 12, color: '#991b1b', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
+              Try again
+            </button>
+          </div>
+        )}
+
+        {ocrResult && !ocrBusy && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+              Extracted fields
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+              <tbody>
+                {[
+                  ['Manufacturer',    ocrResult.manufacturer],
+                  ['Model',           ocrResult.model],
+                  ['Serial No.',      ocrResult.serialNumber],
+                  ['Voltage',         ocrResult.voltage],
+                  ['kVA',             ocrResult.kva != null ? String(ocrResult.kva) : null],
+                  ['Amperage',        ocrResult.amperage],
+                  ['Phases',          ocrResult.phases != null ? String(ocrResult.phases) : null],
+                  ['Frequency',       ocrResult.frequency],
+                  ['Mfg. Year',       ocrResult.year != null ? String(ocrResult.year) : null],
+                  ['Enclosure',       ocrResult.enclosureRating],
+                ].filter(([, v]) => v).map(([label, value]) => (
+                  <tr key={label}>
+                    <td style={{ padding: '4px 0', color: 'var(--color-text-secondary)', width: '38%', verticalAlign: 'top' }}>{label}</td>
+                    <td style={{ padding: '4px 0', fontWeight: 600 }}>{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+              {!ocrApplied && (ocrResult.manufacturer || ocrResult.model || ocrResult.serialNumber) && (
+                <button
+                  type="button"
+                  onClick={applyOcrToAsset}
+                  style={{ ...fatBtn, background: '#7c3aed', color: '#fff', border: 'none', flex: '1 1 auto' }}
+                >
+                  Apply to asset
+                </button>
+              )}
+              {ocrApplied && (
+                <div style={{ padding: '10px 14px', borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: 13.5, fontWeight: 600, flex: '1 1 auto', textAlign: 'center' }}>
+                  ✓ Asset updated
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => { setOcrResult(null); setOcrApplied(false); setOcrError(null); ocrInputRef.current?.click(); }}
+                style={{ ...fatBtn, background: 'none', border: '1px solid var(--color-border)', color: 'var(--color-text)', flex: '0 0 auto' }}
+              >
+                Rescan
+              </button>
+            </div>
+          </div>
+        )}
+      </SectionCard>
 
       {/* ── Bottom-sheet: complete task ────────────────────────────────────── */}
       {sheetSchedule && (

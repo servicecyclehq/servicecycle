@@ -6,6 +6,7 @@ import DemoModeBanner from './DemoModeBanner';
 import OfflineBanner from './OfflineBanner';
 import DisasterBanner from './DisasterBanner';
 import { useAuth } from '../context/AuthContext';
+import { useBranding } from '../hooks/useBranding';
 
 // v0.37.1 W5 MT-023: <HelpDrawer /> used to mount HERE inside the
 // authenticated <Layout /> shell. That made the JSDoc claim "works on
@@ -164,6 +165,7 @@ export default function Layout() {
   // intentionally NOT done (drawer is ephemeral per page-view).
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useBranding(); // Load white-label CSS vars on every authenticated page
   // H7 (audit High, 2026-05-22): focus trap on the mobile sidebar drawer.
   // useFocusTrap inside a conditional component is the standard pattern --
   // we mount the trap wrapper only when sidebarOpen so the hook only runs

@@ -1002,104 +1002,67 @@ router.put('/service-rep', requireAdmin, async (req, res) => {
   }
 });
 
-// ── GET /api/settings/import-webhook ─────────────────────────────────────────
-// Returns current import webhook config (URL masked, secret never returned).
-router.get('/import-webhook', requireAdmin, async (req, res) => {
+
+// ── GET /api/settings/branding — no auth level gate; any user can load brand ──
+// Returns BRAND_LOGO_URL, BRAND_PRIMARY_COLOR, BRAND_DISPLAY_NAME for CSS
+// injection on load.  Safe to expose — cosmetic only.
+router.get('/branding', async (req, res) => {
   try {
-    const account = await prisma.account.findUnique({
-      where:  { id: req.user.accountId },
-      select: { importWebhookUrl: true, importWebhookSecret: true },
+    const rows = await prisma.accountSetting.findMany({
+      where: {
+        accountId: req.user.accountId,
+        key: { in: ['BRAND_LOGO_URL', 'BRAND_PRIMARY_COLOR', 'BRAND_DISPLAY_NAME'] },
+      },
     });
-    const { decryptIfEncrypted } = require('../lib/crypto');
-    const { maskUrl } = require('../lib/webhookDlq');
-    const rawUrl = account?.importWebhookUrl ? decryptIfEncrypted(account.importWebhookUrl) : null;
+    const m: Record<string, string> = {};
+    for (const r of rows) m[r.key] = r.value;
     return res.json({
       success: true,
       data: {
-        configured: !!(rawUrl && account?.importWebhookSecret),
-        urlMasked:  rawUrl ? maskUrl(rawUrl) : null,
-        secretSet:  !!(account?.importWebhookSecret),
+        logoUrl:      m['BRAND_LOGO_URL']      ?? null,
+        primaryColor: m['BRAND_PRIMARY_COLOR'] ?? null,
+        displayName:  m['BRAND_DISPLAY_NAME']  ?? null,
       },
     });
   } catch (err) {
-    console.error('[settings/import-webhook GET]', err);
-    return res.status(500).json({ success: false, error: 'Failed to load import webhook' });
+    console.error('[settings/branding GET]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load branding' });
   }
 });
 
-// ── PUT /api/settings/import-webhook ─────────────────────────────────────────
-// Set (or rotate) the import webhook URL + generate a new HMAC secret.
-// The secret is returned ONCE on this response — it is never surfaced again.
-router.put('/import-webhook', requireAdmin, async (req, res) => {
+// ── PUT /api/settings/branding — admin only ────────────────────────────────────
+// Saves white-label branding settings.  All fields optional (null clears).
+// primaryColor must be a valid CSS hex (#rrggbb) if provided.
+router.put('/branding', requireAdmin, async (req, res) => {
   try {
-    const { url } = req.body;
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ success: false, error: 'url is required' });
-    }
-    const { validateWebhookUrl } = require('../lib/webhook');
-    const { valid, reason } = await validateWebhookUrl(url.trim());
-    if (!valid) {
-      return res.status(400).json({ success: false, error: `Invalid webhook URL: ${reason}` });
-    }
-    const crypto = require('crypto');
-    const { encryptIfNeeded } = require('../lib/crypto');
-    const { maskUrl } = require('../lib/webhookDlq');
-    const newSecret = crypto.randomBytes(32).toString('hex');
-    await prisma.account.update({
-      where: { id: req.user.accountId },
-      data:  {
-        importWebhookUrl:    encryptIfNeeded(url.trim()),
-        importWebhookSecret: encryptIfNeeded(newSecret),
-      },
-    });
-    return res.json({
-      success: true,
-      data: {
-        urlMasked:      maskUrl(url.trim()),
-        hmacSecretOnce: newSecret, // shown only this once
-      },
-    });
-  } catch (err) {
-    console.error('[settings/import-webhook PUT]', err);
-    return res.status(500).json({ success: false, error: 'Failed to save import webhook' });
-  }
-});
+    const { logoUrl, primaryColor, displayName } = req.body;
 
-// ── DELETE /api/settings/import-webhook ──────────────────────────────────────
-// Remove the import webhook configuration entirely.
-router.delete('/import-webhook', requireAdmin, async (req, res) => {
-  try {
-    await prisma.account.update({
-      where: { id: req.user.accountId },
-      data:  { importWebhookUrl: null, importWebhookSecret: null },
-    });
+    // Validate hex color if provided
+    if (primaryColor != null && !/^#[0-9a-fA-F]{6}$/.test(String(primaryColor))) {
+      return res.status(400).json({ success: false, error: 'primaryColor must be a 6-digit hex (e.g. #0057b8)' });
+    }
+
+    const upsert = async (key: string, value: string | null) => {
+      if (value === null || value === undefined || String(value).trim() === '') {
+        await prisma.accountSetting.deleteMany({ where: { accountId: req.user.accountId, key } });
+      } else {
+        await prisma.accountSetting.upsert({
+          where:  { accountId_key: { accountId: req.user.accountId, key } },
+          create: { accountId: req.user.accountId, key, value: String(value).trim() },
+          update: { value: String(value).trim() },
+        });
+      }
+    };
+
+    await Promise.all([
+      upsert('BRAND_LOGO_URL',      logoUrl),
+      upsert('BRAND_PRIMARY_COLOR', primaryColor),
+      upsert('BRAND_DISPLAY_NAME',  displayName),
+    ]);
+
     return res.json({ success: true });
   } catch (err) {
-    console.error('[settings/import-webhook DELETE]', err);
-    return res.status(500).json({ success: false, error: 'Failed to remove import webhook' });
+    console.error('[settings/branding PUT]', err);
+    return res.status(500).json({ success: false, error: 'Failed to save branding' });
   }
 });
-
-// ── GET /api/settings/import-webhook/deliveries ───────────────────────────────
-// Recent import webhook delivery history for the account (last 50 rows).
-router.get('/import-webhook/deliveries', requireAdmin, async (req, res) => {
-  try {
-    const deliveries = await prisma.webhookDelivery.findMany({
-      where:   { accountId: req.user.accountId },
-      orderBy: { createdAt: 'desc' },
-      take:    50,
-      select: {
-        id: true, event: true, deliveryId: true, status: true,
-        statusCode: true, responseMs: true, error: true, createdAt: true,
-      },
-    });
-    return res.json({ success: true, data: deliveries });
-  } catch (err) {
-    console.error('[settings/import-webhook/deliveries GET]', err);
-    return res.status(500).json({ success: false, error: 'Failed to load delivery history' });
-  }
-});
-
-module.exports = router;
-
-export {};

@@ -180,6 +180,9 @@ const workOrderRoutes       = require('./routes/workOrders');   // execution
 const deficiencyRoutes      = require('./routes/deficiencies'); // findings
 const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
 const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
+const workOrdersImportRoutes = require('./routes/workOrdersImport'); // WO history import
+const deficienciesImportRoutes = require('./routes/deficienciesImport'); // findings import
+const schedulesImportRoutes  = require('./routes/schedulesImport'); // schedule history import
 const assetBriefRoutes      = require('./routes/assetBrief');   // AI maintenance brief
 const assetPhotoInspectRoutes = require('./routes/assetPhotoInspect'); // AI photo inspection (vision)
 const fieldRoutes           = require('./routes/fieldRoutes');  // Field Mode: My Day + field asset card
@@ -215,6 +218,7 @@ const v1ContractorRoutes = require('./routes/v1/contractors');
 const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
 const quoteRequestRoutes    = require('./routes/quoteRequests');
+const fleetDashboardRoutes  = require('./routes/fleetDashboard');
 const outagePlanRoutes      = require('./routes/outagePlan');
 const assetTemplateRoutes   = require('./routes/assetTemplates');
 const outagePlannerRoutes   = require('./routes/outagePlanner');
@@ -1115,8 +1119,11 @@ app.use('/api/assets',          authenticateToken, assetBriefRoutes);
 app.use('/api/assets',          authenticateToken, assetPhotoInspectRoutes);
 app.use('/api/sites',           authenticateToken, siteRoutes);
 app.use('/api/contractors',     authenticateToken, contractorRoutes);
+app.use('/api/schedules/import', authenticateToken, ingestLimiter, schedulesImportRoutes);
 app.use('/api/schedules',       authenticateToken, scheduleRoutes);
+app.use('/api/work-orders/import', authenticateToken, ingestLimiter, workOrdersImportRoutes);
 app.use('/api/work-orders',     authenticateToken, workOrderRoutes);
+app.use('/api/deficiencies/import', authenticateToken, ingestLimiter, deficienciesImportRoutes);
 app.use('/api/deficiencies',    authenticateToken, deficiencyRoutes);
 app.use('/api/standards',       authenticateToken, standardsRoutes);
 // Per-standard compliance proof: summary/report reads for any role,
@@ -1218,6 +1225,9 @@ app.use('/api/settings/api-keys', authenticateToken, apiKeyRoutes);
 
 // ── v0.24.0: Generic outbound webhooks — admin only ───────────────────────────
 app.use('/api/webhooks', authenticateToken, webhookRoutes);
+
+// ── OEM Fleet Dashboard — cross-account view for oem_admin users ─────────────
+app.use('/api/fleet', authenticateToken, fleetDashboardRoutes);
 
 // ── Quote Request — per-asset service quote lifecycle ────────────────────────
 app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
@@ -1778,6 +1788,144 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
         .catch((e) => console.warn('[aiBudgetGuard] periodic persist error (non-fatal):', e.message));
     }, 60_000);
     console.log('[aiBudgetGuard] 60s persist interval wired (CR-2)');
+
+    // ── Service Opportunity Trigger — daily 02:30 UTC ──────────────────────────
+    // Scans all accounts for:
+    //   (a) IMMEDIATE deficiencies open 30+ days with no active QuoteRequest
+    //   (b) Assets at C3 conditionOverride with no active QuoteRequest
+    // Auto-creates a QuoteRequest for each qualifying asset. Deduplicates
+    // by skipping assets that already have an open (non-declined) quote.
+    cron.schedule('30 2 * * *', () => runOnce('serviceOpportunityTrigger', async () => {
+      const ago30 = new Date(Date.now() - 30 * 86_400_000);
+      let created = 0, skipped = 0;
+
+      try {
+        // ── Find system user to act as requester (use first admin per account) ──
+        // We'll batch per account below to avoid a global scan.
+
+        // 1. IMMEDIATE deficiencies open 30+ days
+        const escalatedDefs = await prisma.deficiency.findMany({
+          where: {
+            severity: 'IMMEDIATE',
+            resolvedAt: null,
+            createdAt: { lte: ago30 },
+            asset: { archivedAt: null },
+          },
+          select: {
+            id: true, accountId: true, assetId: true, description: true,
+            asset: { select: { name: true } },
+          },
+          take: 500,
+        });
+
+        // 2. C3 condition assets (schedule conditionOverride = C3)
+        const c3Schedules = await prisma.maintenanceSchedule.findMany({
+          where: {
+            conditionOverride: 'C3',
+            isActive: true,
+            asset: { archivedAt: null },
+          },
+          select: {
+            accountId: true, assetId: true,
+            asset: { select: { name: true } },
+          },
+          take: 500,
+        });
+
+        // Build dedup set: assetId of assets already with open quotes
+        const allAssetIds = [
+          ...new Set([
+            ...escalatedDefs.map(d => d.assetId),
+            ...c3Schedules.map(s => s.assetId),
+          ]),
+        ];
+
+        const existingQuotes = await prisma.quoteRequest.findMany({
+          where: {
+            assetId: { in: allAssetIds },
+            status: { in: ['requested', 'quoted'] },
+          },
+          select: { assetId: true, accountId: true },
+        });
+        const quotedSet = new Set(existingQuotes.map(q => `${q.accountId}:${q.assetId}`));
+
+        // Build account → first admin user map for requestedById
+        const accountIds = [...new Set([
+          ...escalatedDefs.map(d => d.accountId),
+          ...c3Schedules.map(s => s.accountId),
+        ])];
+        const adminUsers = await prisma.user.findMany({
+          where: {
+            accountId: { in: accountIds },
+            role: { in: ['admin', 'manager'] },
+            isActive: true,
+          },
+          select: { id: true, accountId: true },
+        });
+        const adminMap = new Map<string, string>();
+        for (const u of adminUsers) {
+          if (!adminMap.has(u.accountId)) adminMap.set(u.accountId, u.id);
+        }
+
+        // Helper: create quote if not already quoted
+        const maybeCreate = async (accountId: string, assetId: string, opts: {
+          driver: string; notes: string;
+        }) => {
+          const key = `${accountId}:${assetId}`;
+          if (quotedSet.has(key)) { skipped++; return; }
+          const requestedById = adminMap.get(accountId);
+          if (!requestedById) { skipped++; return; }
+          quotedSet.add(key); // mark in-memory so dupes in same run don't double-create
+          await prisma.quoteRequest.create({
+            data: {
+              accountId,
+              assetId,
+              requestedById,
+              driver:   opts.driver as any,
+              timeline: 'within_30_days',
+              status:   'requested',
+              notes:    opts.notes,
+              emergencyMode: false,
+            },
+          });
+          created++;
+        };
+
+        // Process escalated deficiencies
+        for (const def of escalatedDefs) {
+          await maybeCreate(def.accountId, def.assetId, {
+            driver: 'suspected_failing',
+            notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${def.asset?.name ?? def.assetId}.`,
+          });
+        }
+
+        // Process C3 condition assets
+        for (const sched of c3Schedules) {
+          await maybeCreate(sched.accountId, sched.assetId, {
+            driver: 'failed_inspection',
+            notes:  `Auto-triggered: Asset "${sched.asset?.name ?? sched.assetId}" in C3 (immediate service required) condition.`,
+          });
+        }
+
+        console.log(`[Cron][serviceOpportunityTrigger] Done — created: ${created}, skipped: ${skipped}`);
+      } catch (e) {
+        console.error('[Cron][serviceOpportunityTrigger] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Service opportunity trigger scheduled — runs daily at 02:30 UTC');
+
+    // ── Deficiency Alerts — daily 08:00 UTC ─────────────────────────────────
+    const { runDeficiencyAlerts } = require('./lib/deficiencyAlerts');
+    cron.schedule('0 8 * * *', () => runOnce('deficiencyAlerts', async () => {
+      pingHeartbeat('deficiencyAlerts');
+      try {
+        const { accounts, emails, skipped } = await runDeficiencyAlerts();
+        console.log(`[Cron][deficiencyAlerts] Done — accounts: ${accounts}, emails: ${emails}, skipped: ${skipped}`);
+      } catch (e) {
+        console.error('[Cron][deficiencyAlerts] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Deficiency alerts scheduled — runs daily at 08:00 UTC');
 
   } catch (e) {
     console.warn('[Cron] node-cron not available — run npm install to enable scheduled alerts');

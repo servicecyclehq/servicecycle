@@ -32,6 +32,7 @@ const WorkspaceTab = {
     'emp',              // Electrical Maintenance Program (NFPA 70B §4.2)
     'customfields',     // Custom Fields
     'access',           // Users & Roles
+    'branding',         // White-label branding
   ],
   // Default sub-tab when the top tab is first selected.
   defaultSubTab: 'general',

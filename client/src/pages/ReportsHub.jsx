@@ -105,6 +105,11 @@ function ReportCard({ report, onActivate, busy }) {
                 Open report
                 <ArrowRight size={14} />
               </>
+            ) : report.empDownload ? (
+              <>
+                <Download size={14} />
+                {busy ? 'Generating EMP…' : 'Download PDF'}
+              </>
             ) : (
               <>
                 <Download size={14} />
@@ -122,6 +127,7 @@ export default function ReportsHub() {
   useDocumentTitle('Reports');
   const navigate = useNavigate();
   const [exporting, setExporting] = useState(false);
+  const [empGenerating, setEmpGenerating] = useState(false);
   const [toast, setToast] = useState(null);
 
   async function handleActivate(report) {
@@ -130,6 +136,26 @@ export default function ReportsHub() {
       navigate(report.to);
       return;
     }
+
+    // EMP PDF download — GET /api/reports/emp streams the PDF directly.
+    if (report.empDownload) {
+      if (empGenerating) return;
+      setEmpGenerating(true);
+      setToast({ title: 'Generating EMP…', message: 'Building your Electrical Maintenance Program document — this may take a few seconds.', variant: 'info', duration: 8000 });
+      try {
+        const months = report.empMonths ?? 24;
+        const url = `${import.meta.env.VITE_API_URL ?? ''}/api/reports/emp?months=${months}`;
+        const dateStamp = new Date().toISOString().split('T')[0];
+        await downloadAuthedFile(url, `EMP_${dateStamp}.pdf`);
+        setToast({ title: 'EMP document ready', message: 'Your Electrical Maintenance Program PDF is downloading.', variant: 'success', duration: 5000 });
+      } catch (e) {
+        setToast({ title: 'EMP generation failed', message: e.message || 'Please try again.', variant: 'error', duration: 8000 });
+      } finally {
+        setEmpGenerating(false);
+      }
+      return;
+    }
+
     if (!report.exportView || exporting) return;
     setExporting(true);
     setToast({ title: 'Preparing export…', message: 'Building your file — this may take a moment.', variant: 'info', duration: 5000 });
@@ -185,7 +211,7 @@ export default function ReportsHub() {
               key={r.id}
               report={r}
               onActivate={handleActivate}
-              busy={exporting && !!r.exportView}
+              busy={(exporting && !!r.exportView) || (empGenerating && !!r.empDownload)}
             />
           ))}
         </div>

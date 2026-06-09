@@ -678,6 +678,16 @@ async function _seedAccount() {
     // anchors for the COMPLETE work orders below
     'SWGR-1A-1:SWGR_INSULATION_RES': { completedAgo: 45 }, // pairs with WO #2 (YELLOW)
     'T-2:XFMR_INSULATION_RES':       { completedAgo: 30 }, // pairs with WO #1 (GREEN)
+    // 24-month history anchors (populate the EMP maintenance-history section)
+    'T-1:XFMR_DGA':                  { completedAgo: 90 },
+    'T-1:XFMR_INSULATION_RES':       { completedAgo: 400 },
+    'T-E1:XFMR_INSULATION_RES':      { completedAgo: 550 },
+    'SWGR-1A-1:SWGR_IR_THERMO':      { completedAgo: 365 },
+    'SWGR-1A-2:SWGR_INSULATION_RES': { completedAgo: 120 },
+    'SWGR-1A-3:SWGR_INSULATION_RES': { completedAgo: 380 },
+    'T-2:XFMR_OIL_QUALITY':          { completedAgo: 150 },
+    // GEN-E1:GEN_FUEL_ANALYSIS skipped -- dueIn:70 entry above drives the
+    // dashboard; WO #20 uses its own completedDate for EMP history.
   };
 
   const defsByType = await _loadGlobalDefsByType(prisma);
@@ -780,6 +790,288 @@ async function _seedAccount() {
     notes: 'De-energized micro-ohm survey of bus joints; aligned to the Thanksgiving shutdown window.',
   } });
 
+  // ── Work orders: 24-month history (WOs #6-#22) ────────────────────────────
+  // These populate the EMP Section 5b maintenance-history table and give the
+  // Compliance by Standard / Activity reports meaningful data to render.
+
+  // WO #6 -- COMPLETE: T-1 dissolved-gas analysis 90 days ago (Apex, C2 YELLOW).
+  // Mildly elevated C2H2 triggers YELLOW -- matches the LabSample story.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['T-1:XFMR_DGA'].id,
+    assetId: assets['T-1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.rios.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -92), startedAt: addDays(now, -90), completedDate: addDays(now, -90),
+    asFoundCondition: 'C2', asLeftCondition: 'C2',
+    netaDecal: 'YELLOW',
+    ambientTempC: 20.0, humidityPct: 44.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'DGA oil sample collected per IEEE C57.104; C2H2 at 2.8 ppm (elevated vs. prior baseline). YELLOW decal applied; IEEE Status 2 / Duval D1 (low-energy discharge). Resample in 90 days recommended.',
+  } });
+
+  // WO #7 -- COMPLETE: T-1 insulation resistance + PI ~13 months ago (Murphy, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['T-1:XFMR_INSULATION_RES'].id,
+    assetId: assets['T-1'].id,
+    contractorId: murphy.id, assignedTechId: murphyTechs.hale.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -402), startedAt: addDays(now, -400), completedDate: addDays(now, -400),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    ambientTempC: 19.5, humidityPct: 38.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Insulation resistance + polarisation index on HV and LV windings; all readings above IEEE 43 minimums for transformer age and kV class. No findings.',
+  } });
+
+  // WO #8 -- COMPLETE: T-E1 DGA ~6.5 months ago (Apex, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['T-E1:XFMR_DGA'].id,
+    assetId: assets['T-E1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -202), startedAt: addDays(now, -200), completedDate: addDays(now, -200),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    ambientTempC: 18.5, humidityPct: 40.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Annual DGA on FR3 natural-ester oil per IEEE C57.104; all gases within Condition 1 limits. Oil chemistry healthy -- no furfural detected.',
+  } });
+
+  // WO #9 -- COMPLETE: T-E1 insulation resistance ~18 months ago (Murphy, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['T-E1:XFMR_INSULATION_RES'].id,
+    assetId: assets['T-E1'].id,
+    contractorId: murphy.id, assignedTechId: murphyTechs.tran.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -552), startedAt: addDays(now, -550), completedDate: addDays(now, -550),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    ambientTempC: 17.0, humidityPct: 35.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'IR + PI on Eastgate 1000 kVA transformer; PI > 2.0 on both windings. Asset in excellent condition for installation age.',
+  } });
+
+  // WO #10 -- COMPLETE: SWGR-1A-1 IR thermography ~12 months ago (Apex, C2 YELLOW).
+  // Moderate hotspot found, noted but within NETA MTS acceptable range.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['SWGR-1A-1:SWGR_IR_THERMO'].id,
+    assetId: assets['SWGR-1A-1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.rios.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -367), startedAt: addDays(now, -365), completedDate: addDays(now, -365),
+    asFoundCondition: 'C2', asLeftCondition: 'C2',
+    netaDecal: 'YELLOW',
+    ambientTempC: 22.0, humidityPct: 48.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Annual IR thermography under 62% load. C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient -- NETA MTS Table 100.18 Category 2 (repair at earliest convenience). Deficiency logged.',
+  } });
+
+  // WO #11 -- COMPLETE: SWGR-1A-2 insulation resistance ~4 months ago (Murphy, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['SWGR-1A-2:SWGR_INSULATION_RES'].id,
+    assetId: assets['SWGR-1A-2'].id,
+    contractorId: murphy.id, assignedTechId: murphyTechs.hale.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -122), startedAt: addDays(now, -120), completedDate: addDays(now, -120),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    ambientTempC: 16.5, humidityPct: 42.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Phase-to-ground insulation resistance survey on Substation A cubicles 2. All phases > 5 GΩ. No findings; GREEN decal.',
+  } });
+
+  // WO #12 -- COMPLETE: SWGR-1A-2 IR thermography ~7 months ago (Apex, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['SWGR-1A-2:SWGR_IR_THERMO'].id,
+    assetId: assets['SWGR-1A-2'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -212), startedAt: addDays(now, -210), completedDate: addDays(now, -210),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    ambientTempC: 21.0, humidityPct: 43.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'IR scan at 70% load; all bus joints and connections within NETA MTS Category 1 (< 1 deg C differential). No corrective action required.',
+  } });
+
+  // WO #13 -- COMPLETE: SWGR-1A-3 insulation resistance ~12.5 months ago (Murphy, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['SWGR-1A-3:SWGR_INSULATION_RES'].id,
+    assetId: assets['SWGR-1A-3'].id,
+    contractorId: murphy.id, assignedTechId: murphyTechs.tran.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -382), startedAt: addDays(now, -380), completedDate: addDays(now, -380),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    ambientTempC: 18.0, humidityPct: 36.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Cubicle 3 insulation resistance survey; all results well above NETA MTS minimum acceptance criteria.',
+  } });
+
+  // WO #14 -- COMPLETE: SWGR-1A-3 IR thermography ~18 months ago (Apex, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['SWGR-1A-3:SWGR_IR_THERMO'].id,
+    assetId: assets['SWGR-1A-3'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.rios.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -542), startedAt: addDays(now, -540), completedDate: addDays(now, -540),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    ambientTempC: 20.5, humidityPct: 39.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Annual thermographic survey of Substation A cubicle 3 under load. No elevated temperatures detected. All connections within NETA Category 1.',
+  } });
+
+  // WO #15 -- COMPLETE: SWGR-2M IR thermography ~12 months ago (Apex, C2 YELLOW).
+  // Mezzanine C3 environment with dust loading; scan showed early hotspot at B-phase.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['SWGR-2M:SWGR_IR_THERMO'].id,
+    assetId: assets['SWGR-2M'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -352), startedAt: addDays(now, -350), completedDate: addDays(now, -350),
+    asFoundCondition: 'C2', asLeftCondition: 'C2',
+    netaDecal: 'YELLOW',
+    ambientTempC: 27.0, humidityPct: 55.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Mezzanine lineup IR scan at 55% load. B-phase bus connection showing delta-T 12 deg C -- NETA Category 2. Deficiency logged as RECOMMENDED; follow-up scan required at next scheduled interval.',
+  } });
+
+  // WO #16 -- COMPLETE: SWGR-2M insulation resistance ~20 months ago (Murphy, C2 YELLOW).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['SWGR-2M:SWGR_INSULATION_RES'].id,
+    assetId: assets['SWGR-2M'].id,
+    contractorId: murphy.id, assignedTechId: murphyTechs.hale.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -602), startedAt: addDays(now, -600), completedDate: addDays(now, -600),
+    asFoundCondition: 'C2', asLeftCondition: 'C2',
+    netaDecal: 'YELLOW',
+    ambientTempC: 29.0, humidityPct: 60.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Mezzanine lineup C3 environment -- compressed 6-month interval. Insulation values acceptable but trending lower vs. prior cycle; surface contamination from airborne particulates suspected. Cleaning performed.',
+  } });
+
+  // WO #17 -- COMPLETE: GEN-1 monthly exercise ~20 days ago (Apex, C1 GREEN).
+  // Pairs with schedule anchor completedAgo: 20.
+  const wo17 = await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['GEN-1:GEN_MONTHLY_EXERCISE'].id,
+    assetId: assets['GEN-1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -22), startedAt: addDays(now, -20), completedDate: addDays(now, -20),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    notes: 'NFPA 110 monthly exercise at 30-minute rated load. Engine started on first attempt; transfer to utility within spec (< 10 s). Oil, coolant, and battery checks satisfactory.',
+  } });
+
+  // WO #18 -- COMPLETE: GEN-E1 monthly exercise ~24 days ago (Apex, C1 GREEN).
+  // Pairs with schedule anchor dueIn: 6 (lastCompleted = ~24 days ago).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['GEN-E1:GEN_MONTHLY_EXERCISE'].id,
+    assetId: assets['GEN-E1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.rios.id,
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -26), startedAt: addDays(now, -24), completedDate: addDays(now, -24),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    notes: 'Monthly natural-gas generator exercise; Eastgate distribution. Transfer test at 100% nameplate load for 30 minutes. No faults recorded.',
+  } });
+
+  // WO #19 -- COMPLETE: GEN-1 fuel analysis ~6 months ago (Murphy, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['GEN-1:GEN_FUEL_ANALYSIS'].id,
+    assetId: assets['GEN-1'].id,
+    contractorId: murphy.id, assignedTechId: murphyTechs.hale.id,
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -182), startedAt: addDays(now, -180), completedDate: addDays(now, -180),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    notes: 'Annual diesel fuel analysis per NFPA 110 A.8.5.2; fuel stability, water content, and microbial growth all within ASTM D975 limits. Fuel polishing not required.',
+  } });
+
+  // WO #20 -- COMPLETE: GEN-E1 fuel analysis ~11 months ago (Apex, C1 GREEN).
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['GEN-E1:GEN_FUEL_ANALYSIS'].id,
+    assetId: assets['GEN-E1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -332), startedAt: addDays(now, -330), completedDate: addDays(now, -330),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    notes: 'Natural-gas generator: annual fuel train and governor inspection. Gas pressure at rated spec; governor response within NFPA 110 tolerance. Block heater and battery float charger confirmed operational.',
+  } });
+
+  // WO #21 -- COMPLETE: T-2 oil quality ~5 months ago (Murphy, C2 YELLOW).
+  // Elevated moisture triggers YELLOW; dehydration recommended.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['T-2:XFMR_OIL_QUALITY'].id,
+    assetId: assets['T-2'].id,
+    contractorId: murphy.id, assignedTechId: murphyTechs.tran.id,
+    netaCertLevel: 'LEVEL_II',
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -152), startedAt: addDays(now, -150), completedDate: addDays(now, -150),
+    asFoundCondition: 'C2', asLeftCondition: 'C2',
+    netaDecal: 'YELLOW',
+    ambientTempC: 15.5, humidityPct: 70.0,
+    testEquipment: testEquipmentProvenance,
+    notes: 'Annual oil quality screen per ASTM D877; moisture content 28 ppm (IEEE C57.106 Action Level 1 for 138 kV class). Dielectric strength 28 kV (low). Dehydration filtration recommended; deficiency logged as ADVISORY.',
+  } });
+
+  // WO #22 -- COMPLETE: ATS-1 monthly transfer test ~12 days ago (Apex, C1 GREEN).
+  // Pairs with schedule anchor completedAgo: 12.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['ATS-1:ATS_MONTHLY_TRANSFER'].id,
+    assetId: assets['ATS-1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.rios.id,
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -14), startedAt: addDays(now, -12), completedDate: addDays(now, -12),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    notes: 'NFPA 110 monthly ATS manual transfer test; normal-to-emergency in 8.2 s (within 10 s spec). Retransfer to normal complete. No alarms.',
+  } });
+
+  // WO #23 -- COMPLETE: ELTG-1 monthly functional test ~10 days ago (Apex, C1 GREEN).
+  // Pairs with schedule anchor completedAgo: 10.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['ELTG-1:ELTG_MONTHLY_FUNCTIONAL'].id,
+    assetId: assets['ELTG-1'].id,
+    contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+    status: 'COMPLETE',
+    scheduledDate: addDays(now, -12), startedAt: addDays(now, -10), completedDate: addDays(now, -10),
+    asFoundCondition: 'C1', asLeftCondition: 'C1',
+    netaDecal: 'GREEN',
+    notes: 'NFPA 101 30-second functional self-test on all 24 heads. All units illuminated and held illumination for full test period. Battery float current normal.',
+  } });
+
   // ── Deficiencies ──────────────────────────────────────────────────────────
   const def1 = await prisma.deficiency.create({ data: {
     accountId: account.id, assetId: assets['SWGR-2M'].id,
@@ -811,6 +1103,46 @@ async function _seedAccount() {
     resolvedAt: addDays(now, -60), resolvedById: manager.id,
   } });
 
+  // Additional deficiencies: fuller severity breakdown for the Overdue
+  // Maintenance by Severity report and the EMP Section 6 open-deficiency table.
+  const def5 = await prisma.deficiency.create({ data: {
+    accountId: account.id, assetId: assets['SWGR-1A-1'].id, workOrderId: wo17.id,
+    severity: 'RECOMMENDED',
+    description: 'C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient at 62% load (NETA MTS Table 100.18 Category 2 -- repair at earliest convenience)',
+    correctiveAction: 'Clean and re-torque C-phase bus connection at next outage window; re-image under load to confirm resolution.',
+    createdAt: addDays(now, -365),
+  } });
+  await prisma.deficiency.create({ data: {
+    accountId: account.id, assetId: assets['SWGR-2M'].id,
+    severity: 'RECOMMENDED',
+    description: 'B-phase bus connection delta-T 12 deg C above ambient at 55% load (NETA MTS Category 2 -- early-stage thermal signature). History: 38 deg C in most recent scan.',
+    correctiveAction: 'Prior scan (12 months ago) showed Category 2; current IMMEDIATE deficiency (38 deg C) spawned from the follow-up catch-up IR. Consolidate corrective actions.',
+    createdAt: addDays(now, -350),
+    resolvedAt: null,
+  } });
+  await prisma.deficiency.create({ data: {
+    accountId: account.id, assetId: assets['T-2'].id,
+    severity: 'ADVISORY',
+    description: 'Oil moisture content 28 ppm (IEEE C57.106 Action Level 1); dielectric strength 28 kV -- below recommended 30 kV minimum for transformer class',
+    correctiveAction: 'Schedule oil dehydration filtration within next planned maintenance window. Re-test after treatment.',
+    createdAt: addDays(now, -150),
+  } });
+  await prisma.deficiency.create({ data: {
+    accountId: account.id, assetId: assets['BATT-1'].id,
+    severity: 'RECOMMENDED',
+    description: 'Two battery cells (strings 1-C4 and 2-C7) showing ohmic resistance 25% above baseline -- IEEE 450 replacement threshold is 20% above initial value. Cell voltage still holding.',
+    correctiveAction: 'Replace cells 1-C4 and 2-C7 at next scheduled ohmic inspection window; order spares now (6-week lead time). Interim: add to weekly float-voltage monitoring.',
+    createdAt: addDays(now, -14),
+  } });
+  await prisma.deficiency.create({ data: {
+    accountId: account.id, assetId: assets['GEN-E1'].id,
+    severity: 'ADVISORY',
+    description: 'Natural-gas pressure regulator body showing minor corrosion pitting at downstream fitting; no leak detected on soap-bubble test',
+    correctiveAction: 'Schedule regulator replacement at next annual fuel-train inspection; apply corrosion-inhibiting coating in interim.',
+    createdAt: addDays(now, -330),
+    resolvedAt: null,
+  } });
+
   // ── Lab sample — DGA on T-1 (IEEE C57.104) ────────────────────────────────
   // Mildly elevated acetylene (C2H2) justifies the YELLOW rating: any
   // detectable C2H2 warrants attention (possible low-energy arcing).
@@ -825,7 +1157,40 @@ async function _seedAccount() {
     // matching the detectable-acetylene story below.
     ieeeStatus: 2, faultCode: 'D1',
     resultRating: 'YELLOW',
-    notes: 'C2H2 detectable at 2.8 ppm (was <0.5 ppm in prior sample) — possible low-energy discharge. Lab recommends resample in 90 days; other gases within IEEE C57.104 Condition 1 limits for transformer age.',
+    notes: 'C2H2 detectable at 2.8 ppm (was <0.5 ppm in prior sample) -- possible low-energy discharge. Lab recommends resample in 90 days; other gases within IEEE C57.104 Condition 1 limits for transformer age.',
+  } });
+
+  // Prior T-1 DGA sample (~15 months ago) -- Condition 1 (GREEN), establishes trend baseline.
+  await prisma.labSample.create({ data: {
+    accountId: account.id, assetId: assets['T-1'].id,
+    sampleType: 'dga', sampleDate: addDays(now, -455),
+    labName: 'Delta Insulating Fluids Laboratory',
+    h2: 12, ch4: 14, c2h2: 0.3, c2h4: 8, c2h6: 7, co: 210, co2: 2100,
+    o2: 2200, n2: 62000,
+    ieeeStatus: 1, faultCode: null,
+    resultRating: 'GREEN',
+    notes: 'All gases within IEEE C57.104-2019 Condition 1 limits. C2H2 < 0.5 ppm (below significance threshold). Transformer in normal service.',
+  } });
+
+  // T-E1 DGA sample (~6.5 months ago) -- Condition 1 (GREEN), FR3 natural-ester oil.
+  await prisma.labSample.create({ data: {
+    accountId: account.id, assetId: assets['T-E1'].id,
+    sampleType: 'dga', sampleDate: addDays(now, -200),
+    labName: 'Delta Insulating Fluids Laboratory',
+    h2: 5, ch4: 9, c2h2: 0, c2h4: 3, c2h6: 4, co: 95, co2: 980,
+    o2: 3100, n2: 70000,
+    ieeeStatus: 1, faultCode: null,
+    resultRating: 'GREEN',
+    notes: 'FR3 natural-ester fluid reference table applied. All gases well within Condition 1 limits; no detectable acetylene. Eastgate 1000 kVA transformer performing normally.',
+  } });
+
+  // T-2 oil quality sample (~5 months ago) -- elevated moisture, YELLOW.
+  await prisma.labSample.create({ data: {
+    accountId: account.id, assetId: assets['T-2'].id,
+    sampleType: 'oil_quality', sampleDate: addDays(now, -150),
+    labName: 'Delta Insulating Fluids Laboratory',
+    resultRating: 'YELLOW',
+    notes: 'Moisture 28 ppm (IEEE C57.106 Action Level 1); dielectric strength 28 kV (below 30 kV recommended minimum). Oil dehydration filtration recommended. Acid number and color within limits.',
   } });
 
   // ── System studies — the documents loss-control auditors ask for by name ──
@@ -896,6 +1261,42 @@ async function _seedAccount() {
     dueDate: addDays(now, 30),
     status: 'open',
     assignedToUserId: manager.id,
+  } });
+
+  // Second audit visit -- internal electrical safety audit ~2 months ago.
+  const auditVisit2 = await prisma.auditVisit.create({ data: {
+    accountId: account.id, siteId: riverside.id,
+    auditType: 'internal',
+    auditorName: 'Avery Sandoval',
+    auditorOrg: 'Meridian Manufacturing -- EHS',
+    scheduledDate: addDays(now, -65), performedDate: addDays(now, -63),
+    outcome: 'passed_with_findings',
+    notes: 'Quarterly internal electrical safety walkdown per NFPA 70E 110.1. Covered Substation A, mezzanine lineup, and emergency power systems. Three findings issued.',
+  } });
+  await prisma.auditRecommendation.create({ data: {
+    accountId: account.id, auditVisitId: auditVisit2.id,
+    source: 'internal', severity: 'finding',
+    description: 'ARC flash PPE kits in Substation A not up to date with current incident-energy study values; two kits contain cal/cm2 ratings from the 2019 study.',
+    dueDate: addDays(now, -20),
+    status: 'completed',
+    responseNotes: 'All PPE kits inventoried and re-labelled with current 2022 study values; two kits replaced.',
+    respondedAt: addDays(now, -58), completedAt: addDays(now, -50),
+  } });
+  await prisma.auditRecommendation.create({ data: {
+    accountId: account.id, auditVisitId: auditVisit2.id,
+    source: 'internal', severity: 'finding',
+    description: 'Generator GEN-1 transfer switch exercise log not posted at the generator; NFPA 110 8.4.2 requires log maintained at the equipment.',
+    dueDate: addDays(now, 14),
+    status: 'open',
+    assignedToUserId: manager.id,
+  } });
+  await prisma.auditRecommendation.create({ data: {
+    accountId: account.id, auditVisitId: auditVisit2.id,
+    source: 'internal', severity: 'observation',
+    description: 'SWGR-2M mezzanine lineup room housekeeping: combustible material (cardboard, spare parts packaging) stored within 3 ft of energized equipment.',
+    dueDate: addDays(now, 7),
+    status: 'open',
+    assignedToUserId: admin.id,
   } });
 
   // ── Blackout window — planned production shutdown ────────────────────────
@@ -970,7 +1371,7 @@ async function _seedAccount() {
     createdAt: addDays(now, -95),
   } });
 
-  // ── LOTO Procedures ───────────────────────────────────────────────────────
+  // -- LOTO Procedures -------------------------------------------------------
   // One active procedure on T-1 (most critical asset), one draft on GEN-1.
 
   const lotoT1 = await prisma.lotoProc.create({ data: {
@@ -1003,10 +1404,10 @@ async function _seedAccount() {
       {
         accountId: account.id, sortOrder: 2,
         energyType: 'thermal',
-        description: 'Residual heat in transformer core and oil — core temperature may remain elevated for 2+ hours after de-energisation',
-        isolationPoint: 'N/A — time-based isolation',
+        description: 'Residual heat in transformer core and oil -- core temperature may remain elevated for 2+ hours after de-energisation',
+        isolationPoint: 'N/A -- time-based isolation',
         isolationMethod: 'Allow minimum 2-hour cool-down after de-energisation before opening inspection covers.',
-        verificationMethod: 'Confirm oil temperature gauge reads below 40°C before opening access panels.',
+        verificationMethod: 'Confirm oil temperature gauge reads below 40 deg C before opening access panels.',
       },
     ]},
     steps: { create: [
@@ -1019,7 +1420,7 @@ async function _seedAccount() {
       { accountId: account.id, sortOrder: 6, category: 'verify', instruction: 'Test primary HV terminals with hotstick-mounted voltage indicator. Confirm absence of voltage on all phases.', requiresVerification: true },
       { accountId: account.id, sortOrder: 7, category: 'verify', instruction: 'Test 480V secondary terminals at T-1 with Fluke T6. Confirm 0V on all phases.', requiresVerification: true },
       { accountId: account.id, sortOrder: 8, category: 'verify', instruction: 'Attempt to re-close CB-101 via normal operating mechanism to confirm lock prevents operation (do not force).', requiresVerification: true },
-      { accountId: account.id, sortOrder: 9, category: 'verify', instruction: 'Confirm oil temperature gauge reads below 40°C before opening inspection covers.' },
+      { accountId: account.id, sortOrder: 9, category: 'verify', instruction: 'Confirm oil temperature gauge reads below 40 deg C before opening inspection covers.' },
       { accountId: account.id, sortOrder: 10, category: 'lockout', instruction: 'Post "Equipment Under Maintenance" sign on transformer pad and install physical barrier tape.' },
     ]},
   }});
@@ -1032,7 +1433,7 @@ async function _seedAccount() {
     status:    'draft',
     version:   1,
     createdById: manager.id,
-    notes: 'DRAFT — pending review. Mechanical (fuel/cooling) sources need verification with OEM service team.',
+    notes: 'DRAFT -- pending review. Mechanical (fuel/cooling) sources need verification with OEM service team.',
     energySources: { create: [
       {
         accountId: account.id, sortOrder: 0,
@@ -1045,18 +1446,18 @@ async function _seedAccount() {
       {
         accountId: account.id, sortOrder: 1,
         energyType: 'mechanical',
-        description: 'Engine starter motor and battery bank — engine can be inadvertently cranked',
+        description: 'Engine starter motor and battery bank -- engine can be inadvertently cranked',
         isolationPoint: 'Battery disconnect switch on generator skid (red handle, left side)',
         isolationMethod: 'Open battery disconnect switch. Apply lock.',
-        verificationMethod: 'Attempt to start engine via normal start button — confirm no crank.',
+        verificationMethod: 'Attempt to start engine via normal start button -- confirm no crank.',
       },
       {
         accountId: account.id, sortOrder: 2,
         energyType: 'thermal',
-        description: 'Engine coolant and exhaust — residual heat after shutdown',
-        isolationPoint: 'N/A — time-based',
+        description: 'Engine coolant and exhaust -- residual heat after shutdown',
+        isolationPoint: 'N/A -- time-based',
         isolationMethod: 'Allow minimum 30-minute cool-down after engine shutdown.',
-        verificationMethod: 'Confirm exhaust temp gauge below 60°C before contacting engine block.',
+        verificationMethod: 'Confirm exhaust temp gauge below 60 deg C before contacting engine block.',
       },
     ]},
     steps: { create: [
@@ -1070,7 +1471,7 @@ async function _seedAccount() {
     ]},
   }});
 
-  // ── Documents — OEM manual URL + test report ──────────────────────────────
+  // -- Documents -- OEM manual URL + test report ----------------------------
   await prisma.document.create({ data: {
     accountId:   account.id,
     assetId:     assets['T-1'].id,
@@ -1087,7 +1488,7 @@ async function _seedAccount() {
     accountId:   account.id,
     assetId:     assets['T-1'].id,
     uploadedBy:  admin.id,
-    filename:    'T-1 Wiring Diagram — Primary and Secondary One-Line',
+    filename:    'T-1 Wiring Diagram -- Primary and Secondary One-Line',
     fileType:    'text/uri-list',
     filePath:    '__external__',
     encrypted:   false,
@@ -1107,7 +1508,26 @@ async function _seedAccount() {
     externalUrl: 'https://www.cat.com/en_US/support/documentation/c175-generator-set.html',
   }});
 
-  // ── Activity log — so the Activity page isn't empty on first load ─────────
+  // -- EMP account settings --------------------------------------------------
+  // Seed the three settings that drive the EMP cover page and footer so the
+  // demo document renders with real values instead of placeholder warnings.
+  await prisma.accountSetting.upsert({
+    where:  { accountId_key: { accountId: account.id, key: 'EMP_COORDINATOR_USER_ID' } },
+    update: { value: admin.id },
+    create: { accountId: account.id, key: 'EMP_COORDINATOR_USER_ID', value: admin.id },
+  });
+  await prisma.accountSetting.upsert({
+    where:  { accountId_key: { accountId: account.id, key: 'RETENTION_POLICY_TEXT' } },
+    update: { value: 'All electrical maintenance records, test reports, work orders, and supporting documentation shall be retained for a minimum of five (5) years from the date of the maintenance activity, or as required by the applicable authority having jurisdiction (AHJ), whichever is longer. Records shall be stored in a secure, retrievable format and made available for inspection by the insurer, AHJ, or internal EHS auditors upon request. Digital records maintained in the ServiceCycle platform are supplemented by physical binder copies archived in the Substation A control room.' },
+    create: { accountId: account.id, key: 'RETENTION_POLICY_TEXT', value: 'All electrical maintenance records, test reports, work orders, and supporting documentation shall be retained for a minimum of five (5) years from the date of the maintenance activity, or as required by the applicable authority having jurisdiction (AHJ), whichever is longer. Records shall be stored in a secure, retrievable format and made available for inspection by the insurer, AHJ, or internal EHS auditors upon request. Digital records maintained in the ServiceCycle platform are supplemented by physical binder copies archived in the Substation A control room.' },
+  });
+  await prisma.accountSetting.upsert({
+    where:  { accountId_key: { accountId: account.id, key: 'EMP_LAST_REVIEWED_AT' } },
+    update: { value: addDays(now, -182).toISOString() },
+    create: { accountId: account.id, key: 'EMP_LAST_REVIEWED_AT', value: addDays(now, -182).toISOString() },
+  });
+
+  // -- Activity log -- so the Activity page isn't empty on first load --------
   await writeActivityLog({
     assetId: assets['T-1'].id, userId: admin.id, accountId: account.id,
     action: 'asset_created',
@@ -1123,6 +1543,36 @@ async function _seedAccount() {
     action: 'condition_changed',
     details: { axis: 'environment', from: 'C2', to: 'C3', governingCondition: 'C3', reason: 'Dust loading in mezzanine MCC room' },
   });
+  await writeActivityLog({
+    assetId: assets['SWGR-2M'].id, userId: admin.id, accountId: account.id,
+    action: 'deficiency_created',
+    details: { severity: 'IMMEDIATE', description: 'B-phase bus connection severe overheating -- delta-T 38 deg C', source: 'demo_seed' },
+  });
+  await writeActivityLog({
+    assetId: assets['T-1'].id, userId: manager.id, accountId: account.id,
+    action: 'work_order_completed',
+    details: { netaDecal: 'YELLOW', contractor: 'Apex Electrical Testing', test: 'DGA oil sample -- elevated C2H2' },
+  });
+  await writeActivityLog({
+    assetId: assets['GEN-1'].id, userId: admin.id, accountId: account.id,
+    action: 'work_order_completed',
+    details: { netaDecal: 'GREEN', contractor: 'Apex Electrical Testing', test: 'NFPA 110 monthly exercise' },
+  });
+  await writeActivityLog({
+    assetId: assets['SWGR-1A-1'].id, userId: manager.id, accountId: account.id,
+    action: 'work_order_completed',
+    details: { netaDecal: 'YELLOW', contractor: 'Murphy Switchgear Services', test: 'Insulation resistance -- C-phase trending low' },
+  });
+  await writeActivityLog({
+    assetId: assets['T-2'].id, userId: manager.id, accountId: account.id,
+    action: 'deficiency_created',
+    details: { severity: 'ADVISORY', description: 'Oil moisture content elevated -- dehydration filtration recommended' },
+  });
+  await writeActivityLog({
+    assetId: assets['BATT-1'].id, userId: admin.id, accountId: account.id,
+    action: 'deficiency_created',
+    details: { severity: 'RECOMMENDED', description: 'Two cells exceeding IEEE 450 ohmic replacement threshold' },
+  });
 
   return {
     accountId: account.id,
@@ -1134,27 +1584,24 @@ async function _seedAccount() {
       contractors: 2, contractorTechs: 5,
       assets: assetSpecs.length,
       schedules: scheduleCount,
-      workOrders: 5, testMeasurements: wo2Measurements.length,
-      deficiencies: 4, labSamples: 1, systemStudies: 3,
-      auditVisits: 1, auditRecommendations: 2,
+      workOrders: 23, testMeasurements: wo2Measurements.length,
+      deficiencies: 9, labSamples: 4, systemStudies: 3,
+      auditVisits: 2, auditRecommendations: 5,
       assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4,
-      activityLogs: 3,
+      activityLogs: 9,
       lotoProcs: 2, documents: 3,
     },
     dashboardStory: {
       overdue: 5, regulatoryBreachTier: 1,
       dueWithin30Days: 6, due60To90Days: 5,
-      openDeficiencies: 3, immediateOpen: 1,
+      openDeficiencies: 8, immediateOpen: 1,
       arcFlashExpiringWithinMonths: 10,
-      // Priority-tab seeds (2026-06 risk dimensions): critical tab led by
-      // T-1/GEN-1/ATS-1 (score 5), value tab led by T-1 ($850k, 26wk lead),
-      // ATS monthly transfer current vs. ATS IR scan + battery ohmic overdue.
       criticalityScored: 11, predictiveMaintenanceFlagged: 2,
     },
   };
 }
 
-// ── Per-visitor sandbox seed ─────────────────────────────────────────────────
+// -- Per-visitor sandbox seed ------------------------------------------------
 
 /**
  * seedAccountForUser(userId)
@@ -1165,7 +1612,7 @@ async function _seedAccount() {
  * handler in routes/auth.ts after it creates the visitor's User + Account;
  * lib/demoPrune.ts reaps these sandboxes after 5 days of inactivity.
  *
- * Idempotency: this is NOT idempotent — it always creates new rows. Calling
+ * Idempotency: this is NOT idempotent -- it always creates new rows. Calling
  * twice on the same account doubles the data (site name collision will throw
  * on the @@unique(accountId, name), which is the desired guard).
  */
@@ -1179,7 +1626,7 @@ async function seedAccountForUser(userId) {
   const accountId = user.accountId;
   const now = new Date();
 
-  // Sandbox conveniences — each block independently guarded so a failure
+  // Sandbox conveniences -- each block independently guarded so a failure
   // never produces an empty sandbox.
   try {
     await prisma.account.update({ where: { id: accountId }, data: { fteCount: 240, aiBriefEnabled: true } });
@@ -1229,7 +1676,7 @@ async function seedAccountForUser(userId) {
   const site = await prisma.site.create({ data: {
     accountId, name: 'Harborview Plant',
     address: '212 Pierhead Avenue', city: 'Green Bay', state: 'WI', postalCode: '54302',
-    notes: 'Sandbox facility — flat hierarchy (positions directly under the site).',
+    notes: 'Sandbox facility -- flat hierarchy (positions directly under the site).',
   } });
   const padPos = await prisma.equipmentPosition.create({ data: {
     accountId, siteId: site.id, name: 'XFMR Pad 1', code: 'XFMR-PAD-1',
@@ -1238,7 +1685,7 @@ async function seedAccountForUser(userId) {
     accountId, siteId: site.id, name: 'Main Switchgear Lineup', code: 'SWGR-1',
   } });
 
-  // 6 assets — 5 Tier 1 (get schedules) + 1 dry transformer (matrix gap).
+  // 6 assets -- 5 Tier 1 (get schedules) + 1 dry transformer (matrix gap).
   const assetSpecs = [
     { key: 'T-1', siteId: site.id, positionId: padPos.id, equipmentType: 'TRANSFORMER_LIQUID',
       manufacturer: 'Kestrel Power Apparatus', model: 'KPA-2000S', serialNumber: 'KPA-02-44102',
@@ -1255,7 +1702,7 @@ async function seedAccountForUser(userId) {
     { key: 'SWGR-2', siteId: site.id, equipmentType: 'SWITCHGEAR',
       manufacturer: 'NorthStar Switchgear Co.', model: 'NS-LV600', serialNumber: 'NS-07-8841',
       installDate: new Date('2007-03-14'),
-      conditionEnvironment: 'C3', // boiler-room heat + dust — governing C3
+      conditionEnvironment: 'C3',
       nameplateData: { voltageClass: '600 V', busRating: '1600 A', aic: '50 kA' },
       notes: 'Boiler-room environment drives the C3 rating; compressed intervals.' },
     { key: 'GEN-1', siteId: site.id, equipmentType: 'GENERATOR',
@@ -1266,7 +1713,7 @@ async function seedAccountForUser(userId) {
       manufacturer: 'Vantage Electric Works', model: 'VE-225DT', serialNumber: 'VE-17-6612',
       installDate: new Date('2017-01-19'),
       nameplateData: { kVA: 225, primaryVoltage: '480 V delta', secondaryVoltage: '208Y/120 V', tempRiseC: 150, kFactor: 'K-13' },
-      notes: 'No global task matrix rows for dry transformers yet — schedule coverage gap.' },
+      notes: 'No global task matrix rows for dry transformers yet -- schedule coverage gap.' },
   ];
   const assets = {};
   for (const spec of assetSpecs) {
@@ -1275,11 +1722,11 @@ async function seedAccountForUser(userId) {
 
   // Schedules: 1 overdue, a couple inside 30 days, rest in the future.
   const story = {
-    'SWGR-2:SWGR_IR_THERMO':      { dueIn: -35 },          // overdue (C3, 6-month interval)
+    'SWGR-2:SWGR_IR_THERMO':      { dueIn: -35 },
     'T-1:XFMR_DGA':               { dueIn: 12 },
     'SWGR-1:SWGR_IR_THERMO':      { dueIn: 25 },
-    'GEN-1:GEN_MONTHLY_EXERCISE': { completedAgo: 18 },     // due ≈ +12d
-    'T-1:XFMR_INSULATION_RES':    { completedAgo: 25 },     // pairs with the COMPLETE WO
+    'GEN-1:GEN_MONTHLY_EXERCISE': { completedAgo: 18 },
+    'T-1:XFMR_INSULATION_RES':    { completedAgo: 25 },
   };
   const { byKey: schedules, count: scheduleCount } =
     await _createSchedules(prisma, accountId, assets, defsByType, story);
@@ -1354,7 +1801,7 @@ async function resetAndSeedDemo(opts = {}) {
   return { ...summary, trigger: opts.trigger || 'cli' };
 }
 
-// ── CLI entry ────────────────────────────────────────────────────────────────
+// -- CLI entry ----------------------------------------------------------------
 if (require.main === module) {
   resetAndSeedDemo({ trigger: 'cli' })
     .then((s) => {
@@ -1374,4 +1821,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { resetAndSeedDemo, seedAccountForUser, DEMO_ACCOUNT_ID };
+module.exports = { resetAndSeedDemo, seedAccountForUser };

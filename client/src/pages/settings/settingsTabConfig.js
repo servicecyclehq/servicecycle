@@ -42,6 +42,7 @@ export const SUB_TAB_LABELS = {
   encryption:         'Encryption',
   customfields:       'Custom Fields',
   data:               'Account Data',
+  branding:           'Branding',
 };
 
 // Sub-tabs that require admin role. Non-admins won't see these in the

@@ -301,6 +301,111 @@ router.post('/photo-inspect', aiPreGate, aiIpLimiter, photoInspectLimiter, photo
   }
 });
 
+// ─── POST /ocr-nameplate ─────────────────────────────────────────────────────
+//
+// Lightweight nameplate OCR: upload a photo of an electrical equipment
+// nameplate and receive structured identity fields back as JSON. Intended
+// for the field mobile write flow so technicians can auto-populate asset
+// records without typing.
+//
+// Extracted fields:
+//   manufacturer, model, serialNumber, voltage, kva, amperage, phases,
+//   frequency, year, enclosureRating
+//
+// Gate order: AI_ENABLED kill-switch → IP limiter → multer → consent check
+// → completeWithImage → respond. No aiQuota slot consumed (text extraction
+// is cheaper and fails gracefully; quota is reserved for photo_inspect).
+//
+// Auth: authenticateToken applied at mount point in index.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OCR_SYSTEM = `You are an expert electrical equipment nameplate reader.
+Your job is to extract structured data from photos of equipment nameplates.
+Respond ONLY with a JSON object — no markdown fences, no prose.
+
+Extract these fields (use null for any field not visible or legible):
+{
+  "manufacturer":    string | null,   // company name on nameplate
+  "model":           string | null,   // model number or designation
+  "serialNumber":    string | null,   // serial number
+  "voltage":         string | null,   // full voltage rating e.g. "480V" or "480/277V"
+  "kva":             number | null,   // transformer kVA rating (numeric only)
+  "amperage":        string | null,   // amperage / current rating e.g. "100A" or "100/200A"
+  "phases":          number | null,   // 1 or 3
+  "frequency":       string | null,   // e.g. "60 Hz"
+  "year":            number | null,   // 4-digit manufacture year
+  "enclosureRating": string | null    // NEMA or IP rating e.g. "NEMA 12" or "IP54"
+}
+
+Rules:
+- Be precise; do not guess if the field is not legible.
+- For voltage, preserve the full string from the nameplate.
+- For kva, return only the number (e.g. 75, not "75 kVA").
+- If multiple values appear (e.g. dual-voltage transformer), use the primary.`;
+
+const ocrLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max:      60,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator: (req) => `ocr_nameplate:${(req as any).user?.id || 'anon'}`,
+  message: { success: false, error: 'Too many OCR requests — try again in an hour.' },
+});
+
+// Reuse same multer middleware (memory storage, 10MB, JPEG/PNG/WebP only).
+const ocrUploadMiddleware = photoUpload.single('image');
+
+router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddleware, async (req: any, res: any) => {
+  const { completeWithImage, parseJSON } = require('../lib/ai');
+  const { ensureAiBudget } = require('../lib/aiBudgetGuard');
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'No image uploaded. Send the photo as multipart field "image".' });
+  }
+
+  const { accountId, id: userId } = req.user;
+
+  // AI consent — same guard as photo_inspect (tech already acknowledged in field mode).
+  try {
+    await ensureAiConsent(userId, accountId, req);
+  } catch (consentErr: any) {
+    return res.status(403).json({ success: false, error: consentErr.code || 'ai_consent_required' });
+  }
+
+  // Demo AI budget guard.
+  try {
+    await ensureAiBudget(accountId);
+  } catch (budgetErr: any) {
+    return res.status(503).json({ success: false, error: budgetErr.code || 'ai_demo_budget_exhausted', message: budgetErr.message });
+  }
+
+  try {
+    const { text } = await completeWithImage({
+      imageBuffer: req.file.buffer,
+      mediaType:   req.file.mimetype,
+      prompt:      'Extract the nameplate fields from this equipment photo.',
+      maxTokens:   512,
+      settings:    { system: OCR_SYSTEM },
+    });
+
+    const fields = parseJSON(text, 'ocr-nameplate');
+
+    // Optional: fire-and-forget activity log if assetId provided
+    const assetId = (req.body?.assetId || '').trim();
+    if (assetId) {
+      void logActivity(assetId, userId, accountId, 'nameplate_ocr', {
+        manufacturer: fields.manufacturer,
+        model:        fields.model,
+      });
+    }
+
+    return res.json({ success: true, data: fields });
+  } catch (err: any) {
+    console.error('[ocr-nameplate] error:', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to read nameplate — try a clearer photo.' });
+  }
+});
+
 module.exports = router;
 
 export {};
