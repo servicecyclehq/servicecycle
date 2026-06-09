@@ -595,6 +595,71 @@ function PriorityAssetsCard({ navigate }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── CapEx Forecast Panel (customer-facing) ────────────────────────────────────
+function CapExForecastPanel() {
+  const [forecast, setForecast] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/api/fleet/account-forecast')
+      .then((r) => setForecast(r.data.forecast))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+  if (!forecast || forecast.length === 0 || forecast.every((f) => f.assetCount === 0)) return null;
+
+  const fmt = (c) => `$${Math.round(c / 100).toLocaleString()}`;
+
+  return (
+    <div style={{
+      marginTop: 24,
+      padding: '20px 24px',
+      background: 'var(--color-surface)',
+      border: '1px solid var(--color-border)',
+      borderRadius: 10,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+          Estimated Electrical CapEx Exposure
+        </h3>
+        <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+          Platform benchmarks — not binding quotes
+        </span>
+      </div>
+      <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+        Assets approaching end-of-life based on IEEE/NFPA/NETA life models. Use these ranges for
+        CapEx planning with your CFO or facilities budget team.
+      </p>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        {forecast.filter((f) => f.assetCount > 0).map((f) => (
+          <div key={f.year} style={{
+            flex: '1 1 160px',
+            padding: '14px 16px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 8,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+              {f.year}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              {fmt(f.minCents)}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '2px 0 6px' }}>
+              to {fmt(f.maxCents)}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary, var(--color-text-secondary))' }}>
+              {f.assetCount} asset{f.assetCount !== 1 ? 's' : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   useDocumentTitle('Dashboard');
   useEffect(() => { window.scrollTo(0, 0); }, []);
@@ -904,6 +969,9 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
+            {/* ── CapEx forecast (facilities manager / CFO) ──────────────── */}
+            <CapExForecastPanel />
 
             {/* ── 36-month maintenance horizon ───────────────────────────── */}
             <MaintenanceHorizon navigate={navigate} />

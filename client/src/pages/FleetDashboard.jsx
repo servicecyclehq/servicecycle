@@ -224,6 +224,8 @@ export default function FleetDashboard() {
   const [expandedId, setExpandedId] = useState(null);
   const [filter, setFilter] = useState('all'); // all | attention | healthy
   const [search, setSearch] = useState('');
+  const [forecast, setForecast] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'oem_admin') {
@@ -235,6 +237,13 @@ export default function FleetDashboard() {
       .then((r) => setData(r.data))
       .catch((e) => setError(e.response?.data?.error ?? e.message))
       .finally(() => setLoading(false));
+
+    // Load fleet CapEx forecast
+    setForecastLoading(true);
+    api.get('/api/fleet/forecast')
+      .then((r) => setForecast(r.data.forecast))
+      .catch(() => {})
+      .finally(() => setForecastLoading(false));
   }, []);
 
   const toggle = useCallback((id) => {
@@ -334,6 +343,63 @@ export default function FleetDashboard() {
             onToggle={() => toggle(account.id)}
           />
         ))}
+      </div>
+
+      {/* Fleet Modernization Forecast */}
+      <div style={styles.forecastSection}>
+        <h2 style={styles.forecastTitle}>Fleet Modernization Forecast — 3-Year Rolling CapEx Exposure</h2>
+        <p style={styles.forecastNote}>
+          Figures are platform benchmarks derived from IEEE/NFPA/NETA asset life models and published service rate ranges.
+          They are not binding quotes.
+        </p>
+        {forecastLoading && <div style={styles.forecastLoading}>Loading forecast…</div>}
+        {!forecastLoading && forecast && forecast.length === 0 && (
+          <div style={styles.forecastEmpty}>No at-risk assets flagged. Fleet is in good standing.</div>
+        )}
+        {!forecastLoading && forecast && forecast.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={styles.forecastTable}>
+              <thead>
+                <tr style={styles.forecastThead}>
+                  {['Account', ...forecast.map((f) => `${f.year} CapEx Range`), 'Assets'].map((h) => (
+                    <th key={h} style={styles.forecastTh}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Build account rows */}
+                {(() => {
+                  // collect all accountIds from all years
+                  const allAccountIds = [...new Set(forecast.flatMap((f) => f.accounts.map((a) => a.accountId)))];
+                  return allAccountIds.map((accountId) => {
+                    const firstMatch = forecast.flatMap((f) => f.accounts).find((a) => a.accountId === accountId);
+                    const companyName = firstMatch?.companyName ?? accountId;
+                    const totalAssets = Math.max(...forecast.map((f) => {
+                      const a = f.accounts.find((x) => x.accountId === accountId);
+                      return a ? a.assetCount : 0;
+                    }));
+                    return (
+                      <tr key={accountId} style={styles.forecastTr}>
+                        <td style={styles.forecastTd}>{companyName}</td>
+                        {forecast.map((f) => {
+                          const a = f.accounts.find((x) => x.accountId === accountId);
+                          if (!a) return <td key={f.year} style={{ ...styles.forecastTd, color: 'var(--text-secondary)' }}>—</td>;
+                          const fmt = (c) => `$${Math.round(c / 100).toLocaleString()}`;
+                          return (
+                            <td key={f.year} style={styles.forecastTd}>
+                              {fmt(a.minCents)} – {fmt(a.maxCents)}
+                            </td>
+                          );
+                        })}
+                        <td style={{ ...styles.forecastTd, textAlign: 'center' }}>{totalAssets}</td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -567,5 +633,61 @@ const styles = {
     color: '#b91c1c',
     borderRadius: 8,
     fontSize: 13,
+  },
+  forecastSection: {
+    marginTop: 40,
+    padding: '24px',
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 10,
+  },
+  forecastTitle: {
+    fontSize: 16,
+    fontWeight: 700,
+    margin: '0 0 6px',
+    color: 'var(--text-primary)',
+  },
+  forecastNote: {
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+    margin: '0 0 16px',
+    fontStyle: 'italic',
+  },
+  forecastLoading: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    padding: '12px 0',
+  },
+  forecastEmpty: {
+    fontSize: 13,
+    color: '#059669',
+    padding: '12px 0',
+  },
+  forecastTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: 13,
+  },
+  forecastThead: {
+    background: 'var(--surface-2, #f3f4f6)',
+  },
+  forecastTh: {
+    padding: '8px 12px',
+    textAlign: 'left',
+    fontWeight: 600,
+    fontSize: 11,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    borderBottom: '1px solid var(--border)',
+    whiteSpace: 'nowrap',
+  },
+  forecastTr: {
+    borderBottom: '1px solid var(--border)',
+  },
+  forecastTd: {
+    padding: '10px 12px',
+    color: 'var(--text-primary)',
+    verticalAlign: 'middle',
   },
 };
