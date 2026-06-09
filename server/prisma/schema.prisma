@@ -466,6 +466,13 @@ model ContractorTech {
   qualifiedPersonDesignatedAt DateTime?
   trainingExpiresAt           DateTime?
   thermographerCertLevel      String?
+  // ── QEMW credential (ANSI/NETA EMW-2026, approved 2026-01-06) ────────────
+  // ANSI/NETA EMW-2026 created the Qualified Electrical Equipment Maintenance
+  // Worker (QEMW) certification. First-mover window ~12-18 months before
+  // PowerDB/Accruent builds this. 3-year renewal cycle per the standard.
+  qemwCertNumber  String?   // certificate number issued by NETA
+  qemwExpiresAt   DateTime? // expiry date (drives 60d + 14d alert cron)
+  qemwIssuingBody String?   // "NETA" (only currently-recognized body)
   lastContactedAt DateTime?
   notes           String?
   createdAt       DateTime       @default(now())
@@ -658,6 +665,20 @@ model Asset {
   isEnergized           Boolean         @default(true)
   notes                 String?
   archivedAt            DateTime? // soft-delete; history (work orders, samples) stays addressable
+  // ── EOL / Obsolescence (Task 23 — Modernization Revenue Engine) ───────────
+  // OEM-published lifecycle dates. When endOfSupport is set the
+  // modernizationRiskScore cron normalises over a 5-year window
+  // (see lib/modernizationAlerts.ts). When null, the cron falls back to the
+  // IEEE/NFPA base-life + condition-multiplier heuristic.
+  // Backlog: expose these via outbound webhook/API so OEM CRMs (Brightlayer,
+  // EcoStruxure, ABB Ability, Xcelerator) can pull asset health scores.
+  endOfManufacture      DateTime? // OEM last manufacture date
+  endOfSupport          DateTime? // OEM last support/parts date
+  obsolescenceStatus    String?   // ACTIVE | ACTIVE_UNSUPPORTED | DISCONTINUED | OBSOLETE
+  criticalSparesAvailable Boolean? // true = spares in OEM/distributor inventory
+  sparePartsLeadTimeDays  Int?    // estimated lead time (days) for critical spares
+  replacementCostCents    Int?    // all-in replacement estimate (USD cents)
+  modernizationRiskScore  Float?  // 0-1+ RUL score; recomputed daily by modernizationAlerts cron
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
 
@@ -1755,6 +1776,9 @@ model QuoteRequest {
   budgetNotes     String?
   attachmentNotes String?  // photos, IR scans, test reports
   emergencyMode   Boolean            @default(false) // true when driver=down_now
+  // System-generated trigger type — null when submitted manually by the customer.
+  // Values: MODERNIZATION_EOL | ARC_FLASH_STUDY | QEMW_TRAINING
+  triggerType     String?
   // Full asset dossier snapshot at submission time — nameplate, age, open
   // deficiencies, overdue tasks, downstream topology. Stored so the rep
   // always sees the state of the asset when the request was submitted.
@@ -1999,4 +2023,32 @@ model AssetTemplateTask {
 
   @@unique([templateId, taskDefinitionId])
   @@map("asset_template_tasks")
+}
+
+// ─── Service Rate Card (Task 24 — Fleet Modernization Forecast) ───────────────
+// Platform-level and account-level pricing benchmarks used to project CapEx
+// exposure on the fleet forecast. partnerOrgId=null + accountId=null = global
+// default visible to all. Account-level rows override the global default for
+// that account. OEMs with custom agreements can set partnerOrgId overrides.
+//
+// serviceType values:
+//   ARC_FLASH_STUDY / SWITCHGEAR_MODERNIZATION / BREAKER_RETROFIT /
+//   TRANSFORMER_REPLACEMENT / RELAY_UPGRADE / INSPECTION / LOAD_STUDY / QEMW_TRAINING
+//
+// Read-only aggregation only — no pipeline/win-loss tracking (CRM territory).
+model ServiceRateCard {
+  id           String   @id @default(uuid())
+  partnerOrgId String?  // null = platform default
+  accountId    String?  // null = OEM default; account-level overrides supported
+  serviceType  String   // see values above
+  minCents     Int      // minimum estimate (USD cents)
+  maxCents     Int      // maximum estimate (USD cents)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([partnerOrgId])
+  @@index([accountId])
+  @@index([serviceType])
+  @@map("service_rate_cards")
 }
