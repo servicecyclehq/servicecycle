@@ -224,6 +224,7 @@ const assetTemplateRoutes   = require('./routes/assetTemplates');
 const outagePlannerRoutes   = require('./routes/outagePlanner');
 const lotoRoutes            = require('./routes/loto');
 const disasterEventRoutes   = require('./routes/disasterEvents');
+const leaveBehindRoutes     = require('./routes/leaveBehind');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
 const { requestId }                      = require('./middleware/requestId'); // v0.37.1 W5 MT-129
 const openapiRoute                       = require('./routes/openapi');        // v0.37.1 W5 MT-128
@@ -1244,6 +1245,11 @@ app.use('/api/outage-planner', authenticateToken, outagePlannerRoutes);
 // ── LOTO — Lockout/Tagout procedures (asset-scoped) ──────────────────────────
 app.use('/api/assets/:assetId/loto', authenticateToken, lotoRoutes);
 
+// ── Leave-Behind PDF — inspection close leave-behind (Task 28) ───────────────
+// Mounted at both the canonical work-orders path and the inspections alias.
+app.use('/api/work-orders/:id/leave-behind-pdf', authenticateToken, leaveBehindRoutes);
+app.use('/api/inspections/:id/leave-behind-pdf', authenticateToken, leaveBehindRoutes);
+
 // ── Disaster Response Mode — weather alerts + emergency declarations ──────────
 app.use('/api/disaster-events', authenticateToken, disasterEventRoutes);
 
@@ -1926,6 +1932,63 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
       }
     }), { timezone: 'UTC' });
     console.log('[Cron] Deficiency alerts scheduled — runs daily at 08:00 UTC');
+
+    // ── Modernization Alerts (Task 23) — daily 09:00 UTC ────────────────────
+    // Scores every asset by RUL model, stores modernizationRiskScore, fires
+    // QuoteRequests + emails for assets >= 0.70 threshold.
+    const { runModernizationAlerts } = require('./lib/modernizationAlerts');
+    cron.schedule('0 9 * * *', () => runOnce('modernizationAlerts', async () => {
+      pingHeartbeat('modernizationAlerts');
+      try {
+        const r = await runModernizationAlerts();
+        console.log(`[Cron][modernizationAlerts] Done — scored: ${r.assetsScored}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}, skipped: ${r.skipped}`);
+      } catch (e) {
+        console.error('[Cron][modernizationAlerts] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Modernization alerts scheduled — runs daily at 09:00 UTC');
+
+    // ── Arc Flash Integrity Engine (Task 25) — daily 09:30 UTC ──────────────
+    // Checks 5-yr expiry, load growth, relay/breaker deficiencies.
+    const { runArcFlashIntegrity } = require('./lib/arcFlashIntegrity');
+    cron.schedule('30 9 * * *', () => runOnce('arcFlashIntegrity', async () => {
+      pingHeartbeat('arcFlashIntegrity');
+      try {
+        const r = await runArcFlashIntegrity();
+        console.log(`[Cron][arcFlashIntegrity] Done — expired: ${r.expiredStudies}, loadGrowth: ${r.loadGrowthAlerts}, deficiency: ${r.deficiencyAlerts}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}`);
+      } catch (e) {
+        console.error('[Cron][arcFlashIntegrity] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Arc flash integrity scheduled — runs daily at 09:30 UTC');
+
+    // ── QEMW Credential Alerts (Task 26) — daily 10:00 UTC ──────────────────
+    // Fires 60d + 14d expiry alerts; detects compliance gaps for REQUIRE_QEMW accounts.
+    const { runQemwAlerts } = require('./lib/qemwAlerts');
+    cron.schedule('0 10 * * *', () => runOnce('qemwAlerts', async () => {
+      pingHeartbeat('qemwAlerts');
+      try {
+        const r = await runQemwAlerts();
+        console.log(`[Cron][qemwAlerts] Done — expiry: ${r.expiryAlerts}, gaps: ${r.gapAlerts}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}, skipped: ${r.skipped}`);
+      } catch (e) {
+        console.error('[Cron][qemwAlerts] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] QEMW alerts scheduled — runs daily at 10:00 UTC');
+
+    // ── Standard Revision Alerts (Task 27) — daily 10:30 UTC ────────────────
+    // Notifies accounts when ComplianceStandard.supersededAt is set.
+    const { runStandardRevisionCron } = require('./lib/standardRevisionCron');
+    cron.schedule('30 10 * * *', () => runOnce('standardRevisionCron', async () => {
+      pingHeartbeat('standardRevisionCron');
+      try {
+        const r = await runStandardRevisionCron();
+        console.log(`[Cron][standardRevisionCron] Done — standards: ${r.standardsChecked}, accounts: ${r.accountsAlerted}, emails: ${r.emailsSent}, skipped: ${r.skipped}`);
+      } catch (e) {
+        console.error('[Cron][standardRevisionCron] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Standard revision cron scheduled — runs daily at 10:30 UTC');
 
   } catch (e) {
     console.warn('[Cron] node-cron not available — run npm install to enable scheduled alerts');

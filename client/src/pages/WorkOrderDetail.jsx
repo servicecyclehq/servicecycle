@@ -167,6 +167,36 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
   );
 }
 
+// ── Leave-Behind PDF button — fetches as blob, opens in new tab ────────────
+function LeaveBehindButton({ woId, label = 'Leave-Behind PDF' }) {
+  const [busy, setBusy] = useState(false);
+  async function generate() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/work-orders/${woId}/leave-behind-pdf`, { method: 'POST' });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `leave-behind-${woId.slice(-8).toUpperCase()}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      alert('Could not generate leave-behind PDF. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button className="btn btn-secondary" onClick={generate} disabled={busy}>
+      <FileText size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 5 }} />
+      {busy ? 'Generating…' : label}
+    </button>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function WorkOrderDetail() {
   const { id } = useParams();
@@ -564,6 +594,9 @@ export default function WorkOrderDetail() {
             <button className="btn btn-secondary" style={{ color: 'var(--color-danger)' }} onClick={cancelJob} disabled={transitioning}>
               Cancel
             </button>
+          )}
+          {wo.status === 'COMPLETE' && (
+            <LeaveBehindButton woId={wo.id} />
           )}
         </div>
       </div>

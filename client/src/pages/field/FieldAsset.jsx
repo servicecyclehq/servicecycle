@@ -95,6 +95,45 @@ const fatBtn = {
   WebkitTapHighlightColor: 'transparent',
 };
 
+// ── Leave-Behind PDF — field-friendly version ─────────────────────────────
+function FieldLeaveBehindButton({ woId }) {
+  const [busy, setBusy] = useState(false);
+  async function generate() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/work-orders/${woId}/leave-behind-pdf`, { method: 'POST' });
+      if (!res.ok) throw new Error('Server error');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `leave-behind-${woId.slice(-8).toUpperCase()}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      alert('Could not generate PDF. Please try again when online.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={generate}
+      disabled={busy}
+      style={{
+        ...btnBase,
+        background: 'var(--color-surface)', color: 'var(--color-text)',
+        border: '1px solid var(--color-border)', fontSize: 13, padding: '8px 14px',
+        opacity: busy ? 0.6 : 1,
+      }}
+    >
+      {busy ? 'Generating…' : 'Leave-Behind PDF'}
+    </button>
+  );
+}
+
 export default function FieldAsset() {
   const { id } = useParams();
   const { aiEnabled, aiConfigured, features } = useAuth();
@@ -742,13 +781,16 @@ export default function FieldAsset() {
             const meta = WO_STATUS_META[wo.status];
             return (
               <div key={wo.id} style={{
-                display: 'flex', gap: 10, alignItems: 'center', padding: '12px 14px',
+                padding: '12px 14px',
                 borderBottom: i < openWOs.length - 1 ? '1px solid var(--color-border)' : 'none',
               }}>
-                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)' }}>
-                  {wo.taskName || 'Work order'}
-                </span>
-                {meta && <Chip label={meta.label} color={meta.color} bg={meta.bg} />}
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: 'var(--color-text)' }}>
+                    {wo.taskName || 'Work order'}
+                  </span>
+                  {meta && <Chip label={meta.label} color={meta.color} bg={meta.bg} />}
+                </div>
+                <FieldLeaveBehindButton woId={wo.id} />
               </div>
             );
           })}
