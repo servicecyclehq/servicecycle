@@ -95,6 +95,21 @@ const fatBtn = {
   WebkitTapHighlightColor: 'transparent',
 };
 
+// ── Shared base style for small inline buttons ────────────────────────────
+const btnBase = {
+  cursor: 'pointer',
+  borderRadius: 8,
+  border: 'none',
+  outline: 'none',
+  fontFamily: 'inherit',
+  fontWeight: 500,
+  lineHeight: 1.2,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  WebkitTapHighlightColor: 'transparent',
+};
+
 // ── Leave-Behind PDF — field-friendly version ─────────────────────────────
 function FieldLeaveBehindButton({ woId }) {
   const [busy, setBusy] = useState(false);

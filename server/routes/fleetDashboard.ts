@@ -16,7 +16,10 @@ import prisma from '../lib/prisma';
 const DAY_MS = 86_400_000;
 
 // ── Role guard ────────────────────────────────────────────────────────────────
+// account-forecast is customer-facing (any authenticated user); all other
+// /api/fleet/* endpoints require oem_admin role.
 function requireOemAdmin(req, res, next) {
+  if (req.path === '/account-forecast') return next(); // customer-facing, no OEM role needed
   if (req.user?.role !== 'oem_admin') {
     return res.status(403).json({ error: 'OEM admin role required' });
   }
@@ -331,6 +334,197 @@ router.get('/accounts/:id', async (req, res) => {
   } catch (err: any) {
     console.error('[fleet/accounts/:id]', err);
     res.status(500).json({ error: 'Account detail query failed' });
+  }
+});
+
+// ── GET /api/fleet/forecast ────────────────────────────────────────────────────
+// Fleet Modernization Forecast (Task 24).
+// Per-account CapEx exposure by year — rolling 3 years — based on assets with
+// modernizationRiskScore >= 0.50 joined against the platform-default rate card.
+// Read-only aggregation. No pipeline/win-loss tracking (CRM territory).
+//
+// Response: { partnerOrg, forecast: [{ year, accounts: [{ accountId, companyName, minCents, maxCents, assetCount }] }] }
+router.get('/forecast', async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const now = new Date();
+    const callerAccount = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { partnerOrgId: true },
+    });
+
+    const accountWhere: any = { status: 'active' };
+    if (callerAccount?.partnerOrgId) {
+      accountWhere.partnerOrgId = callerAccount.partnerOrgId;
+    }
+
+    const accounts = await prisma.account.findMany({
+      where: accountWhere,
+      select: { id: true, companyName: true },
+      orderBy: { companyName: 'asc' },
+    });
+
+    const accountIds = accounts.map((a) => a.id);
+
+    // Load global rate card (no partnerOrgId, no accountId)
+    const rateCards = await prisma.serviceRateCard.findMany({
+      where: { partnerOrgId: null, accountId: null },
+    });
+    const rateMap = new Map<string, { minCents: number; maxCents: number }>();
+    for (const r of rateCards) rateMap.set(r.serviceType, r);
+
+    // Map EquipmentType → service type for rate lookup
+    const equipToService: Record<string, string> = {
+      TRANSFORMER_LIQUID: 'TRANSFORMER_REPLACEMENT',
+      TRANSFORMER_DRY:    'TRANSFORMER_REPLACEMENT',
+      SWITCHGEAR:         'SWITCHGEAR_MODERNIZATION',
+      SWITCHBOARD:        'SWITCHGEAR_MODERNIZATION',
+      CIRCUIT_BREAKER:    'BREAKER_RETROFIT',
+      PROTECTION_RELAY:   'RELAY_UPGRADE',
+      MCC:                'SWITCHGEAR_MODERNIZATION',
+      UPS_BATTERY:        'INSPECTION',
+      BATTERY_SYSTEM:     'INSPECTION',
+      TRANSFER_SWITCH:    'INSPECTION',
+    };
+
+    // Load at-risk assets across all accounts
+    const atRiskAssets = await prisma.asset.findMany({
+      where: {
+        accountId:              { in: accountIds },
+        archivedAt:             null,
+        installDate:            { not: null },
+        modernizationRiskScore: { gte: 0.50 },
+      },
+      select: {
+        id: true, accountId: true, equipmentType: true,
+        installDate: true, modernizationRiskScore: true,
+        endOfSupport: true,
+      },
+      take: 10000,
+    });
+
+    // Bucket each asset into year 1, 2, or 3 based on risk score
+    // Score 0.85+ → year 1; 0.70–0.84 → year 2; 0.50–0.69 → year 3
+    // (watch-list tier — surface but don't alert customer directly)
+    const years = [now.getFullYear(), now.getFullYear() + 1, now.getFullYear() + 2];
+
+    function scoreToYear(score: number): number {
+      if (score >= 0.85) return years[0];
+      if (score >= 0.70) return years[1];
+      return years[2];
+    }
+
+    // Aggregate per account per year
+    type YearBucket = { minCents: number; maxCents: number; assetCount: number };
+    const byAccountYear = new Map<string, Map<number, YearBucket>>();
+
+    for (const asset of atRiskAssets) {
+      const score       = asset.modernizationRiskScore ?? 0;
+      const targetYear  = scoreToYear(score);
+      const svcType     = equipToService[asset.equipmentType] ?? 'INSPECTION';
+      const rate        = rateMap.get(svcType);
+      if (!rate) continue;
+
+      if (!byAccountYear.has(asset.accountId)) byAccountYear.set(asset.accountId, new Map());
+      const yearMap = byAccountYear.get(asset.accountId)!;
+      if (!yearMap.has(targetYear)) yearMap.set(targetYear, { minCents: 0, maxCents: 0, assetCount: 0 });
+      const bucket = yearMap.get(targetYear)!;
+      bucket.minCents   += rate.minCents;
+      bucket.maxCents   += rate.maxCents;
+      bucket.assetCount += 1;
+    }
+
+    // Shape response
+    const forecast = years.map((year) => ({
+      year,
+      accounts: accounts
+        .map((acct) => {
+          const bucket = byAccountYear.get(acct.id)?.get(year);
+          return {
+            accountId:   acct.id,
+            companyName: acct.companyName,
+            minCents:    bucket?.minCents    ?? 0,
+            maxCents:    bucket?.maxCents    ?? 0,
+            assetCount:  bucket?.assetCount  ?? 0,
+          };
+        })
+        .filter((r) => r.assetCount > 0),
+    }));
+
+    res.json({ forecast });
+  } catch (err: any) {
+    console.error('[fleet/forecast]', err);
+    res.status(500).json({ error: 'Forecast query failed' });
+  }
+});
+
+// ── GET /api/fleet/account-forecast ───────────────────────────────────────────
+// Customer-facing CapEx forecast for the account dashboard (Task 24).
+// Auth: any authenticated user — shows THEIR account only.
+// Returns: { forecast: [{ year, minCents, maxCents, assetCount }] }
+router.get('/account-forecast', async (req, res) => {
+  // Override the oem_admin-only guard for this endpoint
+  (router as any).accountForecast = true; // flag so middleware can pass
+  try {
+    const { accountId } = req.user;
+    const now = new Date();
+    const years = [now.getFullYear(), now.getFullYear() + 1, now.getFullYear() + 2];
+
+    const rateCards = await prisma.serviceRateCard.findMany({
+      where: { partnerOrgId: null, accountId: null },
+    });
+    const rateMap = new Map<string, { minCents: number; maxCents: number }>();
+    for (const r of rateCards) rateMap.set(r.serviceType, r);
+
+    const equipToService: Record<string, string> = {
+      TRANSFORMER_LIQUID: 'TRANSFORMER_REPLACEMENT',
+      TRANSFORMER_DRY:    'TRANSFORMER_REPLACEMENT',
+      SWITCHGEAR:         'SWITCHGEAR_MODERNIZATION',
+      SWITCHBOARD:        'SWITCHGEAR_MODERNIZATION',
+      CIRCUIT_BREAKER:    'BREAKER_RETROFIT',
+      PROTECTION_RELAY:   'RELAY_UPGRADE',
+      MCC:                'SWITCHGEAR_MODERNIZATION',
+      UPS_BATTERY:        'INSPECTION',
+      BATTERY_SYSTEM:     'INSPECTION',
+      TRANSFER_SWITCH:    'INSPECTION',
+    };
+
+    const atRiskAssets = await prisma.asset.findMany({
+      where: {
+        accountId,
+        archivedAt:             null,
+        modernizationRiskScore: { gte: 0.50 },
+      },
+      select: { equipmentType: true, modernizationRiskScore: true },
+      take: 5000,
+    });
+
+    function scoreToYear(score: number): number {
+      if (score >= 0.85) return years[0];
+      if (score >= 0.70) return years[1];
+      return years[2];
+    }
+
+    const buckets = new Map<number, { minCents: number; maxCents: number; assetCount: number }>();
+    for (const y of years) buckets.set(y, { minCents: 0, maxCents: 0, assetCount: 0 });
+
+    for (const asset of atRiskAssets) {
+      const score      = asset.modernizationRiskScore ?? 0;
+      const targetYear = scoreToYear(score);
+      const svcType    = equipToService[asset.equipmentType] ?? 'INSPECTION';
+      const rate       = rateMap.get(svcType);
+      if (!rate) continue;
+      const bucket = buckets.get(targetYear)!;
+      bucket.minCents   += rate.minCents;
+      bucket.maxCents   += rate.maxCents;
+      bucket.assetCount += 1;
+    }
+
+    const forecast = years.map((y) => ({ year: y, ...buckets.get(y)! }));
+    res.json({ forecast });
+  } catch (err: any) {
+    console.error('[fleet/account-forecast]', err);
+    res.status(500).json({ error: 'Forecast query failed' });
   }
 });
 

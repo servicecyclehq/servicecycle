@@ -1,6 +1,8 @@
 # Brother Conversation Guide
 Purpose: Product validation + strategic/acquisition setup
-Prep time: 30 min. This is the most important conversation in the company's history — treat it that way.
+Last updated: 2026-06-08 — revised after sessions covering RUL scoring, modernization engine, arc flash integrity, QEMW, rate card, fleet forecast, leave-behind PDF, and multi-AI exit thesis research.
+
+Prep time: 45 min. This is the most important conversation in the company's history — treat it that way.
 
 ---
 
@@ -44,7 +46,7 @@ These questions establish baseline. Listen for pain, not just answers.
 
 12. Have you ever lost a customer or a renewal because a competitor offered better visibility into their equipment health?
 
-13. What would your ideal customer look like? Meaning — what kind of customer would get the most value from having a software layer managing their equipment?
+13. What would your ideal customer look like? Meaning — what kind of customer gets the most value from having a software layer managing their equipment?
 
 ---
 
@@ -52,69 +54,91 @@ These questions establish baseline. Listen for pain, not just answers.
 
 14. How big a deal is NFPA 70B compliance for your customers? Is it something they're actively managing, or is it a checkbox they ignore until an audit?
 
-15. What about NFPA 70E (electrical safety in the workplace)? How do your customers handle lockout/tagout today — paper binders, nothing, or something formal?
+15. What about NFPA 70E (electrical safety in the workplace)? How do your customers handle arc flash studies — do they track when the last one was done, or is that buried in a binder somewhere?
 
 16. Do you have customers in healthcare (NFPA 99 requirements)? If so, how do they currently manage their compliance documentation?
 
 17. What compliance failures have you seen cause real problems for customers? Lost certifications, fines, insurance issues, OSHA citations?
 
-18. When a customer has a planned outage — scheduled downtime to do maintenance — how do they currently coordinate which equipment gets serviced in that window?
+18. When a customer has a planned outage — scheduled downtime to do maintenance — how do they currently coordinate which equipment gets serviced in that window? Is there a process, or is it whoever yells loudest?
+
+19. ANSI/NETA EMW-2026 created a new QEMW (Qualified Electrical Equipment Maintenance Worker) certification requirement effective January 2026. How aware is the industry of this? Is anyone actually enforcing it yet or is it theoretical at this point?
 
 ---
 
-## Section 4 — Risk-Based Scheduling (The 90% Question)
+## Section 4 — Equipment Aging and Modernization (NEW — validate our core assumptions)
 
-19. Walk me through how NFPA 70B Chapter 9 actually works in practice. What are the maintenance intervals for your most common equipment types (switchgear, transformers, breakers, MCCs) at each condition rating?
+These are the most important questions for the next feature sprint. We've built a scoring model and need a real operator to gut-check it.
 
-20. Today, when a customer's equipment condition degrades — say a transformer goes from good condition to showing signs of deterioration — does anyone proactively shorten the service interval? Or does it just go on the calendar regardless?
+20. When you look at a piece of equipment that's, say, 25 years old — a switchgear lineup or a transformer — how do you actually decide if it needs to be replaced vs. getting another 10 years out of it? What's the mental model?
 
-21. How far out do you need to plan maintenance? Is 180 days enough of a horizon, or are you working with 1-year, 2-year, 3-year cycles on some equipment?
+21. We've built a Remaining Useful Life score for assets that adjusts based on condition rating, not just age. The idea: a 25-year-old transformer in C1 condition (well-maintained, controlled environment) scores differently than the same age transformer in C3 (missed maintenance, harsh environment). Does that map to how experienced techs actually think about this, or is it more complicated than that?
 
-22. What data points actually matter most for determining maintenance priority? Age of equipment, last service date, condition assessment, manufacturer recommendation, operating environment?
+22. We're using IEEE base life figures as starting points — liquid-filled transformers at 30 years base, MV switchgear at 30 years, LV breakers at 25 years, microprocessor relays at 20 years. Do those feel right in the field, or are you regularly seeing equipment last meaningfully longer or shorter?
 
----
+23. When a piece of equipment approaches end-of-support — the manufacturer stops making parts for it — how does that conversation with the customer go today? Do they know it's coming, or is it always a surprise?
 
-## Section 5 — Technology (Import Connectors + Integration)
+24. We're building a 3-year CapEx forecast that shows customers their estimated electrical infrastructure spend by year based on equipment age and condition. Something like: "2027: $180k–$340k in recommended upgrades across 4 assets." Would a facilities manager or CFO actually use that for budget planning, or would they dismiss it as too speculative?
 
-23. When you're looking at a list of equipment at a customer site, what are the first 3-4 columns you want to see — the ones that tell you at a glance whether something needs attention? (We can configure the asset list to surface whatever matters most.)
-
-24. What system does your company (and your biggest customers) use to track equipment and maintenance today? Maximo, SAP, something custom, spreadsheets?
-
-25. When you onboard a new customer to any kind of digital service, how do you get their existing equipment list into the system? Manual entry, spreadsheet upload, something else?
-
-26. Do any of your customers run ETAP or SKM for arc flash studies? If so, do they have full equipment inventories in those tools?
-
-27. Are there any systems your reps use every day that a service platform absolutely must connect to — CRM, ERP, dispatch tools, anything?
-
-28. What's your company's general appetite for new software? Procurement process, security review, how long does it typically take to get something approved?
+25. What are realistic price ranges for the most common service events? We've seeded default estimates (arc flash study $8–15k, switchgear modernization $12–45k, breaker retrofit $3.5–8k, transformer replacement $25–120k). Are those in the right ballpark, or wildly off for your market?
 
 ---
 
-## Section 6 — Competitive Landscape (Intel)
+## Section 5 — Arc Flash and High-Value Service Events
 
-29. What software tools are your biggest competitors using for field service? Have you seen any of them offer customers a digital portal or asset management tool as a differentiator?
+26. How often are arc flash studies actually current at your customers' facilities? NFPA 70E requires a review every 5 years or when the system changes. In your experience, what percentage of customers are actually compliant with that?
 
-30. Have you looked at Gimba? Your company apparently came close to buying them. What did they do well and where did they fall short?
+27. When new equipment gets added to a facility — a new panel, a new breaker — does anyone proactively flag that the arc flash study may be invalidated? Or does that just get missed?
 
-31. If you were designing the perfect service platform for your industry, what would it do that nothing on the market does today?
+28. We built an automatic trigger: when an IMMEDIATE deficiency is logged for a protective relay calibration issue, the system auto-generates an arc flash study quote request. Does that logic hold up — is a relay calibration issue actually a material arc flash risk in practice?
+
+29. What's the most common reason a customer ends up needing an emergency service event that could have been predicted? What's the "if we'd caught this 6 months ago" failure mode you see most?
 
 ---
 
-## Section 7 — Strategic / Acquisition Setup
+## Section 6 — Field Tech Experience (Validate What We Built)
+
+30. After a tech completes an inspection, what does the customer typically get? A report? A verbal summary? An email? How formal is the leave-behind documentation today?
+
+31. We built a "sales conversion leave-behind" PDF — three sections: what we found, what we fixed, what you should budget for. The third section shows open deficiencies and aging equipment with estimated cost ranges. Would a field tech actually use that, or is it too formal for how field conversations work?
+
+32. When a tech finds a nameplate on equipment and needs to look up specs or log it — manufacture year, model, voltage rating — what's the process today? How much time does that take per piece of equipment on a typical site survey?
+
+---
+
+## Section 7 — Technology and Competition
+
+33. When you're looking at a list of equipment at a customer site, what are the first 3–4 columns you want to see — the ones that tell you at a glance whether something needs attention?
+
+34. What system does your company use to track equipment and maintenance today? What about your biggest customers?
+
+35. Do any of your customers run ETAP or SKM for arc flash studies? If so, do they have full equipment inventories in those tools?
+
+36. What software are your biggest competitors using for field service? Have you seen any of them offer customers a digital portal or asset health dashboard as a differentiator?
+
+37. Have you looked at Gimba? Your company apparently came close to buying them. What did they do well and where did they fall short? What was the number management was willing to pay, and what drove that valuation?
+
+38. Have you heard of PowerDB? It's the incumbent NETA field test data tool. Do your techs use it, hate it, or never touch it?
+
+39. What would the perfect service platform do that nothing on the market does today?
+
+---
+
+## Section 8 — Strategic / Exit (Handle With Care)
 
 *These land naturally at the end once he's seen the product and answered the questions above. Don't force them early.*
 
-32. What would it mean for your company competitively if you owned a platform like this instead of a competitor owning it?
+40. What would it mean for your company competitively if you owned a platform like this instead of a competitor owning it?
 
-33. Is there a world where a platform like ServiceCycle becomes something you offer customers as part of your service contract — "you get the equipment and the software to manage it"? What would that do for retention?
+41. We've had multiple independent research sources tell us the most likely acquirers aren't OEMs (Eaton, Schneider) — they're PE-backed electrical contractors like Shermco/Blackstone or Integrated Power Services, or large contractors like EMCOR, Quanta, RESA. Does that match what you see in your market, or does the OEM acquisition path feel more real from the inside?
 
-34. Who at your company would be the person to evaluate something like this? Is it a product decision, an IT decision, a business unit decision, or does it go to the top?
+42. Is there a world where a platform like ServiceCycle becomes something your company offers customers as part of a service contract — "you get the equipment maintenance and the software to manage it"? What would that do for renewal rates?
 
-35. When your management looked at Gimba, what was the number they were willing to pay? What criteria drove that valuation in their mind?
+43. Who at your company would be the person to evaluate something like this? Product, IT, business unit, or does it go to the top?
 
-36. What would need to be true — features, customers, compliance certifications, revenue — for this to be a "we need to own this" conversation at your company?
+44. What would need to be true — features, customers, compliance certifications, revenue — for this to be a "we need to own this" conversation at your company?
 
-37. Is there a contractor network or dealer channel attached to your business that would also benefit from a white-label version of this? How many companies in that network?
+45. Is there a contractor network or dealer channel attached to your business that would also benefit from a version of this? How many companies in that network?
 
 ---
 
@@ -122,32 +146,46 @@ These questions establish baseline. Listen for pain, not just answers.
 
 Show in this order — each one should answer a question he didn't know he had:
 
-1. **Asset inventory with condition tracking** — "Here's what a customer's equipment looks like the moment they're onboarded."
+1. **Asset inventory with condition tracking** — "Here's what a customer's site looks like the moment they're onboarded."
 2. **Field Mode / QR scan** — "Here's what the tech sees on their phone when they walk up to a panel."
-3. **Photo Inspect** — "Take a photo of the nameplate, the record populates itself."
-4. **LOTO procedure** — "OSHA-compliant, versioned, on the asset record."
-5. **Deficiency report** — "Tech finds something wrong in the field — this is how it gets documented, tracked, and closed."
-6. **Quote Request + EMERGENCY mode** — "Equipment is down. This is what the customer sees. This is what the rep gets."
-7. **Outage Consolidation Planner** — "Planned downtime window — here's every asset that's overdue and can be batched."
-8. **Compliance report** — "One click — NFPA 70B program document, audit-ready."
+3. **Nameplate OCR** — "Point the camera at the nameplate. The record populates itself." (This one gets a reaction every time.)
+4. **Deficiency report workflow** — "Tech finds something wrong — this is how it gets documented, tiered by severity, tracked, and closed."
+5. **Quote Request + EMERGENCY mode** — "Equipment is down. This is what the customer sees. This is what the rep gets."
+6. **Outage Consolidation Planner** — "Planned downtime window — every asset that's overdue, batched automatically."
+7. **Fleet Dashboard (OEM view)** — "Here's what your management team sees across every customer account. Risk-ranked."
+8. **Compliance report / EMP** — "One click — NFPA 70B program document, audit-ready."
+9. **Modernization Forecast** — "Here's what this customer's electrical CapEx looks like over the next 3 years based on asset age and condition." (Tease this — it's coming in the next sprint.)
 
-Save the disaster response concept for the end as a "we're building this next" teaser.
+---
+
+## Assumptions We Built That Need His Gut-Check
+
+These are engineering decisions made without an industry operator in the room. Flag these specifically and get a reaction:
+
+- **C1 condition = 1.0× life, C3 = 0.50× life (cut expected life in half).** Is that too aggressive, not aggressive enough, or about right for badly maintained equipment?
+- **Arc flash study expires at 5 years per NFPA 70E.** Is that actually tracked, or is it honored in the breach?
+- **Default CapEx estimate ranges (arc flash $8–15k, switchgear modernization $12–45k, etc.).** Right ballpark for your geography and customer size?
+- **QEMW certification as a meaningful compliance forcing event.** Is the industry taking this seriously or will it be ignored for years?
+- **PE roll-ups and large contractors as the most likely acquirers, not OEMs.** Does that match what he sees?
+- **The "leave-behind as sales artifact" concept.** Do field techs have that kind of commercial conversation with customers, or does that happen at a different level?
 
 ---
 
 ## Listen For
 
-- **Pain signals**: "We still do that on spreadsheets." "That takes 3 days." "Customers always complain about that." → These are features that matter.
-- **Validation signals**: "We actually have that problem." "Our reps would love that." → Note these exactly.
-- **Acquisition signals**: "Management was willing to pay X for Gimba." "We budgeted for this." "Our CEO keeps asking why we don't have something like this." → These are your opens.
-- **Gap signals**: "What about [X]?" "Can it do [Y]?" → These become the next sprint.
+- **Pain signals**: "We still do that on spreadsheets." "That takes 3 days." "Customers always ask us for that and we can't give it to them." → Features that matter.
+- **Validation signals**: "We actually have that problem." "Our reps would love that." → Note these exactly, word for word.
+- **Acquisition signals**: "Management was willing to pay X for Gimba." "We budgeted for this type of tool." "Our CEO keeps asking why we don't have something like this." → These are your opens.
+- **Gap signals**: "What about [X]?" "Can it do [Y]?" → Next sprint.
+- **Correction signals**: "That's not how it works in the field." "Nobody cares about that." → Equally valuable. Note these and bring them back.
 
 ---
 
 ## After the Conversation
 
-Bring the notes back here. We'll:
-1. Update the risk-based scheduling interval table
-2. Prioritize any feature gaps he surfaces
-3. Update the PDFs and acquisition deck with his validation quotes
-4. Draft the formal pitch if the acquisition signals are there
+Bring the notes back. We'll:
+1. Validate or adjust the RUL scoring multipliers based on his gut-check
+2. Adjust the default ServiceRateCard values to match real market pricing
+3. Reprioritize any feature gaps he surfaces
+4. Update the acquisition narrative if exit signals are there
+5. Draft the formal pitch if warranted
