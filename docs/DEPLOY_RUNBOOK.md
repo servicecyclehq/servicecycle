@@ -69,7 +69,7 @@ sudo ufw enable
 sudo apt-get install -y fail2ban unattended-upgrades
 sudo dpkg-reconfigure --priority=low unattended-upgrades
 
-# Swap — fresh droplets ship with NONE; this prevents OOM kills during the
+# Swap - fresh droplets ship with NONE; this prevents OOM kills during the
 # client build (vite/rollup) and migrations on a 2 GB box.
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
@@ -79,7 +79,7 @@ echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf && sudo sysc
 sudo timedatectl set-timezone America/New_York   # adjust to yours
 ```
 
-> **Critical gotcha — Docker bypasses UFW.** Docker writes its own iptables rules, so publishing a container port on `0.0.0.0` is **internet-reachable even with UFW set to deny**. This stack already binds the API to `127.0.0.1` and never publishes Postgres (5432), so you're safe out of the box — but never flip a port mapping to `0.0.0.0` (e.g. via `SERVICECYCLE_HOST_BIND`) without re-checking the firewall.
+> **Critical gotcha - Docker bypasses UFW.** Docker writes its own iptables rules, so publishing a container port on `0.0.0.0` is **internet-reachable even with UFW set to deny**. This stack already binds the API to `127.0.0.1` and never publishes Postgres (5432), so you're safe out of the box - but never flip a port mapping to `0.0.0.0` (e.g. via `SERVICECYCLE_HOST_BIND`) without re-checking the firewall.
 
 ---
 
@@ -222,7 +222,7 @@ dig +short AAAA demo.servicecycle.com  # if you set an AAAA record, it must also
 
 Lower the record TTL to ~300s before cutover so you can correct mistakes quickly. Confirm the client and server container host ports match what Caddy proxies (`docker compose ps`); by default the API is on 127.0.0.1:3001. Adjust the client port in the Caddyfile to whatever the client service publishes.
 
-Optional belt-and-suspenders security headers (the app already sets HSTS/nosniff/frame headers via helmet, but you can also enforce at the edge) — add inside the site block:
+Optional belt-and-suspenders security headers (the app already sets HSTS/nosniff/frame headers via helmet, but you can also enforce at the edge) - add inside the site block:
 
 ```
     header {
