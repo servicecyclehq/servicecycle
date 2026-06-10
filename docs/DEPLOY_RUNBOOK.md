@@ -20,9 +20,11 @@ demo; works for any single-box self-hosted install.
 1. **db** - Postgres 16, hardened (statement_timeout / lock_timeout / idle timeout), named volume `postgres_data`.
 2. **server-migrate** - runs `prisma migrate deploy` once, applies the baseline, exits 0. The API waits on its success.
 3. **server** - Express/Prisma API on :3001 (bound to 127.0.0.1 by default). Health: `/api/health` (no DB), `/api/ready` (DB).
-4. **client** - prebuilt Vite SPA.
+4. **client** - the SPA. In `docker-compose.yml` the client service runs `npm run build && npm run preview` (a production build served by Vite preview, console-stripped and minified - NOT the dev server). Vite preview does not proxy `/api`, which is why the Caddy config below routes `/api` to the server separately.
 
 Caddy (installed separately, on the host) terminates TLS and proxies the domain to the client + `/api` to the server.
+
+> More production-grade option: the repo also ships `client/Dockerfile.prod` (vite build -> nginx static serve on :80, with gzip, long-cache headers, scan-path blocking, and an internal `/api` -> `server:3001` proxy). It's what the GHCR images use. For a longer-lived or higher-traffic deployment, switch the client service to `build: { dockerfile: Dockerfile.prod }`, publish container port 80, and simplify Caddy to a single `reverse_proxy 127.0.0.1:<client-port>` (nginx then handles `/api` itself). For a short brother demo, the `vite preview` path is fine and needs no changes.
 
 ---
 
@@ -98,6 +100,8 @@ VITE_API_URL=https://demo.servicecycle.com
 ```
 
 Note: `POSTGRES_USER` / `POSTGRES_DB` default to `servicecycle` in compose - leave them unset unless you have a reason. (`.env.example` still shows legacy `lapseiq` defaults in a few comments; harmless, cosmetic.)
+
+**`DEMO_MODE` - leave it `false` (the default) for a curated demo.** Setting `DEMO_MODE=true` forces email-mock + AI-off, but also **opens self-signup**, prunes inactive accounts, and **wipes + re-seeds the database nightly at 03:30 server time**. That's good for an always-fresh public sandbox, but for a controlled walkthrough it would erase anything you set up mid-demo. The explicit `EMAIL_MOCK=true` / `AI_ENABLED=false` / `REGISTRATION_OPEN=false` above give you the safe defaults without the nightly reset.
 
 ---
 
