@@ -97,8 +97,17 @@ function hashToken(raw) {
 const REFRESH_TOKEN_PER_USER_CAP = parseInt(process.env.REFRESH_TOKEN_PER_USER_CAP || '10', 10);
 
 async function issueTokenPair(userId, accountId) {
+  // L2 (2026-06-09 audit): stamp the access token with the user's current
+  // tokenEpoch (claim `ep`) so the auth middleware can revoke it instantly
+  // when the epoch is bumped (password change/reset). `jti` gives each token
+  // a unique id for tracing/audit. Login + refresh are infrequent, so the
+  // extra single-column lookup here is negligible.
+  const _epoch = await prisma.user.findUnique({
+    where:  { id: userId },
+    select: { tokenEpoch: true },
+  });
   const accessToken = jwt.sign(
-    { userId, accountId },
+    { userId, accountId, ep: _epoch?.tokenEpoch ?? 0, jti: crypto.randomUUID() },
     process.env.JWT_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRY, algorithm: 'HS256' }
   );
@@ -869,7 +878,10 @@ router.post('/reset-password', credentialLimiter, async (req, res) => { // (M1)
     const passwordHash = await bcrypt.hash(password, 12);
     await prisma.user.update({
       where: { id: user.id },
-      data:  { passwordHash, passwordResetToken: null, passwordResetExpiresAt: null },
+      // L2 (2026-06-09 audit): bump tokenEpoch so the reset also invalidates
+      // every outstanding access token — closes the stolen-then-reset window
+      // where an attacker's still-valid access token outlives the reset.
+      data:  { passwordHash, passwordResetToken: null, passwordResetExpiresAt: null, tokenEpoch: { increment: 1 } },
     });
 
     // C2 (audit Critical, 2026-05-22): kill every outstanding refresh token

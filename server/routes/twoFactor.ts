@@ -140,8 +140,14 @@ const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS, 10) 
 const REFRESH_TOKEN_TTL_MS = REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
 
 async function issueTokenPair(userId, accountId) {
+  // L2 (2026-06-09 audit): mirror auth.ts — embed the user's tokenEpoch (`ep`)
+  // and a unique `jti` so 2FA-completed sessions honor instant revocation too.
+  const _epoch = await prisma.user.findUnique({
+    where:  { id: userId },
+    select: { tokenEpoch: true },
+  });
   const accessToken = jwt.sign(
-    { userId, accountId },
+    { userId, accountId, ep: _epoch?.tokenEpoch ?? 0, jti: crypto.randomUUID() },
     process.env.JWT_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRY, algorithm: 'HS256' }
   );

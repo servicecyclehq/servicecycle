@@ -346,7 +346,10 @@ router.put('/me/password', async (req, res) => {
     if (!valid) return res.status(400).json({ success: false, error: 'Current password is incorrect' });
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash } });
+    // L2 (2026-06-09 audit): bump tokenEpoch alongside the password change so
+    // every outstanding ACCESS token (not just refresh tokens) is invalidated
+    // immediately, not after its TTL.
+    await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash, tokenEpoch: { increment: 1 } } });
 
     // C2 (audit Critical, 2026-05-22): revoke every outstanding refresh token
     // for this user so a stolen session is killed at password-change time.
@@ -524,11 +527,13 @@ router.put('/:id/activate', requireAdmin, async (req, res) => {
 // ── POST /api/users/:id/revoke-sessions ──────────────────────────────────────
 // v0.37.4 W7: incident-response primitive. Admin-only. Revokes every active
 // refresh token for the target user, forcing them to re-authenticate on every
-// device. The current access JWT can't be invalidated (stateless), but it
-// expires within JWT_EXPIRES_IN (default 1h), so the worst-case window is
-// bounded. Use cases: phishing suspicion, employee offboarding mid-shift,
+// device. Use cases: phishing suspicion, employee offboarding mid-shift,
 // stolen-laptop response. Self-revoke is allowed (useful when an admin
 // suspects their own session was hijacked but isn't sure yet).
+//
+// L2 (2026-06-09 audit): this now ALSO bumps tokenEpoch, so the current
+// access JWT is invalidated immediately rather than lingering until its TTL
+// (default 1h) expires. Revoke-sessions is therefore a true instant kill.
 //
 // Audit-logged via the shared activityLog helper so the incident response
 // has a trail.
@@ -543,6 +548,12 @@ router.post('/:id/revoke-sessions', requireAdmin, async (req, res) => {
     const result = await prisma.refreshToken.updateMany({
       where: { userId: target.id, revokedAt: null },
       data:  { revokedAt: new Date() },
+    });
+
+    // L2: invalidate outstanding access tokens too (instant, not TTL-bounded).
+    await prisma.user.update({
+      where: { id: target.id },
+      data:  { tokenEpoch: { increment: 1 } },
     });
 
     try {
@@ -865,7 +876,9 @@ router.put('/:id/reset-password', requireAdmin, async (req, res) => {
 
     await prisma.user.update({
       where: { id: req.params.id },
-      data: { passwordHash, passwordResetToken: null, passwordResetExpiresAt: null },
+      // L2 (2026-06-09 audit): bump tokenEpoch so an admin-forced password
+      // reset kills every outstanding access token for the target user.
+      data: { passwordHash, passwordResetToken: null, passwordResetExpiresAt: null, tokenEpoch: { increment: 1 } },
     });
 
     // F010: audit the privileged action. Fire-and-forget — never blocks the

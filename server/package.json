@@ -76,5 +76,13 @@
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
+  },
+  "comments": {
+    "overrides": "L7 (2026-06-09 audit): exceljs@4.4.0 pulls a vulnerable nested uuid@8.3.2 (GHSA-w5hq-g745-h8pq, buffer-bounds check). exceljs imports uuid via the named `require('uuid').v4` export, which uuid@14 still provides, so forcing its nested uuid up to the already-present top-level v14 dedupes to a single patched copy without the breaking exceljs 4->3 downgrade that `npm audit fix --force` proposed."
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^14.0.0"
+    }
   }
 }

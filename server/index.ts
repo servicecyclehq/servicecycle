@@ -1407,8 +1407,42 @@ module.exports.default = app;
 // In test mode, skip listen + crons so supertest can use the express app directly.
 let httpServer: any = { close: (cb: any) => { try { cb?.(); } catch {} } };
 if (process.env.NODE_ENV !== 'test') {
-httpServer = app.listen(PORT, '0.0.0.0', () => {
+httpServer = app.listen(PORT, '0.0.0.0', async () => {
   console.log(`ServiceCycle API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+
+  // ── M1 (2026-06-09 audit): cron single-instance guard ─────────────────────
+  // node-cron registrations live in THIS process. `runOnce()` only prevents a
+  // job from overlapping *itself within one process* — it does NOT stop two
+  // processes from each firing the same schedule. The moment this app is run
+  // as >1 instance (PM2 cluster `instances`, a scaled compose `replicas`, or a
+  // second container on the demo droplet) every cron fires N times: double
+  // pg_dump backups, double prune deletes, double digest emails, double
+  // webhook retries.
+  //
+  // Guard: grab a Postgres SESSION-level advisory lock. Exactly one instance
+  // wins `pg_try_advisory_lock`; the rest skip cron registration entirely and
+  // run as web-only workers. The lock is held by the Prisma backend connection
+  // for the life of the process and is released automatically when the process
+  // exits / `prisma.$disconnect()` runs during graceful shutdown — no explicit
+  // unlock needed. Single-instance deployments (the demo box) always win the
+  // lock, so behavior there is unchanged.
+  const CRON_ADVISORY_LOCK_KEY = 4242000001; // arbitrary stable app-wide constant
+  try {
+    const lockRows = await prisma.$queryRaw<{ locked: boolean }[]>`
+      SELECT pg_try_advisory_lock(${CRON_ADVISORY_LOCK_KEY}::bigint) AS locked`;
+    if (!lockRows?.[0]?.locked) {
+      console.log('[Cron] Another instance holds the scheduler advisory lock — running web-only, skipping cron registration on this instance.');
+      return;
+    }
+    console.log('[Cron] Acquired scheduler advisory lock — this instance owns scheduled jobs.');
+  } catch (lockErr: any) {
+    // If the lock probe itself fails (DB momentarily unreachable at boot),
+    // fail OPEN so a single-instance demo box still runs its crons rather than
+    // silently going dark. The trade-off (possible double-fire if the DB blips
+    // during a genuine multi-instance boot race) is acceptable versus a demo
+    // with no backups/alerts running at all.
+    console.error('[Cron] advisory-lock probe failed, proceeding with cron registration (fail-open):', lockErr?.message);
+  }
 
   // ── Nightly alert cron (runs at 7:00 AM server time) ──────────────────────
   // Set EMAIL_MOCK=true in .env to log emails to console without sending

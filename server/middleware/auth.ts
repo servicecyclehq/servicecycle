@@ -82,6 +82,7 @@ async function authenticateToken(req, res, next) {
         role: true,
         isActive: true,
         assetScopeRestricted: true,
+        tokenEpoch: true,
       },
     });
 
@@ -93,7 +94,19 @@ async function authenticateToken(req, res, next) {
       return res.status(403).json({ success: false, error: 'Account deactivated — contact your administrator' });
     }
 
-    req.user = user;
+    // L2 (2026-06-09 audit): instant access-token revocation. The token's `ep`
+    // claim is the tokenEpoch at issue time; if the user's current tokenEpoch
+    // is higher (bumped by a password change/reset), every token minted before
+    // that bump is now invalid. Tokens predating this feature carry no `ep`
+    // and are treated as epoch 0 — they remain valid until their short TTL
+    // expires, which is the intended backwards-compatible rollout behavior.
+    if ((decoded.ep ?? 0) !== user.tokenEpoch) {
+      return res.status(401).json({ success: false, error: 'Token revoked — please sign in again' });
+    }
+
+    // Don't leak the epoch column to downstream handlers / req.user consumers.
+    const { tokenEpoch: _omit, ...safeUser } = user;
+    req.user = safeUser;
     // L3: debounced demo-account activity stamp. Fire-and-forget.
     // v0.33.0 (Pass-5 F-DEMO-02): gated on write methods only. A bare
     // GET — including the /api/auth/me poll the SPA fires on focus —
@@ -125,9 +138,16 @@ async function optionalAuthenticateToken(req, _res, next) {
     const decoded = verifyToken(token);
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, accountId: true, role: true, isActive: true },
+      select: { id: true, accountId: true, role: true, isActive: true, tokenEpoch: true },
     });
-    req.user = (user && user.isActive) ? user : null;
+    // L2: honor token-epoch revocation here too — a revoked token must not
+    // enrich req.user on soft-auth endpoints either.
+    if (user && user.isActive && (decoded.ep ?? 0) === user.tokenEpoch) {
+      const { tokenEpoch: _omit, ...safeUser } = user;
+      req.user = safeUser;
+    } else {
+      req.user = null;
+    }
   } catch (_e) {
     req.user = null;
   }

@@ -277,34 +277,36 @@ router.get('/metrics/overview', requireAdmin, async (req, res) => {
       prisma.asset.count({ where: { archivedAt: { not: null } } }),
     ]);
 
-    const signupsByDayRows = await prisma.$queryRawUnsafe(
-      `SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
+    // L1 (2026-06-09 audit): tagged-template $queryRaw instead of
+    // $queryRawUnsafe. These queries are 100% static (no interpolation) and
+    // admin-only, so there was never an injection path — but the tagged form
+    // keeps Prisma's parameterization safety net in place so a future edit
+    // that drops a variable in here can't silently become injectable.
+    const signupsByDayRows = await prisma.$queryRaw<any[]>`
+      SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
               COUNT(*)::int AS count
        FROM users
        WHERE "createdAt" >= NOW() - INTERVAL '30 days'
-       GROUP BY 1 ORDER BY 1`
-    );
+       GROUP BY 1 ORDER BY 1`;
 
-    const assetsByDayRows = await prisma.$queryRawUnsafe(
-      `SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
+    const assetsByDayRows = await prisma.$queryRaw<any[]>`
+      SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
               COUNT(*)::int AS count
        FROM assets
        WHERE "createdAt" >= NOW() - INTERVAL '30 days'
-       GROUP BY 1 ORDER BY 1`
-    );
+       GROUP BY 1 ORDER BY 1`;
 
-    const dauByDayRows = await prisma.$queryRawUnsafe(
-      `SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
+    const dauByDayRows = await prisma.$queryRaw<any[]>`
+      SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
               COUNT(DISTINCT "userId")::int AS count
        FROM activity_logs
        WHERE action = 'login_success'
          AND "createdAt" >= NOW() - INTERVAL '7 days'
          AND "userId" IS NOT NULL
-       GROUP BY 1 ORDER BY 1`
-    );
+       GROUP BY 1 ORDER BY 1`;
 
-    const retentionRows = await prisma.$queryRawUnsafe(
-      `WITH cohort AS (
+    const retentionRows = await prisma.$queryRaw<any[]>`
+      WITH cohort AS (
          SELECT id, "createdAt" FROM users
          WHERE "createdAt" >= NOW() - INTERVAL '15 days'
            AND "createdAt" <  NOW() - INTERVAL '8 days'
@@ -322,20 +324,18 @@ router.get('/metrics/overview', requireAdmin, async (req, res) => {
          (SELECT COUNT(DISTINCT c.id) FROM cohort c
            JOIN activity_logs l ON l."userId" = c.id
                                AND l.action = 'login_success'
-                               AND l."createdAt" >= c."createdAt" + INTERVAL '7 days')::int AS d7`
-    );
+                               AND l."createdAt" >= c."createdAt" + INTERVAL '7 days')::int AS d7`;
     const ret = retentionRows?.[0] ?? { cohort_size: 0, d1: 0, d3: 0, d7: 0 };
     const cohortSize = Number(ret.cohort_size || 0);
     const pct = (n) => (cohortSize > 0 ? Math.round((Number(n) / cohortSize) * 1000) / 10 : 0);
 
-    const topActionsRows = await prisma.$queryRawUnsafe(
-      `SELECT action, COUNT(*)::int AS count
+    const topActionsRows = await prisma.$queryRaw<any[]>`
+      SELECT action, COUNT(*)::int AS count
        FROM activity_logs
        WHERE "createdAt" >= NOW() - INTERVAL '7 days'
        GROUP BY action
        ORDER BY count DESC
-       LIMIT 15`
-    );
+       LIMIT 15`;
 
     return res.json({
       success: true,
@@ -375,7 +375,7 @@ router.get('/db-pool-health', requireAdmin, async (req, res) => {
   try {
     // datname filter scopes to the servicecycle database; postgres role excluded
     // so internal autovacuum / replication connections don't inflate the count.
-    const rows = await prisma.$queryRawUnsafe(`
+    const rows = await prisma.$queryRaw<any[]>`
       SELECT
         COUNT(*) FILTER (WHERE state = 'active')                            AS active,
         COUNT(*) FILTER (WHERE state = 'idle')                              AS idle,
@@ -385,8 +385,8 @@ router.get('/db-pool-health', requireAdmin, async (req, res) => {
       FROM pg_stat_activity
       WHERE datname = current_database()
         AND usename <> 'postgres'
-    `);
-    const maxRows = await prisma.$queryRawUnsafe(`SHOW max_connections`);
+    `;
+    const maxRows = await prisma.$queryRaw<any[]>`SHOW max_connections`;
     const max = parseInt(maxRows?.[0]?.max_connections ?? '0', 10) || 0;
     const r = rows?.[0] ?? {};
     // Cast bigints (Postgres COUNT) to JS numbers; safe for connection-count ranges.

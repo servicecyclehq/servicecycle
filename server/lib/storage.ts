@@ -41,6 +41,22 @@ const fsp  = require('fs/promises');
 function getDest()      { return (process.env.STORAGE_DEST || 'local').toLowerCase(); }
 function getLocalPath() { return path.resolve(process.env.STORAGE_LOCAL_PATH || path.join(__dirname, '..', 'uploads')); }
 
+// L4 (2026-06-09 audit): belt-and-suspenders path-traversal guard. The
+// documents file-serving route already gates `key` via a DB lookup scoped
+// to accountId before reaching here, and buildStorageKey() sanitizes the
+// filename segment at write time — but resolving + asserting containment
+// means no future caller can reach the filesystem with a `../`-laden key
+// even if it bypasses the route-level DB gate. Throws on any key that
+// escapes the storage root.
+function resolveLocalPath(storageKey) {
+  const root = getLocalPath();
+  const abs  = path.resolve(root, storageKey);
+  if (abs !== root && !abs.startsWith(root + path.sep)) {
+    throw new Error('storage key resolves outside the storage root — refusing path traversal');
+  }
+  return abs;
+}
+
 function s3Configured() {
   return !!(
     process.env.STORAGE_S3_BUCKET &&
@@ -126,7 +142,7 @@ async function uploadFile(accountId, assetId, filename, buffer, mimeType) {
     }));
   } else {
     // local filesystem
-    const filePath = path.join(getLocalPath(), key);
+    const filePath = resolveLocalPath(key);
     await fsp.mkdir(path.dirname(filePath), { recursive: true });
     await fsp.writeFile(filePath, buffer);
   }
@@ -156,7 +172,7 @@ async function downloadFile(storageKey) {
     for await (const chunk of res.Body) chunks.push(chunk);
     return Buffer.concat(chunks);
   } else {
-    return fsp.readFile(path.join(getLocalPath(), storageKey));
+    return fsp.readFile(resolveLocalPath(storageKey));
   }
 }
 
@@ -180,7 +196,7 @@ async function deleteFile(storageKey) {
     } catch { /* ignore */ }
   } else {
     try {
-      await fsp.unlink(path.join(getLocalPath(), storageKey));
+      await fsp.unlink(resolveLocalPath(storageKey));
     } catch { /* already gone */ }
   }
 }

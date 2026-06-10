@@ -146,6 +146,28 @@ function looksLikeDeclaredType(buf, mime) {
   return false;
 }
 
+// L3 (2026-06-09 audit): defense-in-depth magic-byte enforcement, now
+// actually wired into the upload handler. The fileFilter still accepts any
+// declared MIME (every stored file is served forced-download + nosniff, so
+// nothing renders inline in our origin regardless). This second gate runs
+// ONLY for MIME types we can fingerprint — PDF / Word / images — and rejects
+// a payload whose bytes contradict its declared Content-Type (the classic
+// "upload a script tagged Content-Type: application/pdf" trick). Types we
+// have no signature for (text/plain, text/csv, application/zip, …) are not
+// blocked here; the forced-download serving is their protection.
+const MAGIC_VERIFIED_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+function magicBytesRejected(buf, mime) {
+  if (!mime) return false;
+  const m = String(mime).toLowerCase();
+  const known = MAGIC_VERIFIED_MIME.has(m) || m.startsWith('image/');
+  if (!known) return false;             // no signature to verify against → allow
+  return !looksLikeDeclaredType(buf, m); // known type but bytes mismatch → reject
+}
+
 // Wrap multer's middleware to translate fileFilter / limit errors into
 // well-typed JSON responses. Without this, multer surfaces them as 500s.
 function uploadSingle(field) {
@@ -433,10 +455,18 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
       return res.status(400).json({ success: false, error: 'File is empty.' });
     }
 
-    // #11: storage uploads accept any type, so there is no "declared type" to
-    // verify magic bytes against. The forced-download serving (attachment +
-    // nosniff in GET /file and the presigned URL) is what keeps an arbitrary
-    // upload from ever executing/rendering in our origin.
+    // #11 + L3: storage uploads accept any declared type (the forced-download
+    // serving — attachment + nosniff in GET /file and the presigned URL — is
+    // what keeps an arbitrary upload from ever executing/rendering in our
+    // origin). As defense-in-depth we additionally reject a payload whose
+    // bytes contradict its declared Content-Type for the types we can
+    // fingerprint (PDF / Word / images); signature-less types pass through.
+    if (magicBytesRejected(req.file.buffer, req.file.mimetype)) {
+      return res.status(415).json({
+        success: false,
+        error: 'File contents do not match the declared file type.',
+      });
+    }
 
     const { accountId, id: userId } = req.user;
     let { assetId } = req.body || {};

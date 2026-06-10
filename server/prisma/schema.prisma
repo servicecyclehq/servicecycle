@@ -350,6 +350,13 @@ model User {
   passwordHash                  String
   role                          UserRole
   isActive                      Boolean   @default(true)
+  // L2 (2026-06-09 audit): monotonic token epoch for instant access-token
+  // revocation. Access tokens embed the current value as the `ep` claim; the
+  // auth middleware rejects any token whose `ep` differs from this column.
+  // Incremented on password change, password reset, and admin password reset
+  // so those events kill every outstanding access token immediately rather
+  // than waiting out the (short) token TTL.
+  tokenEpoch                    Int       @default(0)
   passwordResetToken            String?
   passwordResetExpiresAt        DateTime?
   lastLogin                     DateTime?
@@ -1774,6 +1781,9 @@ model RenderError {
   @@index([errorCode])
   @@index([userId])
   @@index([kind])
+  // L5 (2026-06-09 audit): admin dashboards filter server errors by tenant;
+  // this composite keeps those lookups index-backed as the table grows.
+  @@index([accountId, occurredAt])
   @@map("render_errors")
 }
 
