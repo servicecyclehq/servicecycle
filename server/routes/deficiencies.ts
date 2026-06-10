@@ -109,7 +109,7 @@ router.post('/', requireManager, async (req, res) => {
 
     const asset = await prisma.asset.findFirst({
       where: { id: assetId, accountId: req.user.accountId },
-      select: { id: true },
+      select: { id: true, manufacturer: true, model: true, site: { select: { name: true } } },
     });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
@@ -124,6 +124,21 @@ router.post('/', requireManager, async (req, res) => {
       },
       include: deficiencyInclude,
     });
+
+    // Partner Flywheel: emit IMMEDIATE_DEFICIENCY event (fire-and-forget)
+    if (severity === 'IMMEDIATE') {
+      const { emitPartnerEvent } = require('../lib/partnerEvents');
+      emitPartnerEvent(req.user.accountId, 'IMMEDIATE_DEFICIENCY', {
+        assetId:          asset.id,
+        assetName:        deficiency.asset?.name ?? (`${asset.manufacturer ?? ''} ${asset.model ?? ''}`.trim() || 'Asset'),
+        assetSite:        asset.site?.name ?? null,
+        severity,
+        description:      deficiency.description,
+        correctiveAction: deficiency.correctiveAction ?? null,
+        estimatedCapExMin: null,
+        estimatedCapExMax: null,
+      }).catch(console.error);
+    }
 
     res.status(201).json({ success: true, data: { deficiency } });
   } catch (err) {

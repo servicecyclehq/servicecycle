@@ -622,6 +622,24 @@ async function runAlertEngine({ accountId }: any = {}) {
         } catch (webhookErr) {
           console.warn(`${pfx} Webhook delivery skipped:`, webhookErr.message);
         }
+
+        // Partner Flywheel: emit TASK_OVERDUE once per account for any overdue/escalation alerts (fire-and-forget)
+        try {
+          const overdueItems = alertItems.filter((a: any) =>
+            a.alertType === 'overdue' || a.alertType === 'escalation'
+          );
+          if (overdueItems.length > 0) {
+            const { emitPartnerEvent } = require('./partnerEvents');
+            const overdueAssetIds = [...new Set(overdueItems.map((a: any) => a.asset.id))] as string[];
+            emitPartnerEvent(accId, 'TASK_OVERDUE', {
+              overdueCount: overdueItems.length,
+              assetIds: overdueAssetIds,
+            }).catch((e: any) => console.error('[AlertEngine] partnerEvent emit failed:', e.message));
+          }
+        } catch (peErr: any) {
+          console.warn(`${pfx} Partner event emit skipped:`, peErr.message);
+        }
+
       } catch (tenantErr) {
         const _pfx = '[AlertEngine][' + accId.slice(0, 8) + ']';
         console.error(_pfx + ' Tenant digest run failed - skipping account:', tenantErr.message);

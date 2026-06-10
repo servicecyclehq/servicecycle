@@ -526,4 +526,456 @@ router.get('/account-forecast', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARTNER FLYWHEEL ROUTES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import crypto from 'crypto';
+const { sendEmail } = require('../lib/email');
+
+// ── Helper: resolve caller's partnerOrgId (required for all flywheel routes) ──
+async function getCallerPartnerOrgId(accountId: string): Promise<string | null> {
+  const acct = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { partnerOrgId: true },
+  });
+  return acct?.partnerOrgId ?? null;
+}
+
+// ─── Invite routes ─────────────────────────────────────────────────────────────
+
+// POST /api/fleet/invites
+router.post('/invites', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org linked to your account' });
+
+    const { email } = req.body;
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const invite = await prisma.partnerInvite.create({
+      data: {
+        partnerOrgId,
+        inviteeEmail: email.toLowerCase().trim(),
+        invitedById:  req.user.id,
+        tokenHash,
+        expiresAt,
+      },
+      include: { partnerOrg: { select: { name: true, logoUrl: true } } },
+    });
+
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const acceptUrl = `${clientUrl}/invite/accept?token=${rawToken}`;
+    const orgName = invite.partnerOrg.name;
+
+    await sendEmail({
+      to: email,
+      subject: `${orgName} has invited you to connect on ServiceCycle`,
+      html: `
+        <h2>You've been invited to connect</h2>
+        <p><strong>${orgName}</strong> manages your electrical compliance program and has invited you to link your facility account.</p>
+        <p>Accepting gives <strong>${orgName}</strong> visibility into your maintenance activity so they can support you proactively.</p>
+        <p>This invitation expires in 7 days.</p>
+        <p><a href="${acceptUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:bold;">Accept Invitation</a></p>
+        <p style="color:#888;font-size:12px;">Or copy this link: ${acceptUrl}</p>
+      `,
+    });
+
+    res.status(201).json({
+      id: invite.id,
+      email: invite.inviteeEmail,
+      expiresAt: invite.expiresAt,
+      status: 'PENDING',
+    });
+  } catch (err: any) {
+    console.error('[fleet/invites POST]', err);
+    res.status(500).json({ error: 'Failed to create invite' });
+  }
+});
+
+// GET /api/fleet/invites
+router.get('/invites', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const invites = await prisma.partnerInvite.findMany({
+      where: { partnerOrgId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, inviteeEmail: true, expiresAt: true,
+        acceptedAt: true, revokedAt: true, createdAt: true,
+        account: { select: { id: true, companyName: true } },
+      },
+    });
+
+    const now = new Date();
+    const withStatus = invites.map((i: any) => ({
+      ...i,
+      status: i.revokedAt ? 'REVOKED'
+        : i.acceptedAt ? 'ACCEPTED'
+        : i.expiresAt < now ? 'EXPIRED'
+        : 'PENDING',
+    }));
+
+    res.json({ invites: withStatus });
+  } catch (err: any) {
+    console.error('[fleet/invites GET]', err);
+    res.status(500).json({ error: 'Failed to list invites' });
+  }
+});
+
+// DELETE /api/fleet/invites/:id  (revoke)
+router.delete('/invites/:id', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const invite = await prisma.partnerInvite.findFirst({
+      where: { id: req.params.id, partnerOrgId },
+    });
+    if (!invite) return res.status(404).json({ error: 'Invite not found' });
+    if (invite.revokedAt) return res.status(409).json({ error: 'Already revoked' });
+
+    await prisma.partnerInvite.update({
+      where: { id: invite.id },
+      data: { revokedAt: new Date() },
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[fleet/invites DELETE]', err);
+    res.status(500).json({ error: 'Failed to revoke invite' });
+  }
+});
+
+// POST /api/fleet/invites/:id/resend
+router.post('/invites/:id/resend', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const invite = await prisma.partnerInvite.findFirst({
+      where: { id: req.params.id, partnerOrgId },
+      include: { partnerOrg: { select: { name: true } } },
+    });
+    if (!invite) return res.status(404).json({ error: 'Invite not found' });
+    if (invite.acceptedAt) return res.status(409).json({ error: 'Already accepted' });
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await prisma.partnerInvite.update({
+      where: { id: invite.id },
+      data: { tokenHash, expiresAt, revokedAt: null },
+    });
+
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const acceptUrl = `${clientUrl}/invite/accept?token=${rawToken}`;
+    const orgName = invite.partnerOrg.name;
+
+    await sendEmail({
+      to: invite.inviteeEmail,
+      subject: `${orgName} has invited you to connect on ServiceCycle`,
+      html: `
+        <h2>You've been invited to connect (resent)</h2>
+        <p><strong>${orgName}</strong> has re-sent your invitation to link your facility account on ServiceCycle.</p>
+        <p>This invitation expires in 7 days.</p>
+        <p><a href="${acceptUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:bold;">Accept Invitation</a></p>
+        <p style="color:#888;font-size:12px;">Or copy this link: ${acceptUrl}</p>
+      `,
+    });
+
+    res.json({ success: true, expiresAt });
+  } catch (err: any) {
+    console.error('[fleet/invites/:id/resend]', err);
+    res.status(500).json({ error: 'Failed to resend invite' });
+  }
+});
+
+// POST /api/fleet/accounts/:accountId/link  (direct link without invite email)
+router.post('/accounts/:accountId/link', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const { accountId } = req.params;
+    const target = await prisma.account.findUnique({ where: { id: accountId } });
+    if (!target) return res.status(404).json({ error: 'Account not found' });
+
+    await prisma.account.update({
+      where: { id: accountId },
+      data: { partnerOrgId },
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[fleet/accounts/:id/link]', err);
+    res.status(500).json({ error: 'Failed to link account' });
+  }
+});
+
+// ─── Rep assignment ───────────────────────────────────────────────────────────
+
+// GET /api/fleet/reps
+router.get('/reps', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const reps = await prisma.user.findMany({
+      where: {
+        role: 'oem_admin',
+        isActive: true,
+        account: { partnerOrgId },
+      },
+      select: { id: true, name: true, email: true, accountId: true },
+      orderBy: { name: 'asc' },
+    });
+    res.json({ reps });
+  } catch (err: any) {
+    console.error('[fleet/reps]', err);
+    res.status(500).json({ error: 'Failed to list reps' });
+  }
+});
+
+// PATCH /api/fleet/accounts/:accountId/assign-rep
+router.patch('/accounts/:accountId/assign-rep', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const { accountId } = req.params;
+    const { repId, fallbackRepId } = req.body;
+
+    // Validate users are oem_admin in the same partner org
+    async function validateRep(id: string | null) {
+      if (!id) return true;
+      const u = await prisma.user.findFirst({
+        where: { id, role: 'oem_admin', account: { partnerOrgId } },
+      });
+      return !!u;
+    }
+
+    if (!(await validateRep(repId ?? null))) {
+      return res.status(400).json({ error: 'repId is not an oem_admin in your partner org' });
+    }
+    if (!(await validateRep(fallbackRepId ?? null))) {
+      return res.status(400).json({ error: 'fallbackRepId is not an oem_admin in your partner org' });
+    }
+
+    const account = await prisma.account.update({
+      where: { id: accountId },
+      data: {
+        assignedRepId:  repId  ?? null,
+        fallbackRepId: fallbackRepId ?? null,
+      },
+      select: { id: true, companyName: true, assignedRepId: true, fallbackRepId: true },
+    });
+    res.json({ account });
+  } catch (err: any) {
+    console.error('[fleet/accounts/:id/assign-rep]', err);
+    res.status(500).json({ error: 'Failed to assign rep' });
+  }
+});
+
+// ─── Partner inbox ────────────────────────────────────────────────────────────
+
+// GET /api/fleet/inbox
+router.get('/inbox', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const { repId, eventType, accountId: filterAccountId, unseenOnly, limit = '50', cursor } = req.query;
+    const take = Math.min(parseInt(String(limit), 10) || 50, 200);
+
+    const where: any = {
+      partnerOrgId,
+      archived: false,
+    };
+    if (repId) where.assignedRepId = String(repId);
+    if (eventType) where.eventType = String(eventType);
+    if (filterAccountId) where.accountId = String(filterAccountId);
+    if (unseenOnly === 'true') where.seenAt = null;
+    if (cursor) where.id = { lt: String(cursor) };
+
+    const logs = await prisma.partnerEventLog.findMany({
+      where,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        account: { select: { id: true, companyName: true } },
+        assignedRep: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    const unseenCount = await prisma.partnerEventLog.count({
+      where: { partnerOrgId, archived: false, seenAt: null },
+    });
+
+    res.json({
+      logs,
+      nextCursor: logs.length === take ? logs[logs.length - 1].id : null,
+      unseenCount,
+    });
+  } catch (err: any) {
+    console.error('[fleet/inbox GET]', err);
+    res.status(500).json({ error: 'Failed to load inbox' });
+  }
+});
+
+// PATCH /api/fleet/inbox/:id/seen
+router.patch('/inbox/:id/seen', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+    const log = await prisma.partnerEventLog.findFirst({
+      where: { id: req.params.id, partnerOrgId },
+    });
+    if (!log) return res.status(404).json({ error: 'Log entry not found' });
+    await prisma.partnerEventLog.update({ where: { id: log.id }, data: { seenAt: new Date() } });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[fleet/inbox/:id/seen]', err);
+    res.status(500).json({ error: 'Failed to mark seen' });
+  }
+});
+
+// PATCH /api/fleet/inbox/:id/actioned
+router.patch('/inbox/:id/actioned', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+    const log = await prisma.partnerEventLog.findFirst({
+      where: { id: req.params.id, partnerOrgId },
+    });
+    if (!log) return res.status(404).json({ error: 'Log entry not found' });
+    await prisma.partnerEventLog.update({ where: { id: log.id }, data: { actionedAt: new Date() } });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[fleet/inbox/:id/actioned]', err);
+    res.status(500).json({ error: 'Failed to mark actioned' });
+  }
+});
+
+// ─── Partner settings ─────────────────────────────────────────────────────────
+
+// GET /api/fleet/settings
+router.get('/settings', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const org = await prisma.partnerOrganization.findUnique({
+      where: { id: partnerOrgId },
+      select: {
+        id: true, name: true, logoUrl: true, website: true,
+        webhookUrl: true, // secret never returned
+        digestIntervalDays: true,
+      },
+    });
+    res.json({ settings: org });
+  } catch (err: any) {
+    console.error('[fleet/settings GET]', err);
+    res.status(500).json({ error: 'Failed to load settings' });
+  }
+});
+
+// PATCH /api/fleet/settings
+router.patch('/settings', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const { webhookUrl, digestIntervalDays } = req.body;
+    const data: any = {};
+    let newSecret: string | null = null;
+
+    if (webhookUrl !== undefined) {
+      if (webhookUrl && !String(webhookUrl).startsWith('https://')) {
+        return res.status(400).json({ error: 'webhookUrl must be HTTPS' });
+      }
+      data.webhookUrl = webhookUrl || null;
+      if (webhookUrl) {
+        // Rotate secret whenever webhookUrl is set or changed
+        newSecret = crypto.randomBytes(32).toString('hex');
+        data.webhookSecret = newSecret;
+      }
+    }
+    if (digestIntervalDays !== undefined) {
+      const d = parseInt(String(digestIntervalDays), 10);
+      if (!Number.isFinite(d) || d < 1 || d > 7) {
+        return res.status(400).json({ error: 'digestIntervalDays must be 1–7' });
+      }
+      data.digestIntervalDays = d;
+    }
+
+    const org = await prisma.partnerOrganization.update({
+      where: { id: partnerOrgId },
+      data,
+      select: { id: true, name: true, webhookUrl: true, digestIntervalDays: true },
+    });
+
+    res.json({
+      settings: org,
+      ...(newSecret ? { webhookSecret: newSecret } : {}), // shown ONCE
+    });
+  } catch (err: any) {
+    console.error('[fleet/settings PATCH]', err);
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// POST /api/fleet/settings/webhook-test
+router.post('/settings/webhook-test', async (req: any, res: any) => {
+  try {
+    const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
+    if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
+
+    const org = await prisma.partnerOrganization.findUnique({
+      where: { id: partnerOrgId },
+      select: { webhookUrl: true, webhookSecret: true },
+    });
+    if (!org?.webhookUrl || !org?.webhookSecret) {
+      return res.status(400).json({ error: 'No webhook configured' });
+    }
+
+    const body = JSON.stringify({
+      eventType: 'TEST',
+      timestamp: new Date().toISOString(),
+      partnerId: partnerOrgId,
+    });
+    const sig = crypto.createHmac('sha256', org.webhookSecret).update(body).digest('hex');
+
+    const resp = await fetch(org.webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ServiceCycle-Signature': `sha256=${sig}`,
+      },
+      body,
+      signal: AbortSignal.timeout(5000),
+    });
+
+    res.json({ success: resp.ok, statusCode: resp.status });
+  } catch (err: any) {
+    console.error('[fleet/settings/webhook-test]', err);
+    res.status(500).json({ error: 'Webhook test failed', detail: err.message });
+  }
+});
+
+// ─── Public invite accept routes (no auth guard — mounted on fleet router
+//     but carve-outs from the requireOemAdmin middleware above) ─────────────
+
+// The top-level requireOemAdmin carve-out only handles /account-forecast.
+// Add carve-out for /invite/* at the top — but since middleware is applied at
+// definition time we use a different approach: these routes are mounted in
+// index.ts under /api/invite (public) separately. See publicInviteRouter export.
+
 module.exports = router;

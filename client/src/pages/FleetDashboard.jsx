@@ -1,9 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// FleetDashboard.jsx — OEM cross-account fleet view
+// FleetDashboard.jsx — OEM cross-account fleet view  (Partner Flywheel v2)
 //
-// Visible to users with role=oem_admin only.
-// Shows a grid of customer accounts ranked by risk, with summary metrics and
-// drill-down to per-account detail.
+// Tabs: Overview | Inbox | Accounts & Invites
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react';
@@ -11,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { EQUIPMENT_TYPE_LABELS, fmtDate } from '../lib/equipment';
+import { fmtDate } from '../lib/equipment';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function msAgo(dateStr) {
@@ -25,9 +23,18 @@ function daysAgo(dateStr) {
   return Math.floor(ms / 86_400_000);
 }
 
+function relTime(dateStr) {
+  if (!dateStr) return '—';
+  const ms = Date.now() - new Date(dateStr).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 2) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
+
 function RiskBadge({ score }) {
-  // Liability note (security audit 2026-06-09): avoid deterministic "Healthy" — replaced with
-  // "No Issues Flagged" to signal model-based observation, not a guarantee of equipment condition.
   if (score === 0) return <span style={styles.badge.green}>No Issues Flagged</span>;
   if (score < 10) return <span style={styles.badge.yellow}>Monitor</span>;
   if (score < 25) return <span style={styles.badge.orange}>At Risk</span>;
@@ -44,11 +51,29 @@ function MetricTile({ label, value, accent, sub }) {
   );
 }
 
-// ── Detail panel shown inline below the account card ─────────────────────────
+const EVENT_META = {
+  IMMEDIATE_DEFICIENCY:  { bg: '#fee2e2', color: '#b91c1c', label: 'IMMEDIATE' },
+  TASK_OVERDUE:          { bg: '#fef3c7', color: '#b45309', label: 'OVERDUE' },
+  INSPECTION_COMPLETED:  { bg: '#dbeafe', color: '#1d4ed8', label: 'COMPLETED' },
+  QUOTE_REQUEST_CREATED: { bg: '#ede9fe', color: '#7c3aed', label: 'QUOTE REQ' },
+};
+
+function EventBadge({ type }) {
+  const m = EVENT_META[type] ?? { bg: '#f3f4f6', color: '#374151', label: type };
+  return (
+    <span style={{
+      padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+      background: m.bg, color: m.color, whiteSpace: 'nowrap',
+    }}>
+      {m.label}
+    </span>
+  );
+}
+
+// ── AccountDetailPanel ────────────────────────────────────────────────────────
 function AccountDetailPanel({ accountId, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
     setLoading(true);
@@ -71,7 +96,6 @@ function AccountDetailPanel({ accountId, onClose }) {
       </div>
 
       <div style={styles.panelGrid}>
-        {/* Overdue schedules */}
         <div style={styles.panelSection}>
           <div style={styles.panelSectionTitle}>
             <span style={{ color: '#ef4444' }}>⚠</span> Overdue Schedules ({overdueSchedules.length})
@@ -87,7 +111,6 @@ function AccountDetailPanel({ accountId, onClose }) {
           ))}
         </div>
 
-        {/* Immediate deficiencies */}
         <div style={styles.panelSection}>
           <div style={styles.panelSectionTitle}>
             <span style={{ color: '#dc2626' }}>🔴</span> IMMEDIATE Deficiencies ({immediateDeficiencies.length})
@@ -103,7 +126,6 @@ function AccountDetailPanel({ accountId, onClose }) {
           ))}
         </div>
 
-        {/* Service opportunities */}
         <div style={styles.panelSection}>
           <div style={styles.panelSectionTitle}>
             <span style={{ color: '#f59e0b' }}>💰</span> Service Opportunities ({serviceOpportunities.length})
@@ -119,7 +141,6 @@ function AccountDetailPanel({ accountId, onClose }) {
           ))}
         </div>
 
-        {/* Recent work orders */}
         <div style={styles.panelSection}>
           <div style={styles.panelSectionTitle}>
             <span style={{ color: '#22c55e' }}>✓</span> Recent Work Orders
@@ -130,7 +151,9 @@ function AccountDetailPanel({ accountId, onClose }) {
               <div style={{ fontWeight: 500, fontSize: 12 }}>{wo.title}</div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 {wo.asset?.name} · Completed {fmtDate(wo.completedDate)}
-                {wo.asLeftCondition && <span style={{ marginLeft: 4, color: '#94a3b8' }}>→ {wo.asLeftCondition}</span>}
+                {wo.asLeftCondition && (
+                  <span style={{ marginLeft: 4, color: '#94a3b8' }}>→ {wo.asLeftCondition}</span>
+                )}
               </div>
             </div>
           ))}
@@ -157,15 +180,33 @@ function AccountDetailPanel({ accountId, onClose }) {
   );
 }
 
-// ── Account card ──────────────────────────────────────────────────────────────
-function AccountCard({ account, expanded, onToggle }) {
+// ── AccountCard (with rep selects) ────────────────────────────────────────────
+function AccountCard({ account, expanded, onToggle, reps, onRepChange }) {
   const { metrics, riskScore, companyName, planTier } = account;
   const lastWoDays = daysAgo(metrics.lastWorkOrderDate);
+  const [saving, setSaving] = useState(false);
+
+  async function handleRepChange(field, value) {
+    setSaving(true);
+    try {
+      await api.patch(`/api/fleet/accounts/${account.id}/assign-rep`, { [field]: value || null });
+      onRepChange(account.id, field, value || null);
+    } catch (e) {
+      console.error('Rep assign failed', e);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div style={{ ...styles.card, outline: expanded ? '2px solid var(--accent)' : 'none' }}>
-      <div style={styles.cardHeader} onClick={onToggle} role="button" tabIndex={0}
-           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onToggle()}>
+      <div
+        style={styles.cardHeader}
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onToggle()}
+      >
         <div style={styles.cardTitle}>
           <span style={{ fontWeight: 600, fontSize: 15 }}>{companyName}</span>
           {planTier && <span style={styles.tierBadge}>{planTier}</span>}
@@ -195,11 +236,7 @@ function AccountCard({ account, expanded, onToggle }) {
           value={metrics.serviceOpportunities}
           accent={metrics.serviceOpportunities > 0 ? '#f59e0b' : '#64748b'}
         />
-        <MetricTile
-          label="Open WOs"
-          value={metrics.openWorkOrders}
-          accent="#6366f1"
-        />
+        <MetricTile label="Open WOs" value={metrics.openWorkOrders} accent="#6366f1" />
         <MetricTile
           label="Last Service"
           value={lastWoDays !== null ? `${lastWoDays}d` : '—'}
@@ -208,9 +245,450 @@ function AccountCard({ account, expanded, onToggle }) {
         />
       </div>
 
-      {expanded && (
-        <AccountDetailPanel accountId={account.id} onClose={onToggle} />
+      {reps.length > 0 && (
+        <div style={styles.repSelectRow} onClick={(e) => e.stopPropagation()}>
+          <label style={styles.repSelectLabel}>
+            Primary rep
+            <select
+              style={styles.repSelectInput}
+              disabled={saving}
+              value={account.assignedRepId ?? ''}
+              onChange={(e) => handleRepChange('assignedRepId', e.target.value)}
+            >
+              <option value="">— unassigned —</option>
+              {reps.map((r) => (
+                <option key={r.id} value={r.id}>{r.name || r.email}</option>
+              ))}
+            </select>
+          </label>
+          <label style={styles.repSelectLabel}>
+            Backup rep
+            <select
+              style={styles.repSelectInput}
+              disabled={saving}
+              value={account.fallbackRepId ?? ''}
+              onChange={(e) => handleRepChange('fallbackRepId', e.target.value)}
+            >
+              <option value="">— unassigned —</option>
+              {reps.map((r) => (
+                <option key={r.id} value={r.id}>{r.name || r.email}</option>
+              ))}
+            </select>
+          </label>
+          {saving && <span style={{ fontSize: 11, color: 'var(--text-secondary)', alignSelf: 'center' }}>Saving…</span>}
+        </div>
       )}
+
+      {expanded && <AccountDetailPanel accountId={account.id} onClose={onToggle} />}
+    </div>
+  );
+}
+
+// ── InboxTab ──────────────────────────────────────────────────────────────────
+function InboxTab({ reps, onUnseenCountChange }) {
+  const [items, setItems] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [filters, setFilters] = useState({ repId: '', eventType: '', unseenOnly: false });
+
+  function buildQS(cursor) {
+    const p = new URLSearchParams();
+    if (filters.repId) p.set('repId', filters.repId);
+    if (filters.eventType) p.set('eventType', filters.eventType);
+    if (filters.unseenOnly) p.set('unseenOnly', 'true');
+    if (cursor) p.set('cursor', cursor);
+    p.set('limit', '20');
+    return p.toString();
+  }
+
+  useEffect(() => {
+    setLoading(true);
+    setItems([]);
+    setNextCursor(null);
+    api.get(`/api/fleet/inbox?${buildQS(null)}`)
+      .then((r) => {
+        setItems(r.data.items ?? []);
+        setTotal(r.data.total ?? 0);
+        setNextCursor(r.data.nextCursor ?? null);
+        const unseen = (r.data.items ?? []).filter((i) => !i.seenAt).length;
+        onUnseenCountChange?.(unseen);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [filters]);
+
+  async function loadMore() {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const r = await api.get(`/api/fleet/inbox?${buildQS(nextCursor)}`);
+      setItems((prev) => [...prev, ...(r.data.items ?? [])]);
+      setNextCursor(r.data.nextCursor ?? null);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function markSeen(id) {
+    await api.patch(`/api/fleet/inbox/${id}/seen`).catch(() => {});
+    setItems((prev) =>
+      prev.map((i) => i.id === id ? { ...i, seenAt: new Date().toISOString() } : i)
+    );
+  }
+
+  async function markActioned(id) {
+    await api.patch(`/api/fleet/inbox/${id}/actioned`).catch(() => {});
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === id
+          ? { ...i, actionedAt: new Date().toISOString(), seenAt: i.seenAt ?? new Date().toISOString() }
+          : i
+      )
+    );
+  }
+
+  const unseenOnPage = items.filter((i) => !i.seenAt).length;
+
+  return (
+    <div>
+      {/* Filter bar */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select
+          style={styles.filterSelect}
+          value={filters.repId}
+          onChange={(e) => setFilters((f) => ({ ...f, repId: e.target.value }))}
+        >
+          <option value="">All reps</option>
+          {reps.map((r) => (
+            <option key={r.id} value={r.id}>{r.name || r.email}</option>
+          ))}
+        </select>
+
+        <select
+          style={styles.filterSelect}
+          value={filters.eventType}
+          onChange={(e) => setFilters((f) => ({ ...f, eventType: e.target.value }))}
+        >
+          <option value="">All event types</option>
+          <option value="IMMEDIATE_DEFICIENCY">IMMEDIATE Deficiency</option>
+          <option value="TASK_OVERDUE">Task Overdue</option>
+          <option value="INSPECTION_COMPLETED">Inspection Completed</option>
+          <option value="QUOTE_REQUEST_CREATED">Quote Request</option>
+        </select>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={filters.unseenOnly}
+            onChange={(e) => setFilters((f) => ({ ...f, unseenOnly: e.target.checked }))}
+          />
+          Unseen only
+        </label>
+
+        {!loading && (
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-secondary)' }}>
+            {total} total · {unseenOnPage} unseen on page
+          </span>
+        )}
+      </div>
+
+      {loading && <div style={styles.panelLoading}>Loading inbox…</div>}
+
+      {!loading && items.length === 0 && (
+        <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14 }}>
+          No events match your filters.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {items.map((item) => {
+          const p = item.payload ?? {};
+          const unseen = !item.seenAt;
+          const actioned = !!item.actionedAt;
+          const borderColor = EVENT_META[item.eventType]?.color ?? '#94a3b8';
+
+          return (
+            <div
+              key={item.id}
+              style={{
+                ...styles.card,
+                borderLeft: `4px solid ${borderColor}`,
+                opacity: actioned ? 0.65 : 1,
+                background: unseen ? 'var(--surface)' : 'var(--bg)',
+              }}
+            >
+              <div style={{ padding: '12px 16px' }}>
+                {/* Top row */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <EventBadge type={item.eventType} />
+                    {unseen && (
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%', background: '#3b82f6',
+                        display: 'inline-block', flexShrink: 0,
+                      }} />
+                    )}
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>
+                      {item.account?.companyName ?? item.accountId}
+                    </span>
+                    {p.assetName && (
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        · {p.assetName}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {relTime(item.createdAt)}
+                  </span>
+                </div>
+
+                {/* Detail line */}
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.4 }}>
+                  {item.eventType === 'IMMEDIATE_DEFICIENCY' && p.description && (
+                    <span>{p.description.slice(0, 140)}{p.description.length > 140 ? '…' : ''}</span>
+                  )}
+                  {item.eventType === 'TASK_OVERDUE' && (
+                    <span>{p.overdueCount ?? 0} overdue task{p.overdueCount !== 1 ? 's' : ''}</span>
+                  )}
+                  {item.eventType === 'INSPECTION_COMPLETED' && (
+                    <span>
+                      {p.deficiencyCount ?? 0} open deficienc{p.deficiencyCount !== 1 ? 'ies' : 'y'}
+                      {p.immediateCount > 0 ? ` (${p.immediateCount} IMMEDIATE)` : ''}
+                    </span>
+                  )}
+                  {item.eventType === 'QUOTE_REQUEST_CREATED' && p.estimatedMin != null && (
+                    <span>
+                      Est. ${Math.round(p.estimatedMin / 100).toLocaleString()} –{' '}
+                      ${Math.round(p.estimatedMax / 100).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+
+                {item.rep && (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                    Rep: {item.rep.name || item.rep.email}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                  {!item.seenAt && (
+                    <button style={styles.inboxBtn} onClick={() => markSeen(item.id)}>
+                      Mark seen
+                    </button>
+                  )}
+                  {!item.actionedAt && (
+                    <button
+                      style={{ ...styles.inboxBtn, background: 'var(--accent)', color: '#fff', borderColor: 'transparent' }}
+                      onClick={() => markActioned(item.id)}
+                    >
+                      Mark actioned
+                    </button>
+                  )}
+                  {item.actionedAt && (
+                    <span style={{ fontSize: 11, color: '#059669' }}>
+                      ✓ Actioned {relTime(item.actionedAt)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {nextCursor && (
+        <div style={{ textAlign: 'center', marginTop: 20 }}>
+          <button style={styles.loadMoreBtn} onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── AccountsInvitesTab ────────────────────────────────────────────────────────
+function AccountsInvitesTab({ accounts }) {
+  const [invites, setInvites] = useState([]);
+  const [invitesLoading, setInvitesLoading] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+  const [inviteSuccess, setInviteSuccess] = useState('');
+
+  useEffect(() => {
+    api.get('/api/fleet/invites')
+      .then((r) => setInvites(r.data.invites ?? r.data ?? []))
+      .catch(() => {})
+      .finally(() => setInvitesLoading(false));
+  }, []);
+
+  async function sendInvite(e) {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    setInviteSending(true);
+    setInviteError('');
+    setInviteSuccess('');
+    try {
+      const r = await api.post('/api/fleet/invites', { email: inviteEmail.trim() });
+      setInvites((prev) => [r.data.invite ?? r.data, ...prev]);
+      setInviteSuccess(`Invite sent to ${inviteEmail}`);
+      setInviteEmail('');
+    } catch (err) {
+      setInviteError(err.response?.data?.error ?? 'Failed to send invite.');
+    } finally {
+      setInviteSending(false);
+    }
+  }
+
+  async function revokeInvite(id) {
+    await api.delete(`/api/fleet/invites/${id}`).catch(() => {});
+    setInvites((prev) =>
+      prev.map((i) => i.id === id ? { ...i, revokedAt: new Date().toISOString() } : i)
+    );
+  }
+
+  async function resendInvite(id) {
+    try {
+      const r = await api.post(`/api/fleet/invites/${id}/resend`);
+      setInvites((prev) =>
+        prev.map((i) => i.id === id ? { ...i, ...(r.data.invite ?? r.data) } : i)
+      );
+    } catch (err) {
+      console.error('Resend failed', err);
+    }
+  }
+
+  function inviteStatus(inv) {
+    if (inv.revokedAt) return { label: 'Revoked', color: '#94a3b8' };
+    if (inv.acceptedAt) return { label: 'Accepted', color: '#059669' };
+    if (inv.expiresAt && new Date(inv.expiresAt) < new Date()) return { label: 'Expired', color: '#f59e0b' };
+    return { label: 'Pending', color: '#3b82f6' };
+  }
+
+  const linked = accounts.filter((a) => a.partnerOrgId);
+
+  return (
+    <div>
+      {/* Connected accounts */}
+      <div style={styles.sectionCard}>
+        <div style={styles.sectionTitle}>Connected Accounts ({linked.length})</div>
+        {linked.length === 0 && (
+          <div style={styles.empty}>No accounts linked yet. Send an invite below to get started.</div>
+        )}
+        {linked.map((a) => (
+          <div
+            key={a.id}
+            style={{
+              ...styles.listRow,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 500, fontSize: 13 }}>{a.companyName}</div>
+              {a.assignedRepId && (
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Primary rep assigned</div>
+              )}
+            </div>
+            <span style={styles.badge.green}>Linked</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Invite new account */}
+      <div style={{ ...styles.sectionCard, marginTop: 16 }}>
+        <div style={styles.sectionTitle}>Invite new account</div>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+          An email will be sent to the customer's admin. When they accept, their account links to your partner org.
+        </p>
+        <form onSubmit={sendInvite} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <input
+            type="email"
+            placeholder="admin@customer.com"
+            style={{ ...styles.filterSelect, flex: 1, minWidth: 220 }}
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            required
+          />
+          <button
+            type="submit"
+            disabled={inviteSending}
+            style={{
+              ...styles.inboxBtn,
+              background: 'var(--accent)',
+              color: '#fff',
+              borderColor: 'transparent',
+              padding: '8px 18px',
+              fontWeight: 600,
+            }}
+          >
+            {inviteSending ? 'Sending…' : 'Send invite'}
+          </button>
+        </form>
+        {inviteError && <div style={{ marginTop: 8, fontSize: 12, color: '#b91c1c' }}>{inviteError}</div>}
+        {inviteSuccess && <div style={{ marginTop: 8, fontSize: 12, color: '#059669' }}>✓ {inviteSuccess}</div>}
+      </div>
+
+      {/* Invite list */}
+      <div style={{ ...styles.sectionCard, marginTop: 16 }}>
+        <div style={styles.sectionTitle}>All Invites</div>
+        {invitesLoading && <div style={styles.panelLoading}>Loading…</div>}
+        {!invitesLoading && invites.length === 0 && (
+          <div style={styles.empty}>No invites sent yet.</div>
+        )}
+        {invites.map((inv) => {
+          const st = inviteStatus(inv);
+          const isPending = st.label === 'Pending';
+          return (
+            <div
+              key={inv.id}
+              style={{
+                ...styles.listRow,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>
+                  {inv.inviteeEmail ?? inv.email ?? '—'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                  Sent {fmtDate(inv.createdAt)}
+                  {inv.expiresAt && !inv.acceptedAt && !inv.revokedAt
+                    ? ` · Expires ${fmtDate(inv.expiresAt)}`
+                    : ''}
+                  {inv.acceptedAt ? ` · Accepted ${fmtDate(inv.acceptedAt)}` : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
+                {isPending && (
+                  <>
+                    <button style={styles.inboxBtn} onClick={() => resendInvite(inv.id)}>
+                      Resend
+                    </button>
+                    <button
+                      style={{ ...styles.inboxBtn, color: '#b91c1c', borderColor: '#fca5a5' }}
+                      onClick={() => revokeInvite(inv.id)}
+                    >
+                      Revoke
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -224,10 +702,13 @@ export default function FleetDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
-  const [filter, setFilter] = useState('all'); // all | attention | healthy
+  const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [forecast, setForecast] = useState(null);
   const [forecastLoading, setForecastLoading] = useState(false);
+  const [reps, setReps] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [unseenCount, setUnseenCount] = useState(0);
 
   useEffect(() => {
     if (user?.role !== 'oem_admin') {
@@ -240,17 +721,34 @@ export default function FleetDashboard() {
       .catch((e) => setError(e.response?.data?.error ?? e.message))
       .finally(() => setLoading(false));
 
-    // Load fleet CapEx forecast
     setForecastLoading(true);
     api.get('/api/fleet/forecast')
       .then((r) => setForecast(r.data.forecast))
       .catch(() => {})
       .finally(() => setForecastLoading(false));
+
+    api.get('/api/fleet/reps')
+      .then((r) => setReps(r.data.reps ?? r.data ?? []))
+      .catch(() => {});
+
+    // Quick unseen badge
+    api.get('/api/fleet/inbox?unseenOnly=true&limit=1')
+      .then((r) => setUnseenCount(r.data.total ?? 0))
+      .catch(() => {});
   }, []);
 
   const toggle = useCallback((id) => {
     setExpandedId((prev) => (prev === id ? null : id));
   }, []);
+
+  function handleRepChange(accountId, field, value) {
+    setData((prev) => ({
+      ...prev,
+      accounts: prev.accounts.map((a) =>
+        a.id === accountId ? { ...a, [field]: value } : a
+      ),
+    }));
+  }
 
   if (loading) return <div style={styles.page}><div style={styles.loading}>Loading fleet data…</div></div>;
   if (error) return <div style={styles.page}><div style={styles.errorBox}>{error}</div></div>;
@@ -264,6 +762,12 @@ export default function FleetDashboard() {
     if (filter === 'healthy') return !a.needsAttention;
     return true;
   });
+
+  const topTabs = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'inbox', label: unseenCount > 0 ? `Inbox (${unseenCount})` : 'Inbox' },
+    { key: 'accounts', label: 'Accounts & Invites' },
+  ];
 
   return (
     <div style={styles.page}>
@@ -279,134 +783,169 @@ export default function FleetDashboard() {
         </div>
       </div>
 
-      {/* Fleet totals bar */}
-      <div style={styles.totalsBar}>
-        <MetricTile label="Total Assets" value={totals.assets} accent="#64748b" />
-        <MetricTile
-          label="Overdue Schedules"
-          value={totals.overdueSchedules}
-          accent={totals.overdueSchedules > 0 ? '#ef4444' : '#22c55e'}
-        />
-        <MetricTile
-          label="IMMEDIATE Open"
-          value={totals.immediateDeficiencies}
-          accent={totals.immediateDeficiencies > 0 ? '#dc2626' : '#22c55e'}
-        />
-        <MetricTile
-          label="Service Opportunities"
-          value={totals.serviceOpportunities}
-          accent={totals.serviceOpportunities > 0 ? '#f59e0b' : '#64748b'}
-        />
-        <MetricTile label="Open Work Orders" value={totals.openWorkOrders} accent="#6366f1" />
-        <MetricTile
-          label="Accounts w/ Issues"
-          value={accounts.filter((a) => a.needsAttention).length}
-          accent={accounts.filter((a) => a.needsAttention).length > 0 ? '#f97316' : '#22c55e'}
-          sub={`of ${accounts.length}`}
-        />
-      </div>
-
-      {/* Filter row */}
-      <div style={styles.filterRow}>
-        <div style={styles.filterTabs}>
-          {['all', 'attention', 'healthy'].map((f) => (
-            <button
-              key={f}
-              style={{ ...styles.tab, ...(filter === f ? styles.tabActive : {}) }}
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all' ? 'All Accounts' : f === 'attention' ? '⚠ Needs Attention' : '✓ Healthy'}
-              <span style={styles.tabCount}>
-                {f === 'all' ? accounts.length
-                  : f === 'attention' ? accounts.filter((a) => a.needsAttention).length
-                  : accounts.filter((a) => !a.needsAttention).length}
-              </span>
-            </button>
-          ))}
-        </div>
-        <input
-          style={styles.searchInput}
-          placeholder="Search accounts…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-
-      {/* Account cards */}
-      <div style={styles.cardList}>
-        {filtered.length === 0 && (
-          <div style={styles.empty}>No accounts match your filter.</div>
-        )}
-        {filtered.map((account) => (
-          <AccountCard
-            key={account.id}
-            account={account}
-            expanded={expandedId === account.id}
-            onToggle={() => toggle(account.id)}
-          />
+      {/* Top-level tab bar */}
+      <div style={styles.topTabBar}>
+        {topTabs.map(({ key, label }) => (
+          <button
+            key={key}
+            style={{ ...styles.topTab, ...(activeTab === key ? styles.topTabActive : {}) }}
+            onClick={() => setActiveTab(key)}
+          >
+            {label}
+            {key === 'inbox' && unseenCount > 0 && (
+              <span style={styles.unseenPip} />
+            )}
+          </button>
         ))}
       </div>
 
-      {/* Fleet Modernization Forecast */}
-      <div style={styles.forecastSection}>
-        <h2 style={styles.forecastTitle}>Fleet Modernization Forecast — 3-Year Rolling CapEx Exposure</h2>
-        <p style={styles.forecastNote}>
-          <strong>Budget planning estimates only.</strong> Figures are probabilistic ranges derived from
-          IEEE/NFPA/NETA equipment-life models, customer-provided condition ratings, and published service
-          rate benchmarks. Actual costs vary by site, equipment configuration, labor market, and factors
-          not captured in this model. These estimates are <strong>not formal quotes, engineering assessments,
-          or guarantees of equipment condition or remaining useful life.</strong> Consult a licensed
-          electrical engineer before making capital replacement decisions.
-        </p>
-        {forecastLoading && <div style={styles.forecastLoading}>Loading forecast…</div>}
-        {!forecastLoading && forecast && forecast.length === 0 && (
-          <div style={styles.forecastEmpty}>No at-risk assets flagged. Fleet is in good standing.</div>
-        )}
-        {!forecastLoading && forecast && forecast.length > 0 && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={styles.forecastTable}>
-              <thead>
-                <tr style={styles.forecastThead}>
-                  {['Account', ...forecast.map((f) => `${f.year} CapEx Range`), 'Assets'].map((h) => (
-                    <th key={h} style={styles.forecastTh}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {/* Build account rows */}
-                {(() => {
-                  // collect all accountIds from all years
-                  const allAccountIds = [...new Set(forecast.flatMap((f) => f.accounts.map((a) => a.accountId)))];
-                  return allAccountIds.map((accountId) => {
-                    const firstMatch = forecast.flatMap((f) => f.accounts).find((a) => a.accountId === accountId);
-                    const companyName = firstMatch?.companyName ?? accountId;
-                    const totalAssets = Math.max(...forecast.map((f) => {
-                      const a = f.accounts.find((x) => x.accountId === accountId);
-                      return a ? a.assetCount : 0;
-                    }));
-                    return (
-                      <tr key={accountId} style={styles.forecastTr}>
-                        <td style={styles.forecastTd}>{companyName}</td>
-                        {forecast.map((f) => {
-                          const a = f.accounts.find((x) => x.accountId === accountId);
-                          if (!a) return <td key={f.year} style={{ ...styles.forecastTd, color: 'var(--text-secondary)' }}>—</td>;
-                          const fmt = (c) => `$${Math.round(c / 100).toLocaleString()}`;
-                          return (
-                            <td key={f.year} style={styles.forecastTd}>
-                              {fmt(a.minCents)} – {fmt(a.maxCents)}
-                            </td>
-                          );
-                        })}
-                        <td style={{ ...styles.forecastTd, textAlign: 'center' }}>{totalAssets}</td>
-                      </tr>
-                    );
-                  });
-                })()}
-              </tbody>
-            </table>
+      {/* ── OVERVIEW TAB ── */}
+      {activeTab === 'overview' && (
+        <>
+          {/* Fleet totals bar */}
+          <div style={styles.totalsBar}>
+            <MetricTile label="Total Assets" value={totals.assets} accent="#64748b" />
+            <MetricTile
+              label="Overdue Schedules"
+              value={totals.overdueSchedules}
+              accent={totals.overdueSchedules > 0 ? '#ef4444' : '#22c55e'}
+            />
+            <MetricTile
+              label="IMMEDIATE Open"
+              value={totals.immediateDeficiencies}
+              accent={totals.immediateDeficiencies > 0 ? '#dc2626' : '#22c55e'}
+            />
+            <MetricTile
+              label="Service Opportunities"
+              value={totals.serviceOpportunities}
+              accent={totals.serviceOpportunities > 0 ? '#f59e0b' : '#64748b'}
+            />
+            <MetricTile label="Open Work Orders" value={totals.openWorkOrders} accent="#6366f1" />
+            <MetricTile
+              label="Accounts w/ Issues"
+              value={accounts.filter((a) => a.needsAttention).length}
+              accent={accounts.filter((a) => a.needsAttention).length > 0 ? '#f97316' : '#22c55e'}
+              sub={`of ${accounts.length}`}
+            />
           </div>
-        )}
-      </div>
+
+          {/* Filter row */}
+          <div style={styles.filterRow}>
+            <div style={styles.filterTabs}>
+              {['all', 'attention', 'healthy'].map((f) => (
+                <button
+                  key={f}
+                  style={{ ...styles.tab, ...(filter === f ? styles.tabActive : {}) }}
+                  onClick={() => setFilter(f)}
+                >
+                  {f === 'all' ? 'All Accounts' : f === 'attention' ? '⚠ Needs Attention' : '✓ Healthy'}
+                  <span style={styles.tabCount}>
+                    {f === 'all'
+                      ? accounts.length
+                      : f === 'attention'
+                      ? accounts.filter((a) => a.needsAttention).length
+                      : accounts.filter((a) => !a.needsAttention).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <input
+              style={styles.searchInput}
+              placeholder="Search accounts…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Account cards */}
+          <div style={styles.cardList}>
+            {filtered.length === 0 && <div style={styles.empty}>No accounts match your filter.</div>}
+            {filtered.map((account) => (
+              <AccountCard
+                key={account.id}
+                account={account}
+                expanded={expandedId === account.id}
+                onToggle={() => toggle(account.id)}
+                reps={reps}
+                onRepChange={handleRepChange}
+              />
+            ))}
+          </div>
+
+          {/* Fleet Modernization Forecast */}
+          <div style={styles.forecastSection}>
+            <h2 style={styles.forecastTitle}>Fleet Modernization Forecast — 3-Year Rolling CapEx Exposure</h2>
+            <p style={styles.forecastNote}>
+              <strong>Budget planning estimates only.</strong> Figures are probabilistic ranges derived from
+              IEEE/NFPA/NETA equipment-life models, customer-provided condition ratings, and published service
+              rate benchmarks. Actual costs vary by site, equipment configuration, labor market, and factors
+              not captured in this model. These estimates are <strong>not formal quotes, engineering assessments,
+              or guarantees of equipment condition or remaining useful life.</strong> Consult a licensed
+              electrical engineer before making capital replacement decisions.
+            </p>
+            {forecastLoading && <div style={styles.forecastLoading}>Loading forecast…</div>}
+            {!forecastLoading && forecast && forecast.length === 0 && (
+              <div style={styles.forecastEmpty}>No at-risk assets flagged. Fleet is in good standing.</div>
+            )}
+            {!forecastLoading && forecast && forecast.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={styles.forecastTable}>
+                  <thead>
+                    <tr style={styles.forecastThead}>
+                      {['Account', ...forecast.map((f) => `${f.year} CapEx Range`), 'Assets'].map((h) => (
+                        <th key={h} style={styles.forecastTh}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const allAccountIds = [
+                        ...new Set(forecast.flatMap((f) => f.accounts.map((a) => a.accountId))),
+                      ];
+                      return allAccountIds.map((accountId) => {
+                        const firstMatch = forecast.flatMap((f) => f.accounts).find((a) => a.accountId === accountId);
+                        const companyName = firstMatch?.companyName ?? accountId;
+                        const totalAssets = Math.max(...forecast.map((f) => {
+                          const a = f.accounts.find((x) => x.accountId === accountId);
+                          return a ? a.assetCount : 0;
+                        }));
+                        return (
+                          <tr key={accountId} style={styles.forecastTr}>
+                            <td style={styles.forecastTd}>{companyName}</td>
+                            {forecast.map((f) => {
+                              const a = f.accounts.find((x) => x.accountId === accountId);
+                              if (!a) return (
+                                <td key={f.year} style={{ ...styles.forecastTd, color: 'var(--text-secondary)' }}>—</td>
+                              );
+                              const fmt = (c) => `$${Math.round(c / 100).toLocaleString()}`;
+                              return (
+                                <td key={f.year} style={styles.forecastTd}>
+                                  {fmt(a.minCents)} – {fmt(a.maxCents)}
+                                </td>
+                              );
+                            })}
+                            <td style={{ ...styles.forecastTd, textAlign: 'center' }}>{totalAssets}</td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── INBOX TAB ── */}
+      {activeTab === 'inbox' && (
+        <InboxTab reps={reps} onUnseenCountChange={setUnseenCount} />
+      )}
+
+      {/* ── ACCOUNTS & INVITES TAB ── */}
+      {activeTab === 'accounts' && (
+        <AccountsInvitesTab accounts={accounts} />
+      )}
     </div>
   );
 }
@@ -422,7 +961,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   h1: {
     fontSize: 22,
@@ -434,6 +973,40 @@ const styles = {
     fontSize: 13,
     color: 'var(--text-secondary)',
     margin: '4px 0 0',
+  },
+  // Top-level tab bar
+  topTabBar: {
+    display: 'flex',
+    gap: 2,
+    borderBottom: '2px solid var(--border)',
+    marginBottom: 24,
+  },
+  topTab: {
+    padding: '9px 18px',
+    fontSize: 13,
+    fontWeight: 500,
+    background: 'transparent',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    marginBottom: -2,
+    cursor: 'pointer',
+    color: 'var(--text-secondary)',
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  topTabActive: {
+    color: 'var(--accent)',
+    borderBottomColor: 'var(--accent)',
+    fontWeight: 600,
+  },
+  unseenPip: {
+    width: 7,
+    height: 7,
+    borderRadius: '50%',
+    background: '#ef4444',
+    flexShrink: 0,
   },
   totalsBar: {
     display: 'grid',
@@ -482,7 +1055,7 @@ const styles = {
   },
   tabCount: {
     fontSize: 11,
-    background: 'rgba(255,255,255,0.2)',
+    background: 'rgba(0,0,0,0.12)',
     borderRadius: 10,
     padding: '1px 6px',
   },
@@ -536,6 +1109,77 @@ const styles = {
     borderTop: '1px solid var(--border)',
     padding: '12px 18px',
     gap: 8,
+  },
+  // Rep select row inside account card
+  repSelectRow: {
+    display: 'flex',
+    gap: 12,
+    alignItems: 'center',
+    padding: '10px 18px',
+    borderTop: '1px solid var(--border)',
+    background: 'var(--bg)',
+    flexWrap: 'wrap',
+  },
+  repSelectLabel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 3,
+    fontSize: 11,
+    color: 'var(--text-secondary)',
+    fontWeight: 500,
+  },
+  repSelectInput: {
+    padding: '5px 8px',
+    fontSize: 12,
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    outline: 'none',
+    minWidth: 160,
+  },
+  // Inbox / generic
+  filterSelect: {
+    padding: '7px 10px',
+    fontSize: 12,
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    background: 'var(--surface)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    outline: 'none',
+  },
+  inboxBtn: {
+    padding: '5px 12px',
+    fontSize: 12,
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+  },
+  loadMoreBtn: {
+    padding: '8px 24px',
+    fontSize: 13,
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    background: 'var(--surface)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+  },
+  // Accounts & Invites tab
+  sectionCard: {
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 10,
+    padding: '16px 20px',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    marginBottom: 14,
   },
   badge: {
     green: {
@@ -602,7 +1246,7 @@ const styles = {
     gap: 5,
   },
   listRow: {
-    padding: '6px 0',
+    padding: '8px 0',
     borderBottom: '1px solid var(--border)',
   },
   empty: {

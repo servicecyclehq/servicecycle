@@ -86,6 +86,7 @@ const Register                = lazyWithReload(() => import('./pages/Register'))
 const ForgotPassword          = lazyWithReload(() => import('./pages/ForgotPassword'));
 const ResetPassword           = lazyWithReload(() => import('./pages/ResetPassword'));
 const AcceptInvite            = lazyWithReload(() => import('./pages/AcceptInvite'));
+const InviteAcceptPage        = lazyWithReload(() => import('./pages/InviteAcceptPage')); // partner invite accept
 const Dashboard               = lazyWithReload(() => import('./pages/Dashboard'));
 // ServiceCycle core domain pages
 const AssetsList              = lazyWithReload(() => import('./pages/AssetsList'));
@@ -231,6 +232,7 @@ function AppRoutes() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/accept-invite/:token" element={<AcceptInvite />} />
+          <Route path="/invite/accept" element={<InviteAcceptPage />} />
 
           {/* (A2/A3) Legal pages — public, no Layout shell, no auth required.
               Each page is reachable at both the bare path and a /legal/* alias.

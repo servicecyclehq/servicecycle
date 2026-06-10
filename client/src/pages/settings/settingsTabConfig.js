@@ -43,6 +43,7 @@ export const SUB_TAB_LABELS = {
   customfields:       'Custom Fields',
   data:               'Account Data',
   branding:           'Branding',
+  partner:            'Connected Partner',
 };
 
 // Sub-tabs that require admin role. Non-admins won't see these in the

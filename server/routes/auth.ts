@@ -719,6 +719,9 @@ router.get('/me', authenticateToken, async (req, res) => {
             // Phase 4: per-account AI brief toggle for the client to decide
             // whether to render the "Generate brief" button at all.
             aiBriefEnabled: true,
+            // Partner flywheel: expose to client so settings UI can show consent panel
+            partnerOrgId: true,
+            partnerOrg: { select: { name: true } },
           },
         },
       },

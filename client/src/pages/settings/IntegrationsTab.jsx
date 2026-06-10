@@ -23,6 +23,7 @@ const IntegrationsTab = {
     'ai',         // AI Features + Provider + Azure
     'api-keys',   // API Keys (admin)
     'webhooks',   // Webhooks (admin)
+    'partner',    // Connected Partner consent + audit log
   ],
   defaultSubTab: 'ai',
 };

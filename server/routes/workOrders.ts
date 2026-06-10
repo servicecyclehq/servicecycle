@@ -618,6 +618,22 @@ router.put('/:id', requireManager, async (req, res) => {
         });
       }
 
+      // Partner Flywheel: emit INSPECTION_COMPLETED (fire-and-forget)
+      {
+        const { emitPartnerEvent } = require('../lib/partnerEvents');
+        const openDefs = await prisma.deficiency.findMany({
+          where: { accountId: req.user.accountId, assetId: existing.assetId, resolvedAt: null },
+          select: { severity: true },
+        });
+        const immediateCount = openDefs.filter((d: any) => d.severity === 'IMMEDIATE').length;
+        emitPartnerEvent(req.user.accountId, 'INSPECTION_COMPLETED', {
+          assetId:         existing.assetId,
+          assetName:       existing.asset?.name ?? 'Asset',
+          deficiencyCount: openDefs.length,
+          immediateCount,
+        }).catch(console.error);
+      }
+
       return res.json({ success: true, data: { workOrder } });
     }
 

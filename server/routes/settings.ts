@@ -1066,3 +1066,78 @@ router.put('/branding', requireAdmin, async (req, res) => {
     return res.status(500).json({ success: false, error: 'Failed to save branding' });
   }
 });
+
+
+// ─── GET /api/settings/partner-events ─────────────────────────────────────────
+// Customer-facing read-only audit log: events this account has shared with
+// its partner org. Requires requireAdmin (scoped to own account).
+
+router.get('/partner-events', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { accountId } = req.user;
+    const { limit = '50', cursor } = req.query;
+    const take = Math.min(parseInt(String(limit), 10) || 50, 200);
+
+    const where: any = { accountId, archived: false };
+    if (cursor) where.id = { lt: String(cursor) };
+
+    const logs = await prisma.partnerEventLog.findMany({
+      where,
+      take,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        eventType: true,
+        payload: true,
+        createdAt: true,
+        digestSentAt: true,
+        immediateEmailSentAt: true,
+        assignedRep: { select: { name: true, email: true } },
+        partnerOrg:  { select: { name: true } },
+      },
+    });
+
+    res.json({
+      logs,
+      nextCursor: logs.length === take ? logs[logs.length - 1].id : null,
+    });
+  } catch (err: any) {
+    console.error('[settings/partner-events]', err);
+    res.status(500).json({ success: false, error: 'Failed to load partner events' });
+  }
+});
+
+// ─── POST /api/settings/partner-revoke ────────────────────────────────────────
+// Customer revokes partner access entirely — sets partnerOrgId = null and
+// disables all consent settings.
+router.post('/partner-revoke', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { accountId } = req.user;
+
+    const consentKeys = [
+      'partner_share_deficiencies',
+      'partner_share_inspections',
+      'partner_share_quote_requests',
+      'partner_share_overdue_tasks',
+    ];
+
+    await prisma.$transaction([
+      prisma.account.update({
+        where: { id: accountId },
+        data: { partnerOrgId: null, assignedRepId: null, fallbackRepId: null },
+      }),
+      ...consentKeys.map((key) =>
+        prisma.accountSetting.upsert({
+          where:  { accountId_key: { accountId, key } },
+          create: { accountId, key, value: 'false' },
+          update: { value: 'false' },
+        })
+      ),
+    ]);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[settings/partner-revoke]', err);
+    res.status(500).json({ success: false, error: 'Failed to revoke partner access' });
+  }
+});

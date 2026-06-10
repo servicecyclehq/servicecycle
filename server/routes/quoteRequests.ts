@@ -312,6 +312,22 @@ router.post('/', async (req, res) => {
       },
     });
 
+    // Partner Flywheel: emit QUOTE_REQUEST_CREATED (fire-and-forget)
+    {
+      const { emitPartnerEvent } = require('../lib/partnerEvents');
+      const ss = (dossierSnapshot as any) ?? {};
+      emitPartnerEvent(req.user.accountId, 'QUOTE_REQUEST_CREATED', {
+        quoteRequestId: qr.id,
+        assetId,
+        assetName: qr.asset
+          ? `${qr.asset.manufacturer ?? ''} ${qr.asset.model ?? ''}`.trim() || `Asset ${assetId.slice(0, 8)}`
+          : 'Asset',
+        triggerType:  qr.triggerType ?? null,
+        estimatedMin: ss.estimatedCapExMin ?? null,
+        estimatedMax: ss.estimatedCapExMax ?? null,
+      }).catch(console.error);
+    }
+
     return res.status(201).json({ success: true, data: qr });
   } catch (err) {
     console.error('[quoteRequests POST /]', err);

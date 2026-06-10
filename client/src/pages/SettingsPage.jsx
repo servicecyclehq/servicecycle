@@ -19,6 +19,7 @@ import EncryptionSection from '../components/settings/EncryptionSection.jsx'; //
 import CustomFieldsSection from '../components/settings/CustomFieldsSection.jsx'; // v0.91 Phase 1b cont'd
 import EmpSection from '../components/settings/EmpSection.jsx'; // EMP / NFPA 70B §4.2 program settings
 import BrandingSection from '../components/settings/BrandingSection.jsx'; // white-label branding
+import PartnerSection from '../components/settings/PartnerSection.jsx'; // partner flywheel consent
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const API = import.meta.env.VITE_API_URL || '/api';
@@ -1010,6 +1011,21 @@ export default function SettingsPage() {
 
       {/* ── White-label branding ─────────────────────────────────────────── */}
       {activeTab === 'branding' && <BrandingSection isAdmin={isAdmin} />}
+
+      {/* ── Connected Partner — consent toggles + audit log ─────────────── */}
+      {activeTab === 'partner' && user?.account?.partnerOrgId && (
+        <PartnerSection
+          partnerOrgId={user.account.partnerOrgId}
+          partnerOrgName={user.account.partnerOrg?.name}
+          isAdmin={isAdmin}
+        />
+      )}
+      {activeTab === 'partner' && !user?.account?.partnerOrgId && (
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 14 }}>
+          Your account is not currently connected to a service partner.
+          If you have received an invite link, open it to connect.
+        </div>
+      )}
 
       {/* ── API Keys — admin-only (v0.20.0) ─────────────────────────────── */}
       {isAdmin && activeTab === 'api-keys' && <ApiKeysSection />}

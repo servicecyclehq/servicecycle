@@ -171,6 +171,20 @@ enum IngestionStatus {
   failed
 }
 
+enum PartnerEventType {
+  IMMEDIATE_DEFICIENCY
+  INSPECTION_COMPLETED
+  QUOTE_REQUEST_CREATED
+  TASK_OVERDUE
+}
+
+enum RetentionTier {
+  STANDARD    // 7 years
+  HEALTHCARE  // 10 years
+  UTILITY     // permanent (never archived)
+  CUSTOM
+}
+
 // Document type classification — surfaces documents grouped by purpose on the
 // asset detail page. oem_manual + wiring_diagram cover vendor docs; loto_pdf
 // covers a scanned/printed LOTO procedure (vs. the structured LotoProc model);
@@ -240,6 +254,12 @@ model Account {
   // OEM partner linkage -- links this customer account to a PartnerOrganization
   // for fleet-level visibility by oem_admin users.
   partnerOrgId             String?
+  // Partner flywheel: assigned service rep + fallback rep routing
+  assignedRepId            String?   // FK → User (primary rep)
+  fallbackRepId            String?   // FK → User (fallback rep, nullable)
+  // Data retention tier for PartnerEventLog archival
+  retentionTier            RetentionTier @default(STANDARD)
+  retentionCustomYears     Int?          // used when retentionTier=CUSTOM
   // Per-tenant total headcount — drives cost-per-employee KPI tiles.
   // Nullable so existing accounts continue to work.
   fteCount                 Int?
@@ -290,6 +310,10 @@ model Account {
   assetTemplates         AssetTemplate[]
 
   partnerOrg             PartnerOrganization? @relation(fields: [partnerOrgId], references: [id], onDelete: SetNull)
+  assignedRep            User?                @relation("AssignedRep", fields: [assignedRepId], references: [id], onDelete: SetNull)
+  fallbackRep            User?                @relation("FallbackRep", fields: [fallbackRepId], references: [id], onDelete: SetNull)
+  partnerInvites         PartnerInvite[]
+  partnerEventLogs       PartnerEventLog[]
 
   @@map("accounts")
 }
@@ -299,15 +323,20 @@ model Account {
 // Customer accounts are linked via partnerOrgId.  Users with role oem_admin
 // on any account in the same partner org get cross-account fleet visibility.
 model PartnerOrganization {
-  id           String    @id @default(uuid())
-  name         String
-  logoUrl      String?
-  primaryColor String?   // hex, e.g. "#0057b8"
-  website      String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  name               String
+  logoUrl            String?
+  primaryColor       String?   // hex, e.g. "#0057b8"
+  website            String?
+  webhookUrl         String?
+  webhookSecret      String?   // 32-byte hex; HMAC-SHA256 signing key
+  digestIntervalDays Int       @default(1) // 1–7 days; OEM configurable
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  accounts Account[]
+  accounts         Account[]
+  partnerInvites   PartnerInvite[]
+  partnerEventLogs PartnerEventLog[]
 
   @@map("partner_organizations")
 }
@@ -379,6 +408,10 @@ model User {
   approvedLotoProcs        LotoProc[]              @relation("LotoProcApprover")
   createdLotoProcs         LotoProc[]              @relation("LotoProcCreator")
   declaredDisasters        DisasterEvent[]         @relation("DisasterDeclarer")
+  sentPartnerInvites       PartnerInvite[]         @relation("PartnerInviter")
+  assignedRepAccounts      Account[]               @relation("AssignedRep")
+  fallbackRepAccounts      Account[]               @relation("FallbackRep")
+  assignedEventLogs        PartnerEventLog[]       @relation("EventLogRep")
 
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
@@ -2051,4 +2084,60 @@ model ServiceRateCard {
   @@index([accountId])
   @@index([serviceType])
   @@map("service_rate_cards")
+}
+
+// ─── Partner Invites ──────────────────────────────────────────────────────────
+// Invitation tokens sent by a PartnerOrganization to link a customer Account.
+// Token is stored as SHA-256 hash — plaintext never persisted.
+// Status: PENDING → ACCEPTED (acceptedAt set) | REVOKED (revokedAt set).
+// Resending invalidates the prior token by overwriting tokenHash + expiresAt.
+
+model PartnerInvite {
+  id           String               @id @default(cuid())
+  partnerOrgId String
+  partnerOrg   PartnerOrganization  @relation(fields: [partnerOrgId], references: [id])
+  inviteeEmail String
+  invitedById  String
+  invitedBy    User                 @relation("PartnerInviter", fields: [invitedById], references: [id])
+  tokenHash    String               @unique  // SHA-256 of the actual 32-byte hex token
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  revokedAt    DateTime?
+  accountId    String?              // set on accept — FK to Account
+  account      Account?             @relation(fields: [accountId], references: [id])
+  createdAt    DateTime             @default(now())
+
+  @@index([partnerOrgId])
+  @@index([invitedById])
+  @@map("partner_invites")
+}
+
+// ─── Partner Event Log ────────────────────────────────────────────────────────
+// Append-only log of events fanned out from customer accounts to partner orgs.
+// Archived per customer Account.retentionTier by the nightly archival cron.
+// Soft-archive only: archived=true, never hard-deleted.
+
+model PartnerEventLog {
+  id                       String               @id @default(cuid())
+  partnerOrgId             String
+  partnerOrg               PartnerOrganization  @relation(fields: [partnerOrgId], references: [id])
+  accountId                String
+  account                  Account              @relation(fields: [accountId], references: [id])
+  eventType                PartnerEventType
+  payload                  Json
+  assignedRepId            String?
+  assignedRep              User?                @relation("EventLogRep", fields: [assignedRepId], references: [id])
+  digestSentAt             DateTime?            // set when included in a digest email
+  immediateEmailSentAt     DateTime?            // set for IMMEDIATE_DEFICIENCY instant email
+  webhookSentAt            DateTime?
+  seenAt                   DateTime?
+  actionedAt               DateTime?
+  archived                 Boolean              @default(false)
+  createdAt                DateTime             @default(now())
+
+  @@index([partnerOrgId])
+  @@index([accountId])
+  @@index([partnerOrgId, archived, digestSentAt])
+  @@index([accountId, eventType, createdAt])
+  @@map("partner_event_logs")
 }

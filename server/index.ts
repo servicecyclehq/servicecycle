@@ -1241,6 +1241,10 @@ app.use('/api/webhooks', authenticateToken, webhookRoutes);
 // ── OEM Fleet Dashboard — cross-account view for oem_admin users ─────────────
 app.use('/api/fleet', authenticateToken, fleetDashboardRoutes);
 
+// ── Partner invite accept — public routes (no auth required) ─────────────────
+const partnerInvitePublicRoutes = require('./routes/partnerInvitePublic');
+app.use('/api/invite', partnerInvitePublicRoutes);
+
 // ── Quote Request — per-asset service quote lifecycle ────────────────────────
 app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 
@@ -2000,6 +2004,36 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
       }
     }), { timezone: 'UTC' });
     console.log('[Cron] Standard revision cron scheduled — runs daily at 10:30 UTC');
+
+    // ── Partner Flywheel: digest cron — daily 7:00 AM UTC ────────────────────
+    // Groups undigested PartnerEventLog records by assignedRep and sends one
+    // consolidated email per rep per partner org.  IMMEDIATE_DEFICIENCY records
+    // are excluded (already emailed at event time).
+    const { runPartnerDigestCron } = require('./lib/partnerDigest');
+    cron.schedule('0 7 * * *', () => runOnce('partnerDigest', async () => {
+      pingHeartbeat('partnerDigest');
+      try {
+        const result = await runPartnerDigestCron();
+        console.log(`[Cron][partnerDigest] Done — orgs: ${result.orgsProcessed}, emails: ${result.emailsSent}, records: ${result.recordsMarked}`);
+      } catch (e) {
+        console.error('[Cron][partnerDigest] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Partner digest cron scheduled — runs daily at 07:00 UTC');
+
+    // ── Partner Flywheel: retention archival cron — daily 2:05 AM UTC ────────
+    // Soft-archives PartnerEventLog records past the account's retention window.
+    const { runRetentionArchival } = require('./lib/partnerRetentionArchival');
+    cron.schedule('5 2 * * *', () => runOnce('partnerRetentionArchival', async () => {
+      pingHeartbeat('partnerRetentionArchival');
+      try {
+        const result = await runRetentionArchival();
+        console.log(`[Cron][partnerRetentionArchival] Done — archived: ${result.archived}, accounts: ${result.accountsProcessed}`);
+      } catch (e) {
+        console.error('[Cron][partnerRetentionArchival] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Partner retention archival cron scheduled — runs daily at 02:05 UTC');
 
   } catch (e) {
     console.warn('[Cron] node-cron not available — run npm install to enable scheduled alerts');
