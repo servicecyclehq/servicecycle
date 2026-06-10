@@ -116,6 +116,19 @@ function requireOemAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAdmin, requireManager, requireViewer, requireOemAdmin };
+/**
+ * Requires super_admin role.
+ * Use for: platform-level PartnerOrganization management, bootstrapping OEM users.
+ * Logs permission_denied to the activity log on failure (matches requireAdmin pattern).
+ */
+function requireSuperAdmin(req, res, next) {
+  if (req.user.role !== 'super_admin') {
+    _logDenied(req, 'super_admin');
+    return res.status(403).json({ success: false, error: 'Super-admin access required' });
+  }
+  next();
+}
+
+module.exports = { requireAdmin, requireManager, requireViewer, requireOemAdmin, requireSuperAdmin };
 
 export {};

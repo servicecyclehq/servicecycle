@@ -37,7 +37,7 @@
 
 import { Router } from 'express';
 import prisma from '../lib/prisma';
-const { requireManager } = require('../middleware/auth');
+const { requireManager } = require('../middleware/roles');
 
 const router: Router = Router();
 

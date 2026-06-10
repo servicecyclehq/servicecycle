@@ -1141,3 +1141,6 @@ router.post('/partner-revoke', requireAdmin, async (req: any, res: any) => {
     res.status(500).json({ success: false, error: 'Failed to revoke partner access' });
   }
 });
+
+
+module.exports = router;

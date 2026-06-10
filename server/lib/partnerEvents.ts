@@ -193,23 +193,48 @@ async function firePartnerWebhook(log: any, partnerOrg: any): Promise<void> {
 
   const sig = createHmac('sha256', partnerOrg.webhookSecret).update(body).digest('hex');
 
-  const resp = await fetch(partnerOrg.webhookUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-ServiceCycle-Signature': `sha256=${sig}`,
-    },
-    body,
-    signal: AbortSignal.timeout(5000),
-  });
+  try {
+    const resp = await fetch(partnerOrg.webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ServiceCycle-Signature': `sha256=${sig}`,
+      },
+      body,
+      signal: AbortSignal.timeout(5000),
+    });
 
-  await prisma.partnerEventLog.update({
-    where: { id: log.id },
-    data: { webhookSentAt: new Date() },
-  });
+    if (!resp.ok) {
+      // Non-2xx response — record failure, do not throw.
+      console.error(`[partnerEvents] webhook responded ${resp.status} for log ${log.id}`);
+      await prisma.partnerEventLog.update({
+        where: { id: log.id },
+        data: {
+          webhookAttempts:     { increment: 1 },
+          webhookLastFailedAt: new Date(),
+        },
+      });
+      return;
+    }
 
-  if (!resp.ok) {
-    console.error(`[partnerEvents] webhook responded ${resp.status} for log ${log.id}`);
+    await prisma.partnerEventLog.update({
+      where: { id: log.id },
+      data: { webhookSentAt: new Date() },
+    });
+  } catch (err: any) {
+    // Network error or timeout — record failure, do NOT throw (fire-and-forget).
+    console.error(`[partnerEvents] webhook delivery failed for log ${log.id}:`, err.message);
+    try {
+      await prisma.partnerEventLog.update({
+        where: { id: log.id },
+        data: {
+          webhookAttempts:     { increment: 1 },
+          webhookLastFailedAt: new Date(),
+        },
+      });
+    } catch (updateErr: any) {
+      console.error('[partnerEvents] failed to record webhook failure:', updateErr.message);
+    }
   }
 }
 

@@ -207,6 +207,7 @@ const documentRoutes            = require('./routes/documents');
 const setupRoutes               = require('./routes/setup'); // (S8) first-run wizard
 const adminRoutes               = require('./routes/admin'); // (A4) demo reset endpoint
 const adminAuditChainRoutes     = require('./routes/adminAuditChain'); // Pass-6 W4 MT-127 chain verify endpoint
+const adminPartnerOrgsRoutes    = require('./routes/adminPartnerOrgs'); // super-admin PartnerOrg management
 const reportRoutes              = require('./routes/reports'); // compliance reports (stub — later session)
 const customFieldRoutes         = require('./routes/customFields'); // admin-defined asset fields
 const earlyAccessRoutes         = require('./routes/earlyAccess');  // (L7) public lead-capture POST
@@ -1180,6 +1181,8 @@ app.use('/api/documents',         authenticateToken, documentRoutes);
 // guards live inside the route handler.
 app.use('/api/admin',             authenticateToken, adminRoutes);
 app.use('/api/admin/audit-chain', authenticateToken, adminAuditChainRoutes);
+const { requireSuperAdmin } = require('./middleware/roles');
+app.use('/api/admin/partner-orgs', authenticateToken, requireSuperAdmin, adminPartnerOrgsRoutes);
 
 // T2-N3 (audit-2 2026-05-22): admin endpoint to trigger deep restore test on demand.
 // POST /api/admin/restore-test/deep -- admin only; no body required.
@@ -1397,7 +1400,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-const httpServer = app.listen(PORT, '0.0.0.0', () => {
+// Export app for integration tests (supertest attaches directly without binding a port).
+module.exports = app;
+module.exports.default = app;
+
+// In test mode, skip listen + crons so supertest can use the express app directly.
+let httpServer: any = { close: (cb: any) => { try { cb?.(); } catch {} } };
+if (process.env.NODE_ENV !== 'test') {
+httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log(`ServiceCycle API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
 
   // ── Nightly alert cron (runs at 7:00 AM server time) ──────────────────────
@@ -2021,6 +2031,22 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
     }), { timezone: 'UTC' });
     console.log('[Cron] Partner digest cron scheduled — runs daily at 07:00 UTC');
 
+    // ── Partner Flywheel: webhook retry cron — every 15 minutes ─────────────
+    // Re-attempts failed webhook deliveries with exponential backoff.
+    // attempt 1 → after 5 min, attempt 2 → after 10 min, attempt 3 → after 20 min.
+    const { runWebhookRetryCron } = require('./lib/partnerWebhookRetry');
+    cron.schedule('*/15 * * * *', () => runOnce('partnerWebhookRetry', async () => {
+      try {
+        const result = await runWebhookRetryCron();
+        if (result.checked > 0) {
+          console.log(`[Cron][partnerWebhookRetry] checked: ${result.checked}, succeeded: ${result.succeeded}, failed: ${result.failed}, exhausted: ${result.exhausted}`);
+        }
+      } catch (e) {
+        console.error('[Cron][partnerWebhookRetry] Error:', (e as any).message);
+      }
+    }));
+    console.log('[Cron] Partner webhook retry cron scheduled — runs every 15 minutes');
+
     // ── Partner Flywheel: retention archival cron — daily 2:05 AM UTC ────────
     // Soft-archives PartnerEventLog records past the account's retention window.
     const { runRetentionArchival } = require('./lib/partnerRetentionArchival');
@@ -2038,7 +2064,8 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
   } catch (e) {
     console.warn('[Cron] node-cron not available — run npm install to enable scheduled alerts');
   }
-});
+}); // end app.listen callback
+} // end if NODE_ENV !== 'test'
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Docker `compose down`, Kubernetes rolling deploys, and most orchestrators

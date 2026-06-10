@@ -60,8 +60,9 @@ enum UserRole {
   admin
   manager
   viewer
-  consultant // Maintenance Vendor account manager — receives alerts in tandem
-  oem_admin  // OEM service org fleet manager — cross-account read-only view
+  consultant  // Maintenance Vendor account manager — receives alerts in tandem
+  oem_admin   // OEM service org fleet manager — cross-account read-only view
+  super_admin // Platform super-admin — can manage PartnerOrganizations and bootstrap OEM users
 }
 
 // Equipment taxonomy. Expanded 2026-06-07 from the buyer-priority analysis
@@ -2109,6 +2110,7 @@ model PartnerInvite {
 
   @@index([partnerOrgId])
   @@index([invitedById])
+  @@index([inviteeEmail])
   @@map("partner_invites")
 }
 
@@ -2130,6 +2132,8 @@ model PartnerEventLog {
   digestSentAt             DateTime?            // set when included in a digest email
   immediateEmailSentAt     DateTime?            // set for IMMEDIATE_DEFICIENCY instant email
   webhookSentAt            DateTime?
+  webhookAttempts          Int                  @default(0)
+  webhookLastFailedAt      DateTime?
   seenAt                   DateTime?
   actionedAt               DateTime?
   archived                 Boolean              @default(false)
@@ -2139,5 +2143,7 @@ model PartnerEventLog {
   @@index([accountId])
   @@index([partnerOrgId, archived, digestSentAt])
   @@index([accountId, eventType, createdAt])
+  @@index([assignedRepId, digestSentAt])
+  @@index([archived, createdAt])
   @@map("partner_event_logs")
 }
