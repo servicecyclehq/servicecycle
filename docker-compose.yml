@@ -131,6 +131,27 @@ services:
       retries: 5
       start_period: 10s
 
+  # ── DB migrations (init container) ───────────────────────────────────────────
+  # 2026-06-10: mirrors docker-compose.ghcr.yml's server-migrate. Runs
+  # `prisma migrate deploy` once (applies the squashed 20260606000000_init
+  # baseline) and exits 0. The API server waits on
+  # service_completed_successfully, so a failed migration leaves the API
+  # un-started (clean failure) instead of crash-looping. Without this service
+  # `docker compose up --build` would start the API against an un-migrated DB.
+  server-migrate:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.migrate
+    container_name: servicecycle-migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-servicecycle}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-servicecycle}"
+      MASTER_KEY:   ${MASTER_KEY:?MASTER_KEY must be set in .env (44-char base64 of 32 random bytes)}
+      NODE_ENV:     ${NODE_ENV:-production}
+
   # ── API Server ─────────────────────────────────────────────────────────────
   server:
     build:
@@ -161,6 +182,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      server-migrate:
+        condition: service_completed_successfully
     # Host-port binding defaults to 127.0.0.1 (defense-in-depth, 2026-05-12):
     # for local dev that's fine (host:3001 still works from the same machine).
     # If you need to hit the server from another box on the LAN (e.g. running
