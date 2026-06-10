@@ -1,3 +1,23 @@
+-- ============================================================================
+-- Squashed baseline migration (2026-06-10).
+-- Replaces the original 14-migration chain, whose timestamps did not match
+-- table dependency order (e.g. 20260607100820_audit_readiness altered
+-- compliance_snapshots, created later in 20260607142446) so a fresh
+-- 'prisma migrate deploy' failed with P3018 / 42P01. Regenerated directly
+-- from prisma/schema.prisma via 'migrate diff --from-empty', which emits
+-- enums -> tables -> indexes -> FKs in dependency order, guaranteeing a clean
+-- replay on an empty database. Includes the 2026-06-09 security-audit schema
+-- changes (users.tokenEpoch, render_errors composite index).
+-- ============================================================================
+-- CreateEnum
+CREATE TYPE "QuoteDriver" AS ENUM ('down_now', 'suspected_failing', 'failed_inspection', 'planned_replacement', 'budgetary');
+
+-- CreateEnum
+CREATE TYPE "QuoteTimeline" AS ENUM ('immediately', 'within_1_week', 'within_30_days', 'next_budget_cycle');
+
+-- CreateEnum
+CREATE TYPE "QuoteRequestStatus" AS ENUM ('requested', 'quoted', 'accepted', 'declined');
+
 -- CreateEnum
 CREATE TYPE "AccountStatus" AS ENUM ('active', 'expiring', 'lapsed', 'read_only', 'inactive');
 
@@ -8,10 +28,10 @@ CREATE TYPE "PlanType" AS ENUM ('saas', 'licensed');
 CREATE TYPE "PlanTier" AS ENUM ('small', 'mid', 'enterprise');
 
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('admin', 'manager', 'viewer', 'consultant');
+CREATE TYPE "UserRole" AS ENUM ('admin', 'manager', 'viewer', 'consultant', 'oem_admin', 'super_admin');
 
 -- CreateEnum
-CREATE TYPE "EquipmentType" AS ENUM ('TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'GENERATOR', 'MOTOR', 'MCC', 'UPS_BATTERY', 'CIRCUIT_BREAKER', 'ARC_FLASH_PANEL', 'VFD', 'FIRE_PUMP_CONTROLLER');
+CREATE TYPE "EquipmentType" AS ENUM ('TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'SWITCHBOARD', 'PANELBOARD', 'BUSWAY', 'GENERATOR', 'MOTOR', 'MCC', 'VFD', 'UPS_BATTERY', 'BATTERY_SYSTEM', 'CIRCUIT_BREAKER', 'FUSE_GEAR', 'DISCONNECT_SWITCH', 'TRANSFER_SWITCH', 'PROTECTION_RELAY', 'GROUND_FAULT_PROTECTION', 'SURGE_ARRESTER', 'CABLE_LV', 'CABLE_MV_HV', 'CABLE_TRAY', 'GROUNDING_SYSTEM', 'EMERGENCY_LIGHTING', 'ARC_FLASH_PANEL', 'FIRE_PUMP_CONTROLLER');
 
 -- CreateEnum
 CREATE TYPE "ConditionRating" AS ENUM ('C1', 'C2', 'C3');
@@ -40,6 +60,21 @@ CREATE TYPE "AlertStatus" AS ENUM ('pending', 'sent', 'acknowledged', 'escalated
 -- CreateEnum
 CREATE TYPE "IngestionStatus" AS ENUM ('processing', 'review_pending', 'approved', 'imported', 'failed');
 
+-- CreateEnum
+CREATE TYPE "PartnerEventType" AS ENUM ('IMMEDIATE_DEFICIENCY', 'INSPECTION_COMPLETED', 'QUOTE_REQUEST_CREATED', 'TASK_OVERDUE');
+
+-- CreateEnum
+CREATE TYPE "RetentionTier" AS ENUM ('STANDARD', 'HEALTHCARE', 'UTILITY', 'CUSTOM');
+
+-- CreateEnum
+CREATE TYPE "DocType" AS ENUM ('oem_manual', 'wiring_diagram', 'loto_pdf', 'test_report', 'inspection_report', 'commissioning_report', 'warranty', 'other');
+
+-- CreateEnum
+CREATE TYPE "LotoStatus" AS ENUM ('draft', 'active', 'archived');
+
+-- CreateEnum
+CREATE TYPE "EnergyType" AS ENUM ('electrical', 'pneumatic', 'hydraulic', 'mechanical', 'thermal', 'chemical', 'gravity');
+
 -- CreateTable
 CREATE TABLE "accounts" (
     "id" TEXT NOT NULL,
@@ -56,11 +91,37 @@ CREATE TABLE "accounts" (
     "lastActiveAt" TIMESTAMP(3),
     "aiBriefEnabled" BOOLEAN NOT NULL DEFAULT false,
     "mfaRequiredForAdmins" BOOLEAN NOT NULL DEFAULT false,
+    "serviceRepName" TEXT,
+    "serviceRepEmail" TEXT,
+    "serviceRepPhone" TEXT,
+    "partnerOrgId" TEXT,
+    "assignedRepId" TEXT,
+    "fallbackRepId" TEXT,
+    "retentionTier" "RetentionTier" NOT NULL DEFAULT 'STANDARD',
+    "retentionCustomYears" INTEGER,
     "fteCount" INTEGER,
+    "importWebhookUrl" TEXT,
+    "importWebhookSecret" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "accounts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "partner_organizations" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "logoUrl" TEXT,
+    "primaryColor" TEXT,
+    "website" TEXT,
+    "webhookUrl" TEXT,
+    "webhookSecret" TEXT,
+    "digestIntervalDays" INTEGER NOT NULL DEFAULT 1,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "partner_organizations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -72,6 +133,7 @@ CREATE TABLE "users" (
     "passwordHash" TEXT NOT NULL,
     "role" "UserRole" NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "tokenEpoch" INTEGER NOT NULL DEFAULT 0,
     "passwordResetToken" TEXT,
     "passwordResetExpiresAt" TIMESTAMP(3),
     "lastLogin" TIMESTAMP(3),
@@ -112,6 +174,7 @@ CREATE TABLE "contractors" (
     "id" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "isInternal" BOOLEAN NOT NULL DEFAULT false,
     "netaAccredited" BOOLEAN NOT NULL DEFAULT false,
     "notes" TEXT,
     "supportEmail" TEXT,
@@ -136,6 +199,12 @@ CREATE TABLE "contractor_techs" (
     "phone" TEXT,
     "title" TEXT,
     "netaCertLevel" "NetaCertLevel",
+    "qualifiedPersonDesignatedAt" TIMESTAMP(3),
+    "trainingExpiresAt" TIMESTAMP(3),
+    "thermographerCertLevel" TEXT,
+    "qemwCertNumber" TEXT,
+    "qemwExpiresAt" TIMESTAMP(3),
+    "qemwIssuingBody" TEXT,
     "lastContactedAt" TIMESTAMP(3),
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -224,11 +293,27 @@ CREATE TABLE "assets" (
     "conditionPhysical" "ConditionRating" NOT NULL DEFAULT 'C2',
     "conditionCriticality" "ConditionRating" NOT NULL DEFAULT 'C2',
     "conditionEnvironment" "ConditionRating" NOT NULL DEFAULT 'C2',
+    "ownerId" TEXT,
+    "fedFromAssetId" TEXT,
+    "criticalityScore" INTEGER,
+    "conditionScore" INTEGER,
+    "priorityScore" INTEGER,
+    "repairCostEstimate" DECIMAL(14,2),
+    "spareLeadTimeWeeks" INTEGER,
+    "redundancyStatus" TEXT,
+    "requiresPredictiveMaintenance" BOOLEAN NOT NULL DEFAULT false,
     "governingCondition" "ConditionRating" NOT NULL DEFAULT 'C2',
     "inService" BOOLEAN NOT NULL DEFAULT true,
     "isEnergized" BOOLEAN NOT NULL DEFAULT true,
     "notes" TEXT,
     "archivedAt" TIMESTAMP(3),
+    "endOfManufacture" TIMESTAMP(3),
+    "endOfSupport" TIMESTAMP(3),
+    "obsolescenceStatus" TEXT,
+    "criticalSparesAvailable" BOOLEAN,
+    "sparePartsLeadTimeDays" INTEGER,
+    "replacementCostCents" INTEGER,
+    "modernizationRiskScore" DOUBLE PRECISION,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -288,6 +373,7 @@ CREATE TABLE "maintenance_schedules" (
     "leadTimeSchedulingDays" INTEGER NOT NULL DEFAULT 180,
     "leadTimeCustomerDays" INTEGER NOT NULL DEFAULT 90,
     "conditionOverride" "ConditionRating",
+    "lastPerformedByName" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -312,6 +398,9 @@ CREATE TABLE "work_orders" (
     "asFoundCondition" "ConditionRating",
     "asLeftCondition" "ConditionRating",
     "netaDecal" "ResultRating",
+    "ambientTempC" DECIMAL(5,1),
+    "humidityPct" DECIMAL(5,1),
+    "testEquipment" JSONB,
     "reportPdfUrl" TEXT,
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -332,6 +421,10 @@ CREATE TABLE "test_measurements" (
     "asLeftValue" DECIMAL(16,4),
     "asLeftUnit" TEXT,
     "passFail" "ResultRating",
+    "expectedRange" TEXT,
+    "testVoltage" TEXT,
+    "loadPercent" DECIMAL(5,1),
+    "severityPriority" INTEGER,
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -357,13 +450,17 @@ CREATE TABLE "deficiencies" (
 );
 
 -- CreateTable
-CREATE TABLE "arc_flash_studies" (
+CREATE TABLE "system_studies" (
     "id" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
     "siteId" TEXT NOT NULL,
+    "studyType" TEXT NOT NULL DEFAULT 'arc_flash',
     "performedDate" TIMESTAMP(3) NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "performedBy" TEXT,
+    "method" TEXT,
+    "peName" TEXT,
+    "peLicense" TEXT,
     "trigger" TEXT,
     "reportPdfUrl" TEXT,
     "notes" TEXT,
@@ -371,7 +468,45 @@ CREATE TABLE "arc_flash_studies" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "arc_flash_studies_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "system_studies_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "audit_visits" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "siteId" TEXT,
+    "auditType" TEXT NOT NULL,
+    "auditorName" TEXT,
+    "auditorOrg" TEXT,
+    "scheduledDate" TIMESTAMP(3),
+    "performedDate" TIMESTAMP(3),
+    "outcome" TEXT,
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "audit_visits_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "audit_recommendations" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "auditVisitId" TEXT,
+    "source" TEXT NOT NULL DEFAULT 'insurer',
+    "severity" TEXT NOT NULL DEFAULT 'recommendation',
+    "description" TEXT NOT NULL,
+    "dueDate" TIMESTAMP(3),
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "responseNotes" TEXT,
+    "respondedAt" TIMESTAMP(3),
+    "completedAt" TIMESTAMP(3),
+    "assignedToUserId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "audit_recommendations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -390,6 +525,10 @@ CREATE TABLE "lab_samples" (
     "c2h6" DECIMAL(10,2),
     "co" DECIMAL(10,2),
     "co2" DECIMAL(10,2),
+    "o2" DECIMAL(10,2),
+    "n2" DECIMAL(10,2),
+    "ieeeStatus" INTEGER,
+    "faultCode" TEXT,
     "resultsData" JSONB,
     "resultRating" "ResultRating",
     "reportPdfUrl" TEXT,
@@ -432,6 +571,40 @@ CREATE TABLE "standard_revision_alerts" (
 );
 
 -- CreateTable
+CREATE TABLE "compliance_snapshots" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "siteId" TEXT,
+    "standardCode" TEXT,
+    "kind" TEXT NOT NULL DEFAULT 'compliance',
+    "auditVisitId" TEXT,
+    "generatedById" TEXT,
+    "filename" TEXT NOT NULL,
+    "filePath" TEXT NOT NULL,
+    "sizeBytes" INTEGER,
+    "sha256" TEXT NOT NULL,
+    "stats" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "compliance_snapshots_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "news_items" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "source" TEXT NOT NULL,
+    "category" TEXT NOT NULL DEFAULT 'industry',
+    "summary" TEXT,
+    "matchedTerm" TEXT,
+    "publishedAt" TIMESTAMP(3) NOT NULL,
+    "fetchedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "news_items_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "documents" (
     "id" TEXT NOT NULL,
     "assetId" TEXT,
@@ -444,6 +617,8 @@ CREATE TABLE "documents" (
     "version" INTEGER NOT NULL DEFAULT 1,
     "uploadedBy" TEXT NOT NULL,
     "uploadedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "docType" "DocType",
+    "externalUrl" TEXT,
 
     CONSTRAINT "documents_pkey" PRIMARY KEY ("id")
 );
@@ -750,6 +925,196 @@ CREATE TABLE "render_errors" (
     CONSTRAINT "render_errors_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "quote_requests" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "assetId" TEXT NOT NULL,
+    "requestedById" TEXT NOT NULL,
+    "status" "QuoteRequestStatus" NOT NULL DEFAULT 'requested',
+    "driver" "QuoteDriver" NOT NULL,
+    "timeline" "QuoteTimeline" NOT NULL,
+    "outageAvailable" BOOLEAN,
+    "outageWindow" TEXT,
+    "budgeted" BOOLEAN,
+    "budgetNotes" TEXT,
+    "attachmentNotes" TEXT,
+    "emergencyMode" BOOLEAN NOT NULL DEFAULT false,
+    "triggerType" TEXT,
+    "dossierSnapshot" JSONB,
+    "notes" TEXT,
+    "priority" TEXT,
+    "quotedAt" TIMESTAMP(3),
+    "quoteNotes" TEXT,
+    "respondedAt" TIMESTAMP(3),
+    "declineReason" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "quote_requests_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "loto_procs" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "assetId" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "status" "LotoStatus" NOT NULL DEFAULT 'draft',
+    "version" INTEGER NOT NULL DEFAULT 1,
+    "approvedById" TEXT,
+    "approvedAt" TIMESTAMP(3),
+    "notes" TEXT,
+    "createdById" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "loto_procs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "loto_energy_sources" (
+    "id" TEXT NOT NULL,
+    "lotoId" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "energyType" "EnergyType" NOT NULL,
+    "description" TEXT NOT NULL,
+    "isolationPoint" TEXT NOT NULL,
+    "isolationMethod" TEXT NOT NULL,
+    "verificationMethod" TEXT NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+
+    CONSTRAINT "loto_energy_sources_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "loto_steps" (
+    "id" TEXT NOT NULL,
+    "lotoId" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "sortOrder" INTEGER NOT NULL,
+    "instruction" TEXT NOT NULL,
+    "category" TEXT NOT NULL DEFAULT 'lockout',
+    "requiresVerification" BOOLEAN NOT NULL DEFAULT false,
+
+    CONSTRAINT "loto_steps_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "disaster_events" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT,
+    "eventType" TEXT NOT NULL,
+    "severity" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "region" TEXT NOT NULL,
+    "affectedStates" TEXT[],
+    "affectedSiteIds" TEXT[],
+    "nwsAlertId" TEXT,
+    "declaredBy" TEXT,
+    "source" TEXT NOT NULL DEFAULT 'system',
+    "declaredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "resolvedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "disaster_events_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "webhook_deliveries" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "event" TEXT NOT NULL,
+    "deliveryId" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "statusCode" INTEGER,
+    "responseMs" INTEGER,
+    "error" TEXT,
+    "payload" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "webhook_deliveries_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "asset_templates" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "equipmentType" "EquipmentType" NOT NULL,
+    "defaultCriticalityScore" INTEGER,
+    "defaultRedundancyStatus" TEXT,
+    "defaultRequiresPredictiveMaintenance" BOOLEAN NOT NULL DEFAULT false,
+    "nameplateDefaults" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "asset_templates_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "asset_template_tasks" (
+    "id" TEXT NOT NULL,
+    "templateId" TEXT NOT NULL,
+    "taskDefinitionId" TEXT NOT NULL,
+
+    CONSTRAINT "asset_template_tasks_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "service_rate_cards" (
+    "id" TEXT NOT NULL,
+    "partnerOrgId" TEXT,
+    "accountId" TEXT,
+    "serviceType" TEXT NOT NULL,
+    "minCents" INTEGER NOT NULL,
+    "maxCents" INTEGER NOT NULL,
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "service_rate_cards_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "partner_invites" (
+    "id" TEXT NOT NULL,
+    "partnerOrgId" TEXT NOT NULL,
+    "inviteeEmail" TEXT NOT NULL,
+    "invitedById" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "acceptedAt" TIMESTAMP(3),
+    "revokedAt" TIMESTAMP(3),
+    "accountId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "partner_invites_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "partner_event_logs" (
+    "id" TEXT NOT NULL,
+    "partnerOrgId" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "eventType" "PartnerEventType" NOT NULL,
+    "payload" JSONB NOT NULL,
+    "assignedRepId" TEXT,
+    "digestSentAt" TIMESTAMP(3),
+    "immediateEmailSentAt" TIMESTAMP(3),
+    "webhookSentAt" TIMESTAMP(3),
+    "webhookAttempts" INTEGER NOT NULL DEFAULT 0,
+    "webhookLastFailedAt" TIMESTAMP(3),
+    "seenAt" TIMESTAMP(3),
+    "actionedAt" TIMESTAMP(3),
+    "archived" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "partner_event_logs_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
@@ -832,6 +1197,9 @@ CREATE INDEX "assets_accountId_archivedAt_idx" ON "assets"("accountId", "archive
 CREATE INDEX "assets_positionId_idx" ON "assets"("positionId");
 
 -- CreateIndex
+CREATE INDEX "assets_fedFromAssetId_idx" ON "assets"("fedFromAssetId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "compliance_standards_code_edition_key" ON "compliance_standards"("code", "edition");
 
 -- CreateIndex
@@ -898,13 +1266,25 @@ CREATE INDEX "deficiencies_assetId_idx" ON "deficiencies"("assetId");
 CREATE INDEX "deficiencies_workOrderId_idx" ON "deficiencies"("workOrderId");
 
 -- CreateIndex
-CREATE INDEX "arc_flash_studies_accountId_idx" ON "arc_flash_studies"("accountId");
+CREATE INDEX "system_studies_accountId_idx" ON "system_studies"("accountId");
 
 -- CreateIndex
-CREATE INDEX "arc_flash_studies_accountId_expiresAt_idx" ON "arc_flash_studies"("accountId", "expiresAt");
+CREATE INDEX "system_studies_accountId_expiresAt_idx" ON "system_studies"("accountId", "expiresAt");
 
 -- CreateIndex
-CREATE INDEX "arc_flash_studies_siteId_idx" ON "arc_flash_studies"("siteId");
+CREATE INDEX "system_studies_siteId_studyType_idx" ON "system_studies"("siteId", "studyType");
+
+-- CreateIndex
+CREATE INDEX "audit_visits_accountId_performedDate_idx" ON "audit_visits"("accountId", "performedDate" DESC);
+
+-- CreateIndex
+CREATE INDEX "audit_visits_siteId_idx" ON "audit_visits"("siteId");
+
+-- CreateIndex
+CREATE INDEX "audit_recommendations_accountId_status_dueDate_idx" ON "audit_recommendations"("accountId", "status", "dueDate");
+
+-- CreateIndex
+CREATE INDEX "audit_recommendations_auditVisitId_idx" ON "audit_recommendations"("auditVisitId");
 
 -- CreateIndex
 CREATE INDEX "lab_samples_accountId_idx" ON "lab_samples"("accountId");
@@ -926,6 +1306,18 @@ CREATE INDEX "standard_revision_alerts_accountId_acknowledgedAt_idx" ON "standar
 
 -- CreateIndex
 CREATE INDEX "standard_revision_alerts_standardId_idx" ON "standard_revision_alerts"("standardId");
+
+-- CreateIndex
+CREATE INDEX "compliance_snapshots_accountId_createdAt_idx" ON "compliance_snapshots"("accountId", "createdAt" DESC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "news_items_url_key" ON "news_items"("url");
+
+-- CreateIndex
+CREATE INDEX "news_items_publishedAt_idx" ON "news_items"("publishedAt" DESC);
+
+-- CreateIndex
+CREATE INDEX "news_items_category_publishedAt_idx" ON "news_items"("category", "publishedAt" DESC);
 
 -- CreateIndex
 CREATE INDEX "documents_accountId_idx" ON "documents"("accountId");
@@ -1083,6 +1475,111 @@ CREATE INDEX "render_errors_userId_idx" ON "render_errors"("userId");
 -- CreateIndex
 CREATE INDEX "render_errors_kind_idx" ON "render_errors"("kind");
 
+-- CreateIndex
+CREATE INDEX "render_errors_accountId_occurredAt_idx" ON "render_errors"("accountId", "occurredAt");
+
+-- CreateIndex
+CREATE INDEX "quote_requests_accountId_idx" ON "quote_requests"("accountId");
+
+-- CreateIndex
+CREATE INDEX "quote_requests_accountId_status_idx" ON "quote_requests"("accountId", "status");
+
+-- CreateIndex
+CREATE INDEX "quote_requests_assetId_idx" ON "quote_requests"("assetId");
+
+-- CreateIndex
+CREATE INDEX "quote_requests_requestedById_idx" ON "quote_requests"("requestedById");
+
+-- CreateIndex
+CREATE INDEX "loto_procs_accountId_idx" ON "loto_procs"("accountId");
+
+-- CreateIndex
+CREATE INDEX "loto_procs_assetId_idx" ON "loto_procs"("assetId");
+
+-- CreateIndex
+CREATE INDEX "loto_procs_accountId_status_idx" ON "loto_procs"("accountId", "status");
+
+-- CreateIndex
+CREATE INDEX "loto_energy_sources_lotoId_idx" ON "loto_energy_sources"("lotoId");
+
+-- CreateIndex
+CREATE INDEX "loto_energy_sources_accountId_idx" ON "loto_energy_sources"("accountId");
+
+-- CreateIndex
+CREATE INDEX "loto_steps_lotoId_idx" ON "loto_steps"("lotoId");
+
+-- CreateIndex
+CREATE INDEX "loto_steps_accountId_idx" ON "loto_steps"("accountId");
+
+-- CreateIndex
+CREATE INDEX "disaster_events_accountId_idx" ON "disaster_events"("accountId");
+
+-- CreateIndex
+CREATE INDEX "disaster_events_resolvedAt_idx" ON "disaster_events"("resolvedAt");
+
+-- CreateIndex
+CREATE INDEX "disaster_events_nwsAlertId_idx" ON "disaster_events"("nwsAlertId");
+
+-- CreateIndex
+CREATE INDEX "webhook_deliveries_accountId_createdAt_idx" ON "webhook_deliveries"("accountId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "asset_templates_accountId_idx" ON "asset_templates"("accountId");
+
+-- CreateIndex
+CREATE INDEX "asset_templates_equipmentType_idx" ON "asset_templates"("equipmentType");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "asset_template_tasks_templateId_taskDefinitionId_key" ON "asset_template_tasks"("templateId", "taskDefinitionId");
+
+-- CreateIndex
+CREATE INDEX "service_rate_cards_partnerOrgId_idx" ON "service_rate_cards"("partnerOrgId");
+
+-- CreateIndex
+CREATE INDEX "service_rate_cards_accountId_idx" ON "service_rate_cards"("accountId");
+
+-- CreateIndex
+CREATE INDEX "service_rate_cards_serviceType_idx" ON "service_rate_cards"("serviceType");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "partner_invites_tokenHash_key" ON "partner_invites"("tokenHash");
+
+-- CreateIndex
+CREATE INDEX "partner_invites_partnerOrgId_idx" ON "partner_invites"("partnerOrgId");
+
+-- CreateIndex
+CREATE INDEX "partner_invites_invitedById_idx" ON "partner_invites"("invitedById");
+
+-- CreateIndex
+CREATE INDEX "partner_invites_inviteeEmail_idx" ON "partner_invites"("inviteeEmail");
+
+-- CreateIndex
+CREATE INDEX "partner_event_logs_partnerOrgId_idx" ON "partner_event_logs"("partnerOrgId");
+
+-- CreateIndex
+CREATE INDEX "partner_event_logs_accountId_idx" ON "partner_event_logs"("accountId");
+
+-- CreateIndex
+CREATE INDEX "partner_event_logs_partnerOrgId_archived_digestSentAt_idx" ON "partner_event_logs"("partnerOrgId", "archived", "digestSentAt");
+
+-- CreateIndex
+CREATE INDEX "partner_event_logs_accountId_eventType_createdAt_idx" ON "partner_event_logs"("accountId", "eventType", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "partner_event_logs_assignedRepId_digestSentAt_idx" ON "partner_event_logs"("assignedRepId", "digestSentAt");
+
+-- CreateIndex
+CREATE INDEX "partner_event_logs_archived_createdAt_idx" ON "partner_event_logs"("archived", "createdAt");
+
+-- AddForeignKey
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_partnerOrgId_fkey" FOREIGN KEY ("partnerOrgId") REFERENCES "partner_organizations"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_assignedRepId_fkey" FOREIGN KEY ("assignedRepId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_fallbackRepId_fkey" FOREIGN KEY ("fallbackRepId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -1127,6 +1624,12 @@ ALTER TABLE "assets" ADD CONSTRAINT "assets_areaId_fkey" FOREIGN KEY ("areaId") 
 
 -- AddForeignKey
 ALTER TABLE "assets" ADD CONSTRAINT "assets_positionId_fkey" FOREIGN KEY ("positionId") REFERENCES "equipment_positions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "assets" ADD CONSTRAINT "assets_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "assets" ADD CONSTRAINT "assets_fedFromAssetId_fkey" FOREIGN KEY ("fedFromAssetId") REFERENCES "assets"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "maintenance_task_definitions" ADD CONSTRAINT "maintenance_task_definitions_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1177,13 +1680,28 @@ ALTER TABLE "deficiencies" ADD CONSTRAINT "deficiencies_assetId_fkey" FOREIGN KE
 ALTER TABLE "deficiencies" ADD CONSTRAINT "deficiencies_resolvedById_fkey" FOREIGN KEY ("resolvedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "arc_flash_studies" ADD CONSTRAINT "arc_flash_studies_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "system_studies" ADD CONSTRAINT "system_studies_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "arc_flash_studies" ADD CONSTRAINT "arc_flash_studies_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "sites"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "system_studies" ADD CONSTRAINT "system_studies_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "sites"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "arc_flash_studies" ADD CONSTRAINT "arc_flash_studies_supersededById_fkey" FOREIGN KEY ("supersededById") REFERENCES "arc_flash_studies"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "system_studies" ADD CONSTRAINT "system_studies_supersededById_fkey" FOREIGN KEY ("supersededById") REFERENCES "system_studies"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "audit_visits" ADD CONSTRAINT "audit_visits_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "audit_visits" ADD CONSTRAINT "audit_visits_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "sites"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "audit_recommendations" ADD CONSTRAINT "audit_recommendations_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "audit_recommendations" ADD CONSTRAINT "audit_recommendations_auditVisitId_fkey" FOREIGN KEY ("auditVisitId") REFERENCES "audit_visits"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "audit_recommendations" ADD CONSTRAINT "audit_recommendations_assignedToUserId_fkey" FOREIGN KEY ("assignedToUserId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "lab_samples" ADD CONSTRAINT "lab_samples_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1208,6 +1726,18 @@ ALTER TABLE "standard_revision_alerts" ADD CONSTRAINT "standard_revision_alerts_
 
 -- AddForeignKey
 ALTER TABLE "standard_revision_alerts" ADD CONSTRAINT "standard_revision_alerts_acknowledgedById_fkey" FOREIGN KEY ("acknowledgedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "compliance_snapshots" ADD CONSTRAINT "compliance_snapshots_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "compliance_snapshots" ADD CONSTRAINT "compliance_snapshots_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "sites"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "compliance_snapshots" ADD CONSTRAINT "compliance_snapshots_generatedById_fkey" FOREIGN KEY ("generatedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "compliance_snapshots" ADD CONSTRAINT "compliance_snapshots_auditVisitId_fkey" FOREIGN KEY ("auditVisitId") REFERENCES "audit_visits"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "documents" ADD CONSTRAINT "documents_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "assets"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1322,4 +1852,73 @@ ALTER TABLE "notification_logs" ADD CONSTRAINT "notification_logs_accountId_fkey
 
 -- AddForeignKey
 ALTER TABLE "notification_logs" ADD CONSTRAINT "notification_logs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "quote_requests" ADD CONSTRAINT "quote_requests_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "quote_requests" ADD CONSTRAINT "quote_requests_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "assets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "quote_requests" ADD CONSTRAINT "quote_requests_requestedById_fkey" FOREIGN KEY ("requestedById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_procs" ADD CONSTRAINT "loto_procs_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_procs" ADD CONSTRAINT "loto_procs_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "assets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_procs" ADD CONSTRAINT "loto_procs_approvedById_fkey" FOREIGN KEY ("approvedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_procs" ADD CONSTRAINT "loto_procs_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_energy_sources" ADD CONSTRAINT "loto_energy_sources_lotoId_fkey" FOREIGN KEY ("lotoId") REFERENCES "loto_procs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_energy_sources" ADD CONSTRAINT "loto_energy_sources_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_steps" ADD CONSTRAINT "loto_steps_lotoId_fkey" FOREIGN KEY ("lotoId") REFERENCES "loto_procs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "loto_steps" ADD CONSTRAINT "loto_steps_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "disaster_events" ADD CONSTRAINT "disaster_events_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "disaster_events" ADD CONSTRAINT "disaster_events_declaredBy_fkey" FOREIGN KEY ("declaredBy") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "webhook_deliveries" ADD CONSTRAINT "webhook_deliveries_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "asset_templates" ADD CONSTRAINT "asset_templates_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "asset_template_tasks" ADD CONSTRAINT "asset_template_tasks_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES "asset_templates"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "asset_template_tasks" ADD CONSTRAINT "asset_template_tasks_taskDefinitionId_fkey" FOREIGN KEY ("taskDefinitionId") REFERENCES "maintenance_task_definitions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "partner_invites" ADD CONSTRAINT "partner_invites_partnerOrgId_fkey" FOREIGN KEY ("partnerOrgId") REFERENCES "partner_organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "partner_invites" ADD CONSTRAINT "partner_invites_invitedById_fkey" FOREIGN KEY ("invitedById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "partner_invites" ADD CONSTRAINT "partner_invites_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "partner_event_logs" ADD CONSTRAINT "partner_event_logs_partnerOrgId_fkey" FOREIGN KEY ("partnerOrgId") REFERENCES "partner_organizations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "partner_event_logs" ADD CONSTRAINT "partner_event_logs_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "partner_event_logs" ADD CONSTRAINT "partner_event_logs_assignedRepId_fkey" FOREIGN KEY ("assignedRepId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
