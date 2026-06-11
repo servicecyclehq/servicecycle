@@ -62,9 +62,17 @@
  *   - 3 SystemStudies at Riverside: arc_flash ~4.2yr ago (5-year clock →
  *     expiry-warning territory, IEEE 1584-2018 + PE provenance),
  *     short_circuit ~3yr ago, one_line_review ~6mo ago
- *   - 1 AuditVisit (insurance loss-control, "Granite Mutual", ~5mo ago,
- *     passed_with_findings) with 2 AuditRecommendations (1 completed,
- *     1 open due ~30d out, assigned to the manager)
+ *   - 4 AuditVisits (insurance loss-control ~5mo ago passed_with_findings,
+ *     internal walkdown ~2mo ago, AHJ fire marshal ~10mo ago passed, and an
+ *     UPCOMING insurance survey at Eastgate) with 6 AuditRecommendations
+ *   - 3 archived assets (retired SWGR-1A-4 section, decommissioned UPS,
+ *     salvaged dry transformer) so the Archived Assets view has content
+ *   - 17 Alert rows mirroring what lib/alertEngine.ts would have fired for
+ *     the engineered schedules (overdue/escalation/breach ladder + lead-time
+ *     tiers, statuses spanning pending/sent/acknowledged) so the Alerts page
+ *     renders immediately after a reset instead of waiting for the 07:00 cron
+ *   - 2 REAL compliance snapshots (account-wide + Riverside) generated via
+ *     lib/snapshotPipeline so downloads verify sha256 against a stored PDF
  *   - ~5 assets carry an owner (admin/manager) for owner-aware alert routing
  *   - 1 BlackoutWindow (planned outage window ~45 days out, 48h)
  *   - ONBOARDING_COMPLETE account setting + a few activity-log rows so the
@@ -190,6 +198,22 @@ async function _resetDemoAccount() {
   // ── Contractors ───────────────────────────────────────────────────────────
   await prisma.contractorTech.deleteMany({ where: { contractor: { accountId: DEMO_ACCOUNT_ID } } }).catch(() => {});
   await prisma.contractor.deleteMany({ where: filter });
+
+  // ── Compliance snapshots ──────────────────────────────────────────────────
+  // Rows would cascade with the account, but each one points at a REAL stored
+  // PDF (seeded via lib/snapshotPipeline.generateSnapshot) that would orphan
+  // in document storage on every nightly reset — delete the files first, then
+  // the rows explicitly.
+  try {
+    const { deleteFile } = require('../lib/storage');
+    const snaps = await prisma.complianceSnapshot.findMany({
+      where: filter, select: { filePath: true },
+    });
+    for (const s of snaps) {
+      try { await deleteFile(s.filePath); } catch (_) { /* best-effort */ }
+    }
+  } catch (_) { /* storage module unavailable — rows still wiped below */ }
+  await prisma.complianceSnapshot.deleteMany({ where: filter }).catch(() => {});
 
   // ── Account-scoped lookups / infra ────────────────────────────────────────
   await prisma.standardRevisionAlert.deleteMany({ where: filter }).catch(() => {});
@@ -693,6 +717,45 @@ async function _seedAccount() {
   const defsByType = await _loadGlobalDefsByType(prisma);
   const { byKey: schedules, count: scheduleCount } =
     await _createSchedules(prisma, account.id, assets, defsByType, story);
+
+  // ── Archived assets (G2) ──────────────────────────────────────────────────
+  // Retired equipment so the Archived Assets view (?archived=true) isn't
+  // empty. Created AFTER _createSchedules and kept out of the `assets` map so
+  // they get no schedules/work orders. Same accountId filter wipes them on
+  // reset. SWGR-1A-4 is the scrapped occupant of the deliberately-vacant
+  // Cubicle 4 position (positionId stays null — the position stays vacant).
+  const archivedSpecs = [
+    { spec: { siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+        equipmentType: 'SWITCHGEAR',
+        manufacturer: 'NorthStar Switchgear Co.', model: 'NS-MV15', serialNumber: 'NS-96-3311-4',
+        installDate: new Date('1996-09-04'),
+        nameplateData: { voltageClass: '15 kV', busRating: '1200 A', aic: '25 kA' },
+        notes: 'Former SWGR-1A Cubicle 4 section. Scrapped during the 2024 section replacement project after arc-damage assessment found the bus bracing uneconomical to repair.' },
+      archivedAgo: 550 },
+    { spec: { siteId: riverside.id, buildingId: mainProduction.id,
+        equipmentType: 'UPS_BATTERY',
+        manufacturer: 'Stonebridge Power Systems', model: 'SB-60U', serialNumber: 'SB-09-4417',
+        installDate: new Date('2009-03-12'),
+        nameplateData: { kVA: 60, voltage: '480 V', batteryType: 'VRLA', strings: 1, cellsPerString: 40 },
+        notes: 'Original stamping-line controls UPS, replaced by SB-80U (UPS-1). Battery string beyond end-of-life; unit decommissioned and removed.' },
+      archivedAgo: 200 },
+    { spec: { siteId: eastgate.id,
+        equipmentType: 'TRANSFORMER_DRY',
+        manufacturer: 'Vantage Electric Works', model: 'VE-75DT', serialNumber: 'VE-03-1108',
+        installDate: new Date('2003-07-22'),
+        nameplateData: { kVA: 75, primaryVoltage: '480 V delta', secondaryVoltage: '208Y/120 V', tempRiseC: 150 },
+        notes: 'Fed the old dock office wing; load removed in the renovation. De-energized, disconnected, and released for salvage.' },
+      archivedAgo: 90 },
+  ];
+  let archivedAssetCount = 0;
+  for (const { spec, archivedAgo } of archivedSpecs) {
+    const a = await _createAsset(prisma, account.id, spec);
+    await prisma.asset.update({
+      where: { id: a.id },
+      data:  { archivedAt: addDays(now, -archivedAgo) },
+    });
+    archivedAssetCount++;
+  }
 
   // ── Work orders ───────────────────────────────────────────────────────────
   // Test-condition + instrument provenance for the COMPLETE jobs (NETA MTS
@@ -1299,6 +1362,40 @@ async function _seedAccount() {
     assignedToUserId: admin.id,
   } });
 
+  // Third audit visit (G2) -- AHJ / fire marshal inspection ~10 months ago,
+  // clean pass with one (since-completed) recommendation. Varies auditType,
+  // outcome, and date so the Audits page shows a real history.
+  const auditVisit3 = await prisma.auditVisit.create({ data: {
+    accountId: account.id, siteId: riverside.id,
+    auditType: 'ahj',
+    auditorName: 'Lt. R. Calloway',
+    auditorOrg: 'Davenport Fire Marshal\'s Office',
+    scheduledDate: addDays(now, -310), performedDate: addDays(now, -305),
+    outcome: 'passed',
+    notes: 'Routine fire-prevention inspection covering the electrical rooms. Egress, working clearances (NEC 110.26), and emergency lighting verified. One advisory note on panel labeling.',
+  } });
+  await prisma.auditRecommendation.create({ data: {
+    accountId: account.id, auditVisitId: auditVisit3.id,
+    source: 'ahj', severity: 'recommendation',
+    description: 'Update circuit directory cards on the office-wing panelboard (PNL-1) -- several handwritten entries illegible or outdated.',
+    dueDate: addDays(now, -275),
+    status: 'completed',
+    responseNotes: 'Directory cards re-typed from as-built drawings and verified circuit-by-circuit during a lunch-hour shutdown.',
+    respondedAt: addDays(now, -300), completedAt: addDays(now, -290),
+  } });
+
+  // Fourth audit visit (G2) -- UPCOMING insurance loss-control survey, shows
+  // the scheduled/pending state on the Audits page.
+  await prisma.auditVisit.create({ data: {
+    accountId: account.id, siteId: eastgate.id,
+    auditType: 'insurance',
+    auditorName: 'P. Okonjo',
+    auditorOrg: 'Granite Mutual',
+    scheduledDate: addDays(now, 35), performedDate: null,
+    outcome: 'pending',
+    notes: 'Annual loss-control survey for the Eastgate Distribution Center -- first carrier visit to this site. Evidence pack to be generated from ServiceCycle ahead of the visit.',
+  } });
+
   // ── Blackout window — planned production shutdown ────────────────────────
   const outageStart = addDays(now, 45);
   await prisma.blackoutWindow.create({ data: {
@@ -1307,6 +1404,68 @@ async function _seedAccount() {
     isOutageWindow: true,
     reason: 'Annual Thanksgiving production shutdown',
   } });
+
+  // ── Alerts (G2/F5) ────────────────────────────────────────────────────────
+  // Alert rows normally come only from lib/alertEngine.ts (07:00 UTC cron),
+  // so the Alerts page sat empty between the 03:30 demo reset and the next
+  // engine run. Seed the rows the engine WOULD have produced for the
+  // engineered overdue/due-soon schedules, using the engine's exact row shape:
+  // leadDays positive for maintenance_due lead tiers, negative for the
+  // overdue (-1) / escalation (-7,-30) / regulatory_breach (-90) ladder.
+  //
+  // Dedup safety: the engine's per-cycle dedup key is
+  // (scheduleId, alertType, leadDays) over status sent|acknowledged, so the
+  // 07:00 run skips everything seeded here as sent/acknowledged. The two
+  // 'pending' rows use lead tiers outside the engine's ±5-day crossing window
+  // so they can't be double-fired either.
+  //
+  // `at` = days from now for scheduledAt/createdAt/sentAt (matches each
+  // schedule's engineered dueIn); GET /api/alerts shows pending|sent only.
+  const alertSpecs = [
+    // SWGR-2M IR scan — 120d overdue: the full escalation ladder.
+    { sched: 'SWGR-2M:SWGR_IR_THERMO',  type: 'overdue',           leadDays: -1,  at: -119, status: 'acknowledged', ackAt: -110 },
+    { sched: 'SWGR-2M:SWGR_IR_THERMO',  type: 'escalation',        leadDays: -7,  at: -113, status: 'acknowledged', ackAt: -110 },
+    { sched: 'SWGR-2M:SWGR_IR_THERMO',  type: 'escalation',        leadDays: -30, at: -90,  status: 'sent' },
+    { sched: 'SWGR-2M:SWGR_IR_THERMO',  type: 'regulatory_breach', leadDays: -90, at: -30,  status: 'sent' },
+    // T-1 oil screen — 25d overdue.
+    { sched: 'T-1:XFMR_OIL_QUALITY',    type: 'overdue',           leadDays: -1,  at: -24,  status: 'sent' },
+    { sched: 'T-1:XFMR_OIL_QUALITY',    type: 'escalation',        leadDays: -7,  at: -18,  status: 'sent' },
+    // GEN-1 load bank — 9d overdue; first ping acked (WO #3 is on site).
+    { sched: 'GEN-1:GEN_LOAD_BANK',     type: 'overdue',           leadDays: -1,  at: -8,   status: 'acknowledged', ackAt: -6 },
+    { sched: 'GEN-1:GEN_LOAD_BANK',     type: 'escalation',        leadDays: -7,  at: -2,   status: 'sent' },
+    // ATS-1 IR scan — 18d overdue.
+    { sched: 'ATS-1:ATS_IR_THERMO',     type: 'overdue',           leadDays: -1,  at: -17,  status: 'sent' },
+    { sched: 'ATS-1:ATS_IR_THERMO',     type: 'escalation',        leadDays: -7,  at: -11,  status: 'sent' },
+    // BATT-1 ohmic — 14d overdue.
+    { sched: 'BATT-1:BATT_OHMIC_FLOAT', type: 'overdue',           leadDays: -1,  at: -13,  status: 'sent' },
+    { sched: 'BATT-1:BATT_OHMIC_FLOAT', type: 'escalation',        leadDays: -7,  at: -7,   status: 'sent' },
+    // Upcoming work — maintenance_due lead-time tiers.
+    { sched: 'GEN-E1:GEN_MONTHLY_EXERCISE', type: 'maintenance_due', leadDays: 7,  at: -1,  status: 'sent' },
+    { sched: 'T-2:XFMR_DGA',                type: 'maintenance_due', leadDays: 30, at: -8,  status: 'sent' },
+    { sched: 'GEN-E1:GEN_FUEL_ANALYSIS',    type: 'maintenance_due', leadDays: 90, at: -20, status: 'sent' },
+    // Queued-not-yet-emailed rows (90d tier already passed for these — the
+    // engine won't re-cross it, so no duplicate risk).
+    { sched: 'T-1:XFMR_TTR',                type: 'maintenance_due', leadDays: 90, at: -15, status: 'pending' },
+    { sched: 'T-E1:XFMR_DGA',               type: 'maintenance_due', leadDays: 90, at: -8,  status: 'pending' },
+  ];
+  let alertCount = 0;
+  for (const a of alertSpecs) {
+    const sched = schedules[a.sched];
+    if (!sched) continue; // task-matrix drift — skip rather than crash the seed
+    await prisma.alert.create({ data: {
+      accountId:      account.id,
+      scheduleId:     sched.id,
+      assetId:        sched.assetId,
+      alertType:      a.type,
+      leadDays:       a.leadDays,
+      scheduledAt:    addDays(now, a.at),
+      createdAt:      addDays(now, a.at),
+      sentAt:         a.status === 'pending' ? null : addDays(now, a.at),
+      acknowledgedAt: a.status === 'acknowledged' ? addDays(now, a.ackAt) : null,
+      status:         a.status,
+    } });
+    alertCount++;
+  }
 
   // ── Quote Requests — demo data for the Quote Request feature ────────────────
   // Demonstrates the full lifecycle: one requested, one quoted, one accepted,
@@ -1653,6 +1812,30 @@ async function _seedAccount() {
   const { seedPowerDbInto } = require('./seed-powerdb-demo');
   const pdb = await seedPowerDbInto(prisma, account.id, { siteName: 'Cedar Ridge Facility', ownerUserId: admin.id });
 
+  // ── Compliance snapshots (G1) — REAL generated evidence packs ─────────────
+  // Snapshot downloads stream the stored file and verify sha256, so fake rows
+  // 404. lib/snapshotPipeline.generateSnapshot is the same render → hash →
+  // store → row → audit-anchor pipeline the UI button uses; run it twice so
+  // the Compliance Snapshots list shows account-wide and per-site evidence.
+  // Runs LAST so the PDFs capture the fully-seeded account. Cleanup: the
+  // reset deletes the stored files + rows (see _resetDemoAccount).
+  // Best-effort — a storage/render failure must not sink the whole seed.
+  let snapshotCount = 0;
+  try {
+    const { generateSnapshot } = require('../lib/snapshotPipeline');
+    await generateSnapshot(prisma, {
+      accountId: account.id, userId: admin.id, userName: admin.name,
+    }); // all standards, all sites
+    snapshotCount++;
+    await generateSnapshot(prisma, {
+      accountId: account.id, userId: admin.id, userName: admin.name,
+      siteId: riverside.id,
+    }); // all standards, Riverside only
+    snapshotCount++;
+  } catch (e) {
+    console.warn('[seed-demo] compliance snapshot generation skipped:', e.message);
+  }
+
   return {
     accountId: account.id,
     companyName: account.companyName,
@@ -1662,15 +1845,17 @@ async function _seedAccount() {
       powerDbAssets: pdb.assets, powerDbWorkOrders: pdb.workOrders, powerDbMeasurements: pdb.measurements,
       sites: 2, buildings: 1, areas: 2, positions: posSpecs.length + egPosSpecs.length,
       contractors: 2, contractorTechs: 5,
-      assets: assetSpecs.length,
+      assets: assetSpecs.length, archivedAssets: archivedAssetCount,
       schedules: scheduleCount,
       workOrders: 23, testMeasurements: wo2Measurements.length,
       deficiencies: 9, labSamples: 4, systemStudies: 3,
-      auditVisits: 2, auditRecommendations: 5,
+      auditVisits: 4, auditRecommendations: 6,
+      alerts: alertCount,
       assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4,
       activityLogs: 9,
       lotoProcs: 2, documents: 3,
       assetTemplates: templateCount, newsItems: newsCount,
+      complianceSnapshots: snapshotCount,
     },
     dashboardStory: {
       overdue: 5, regulatoryBreachTier: 1,
