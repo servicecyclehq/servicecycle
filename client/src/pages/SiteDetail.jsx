@@ -655,6 +655,7 @@ export default function SiteDetail() {
                     <th>Asset</th>
                     <th>Type</th>
                     <th>Condition</th>
+                    <th>Next Due</th>
                     <th style={{ textAlign: 'right' }}>Open deficiencies</th>
                   </tr>
                 </thead>
@@ -673,6 +674,19 @@ export default function SiteDetail() {
                           {a.governingCondition ? (
                             <span style={{ fontWeight: 600, color: cm.color || 'var(--color-text)' }}>
                               {cm.label || a.governingCondition}
+                            </span>
+                          ) : <span className="text-muted">—</span>}
+                        </td>
+                        {/* D5 (2026-06-11): Next Due — soonest active schedule
+                            (decorated as `nextDue` by GET /api/assets). */}
+                        <td>
+                          {a.nextDue ? (
+                            <span style={{
+                              fontWeight: 600,
+                              color: new Date(a.nextDue) < new Date() ? 'var(--color-danger)' : 'var(--color-text)',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {fmtDate(a.nextDue)}{new Date(a.nextDue) < new Date() ? ' · overdue' : ''}
                             </span>
                           ) : <span className="text-muted">—</span>}
                         </td>

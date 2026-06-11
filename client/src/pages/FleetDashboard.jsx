@@ -755,6 +755,7 @@ export default function FleetDashboard() {
   if (!data) return null;
 
   const { totals, accounts, partnerOrg } = data;
+  const accountsWithIssues = accounts.filter((a) => a.needsAttention).length;
 
   const filtered = accounts.filter((a) => {
     if (search && !a.companyName.toLowerCase().includes(search.toLowerCase())) return false;
@@ -802,78 +803,38 @@ export default function FleetDashboard() {
       {/* ── OVERVIEW TAB ── */}
       {activeTab === 'overview' && (
         <>
-          {/* Fleet totals bar */}
+          {/* Fleet totals bar — D3 (2026-06-11): severity-first order,
+              IMMEDIATE → Overdue → Svc Opps → Accounts w/ issues → Open WOs
+              → Total Assets. */}
           <div style={styles.totalsBar}>
-            <MetricTile label="Total Assets" value={totals.assets} accent="#64748b" />
-            <MetricTile
-              label="Overdue Schedules"
-              value={totals.overdueSchedules}
-              accent={totals.overdueSchedules > 0 ? '#ef4444' : '#22c55e'}
-            />
             <MetricTile
               label="IMMEDIATE Open"
               value={totals.immediateDeficiencies}
               accent={totals.immediateDeficiencies > 0 ? '#dc2626' : '#22c55e'}
             />
             <MetricTile
+              label="Overdue Schedules"
+              value={totals.overdueSchedules}
+              accent={totals.overdueSchedules > 0 ? '#ef4444' : '#22c55e'}
+            />
+            <MetricTile
               label="Service Opportunities"
               value={totals.serviceOpportunities}
               accent={totals.serviceOpportunities > 0 ? '#f59e0b' : '#64748b'}
             />
-            <MetricTile label="Open Work Orders" value={totals.openWorkOrders} accent="#6366f1" />
             <MetricTile
               label="Accounts w/ Issues"
-              value={accounts.filter((a) => a.needsAttention).length}
-              accent={accounts.filter((a) => a.needsAttention).length > 0 ? '#f97316' : '#22c55e'}
+              value={accountsWithIssues}
+              accent={accountsWithIssues > 0 ? '#f97316' : '#22c55e'}
               sub={`of ${accounts.length}`}
             />
+            <MetricTile label="Open Work Orders" value={totals.openWorkOrders} accent="#6366f1" />
+            <MetricTile label="Total Assets" value={totals.assets} accent="#64748b" />
           </div>
 
-          {/* Filter row */}
-          <div style={styles.filterRow}>
-            <div style={styles.filterTabs}>
-              {['all', 'attention', 'healthy'].map((f) => (
-                <button
-                  key={f}
-                  style={{ ...styles.tab, ...(filter === f ? styles.tabActive : {}) }}
-                  onClick={() => setFilter(f)}
-                >
-                  {f === 'all' ? 'All Accounts' : f === 'attention' ? '⚠ Needs Attention' : '✓ Healthy'}
-                  <span style={styles.tabCount}>
-                    {f === 'all'
-                      ? accounts.length
-                      : f === 'attention'
-                      ? accounts.filter((a) => a.needsAttention).length
-                      : accounts.filter((a) => !a.needsAttention).length}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <input
-              style={styles.searchInput}
-              placeholder="Search accounts…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          {/* Account cards */}
-          <div style={styles.cardList}>
-            {filtered.length === 0 && <div style={styles.empty}>No accounts match your filter.</div>}
-            {filtered.map((account) => (
-              <AccountCard
-                key={account.id}
-                account={account}
-                expanded={expandedId === account.id}
-                onToggle={() => toggle(account.id)}
-                reps={reps}
-                onRepChange={handleRepChange}
-              />
-            ))}
-          </div>
-
-          {/* Fleet Modernization Forecast */}
-          <div style={styles.forecastSection}>
+          {/* Fleet Modernization Forecast — D3: lifted to directly under the
+              totals bar (the CapEx table is the page's headline artifact). */}
+          <div style={{ ...styles.forecastSection, marginTop: 0, marginBottom: 24 }}>
             <h2 style={styles.forecastTitle}>Fleet Modernization Forecast — 3-Year Rolling CapEx Exposure</h2>
             <p style={styles.forecastNote}>
               <strong>Budget planning estimates only.</strong> Figures are probabilistic ranges derived from
@@ -934,6 +895,50 @@ export default function FleetDashboard() {
               </div>
             )}
           </div>
+
+          {/* Filter row */}
+          <div style={styles.filterRow}>
+            <div style={styles.filterTabs}>
+              {['all', 'attention', 'healthy'].map((f) => (
+                <button
+                  key={f}
+                  style={{ ...styles.tab, ...(filter === f ? styles.tabActive : {}) }}
+                  onClick={() => setFilter(f)}
+                >
+                  {f === 'all' ? 'All Accounts' : f === 'attention' ? '⚠ Needs Attention' : '✓ Healthy'}
+                  <span style={styles.tabCount}>
+                    {f === 'all'
+                      ? accounts.length
+                      : f === 'attention'
+                      ? accounts.filter((a) => a.needsAttention).length
+                      : accounts.filter((a) => !a.needsAttention).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <input
+              style={styles.searchInput}
+              placeholder="Search accounts…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Account cards */}
+          <div style={styles.cardList}>
+            {filtered.length === 0 && <div style={styles.empty}>No accounts match your filter.</div>}
+            {filtered.map((account) => (
+              <AccountCard
+                key={account.id}
+                account={account}
+                expanded={expandedId === account.id}
+                onToggle={() => toggle(account.id)}
+                reps={reps}
+                onRepChange={handleRepChange}
+              />
+            ))}
+          </div>
+
         </>
       )}
 
