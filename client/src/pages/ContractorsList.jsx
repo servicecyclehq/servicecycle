@@ -12,6 +12,7 @@ import { Plus, HardHat, BadgeCheck } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import EmptyState from '../components/EmptyState';
+import { useFromState } from '../components/BackLink';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
@@ -144,6 +145,8 @@ export default function ContractorsList() {
   useDocumentTitle('Contractors');
   const { user } = useAuth();
   const navigate = useNavigate();
+  // C1: row clicks record this list as the origin for the detail BackLink.
+  const fromState = useFromState();
   const [contractors, setContractors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -162,7 +165,7 @@ export default function ContractorsList() {
 
   function handleCreated(contractor) {
     setShowAdd(false);
-    if (contractor?.id) navigate(`/contractors/${contractor.id}`);
+    if (contractor?.id) navigate(`/contractors/${contractor.id}`, { state: fromState });
     else fetchContractors();
   }
 
@@ -213,7 +216,7 @@ export default function ContractorsList() {
                 </thead>
                 <tbody>
                   {contractors.map(c => {
-                    const go = () => navigate(`/contractors/${c.id}`);
+                    const go = () => navigate(`/contractors/${c.id}`, { state: fromState });
                     const openWOs = c._count?.workOrders ?? 0;
                     return (
                       <tr

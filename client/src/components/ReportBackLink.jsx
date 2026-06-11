@@ -1,14 +1,15 @@
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import BackLink from './BackLink';
 
 // #5: canonical "back to the Reports hub" affordance. Every report renders
-// this so the back link is identical everywhere -- it mirrors the original
-// Renewal Horizon pattern (left arrow + "Reports"). The arrow is a lucide
-// icon, never a raw glyph byte.
+// this so the back link is identical everywhere. C1 (2026-06-11): now a thin
+// wrapper over <BackLink>, so reports return to the actual previous page
+// (dashboard drill-down, another report, …) and only fall back to /reports
+// on deep links. The arrow is a lucide icon, never a raw glyph byte.
 export default function ReportBackLink({ style }) {
   return (
-    <Link
-      to="/reports"
+    <BackLink
+      fallback="/reports"
+      fallbackLabel="Reports"
       style={{
         fontSize: 'var(--font-size-sm)',
         color: 'var(--color-text-secondary)',
@@ -19,8 +20,6 @@ export default function ReportBackLink({ style }) {
         marginBottom: 4,
         ...style,
       }}
-    >
-      <ArrowLeft size={14} strokeWidth={2} /> Reports
-    </Link>
+    />
   );
 }

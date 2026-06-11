@@ -25,6 +25,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { downloadAuthedFile } from '../api/download';
 import Toast from '../components/Toast';
 import EmptyState from '../components/EmptyState';
+import BackLink, { useFromState } from '../components/BackLink';
 import { SEVERITY_META, DECAL_META, assetLabel, fmtDate } from '../lib/equipment';
 
 // Schedule compliance status chips. Literal hexes, matching the domain
@@ -73,6 +74,8 @@ export default function ComplianceStandardDetailReport() {
   try { standardCode = decodeURIComponent(standardCode); } catch { /* keep raw */ }
 
   useDocumentTitle(`${standardCode} compliance`);
+  // C1: asset/WO links record this report as the origin for their BackLink.
+  const fromState = useFromState();
   const { user } = useAuth();
   const canSnapshot = ['admin', 'manager'].includes(user?.role);
 
@@ -147,7 +150,7 @@ export default function ComplianceStandardDetailReport() {
     return (
       <div className="page-body">
         <div role="alert" className="alert alert-error mb-16">{error}</div>
-        <Link to="/reports/compliance" className="btn btn-secondary">← Back to Compliance by Standard</Link>
+        <BackLink fallback="/reports/compliance" fallbackLabel="Compliance by Standard" className="btn btn-secondary" />
       </div>
     );
   }
@@ -162,7 +165,7 @@ export default function ComplianceStandardDetailReport() {
     <>
       <div className="page-header">
         <div>
-          <Link to="/reports/compliance" className="back-link">← Compliance by Standard</Link>
+          <BackLink fallback="/reports/compliance" fallbackLabel="Compliance by Standard" />
           <h1 className="page-title">
             {std.code || standardCode}
             {std.edition && (
@@ -267,7 +270,7 @@ export default function ComplianceStandardDetailReport() {
                       <tr key={`${asset.id || 'a'}-${task.taskCode || i}`} style={status === 'inactive' ? { opacity: 0.55 } : undefined}>
                         <td>
                           {asset.id ? (
-                            <Link to={`/assets/${asset.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+                            <Link to={`/assets/${asset.id}`} state={fromState} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
                               {assetLabel(asset)}
                             </Link>
                           ) : (
@@ -297,6 +300,7 @@ export default function ComplianceStandardDetailReport() {
                           {wo ? (
                             <Link
                               to={`/work-orders/${wo.id}`}
+                              state={fromState}
                               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
                               title="Open the latest completed work order"
                             >
@@ -351,7 +355,7 @@ export default function ComplianceStandardDetailReport() {
                       <td>{d.description || '—'}</td>
                       <td>
                         {d.asset?.id ? (
-                          <Link to={`/assets/${d.asset.id}`} style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
+                          <Link to={`/assets/${d.asset.id}`} state={fromState} style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
                             {assetLabel(d.asset)}
                           </Link>
                         ) : (

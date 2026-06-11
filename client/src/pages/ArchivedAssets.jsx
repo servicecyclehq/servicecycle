@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Archive } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { kbdActivate } from '../lib/a11y';
 import EmptyState from '../components/EmptyState';
 import Toast from '../components/Toast';
+import BackLink, { useFromState } from '../components/BackLink';
 import { EQUIPMENT_TYPE_LABELS, assetLabel, fmtDate } from '../lib/equipment';
 
 const PAGE_SIZE = 25;
@@ -24,6 +25,8 @@ const PAGE_SIZE = 25;
 export default function ArchivedAssets() {
   useDocumentTitle('Archived Assets');
   const navigate = useNavigate();
+  // C1: row clicks record this list as the origin for AssetDetail's BackLink.
+  const fromState = useFromState();
   const confirm = useConfirm();
   const { features } = useAuth();
   // See AssetsList: assets_write with contracts_write fallback.
@@ -75,7 +78,7 @@ export default function ArchivedAssets() {
     <>
       <div className="page-header">
         <div>
-          <Link to="/assets" className="back-link">← Assets</Link>
+          <BackLink fallback="/assets" fallbackLabel="Assets" />
           <h1 className="page-title">Archived Assets</h1>
           <div className="page-subtitle">
             {loading ? 'Loading…' : `${pagination.total} archived asset${pagination.total !== 1 ? 's' : ''} — history preserved, hidden from the main register`}
@@ -116,9 +119,9 @@ export default function ArchivedAssets() {
                       <tr
                         key={a.id}
                         style={{ opacity: 0.75, cursor: 'pointer' }}
-                        onClick={() => navigate(`/assets/${a.id}`)}
+                        onClick={() => navigate(`/assets/${a.id}`, { state: fromState })}
                         tabIndex={0}
-                        onKeyDown={kbdActivate(() => navigate(`/assets/${a.id}`))}
+                        onKeyDown={kbdActivate(() => navigate(`/assets/${a.id}`, { state: fromState }))}
                       >
                         <td style={{ fontWeight: 600 }}>
                           {EQUIPMENT_TYPE_LABELS[a.equipmentType] || a.equipmentType}

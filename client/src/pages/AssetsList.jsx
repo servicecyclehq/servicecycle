@@ -29,6 +29,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { kbdActivate } from '../lib/a11y';
 import EmptyState from '../components/EmptyState';
 import Toast from '../components/Toast';
+import { useFromState } from '../components/BackLink';
 import ColumnPicker from '../components/ColumnPicker';
 import HeaderFilter, { filterIsActive } from '../components/HeaderFilter';
 import {
@@ -187,6 +188,9 @@ function NextDueCell({ schedule }) {
 export default function AssetsList() {
   useDocumentTitle('Assets');
   const navigate = useNavigate();
+  // C1: row clicks record this list (path only — filters live in state, not
+  // the URL) as the origin for AssetDetail's BackLink.
+  const fromState = useFromState();
   const { features } = useAuth();
   // assets_write is the converted feature key; fall back to contracts_write
   // until AuthContext's flag catalog is retargeted (same role semantics —
@@ -200,12 +204,13 @@ export default function AssetsList() {
   const [exporting, setExporting] = useState(false);
 
   // Deep links (Dashboard's volume tab and elsewhere) pre-filter via
-  // /assets?equipmentType=X — read once on mount, then state owns the value.
+  // /assets?equipmentType=X&siteId=&dueWithin= — read once on mount, then
+  // state owns the value (B5: drill-down counts land pre-filtered).
   const [searchParams] = useSearchParams();
 
   const [page, setPage]           = useState(1);
   const [search, setSearch]       = useState('');
-  const [siteId, setSiteId]       = useState('');
+  const [siteId, setSiteId]       = useState(() => searchParams.get('siteId') || '');
   const [equipmentType, setEquipmentType] = useState(() => searchParams.get('equipmentType') || '');
   const [condition, setCondition] = useState('');
   // Column-filter row (second toolbar row): responsible person, service
@@ -213,7 +218,10 @@ export default function AssetsList() {
   // 'unassigned'; dueWithin is 'overdue' | '30' | '60' | '90'.
   const [ownerId, setOwnerId]         = useState('');
   const [inServiceF, setInServiceF]   = useState('');
-  const [dueWithin, setDueWithin]     = useState('');
+  const [dueWithin, setDueWithin]     = useState(() => {
+    const q = searchParams.get('dueWithin');
+    return ['overdue', '30', '60', '90'].includes(q) ? q : '';
+  });
   // Risk filters: minimum criticality score ('' | '3' | '4' | '5') and the
   // predictive-maintenance-only toggle chip.
   const [minCriticality, setMinCriticality] = useState('');
@@ -845,9 +853,9 @@ export default function AssetsList() {
                         <tr
                           key={a.id}
                           style={{ cursor: 'pointer' }}
-                          onClick={() => navigate(`/assets/${a.id}`)}
+                          onClick={() => navigate(`/assets/${a.id}`, { state: fromState })}
                           tabIndex={0}
-                          onKeyDown={kbdActivate(() => navigate(`/assets/${a.id}`))}
+                          onKeyDown={kbdActivate(() => navigate(`/assets/${a.id}`, { state: fromState }))}
                         >
                           {colVis.equipment   && (
                             <td style={{ fontWeight: 600 }}>

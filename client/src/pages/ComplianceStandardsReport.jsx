@@ -13,11 +13,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { BarChart3 } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
+import BackLink, { useFromState } from '../components/BackLink';
 import { fmtDate } from '../lib/equipment';
 
 // Same thresholds as Dashboard's SiteComplianceRow.
@@ -45,6 +46,8 @@ function ComplianceRateBar({ rate }) {
 export default function ComplianceStandardsReport() {
   useDocumentTitle('Compliance by Standard');
   const navigate = useNavigate();
+  // C1: drill-downs record this report as the origin for their BackLink.
+  const fromState = useFromState();
 
   const [sites, setSites]     = useState([]);
   const [siteId, setSiteId]   = useState('');
@@ -69,13 +72,13 @@ export default function ComplianceStandardsReport() {
       .finally(() => setLoading(false));
   }, [siteId]);
 
-  const openStandard = (code) => navigate(`/reports/compliance/${encodeURIComponent(code)}`);
+  const openStandard = (code) => navigate(`/reports/compliance/${encodeURIComponent(code)}`, { state: fromState });
 
   return (
     <>
       <div className="page-header">
         <div>
-          <Link to="/reports" className="back-link">← Reports</Link>
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Compliance by Standard</h1>
           <div className="page-subtitle">
             Maintenance compliance rolled up per governing standard. Click a row for the full evidence table.

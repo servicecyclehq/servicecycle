@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { fmtDate } from '../lib/equipment';
 import Toast from '../components/Toast';
+import { useFromState } from '../components/BackLink';
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
@@ -159,6 +160,7 @@ function ConsolidateForm({ site, canWrite, onSuccess, onCancel }) {
 // ── Site section ──────────────────────────────────────────────────────────────
 
 function SiteSection({ site, canWrite, onScheduled }) {
+  const fromState = useFromState();
   const [expanded,    setExpanded]    = useState(true);
   const [showForm,    setShowForm]    = useState(false);
   const [toast,       setToast]       = useState(null);
@@ -236,7 +238,9 @@ function SiteSection({ site, canWrite, onScheduled }) {
                       background: '#eff6ff', color: '#1d4ed8' }}>WO already open</span>
                   )}
                 </div>
-                <Link to={`/assets/${asset.assetId}`} style={{ fontSize: 'var(--font-size-xs)',
+                {/* C1: record the planner as the origin so AssetDetail's
+                    BackLink returns here instead of the Assets list. */}
+                <Link to={`/assets/${asset.assetId}`} state={fromState} style={{ fontSize: 'var(--font-size-xs)',
                   color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   View asset <ExternalLink size={11} />
                 </Link>

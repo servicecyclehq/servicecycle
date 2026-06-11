@@ -15,6 +15,7 @@ import { Plus, ClipboardList } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import EmptyState from '../components/EmptyState';
+import { useFromState } from '../components/BackLink';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { WO_STATUS_META, DECAL_META, assetLabel, fmtDate } from '../lib/equipment';
@@ -254,6 +255,8 @@ export default function WorkOrdersList() {
   useDocumentTitle('Work orders');
   const { user } = useAuth();
   const navigate = useNavigate();
+  // C1: row clicks record this list as the origin for the detail BackLink.
+  const fromState = useFromState();
   const canWrite = ['admin', 'manager'].includes(user?.role);
 
   const [workOrders, setWorkOrders] = useState([]);
@@ -394,7 +397,7 @@ export default function WorkOrdersList() {
                       return (
                         <tr key={a.id}>
                           <td>
-                            <Link to={`/assets/${a.id}`} style={{ fontWeight: 500 }}>{name}</Link>
+                            <Link to={`/assets/${a.id}`} state={fromState} style={{ fontWeight: 500 }}>{name}</Link>
                             {a.serialNumber && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginLeft: 6 }}>#{a.serialNumber}</span>}
                           </td>
                           <td className="td-muted">{a.site?.name || '—'}</td>
@@ -455,7 +458,7 @@ export default function WorkOrdersList() {
                 </thead>
                 <tbody>
                   {workOrders.map(wo => {
-                    const go = () => navigate(`/work-orders/${wo.id}`);
+                    const go = () => navigate(`/work-orders/${wo.id}`, { state: fromState });
                     return (
                       <tr
                         key={wo.id}
@@ -465,6 +468,7 @@ export default function WorkOrdersList() {
                         <td>
                           <Link
                             to={`/work-orders/${wo.id}`}
+                            state={fromState}
                             onClick={e => e.stopPropagation()}
                             style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}
                           >
@@ -519,7 +523,7 @@ export default function WorkOrdersList() {
           onCreated={(wo) => {
             setShowNew(false);
             setNewWoAssetId(null);
-            if (wo?.id) navigate(`/work-orders/${wo.id}`);
+            if (wo?.id) navigate(`/work-orders/${wo.id}`, { state: fromState });
           }}
         />
       )}

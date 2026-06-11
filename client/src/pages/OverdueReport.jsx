@@ -25,6 +25,7 @@ import { AlertTriangle, Printer } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
+import BackLink, { useFromState } from '../components/BackLink';
 import { SEVERITY_META, assetLabel, fmtDate } from '../lib/equipment';
 
 const SEVERITY_ORDER = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
@@ -76,6 +77,8 @@ function deficiencyAgeDays(item) {
 
 export default function OverdueReport() {
   useDocumentTitle('Overdue Maintenance by Severity');
+  // C1: asset links record this report as the origin for their BackLink.
+  const fromState = useFromState();
 
   const [sites, setSites]     = useState([]);
   const [siteId, setSiteId]   = useState('');
@@ -133,7 +136,7 @@ export default function OverdueReport() {
     <>
       <div className="page-header">
         <div>
-          <Link to="/reports" className="back-link">← Reports</Link>
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Overdue Maintenance by Severity</h1>
           <div className="page-subtitle">
             Overdue scheduled tasks and open deficiencies, riskiest first
@@ -215,7 +218,7 @@ export default function OverdueReport() {
                           <tr key={row?.id || `${asset.id || 'a'}-${i}`}>
                             <td>
                               {asset.id ? (
-                                <Link to={`/assets/${asset.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+                                <Link to={`/assets/${asset.id}`} state={fromState} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
                                   {assetLabel(asset)}
                                 </Link>
                               ) : (
@@ -282,7 +285,7 @@ export default function OverdueReport() {
                             </div>
                             <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
                               {asset.id ? (
-                                <Link to={`/assets/${asset.id}`} style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
+                                <Link to={`/assets/${asset.id}`} state={fromState} style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
                                   {assetLabel(asset)}
                                 </Link>
                               ) : assetLabel(asset)}

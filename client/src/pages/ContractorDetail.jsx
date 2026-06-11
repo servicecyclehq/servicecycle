@@ -10,12 +10,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { Pencil, BadgeCheck } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
+import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { WO_STATUS_META, DECAL_META, assetLabel, fmtDate } from '../lib/equipment';
 
@@ -187,7 +188,8 @@ function TechRow({ tech, canWrite, onSave, onDelete }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ContractorDetail() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  // C1: WO links record this contractor as the origin for their BackLink.
+  const fromState = useFromState();
   const { user } = useAuth();
   const confirm = useConfirm();
   const canWrite = ['admin', 'manager'].includes(user?.role);
@@ -316,7 +318,7 @@ export default function ContractorDetail() {
         <div className="page-header"><h1 className="page-title">Contractor</h1></div>
         <div className="page-body">
           <div role="alert" className="alert alert-error">{error || 'Contractor not found.'}</div>
-          <Link to="/contractors" className="btn btn-secondary" style={{ marginTop: 12 }}>Back to contractors</Link>
+          <BackLink fallback="/contractors" fallbackLabel="Contractors" className="btn btn-secondary" style={{ marginTop: 12 }} />
         </div>
       </>
     );
@@ -330,12 +332,10 @@ export default function ContractorDetail() {
     <>
       <div className="page-header">
         <div>
-          <button
-            type="button" onClick={() => navigate('/contractors')}
-            style={{ background: 'none', border: 'none', padding: 0, marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', cursor: 'pointer' }}
-          >
-            {String.fromCharCode(8592)} Contractors
-          </button>
+          <BackLink
+            fallback="/contractors" fallbackLabel="Contractors"
+            style={{ padding: 0, marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}
+          />
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {contractor.name}
             {contractor.isInternal && (
@@ -566,7 +566,7 @@ export default function ContractorDetail() {
                   {workOrders.map(wo => (
                     <tr key={wo.id}>
                       <td>
-                        <Link to={`/work-orders/${wo.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+                        <Link to={`/work-orders/${wo.id}`} state={fromState} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
                           {assetLabel(wo.asset)}
                         </Link>
                         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>

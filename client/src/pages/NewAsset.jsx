@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Layers } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +23,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import InfoTip from '../components/InfoTip';
 import CustomFieldInputs from '../components/CustomFieldInputs';
 import Toast from '../components/Toast';
+import BackLink from '../components/BackLink';
 import { EQUIPMENT_TYPE_LABELS, CONDITION_META, REDUNDANCY_META, CRITICALITY_SCORE_META } from '../lib/equipment';
 
 // ── "Start from a photo" helpers ─────────────────────────────────────────────
@@ -400,7 +401,7 @@ export default function NewAsset() {
     <>
       <div className="page-header">
         <div>
-          <Link to="/assets" className="back-link">← Assets</Link>
+          <BackLink fallback="/assets" fallbackLabel="Assets" />
           <h1 className="page-title">New Asset</h1>
           <div className="page-subtitle">Register a piece of electrical equipment for maintenance tracking</div>
         </div>

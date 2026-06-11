@@ -29,6 +29,11 @@ function isPast(dateStr) {
   return new Date(dateStr).getTime() < Date.now();
 }
 
+// C1 (2026-06-11): every dashboard drill-down records the dashboard as its
+// origin, so the target page's <BackLink> returns here instead of the
+// target's hardcoded parent.
+const FROM_DASHBOARD = { from: '/dashboard', fromLabel: 'Dashboard' };
+
 function metaOf(metaMap, key) {
   const m = metaMap?.[key];
   if (!m) return {};
@@ -412,7 +417,7 @@ function PredictiveSignalChip({ signal }) {
 function AssetLinkCell({ asset }) {
   return (
     <>
-      <Link to={`/assets/${asset?.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+      <Link to={`/assets/${asset?.id}`} state={FROM_DASHBOARD} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
         {assetLabel(asset)}
       </Link>
       <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
@@ -678,7 +683,10 @@ export default function Dashboard() {
   useDocumentTitle('Dashboard');
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const rrNavigate = useNavigate();
+  // C1: shadow navigate so every drill-down (incl. the ones in child cards
+  // that receive it as a prop) carries the dashboard-origin state.
+  const navigate = (to, opts) => rrNavigate(to, { state: FROM_DASHBOARD, ...opts });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -781,11 +789,13 @@ export default function Dashboard() {
             {/* B1 (2026-06-11): severity reads left→right — Overdue leads,
                 then the open-IMMEDIATE count, then the due windows. */}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: isMobile ? 10 : 16, marginBottom: 20 }}>
+              {/* B5: each due tile deep-links into the calendar pre-filtered
+                  to the exact set the number counts (?due= window). */}
               <KpiTile
                 label="Overdue" value={due.overdue}
                 sub={due.overdue > 0 ? 'Needs scheduling now' : 'All caught up'}
                 accent={due.overdue > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #22c55e)'}
-                onClick={() => navigate('/calendar')}
+                onClick={() => navigate('/calendar?due=overdue')}
               />
               <KpiTile
                 label="Immediate" value={defs.IMMEDIATE || 0}
@@ -797,17 +807,17 @@ export default function Dashboard() {
                 label="Due in 30 days" value={due.due30}
                 sub="Active schedules"
                 accent={due.due30 > 0 ? 'var(--color-warning, #f59e0b)' : undefined}
-                onClick={() => navigate('/calendar')}
+                onClick={() => navigate('/calendar?due=30')}
               />
               <KpiTile
                 label="Due in 60 days" value={due.due60}
                 sub="Cumulative window"
-                onClick={() => navigate('/calendar')}
+                onClick={() => navigate('/calendar?due=60')}
               />
               <KpiTile
                 label="Due in 90 days" value={due.due90}
                 sub="Cumulative window"
-                onClick={() => navigate('/calendar')}
+                onClick={() => navigate('/calendar?due=90')}
               />
             </div>
 
@@ -910,7 +920,7 @@ export default function Dashboard() {
                         return (
                           <tr key={s.id}>
                             <td>
-                              <Link to={`/assets/${s.asset?.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+                              <Link to={`/assets/${s.asset?.id}`} state={FROM_DASHBOARD} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
                                 {assetLabel(s.asset)}
                               </Link>
                               <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>

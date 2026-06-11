@@ -28,6 +28,7 @@ import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import TestingTrendsTab from '../components/TestingTrendsTab';
+import BackLink, { useFromState } from '../components/BackLink';
 import Toast from '../components/Toast';
 import InfoTip from '../components/InfoTip';
 import CustomFieldInputs from '../components/CustomFieldInputs';
@@ -490,6 +491,9 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
 export default function AssetDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  // C1: links out of this page record it as the origin, so their BackLink
+  // returns here (asset → work order → back to this asset).
+  const fromState = useFromState();
   const confirm = useConfirm();
   const { user, features } = useAuth();
   // See AssetsList: assets_write with contracts_write fallback until the
@@ -635,7 +639,7 @@ export default function AssetDetail() {
     setBusy(true);
     try {
       const res = await api.post('/api/work-orders', { assetId: id, scheduleId: schedule?.id || null });
-      navigate(`/work-orders/${res.data.data.workOrder.id}`);
+      navigate(`/work-orders/${res.data.data.workOrder.id}`, { state: fromState });
     } catch (err) {
       setToast({ message: err.response?.data?.error || 'Failed to create work order.', variant: 'error' });
       setBusy(false);
@@ -669,7 +673,7 @@ export default function AssetDetail() {
     return (
       <div className="page-body">
         <div role="alert" className="alert alert-error mb-16">{error}</div>
-        <Link to="/assets" className="btn btn-secondary">← Back to Assets</Link>
+        <BackLink fallback="/assets" fallbackLabel="Assets" className="btn btn-secondary" />
       </div>
     );
   }
@@ -713,7 +717,7 @@ export default function AssetDetail() {
     <>
       <div className="page-header">
         <div>
-          <Link to="/assets" className="back-link">← Assets</Link>
+          <BackLink fallback="/assets" fallbackLabel="Assets" />
           <h1 className="page-title">
             {assetLabel(asset)}
             {asset.archivedAt && (
@@ -1090,7 +1094,7 @@ export default function AssetDetail() {
                       </td>
                       <td>{fmtDate(wo.completedDate)}</td>
                       <td style={{ textAlign: 'right' }}>
-                        <Link to={`/work-orders/${wo.id}`} className="btn btn-secondary btn-sm">Open</Link>
+                        <Link to={`/work-orders/${wo.id}`} state={fromState} className="btn btn-secondary btn-sm">Open</Link>
                       </td>
                     </tr>
                   ))}

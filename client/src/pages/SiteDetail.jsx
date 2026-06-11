@@ -22,6 +22,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
+import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
   EQUIPMENT_TYPE_LABELS, CONDITION_META, STUDY_TYPE_LABELS, assetLabel, fmtDate,
@@ -223,6 +224,9 @@ function SiteEditForm({ site, onSaved, onCancel }) {
 export default function SiteDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  // C1: asset links record this site as the origin so AssetDetail's BackLink
+  // returns here instead of the global Assets list.
+  const fromState = useFromState();
   const { user } = useAuth();
   const confirm = useConfirm();
   const canWrite = ['admin', 'manager'].includes(user?.role);
@@ -454,7 +458,7 @@ export default function SiteDetail() {
         <div className="page-header"><h1 className="page-title">Site</h1></div>
         <div className="page-body">
           <div role="alert" className="alert alert-error">{error || 'Site not found.'}</div>
-          <Link to="/sites" className="btn btn-secondary" style={{ marginTop: 12 }}>Back to sites</Link>
+          <BackLink fallback="/sites" fallbackLabel="Sites" className="btn btn-secondary" style={{ marginTop: 12 }} />
         </div>
       </>
     );
@@ -478,12 +482,10 @@ export default function SiteDetail() {
     <>
       <div className="page-header">
         <div>
-          <button
-            type="button" onClick={() => navigate('/sites')}
-            style={{ background: 'none', border: 'none', padding: 0, marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', cursor: 'pointer' }}
-          >
-            {String.fromCharCode(8592)} Sites
-          </button>
+          <BackLink
+            fallback="/sites" fallbackLabel="Sites"
+            style={{ padding: 0, marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}
+          />
           <h1 className="page-title">{site.name}</h1>
           <div className="page-subtitle">
             {loc || 'No address on file'}
@@ -665,7 +667,7 @@ export default function SiteDetail() {
                     return (
                       <tr key={a.id}>
                         <td>
-                          <Link to={`/assets/${a.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+                          <Link to={`/assets/${a.id}`} state={fromState} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
                             {assetLabel(a)}
                           </Link>
                         </td>

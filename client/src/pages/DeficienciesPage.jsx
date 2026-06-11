@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import EmptyState from '../components/EmptyState';
+import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { SEVERITY_META, assetLabel, fmtDate } from '../lib/equipment';
 
@@ -137,6 +138,9 @@ export default function DeficienciesPage() {
   const { user } = useAuth();
   const confirm = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
+  // C1: asset/WO links record this page (incl. active filters) as the origin
+  // for their BackLink.
+  const fromState = useFromState();
 
   // ── Filters live in the URL so dashboard tiles can deep-link ──────────────
   const severityParam = searchParams.get('severity');
@@ -242,6 +246,9 @@ export default function DeficienciesPage() {
     <>
       <div className="page-header">
         <div>
+          {/* C1: this page is reached from dashboard tiles, asset pages, … —
+              return to the actual origin, defaulting to the dashboard. */}
+          <BackLink fallback="/dashboard" fallbackLabel="Dashboard" />
           <h1 className="page-title">Deficiencies</h1>
           <div className="page-subtitle">
             NETA findings across all sites — triage queue, worst severity first
@@ -358,7 +365,7 @@ export default function DeficienciesPage() {
                         </td>
                         <td>
                           {def.asset?.id ? (
-                            <Link to={`/assets/${def.asset.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+                            <Link to={`/assets/${def.asset.id}`} state={fromState} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
                               {assetLabel(def.asset)}
                             </Link>
                           ) : '—'}
@@ -383,7 +390,7 @@ export default function DeficienciesPage() {
                         </td>
                         <td>
                           {woId ? (
-                            <Link to={`/work-orders/${woId}`} style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 600, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' }}>
+                            <Link to={`/work-orders/${woId}`} state={fromState} style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 600, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' }}>
                               View WO →
                             </Link>
                           ) : <span className="td-muted">—</span>}

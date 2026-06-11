@@ -12,6 +12,7 @@ import { Plus, MapPin } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import EmptyState from '../components/EmptyState';
+import { useFromState } from '../components/BackLink';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
@@ -122,6 +123,8 @@ export default function SitesList() {
   useDocumentTitle('Sites');
   const { user } = useAuth();
   const navigate = useNavigate();
+  // C1: row clicks record this list as the origin for SiteDetail's BackLink.
+  const fromState = useFromState();
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -140,7 +143,7 @@ export default function SitesList() {
 
   function handleCreated(site) {
     setShowAdd(false);
-    if (site?.id) navigate(`/sites/${site.id}`);
+    if (site?.id) navigate(`/sites/${site.id}`, { state: fromState });
     else fetchSites();
   }
 
@@ -191,7 +194,7 @@ export default function SitesList() {
                 </thead>
                 <tbody>
                   {sites.map(s => {
-                    const go = () => navigate(`/sites/${s.id}`);
+                    const go = () => navigate(`/sites/${s.id}`, { state: fromState });
                     const loc = [s.city, s.state].filter(Boolean).join(', ');
                     const defCount = s.openDeficiencyCount ?? 0;
                     return (

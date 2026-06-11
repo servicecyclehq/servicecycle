@@ -21,6 +21,7 @@ import { BookOpen, ArrowRight } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
+import BackLink from '../components/BackLink';
 
 // Publisher chip palette — literal hexes per the house domain-chip convention.
 const PUBLISHER_META = {
@@ -127,7 +128,7 @@ export default function StandardsLibrary() {
     <>
       <div className="page-header">
         <div>
-          <Link to="/reports" className="back-link">← Reports</Link>
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Standards Library</h1>
           <div className="page-subtitle">
             The documents that govern your electrical maintenance program — what each one is,

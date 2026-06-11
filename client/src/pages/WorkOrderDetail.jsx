@@ -19,12 +19,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { Pencil, FileText } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
+import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
   CONDITION_META, WO_STATUS_META, SEVERITY_META, DECAL_META, IEEE_STATUS_META,
@@ -200,7 +201,9 @@ function LeaveBehindButton({ woId, label = 'Leave-Behind PDF' }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function WorkOrderDetail() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  // C1: outbound links record this WO as the origin so their BackLink
+  // returns here.
+  const fromState = useFromState();
   const { user } = useAuth();
   const confirm = useConfirm();
   const canWrite = ['admin', 'manager'].includes(user?.role);
@@ -537,7 +540,7 @@ export default function WorkOrderDetail() {
         <div className="page-header"><h1 className="page-title">Work order</h1></div>
         <div className="page-body">
           <div role="alert" className="alert alert-error">{error || 'Work order not found.'}</div>
-          <Link to="/work-orders" className="btn btn-secondary" style={{ marginTop: 12 }}>Back to work orders</Link>
+          <BackLink fallback="/work-orders" fallbackLabel="Work orders" className="btn btn-secondary" style={{ marginTop: 12 }} />
         </div>
       </>
     );
@@ -566,12 +569,10 @@ export default function WorkOrderDetail() {
     <>
       <div className="page-header">
         <div>
-          <button
-            type="button" onClick={() => navigate('/work-orders')}
-            style={{ background: 'none', border: 'none', padding: 0, marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', cursor: 'pointer' }}
-          >
-            {String.fromCharCode(8592)} Work orders
-          </button>
+          <BackLink
+            fallback="/work-orders" fallbackLabel="Work orders"
+            style={{ padding: 0, marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}
+          />
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             {assetLabel(wo.asset)}
             <Chip meta={metaOf(WO_STATUS_META, wo.status)} fallback={wo.status} />
@@ -625,7 +626,7 @@ export default function WorkOrderDetail() {
           {!editing ? (
             <div style={{ padding: '14px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
               <DetailItem label="Asset">
-                <Link to={`/assets/${wo.asset?.id}`} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
+                <Link to={`/assets/${wo.asset?.id}`} state={fromState} style={{ fontWeight: 600, color: 'var(--color-primary)', textDecoration: 'none' }}>
                   {assetLabel(wo.asset)}
                 </Link>
               </DetailItem>

@@ -21,11 +21,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { BookOpenCheck, Copy, Download, FileCheck2, ShieldCheck } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import BackLink from '../components/BackLink';
 import { downloadAuthedFile } from '../api/download';
 import Toast from '../components/Toast';
 import EmptyState from '../components/EmptyState';
@@ -197,7 +197,7 @@ export default function AuditSnapshotsPage() {
     <>
       <div className="page-header">
         <div>
-          <Link to="/reports" className="back-link">← Reports</Link>
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Audit Evidence Snapshots</h1>
           <div className="page-subtitle">
             Point-in-time PDF compliance reports with cryptographic integrity hashes — evidence for an AHJ, insurer, or auditor.
