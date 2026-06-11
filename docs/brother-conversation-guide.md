@@ -189,3 +189,49 @@ Bring the notes back. We'll:
 3. Reprioritize any feature gaps he surfaces
 4. Update the acquisition narrative if exit signals are there
 5. Draft the formal pitch if warranted
+
+---
+
+## Section 9 — Test Data, PowerDB Import & Standards (NEW — 2026-06-11)
+
+Added after he corrected the NETA framing and asked us to ingest a real PowerDB/Megger annual report and trend it year-over-year. Goal: lock down the "standard vs optional" test taxonomy, the YoY signals that matter, and how the import should model devices. See `docs/research/2026-06-11-test-data-model-standard-vs-optional-yoy.md`.
+
+**Standards & scope**
+46. We're demoting NETA from "the standard" to optional/advanced and making **NFPA 70B Ch. 11–38 + manufacturer recommended maintenance** the primary procedure reference. Does that match how you actually scope a maintenance job?
+47. For each equipment type you service most (LV/MV breakers, switchgear, transformers, cables, batteries, relays) — what tests do you consider **standard annual maintenance** vs **optional/advanced** (only on request / troubleshooting / acceptance)? This directly drives what we default-show.
+48. Manufacturer recommended maintenance is "very hard to figure out." Where does that knowledge live today — OEM manuals, tribal knowledge, a database? Is there anything we could ingest, or do techs just know it?
+49. Cert reality check: should we drop "NETA cert required" entirely and replace it with a "qualified testing company" flag + optional cert tags (NICET / NETA / manufacturer-trained)? Anyone ever actually asked your techs for a cert?
+50. Beyond NFPA 70B, which standards do customers genuinely want *tracked* (NFPA 70E/arc flash, NFPA 110 gensets, IEEE 450/1188 batteries, manufacturer)? Which to prioritize vs. keep-but-optional?
+51. Confirm we mark **SFRA optional** (or remove). Any other advanced tests currently in the app we should demote the same way?
+
+**PowerDB / data plumbing**
+52. Does PowerDB (or the Megger device) export a **data file** — CSV / XML / database — or is the **PDF the only output** we'll realistically get? (This is the single biggest factor in import reliability.)
+53. Are oil quality / **DGA** results in the same PowerDB report, or separate lab reports? What format?
+54. When you say "device," is each **breaker its own asset**, or is the **substation the asset** and the breakers are just rows under it? How do you want to *see* it in the app?
+55. The same Device ID shows up as "B36S01" and "B36SO1" (O vs zero) in one report. How standardized are device IDs across years/techs — can we match on them reliably, or do we need a fuzzy-match/confirm step?
+
+**Year-over-year signals (the actual deliverable)**
+56. Do you trend results today at all, or just read this year's pass/fail? If you trend — in what tool?
+57. What YoY changes make you *act*? e.g., how much of a **contact-resistance** increase makes you say "remove and clean contacts"? How big an **insulation-resistance** drop worries you? Transformer **power factor** % thresholds?
+58. Do you react more to **one phase being off** (imbalance) or to **all three rising together**? Both matter — which triggers faster?
+59. Are you recording the variables we'd need to compare years *fairly* — **load %** at thermography, **temperature** at transformer IR/PF? Or is that inconsistent in the field?
+60. What would make a YoY trend report genuinely useful to **hand a customer** — per-asset cards, per-site rollup, an exec summary of "deficiencies trending worse"? What's the deliverable that wins the renewal?
+
+**New vs maintenance equipment (positioning)**
+61. Should customers be able to catalog **new** equipment too (using its acceptance test as the year-0 baseline), so it rolls into maintenance trending over its life? Or do they only care once it's on a service contract?
+
+---
+
+## Assumptions to gut-check (added 2026-06-11)
+
+- **Standard vs optional split** (see research doc §3) — is our per-equipment-type classification of "standard maintenance" tests right, or did we mislabel anything as standard that's really advanced (or vice-versa)?
+- **YoY flag logic** (research doc §4): contact resistance +>20–50% YoY, insulation resistance drop >50%, transformer PF >1.0%. Right ballpark, or what numbers do you actually use?
+- **Each switchgear breaker = a child asset** (auto-created on import). Does that match how techs think, or is it too granular?
+
+---
+
+## Section 10 — Test-tool ecosystem (NEW — 2026-06-11)
+
+62. Besides PowerDB, which test-data tools do your techs and your customers actually use — **Doble** (dobleARMS / Test Assistant), **OMICRON** (Primary Test Manager / ADMO), homegrown Excel, anything else? Rough split?
+63. For whichever they use: is the output **PDF-only** (like PowerDB) or do any of them **export structured data** (CSV / XML / database)? (Structured export = far easier and more reliable import for us.)
+64. If a customer is mid-stream on PowerDB, would they ever switch tools — or is the value in us being the layer that *consumes* whatever tool they already run?
