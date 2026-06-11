@@ -18,7 +18,7 @@
 
 ## How this differs from the Terms of Service
 
-The Terms of Service (ToS) at [servicecycle.com/terms](https://servicecycle.com/terms) govern your use of services that ForgeRift operates — the marketing site at servicecycle.com and the demo sandbox at demo.servicecycle.com. **This EULA governs your use of the Software you install on infrastructure you own or control.** You may be bound by both: the ToS while you're evaluating the demo, this EULA the moment you install. Where the two overlap, this EULA controls for the installed Software, and the ToS controls for the hosted services.
+The Terms of Service (ToS) at [servicecycle.app/terms](https://servicecycle.app/terms) govern your use of services that ForgeRift operates — the marketing site at servicecycle.app and the demo sandbox at servicecycle.app. **This EULA governs your use of the Software you install on infrastructure you own or control.** You may be bound by both: the ToS while you're evaluating the demo, this EULA the moment you install. Where the two overlap, this EULA controls for the installed Software, and the ToS controls for the hosted services.
 
 ---
 
@@ -105,7 +105,7 @@ ForgeRift is not a "processor" or "service provider" of any data you process thr
 
 ## 7. Third-party components
 
-The Software incorporates third-party open-source components, each of which is licensed under its own license terms. The complete list, with version numbers and license identifiers, is shipped inside every container image at `/app/sbom/` and is also available on request from support@servicecycle.com.
+The Software incorporates third-party open-source components, each of which is licensed under its own license terms. The complete list, with version numbers and license identifiers, is shipped inside every container image at `/app/sbom/` and is also available on request from support@servicecycle.app.
 
 Nothing in this EULA limits or restricts your rights under the licenses of any third-party open-source component, with respect to that component.
 
@@ -171,7 +171,7 @@ Your obligations under this Section 11(c) do not extend to claims to the extent 
 
 **Governing law.** This EULA is governed by the laws of the **State of Wisconsin, USA**, without regard to its conflict-of-laws principles. The United Nations Convention on Contracts for the International Sale of Goods does not apply.
 
-**Informal resolution required first.** Before commencing any arbitration or court proceeding, you and ForgeRift agree to attempt in good faith to resolve any dispute by sending a written notice describing the dispute, the relief sought, and your contact information to **support@servicecycle.com** (for notices to ForgeRift) or to the email address registered with your installation (for notices to you). The parties will attempt resolution for at least **30 days** before either party commences a formal proceeding. The 30-day period tolls any applicable limitations period.
+**Informal resolution required first.** Before commencing any arbitration or court proceeding, you and ForgeRift agree to attempt in good faith to resolve any dispute by sending a written notice describing the dispute, the relief sought, and your contact information to **support@servicecycle.app** (for notices to ForgeRift) or to the email address registered with your installation (for notices to you). The parties will attempt resolution for at least **30 days** before either party commences a formal proceeding. The 30-day period tolls any applicable limitations period.
 
 **Mandatory binding arbitration.** Except as provided in the "Carve-outs" paragraph below, any dispute, claim, or controversy arising out of or relating to this EULA, the Software, or the relationship between you and ForgeRift (a "Dispute") that is not resolved through the informal-resolution process will be resolved by **binding individual arbitration** administered by JAMS under its Streamlined Arbitration Rules and Procedures then in effect. The arbitration will be seated in **Milwaukee, Wisconsin**, conducted in English, and decided by a single arbitrator. The arbitrator's award is final and may be entered in any court of competent jurisdiction. **The Federal Arbitration Act, 9 U.S.C. §§ 1 et seq., governs the interpretation and enforcement of this arbitration agreement.**
 
@@ -189,6 +189,6 @@ Your obligations under this Section 11(c) do not extend to claims to the extent 
 
 **Entire agreement; severability; assignment; force majeure.** This EULA, together with the Privacy Policy (which governs the marketing site and demo sandbox only) and any separate written agreement between you and ForgeRift (including any Master Services Agreement and any signed order form), is the entire agreement between the parties regarding the Software. In the event of conflict, a signed Master Services Agreement controls over a signed order form, which controls over this EULA, which controls over the Privacy Policy with respect to the installed Software. If any provision is held unenforceable, the remaining provisions remain in effect. You may not assign this EULA without our prior written consent; we may assign freely. Neither party is liable for delay or failure caused by events beyond its reasonable control.
 
-**Notices.** Notices to ForgeRift may be sent to **support@servicecycle.com**. Notices to you may be sent to the email address you provided at install time or in any later support correspondence. The parties agree that electronic notices, including by email to the address each party most recently provided to the other, satisfy any legal-notice requirement under this EULA. A notice is effective on the date sent unless the sender receives a delivery-failure response, in which case the notice is effective only upon successful re-delivery to an updated address.
+**Notices.** Notices to ForgeRift may be sent to **support@servicecycle.app**. Notices to you may be sent to the email address you provided at install time or in any later support correspondence. The parties agree that electronic notices, including by email to the address each party most recently provided to the other, satisfy any legal-notice requirement under this EULA. A notice is effective on the date sent unless the sender receives a delivery-failure response, in which case the notice is effective only upon successful re-delivery to an updated address.
 
-**Contact.** Questions about this EULA? Email **support@servicecycle.com**.
+**Contact.** Questions about this EULA? Email **support@servicecycle.app**.

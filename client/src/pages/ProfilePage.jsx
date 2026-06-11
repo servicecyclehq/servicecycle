@@ -327,8 +327,8 @@ function YourDataCard({ user }) {
             — you cannot delete the account you're signed in as. Ask an
             admin to use the "Erase user" action on the Users page, or
             email{' '}
-            <a href="mailto:privacy@servicecycle.com" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
-              privacy@servicecycle.com
+            <a href="mailto:privacy@servicecycle.app" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+              privacy@servicecycle.app
             </a>{' '}
             if you're the only admin.
           </p>

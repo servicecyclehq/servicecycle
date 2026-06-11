@@ -158,7 +158,7 @@ export default function AiConsentModal() {
                     )}
                   </ul>
                   <a
-                    href="https://servicecycle.com/install"
+                    href="https://servicecycle.app/install"
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: 'var(--color-primary, #0d4f6e)', textDecoration: 'underline', fontWeight: 600 }}

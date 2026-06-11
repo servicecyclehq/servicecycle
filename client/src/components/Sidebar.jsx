@@ -258,7 +258,7 @@ function ViewerBanner() {
 //   - Get ServiceCycle for your team  external link to the L7 marketing form
 //   - Share ServiceCycle              prefilled mailto, lets visitors forward to a colleague
 //   - Send feedback                   opens existing FeedbackModal
-//   - Contact support                 mailto:support@servicecycle.com
+//   - Contact support                 mailto:support@servicecycle.app
 //
 // Visible to all roles in DEMO_MODE (the whole demo crowd is the audience for
 // "share / get this for your team" prompts). On non-demo installs we show only
@@ -302,8 +302,8 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
     'It’s called ServiceCycle — self-hosted electrical equipment maintenance ' +
     'compliance tracker built for facilities teams that need NFPA 70B ' +
     'schedules without an enterprise CMMS.\n\n' +
-    'Public demo: https://demo.servicecycle.com\n' +
-    'Install guide: https://servicecycle.com/install.sh\n\n' +
+    'Public demo: https://servicecycle.app\n' +
+    'Install guide: https://servicecycle.app/install.sh\n\n' +
     'Worth a look if your maintenance calendar still lives in a spreadsheet.\n'
   );
   const SHARE_SUBJECT = encodeURIComponent('ServiceCycle — maintenance compliance worth a look');
@@ -315,7 +315,7 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
       key: 'docs',
       label: 'Documentation',
       sub:   'Setup guide, API reference, runbooks',
-      href:  'https://servicecycle.com/docs',
+      href:  'https://servicecycle.app/docs',
       target: '_blank',
       showIn: 'all',
     },
@@ -345,7 +345,7 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
       key: 'team',
       label: 'Get ServiceCycle for your team →',
       sub:   'Self-hosted on your own infrastructure',
-      href:  'https://servicecycle.com/#early-access',
+      href:  'https://servicecycle.app/#early-access',
       target: '_blank',
       showIn: 'demo',  // only meaningful for visitors who don't already have an install
     },
@@ -366,8 +366,8 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
     {
       key: 'support',
       label: 'Contact support',
-      sub:   'support@servicecycle.com',
-      href:  'mailto:support@servicecycle.com',
+      sub:   'support@servicecycle.app',
+      href:  'mailto:support@servicecycle.app',
       showIn: 'all',
     },
     // ── Legal links — always visible ───────────────────────────────────────

@@ -115,6 +115,17 @@ export default function HelpDrawer({ currentPath = '' }) {
   const pathRef = useRef(currentPath);
   useEffect(() => { pathRef.current = currentPath; }, [currentPath]);
 
+  // 1.4: dismiss any open help panel when the user navigates to a different
+  // route, so help doesn't persist across pages (repro: open Reports help,
+  // click Contractors -> the Reports help used to stay open). Keyed on
+  // currentPath; the first run is skipped so the initial mount never fights a
+  // deep-link open.
+  const helpMountedRef = useRef(false);
+  useEffect(() => {
+    if (!helpMountedRef.current) { helpMountedRef.current = true; return; }
+    setOpen(false);
+  }, [currentPath]);
+
   // Listen for the global open event.
   useEffect(() => {
     function handler(e) {
@@ -476,7 +487,7 @@ export default function HelpDrawer({ currentPath = '' }) {
             Still confused?
           </span>
           <a
-            href="mailto:support@servicecycle.com"
+            href="mailto:support@servicecycle.app"
             style={{
               background: 'var(--color-primary, #0d4f6e)',
               color: 'var(--color-surface, #fff)',

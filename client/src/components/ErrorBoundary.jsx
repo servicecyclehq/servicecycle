@@ -134,8 +134,8 @@ export default class ErrorBoundary extends Component {
         {/* Support blurb with error code */}
         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary, #6b7280)', maxWidth: 380, lineHeight: 1.6 }}>
           Still stuck? Email{' '}
-          <a href="mailto:support@servicecycle.com" style={{ color: 'inherit' }}>
-            support@servicecycle.com
+          <a href="mailto:support@servicecycle.app" style={{ color: 'inherit' }}>
+            support@servicecycle.app
           </a>
           {errorCode && (
             <> and include error code: <strong>{errorCode}</strong></>

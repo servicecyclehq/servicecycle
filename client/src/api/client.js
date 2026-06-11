@@ -10,7 +10,7 @@ import axios from 'axios';
 // silently fell to the .catch() branch + the Register page showed
 // "Registration is closed on this instance" instead of the demo form.
 // '/api' resolves same-origin via the Caddy reverse proxy on demo
-// (servicecycle.com -> Caddy -> server container) and on self-host (whatever
+// (servicecycle.app -> Caddy -> server container) and on self-host (whatever
 // reverse-proxy the operator uses). Operators who need a cross-origin
 // API base can still set VITE_API_URL at build time to override.
 // v0.36.10: the v0.36.9 fix used '/api' as the fallback which double-

@@ -90,7 +90,7 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
               <code> /demo-sandbox-notice</code>) when the revision is
               complete. If you need a copy of any document for
               procurement, due-diligence, or regulatory purposes before
-              then, email <a style={s.link} href="mailto:privacy@servicecycle.com">privacy@servicecycle.com</a>
+              then, email <a style={s.link} href="mailto:privacy@servicecycle.app">privacy@servicecycle.app</a>
               {' '}and we will send the most recent draft along with the
               status of the revision.
             </p>
@@ -99,9 +99,9 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
               commitments described to you at the time you created your
               account. Personal-data export and deletion requests can be
               sent to{' '}
-              <a style={s.link} href="mailto:privacy@servicecycle.com">privacy@servicecycle.com</a>
+              <a style={s.link} href="mailto:privacy@servicecycle.app">privacy@servicecycle.app</a>
               {' '}and security-vulnerability reports to{' '}
-              <a style={s.link} href="mailto:security@servicecycle.com">security@servicecycle.com</a>.
+              <a style={s.link} href="mailto:security@servicecycle.app">security@servicecycle.app</a>.
             </p>
             <p style={{ ...s.calloutP, marginBottom: 0, color: '#5b6373', fontSize: 'var(--font-size-ui)' }}>
               — ForgeRift LLC, the team behind ServiceCycle
@@ -110,8 +110,8 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
 
           <div style={s.footerNav}>
             <Link to="/"      style={s.footerLink}>← Home</Link>
-            <a href="mailto:privacy@servicecycle.com" style={s.footerLink}>privacy@servicecycle.com</a>
-            <a href="mailto:security@servicecycle.com" style={s.footerLink}>security@servicecycle.com</a>
+            <a href="mailto:privacy@servicecycle.app" style={s.footerLink}>privacy@servicecycle.app</a>
+            <a href="mailto:security@servicecycle.app" style={s.footerLink}>security@servicecycle.app</a>
           </div>
         </main>
       </div>

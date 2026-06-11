@@ -35,7 +35,7 @@ By creating a sandbox account, you confirm you understand:
 
    **AI providers on the demo:** Primary provider is **Cloudflare Workers AI** (Mistral Small 3.1 24B for contract extraction and renewal briefs; Llama 3.1 8B for Ask ServiceCycle chat and news classification). Fallback providers, used only when Cloudflare is rate-limited or temporarily unavailable, are **Hugging Face Inference API** and **Groq Cloud** (chat / classification only). Cloudflare's Workers AI terms prohibit use of customer inputs or outputs to train models. The demo's AI spend is hard-capped at $25 per month under a server-side budget guard.
 
-   **Self-hosted installations use a "bring-your-own-AI" (BYO-AI) model** — operators connect their own AI provider's API key (Cloudflare, Anthropic, OpenAI, Azure OpenAI, Google Vertex AI, Mistral paid Scale plan, or self-hosted Ollama). The operator pays their AI provider directly; ForgeRift does not resell or bill for AI usage on self-hosted deployments. See the ServiceCycle Settings → AI screen and the install guide at https://servicecycle.com/install#step-3-ai for provider selection guidance.
+   **Self-hosted installations use a "bring-your-own-AI" (BYO-AI) model** — operators connect their own AI provider's API key (Cloudflare, Anthropic, OpenAI, Azure OpenAI, Google Vertex AI, Mistral paid Scale plan, or self-hosted Ollama). The operator pays their AI provider directly; ForgeRift does not resell or bill for AI usage on self-hosted deployments. See the ServiceCycle Settings → AI screen and the install guide at https://servicecycle.app/install#step-3-ai for provider selection guidance.
 
    You'll see "Daily AI limit reached — self-host ServiceCycle to remove all caps" if you exceed any per-user cap. Caps exist for sustainable-demo cost protection and to keep the demo within "light production use" thresholds on free-tier-eligible providers; they are not feature limits and may be adjusted.
 
@@ -55,11 +55,11 @@ If you submit feedback through the in-product form, that message goes to a real 
 
 ## Need to delete your account before the TTL fires?
 
-Email **support@servicecycle.com** from the address you registered with and we'll wipe your account in accordance with applicable law (typically within 30 days; sooner where required by GDPR, CCPA/CPRA, or other applicable data-protection law). See the Privacy Policy for the formal data-subject-request mechanism.
+Email **support@servicecycle.app** from the address you registered with and we'll wipe your account in accordance with applicable law (typically within 30 days; sooner where required by GDPR, CCPA/CPRA, or other applicable data-protection law). See the Privacy Policy for the formal data-subject-request mechanism.
 
 ---
 
-*If any of the above is a problem for your use case, don't create a sandbox account — install ServiceCycle on your own infrastructure instead. The [install guide](https://servicecycle.com/install.sh) is one command.*
+*If any of the above is a problem for your use case, don't create a sandbox account — install ServiceCycle on your own infrastructure instead. The [install guide](https://servicecycle.app/install.sh) is one command.*
 
 ## Feedback collection on the demo
 

@@ -904,3 +904,15 @@ html { overflow-x: hidden; }
 .budget-forecast-table td:nth-child(2) { max-width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .budget-forecast-table td:nth-child(3) { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .budget-forecast-table td:nth-child(5) { max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 4.3: native <option> dropdown popups don't inherit a select's themed
+   background/color on every OS, so in dark mode the Import "Source system"
+   and column-mapping dropdowns rendered near-white option text on a white
+   system background (unreadable). Pin option colors to the surface tokens so
+   they stay legible in both light and dark themes. */
+select option,
+select.form-control option,
+select.filter-select option,
+.filter-select option {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}

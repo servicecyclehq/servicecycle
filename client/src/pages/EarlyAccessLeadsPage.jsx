@@ -6,7 +6,7 @@
  *
  * Read-only: no row mutation. Replying to a lead = clicking the email
  * address (mailto). The API row is kept indefinitely for audit; the
- * privacy policy commits to deletion-on-request via support@servicecycle.com.
+ * privacy policy commits to deletion-on-request via support@servicecycle.app.
  */
 
 import { useEffect, useState } from 'react';
@@ -82,7 +82,7 @@ export default function EarlyAccessLeadsPage() {
         <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 700, marginBottom: 4 }}>Early-access leads</h1>
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-data)', margin: 0 }}>
           Submissions from the landing-page form at{' '}
-          <a href="/" style={{ color: 'var(--color-primary)' }}>servicecycle.com/#early-access</a>.
+          <a href="/" style={{ color: 'var(--color-primary)' }}>servicecycle.app/#early-access</a>.
           Click any email to reply.
         </p>
       </div>

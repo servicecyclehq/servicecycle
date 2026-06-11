@@ -117,7 +117,7 @@ export default function Register() {
             you'd like to be notified when sign-ups re-open, or you need
             access to the documents now for procurement or due-diligence,
             email{' '}
-            <a href="mailto:privacy@servicecycle.com" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>privacy@servicecycle.com</a>.
+            <a href="mailto:privacy@servicecycle.app" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>privacy@servicecycle.app</a>.
           </p>
           <Link to="/login" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
             Back to sign in
@@ -144,7 +144,7 @@ export default function Register() {
           <p style={{ fontSize: 'var(--font-size-data)', color: 'var(--color-text-secondary)', marginTop: 16, marginBottom: 16 }}>
             Public sign-up isn't enabled on this ServiceCycle install. Contact your
             administrator for an invite, or visit the public demo at{' '}
-            <a href="https://demo.servicecycle.com" style={{ color: 'var(--color-primary)' }}>demo.servicecycle.com</a>.
+            <a href="https://servicecycle.app" style={{ color: 'var(--color-primary)' }}>servicecycle.app</a>.
           </p>
           <Link to="/login" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
             Back to sign in
@@ -381,7 +381,7 @@ export default function Register() {
                   <strong>United States</strong>. The ServiceCycle demo sandbox is
                   currently available to U.S.-based businesses only. If you
                   need access from outside the U.S., email{' '}
-                  <a href="mailto:sales@servicecycle.com" style={{ color: 'var(--color-primary)' }}>sales@servicecycle.com</a>.
+                  <a href="mailto:sales@servicecycle.app" style={{ color: 'var(--color-primary)' }}>sales@servicecycle.app</a>.
                 </span>
               </label>
             </div>

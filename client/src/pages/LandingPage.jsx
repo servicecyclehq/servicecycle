@@ -160,7 +160,7 @@ const STEPS = [
 ];
 
 // ── Early-access form (L7) ────────────────────────────────────────────────────
-// Replaces the pre-L7 mailto:hello@servicecycle.com CTAs with a real form that
+// Replaces the pre-L7 mailto:hello@servicecycle.app CTAs with a real form that
 // hits POST /api/early-access. Honeypot field "website" is hidden — humans
 // don't fill it; bots do.
 
@@ -194,12 +194,12 @@ function EarlyAccessForm() {
       if (!res.ok || !data?.success) {
         const msg = data?.issues?.[0]?.msg
           || data?.error
-          || `Submission failed (HTTP ${res.status}). Please email support@servicecycle.com directly.`;
+          || `Submission failed (HTTP ${res.status}). Please email support@servicecycle.app directly.`;
         throw new Error(msg);
       }
       setDone(true);
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again or email support@servicecycle.com.');
+      setError(err.message || 'Something went wrong. Please try again or email support@servicecycle.app.');
     } finally {
       setSubmitting(false);
     }
@@ -212,7 +212,7 @@ function EarlyAccessForm() {
         <h3 style={s.formDoneH3}>You're on the list.</h3>
         <p style={s.formDoneP}>
           Check your inbox in the next minute — there's a one-line install command
-          waiting for you. If it doesn't arrive, ping <a href="mailto:support@servicecycle.com" style={{ color: '#0d4f6e' }}>support@servicecycle.com</a> directly.
+          waiting for you. If it doesn't arrive, ping <a href="mailto:support@servicecycle.app" style={{ color: '#0d4f6e' }}>support@servicecycle.app</a> directly.
         </p>
       </div>
     );
@@ -336,7 +336,7 @@ export default function LandingPage() {
           </p>
           <div style={s.heroCtas}>
             {/* L7: above-the-fold CTA scrolls to the inline early-access
-                form (was a mailto:hello@servicecycle.com pre-L7). */}
+                form (was a mailto:hello@servicecycle.app pre-L7). */}
             <a href="#early-access" style={s.ctaPrimary}>
               Request access →
             </a>
