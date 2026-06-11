@@ -62,9 +62,10 @@ function MetaChip({ meta, fallback }) {
   if (!meta) return <span className="text-muted">{fallback || '—'}</span>;
   return (
     <span style={{
-      display: 'inline-block', padding: '2px 9px', borderRadius: 20,
-      fontSize: 'var(--font-size-xs)', fontWeight: 700, letterSpacing: '0.03em',
-      background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+      display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+      fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '0.02em', lineHeight: 1.5,
+      background: meta.bg, color: meta.color,
+      border: `1px solid color-mix(in srgb, ${meta.color} 40%, transparent)`,
       whiteSpace: 'nowrap',
     }}>
       {meta.label}
@@ -75,11 +76,11 @@ function MetaChip({ meta, fallback }) {
 function ServiceChip({ on, onLabel, offLabel }) {
   return (
     <span style={{
-      display: 'inline-block', padding: '2px 9px', borderRadius: 20,
-      fontSize: 'var(--font-size-xs)', fontWeight: 600, whiteSpace: 'nowrap',
-      background: on ? 'var(--color-success-bg)' : 'var(--color-bg)',
-      color: on ? 'var(--color-success)' : 'var(--color-text-muted)',
-      border: `1px solid ${on ? 'var(--color-success)' : 'var(--color-border)'}`,
+      display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+      fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '0.02em', lineHeight: 1.5, whiteSpace: 'nowrap',
+      background: on ? 'var(--chip-green-bg, var(--color-success-bg))' : 'var(--color-bg)',
+      color: on ? 'var(--chip-green-fg, var(--color-success))' : 'var(--color-text-muted)',
+      border: `1px solid ${on ? 'color-mix(in srgb, var(--chip-green-fg, var(--color-success)) 40%, transparent)' : 'var(--color-border)'}`,
     }}>
       {on ? onLabel : offLabel}
     </span>
@@ -116,10 +117,10 @@ function GroupComplianceBadge({ items }) {
   const statuses = items.map(scheduleStatus);
   const current = statuses.filter(st => st === 'current').length;
   const palette = statuses.includes('overdue')
-    ? { color: '#dc2626', bg: '#fef2f2' }
+    ? { color: 'var(--chip-red-fg, #dc2626)', bg: 'var(--chip-red-bg, #fef2f2)' }
     : statuses.includes('unbaselined')
-      ? { color: '#d97706', bg: '#fffbeb' }
-      : { color: '#16a34a', bg: '#f0fdf4' };
+      ? { color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' }
+      : { color: 'var(--chip-green-fg, #16a34a)', bg: 'var(--chip-green-bg, #f0fdf4)' };
   return <MetaChip meta={{ ...palette, label: `${current} of ${items.length} current` }} />;
 }
 
@@ -760,19 +761,14 @@ export default function AssetDetail() {
         )}
       </div>
 
-      <div style={{ padding: '0 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: 4 }}>
+      <div className="detail-tabs">
         {[['overview', 'Overview'], ['testing', 'Testing & Trends']].map(([key, label]) => (
           <button
             key={key}
             type="button"
+            className="detail-tab"
+            data-active={activeTab === key ? 'true' : 'false'}
             onClick={() => setActiveTab(key)}
-            style={{
-              background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer',
-              fontSize: 'var(--font-size-ui)', fontWeight: activeTab === key ? 700 : 500,
-              color: activeTab === key ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-              borderBottom: activeTab === key ? '2px solid var(--color-primary)' : '2px solid transparent',
-              marginBottom: -1,
-            }}
           >
             {label}
           </button>

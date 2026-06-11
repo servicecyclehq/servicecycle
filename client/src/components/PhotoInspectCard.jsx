@@ -78,7 +78,7 @@ function CondChip({ cond, prefix }) {
     <span style={{
       display: 'inline-block', padding: '2px 9px', borderRadius: 20,
       fontSize: 'var(--font-size-xs)', fontWeight: 700, letterSpacing: '0.03em',
-      background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+      background: meta.bg, color: meta.color, border: `1px solid color-mix(in srgb, ${meta.color} 40%, transparent)`,
       whiteSpace: 'nowrap',
     }}>
       {prefix ? `${prefix} ${cond}` : meta.label}

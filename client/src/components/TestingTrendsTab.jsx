@@ -110,16 +110,18 @@ function ChartTooltip({ active, payload, label }) {
   return (
     <div
       style={{
-        background: 'var(--color-surface, var(--color-card, #161b22))',
+        background: 'color-mix(in srgb, var(--color-surface, #161b22) 88%, transparent)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
         border: '1px solid var(--color-border)',
-        borderRadius: 10,
-        padding: '10px 12px',
+        borderRadius: 12,
+        padding: '10px 14px',
         boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0,0,0,0.18))',
         fontSize: 12,
-        minWidth: 130,
+        minWidth: 140,
       }}
     >
-      <div style={{ color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <div style={{ color: 'var(--color-text-muted)', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 6 }}>{label}</div>
       {rows.map((p) => (
         <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 8, lineHeight: 1.7 }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: p.color, display: 'inline-block', flex: '0 0 auto' }} />
@@ -159,7 +161,7 @@ function ReadingGauge({ label, value, unit, max, color }) {
             alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
           }}
         >
-          <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
             {Number(Number(value).toFixed(2))}
           </span>
           {unit && <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{unit}</span>}
@@ -316,23 +318,16 @@ export default function TestingTrendsTab({ asset }) {
         <div className="card-header" style={{ alignItems: 'flex-start' }}>
           <div>
             <div className="card-title">Trend Analysis</div>
-            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+            <span className="card-subtitle" style={{ display: 'block' }}>
               {titleCase(activeType || '')}{chartUnit ? ` (${chartUnit})` : ''} across {events.length} test event{events.length !== 1 ? 's' : ''}
               {hasFlag ? ' · trending the wrong way' : ''}
             </span>
           </div>
           {types.length > 1 && (
             <select
+              className="filter-select"
               value={activeType || ''}
               onChange={(e) => setSelectedType(e.target.value)}
-              style={{
-                background: 'var(--color-surface, var(--color-card))',
-                color: 'var(--color-text)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius, 6px)',
-                padding: '6px 10px',
-                fontSize: 13,
-              }}
             >
               {types.map((t) => (
                 <option key={t} value={t}>{titleCase(t)}</option>
@@ -352,7 +347,7 @@ export default function TestingTrendsTab({ asset }) {
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid strokeDasharray="4 4" stroke="var(--color-border)" strokeOpacity={0.35} vertical={false} />
+              <CartesianGrid strokeDasharray="3 6" stroke="var(--color-border)" strokeOpacity={0.45} vertical={false} />
               <XAxis
                 dataKey="label"
                 tick={{ fill: 'var(--color-text-muted)', fontSize: 12 }}
@@ -374,11 +369,11 @@ export default function TestingTrendsTab({ asset }) {
                   dataKey={s.key}
                   name={s.name}
                   stroke={s.color}
-                  strokeWidth={2}
+                  strokeWidth={2.25}
                   fill={`url(#grad-${s.key})`}
                   connectNulls
                   dot={false}
-                  activeDot={{ r: 4, strokeWidth: 0 }}
+                  activeDot={{ r: 4.5, stroke: 'var(--color-surface)', strokeWidth: 2 }}
                   isAnimationActive={false}
                 />
               ))}
@@ -404,7 +399,7 @@ export default function TestingTrendsTab({ asset }) {
       <div className="card mb-16">
         <div className="card-header">
           <div className="card-title">Year-over-Year Test Trends</div>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+          <span className="card-subtitle" style={{ display: 'block' }}>
             {events.length} test event{events.length !== 1 ? 's' : ''} · readings flagged in red are trending the wrong way
           </span>
         </div>
@@ -459,7 +454,7 @@ export default function TestingTrendsTab({ asset }) {
         <div className="card mb-16" key={ev.id}>
           <div className="card-header">
             <div className="card-title">Test Event · {fmtDate(ev.date)}</div>
-            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+            <span className="card-subtitle" style={{ display: 'block' }}>
               {[ev.vendor, ev.techName].filter(Boolean).join(' · ') || 'Test report'}
             </span>
           </div>

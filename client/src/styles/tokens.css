@@ -144,10 +144,10 @@
   --border-default:  1px solid var(--color-border);
   --border-emphasis: 1.5px solid var(--color-petrol);
 
-  /* ─── Shadows (use sparingly — palette does the work) ── */
-  --shadow-sm:  0 1px 2px 0 rgba(10, 13, 18, 0.04);
-  --shadow-md:  0 2px 6px -1px rgba(10, 13, 18, 0.06), 0 1px 3px -1px rgba(10, 13, 18, 0.04);
-  --shadow-lg:  0 8px 24px -8px rgba(10, 13, 18, 0.08);
+  /* ─── Shadows — v0.93 layered elevation (soft key + ambient) ── */
+  --shadow-sm:  0 1px 2px rgba(10, 13, 18, 0.04), 0 1px 1px rgba(10, 13, 18, 0.03);
+  --shadow-md:  0 1px 2px rgba(10, 13, 18, 0.05), 0 4px 12px -4px rgba(10, 13, 18, 0.07);
+  --shadow-lg:  0 2px 6px -2px rgba(10, 13, 18, 0.08), 0 16px 32px -16px rgba(10, 13, 18, 0.14);
   --shadow-focus: 0 0 0 3px rgba(7, 58, 82, 0.18);
 
   /* ─── Motion ───────────────────────────────────────────── */
@@ -202,4 +202,30 @@
   --shadow-focus: 0 0 0 3px rgba(26, 107, 145, 0.32);
 
   color-scheme: dark;
+}
+
+/* ─── v0.93 semantic chip tokens ────────────────────────────
+   Status pills/badges (severity, condition, WO status, NETA
+   decal, IEEE DGA, redundancy, criticality) read fg/bg pairs
+   from these instead of literal hexes, so they stay AA-legible
+   in BOTH themes. Canonical consumers: index.css + the meta
+   records in client/src/lib/equipment.js. Dark mode uses
+   lifted pastel text on a translucent same-hue fill. */
+:root {
+  --chip-red-fg:        #b91c1c;  --chip-red-bg:        #fef2f2;
+  --chip-orange-fg:     #c2410c;  --chip-orange-bg:     #fff7ed;
+  --chip-amber-fg:      #a16207;  --chip-amber-bg:      #fefce8;
+  --chip-green-fg:      #15803d;  --chip-green-bg:      #f0fdf4;
+  --chip-blue-fg:       #1d4ed8;  --chip-blue-bg:       #eff6ff;
+  --chip-slate-fg:      #475569;  --chip-slate-bg:      #f1f5f9;
+  --chip-slate-soft-fg: #64748b;  --chip-slate-soft-bg: #f8fafc;
+}
+[data-theme='dark'] {
+  --chip-red-fg:        #fca5a5;  --chip-red-bg:        rgba(248, 113, 113, 0.14);
+  --chip-orange-fg:     #fdba74;  --chip-orange-bg:     rgba(251, 146, 60, 0.14);
+  --chip-amber-fg:      #fcd34d;  --chip-amber-bg:      rgba(251, 191, 36, 0.12);
+  --chip-green-fg:      #86efac;  --chip-green-bg:      rgba(74, 222, 128, 0.12);
+  --chip-blue-fg:       #93c5fd;  --chip-blue-bg:       rgba(96, 165, 250, 0.14);
+  --chip-slate-fg:      #cbd5e1;  --chip-slate-bg:      rgba(148, 163, 184, 0.14);
+  --chip-slate-soft-fg: #94a3b8;  --chip-slate-soft-bg: rgba(148, 163, 184, 0.09);
 }

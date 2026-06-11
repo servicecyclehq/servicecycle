@@ -39,7 +39,9 @@ function metaOf(metaMap, key) {
 function KpiTile({ label, value, sub, accent, onClick }) {
   return (
     <div
-      className="card"
+      className="card stat-tile"
+      data-accented={accent ? 'true' : undefined}
+      data-clickable={onClick ? 'true' : undefined}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : -1}
@@ -47,20 +49,17 @@ function KpiTile({ label, value, sub, accent, onClick }) {
       style={{
         padding: '18px 22px', flex: '1 1 0', minWidth: 0, overflow: 'hidden',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'box-shadow 0.15s, transform 0.15s',
-        borderTop: accent ? `3px solid ${accent}` : undefined,
+        '--tile-accent': accent || 'transparent',
       }}
-      onMouseEnter={e => { if (onClick) { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.10)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.transform = ''; }}
     >
-      <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div className="stat-tile-label" style={{ marginBottom: 10 }}>
         {label}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: accent || 'var(--color-text)', lineHeight: 1.1 }}>
+      <div className="stat-tile-value" style={accent ? { color: accent } : undefined}>
         {value}
       </div>
       {sub && (
-        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className="stat-tile-sub">
           {sub}
         </div>
       )}
@@ -79,7 +78,8 @@ function SeverityTile({ severity, count, onClick }) {
     : (m.color || 'var(--color-text)');
   return (
     <div
-      className="card"
+      className="card stat-tile"
+      data-clickable={onClick ? 'true' : undefined}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : -1}
@@ -88,16 +88,16 @@ function SeverityTile({ severity, count, onClick }) {
         flex: '1 1 0', minWidth: 0, padding: '14px 18px',
         display: 'flex', alignItems: 'center', gap: 12,
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'box-shadow 0.15s, transform 0.15s',
       }}
-      onMouseEnter={e => { if (onClick) { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.10)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.transform = ''; }}
       title={`Open ${m.label || severity} deficiencies — click to triage`}
     >
-      <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      <span aria-hidden="true" style={{
+        width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0,
+        boxShadow: `0 0 0 4px color-mix(in srgb, ${color} 14%, transparent)`,
+      }} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1.1 }}>{count}</div>
-        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className="stat-tile-value" style={{ fontSize: 22, color }}>{count}</div>
+        <div className="stat-tile-sub" style={{ marginTop: 2 }}>
           {m.label || severity}
         </div>
       </div>
@@ -117,10 +117,9 @@ function SiteComplianceRow({ row, navigate }) {
   const go = () => navigate(`/sites/${row.siteId}`);
   return (
     <div
-      style={{ marginBottom: 4, cursor: 'pointer', borderRadius: 'var(--radius)', padding: '6px', transition: 'background 0.12s' }}
+      className="hover-row"
+      style={{ marginBottom: 4, cursor: 'pointer', padding: '7px 8px' }}
       onClick={go} role="button" tabIndex={0} onKeyDown={kbdActivate(go)}
-      onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-surface)'; }}
-      onMouseLeave={e => { e.currentTarget.style.background = ''; }}
       title={`${row.siteName}: ${row.overdue} overdue of ${row.total} schedules`}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, gap: 8 }}>
@@ -134,8 +133,11 @@ function SiteComplianceRow({ row, navigate }) {
           </span>
         </span>
       </div>
-      <div style={{ height: 8, background: 'var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${row.complianceRate}%`, background: color, borderRadius: 4, transition: 'width 0.4s ease' }} />
+      <div style={{ height: 8, background: 'color-mix(in srgb, var(--color-border) 55%, transparent)', borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', width: `${row.complianceRate}%`, borderRadius: 999, transition: 'width 0.4s ease',
+          background: `linear-gradient(90deg, color-mix(in srgb, ${color} 72%, transparent), ${color})`,
+        }} />
       </div>
     </div>
   );
@@ -239,7 +241,7 @@ function MaintenanceHorizon({ navigate }) {
       <div className="card-header">
         <div>
           <div className="card-title">Maintenance horizon — next 36 months</div>
-          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+          <div className="card-subtitle">
             Schedules coming due per month — click a month to open it in the calendar
           </div>
         </div>
@@ -343,9 +345,10 @@ function PillChip({ meta, fallback, title }) {
   if (!meta) return <span className="text-muted">{fallback || '—'}</span>;
   return (
     <span title={title} style={{
-      display: 'inline-block', padding: '2px 8px', borderRadius: 999,
-      fontSize: 'var(--font-size-xs)', fontWeight: 700, whiteSpace: 'nowrap',
-      background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+      display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+      fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '0.01em', whiteSpace: 'nowrap',
+      background: meta.bg, color: meta.color,
+      border: `1px solid color-mix(in srgb, ${meta.color} 40%, transparent)`,
     }}>
       {meta.label}
     </span>
@@ -453,7 +456,7 @@ function PriorityAssetsCard({ navigate }) {
       <div className="card-header">
         <div>
           <div className="card-title">Priority assets</div>
-          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+          <div className="card-subtitle">
             Where to spend the next maintenance dollar — by risk, replacement cost, or fleet volume
           </div>
         </div>
@@ -467,15 +470,9 @@ function PriorityAssetsCard({ navigate }) {
               key={t.key}
               type="button"
               role="tab"
+              className="tab-pill"
               aria-selected={active}
               onClick={() => setTab(t.key)}
-              style={{
-                padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
-                fontSize: 'var(--font-size-sm)', fontWeight: active ? 700 : 500, whiteSpace: 'nowrap',
-                background: active ? 'var(--color-primary-light, #eef6f6)' : 'transparent',
-                color: active ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
-              }}
             >
               {t.label}
             </button>
@@ -613,13 +610,7 @@ function CapExForecastPanel() {
   const fmt = (c) => `$${Math.round(c / 100).toLocaleString()}`;
 
   return (
-    <div style={{
-      marginTop: 24,
-      padding: '20px 24px',
-      background: 'var(--color-surface)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 10,
-    }}>
+    <div className="card" style={{ marginTop: 24, marginBottom: 20, padding: '20px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>
           Estimated Electrical CapEx Exposure
@@ -641,14 +632,14 @@ function CapExForecastPanel() {
           <div key={f.year} style={{
             flex: '1 1 160px',
             padding: '14px 16px',
-            background: 'var(--color-bg)',
+            background: 'linear-gradient(160deg, var(--color-primary-light) -40%, var(--color-bg) 45%)',
             border: '1px solid var(--color-border)',
-            borderRadius: 8,
+            borderRadius: 'var(--radius-lg, 12px)',
           }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
               {f.year}
             </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+            <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-primary)' }}>
               {fmt(f.minCents)}
             </div>
             <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '2px 0 6px' }}>
@@ -743,8 +734,13 @@ export default function Dashboard() {
         {error && <div role="alert" className="alert alert-error">{error}</div>}
 
         {data && data.assetCount === 0 && (
-          <div className="card" style={{ padding: '40px 32px', textAlign: 'center', maxWidth: 640, margin: '0 auto 20px' }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }} aria-hidden="true">⚡</div>
+          <div className="card" style={{ padding: '44px 32px', textAlign: 'center', maxWidth: 640, margin: '0 auto 20px' }}>
+            <div aria-hidden="true" style={{
+              width: 64, height: 64, margin: '0 auto 16px', fontSize: 30,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 18, background: 'linear-gradient(135deg, var(--color-primary-light), transparent)',
+              border: '1px solid var(--color-border)',
+            }}>⚡</div>
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
               Welcome to ServiceCycle
             </div>
@@ -763,7 +759,7 @@ export default function Dashboard() {
         {data && data.assetCount > 0 && (
           <>
             {/* ── KPI tiles ─────────────────────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: isMobile ? 10 : 16, marginBottom: 20 }}>
               <KpiTile
                 label="Due in 30 days" value={due.due30}
                 sub="Active schedules"
@@ -789,9 +785,9 @@ export default function Dashboard() {
             </div>
 
             {/* ── Deficiencies by severity + overall compliance ─────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 14, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16, marginBottom: 20 }}>
               <div className="card" style={{ padding: '14px 18px' }}>
-                <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
+                <div className="stat-tile-label" style={{ marginBottom: 10 }}>
                   Open deficiencies by severity
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -806,10 +802,10 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="card" style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: 6 }}>
+                <div className="stat-tile-label" style={{ marginBottom: 6 }}>
                   Overall compliance rate
                 </div>
-                <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.1, color: complianceColor(data.overallComplianceRate ?? 100) }}>
+                <div className="stat-tile-value" style={{ fontSize: 36, color: complianceColor(data.overallComplianceRate ?? 100) }}>
                   {data.overallComplianceRate ?? 100}%
                 </div>
                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
@@ -824,7 +820,7 @@ export default function Dashboard() {
                 <div className="card-header">
                   <div>
                     <div className="card-title">Compliance by site</div>
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                    <div className="card-subtitle">
                       % of active maintenance schedules not overdue — click a site to drill in
                     </div>
                   </div>
@@ -845,7 +841,7 @@ export default function Dashboard() {
               <div className="card-header">
                 <div>
                   <div className="card-title">Next maintenance due</div>
-                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                  <div className="card-subtitle">
                     Nearest due schedules, including overdue
                   </div>
                 </div>
@@ -919,7 +915,7 @@ export default function Dashboard() {
               <div className="card-header">
                 <div>
                   <div className="card-title">Recent work orders</div>
-                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                  <div className="card-subtitle">
                     Most recently updated jobs
                   </div>
                 </div>
@@ -939,10 +935,9 @@ export default function Dashboard() {
                     return (
                       <div
                         key={wo.id}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 6px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
+                        className="hover-row"
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 8px', borderBottom: '1px solid var(--color-border)', borderRadius: 0, cursor: 'pointer' }}
                         onClick={go} role="button" tabIndex={0} onKeyDown={kbdActivate(go)}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-surface)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = ''; }}
                       >
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 'var(--font-size-ui)', fontWeight: 600, color: 'var(--color-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -955,11 +950,11 @@ export default function Dashboard() {
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
                           <span style={{
-                            display: 'inline-block', padding: '2px 8px', borderRadius: 999,
-                            fontSize: 'var(--font-size-xs)', fontWeight: 600, whiteSpace: 'nowrap',
+                            display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+                            fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '0.01em', whiteSpace: 'nowrap',
                             background: m.bg || 'var(--color-surface)',
                             color: m.color || 'var(--color-text-secondary)',
-                            border: `1px solid ${m.color || 'var(--color-border)'}`,
+                            border: `1px solid color-mix(in srgb, ${m.color || 'var(--color-border)'} 40%, transparent)`,
                           }}>
                             {m.label || wo.status}
                           </span>

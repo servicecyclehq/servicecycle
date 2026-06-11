@@ -45,51 +45,55 @@ export const EQUIPMENT_TYPE_LABELS = {
 
 // Power-path redundancy at the asset's position. N = single point of failure
 // (red), N+1 = one spare path (amber), 2N = fully duplicated (green).
+// Chip palette note (v0.93 UI pass): colors route through the semantic
+// --chip-* CSS tokens declared in index.css so every pill stays AA-readable
+// in BOTH themes (the old literal hexes were light-mode-only). The hex
+// fallbacks preserve the previous light-mode look if a token is missing.
 export const REDUNDANCY_META = {
-  N:        { label: 'N (no redundancy)', color: '#dc2626', bg: '#fef2f2' },
-  N_PLUS_1: { label: 'N+1',               color: '#d97706', bg: '#fffbeb' },
-  TWO_N:    { label: '2N',                color: '#16a34a', bg: '#f0fdf4' },
+  N:        { label: 'N (no redundancy)', color: 'var(--chip-red-fg, #dc2626)',   bg: 'var(--chip-red-bg, #fef2f2)' },
+  N_PLUS_1: { label: 'N+1',               color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' },
+  TWO_N:    { label: '2N',                color: 'var(--chip-green-fg, #16a34a)', bg: 'var(--chip-green-bg, #f0fdf4)' },
 };
 
 // Business-impact criticality score (1–5). Labels describe the consequence of
 // failure; colors escalate red-ward as the score climbs.
 export const CRITICALITY_SCORE_META = {
-  5: { label: 'Failure = injury / shutdown / fines',   color: '#dc2626', bg: '#fef2f2' },
-  4: { label: 'Major disruption to operations',        color: '#ea580c', bg: '#fff7ed' },
-  3: { label: 'Moderate disruption, workaround exists', color: '#d97706', bg: '#fffbeb' },
-  2: { label: 'Minor inconvenience',                   color: '#64748b', bg: '#f1f5f9' },
-  1: { label: 'Minimal impact',                        color: '#94a3b8', bg: '#f8fafc' },
+  5: { label: 'Failure = injury / shutdown / fines',   color: 'var(--chip-red-fg, #dc2626)',        bg: 'var(--chip-red-bg, #fef2f2)' },
+  4: { label: 'Major disruption to operations',        color: 'var(--chip-orange-fg, #ea580c)',     bg: 'var(--chip-orange-bg, #fff7ed)' },
+  3: { label: 'Moderate disruption, workaround exists', color: 'var(--chip-amber-fg, #d97706)',     bg: 'var(--chip-amber-bg, #fffbeb)' },
+  2: { label: 'Minor inconvenience',                   color: 'var(--chip-slate-fg, #64748b)',      bg: 'var(--chip-slate-bg, #f1f5f9)' },
+  1: { label: 'Minimal impact',                        color: 'var(--chip-slate-soft-fg, #94a3b8)', bg: 'var(--chip-slate-soft-bg, #f8fafc)' },
 };
 
 // NFPA 70B:2023 condition of maintenance. The governing condition is the
 // WORST of the three assessment axes (physical / criticality / environment)
 // and selects the maintenance interval column on each task definition.
 export const CONDITION_META = {
-  C1: { label: 'C1 — Good', color: '#16a34a', bg: '#f0fdf4' },
-  C2: { label: 'C2 — Fair', color: '#d97706', bg: '#fffbeb' },
-  C3: { label: 'C3 — Poor', color: '#dc2626', bg: '#fef2f2' },
+  C1: { label: 'C1 — Good', color: 'var(--chip-green-fg, #16a34a)', bg: 'var(--chip-green-bg, #f0fdf4)' },
+  C2: { label: 'C2 — Fair', color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' },
+  C3: { label: 'C3 — Poor', color: 'var(--chip-red-fg, #dc2626)',   bg: 'var(--chip-red-bg, #fef2f2)' },
 };
 
 export const WO_STATUS_META = {
-  SCHEDULED:   { label: 'Scheduled',   color: '#2563eb', bg: '#eff6ff' },
-  IN_PROGRESS: { label: 'In Progress', color: '#d97706', bg: '#fffbeb' },
-  COMPLETE:    { label: 'Complete',    color: '#16a34a', bg: '#f0fdf4' },
-  CANCELLED:   { label: 'Cancelled',   color: '#64748b', bg: '#f1f5f9' },
+  SCHEDULED:   { label: 'Scheduled',   color: 'var(--chip-blue-fg, #2563eb)',  bg: 'var(--chip-blue-bg, #eff6ff)' },
+  IN_PROGRESS: { label: 'In Progress', color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' },
+  COMPLETE:    { label: 'Complete',    color: 'var(--chip-green-fg, #16a34a)', bg: 'var(--chip-green-bg, #f0fdf4)' },
+  CANCELLED:   { label: 'Cancelled',   color: 'var(--chip-slate-fg, #64748b)', bg: 'var(--chip-slate-bg, #f1f5f9)' },
 };
 
 export const SEVERITY_META = {
-  IMMEDIATE:   { label: 'Immediate',   color: '#dc2626', bg: '#fef2f2' },
-  RECOMMENDED: { label: 'Recommended', color: '#d97706', bg: '#fffbeb' },
-  ADVISORY:    { label: 'Advisory',    color: '#64748b', bg: '#f1f5f9' },
+  IMMEDIATE:   { label: 'Immediate',   color: 'var(--chip-red-fg, #dc2626)',   bg: 'var(--chip-red-bg, #fef2f2)' },
+  RECOMMENDED: { label: 'Recommended', color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' },
+  ADVISORY:    { label: 'Advisory',    color: 'var(--chip-slate-fg, #64748b)', bg: 'var(--chip-slate-bg, #f1f5f9)' },
 };
 
 // NETA decal / lab-sample ResultRating, relabeled to NETA service terms.
 // Note: NETA's physical "Serviceable" decal is WHITE — we keep the green
 // accent on screen because white carries no signal against a light UI.
 export const DECAL_META = {
-  GREEN:  { label: 'Serviceable',     color: '#16a34a', bg: '#f0fdf4' },
-  YELLOW: { label: 'Limited Service', color: '#d97706', bg: '#fffbeb' },
-  RED:    { label: 'Non-serviceable', color: '#dc2626', bg: '#fef2f2' },
+  GREEN:  { label: 'Serviceable',     color: 'var(--chip-green-fg, #16a34a)', bg: 'var(--chip-green-bg, #f0fdf4)' },
+  YELLOW: { label: 'Limited Service', color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' },
+  RED:    { label: 'Non-serviceable', color: 'var(--chip-red-fg, #dc2626)',   bg: 'var(--chip-red-bg, #fef2f2)' },
 };
 
 // Engineering system studies tracked per site (audit-readiness).
@@ -102,9 +106,9 @@ export const STUDY_TYPE_LABELS = {
 
 // IEEE C57.104 DGA condition status for transformer lab samples.
 export const IEEE_STATUS_META = {
-  1: { label: 'Normal',          color: '#16a34a', bg: '#f0fdf4' },
-  2: { label: 'Caution',         color: '#d97706', bg: '#fffbeb' },
-  3: { label: 'Action required', color: '#dc2626', bg: '#fef2f2' },
+  1: { label: 'Normal',          color: 'var(--chip-green-fg, #16a34a)', bg: 'var(--chip-green-bg, #f0fdf4)' },
+  2: { label: 'Caution',         color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' },
+  3: { label: 'Action required', color: 'var(--chip-red-fg, #dc2626)',   bg: 'var(--chip-red-bg, #fef2f2)' },
 };
 
 /**

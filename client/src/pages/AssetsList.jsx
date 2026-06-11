@@ -44,7 +44,7 @@ export function ConditionBadge({ condition, compact }) {
       letterSpacing: '0.03em',
       background: meta.bg,
       color: meta.color,
-      border: `1px solid ${meta.color}`,
+      border: `1px solid color-mix(in srgb, ${meta.color} 40%, transparent)`,
       whiteSpace: 'nowrap',
     }}>
       {compact ? condition : meta.label}
@@ -64,7 +64,7 @@ export function CriticalityBadge({ score }) {
         display: 'inline-block', minWidth: 26, textAlign: 'center',
         padding: '2px 8px', borderRadius: 20,
         fontSize: 'var(--font-size-xs)', fontWeight: 700,
-        background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+        background: meta.bg, color: meta.color, border: `1px solid color-mix(in srgb, ${meta.color} 40%, transparent)`,
         whiteSpace: 'nowrap',
       }}
     >

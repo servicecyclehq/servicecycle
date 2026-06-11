@@ -51,7 +51,7 @@ function CondDot({ cond }) {
       style={{
         display: 'inline-block', padding: '0 6px', borderRadius: 999,
         fontSize: 10.5, fontWeight: 700, marginLeft: 5, verticalAlign: 'middle',
-        background: meta.bg, color: meta.color, border: `1px solid ${meta.color}`,
+        background: meta.bg, color: meta.color, border: `1px solid color-mix(in srgb, ${meta.color} 40%, transparent)`,
       }}
     >
       {cond}
