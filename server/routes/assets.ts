@@ -647,6 +647,59 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// ─── GET /api/assets/:id/test-history ─────────────────────────────────────────
+// Annual test-report history for the Testing & Trends tab. Returns each test
+// EVENT (a work order that has recorded measurements) oldest→newest with its
+// measurements, so the client can pivot readings year over year. as-found value
+// is the trended reading; as-left is carried for reference.
+router.get('/:id/test-history', async (req, res) => {
+  try {
+    const asset = await prisma.asset.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!asset) {
+      return res.status(404).json({ success: false, error: 'Asset not found' });
+    }
+
+    const workOrders = await prisma.workOrder.findMany({
+      where:   { assetId: asset.id, accountId: req.user.accountId, measurements: { some: {} } },
+      orderBy: [{ completedDate: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        contractor:   { select: { name: true } },
+        assignedTech: { select: { name: true } },
+        measurements: { orderBy: [{ measurementType: 'asc' }, { phase: 'asc' }] },
+      },
+    });
+
+    const events = workOrders.map((wo) => ({
+      id:       wo.id,
+      date:     wo.completedDate || wo.scheduledDate || wo.createdAt,
+      vendor:   wo.contractor?.name || null,
+      techName: wo.assignedTech?.name || null,
+      measurements: wo.measurements.map((m) => ({
+        id:              m.id,
+        measurementType: m.measurementType,
+        phase:           m.phase,
+        value:           m.asFoundValue,
+        unit:            m.asFoundUnit,
+        asLeftValue:     m.asLeftValue,
+        asLeftUnit:      m.asLeftUnit,
+        passFail:        m.passFail,
+        expectedRange:   m.expectedRange,
+        testVoltage:     m.testVoltage,
+        loadPercent:     m.loadPercent,
+        notes:           m.notes,
+      })),
+    }));
+
+    res.json({ success: true, data: { events } });
+  } catch (err) {
+    console.error('Get asset test-history error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch test history' });
+  }
+});
+
 // ─── POST /api/assets ─────────────────────────────────────────────────────────
 router.post('/', requireManager, async (req, res) => {
   const parsed = validateBody(req, res, CreateAssetSchema);

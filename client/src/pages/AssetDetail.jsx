@@ -27,6 +27,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import TestingTrendsTab from '../components/TestingTrendsTab';
 import Toast from '../components/Toast';
 import InfoTip from '../components/InfoTip';
 import CustomFieldInputs from '../components/CustomFieldInputs';
@@ -502,6 +503,7 @@ export default function AssetDetail() {
   const [error, setError]     = useState('');
   const [toast, setToast]     = useState(null);
   const [editing, setEditing] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'testing'
   const [busy, setBusy]       = useState(false); // serializes row-level actions
   const [activity, setActivity] = useState([]);
   // Active custom field definitions (admin-defined in Settings). Drives the
@@ -758,8 +760,30 @@ export default function AssetDetail() {
         )}
       </div>
 
+      <div style={{ padding: '0 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: 4 }}>
+        {[['overview', 'Overview'], ['testing', 'Testing & Trends']].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key)}
+            style={{
+              background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer',
+              fontSize: 'var(--font-size-ui)', fontWeight: activeTab === key ? 700 : 500,
+              color: activeTab === key ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+              borderBottom: activeTab === key ? '2px solid var(--color-primary)' : '2px solid transparent',
+              marginBottom: -1,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="page-body">
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
+
+        {activeTab === 'testing' && <TestingTrendsTab asset={asset} canWrite={canWrite} />}
+        {activeTab === 'overview' && (<>
 
         {editing && (
           <EditAssetForm
@@ -1257,6 +1281,7 @@ export default function AssetDetail() {
             )}
           </div>
         </div>
+        </>)}
       </div>
       {completingSchedule && (
         <CompleteScheduleModal
