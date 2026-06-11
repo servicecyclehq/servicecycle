@@ -1686,12 +1686,21 @@ async function _seedAccount() {
     });
   }
 
+  // ── PowerDB equipment + multi-year test history ────────────────────────────
+  // Layer the shared PowerDB seed (4 substations + 45 breakers + 9 years of
+  // WorkOrders/TestMeasurements) onto THIS demo account so it shows under
+  // admin@demo.local. It is account-scoped, so the reset above wipes & this
+  // recreates it on every nightly demo reset. Called exactly once per seed.
+  const { seedPowerDbInto } = require('./seed-powerdb-demo');
+  const pdb = await seedPowerDbInto(prisma, account.id, { siteName: 'Cedar Ridge Facility', ownerUserId: admin.id });
+
   return {
     accountId: account.id,
     companyName: account.companyName,
     users: { admin: admin.email, manager: manager.email, viewer: viewer.email, consultant: consultant.email },
     counts: {
       users: 4,
+      powerDbAssets: pdb.assets, powerDbWorkOrders: pdb.workOrders, powerDbMeasurements: pdb.measurements,
       sites: 2, buildings: 1, areas: 2, positions: posSpecs.length + egPosSpecs.length,
       contractors: 2, contractorTechs: 5,
       assets: assetSpecs.length,

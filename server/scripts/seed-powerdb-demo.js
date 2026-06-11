@@ -418,10 +418,301 @@ async function _resetPowerdbAccount() {
   }
 }
 
-// ── Main seed ────────────────────────────────────────────────────────────────
-async function seedPowerdbDemo() {
+// ── Shared equipment+history seeder ──────────────────────────────────────────
+// Creates ONLY the PowerDB equipment tree + multi-year test history under an
+// EXISTING account (the caller owns the Account + User). Builds: a Site, one
+// Building + Area, EquipmentPosition rows, the 4 substation parent assets, the
+// 45 breaker child assets (fedFromAssetId -> parent), and per-year WorkOrders +
+// TestMeasurements (+ story deficiencies). Does NOT create an Account or User.
+//
+//   await seedPowerDbInto(prisma, accountId, {
+//     siteName: 'Cedar Ridge Facility',  // site label
+//     ownerUserId: admin.id,             // optional: set asset.ownerId
+//     log: console.log,                  // optional progress logger
+//   })
+//
+// Returns { assets, workOrders, measurements }.
+async function seedPowerDbInto(db, accountId, opts = {}) {
+  const {
+    siteName = 'Cedar Ridge Facility',
+    ownerUserId = null,
+    log = () => {},
+  } = opts;
+
   const counts = { assets: 0, workOrders: 0, measurements: 0 };
 
+  // ── Contractor (Apex Power Testing LLC) ────────────────────────────────────
+  // Contractor only requires accountId + name; everything else optional. It is
+  // account-scoped, so the account-tree reset wipes it with everything else.
+  const contractor = await db.contractor.create({
+    data: {
+      accountId,
+      name: 'Apex Power Testing LLC',
+      netaAccredited: true,
+      supportEmail: 'dispatch@apexpowertesting-demo.local',
+      supportPhone: '800-555-0177',
+      notes: 'Annual outage testing partner (fictional).',
+    },
+  });
+
+  // ── Site / building / area ────────────────────────────────────────────────
+  const site = await db.site.create({
+    data: {
+      accountId,
+      name: siteName,
+      address: '1200 Cedar Ridge Road', city: 'Plainfield', state: 'WI', postalCode: '54966',
+      primaryContactName: 'Riley Morgan', primaryContactEmail: 'powerdb@demo.local',
+      primaryContactPhone: '555-200-3300',
+      notes: 'Food-processing plant. Four LV unit substations on the production floor.',
+    },
+  });
+  const building = await db.building.create({
+    data: { accountId, siteId: site.id, name: 'Production Floor' },
+  });
+  const area = await db.area.create({
+    data: { accountId, siteId: site.id, buildingId: building.id, name: 'Bay 4' },
+  });
+
+  log('[powerdb-seed] creating assets (substations + breakers)...');
+  // ── Parent substations + child breakers ────────────────────────────────────
+  // Parents are created BEFORE children so the breaker fedFromAssetId
+  // self-relation resolves to an already-existing substation asset.
+  const breakerAssets = []; // { asset, deviceId, breaker }
+  for (const sub of SUBSTATIONS) {
+    const position = await db.equipmentPosition.create({
+      data: {
+        accountId, siteId: site.id, areaId: area.id,
+        name: `Unit Substation ${sub.deviceId}`, code: sub.deviceId,
+      },
+    });
+    const parent = await db.asset.create({
+      data: {
+        accountId, siteId: site.id, buildingId: building.id, areaId: area.id,
+        positionId: position.id,
+        ...(ownerUserId ? { ownerId: ownerUserId } : {}),
+        equipmentType: 'SWITCHGEAR',
+        manufacturer: 'Square D',
+        serialNumber: sub.deviceId,
+        nameplateData: {
+          deviceId: sub.deviceId, equipmentDesignation: 'Unit Substation',
+          systemVoltage: '480Y/277V', ratedCurrent: 3000, breakerCount: sub.breakers.length,
+        },
+        notes: `LV unit substation ${sub.deviceId}; ${sub.breakers.length} breakers tested annually.`,
+      },
+    });
+    counts.assets++;
+
+    for (const br of sub.breakers) {
+      const child = await db.asset.create({
+        data: {
+          accountId, siteId: site.id, buildingId: building.id, areaId: area.id,
+          positionId: position.id,
+          ...(ownerUserId ? { ownerId: ownerUserId } : {}),
+          equipmentType: 'CIRCUIT_BREAKER',
+          manufacturer: br.mfg,
+          model: br.type,
+          fedFromAssetId: parent.id, // breaker fed from its parent substation
+          nameplateData: {
+            deviceId: sub.deviceId, circuitDesignation: br.id,
+            mfg: br.mfg, type: br.type, volts: br.volts,
+            frameAmp: br.frameAmp, tripAmpRange: br.tripRange, functions: br.functions,
+          },
+          notes: `${sub.deviceId} / ${br.id} (${br.mfg} ${br.type})`,
+        },
+      });
+      counts.assets++;
+      breakerAssets.push({ asset: child, deviceId: sub.deviceId, breaker: br });
+    }
+  }
+
+  log('[powerdb-seed] generating ' + (YEARS_BACK + 1) + ' years of work orders + measurements...');
+  // ── Per breaker per year: WorkOrder + TestMeasurements ─────────────────────
+  const phaseLabels = ['A', 'B', 'C'];
+  const irPhases = ["A-A'", "B-B'", "C-C'"];
+
+  for (const { asset, deviceId, breaker } of breakerAssets) {
+    // Pre-compute series per reading.
+    const crSeries = phaseLabels.map((p, i) => synthContactResistance(deviceId, breaker, i, p));
+    const irSeries = irPhases.map((p) => synthInsulationResistance(deviceId, breaker, p));
+    const ltdSeries = synthLtd(deviceId, breaker); // null if no numeric LTD
+
+    for (let year = FIRST_YEAR; year <= ANCHOR_YEAR; year++) {
+      const completedDate = testDateFor(year, deviceId);
+      const ambientTempC = ambientForYear(deviceId, year);
+
+      const wo = await db.workOrder.create({
+        data: {
+          accountId,
+          assetId: asset.id,
+          contractorId: contractor.id,
+          status: 'COMPLETE',
+          scheduledDate: completedDate,
+          startedAt: completedDate,
+          completedDate,
+          netaDecal: 'GREEN', // refined below if any measurement flags
+          ambientTempC,
+          testEquipment: [
+            { make: 'Megger', model: 'DLRO-10HD micro-ohmmeter', serial: 'MG-DLRO-7781', calDate: `${year}-09-15` },
+            { make: 'Megger', model: 'MIT1025 insulation tester', serial: 'MG-MIT-4420', calDate: `${year}-09-15` },
+          ],
+          notes: `Annual outage test — ${deviceId} / ${breaker.id} (${year}).`,
+        },
+      });
+      counts.workOrders++;
+
+      let worstRating = 'GREEN';
+      const bump = (r) => {
+        if (r === 'RED') worstRating = 'RED';
+        else if (r === 'YELLOW' && worstRating !== 'RED') worstRating = 'YELLOW';
+      };
+
+      // Contact resistance: 3 phase rows (unit µΩ).
+      const crYearVals = crSeries.map((s) => s[year].asFound);
+      for (let i = 0; i < 3; i++) {
+        const s = crSeries[i][year];
+        if (s.asFound === 0 && breaker.lockedOut) {
+          // Locked-out breaker: record a not-tested row with notes.
+          await db.testMeasurement.create({
+            data: {
+              accountId, workOrderId: wo.id,
+              measurementType: 'contact_resistance', phase: phaseLabels[i],
+              asFoundValue: null, asFoundUnit: 'µΩ',
+              passFail: null, notes: 'Breaker locked out — contact resistance not performed.',
+            },
+          });
+          counts.measurements++;
+          continue;
+        }
+        const siblings = crYearVals.filter((_, j) => j !== i);
+        const baseline = crSeries[i][FIRST_YEAR].asFound;
+        const { rating, expectedRange } = crPassFail(s.asFound, siblings, baseline);
+        bump(rating);
+        await db.testMeasurement.create({
+          data: {
+            accountId, workOrderId: wo.id,
+            measurementType: 'contact_resistance', phase: phaseLabels[i],
+            asFoundValue: s.asFound, asFoundUnit: 'µΩ',
+            asLeftValue: s.asLeft, asLeftUnit: 'µΩ',
+            passFail: rating, expectedRange,
+            notes: s.event ? 'Contacts cleaned/re-torqued (as-found vs as-left gap).' : null,
+          },
+        });
+        counts.measurements++;
+      }
+
+      // Insulation resistance: line-to-load rows (A-A', B-B', C-C').
+      for (let p = 0; p < irPhases.length; p++) {
+        const s = irSeries[p][year];
+        if (s.raw == null) continue; // reading not present in source
+        const baseline = irSeries[p][FIRST_YEAR].corrected;
+        const { rating, expectedRange } = irPassFail(s.corrected, baseline);
+        if (s.raw > 0) bump(rating);
+        await db.testMeasurement.create({
+          data: {
+            accountId, workOrderId: wo.id,
+            measurementType: 'insulation_resistance', phase: irPhases[p],
+            asFoundValue: s.raw, asFoundUnit: breaker.irUnit,
+            asLeftValue: s.corrected, asLeftUnit: `${breaker.irUnit} @20C`,
+            passFail: s.raw > 0 ? rating : null,
+            expectedRange,
+            testVoltage: '1000 V DC',
+            notes: `20C-corrected: ${s.corrected} ${breaker.irUnit} (raw at ${s.tempC}C).`,
+          },
+        });
+        counts.measurements++;
+      }
+
+      // Trip-unit results: LTD timing (numeric series) or PASS, plus STPU/GFPU.
+      if (ltdSeries) {
+        const sec = ltdSeries[year];
+        const { rating, expectedRange } = ltdPassFail(sec);
+        bump(rating);
+        await db.testMeasurement.create({
+          data: {
+            accountId, workOrderId: wo.id,
+            measurementType: 'trip_unit_ltd', phase: null,
+            asFoundValue: sec, asFoundUnit: 's',
+            passFail: rating, expectedRange,
+            notes: 'Long-time-delay trip timing (primary injection).',
+          },
+        });
+        counts.measurements++;
+      } else if (breaker.ltd === 'PASS') {
+        await db.testMeasurement.create({
+          data: {
+            accountId, workOrderId: wo.id,
+            measurementType: 'trip_unit_ltd', phase: null,
+            asFoundValue: null, asFoundUnit: null,
+            passFail: 'GREEN', expectedRange: 'PASS (test-set verified)',
+            notes: 'LTD function PASS (test-set provided pass/fail).',
+          },
+        });
+        counts.measurements++;
+      }
+
+      // STPU result row (trip / no-trip), where applicable.
+      if (breaker.stpu && breaker.stpu !== 'NA') {
+        const stpuPass = breaker.stpu === 'Trip' ? 'GREEN' : 'RED';
+        await db.testMeasurement.create({
+          data: {
+            accountId, workOrderId: wo.id,
+            measurementType: 'trip_unit_stpu', phase: null,
+            asFoundValue: null, asFoundUnit: null,
+            passFail: stpuPass, expectedRange: 'Trip',
+            notes: `Short-time pickup result: ${breaker.stpu}.`,
+          },
+        });
+        counts.measurements++;
+      }
+
+      // GFPU result row (trip / no-trip / NA).
+      if (breaker.gfpu && breaker.gfpu !== 'NA') {
+        const gfpuPass = breaker.gfpu === 'Trip' ? 'GREEN' : 'RED';
+        await db.testMeasurement.create({
+          data: {
+            accountId, workOrderId: wo.id,
+            measurementType: 'trip_unit_gfpu', phase: null,
+            asFoundValue: null, asFoundUnit: null,
+            passFail: gfpuPass, expectedRange: 'Trip',
+            notes: `Ground-fault pickup result: ${breaker.gfpu}.`,
+          },
+        });
+        counts.measurements++;
+      }
+
+      // Roll the work order's decal up to the worst measurement rating.
+      if (worstRating !== 'GREEN') {
+        await db.workOrder.update({
+          where: { id: wo.id },
+          data: { netaDecal: worstRating },
+        });
+      }
+    }
+
+    // Spawn a current (2025) deficiency on the flagged story breakers so the
+    // YoY callout has a matching finding record.
+    if (breaker.story === 'b41_cphase') {
+      await db.deficiency.create({
+        data: {
+          accountId, assetId: asset.id,
+          severity: 'RECOMMENDED',
+          description: `A141 HIGH CONTACT RESISTANCE ON C PHASE — ${breaker.id}`,
+          correctiveAction: 'Suggest remove and clean contacts.',
+          createdAt: testDateFor(ANCHOR_YEAR, deviceId),
+        },
+      });
+    }
+  }
+
+  log('[powerdb-seed] equipment + history done.');
+  return counts;
+}
+
+// ── Standalone (Northwind Foods) seed ────────────────────────────────────────
+// Creates the dedicated Northwind account + admin user, then layers the shared
+// equipment+history onto it via seedPowerDbInto. Running this file directly
+// still produces the standalone Northwind demo exactly as before.
+async function seedPowerdbDemo() {
   console.log('[powerdb-seed] resetting account tree...');
   await _resetPowerdbAccount();
 
@@ -453,7 +744,6 @@ async function seedPowerdbDemo() {
       serviceRepPhone: '(555) 200-3344',
     },
   });
-  counts.account = account.id;
 
   const passwordHash = await bcrypt.hash('Powerdb1234!', 12);
   const user = await prisma.user.create({
@@ -471,263 +761,12 @@ async function seedPowerdbDemo() {
     data: { accountId: account.id, key: 'ONBOARDING_COMPLETE', value: 'true' },
   });
 
-  // ── Contractor (Apex Power Testing LLC) ────────────────────────────────────
-  // Contractor only requires accountId + name; everything else optional.
-  const contractor = await prisma.contractor.create({
-    data: {
-      accountId: account.id,
-      name: 'Apex Power Testing LLC',
-      netaAccredited: true,
-      supportEmail: 'dispatch@apexpowertesting-demo.local',
-      supportPhone: '800-555-0177',
-      notes: 'Annual outage testing partner (fictional).',
-    },
+  const counts = await seedPowerDbInto(prisma, account.id, {
+    siteName: 'Cedar Ridge Facility',
+    ownerUserId: user.id,
+    log: console.log,
   });
-
-  // ── Site / building / area ────────────────────────────────────────────────
-  const site = await prisma.site.create({
-    data: {
-      accountId: account.id,
-      name: 'Cedar Ridge Facility',
-      address: '1200 Cedar Ridge Road', city: 'Plainfield', state: 'WI', postalCode: '54966',
-      primaryContactName: 'Riley Morgan', primaryContactEmail: 'powerdb@demo.local',
-      primaryContactPhone: '555-200-3300',
-      notes: 'Food-processing plant. Four LV unit substations on the production floor.',
-    },
-  });
-  const building = await prisma.building.create({
-    data: { accountId: account.id, siteId: site.id, name: 'Production Floor' },
-  });
-  const area = await prisma.area.create({
-    data: { accountId: account.id, siteId: site.id, buildingId: building.id, name: 'Bay 4' },
-  });
-
-  console.log('[powerdb-seed] creating assets (substations + breakers)...');
-  // ── Parent substations + child breakers ────────────────────────────────────
-  const breakerAssets = []; // { asset, deviceId, breaker }
-  for (const sub of SUBSTATIONS) {
-    const position = await prisma.equipmentPosition.create({
-      data: {
-        accountId: account.id, siteId: site.id, areaId: area.id,
-        name: `Unit Substation ${sub.deviceId}`, code: sub.deviceId,
-      },
-    });
-    const parent = await prisma.asset.create({
-      data: {
-        accountId: account.id, siteId: site.id, buildingId: building.id, areaId: area.id,
-        positionId: position.id,
-        equipmentType: 'SWITCHGEAR',
-        manufacturer: 'Square D',
-        serialNumber: sub.deviceId,
-        nameplateData: {
-          deviceId: sub.deviceId, equipmentDesignation: 'Unit Substation',
-          systemVoltage: '480Y/277V', ratedCurrent: 3000, breakerCount: sub.breakers.length,
-        },
-        notes: `LV unit substation ${sub.deviceId}; ${sub.breakers.length} breakers tested annually.`,
-      },
-    });
-    counts.assets++;
-
-    for (const br of sub.breakers) {
-      const child = await prisma.asset.create({
-        data: {
-          accountId: account.id, siteId: site.id, buildingId: building.id, areaId: area.id,
-          positionId: position.id,
-          equipmentType: 'CIRCUIT_BREAKER',
-          manufacturer: br.mfg,
-          model: br.type,
-          fedFromAssetId: parent.id, // breaker fed from its parent substation
-          nameplateData: {
-            deviceId: sub.deviceId, circuitDesignation: br.id,
-            mfg: br.mfg, type: br.type, volts: br.volts,
-            frameAmp: br.frameAmp, tripAmpRange: br.tripRange, functions: br.functions,
-          },
-          notes: `${sub.deviceId} / ${br.id} (${br.mfg} ${br.type})`,
-        },
-      });
-      counts.assets++;
-      breakerAssets.push({ asset: child, deviceId: sub.deviceId, breaker: br });
-    }
-  }
-
-  console.log('[powerdb-seed] generating ' + (YEARS_BACK + 1) + ' years of work orders + measurements...');
-  // ── Per breaker per year: WorkOrder + TestMeasurements ─────────────────────
-  const phaseLabels = ['A', 'B', 'C'];
-  const irPhases = ["A-A'", "B-B'", "C-C'"];
-
-  for (const { asset, deviceId, breaker } of breakerAssets) {
-    // Pre-compute series per reading.
-    const crSeries = phaseLabels.map((p, i) => synthContactResistance(deviceId, breaker, i, p));
-    const irSeries = irPhases.map((p) => synthInsulationResistance(deviceId, breaker, p));
-    const ltdSeries = synthLtd(deviceId, breaker); // null if no numeric LTD
-
-    for (let year = FIRST_YEAR; year <= ANCHOR_YEAR; year++) {
-      const completedDate = testDateFor(year, deviceId);
-      const ambientTempC = ambientForYear(deviceId, year);
-
-      const wo = await prisma.workOrder.create({
-        data: {
-          accountId: account.id,
-          assetId: asset.id,
-          contractorId: contractor.id,
-          status: 'COMPLETE',
-          scheduledDate: completedDate,
-          startedAt: completedDate,
-          completedDate,
-          netaDecal: 'GREEN', // refined below if any measurement flags
-          ambientTempC,
-          testEquipment: [
-            { make: 'Megger', model: 'DLRO-10HD micro-ohmmeter', serial: 'MG-DLRO-7781', calDate: `${year}-09-15` },
-            { make: 'Megger', model: 'MIT1025 insulation tester', serial: 'MG-MIT-4420', calDate: `${year}-09-15` },
-          ],
-          notes: `Annual outage test — ${deviceId} / ${breaker.id} (${year}).`,
-        },
-      });
-      counts.workOrders++;
-
-      let worstRating = 'GREEN';
-      const bump = (r) => {
-        if (r === 'RED') worstRating = 'RED';
-        else if (r === 'YELLOW' && worstRating !== 'RED') worstRating = 'YELLOW';
-      };
-
-      // Contact resistance: 3 phase rows (unit µΩ).
-      const crYearVals = crSeries.map((s) => s[year].asFound);
-      for (let i = 0; i < 3; i++) {
-        const s = crSeries[i][year];
-        if (s.asFound === 0 && breaker.lockedOut) {
-          // Locked-out breaker: record a not-tested row with notes.
-          await prisma.testMeasurement.create({
-            data: {
-              accountId: account.id, workOrderId: wo.id,
-              measurementType: 'contact_resistance', phase: phaseLabels[i],
-              asFoundValue: null, asFoundUnit: 'µΩ',
-              passFail: null, notes: 'Breaker locked out — contact resistance not performed.',
-            },
-          });
-          counts.measurements++;
-          continue;
-        }
-        const siblings = crYearVals.filter((_, j) => j !== i);
-        const baseline = crSeries[i][FIRST_YEAR].asFound;
-        const { rating, expectedRange } = crPassFail(s.asFound, siblings, baseline);
-        bump(rating);
-        await prisma.testMeasurement.create({
-          data: {
-            accountId: account.id, workOrderId: wo.id,
-            measurementType: 'contact_resistance', phase: phaseLabels[i],
-            asFoundValue: s.asFound, asFoundUnit: 'µΩ',
-            asLeftValue: s.asLeft, asLeftUnit: 'µΩ',
-            passFail: rating, expectedRange,
-            notes: s.event ? 'Contacts cleaned/re-torqued (as-found vs as-left gap).' : null,
-          },
-        });
-        counts.measurements++;
-      }
-
-      // Insulation resistance: line-to-load rows (A-A', B-B', C-C').
-      for (let p = 0; p < irPhases.length; p++) {
-        const s = irSeries[p][year];
-        if (s.raw == null) continue; // reading not present in source
-        const baseline = irSeries[p][FIRST_YEAR].corrected;
-        const { rating, expectedRange } = irPassFail(s.corrected, baseline);
-        if (s.raw > 0) bump(rating);
-        await prisma.testMeasurement.create({
-          data: {
-            accountId: account.id, workOrderId: wo.id,
-            measurementType: 'insulation_resistance', phase: irPhases[p],
-            asFoundValue: s.raw, asFoundUnit: breaker.irUnit,
-            asLeftValue: s.corrected, asLeftUnit: `${breaker.irUnit} @20C`,
-            passFail: s.raw > 0 ? rating : null,
-            expectedRange,
-            testVoltage: '1000 V DC',
-            notes: `20C-corrected: ${s.corrected} ${breaker.irUnit} (raw at ${s.tempC}C).`,
-          },
-        });
-        counts.measurements++;
-      }
-
-      // Trip-unit results: LTD timing (numeric series) or PASS, plus STPU/GFPU.
-      if (ltdSeries) {
-        const sec = ltdSeries[year];
-        const { rating, expectedRange } = ltdPassFail(sec);
-        bump(rating);
-        await prisma.testMeasurement.create({
-          data: {
-            accountId: account.id, workOrderId: wo.id,
-            measurementType: 'trip_unit_ltd', phase: null,
-            asFoundValue: sec, asFoundUnit: 's',
-            passFail: rating, expectedRange,
-            notes: 'Long-time-delay trip timing (primary injection).',
-          },
-        });
-        counts.measurements++;
-      } else if (breaker.ltd === 'PASS') {
-        await prisma.testMeasurement.create({
-          data: {
-            accountId: account.id, workOrderId: wo.id,
-            measurementType: 'trip_unit_ltd', phase: null,
-            asFoundValue: null, asFoundUnit: null,
-            passFail: 'GREEN', expectedRange: 'PASS (test-set verified)',
-            notes: 'LTD function PASS (test-set provided pass/fail).',
-          },
-        });
-        counts.measurements++;
-      }
-
-      // STPU result row (trip / no-trip), where applicable.
-      if (breaker.stpu && breaker.stpu !== 'NA') {
-        const stpuPass = breaker.stpu === 'Trip' ? 'GREEN' : 'RED';
-        await prisma.testMeasurement.create({
-          data: {
-            accountId: account.id, workOrderId: wo.id,
-            measurementType: 'trip_unit_stpu', phase: null,
-            asFoundValue: null, asFoundUnit: null,
-            passFail: stpuPass, expectedRange: 'Trip',
-            notes: `Short-time pickup result: ${breaker.stpu}.`,
-          },
-        });
-        counts.measurements++;
-      }
-
-      // GFPU result row (trip / no-trip / NA).
-      if (breaker.gfpu && breaker.gfpu !== 'NA') {
-        const gfpuPass = breaker.gfpu === 'Trip' ? 'GREEN' : 'RED';
-        await prisma.testMeasurement.create({
-          data: {
-            accountId: account.id, workOrderId: wo.id,
-            measurementType: 'trip_unit_gfpu', phase: null,
-            asFoundValue: null, asFoundUnit: null,
-            passFail: gfpuPass, expectedRange: 'Trip',
-            notes: `Ground-fault pickup result: ${breaker.gfpu}.`,
-          },
-        });
-        counts.measurements++;
-      }
-
-      // Roll the work order's decal up to the worst measurement rating.
-      if (worstRating !== 'GREEN') {
-        await prisma.workOrder.update({
-          where: { id: wo.id },
-          data: { netaDecal: worstRating },
-        });
-      }
-    }
-
-    // Spawn a current (2025) deficiency on the flagged story breakers so the
-    // YoY callout has a matching finding record.
-    if (breaker.story === 'b41_cphase') {
-      await prisma.deficiency.create({
-        data: {
-          accountId: account.id, assetId: asset.id,
-          severity: 'RECOMMENDED',
-          description: `A141 HIGH CONTACT RESISTANCE ON C PHASE — ${breaker.id}`,
-          correctiveAction: 'Suggest remove and clean contacts.',
-          createdAt: testDateFor(ANCHOR_YEAR, deviceId),
-        },
-      });
-    }
-  }
+  counts.account = account.id;
 
   console.log('[powerdb-seed] done.');
   return counts;
@@ -751,4 +790,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { seedPowerdbDemo, POWERDB_ACCOUNT_ID };
+module.exports = { seedPowerDbInto, seedPowerdbDemo, POWERDB_ACCOUNT_ID };

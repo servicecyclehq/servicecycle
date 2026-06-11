@@ -14,8 +14,35 @@
 // Charts/Excel export are follow-ups; this is the history + YoY core.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ReferenceLine,
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis,
+} from 'recharts';
 import api from '../api/client';
+
+// Modern series palette: phase A teal/cyan, B violet, C rose (so a problem
+// C-phase pops). Tests with no phase fall back to teal. Each gets a matching
+// translucent gradient area fill.
+const PHASE_COLORS = {
+  A: '#06b6d4', B: '#8b5cf6', C: '#f43f5e',
+  "A-A'": '#06b6d4', "B-B'": '#8b5cf6', "C-C'": '#f43f5e',
+  '': '#06b6d4',
+};
+const SERIES_FALLBACK = ['#06b6d4', '#8b5cf6', '#f43f5e', '#f59e0b'];
+const colorForPhase = (phase, idx = 0) =>
+  PHASE_COLORS[phase] || SERIES_FALLBACK[idx % SERIES_FALLBACK.length];
 
 // Which direction is BAD for each measurement type (drives the flag color).
 // 'up' = higher is worse (contact resistance, transformer power factor, DGA,
@@ -67,10 +94,89 @@ function Sparkline({ values, width = 96, height = 24 }) {
   );
 }
 
+// Short x-axis label for a test event: year if we can parse it, else short date.
+const yearLabel = (d) => {
+  if (!d) return '—';
+  const dt = new Date(d);
+  if (isNaN(dt)) return '—';
+  return String(dt.getFullYear());
+};
+
+// Clean, app-themed tooltip (rounded, surface bg, token border).
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  const rows = payload.filter((p) => p.value != null);
+  if (!rows.length) return null;
+  return (
+    <div
+      style={{
+        background: 'var(--color-surface, var(--color-card, #161b22))',
+        border: '1px solid var(--color-border)',
+        borderRadius: 10,
+        padding: '10px 12px',
+        boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0,0,0,0.18))',
+        fontSize: 12,
+        minWidth: 130,
+      }}
+    >
+      <div style={{ color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      {rows.map((p) => (
+        <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 8, lineHeight: 1.7 }}>
+          <span style={{ width: 9, height: 9, borderRadius: '50%', background: p.color, display: 'inline-block', flex: '0 0 auto' }} />
+          <span style={{ color: 'var(--color-text-secondary)' }}>{p.name}</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--color-text)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+            {typeof p.value === 'number' ? Number(p.value.toFixed(2)) : p.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Compact recharts radial gauge: latest value as % toward a sensible max.
+function ReadingGauge({ label, value, unit, max, color }) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  const data = [{ name: label, value: pct, fill: color }];
+  return (
+    <div style={{ textAlign: 'center', minWidth: 116 }}>
+      <div style={{ width: 116, height: 116, position: 'relative', margin: '0 auto' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RadialBarChart
+            innerRadius="72%"
+            outerRadius="100%"
+            barSize={9}
+            data={data}
+            startAngle={220}
+            endAngle={-40}
+          >
+            <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+            <RadialBar background={{ fill: 'var(--color-border)' }} dataKey="value" cornerRadius={6} />
+          </RadialBarChart>
+        </ResponsiveContainer>
+        <div
+          style={{
+            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+          }}
+        >
+          <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>
+            {Number(Number(value).toFixed(2))}
+          </span>
+          {unit && <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{unit}</span>}
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 4, lineHeight: 1.25 }}>{label}</div>
+    </div>
+  );
+}
+
 export default function TestingTrendsTab({ asset }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [events, setEvents] = useState([]);
+  // Which measurementType drives the hero trend chart. null => auto-pick the
+  // most-flagged type once data loads.
+  const [selectedType, setSelectedType] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -141,8 +247,159 @@ export default function TestingTrendsTab({ asset }) {
     return { pct, color: movingBad && significant ? 'var(--color-danger)' : 'var(--color-text-secondary)', significant: movingBad && significant };
   };
 
+  // ── Hero chart data ─────────────────────────────────────────────────────────
+  // Bad-direction magnitude of each row's latest move (used to auto-pick the
+  // most interesting measurementType and to rank gauges).
+  const rowFlagMag = (row) => {
+    const f = flagFor(row);
+    if (!f) return 0;
+    const bad = BAD_DIRECTION[row.measurementType];
+    const movingBad = (bad === 'up' && f.pct > 0) || (bad === 'down' && f.pct < 0);
+    return movingBad ? Math.abs(f.pct) : 0;
+  };
+
+  // Distinct measurementTypes present, and the one with the largest bad move.
+  const types = [...new Set(rows.map((r) => r.measurementType))];
+  let autoType = types[0] || null;
+  let autoMag = -1;
+  for (const t of types) {
+    const mag = Math.max(0, ...rows.filter((r) => r.measurementType === t).map(rowFlagMag));
+    if (mag > autoMag) { autoMag = mag; autoType = t; }
+  }
+  const activeType = (selectedType && types.includes(selectedType)) ? selectedType : autoType;
+
+  // Series (one per phase) for the active measurementType, keyed by event year.
+  const activeRows = rows.filter((r) => r.measurementType === activeType);
+  const chartUnit = activeRows.find((r) => r.unit)?.unit || '';
+  const chartData = events.map((ev) => {
+    const point = { label: yearLabel(ev.date), date: ev.date };
+    for (const r of activeRows) {
+      const v = num(r.byEvent[ev.id]?.value);
+      point[r.phase || 'value'] = v;
+    }
+    return point;
+  });
+  const chartSeries = activeRows.map((r, i) => ({
+    key: r.phase || 'value',
+    name: r.phase ? `Phase ${r.phase}` : titleCase(activeType),
+    color: colorForPhase(r.phase || '', i),
+  }));
+
+  // Top flagged readings (bad-direction movers) for the gauge row.
+  const gaugeRows = rows
+    .map((r) => ({ row: r, mag: rowFlagMag(r) }))
+    .filter((x) => x.mag > 0)
+    .sort((a, b) => b.mag - a.mag)
+    .slice(0, 4)
+    .map(({ row }, i) => {
+      const series = events.map((ev) => num(row.byEvent[ev.id]?.value)).filter((v) => v != null);
+      const latest = series[series.length - 1] ?? 0;
+      const peak = Math.max(...series, latest);
+      // Sensible gauge max: a bit above the historical peak so the needle has room.
+      const max = peak > 0 ? peak * 1.25 : (latest || 1) * 1.25;
+      return {
+        label: `${titleCase(row.measurementType)}${row.phase ? ' · ' + row.phase : ''}`,
+        value: latest,
+        unit: row.unit || '',
+        max,
+        color: colorForPhase(row.phase || '', i),
+      };
+    });
+
+  // Whether a YoY flag threshold band makes sense to draw (insulation/contact).
+  const hasFlag = activeRows.some((r) => flagFor(r)?.significant);
+
   return (
     <>
+      {/* ── Hero: modern multi-year trend chart + gauge row ────────────────── */}
+      <div className="card mb-16">
+        <div className="card-header" style={{ alignItems: 'flex-start' }}>
+          <div>
+            <div className="card-title">Trend Analysis</div>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+              {titleCase(activeType || '')}{chartUnit ? ` (${chartUnit})` : ''} across {events.length} test event{events.length !== 1 ? 's' : ''}
+              {hasFlag ? ' · trending the wrong way' : ''}
+            </span>
+          </div>
+          {types.length > 1 && (
+            <select
+              value={activeType || ''}
+              onChange={(e) => setSelectedType(e.target.value)}
+              style={{
+                background: 'var(--color-surface, var(--color-card))',
+                color: 'var(--color-text)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius, 6px)',
+                padding: '6px 10px',
+                fontSize: 13,
+              }}
+            >
+              {types.map((t) => (
+                <option key={t} value={t}>{titleCase(t)}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div style={{ width: '100%', height: 280, marginTop: 8 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} margin={{ top: 8, right: 16, bottom: 4, left: -8 }}>
+              <defs>
+                {chartSeries.map((s) => (
+                  <linearGradient key={s.key} id={`grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={s.color} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={s.color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="4 4" stroke="var(--color-border)" strokeOpacity={0.35} vertical={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: 'var(--color-text-muted)', fontSize: 12 }}
+                axisLine={{ stroke: 'var(--color-border)' }}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fill: 'var(--color-text-muted)', fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+                width={48}
+              />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--color-border)', strokeWidth: 1 }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: 'var(--color-text-secondary)' }} iconType="plainline" />
+              {chartSeries.map((s) => (
+                <Area
+                  key={s.key}
+                  type="monotone"
+                  dataKey={s.key}
+                  name={s.name}
+                  stroke={s.color}
+                  strokeWidth={2}
+                  fill={`url(#grad-${s.key})`}
+                  connectNulls
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 0 }}
+                  isAnimationActive={false}
+                />
+              ))}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        {gaugeRows.length > 0 && (
+          <div
+            style={{
+              display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center',
+              marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)',
+            }}
+          >
+            {gaugeRows.map((g, i) => (
+              <ReadingGauge key={i} {...g} />
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Year-over-year pivot */}
       <div className="card mb-16">
         <div className="card-header">
