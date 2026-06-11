@@ -1,4 +1,4 @@
-﻿# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 # ServiceCycle — docker-compose.yml (Sprint 5, B4)
 #
 # Single-machine self-hosted stack: Postgres + ServiceCycle API server + Vite
@@ -56,13 +56,15 @@ services:
     # Pass-6 container hardening — drops Linux caps, blocks privilege
     # escalation, makes rootfs read-only with explicit tmpfs for the bits
     # postgres legitimately needs (/tmp for sorts, /var/run/postgresql for
-    # the unix socket). Volume mount at /var/lib/postgresql/data stays
-    # writable because volumes are exempt from read_only.
+    # the unix socket).
+    #
+    # 2026-06-10: cap_drop:ALL + read_only:true were REMOVED here -- the
+    # postgres:16-alpine entrypoint chmod/chowns its data dir and
+    # /var/run/postgresql on every start, which fails ("Operation not
+    # permitted") under cap_drop:ALL + a read-only rootfs and crash-loops the
+    # DB. docker-compose.ghcr.yml already did this rollback; main now matches.
     security_opt:
       - "no-new-privileges:true"
-    cap_drop:
-      - ALL
-    read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
       - /var/run/postgresql:size=20m
@@ -160,11 +162,10 @@ services:
     container_name: servicecycle-server
     # Pass-6 container hardening — see db service for rationale. /tmp is
     # tmpfs so sharp/prisma/ephemeral writes still work on a read-only root.
+    # 2026-06-10: cap_drop:ALL + read_only:true removed for parity with the db
+    # service (see its note). no-new-privileges + tmpfs + limits retained.
     security_opt:
       - "no-new-privileges:true"
-    cap_drop:
-      - ALL
-    read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
     pids_limit: 256
@@ -386,3 +387,6 @@ services:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+
+volumes:
+  postgres_data:
