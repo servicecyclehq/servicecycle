@@ -479,6 +479,26 @@ router.post('/register', registrationLimiter, credentialLimiter, countryGate, as
   }
 });
 
+// Industry-news refresh on login. The user wants the live news "search/pull"
+// to fire when people sign in (demo + production) instead of relying on seeded
+// items. This is throttled so a burst of logins triggers at most one RSS scan
+// per window, and it's fire-and-forget so it never delays the login response.
+// NewsItem is global (no accountId) and the scanner dedupes by URL.
+let _lastNewsRefresh = 0;
+const _NEWS_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 min
+function _maybeRefreshNews() {
+  const now = Date.now();
+  if (now - _lastNewsRefresh < _NEWS_REFRESH_INTERVAL_MS) return;
+  _lastNewsRefresh = now;
+  try {
+    const { runNewsScanner } = require('../lib/newsScanner');
+    Promise.resolve(runNewsScanner()).catch((e) =>
+      console.warn('[auth] news refresh on login failed (non-fatal):', e.message));
+  } catch (e) {
+    console.warn('[auth] news refresh unavailable:', e.message);
+  }
+}
+
 // ─── POST /api/auth/login ─────────────────────────────────────────────────────
 router.post('/login', credentialLimiter, async (req, res) => { // (M1)
   try {
@@ -547,6 +567,9 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
     // Successful login — clear failure counter so a future genuine lock doesn't
     // carry over stale counts from before the user authenticated. (M1)
     _clearLoginFails(normEmail);
+
+    // Refresh industry news on successful auth (throttled, fire-and-forget).
+    _maybeRefreshNews();
 
     // 2FA gate: if enabled, issue a short-lived pending token instead of full tokens.
     // The client must POST /api/auth/2fa/verify-login with this token + TOTP code.
