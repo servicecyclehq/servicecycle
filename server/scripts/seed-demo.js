@@ -1574,6 +1574,118 @@ async function _seedAccount() {
     details: { severity: 'RECOMMENDED', description: 'Two cells exceeding IEEE 450 ohmic replacement threshold' },
   });
 
+  // ── Equipment templates (item 4.1 + section 2 seeding) ─────────────────────
+  // The Equipment Templates page was empty (asset_templates had 0 rows), so it
+  // showed its "Templates will appear here once the seed data is applied" empty
+  // state. Seed account-custom templates so the page demonstrates real content.
+  // They cascade-delete with the account on reseed (asset_templates -> account
+  // is onDelete:Cascade), so no explicit cleanup is needed. Tasks are linked
+  // from the GLOBAL task-definition matrix (accountId NULL), which survives the
+  // reset, keeping the links stable across reseeds.
+  const _defsByType = await _loadGlobalDefsByType(prisma);
+  const templateSpecs = [
+    { name: 'Liquid-Filled Power Transformer — 1000+ kVA', equipmentType: 'TRANSFORMER_LIQUID',
+      description: 'Oil-filled substation transformer profile: DGA oil analysis, fluid quality, and bushing power-factor tasks pre-selected.',
+      defaultCriticalityScore: 5, defaultRedundancyStatus: 'N', defaultRequiresPredictiveMaintenance: true,
+      nameplateDefaults: { 'kVA': '', 'Primary Voltage': '', 'Secondary Voltage': '', 'Cooling Class': 'ONAN/ONAF', 'Impedance %': '' } },
+    { name: 'Medium-Voltage Switchgear Lineup', equipmentType: 'SWITCHGEAR',
+      description: 'Metal-clad MV switchgear: infrared survey, breaker primary-injection, and bus insulation-resistance tasks.',
+      defaultCriticalityScore: 4, defaultRedundancyStatus: 'N_PLUS_1', defaultRequiresPredictiveMaintenance: false,
+      nameplateDefaults: { 'Bus Rating (A)': '', 'Voltage Class (kV)': '', 'Short-Circuit Rating (kA)': '', 'Manufacturer': '' } },
+    { name: 'Standby Diesel Generator Set', equipmentType: 'GENERATOR',
+      description: 'NFPA 110 emergency generator: monthly load-bank exercise, fuel polishing, and battery-bank checks.',
+      defaultCriticalityScore: 5, defaultRedundancyStatus: 'N', defaultRequiresPredictiveMaintenance: false,
+      nameplateDefaults: { 'kW': '', 'Voltage': '', 'Fuel Type': 'Diesel', 'Tank Capacity (gal)': '' } },
+    { name: 'Automatic Transfer Switch', equipmentType: 'TRANSFER_SWITCH',
+      description: 'Life-safety ATS: NFPA 110 monthly transfer test and contact-resistance verification.',
+      defaultCriticalityScore: 5, defaultRedundancyStatus: 'N', defaultRequiresPredictiveMaintenance: false,
+      nameplateDefaults: { 'Amperage': '', 'Poles': '', 'Voltage': '', 'Withstand Rating (kA)': '' } },
+    { name: 'Stationary Battery System', equipmentType: 'BATTERY_SYSTEM',
+      description: 'IEEE 450/1188 string: quarterly ohmic readings, connection-torque checks, and capacity testing.',
+      defaultCriticalityScore: 4, defaultRedundancyStatus: 'N', defaultRequiresPredictiveMaintenance: true,
+      nameplateDefaults: { 'Nominal Voltage': '', 'Cell Count': '', 'Ah Rating': '', 'Chemistry': 'VRLA' } },
+    { name: 'Critical LV Motor — 100+ HP', equipmentType: 'MOTOR',
+      description: 'Process-critical motor: insulation resistance/PI, vibration analysis, and bearing lubrication.',
+      defaultCriticalityScore: 3, defaultRedundancyStatus: 'N', defaultRequiresPredictiveMaintenance: true,
+      nameplateDefaults: { 'HP': '', 'Voltage': '', 'FLA': '', 'RPM': '', 'Frame': '' } },
+  ];
+  let templateCount = 0;
+  for (const spec of templateSpecs) {
+    const tmpl = await prisma.assetTemplate.create({ data: {
+      accountId: account.id,
+      name: spec.name,
+      description: spec.description,
+      equipmentType: spec.equipmentType,
+      defaultCriticalityScore: spec.defaultCriticalityScore,
+      defaultRedundancyStatus: spec.defaultRedundancyStatus,
+      defaultRequiresPredictiveMaintenance: spec.defaultRequiresPredictiveMaintenance,
+      nameplateDefaults: spec.nameplateDefaults,
+    } });
+    templateCount++;
+    // Link up to 5 matching global task definitions (best-effort).
+    for (const d of (_defsByType[spec.equipmentType] || []).slice(0, 5)) {
+      await prisma.assetTemplateTask.create({
+        data: { templateId: tmpl.id, taskDefinitionId: d.id },
+      }).catch(() => {});
+    }
+  }
+
+  // ── Industry news (item 2.3) ──────────────────────────────────────────────
+  // With AI off and no external scanner source, the News page pulls nothing.
+  // Seed a representative set spanning all four categories so the page is
+  // populated. Upserted by URL (the unique key) so reseeds are idempotent and
+  // never accumulate duplicates. NewsItem is global (not account-scoped), so it
+  // is intentionally NOT cleared in resetDemoData.
+  const newsSpecs = [
+    { title: 'NFPA 70B Becomes a Mandatory Standard — What Facilities Need to Know',
+      url: 'https://www.nfpa.org/news-blogs-and-articles/blogs/nfpa-70b-electrical-equipment-maintenance',
+      source: 'NFPA Today', category: 'standards', matchedTerm: 'NFPA 70B',
+      summary: 'The 2023 edition of NFPA 70B converted electrical maintenance from a recommended practice into a mandatory standard, requiring a documented Equipment Maintenance Program (EMP) with condition-based intervals.',
+      publishedAt: addDays(now, -5) },
+    { title: 'OSHA Cites Manufacturer After Arc-Flash Injury Tied to Skipped Maintenance',
+      url: 'https://www.osha.gov/news/newsreleases/region/arc-flash-electrical-maintenance-citation',
+      source: 'OSHA Newsroom', category: 'safety', matchedTerm: 'arc flash',
+      summary: 'A regional OSHA office issued citations under the General Duty Clause after an arc-flash incident, noting the employer could not produce records of breaker maintenance or an up-to-date arc-flash study.',
+      publishedAt: addDays(now, -9) },
+    { title: 'NETA Releases Updated Maintenance Testing Specifications (MTS-2023)',
+      url: 'https://www.netaworld.org/standards/ansi-neta-mts-2023-maintenance-testing-specifications',
+      source: 'NETA World', category: 'standards', matchedTerm: 'NETA MTS',
+      summary: 'The latest ANSI/NETA MTS revision updates acceptance and maintenance test values for power transformers, switchgear, and protective relays, with expanded guidance on infrared and partial-discharge testing.',
+      publishedAt: addDays(now, -14) },
+    { title: 'IEEE C57.104-2019 Reshapes How Utilities Read Dissolved Gas Analysis',
+      url: 'https://standards.ieee.org/ieee/c57-104/dissolved-gas-analysis-transformer',
+      source: 'IEEE Spectrum', category: 'standards', matchedTerm: 'DGA',
+      summary: 'Revised DGA interpretation tables change the gas-concentration thresholds and status classifications used to flag liquid-filled transformers for follow-up, affecting many existing oil-sampling programs.',
+      publishedAt: addDays(now, -21) },
+    { title: 'Insurers Tighten Electrical Maintenance Documentation Requirements for 2026 Renewals',
+      url: 'https://www.ecmweb.com/maintenance-repair-operations/article/insurance-electrical-maintenance-documentation',
+      source: 'EC&M', category: 'regulatory', matchedTerm: 'insurance',
+      summary: 'Property carriers are increasingly requiring evidence of an NFPA 70B-compliant maintenance program — including test records and an EMP — as a condition of coverage and favorable premiums.',
+      publishedAt: addDays(now, -28) },
+    { title: 'Supply-Chain Lead Times for Medium-Voltage Breakers Stretch Past 50 Weeks',
+      url: 'https://www.ecmweb.com/electrical-distribution/article/medium-voltage-breaker-lead-times-2026',
+      source: 'EC&M', category: 'industry', matchedTerm: 'lead time',
+      summary: 'Extended lead times on switchgear and breakers are pushing facilities toward condition-based life-extension and proactive maintenance rather than like-for-like replacement.',
+      publishedAt: addDays(now, -34) },
+    { title: 'Study: Predictive Maintenance Cuts Unplanned Electrical Downtime by Up to 45%',
+      url: 'https://www.maintworld.com/research/predictive-maintenance-electrical-downtime-study',
+      source: 'Maintworld', category: 'industry', matchedTerm: 'predictive maintenance',
+      summary: 'A multi-site reliability study found that condition-based and predictive programs significantly reduced unplanned outages versus calendar-only maintenance, with the strongest gains on critical transformers and switchgear.',
+      publishedAt: addDays(now, -41) },
+    { title: 'NFPA 110 Reminder: Monthly Generator and ATS Testing Is Not Optional',
+      url: 'https://www.nfpa.org/news-blogs-and-articles/blogs/nfpa-110-emergency-standby-power-testing',
+      source: 'NFPA Today', category: 'safety', matchedTerm: 'NFPA 110',
+      summary: 'NFPA 110 requires documented monthly exercise of emergency and standby power systems, including transfer switches, under load — a frequent finding in life-safety inspections.',
+      publishedAt: addDays(now, -48) },
+  ];
+  for (const n of newsSpecs) {
+    await prisma.newsItem.upsert({
+      where:  { url: n.url },
+      update: { title: n.title, source: n.source, category: n.category, summary: n.summary, matchedTerm: n.matchedTerm, publishedAt: n.publishedAt },
+      create: n,
+    });
+  }
+
   return {
     accountId: account.id,
     companyName: account.companyName,
@@ -1590,6 +1702,7 @@ async function _seedAccount() {
       assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4,
       activityLogs: 9,
       lotoProcs: 2, documents: 3,
+      assetTemplates: templateCount, newsItems: newsSpecs.length,
     },
     dashboardStory: {
       overdue: 5, regulatoryBreachTier: 1,

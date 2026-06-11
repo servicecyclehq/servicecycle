@@ -623,29 +623,59 @@ function _getPrisma() {
   catch { return null; }
 }
 
+// 0.3 fix: AccountSetting.accountId is a required FK to Account
+// (account_settings_accountId_fkey, onDelete: Cascade). The old code persisted
+// the process-global counters under a sentinel accountId='__global__' that no
+// Account row matched, so every 60s persist (index.ts) generated a foreign-key
+// violation in Postgres before silently falling back to file. There is no
+// system/global Account, so we anchor the global counters on a REAL account
+// (the earliest-created one — stable for the life of the instance). When no
+// account exists yet (fresh pre-seed install) we skip the DB write entirely and
+// use the file fallback, so the FK error never fires. The resolved id is cached
+// and invalidated on any persist failure (e.g. that account was deleted).
+let _persistAccountId = null;
+async function _resolvePersistAccountId(prisma) {
+  if (_persistAccountId) return _persistAccountId;
+  try {
+    const acct = await prisma.account.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    _persistAccountId = acct ? acct.id : null;
+  } catch {
+    _persistAccountId = null;
+  }
+  return _persistAccountId;
+}
+
 async function persistMonthlyCounters() {
   const prisma = _getPrisma();
   if (!prisma) return;
   try {
-    // The current model is process-global (no per-account scoping for the
-    // in-memory counters) -- we persist under accountId='__global__' which
-    // any operator can read but no Account FK points at it. If/when we
-    // move to per-account counters, this key becomes accountId-specific.
     const payload = JSON.stringify({
       monthly: _monthlyCloudflare,
       daily:   _dailyState,
       ts:      new Date().toISOString(),
     });
+    // Scope the upsert to an account that actually exists (0.3). If none does
+    // yet, fall through to the file fallback without touching the DB so no FK
+    // violation is generated.
+    const acctId = await _resolvePersistAccountId(prisma);
+    if (!acctId) {
+      throw new Error('no account exists yet to anchor global counters');
+    }
     await prisma.accountSetting.upsert({
-      where:  { accountId_key: { accountId: '__global__', key: _PERSIST_KEY } },
+      where:  { accountId_key: { accountId: acctId, key: _PERSIST_KEY } },
       update: { value: payload },
-      create: { accountId: '__global__', key: _PERSIST_KEY, value: payload },
+      create: { accountId: acctId, key: _PERSIST_KEY, value: payload },
     });
   } catch (e) {
-    // DB persist fails when AccountSetting FK has no matching account (__global__ sentinel).
+    // Invalidate the cached account id so a deleted/changed anchor account is
+    // re-resolved on the next tick rather than FK-failing forever.
+    _persistAccountId = null;
     // Fall back to file-based persist so counters survive restarts. Log once only.
     if (!_persistWarnedOnce) {
-      console.warn('[aiBudgetGuard] DB persist unavailable (FK), switching to file fallback:', e.message);
+      console.warn('[aiBudgetGuard] DB persist unavailable, switching to file fallback:', e.message);
       _persistWarnedOnce = true;
     }
     try {
@@ -662,11 +692,24 @@ async function rehydrateOnBoot() {
   const prisma = _getPrisma();
   if (!prisma) return;
   try {
-    const row = await prisma.accountSetting.findUnique({
-      where: { accountId_key: { accountId: '__global__', key: _PERSIST_KEY } },
-    });
-    if (!row || !row.value) return;
-    const parsed = JSON.parse(row.value);
+    // 0.3: read back from the same real account the persist path writes to.
+    const acctId = await _resolvePersistAccountId(prisma);
+    const row = acctId
+      ? await prisma.accountSetting.findUnique({
+          where: { accountId_key: { accountId: acctId, key: _PERSIST_KEY } },
+        })
+      : null;
+    let raw = row && row.value ? row.value : null;
+    // Fall back to the on-disk counters if the DB has nothing (e.g. they were
+    // last persisted to file because no account existed at the time).
+    if (!raw) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(_PERSIST_FILE)) raw = fs.readFileSync(_PERSIST_FILE, 'utf8');
+      } catch (_) { /* no file fallback available */ }
+    }
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
     if (parsed.monthly && typeof parsed.monthly.month === 'string') {
       Object.assign(_monthlyCloudflare, parsed.monthly);
       // S4-FN-03 (v0.74.0): zero stale reservations from crash — in-flight calls killed

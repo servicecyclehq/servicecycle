@@ -797,7 +797,12 @@ const leaveBehindLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders:   false,
-  keyGenerator: (req) => `user:${req.user?.id || req.ip}`,
+  // (0.2) wrap the req.ip fallback in ipKeyGenerator so an anonymous IPv6
+  // client can't bypass the limit — and so express-rate-limit's
+  // keyGeneratorIpFallback validation (ERR_ERL_KEY_GEN_IPV6) stops throwing
+  // at startup. req.user is normally set (authenticateToken runs first); the
+  // IP path is a defensive fallback.
+  keyGenerator: (req) => `user:${req.user?.id || ipKeyGenerator(req.ip)}`,
   message: { success: false, error: 'Too many PDF requests — please wait before generating another leave-behind.' },
 });
 

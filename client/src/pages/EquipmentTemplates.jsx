@@ -271,7 +271,7 @@ export default function EquipmentTemplates() {
     try {
       const [tmplRes, taskRes] = await Promise.all([
         api.get('/api/asset-templates'),
-        api.get('/api/standards/tasks'),
+        api.get('/api/standards/task-definitions'),
       ]);
       setTemplates(tmplRes.data?.data?.templates ?? []);
       setAllTasks(taskRes.data?.data?.taskDefinitions ?? []);
