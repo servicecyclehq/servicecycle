@@ -264,8 +264,11 @@ export default function NewsPage() {
                           display: 'inline-block', marginTop: 6,
                           padding: '1px 7px', borderRadius: 4,
                           fontSize: 10, fontWeight: 600, letterSpacing: '0.03em',
-                          background: 'var(--color-bg-subtle, #f1f5f9)',
-                          color: 'var(--color-text-secondary)',
+                          /* A2 (2026-06-11): route through the semantic chip
+                             tokens — the old --color-bg-subtle fallback painted
+                             light-grey-on-white in dark mode. */
+                          background: 'var(--chip-slate-bg, #f1f5f9)',
+                          color: 'var(--chip-slate-fg, #334155)',
                           border: '1px solid var(--color-border)',
                         }}>
                           matched: {item.matchedTerm}

@@ -795,15 +795,118 @@ export default function AssetDetail() {
           />
         )}
 
-        {/* ── Power Path ────────────────────────────────────────────────────── */}
-        {/* Upstream/downstream feed chain; refetches itself whenever the asset
-            object refreshes, and bumps the page on feed edits. */}
-        <PowerPathCard asset={asset} canWrite={canWrite} onChanged={refetchAll} />
+        {/* ── Open Deficiencies ─────────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header">
+            <div className="card-title" style={deficiencies.length > 0 ? { color: 'var(--color-danger)' } : undefined}>
+              Open Deficiencies ({deficiencies.length})
+            </div>
+          </div>
+          {deficiencies.length === 0 ? (
+            <div className="card-body">
+              <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+                No open deficiencies — nothing outstanding on this asset.
+              </div>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>Description</th>
+                    <th>Logged</th>
+                    {canWrite && <th style={{ textAlign: 'right' }}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {deficiencies.map(def => (
+                    <tr key={def.id}>
+                      <td><MetaChip meta={SEVERITY_META[def.severity]} fallback={def.severity} /></td>
+                      <td>
+                        <div>{def.description}</div>
+                        {def.correctiveAction && (
+                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                            Corrective action: {def.correctiveAction}
+                          </div>
+                        )}
+                      </td>
+                      <td className="td-muted">{fmtDate(def.createdAt)}</td>
+                      {canWrite && (
+                        <td style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleResolveDeficiency(def)}
+                            disabled={busy}
+                          >
+                            Resolve
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
-        {/* ── Outage Consolidation Planner ──────────────────────────────────── */}
-        {/* Self-gating: renders null when there are no outage-requiring tasks
-            in the ±90-day window so it stays invisible for healthy assets. */}
-        <OutageConsolidationCard asset={asset} canWrite={canWrite} />
+        {/* ── Risk & Criticality ────────────────────────────────────────────── */}
+        <div className="card mb-16">
+          <div className="card-header"><div className="card-title">Risk &amp; Criticality</div></div>
+          <div className="card-body">
+            <div className="detail-grid">
+              <div className="detail-item">
+                <div className="detail-label">Criticality Score</div>
+                <div className="detail-value">
+                  <MetaChip
+                    meta={CRITICALITY_SCORE_META[asset.criticalityScore] && {
+                      ...CRITICALITY_SCORE_META[asset.criticalityScore],
+                      label: `${asset.criticalityScore} — ${CRITICALITY_SCORE_META[asset.criticalityScore].label}`,
+                    }}
+                    fallback="Not scored"
+                  />
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Repair Cost Estimate</div>
+                <div className="detail-value">{fmtMoney(asset.repairCostEstimate)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Spare Lead Time</div>
+                <div className="detail-value">
+                  {asset.spareLeadTimeWeeks != null
+                    ? `${asset.spareLeadTimeWeeks} week${asset.spareLeadTimeWeeks !== 1 ? 's' : ''}`
+                    : <span className="text-muted">—</span>}
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Redundancy</div>
+                <div className="detail-value">
+                  <MetaChip meta={REDUNDANCY_META[asset.redundancyStatus]} fallback="Unknown" />
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-label">Predictive Maintenance</div>
+                <div className="detail-value">
+                  <ServiceChip
+                    on={!!asset.requiresPredictiveMaintenance}
+                    onLabel="Predictive program"
+                    offLabel="Not required"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Service Quote Request ─────────────────────────────────────────── */}
+        {/* "The dossier is the feature, not the button." Pre-fills full asset
+            context so the rep gets everything they need without asking.
+            EMERGENCY mode when driver=down_now: rep phone displayed large
+            with CALL NOW copy. PENDING BROTHER VALIDATION on question copy. */}
+        <QuoteRequestButton asset={asset} />
 
         {/* ── Maintenance Schedules ─────────────────────────────────────────── */}
         <div className="card mb-16">
@@ -944,33 +1047,10 @@ export default function AssetDetail() {
           )}
         </div>
 
-        {/* ── AI Maintenance Brief ──────────────────────────────────────────── */}
-        {/* Self-gating: renders null unless AI is enabled+configured and the
-            user's role carries the maintenance_brief feature. */}
-        <MaintenanceBriefCard asset={asset} />
-
-        {/* ── AI Photo Inspection ───────────────────────────────────────────── */}
-        {/* Same self-gating as the brief card (maintenance_brief feature +
-            aiEnabled + aiConfigured). Apply actions refetch the asset. */}
-        <PhotoInspectCard asset={asset} onApplied={refetchAll} />
-
-        {/* ── Service Quote Request ─────────────────────────────────────────── */}
-        {/* "The dossier is the feature, not the button." Pre-fills full asset
-            context so the rep gets everything they need without asking.
-            EMERGENCY mode when driver=down_now: rep phone displayed large
-            with CALL NOW copy. PENDING BROTHER VALIDATION on question copy. */}
-        <QuoteRequestButton asset={asset} />
-
-        {/* ── LOTO Procedures ───────────────────────────────────────────────── */}
-        {/* Structured lockout/tagout procedures (energy sources + steps).
-            Active procedure shown prominently; drafts editable; archived
-            collapsed. OSHA 29 CFR 1910.147 compliance anchor. */}
-        <AssetLotoCard asset={asset} canWrite={canWrite} />
-
-        {/* ── Documents & Procedures ────────────────────────────────────────── */}
-        {/* OEM manuals, wiring diagrams, test reports, warranty docs, and
-            PDF backups of LOTO procedures. Supports file upload and URL links. */}
-        <AssetDocumentsCard asset={asset} canWrite={canWrite} />
+        {/* ── Outage Consolidation Planner ──────────────────────────────────── */}
+        {/* Self-gating: renders null when there are no outage-requiring tasks
+            in the ±90-day window so it stays invisible for healthy assets. */}
+        <OutageConsolidationCard asset={asset} canWrite={canWrite} />
 
         {/* ── Work Orders ───────────────────────────────────────────────────── */}
         <div className="card mb-16">
@@ -1020,62 +1100,15 @@ export default function AssetDetail() {
           )}
         </div>
 
-        {/* ── Open Deficiencies ─────────────────────────────────────────────── */}
-        <div className="card mb-16">
-          <div className="card-header">
-            <div className="card-title" style={deficiencies.length > 0 ? { color: 'var(--color-danger)' } : undefined}>
-              Open Deficiencies ({deficiencies.length})
-            </div>
-          </div>
-          {deficiencies.length === 0 ? (
-            <div className="card-body">
-              <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
-                No open deficiencies — nothing outstanding on this asset.
-              </div>
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Severity</th>
-                    <th>Description</th>
-                    <th>Logged</th>
-                    {canWrite && <th style={{ textAlign: 'right' }}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {deficiencies.map(def => (
-                    <tr key={def.id}>
-                      <td><MetaChip meta={SEVERITY_META[def.severity]} fallback={def.severity} /></td>
-                      <td>
-                        <div>{def.description}</div>
-                        {def.correctiveAction && (
-                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                            Corrective action: {def.correctiveAction}
-                          </div>
-                        )}
-                      </td>
-                      <td className="td-muted">{fmtDate(def.createdAt)}</td>
-                      {canWrite && (
-                        <td style={{ textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleResolveDeficiency(def)}
-                            disabled={busy}
-                          >
-                            Resolve
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* ── AI Maintenance Brief ──────────────────────────────────────────── */}
+        {/* Self-gating: renders null unless AI is enabled+configured and the
+            user's role carries the maintenance_brief feature. */}
+        <MaintenanceBriefCard asset={asset} />
+
+        {/* ── Power Path ────────────────────────────────────────────────────── */}
+        {/* Upstream/downstream feed chain; refetches itself whenever the asset
+            object refreshes, and bumps the page on feed edits. */}
+        <PowerPathCard asset={asset} canWrite={canWrite} onChanged={refetchAll} />
 
         {/* ── Lab Samples ───────────────────────────────────────────────────── */}
         {labSamples.length > 0 && (
@@ -1122,54 +1155,21 @@ export default function AssetDetail() {
           </div>
         )}
 
-        {/* ── Risk & Criticality ────────────────────────────────────────────── */}
-        <div className="card mb-16">
-          <div className="card-header"><div className="card-title">Risk &amp; Criticality</div></div>
-          <div className="card-body">
-            <div className="detail-grid">
-              <div className="detail-item">
-                <div className="detail-label">Criticality Score</div>
-                <div className="detail-value">
-                  <MetaChip
-                    meta={CRITICALITY_SCORE_META[asset.criticalityScore] && {
-                      ...CRITICALITY_SCORE_META[asset.criticalityScore],
-                      label: `${asset.criticalityScore} — ${CRITICALITY_SCORE_META[asset.criticalityScore].label}`,
-                    }}
-                    fallback="Not scored"
-                  />
-                </div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Repair Cost Estimate</div>
-                <div className="detail-value">{fmtMoney(asset.repairCostEstimate)}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Spare Lead Time</div>
-                <div className="detail-value">
-                  {asset.spareLeadTimeWeeks != null
-                    ? `${asset.spareLeadTimeWeeks} week${asset.spareLeadTimeWeeks !== 1 ? 's' : ''}`
-                    : <span className="text-muted">—</span>}
-                </div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Redundancy</div>
-                <div className="detail-value">
-                  <MetaChip meta={REDUNDANCY_META[asset.redundancyStatus]} fallback="Unknown" />
-                </div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-label">Predictive Maintenance</div>
-                <div className="detail-value">
-                  <ServiceChip
-                    on={!!asset.requiresPredictiveMaintenance}
-                    onLabel="Predictive program"
-                    offLabel="Not required"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ── LOTO Procedures ───────────────────────────────────────────────── */}
+        {/* Structured lockout/tagout procedures (energy sources + steps).
+            Active procedure shown prominently; drafts editable; archived
+            collapsed. OSHA 29 CFR 1910.147 compliance anchor. */}
+        <AssetLotoCard asset={asset} canWrite={canWrite} />
+
+        {/* ── Documents & Procedures ────────────────────────────────────────── */}
+        {/* OEM manuals, wiring diagrams, test reports, warranty docs, and
+            PDF backups of LOTO procedures. Supports file upload and URL links. */}
+        <AssetDocumentsCard asset={asset} canWrite={canWrite} />
+
+        {/* ── AI Photo Inspection ───────────────────────────────────────────── */}
+        {/* Same self-gating as the brief card (maintenance_brief feature +
+            aiEnabled + aiConfigured). Apply actions refetch the asset. */}
+        <PhotoInspectCard asset={asset} onApplied={refetchAll} />
 
         {/* ── Nameplate ─────────────────────────────────────────────────────── */}
         <div className="card mb-16">

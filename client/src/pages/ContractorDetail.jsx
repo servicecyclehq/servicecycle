@@ -539,8 +539,19 @@ export default function ContractorDetail() {
               No work orders yet
             </div>
           ) : (
-            <div className="table-wrap">
+            /* A7 (2026-06-11): fixed table layout + colgroup so the
+               Status→Decal columns get deliberate, even widths instead of
+               auto-layout's uneven spacing. */
+            <div className="table-wrap table-even">
               <table>
+                <colgroup>
+                  <col style={{ width: '30%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '14%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Asset</th>

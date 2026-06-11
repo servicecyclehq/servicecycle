@@ -24,7 +24,16 @@ const REDUNDANCY_LABELS  = { N: 'N (none)', N_PLUS_1: 'N+1', TWO_N: '2N (full)' 
 
 function CritBadge({ score }) {
   if (!score) return <span style={{ color: 'var(--color-text-secondary)' }}>—</span>;
-  const colors = ['','#22c55e','#84cc16','#f59e0b','#f97316','#dc2626'];
+  // A2 (2026-06-11): semantic chip tokens — the old literal pastels
+  // (#84cc16 lime, #f59e0b amber) were near-invisible text on a white card.
+  const colors = [
+    '',
+    'var(--chip-green-fg, #166534)',
+    'var(--chip-green-fg, #166534)',
+    'var(--chip-amber-fg, #854d0e)',
+    'var(--chip-orange-fg, #9a3412)',
+    'var(--chip-red-fg, #991b1b)',
+  ];
   return (
     <span style={{ color: colors[score] || 'inherit', fontWeight: 700 }}>
       {score} — {CRITICALITY_LABELS[score]}
@@ -33,18 +42,21 @@ function CritBadge({ score }) {
 }
 
 function TemplateBadge({ isGlobal }) {
+  // A2 (2026-06-11): both badges route through the --chip-* tokens so they
+  // stay readable in dark mode (the old grey/white literals didn't).
   return isGlobal ? (
     <span style={{
       fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
       padding: '2px 7px', borderRadius: 4,
-      background: 'var(--color-bg-subtle, #f1f5f9)',
-      color: 'var(--color-text-secondary)', marginLeft: 6,
+      background: 'var(--chip-slate-bg, #f1f5f9)',
+      color: 'var(--chip-slate-fg, #334155)', marginLeft: 6,
     }}>PLATFORM</span>
   ) : (
     <span style={{
       fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
       padding: '2px 7px', borderRadius: 4,
-      background: '#eff6ff', color: '#1d4ed8', marginLeft: 6,
+      background: 'var(--chip-blue-bg, #eff6ff)',
+      color: 'var(--chip-blue-fg, #1d4ed8)', marginLeft: 6,
     }}>CUSTOM</span>
   );
 }
@@ -302,13 +314,6 @@ export default function EquipmentTemplates() {
       )
     : templates;
 
-  const grouped = {};
-  for (const t of filtered) {
-    const key = EQUIPMENT_TYPE_LABELS[t.equipmentType] || t.equipmentType;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(t);
-  }
-
   return (
     <div className="page-container">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -360,7 +365,7 @@ export default function EquipmentTemplates() {
       {loading && <div style={{ color: 'var(--color-text-secondary)', padding: 32, textAlign: 'center' }}>Loading…</div>}
       {error   && <div style={{ color: 'var(--color-danger)', padding: 16 }}>{error}</div>}
 
-      {!loading && !error && Object.keys(grouped).length === 0 && (
+      {!loading && !error && filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '60px 24px', color: 'var(--color-text-secondary)' }}>
           <Layers size={40} strokeWidth={1} style={{ marginBottom: 12 }} />
           <div style={{ fontWeight: 600 }}>No templates found</div>
@@ -370,19 +375,20 @@ export default function EquipmentTemplates() {
         </div>
       )}
 
-      {/* Template groups */}
-      {Object.entries(grouped).map(([typeLabel, group]) => (
-        <div key={typeLabel} style={{ marginBottom: 28 }}>
-          <h2 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, letterSpacing: '0.04em',
-            textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
-            {typeLabel}
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
-            {group.map(t => (
-              <div key={t.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: '14px 16px 12px' }}>
+      {/* Template cards — flat 3-per-row grid (A6, 2026-06-11; was one
+          section per equipment type, each card on its own row). The type
+          now renders as an eyebrow label inside each card. */}
+      {!loading && !error && filtered.length > 0 && (
+          <div className="template-grid">
+            {filtered.map(t => (
+              <div key={t.id} className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '14px 16px 12px', flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 'var(--font-size-2xs, 10px)', fontWeight: 700, letterSpacing: '0.06em',
+                        textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: 3 }}>
+                        {EQUIPMENT_TYPE_LABELS[t.equipmentType] || t.equipmentType}
+                      </div>
                       <div style={{ fontWeight: 600, fontSize: 'var(--font-size-data)', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
                         {t.name}
                         <TemplateBadge isGlobal={t.isGlobal} />
@@ -435,8 +441,8 @@ export default function EquipmentTemplates() {
                         {t.taskDefinitions.slice(0, 4).map(td => (
                           <span key={td.id} style={{
                             fontSize: 11, padding: '2px 7px', borderRadius: 10,
-                            background: 'var(--color-bg-subtle, #f1f5f9)',
-                            color: 'var(--color-text-secondary)',
+                            background: 'var(--chip-slate-bg, #f1f5f9)',
+                            color: 'var(--chip-slate-fg, #334155)',
                           }}>
                             {td.taskName}
                           </span>
@@ -465,8 +471,7 @@ export default function EquipmentTemplates() {
               </div>
             ))}
           </div>
-        </div>
-      ))}
+      )}
     </div>
   );
 }

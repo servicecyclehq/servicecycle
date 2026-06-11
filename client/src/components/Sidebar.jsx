@@ -564,37 +564,6 @@ export default function Sidebar() {
           Dashboard
         </NavLink>
 
-        {/* Field Mode — phone-first technician surface (/field/*), plus an
-            inline "Print QR labels" action (GET /api/assets/labels PDF) so
-            the desktop user can produce the label sheets the field scanner
-            reads. Same nav-item-row pattern as the Assets quick-add. */}
-        <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
-          <NavLink
-            to="/field"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            style={{ flex: 1 }}
-          >
-            {Icons.field}
-            Field Mode
-          </NavLink>
-          <button
-            onClick={handlePrintLabels}
-            disabled={labelsBusy}
-            title="Print QR labels (PDF)"
-            aria-label="Print QR labels"
-            style={{
-              background: 'none', border: 'none', cursor: labelsBusy ? 'default' : 'pointer',
-              padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
-              display: 'flex', alignItems: 'center', flexShrink: 0, borderRadius: 4,
-              transition: 'color 0.1s', opacity: labelsBusy ? 0.5 : 1,
-            }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-          >
-            <QrCode size={14} strokeWidth={1.75} />
-          </button>
-        </div>
-
         {/* Assets + quick-add button. This row keeps the .nav-item-row
             wrapper because of the inline `+` quick-add button — without
             the wrapper the button would be a sibling of the NavLink, not
@@ -651,6 +620,19 @@ export default function Sidebar() {
         >
           {Icons.archive}
           Archive
+        </NavLink>
+
+        {/* C3 (2026-06-11): Equipment Template Library nested under Assets —
+            it pre-fills New Asset, so it lives with the asset register rather
+            than as a standalone top-level entry. All roles browse; managers+
+            create. */}
+        <NavLink
+          to="/equipment-templates"
+          className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
+          style={{ fontSize: '0.82rem', paddingLeft: 28 }}
+        >
+          {Icons.templates}
+          Templates
         </NavLink>
 
         <NavLink
@@ -735,15 +717,6 @@ export default function Sidebar() {
           Industry News
         </NavLink>
 
-        {/* Equipment Template Library — all roles can browse; managers+ can create. */}
-        <NavLink
-          to="/equipment-templates"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.templates}
-          Equipment Templates
-        </NavLink>
-
         {/* Outage Consolidation Planner — account-wide view of assets needing outage work. */}
         <NavLink
           to="/outage-planner"
@@ -786,6 +759,39 @@ export default function Sidebar() {
             Reports
           </NavLink>
         )}
+
+        {/* Field Mode — phone-first technician surface (/field/*), plus an
+            inline "Print QR labels" action (GET /api/assets/labels PDF) so
+            the desktop user can produce the label sheets the field scanner
+            reads. C2 (2026-06-11): anchored at the very bottom of the nav —
+            it's a mode switch, not a sibling of the workspace pages, and
+            mid-list it broke the scan rhythm. */}
+        <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center', marginTop: 10 }}>
+          <NavLink
+            to="/field"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            style={{ flex: 1 }}
+          >
+            {Icons.field}
+            Field Mode
+          </NavLink>
+          <button
+            onClick={handlePrintLabels}
+            disabled={labelsBusy}
+            title="Print QR labels (PDF)"
+            aria-label="Print QR labels"
+            style={{
+              background: 'none', border: 'none', cursor: labelsBusy ? 'default' : 'pointer',
+              padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
+              display: 'flex', alignItems: 'center', flexShrink: 0, borderRadius: 4,
+              transition: 'color 0.1s', opacity: labelsBusy ? 0.5 : 1,
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+          >
+            <QrCode size={14} strokeWidth={1.75} />
+          </button>
+        </div>
 
         <button
           type="button"

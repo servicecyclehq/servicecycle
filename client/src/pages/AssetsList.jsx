@@ -134,24 +134,28 @@ export default function AssetsList() {
   // Columns that can be toggled. 'equipment', 'condition', 'nextDue' are
   // considered essential and are on by default. 'address' is the new column
   // that surfaces whether a site's address is filled in.
+  // D2 (2026-06-11): reordered — the "does this need attention?" quartet
+  // (Equipment · Condition · Next Due · Open Def.) leads; identity/metadata
+  // columns (Serial #, Address, Owner) are hidden by default but stay
+  // available in the column picker.
   const COLUMNS = [
     { id: 'equipment',    label: 'Equipment' },
-    { id: 'mfgModel',     label: 'Manufacturer / Model' },
-    { id: 'serial',       label: 'Serial #' },
-    { id: 'location',     label: 'Location' },
-    { id: 'address',      label: 'Address' },
-    { id: 'owner',        label: 'Owner' },
     { id: 'condition',    label: 'Condition' },
-    { id: 'criticality',  label: 'Criticality' },
-    { id: 'repairCost',    label: 'Repair Cost' },
-    { id: 'priorityScore', label: 'Priority Score' },
     { id: 'nextDue',       label: 'Next Due' },
     { id: 'openDef',      label: 'Open Def.' },
+    { id: 'criticality',  label: 'Criticality' },
+    { id: 'location',     label: 'Location' },
+    { id: 'mfgModel',     label: 'Manufacturer / Model' },
+    { id: 'serial',       label: 'Serial #' },
+    { id: 'address',      label: 'Address' },
+    { id: 'owner',        label: 'Owner' },
+    { id: 'repairCost',    label: 'Repair Cost' },
+    { id: 'priorityScore', label: 'Priority Score' },
     { id: 'service',      label: 'Service' },
   ];
   const DEFAULT_VISIBILITY = {
-    equipment: true, mfgModel: true, serial: true, location: true,
-    address: true, owner: true, condition: true, criticality: true,
+    equipment: true, mfgModel: true, serial: false, location: true,
+    address: false, owner: false, condition: true, criticality: true,
     repairCost: false, priorityScore: false, nextDue: true, openDef: true, service: true,
   };
   const [colVis, setColVis] = useState(DEFAULT_VISIBILITY);
@@ -503,14 +507,9 @@ export default function AssetsList() {
                   <thead>
                     <tr>
                       {colVis.equipment   && <th>Equipment</th>}
-                      {colVis.mfgModel    && <th>Manufacturer / Model</th>}
-                      {colVis.serial      && <th>Serial #</th>}
-                      {colVis.location    && <th>Location</th>}
-                      {colVis.address     && (
-                        <th title="Whether this asset's site has a street address on record">Address</th>
-                      )}
-                      {colVis.owner       && <th>Owner</th>}
                       {colVis.condition   && <th>Condition</th>}
+                      {colVis.nextDue     && <th>Next Due</th>}
+                      {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Def.</th>}
                       {colVis.criticality && (
                         <th
                           role="button" tabIndex={0}
@@ -523,6 +522,13 @@ export default function AssetsList() {
                           Criticality{sort === 'criticality' ? ' ▼' : ''}
                         </th>
                       )}
+                      {colVis.location    && <th>Location</th>}
+                      {colVis.mfgModel    && <th>Manufacturer / Model</th>}
+                      {colVis.serial      && <th>Serial #</th>}
+                      {colVis.address     && (
+                        <th title="Whether this asset's site has a street address on record">Address</th>
+                      )}
+                      {colVis.owner       && <th>Owner</th>}
                       {colVis.repairCost  && (
                         <th
                           role="button" tabIndex={0}
@@ -547,8 +553,6 @@ export default function AssetsList() {
                           Priority Score{sort === 'priorityScore' ? ' ▼' : ''}
                         </th>
                       )}
-                      {colVis.nextDue     && <th>Next Due</th>}
-                      {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Def.</th>}
                       {colVis.service     && <th>Service</th>}
                     </tr>
                   </thead>
@@ -571,14 +575,25 @@ export default function AssetsList() {
                               {EQUIPMENT_TYPE_LABELS[a.equipmentType] || a.equipmentType}
                             </td>
                           )}
-                          {colVis.mfgModel    && (
-                            <td>
-                              {(a.manufacturer || a.model)
-                                ? [a.manufacturer, a.model].filter(Boolean).join(' ')
-                                : <span className="text-muted">—</span>}
+                          {colVis.condition   && <td><ConditionBadge condition={a.governingCondition} /></td>}
+                          {colVis.nextDue     && <td><NextDueCell schedule={a.schedules?.[0]} /></td>}
+                          {colVis.openDef     && (
+                            <td style={{ textAlign: 'right' }}>
+                              {openDefs > 0 ? (
+                                <span style={{
+                                  display: 'inline-block', minWidth: 20, textAlign: 'center',
+                                  padding: '2px 7px', borderRadius: 20, fontWeight: 700,
+                                  fontSize: 'var(--font-size-xs)',
+                                  background: 'var(--color-danger-bg)', color: 'var(--color-danger)',
+                                }}>
+                                  {openDefs}
+                                </span>
+                              ) : (
+                                <span className="text-muted">0</span>
+                              )}
                             </td>
                           )}
-                          {colVis.serial      && <td className="td-muted">{a.serialNumber || '—'}</td>}
+                          {colVis.criticality && <td><CriticalityBadge score={a.criticalityScore} /></td>}
                           {colVis.location    && (
                             <td>
                               <div>{a.site?.name || '—'}</div>
@@ -589,6 +604,14 @@ export default function AssetsList() {
                               )}
                             </td>
                           )}
+                          {colVis.mfgModel    && (
+                            <td>
+                              {(a.manufacturer || a.model)
+                                ? [a.manufacturer, a.model].filter(Boolean).join(' ')
+                                : <span className="text-muted">—</span>}
+                            </td>
+                          )}
+                          {colVis.serial      && <td className="td-muted">{a.serialNumber || '—'}</td>}
                           {colVis.address     && (
                             <td title={hasAddress
                               ? `${[a.site?.address, a.site?.city, a.site?.state, a.site?.postalCode].filter(Boolean).join(', ')}`
@@ -609,8 +632,6 @@ export default function AssetsList() {
                             </td>
                           )}
                           {colVis.owner       && <td className="td-muted">{a.owner?.name || '—'}</td>}
-                          {colVis.condition   && <td><ConditionBadge condition={a.governingCondition} /></td>}
-                          {colVis.criticality && <td><CriticalityBadge score={a.criticalityScore} /></td>}
                           {colVis.repairCost  && (
                             <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className={a.repairCostEstimate == null ? 'td-muted' : undefined}>
                               {fmtMoney(a.repairCostEstimate)}
@@ -629,23 +650,6 @@ export default function AssetsList() {
                                   {a.priorityScore}
                                 </span>
                               ) : <span className="td-muted">—</span>}
-                            </td>
-                          )}
-                          {colVis.nextDue     && <td><NextDueCell schedule={a.schedules?.[0]} /></td>}
-                          {colVis.openDef     && (
-                            <td style={{ textAlign: 'right' }}>
-                              {openDefs > 0 ? (
-                                <span style={{
-                                  display: 'inline-block', minWidth: 20, textAlign: 'center',
-                                  padding: '2px 7px', borderRadius: 20, fontWeight: 700,
-                                  fontSize: 'var(--font-size-xs)',
-                                  background: 'var(--color-danger-bg)', color: 'var(--color-danger)',
-                                }}>
-                                  {openDefs}
-                                </span>
-                              ) : (
-                                <span className="text-muted">0</span>
-                              )}
                             </td>
                           )}
                           {colVis.service     && (

@@ -407,14 +407,17 @@ export default function TestingTrendsTab({ asset }) {
           <table>
             <thead>
               <tr>
+                {/* D4 (2026-06-11): verdict columns (Latest Δ + Trend) moved
+                    to positions 2–3 — with 5+ years of events they scrolled
+                    off-screen when trailing the history columns. */}
                 <th>Test / Phase</th>
+                <th style={{ textAlign: 'right' }}>Latest Δ</th>
+                <th>Trend</th>
                 {events.map((ev) => (
                   <th key={ev.id} style={{ textAlign: 'right' }}>
                     {fmtDate(ev.date)}
                   </th>
                 ))}
-                <th style={{ textAlign: 'right' }}>Latest Δ</th>
-                <th>Trend</th>
               </tr>
             </thead>
             <tbody>
@@ -427,6 +430,12 @@ export default function TestingTrendsTab({ asset }) {
                       {row.phase && <span className="text-muted"> · {row.phase}</span>}
                       {row.unit && <span className="text-muted" style={{ fontSize: 11 }}> ({row.unit})</span>}
                     </td>
+                    <td style={{ textAlign: 'right', fontWeight: flag?.significant ? 700 : 500, color: flag?.color }}>
+                      {flag ? `${flag.pct > 0 ? '▲' : '▼'} ${Math.abs(flag.pct).toFixed(0)}%` : '—'}
+                    </td>
+                    <td>
+                      <Sparkline values={events.map((ev) => row.byEvent[ev.id]?.value)} />
+                    </td>
                     {events.map((ev) => {
                       const m = row.byEvent[ev.id];
                       return (
@@ -435,12 +444,6 @@ export default function TestingTrendsTab({ asset }) {
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'right', fontWeight: flag?.significant ? 700 : 500, color: flag?.color }}>
-                      {flag ? `${flag.pct > 0 ? '▲' : '▼'} ${Math.abs(flag.pct).toFixed(0)}%` : '—'}
-                    </td>
-                    <td>
-                      <Sparkline values={events.map((ev) => row.byEvent[ev.id]?.value)} />
-                    </td>
                   </tr>
                 );
               })}

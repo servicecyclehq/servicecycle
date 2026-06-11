@@ -602,8 +602,16 @@ export default function WorkOrderDetail() {
       </div>
 
       <div className="page-body">
+        {/* E3 (2026-06-11): section order follows the WO's status. Active
+            jobs keep the execution flow (conditions → measurements →
+            findings, mirroring how a NETA tech works the job); COMPLETE /
+            CANCELLED jobs read findings-first for manager review (instrument
+            serials are audit fine print there). Implemented as CSS flex
+            `order` on a column wrapper — pure presentation, zero data/JSX
+            restructuring. */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
         {/* ── Details card ───────────────────────────────────────────────── */}
-        <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card" style={{ marginBottom: 20, order: 0 }}>
           <div className="card-header">
             <div className="card-title">Details</div>
             {canWrite && !isTerminal && !editing && (
@@ -748,7 +756,7 @@ export default function WorkOrderDetail() {
         </div>
 
         {/* ── Test conditions & instruments ─────────────────────────────── */}
-        <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card" style={{ marginBottom: 20, order: isTerminal ? 3 : 1 }}>
           <div className="card-header">
             <div>
               <div className="card-title">Test conditions &amp; instruments</div>
@@ -877,7 +885,7 @@ export default function WorkOrderDetail() {
         </div>
 
         {/* ── Test measurements ──────────────────────────────────────────── */}
-        <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card" style={{ marginBottom: 20, order: 2 }}>
           <div className="card-header">
             <div>
               <div className="card-title">Test measurements</div>
@@ -1015,7 +1023,7 @@ export default function WorkOrderDetail() {
         </div>
 
         {/* ── Deficiencies found ─────────────────────────────────────────── */}
-        <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card" style={{ marginBottom: 20, order: isTerminal ? 1 : 3 }}>
           <div className="card-header">
             <div>
               <div className="card-title">Deficiencies found</div>
@@ -1087,7 +1095,7 @@ export default function WorkOrderDetail() {
         </div>
 
         {/* ── Lab samples ────────────────────────────────────────────────── */}
-        <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card" style={{ marginBottom: 20, order: 4 }}>
           <div className="card-header">
             <div>
               <div className="card-title">Lab samples</div>
@@ -1222,7 +1230,7 @@ export default function WorkOrderDetail() {
 
         {/* ── Documents ──────────────────────────────────────────────────── */}
         {documents.length > 0 && (
-          <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card" style={{ marginBottom: 20, order: 5 }}>
             <div className="card-header">
               <div className="card-title">Documents</div>
             </div>
@@ -1239,6 +1247,7 @@ export default function WorkOrderDetail() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {showComplete && (

@@ -930,13 +930,22 @@ select.filter-select option,
    Light mode: deep ink on a soft tint. Dark mode: lifted pastel text on a
    translucent same-hue fill — every pair clears WCAG AA on its own bg. */
 :root {
-  --chip-red-fg:        #b91c1c;  --chip-red-bg:        #fef2f2;
-  --chip-orange-fg:     #c2410c;  --chip-orange-bg:     #fff7ed;
-  --chip-amber-fg:      #a16207;  --chip-amber-bg:      #fefce8;
-  --chip-green-fg:      #15803d;  --chip-green-bg:      #f0fdf4;
+  /* 2026-06-11 A2: light-mode chip FGs darkened one shade — the previous
+     values (orange #c2410c, amber #a16207…) measured under 4.5:1 on their
+     soft tints at 11px semi-bold. Every pair now clears WCAG AA. */
+  --chip-red-fg:        #991b1b;  --chip-red-bg:        #fef2f2;
+  --chip-orange-fg:     #9a3412;  --chip-orange-bg:     #fff7ed;
+  --chip-amber-fg:      #854d0e;  --chip-amber-bg:      #fefce8;
+  --chip-green-fg:      #166534;  --chip-green-bg:      #f0fdf4;
   --chip-blue-fg:       #1d4ed8;  --chip-blue-bg:       #eff6ff;
-  --chip-slate-fg:      #475569;  --chip-slate-bg:      #f1f5f9;
-  --chip-slate-soft-fg: #64748b;  --chip-slate-soft-bg: #f8fafc;
+  --chip-slate-fg:      #334155;  --chip-slate-bg:      #f1f5f9;
+  --chip-slate-soft-fg: #475569;  --chip-slate-soft-bg: #f8fafc;
+  /* 2026-06-11 A2: these two were referenced across the SPA (news "matched"
+     chip, Equipment Templates PLATFORM badge + task pills, ReportsHub, …)
+     but never declared — the hardcoded #f1f5f9 fallback painted a light-grey
+     pill in DARK mode too, leaving light-on-light text. Declared per theme. */
+  --color-bg-subtle:    #f1f5f9;
+  --color-bg-secondary: #f8fafc;
 }
 [data-theme="dark"] {
   --chip-red-fg:        #fca5a5;  --chip-red-bg:        rgba(248, 113, 113, 0.14);
@@ -946,6 +955,8 @@ select.filter-select option,
   --chip-blue-fg:       #93c5fd;  --chip-blue-bg:       rgba(96, 165, 250, 0.14);
   --chip-slate-fg:      #cbd5e1;  --chip-slate-bg:      rgba(148, 163, 184, 0.14);
   --chip-slate-soft-fg: #94a3b8;  --chip-slate-soft-bg: rgba(148, 163, 184, 0.09);
+  --color-bg-subtle:    rgba(148, 163, 184, 0.14);
+  --color-bg-secondary: #1b212b;
 }
 
 /* -- Card subtitle (shared) ------------------------------------------------ */
@@ -1072,3 +1083,39 @@ select.filter-select option,
       slightly lifted border + a faint top sheen instead. ------------------- */
 [data-theme="dark"] .card { border-color: #2a3140; }
 [data-theme="dark"] .stat-tile[data-clickable="true"]:hover { border-color: #3b4354; }
+
+/* ===== 2026-06-11 master punch list, batch 1 ================================ */
+
+/* A1 — sticky page top-bar. The page title/action bar stays pinned while the
+   body scrolls under it. Sticks below the demo banner when one is mounted
+   (DemoModeBanner publishes its measured height as --demo-banner-height on
+   <html>, same contract the fixed sidebar already uses). z-index sits above
+   card content/chips but below the sidebar (100), mobile hamburger (60) and
+   the demo banner (200). html{overflow-x:hidden} is root-level, which does
+   NOT break sticky (see the v0.92.6 note above). z-index 15 beats every
+   z-auto card/chip in the page body but stays under the in-page popovers
+   (ColumnPicker / SavedViews / ActionDropdown at 20). */
+.page-header {
+  position: sticky;
+  top: var(--demo-banner-height, 0px);
+  z-index: 15;
+}
+/* A6 — Equipment Templates card grid: 3 columns on desktop (6 templates =
+   2 rows × 3 cols), stepping down responsively. */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1180px) {
+  .template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .template-grid { grid-template-columns: 1fr; }
+}
+
+/* A7 — even data-column spacing. Opt-in on a .table-wrap: fixes the layout
+   so trailing status/date/decal columns get deliberate, equal widths instead
+   of whatever auto-layout dealt that day. Pair with a <colgroup>. */
+.table-even table { table-layout: fixed; width: 100%; }
+.table-even td { overflow: hidden; text-overflow: ellipsis; }

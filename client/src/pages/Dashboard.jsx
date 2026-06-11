@@ -70,12 +70,13 @@ function KpiTile({ label, value, sub, accent, onClick }) {
 // ── Severity chip tile ───────────────────────────────────────────────────────
 // Clickable — deep-links into /deficiencies pre-filtered to this severity's
 // open findings (the page reads ?severity=&resolved= from the URL).
+// A3 (2026-06-11): condensed — count + label on one baseline, no dot bullet.
 function SeverityTile({ severity, count, onClick }) {
   const m = metaOf(SEVERITY_META, severity);
   const isImmediate = severity === 'IMMEDIATE';
-  const color = isImmediate && count > 0
-    ? 'var(--color-danger)'
-    : (m.color || 'var(--color-text)');
+  const color = count > 0
+    ? (isImmediate ? 'var(--color-danger)' : (m.color || 'var(--color-text)'))
+    : 'var(--color-text-secondary)';
   return (
     <div
       className="card stat-tile"
@@ -85,22 +86,16 @@ function SeverityTile({ severity, count, onClick }) {
       tabIndex={onClick ? 0 : -1}
       onKeyDown={kbdActivate(onClick)}
       style={{
-        flex: '1 1 0', minWidth: 0, padding: '14px 18px',
-        display: 'flex', alignItems: 'center', gap: 12,
+        flex: '1 1 0', minWidth: 0, padding: '8px 14px',
+        display: 'flex', alignItems: 'baseline', gap: 8,
         cursor: onClick ? 'pointer' : 'default',
       }}
       title={`Open ${m.label || severity} deficiencies — click to triage`}
     >
-      <span aria-hidden="true" style={{
-        width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0,
-        boxShadow: `0 0 0 4px color-mix(in srgb, ${color} 14%, transparent)`,
-      }} />
-      <div style={{ minWidth: 0 }}>
-        <div className="stat-tile-value" style={{ fontSize: 22, color }}>{count}</div>
-        <div className="stat-tile-sub" style={{ marginTop: 2 }}>
-          {m.label || severity}
-        </div>
-      </div>
+      <span className="stat-tile-value" style={{ fontSize: 20, color }}>{count}</span>
+      <span className="stat-tile-sub" style={{ marginTop: 0, minWidth: 0 }}>
+        {m.label || severity}
+      </span>
     </div>
   );
 }
@@ -230,11 +225,24 @@ function MaintenanceHorizon({ navigate }) {
       monthIdx: d.getMonth(),
       year: d.getFullYear(),
       label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-      showLabel: i === 0 || d.getMonth() === 0, // first cell + every January
-      isJan: d.getMonth() === 0 && i !== 0,     // year separator gap
       ...stats,
     });
   }
+
+  // A5 (2026-06-11): group months into calendar-year rows on a fixed
+  // 12-column grid so the squares align Jan–Dec across every year. The old
+  // single flex strip wrapped wherever the viewport said, which left some
+  // years' first squares visually misaligned with uneven gaps.
+  const years = [];
+  for (const c of cells) {
+    let y = years[years.length - 1];
+    if (!y || y.year !== c.year) {
+      y = { year: c.year, months: Array(12).fill(null) };
+      years.push(y);
+    }
+    y.months[c.monthIdx] = c;
+  }
+  const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
   return (
     <div className="card" style={{ marginBottom: 20 }}>
@@ -253,27 +261,38 @@ function MaintenanceHorizon({ navigate }) {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 3, rowGap: 14 }}>
-              {cells.map(c => {
-                const tip = `${c.label} — ${c.due} due${c.outage > 0 ? ` · ${c.outage} need outage` : ''}${c.overdue > 0 ? ` · ${c.overdue} overdue` : ''}`;
-                return (
-                  <div
-                    key={c.ym}
-                    style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                      // Year separator: extra leading gap before each January.
-                      marginLeft: c.isJan ? 10 : 0,
-                    }}
-                  >
-                    <div style={{
-                      fontSize: 'var(--font-size-2xs, 10px)', lineHeight: 1,
-                      color: 'var(--color-text-secondary)', height: 10,
-                      whiteSpace: 'nowrap', fontWeight: 600,
-                      visibility: c.showLabel ? 'visible' : 'hidden',
-                    }}>
-                      {c.showLabel ? (c.monthIdx === 0 ? String(c.year) : c.label) : '·'}
-                    </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'auto repeat(12, 20px)',
+              gap: '5px 4px',
+              alignItems: 'center',
+              justifyContent: 'start',
+              overflowX: 'auto',
+            }}>
+              {/* Month initials header row */}
+              <div aria-hidden="true" />
+              {MONTH_INITIALS.map((mi, i) => (
+                <div key={i} aria-hidden="true" style={{
+                  fontSize: 'var(--font-size-2xs, 10px)', lineHeight: 1, textAlign: 'center',
+                  color: 'var(--color-text-secondary)', fontWeight: 600,
+                }}>
+                  {mi}
+                </div>
+              ))}
+              {/* One row per calendar year, squares pinned to month columns */}
+              {years.map(y => [
+                <div key={`y-${y.year}`} style={{
+                  fontSize: 'var(--font-size-2xs, 10px)', fontWeight: 600, lineHeight: 1,
+                  color: 'var(--color-text-secondary)', paddingRight: 6, whiteSpace: 'nowrap',
+                }}>
+                  {y.year}
+                </div>,
+                ...y.months.map((c, i) => {
+                  if (!c) return <div key={`${y.year}-${i}`} aria-hidden="true" />;
+                  const tip = `${c.label} — ${c.due} due${c.outage > 0 ? ` · ${c.outage} need outage` : ''}${c.overdue > 0 ? ` · ${c.overdue} overdue` : ''}`;
+                  return (
                     <button
+                      key={c.ym}
                       type="button"
                       title={tip}
                       aria-label={tip}
@@ -299,9 +318,9 @@ function MaintenanceHorizon({ navigate }) {
                         }} />
                       )}
                     </button>
-                  </div>
-                );
-              })}
+                  );
+                }),
+              ])}
             </div>
             {/* Legend */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 12, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
@@ -610,7 +629,7 @@ function CapExForecastPanel() {
   const fmt = (c) => `$${Math.round(c / 100).toLocaleString()}`;
 
   return (
-    <div className="card" style={{ marginTop: 24, marginBottom: 20, padding: '20px 24px' }}>
+    <div className="card" style={{ marginBottom: 20, padding: '20px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>
           Estimated Electrical CapEx Exposure
@@ -759,7 +778,21 @@ export default function Dashboard() {
         {data && data.assetCount > 0 && (
           <>
             {/* ── KPI tiles ─────────────────────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: isMobile ? 10 : 16, marginBottom: 20 }}>
+            {/* B1 (2026-06-11): severity reads left→right — Overdue leads,
+                then the open-IMMEDIATE count, then the due windows. */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: isMobile ? 10 : 16, marginBottom: 20 }}>
+              <KpiTile
+                label="Overdue" value={due.overdue}
+                sub={due.overdue > 0 ? 'Needs scheduling now' : 'All caught up'}
+                accent={due.overdue > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #22c55e)'}
+                onClick={() => navigate('/calendar')}
+              />
+              <KpiTile
+                label="Immediate" value={defs.IMMEDIATE || 0}
+                sub="Open IMMEDIATE deficiencies"
+                accent={(defs.IMMEDIATE || 0) > 0 ? 'var(--color-danger, #dc2626)' : undefined}
+                onClick={() => navigate('/deficiencies?severity=IMMEDIATE&resolved=false')}
+              />
               <KpiTile
                 label="Due in 30 days" value={due.due30}
                 sub="Active schedules"
@@ -776,21 +809,17 @@ export default function Dashboard() {
                 sub="Cumulative window"
                 onClick={() => navigate('/calendar')}
               />
-              <KpiTile
-                label="Overdue" value={due.overdue}
-                sub={due.overdue > 0 ? 'Needs scheduling now' : 'All caught up'}
-                accent={due.overdue > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #22c55e)'}
-                onClick={() => navigate('/calendar')}
-              />
             </div>
 
             {/* ── Deficiencies by severity + overall compliance ─────────── */}
+            {/* A3/A4 (2026-06-11): condensed — inline count·label tiles, and
+                the compliance % sized like the KPI tiles instead of 36px. */}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16, marginBottom: 20 }}>
-              <div className="card" style={{ padding: '14px 18px' }}>
-                <div className="stat-tile-label" style={{ marginBottom: 10 }}>
+              <div className="card" style={{ padding: '10px 16px' }}>
+                <div className="stat-tile-label" style={{ marginBottom: 7 }}>
                   Open deficiencies by severity
                 </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'].map(sev => (
                     <SeverityTile
                       key={sev}
@@ -801,18 +830,32 @@ export default function Dashboard() {
                   ))}
                 </div>
               </div>
-              <div className="card" style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div className="stat-tile-label" style={{ marginBottom: 6 }}>
+              <div className="card" style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="stat-tile-label" style={{ marginBottom: 4 }}>
                   Overall compliance rate
                 </div>
-                <div className="stat-tile-value" style={{ fontSize: 36, color: complianceColor(data.overallComplianceRate ?? 100) }}>
-                  {data.overallComplianceRate ?? 100}%
-                </div>
-                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                  active schedules not overdue · {data.scheduleCount ?? 0} schedule{(data.scheduleCount ?? 0) !== 1 ? 's' : ''}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <span className="stat-tile-value" style={{ color: complianceColor(data.overallComplianceRate ?? 100) }}>
+                    {data.overallComplianceRate ?? 100}%
+                  </span>
+                  <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                    active schedules not overdue · {data.scheduleCount ?? 0} schedule{(data.scheduleCount ?? 0) !== 1 ? 's' : ''}
+                  </span>
                 </div>
               </div>
             </div>
+
+            {/* ── Priority assets (critical / high value / by volume) ───── */}
+            <PriorityAssetsCard navigate={navigate} />
+
+            {/* ── CapEx forecast — B3 (2026-06-11): promoted to slot ~4; the
+                3-year exposure range is the budget conversation and should
+                never sit below a recency feed. */}
+            <CapExForecastPanel />
+
+            {/* ── 36-month maintenance horizon — B2 (2026-06-11): promoted
+                from dead last; planning texture belongs above the rollups. */}
+            <MaintenanceHorizon navigate={navigate} />
 
             {/* ── Compliance by site ─────────────────────────────────────── */}
             {bySite.length > 0 && (
@@ -832,9 +875,6 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
-
-            {/* ── Priority assets (critical / high value / by volume) ───── */}
-            <PriorityAssetsCard navigate={navigate} />
 
             {/* ── Next maintenance due ───────────────────────────────────── */}
             <div className="card" style={{ marginBottom: 20 }}>
@@ -911,7 +951,10 @@ export default function Dashboard() {
             </div>
 
             {/* ── Recent work orders ─────────────────────────────────────── */}
-            <div className="card" style={{ marginBottom: 20 }}>
+            {/* B4 (2026-06-11): demoted to last + resized — pure recency
+                feed, capped at 5 rows and ~half width. The reclaimed space
+                stays empty for now (a later batch fills it). */}
+            <div className="card" style={{ marginBottom: 20, maxWidth: isMobile ? undefined : 560 }}>
               <div className="card-header">
                 <div>
                   <div className="card-title">Recent work orders</div>
@@ -929,7 +972,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div style={{ padding: '4px 16px 12px' }}>
-                  {recentWOs.map(wo => {
+                  {recentWOs.slice(0, 5).map(wo => {
                     const m = metaOf(WO_STATUS_META, wo.status);
                     const go = () => navigate(`/work-orders/${wo.id}`);
                     return (
@@ -969,14 +1012,10 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* ── CapEx forecast (facilities manager / CFO) ──────────────── */}
-            <CapExForecastPanel />
-
-            {/* ── 36-month maintenance horizon ───────────────────────────── */}
-            <MaintenanceHorizon navigate={navigate} />
           </>
         )}
       </div>
     </>
   );
 }
+// 2026-06-11: dashboard IA pass (B1–B4, A3–A5) — see docs/MASTER_PUNCH_LIST_2026-06-11.md
