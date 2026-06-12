@@ -702,6 +702,13 @@ model Asset {
   // and the scheduler never re-derive it. Drives interval selection on
   // MaintenanceTaskDefinition (intervalC1/C2/C3Months).
   governingCondition    ConditionRating @default(C2)
+  // NFPA 70B §9.3.1: an asset that has missed its last two successive
+  // maintenance cycles is treated as Condition 3. Computed by the daily
+  // missedCyclePolicy cron as a SEPARATE governing input (worst-of also
+  // considers this flag) so it tightens every interval WITHOUT overwriting a
+  // qualified person's physical/criticality/environment assessment. Cleared
+  // automatically once maintenance catches up.
+  autoConditionC3       Boolean         @default(false)
   inService             Boolean         @default(true)
   isEnergized           Boolean         @default(true)
   notes                 String?

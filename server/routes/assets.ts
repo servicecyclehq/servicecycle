@@ -996,7 +996,11 @@ router.put('/:id', requireManager, async (req, res) => {
       if (conditionCriticality !== undefined) updateData.conditionCriticality = criticality;
       if (conditionEnvironment !== undefined) updateData.conditionEnvironment = environment;
 
-      const newGoverning = worstCondition(physical, criticality, environment);
+      // NFPA 70B §9.3.1: the missed-cycle auto-C3 flag is a SEPARATE governing
+      // input, so a qualified person re-assessing the physical/criticality/
+      // environment axes here never silently drops a neglect-driven C3. C3 is
+      // the worst rating, so a set flag simply wins.
+      const newGoverning = existing.autoConditionC3 ? 'C3' : worstCondition(physical, criticality, environment);
       updateData.governingCondition = newGoverning;
       if (newGoverning !== existing.governingCondition) {
         governingFrom = existing.governingCondition;

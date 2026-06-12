@@ -1456,6 +1456,26 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
   try {
     const cron = require('node-cron');
 
+    // NFPA 70B §9.3.1 missed-cycle policy. Runs at 06:40 UTC — BEFORE the alert
+    // engine (07:00) so any asset newly auto-flagged Condition 3 has its
+    // tightened intervals reflected in that morning's overdue alerts. Per
+    // account, mirroring the alert-engine pattern.
+    cron.schedule('40 6 * * *', () => runOnce('missedCyclePolicyC3', async () => {
+      const { applyMissedCyclePolicy } = require('./lib/missedCyclePolicy');
+      const accounts = await prisma.account.findMany({ select: { id: true } });
+      let set = 0, cleared = 0;
+      for (const account of accounts) {
+        try {
+          const r = await applyMissedCyclePolicy(prisma, account.id);
+          set += r.c3Set; cleared += r.c3Cleared;
+        } catch (e) {
+          console.error('[Cron] missedCyclePolicyC3 error for account', account.id.slice(0, 8), ':', e.message);
+        }
+      }
+      console.log('[Cron] Missed-cycle policy (§9.3.1):', accounts.length, 'account(s) —', set, 'auto-C3 set,', cleared, 'cleared');
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Missed-cycle Condition-3 policy scheduled — runs daily at 06:40');
+
     // S2-FN-01 (v0.75.x): per-account alert engine. Mirrors the nightly backup
     // pattern (index.js:1265). A single large-contract account no longer holds
     // other tenants behind one global take:1000 query. runAlertEngine() already
