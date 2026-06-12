@@ -302,7 +302,24 @@ async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt
   } else if (visionProvider === 'openai' || visionProvider === 'azure_openai') {
     return _openaiImage({ imageBuffer, prompt, maxTokens, azure: visionProvider === 'azure_openai', s });
   } else if (visionProvider === 'gemini') {
-    return _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s });
+    // Cross-provider vision fallback (Gemini → Groq). When Gemini's free daily
+    // quota is exhausted across the WHOLE model cascade, fall to Groq's Llama-4
+    // Scout vision model so the demo keeps working on a second provider's free
+    // tier. Only on quota exhaustion — a structural error (bad image, auth)
+    // surfaces immediately. Configurable via AI_VISION_FALLBACK (default groq).
+    try {
+      return await _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s });
+    } catch (err: any) {
+      const exhausted = _isGeminiQuotaError(err) || /exhausted their free-tier/i.test(err?.message || '');
+      const fb = (process.env.AI_VISION_FALLBACK || 'groq').toLowerCase();
+      if (exhausted && fb === 'groq' && process.env.GROQ_API_KEY) {
+        console.warn('[ai] gemini vision quota exhausted → falling back to groq vision');
+        return await _groqImage({ imageBuffer, mediaType, prompt, maxTokens, s });
+      }
+      throw err;
+    }
+  } else if (visionProvider === 'groq') {
+    return _groqImage({ imageBuffer, mediaType, prompt, maxTokens, s });
   } else {
     throw new Error(`[ai] Provider "${visionProvider}" does not support image input`);
   }
@@ -579,6 +596,41 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s }) {
     }
   }
   throw lastError || new Error('[ai][gemini] all cascade image models exhausted their free-tier quotas for today');
+}
+
+// ── Groq vision (cross-provider fallback) ─────────────────────────────────────
+// Groq's OpenAI-compatible chat endpoint with a multimodal Llama-4 model. Used
+// as the second free tier behind Gemini for image reads (nameplate OCR). The
+// existing aiProviders/groq.js is text-only and refuses task=extract, so the
+// image path lives here. Model is env-configurable; default verified present on
+// the account via ListModels.
+async function _groqImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTokens = 1024, s }) {
+  const axios = require('axios');
+  const apiKey = process.env.GROQ_API_KEY || (s && s.apiKey);
+  if (!apiKey) throw new Error('[ai][groq] GROQ_API_KEY is not set — cannot use Groq vision fallback');
+  const model = process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+  const dataUrl = `data:${mediaType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}`;
+  const res = await axios.post(
+    `${process.env.GROQ_API_BASE || 'https://api.groq.com/openai/v1'}/chat/completions`,
+    {
+      model,
+      max_tokens: maxTokens,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: dataUrl } },
+        ],
+      }],
+    },
+    { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 30_000, validateStatus: () => true },
+  );
+  if (res.status >= 400) {
+    const detail = typeof res.data === 'string' ? res.data.slice(0, 200) : JSON.stringify(res.data || {}).slice(0, 200);
+    throw new Error(`[ai][groq] vision ${res.status}: ${detail}`);
+  }
+  const text = res.data && res.data.choices && res.data.choices[0] && res.data.choices[0].message && res.data.choices[0].message.content;
+  return { text: String(text || '').trim() };
 }
 
 module.exports = { complete, completeWithImage, parseJSON };
