@@ -4,6 +4,13 @@
 // measurements (human-in-the-loop) → commit to TestMeasurements + auto-created
 // deficiencies → land on the fix-it list. "We read the report nobody reads and
 // hand back the to-do list."
+//
+// #1 one-upload = one-facility: when the report spans >1 SUBSTATION/POSITION
+// section the preview returns `sections[]`; this page renders a per-section
+// accordion (match each block to the register or create a new asset) and
+// commits every asset in one shot. Single-asset reports keep the flat UI.
+// Also wires the cross-block client debt: #4 correction diff + extractionId on
+// commit, and the #5 priorImport / #2 truncated coverage warnings.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
@@ -12,8 +19,11 @@ import { FileText, UploadCloud, CheckCircle2 } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { takePendingImport } from '../lib/pendingImport';
+import { EQUIPMENT_TYPE_LABELS, fmtDate } from '../lib/equipment';
 
 const PF_COLORS = { GREEN: '#15803d', YELLOW: '#92400e', RED: '#b91c1c' };
+const CREATE = '__create__';
+const TYPE_OPTIONS = Object.entries(EQUIPMENT_TYPE_LABELS).sort((a, b) => a[1].localeCompare(b[1]));
 
 export default function TestReportImport() {
   useDocumentTitle('Import Test Report');
@@ -23,8 +33,13 @@ export default function TestReportImport() {
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
   const [rows, setRows] = useState([]);
+  const [original, setOriginal] = useState([]);   // #4: snapshot for the correction diff
+  const [previewedAt, setPreviewedAt] = useState(0);
   const [assets, setAssets] = useState([]);
-  const [assetId, setAssetId] = useState('');
+  const [sites, setSites] = useState([]);
+  const [assetId, setAssetId] = useState('');       // single-asset path
+  const [sel, setSel] = useState([]);               // per-section asset id | CREATE
+  const [createFields, setCreateFields] = useState([]); // per-section new-asset inputs
   const [testDate, setTestDate] = useState('');
   const [vendor, setVendor] = useState('');
   const [techName, setTechName] = useState('');
@@ -36,7 +51,10 @@ export default function TestReportImport() {
       const list = Array.isArray(d) ? d : (d?.assets || d?.items || []);
       setAssets(list.map(a => ({ id: a.id, label: [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || a.serialNumber || a.id, serial: a.serialNumber })));
     }).catch(() => {});
+    api.get('/api/sites').then(r => setSites(r.data?.data?.sites || [])).catch(() => {});
   }, []);
+
+  const isMulti = !!(preview?.sections && preview.sections.length > 1);
 
   async function previewFile(file) {
     if (!file) return;
@@ -48,7 +66,21 @@ export default function TestReportImport() {
       const d = res.data.data;
       setPreview(d);
       setRows(d.measurements.map(m => ({ ...m, include: true })));
+      setOriginal(d.measurements.map(m => ({ passFail: m.passFail ?? null, asFoundValue: m.asFoundValue ?? null })));
+      setPreviewedAt(Date.now());
       setAssetId(d.assetMatch?.id || '');
+      // Per-section selection + create-asset prefill (multi-asset reports).
+      if (d.sections && d.sections.length > 1) {
+        setSel(d.sections.map(sec => sec.assetMatch?.id || CREATE));
+        setCreateFields(d.sections.map((sec, i) => ({
+          siteId: '', equipmentType: '',
+          manufacturer: i === 0 ? (d.meta?.manufacturer || '') : '',
+          model:        i === 0 ? (d.meta?.model || '') : '',
+          serialNumber: i === 0 ? (d.meta?.serialNumber || '') : '',
+        })));
+      } else {
+        setSel([]); setCreateFields([]);
+      }
       setTestDate(d.meta?.testDate || new Date().toISOString().slice(0, 10));
       setVendor(d.meta?.vendor || '');
       setTechName(d.meta?.techName || '');
@@ -64,14 +96,67 @@ export default function TestReportImport() {
   useEffect(() => { const f = takePendingImport(); if (f) previewFile(f); }, []);
 
   function setRow(i, patch) { setRows(rs => rs.map((r, idx) => idx === i ? { ...r, ...patch } : r)); }
+  function setCreate(i, patch) { setCreateFields(cf => cf.map((c, idx) => idx === i ? { ...c, ...patch } : c)); }
+  function setSelAt(i, v) { setSel(s => s.map((x, idx) => idx === i ? v : x)); }
+
+  // #4 correction capture: diff the human-edited rows against the extraction
+  // snapshot so the server banks a labeled {field, before, after} corpus.
+  function buildCorrections() {
+    const out = [];
+    rows.forEach((r, i) => {
+      const o = original[i] || {};
+      if ((r.passFail ?? null) !== (o.passFail ?? null)) {
+        out.push({ field: 'passFail', before: o.passFail ?? null, after: r.passFail ?? null, formFamily: preview?.source || null, measurementType: r.measurementType });
+      }
+      if (String(r.asFoundValue ?? '') !== String(o.asFoundValue ?? '')) {
+        out.push({ field: 'asFoundValue', before: o.asFoundValue ?? null, after: r.asFoundValue ?? null, formFamily: preview?.source || null, measurementType: r.measurementType });
+      }
+    });
+    return out;
+  }
 
   async function commit() {
+    const corrections = buildCorrections();
+    const reviewMs = previewedAt ? Date.now() - previewedAt : null;
+    const base = { testDate, vendor, techName, extractionId: preview?.extractionId || null, corrections, reviewMs };
+
+    if (isMulti) {
+      // Build the per-section payload; only sections with included readings ship.
+      const sectionsPayload = [];
+      for (let i = 0; i < preview.sections.length; i++) {
+        const sec = preview.sections[i];
+        const measurements = sec.measurementIndices.map(idx => rows[idx]).filter(r => r && r.include);
+        if (!measurements.length) continue;
+        const choice = sel[i];
+        if (choice === CREATE) {
+          const c = createFields[i] || {};
+          if (!c.siteId || !c.equipmentType) { setError(`"${sec.label}": pick a site and equipment type for the new asset (or match it to an existing one).`); return; }
+          sectionsPayload.push({ createAsset: { siteId: c.siteId, equipmentType: c.equipmentType, manufacturer: c.manufacturer || null, model: c.model || null, serialNumber: c.serialNumber || null }, measurements, label: sec.label });
+        } else if (choice) {
+          sectionsPayload.push({ assetId: choice, measurements, label: sec.label });
+        } else {
+          setError(`"${sec.label}": choose an asset to attach these readings to.`); return;
+        }
+      }
+      if (!sectionsPayload.length) { setError('Include at least one reading in at least one section.'); return; }
+      setBusy(true); setError('');
+      try {
+        const res = await api.post('/api/test-reports/import/commit', { ...base, sections: sectionsPayload });
+        setResult(res.data.data);
+        setStep(3);
+      } catch (err) {
+        setError(err?.response?.data?.error || 'Failed to commit');
+      } finally { setBusy(false); }
+      return;
+    }
+
+    // Single-asset path.
     if (!assetId) { setError('Pick the asset this report belongs to'); return; }
     const chosen = rows.filter(r => r.include);
     if (!chosen.length) { setError('Include at least one measurement'); return; }
     setBusy(true); setError('');
     try {
-      const res = await api.post('/api/test-reports/import/commit', { assetId, testDate, vendor, techName, measurements: chosen });
+      const res = await api.post('/api/test-reports/import/commit', { ...base, assetId, measurements: chosen });
       setResult(res.data.data);
       setStep(3);
     } catch (err) {
@@ -79,9 +164,119 @@ export default function TestReportImport() {
     } finally { setBusy(false); }
   }
 
-  function reset() { setStep(1); setPreview(null); setRows([]); setResult(null); setError(''); }
+  function reset() { setStep(1); setPreview(null); setRows([]); setOriginal([]); setResult(null); setError(''); setSel([]); setCreateFields([]); }
 
   const s = preview?.summary;
+
+  // ── Render helpers — invoked as functions (NOT <Component/>) so they render
+  // inline without a component boundary; defining a component inside the page
+  // and mounting it as JSX would remount on every keystroke and drop input
+  // focus in the create-asset form. ─────────────────────────────────────────
+  function readingsTable(indices) {
+    const idx = (indices || rows.map((_, i) => i)).map(i => [rows[i], i]);
+    if (!idx.length) return <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>No readings in this section.</div>;
+    const diag = idx.filter(([r]) => (r.kind || 'D') !== 'R');
+    const ref = idx.filter(([r]) => (r.kind || 'D') === 'R');
+    const headRow = (
+      <thead><tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)' }}>
+        <th></th><th>Measurement</th><th>Ph</th><th>Value</th><th>Expected</th><th>Result</th>
+      </tr></thead>
+    );
+    const renderRows = (list) => list.map(([r, i]) => (
+      <tr key={i} style={{ borderTop: '1px solid var(--color-border)' }}>
+        <td><input type="checkbox" checked={r.include} onChange={() => setRow(i, { include: !r.include })} /></td>
+        <td>{r.label}</td>
+        <td>{r.phase || '—'}</td>
+        <td>{r.asFoundValue ?? '—'} {r.asFoundUnit || ''}</td>
+        <td style={{ color: 'var(--color-text-secondary)' }}>{r.expectedRange || '—'}</td>
+        <td>
+          <select value={r.passFail || ''} onChange={e => setRow(i, { passFail: e.target.value || null })}
+            style={{ color: PF_COLORS[r.passFail] || 'inherit', fontWeight: 700, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, padding: '2px 4px' }}>
+            <option value="">—</option><option value="GREEN">GREEN</option><option value="YELLOW">YELLOW</option><option value="RED">RED</option>
+          </select>
+        </td>
+      </tr>
+    ));
+    return (
+      <>
+        <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse' }}>
+          {headRow}<tbody>{renderRows(diag.length ? diag : idx)}</tbody>
+        </table>
+        {diag.length > 0 && ref.length > 0 && (
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', userSelect: 'none' }}>
+              Additional readings &amp; nameplate data ({ref.length}) — voltages, currents, temps, settings; stored for reference, not compliance-critical
+            </summary>
+            <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse', marginTop: 8, opacity: 0.8 }}>
+              {headRow}<tbody>{renderRows(ref)}</tbody>
+            </table>
+          </details>
+        )}
+      </>
+    );
+  }
+
+  function summaryChips(sum) {
+    if (!sum) return null;
+    return (
+      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+        <span style={{ color: '#b91c1c', fontWeight: 700 }}>{sum.red} RED</span> · <span style={{ color: '#92400e', fontWeight: 700 }}>{sum.yellow} YELLOW</span> · {sum.green} GREEN · {sum.deficienciesToCreate} deficiencies
+      </span>
+    );
+  }
+
+  // Asset <select> shared by the flat path and each section. `value`/`onChange`
+  // drive either assetId (flat) or sel[i] (section); section mode adds CREATE.
+  function assetPicker({ value, onChange, candidates, allowCreate }) {
+    return (
+      <select className="input" value={value} onChange={e => onChange(e.target.value)} style={{ width: '100%' }}>
+        <option value="">— select asset —</option>
+        {allowCreate && <option value={CREATE}>+ Create a new asset for this section</option>}
+        {candidates && candidates.length > 0 && (
+          <optgroup label="Suggested matches">
+            {candidates.map(c => <option key={c.id} value={c.id}>{c.label}{c.serialNumber ? ` · ${c.serialNumber}` : ''}{c.lastTestedAt ? ` · last tested ${fmtDate(c.lastTestedAt)}` : ''}</option>)}
+          </optgroup>
+        )}
+        <optgroup label="All assets">
+          {assets.map(a => <option key={a.id} value={a.id}>{a.label}{a.serial ? ` · ${a.serial}` : ''}</option>)}
+        </optgroup>
+      </select>
+    );
+  }
+
+  function createAssetForm(idx) {
+    const c = createFields[idx] || {};
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 8, padding: 12, borderRadius: 8, background: 'var(--color-bg-subtle, #f8fafc)', border: '1px dashed var(--color-border)' }}>
+        <div style={{ flex: '1 1 180px' }}>
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Site</label>
+          <select className="input" value={c.siteId} onChange={e => setCreate(idx, { siteId: e.target.value })} style={{ width: '100%' }}>
+            <option value="">— select site —</option>
+            {sites.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: '1 1 180px' }}>
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Equipment type</label>
+          <select className="input" value={c.equipmentType} onChange={e => setCreate(idx, { equipmentType: e.target.value })} style={{ width: '100%' }}>
+            <option value="">— select type —</option>
+            {TYPE_OPTIONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Serial #</label>
+          <input className="input" value={c.serialNumber} onChange={e => setCreate(idx, { serialNumber: e.target.value })} style={{ width: '100%' }} placeholder="optional" />
+        </div>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Manufacturer</label>
+          <input className="input" value={c.manufacturer} onChange={e => setCreate(idx, { manufacturer: e.target.value })} style={{ width: '100%' }} placeholder="optional" />
+        </div>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Model</label>
+          <input className="input" value={c.model} onChange={e => setCreate(idx, { model: e.target.value })} style={{ width: '100%' }} placeholder="optional" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -107,9 +302,21 @@ export default function TestReportImport() {
       {/* Step 2 — preview */}
       {step === 2 && preview && (
         <>
-          {preview.assetSections > 1 && (
+          {/* #5 dedupe: this exact PDF was already imported. */}
+          {preview.priorImport && (
+            <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 8, background: '#fff1f1', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 'var(--font-size-sm)' }}>
+              ⚠ This exact report was already imported{preview.priorImport.importedAt ? ` on ${fmtDate(preview.priorImport.importedAt)}` : ''}{preview.priorImport.readings ? ` (${preview.priorImport.readings} readings)` : ''}. Committing again will create <strong>duplicate</strong> readings and skew the trends — only proceed if you're intentionally re-importing.
+            </div>
+          )}
+          {/* #2 coverage: the parse was truncated before the last page. */}
+          {preview.truncated && (
             <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 'var(--font-size-sm)' }}>
-              ⚠ This report appears to cover <strong>{preview.assetSections} assets</strong>. All readings below will attach to the one asset you pick — review them, or split the report and import per asset. (Automatic per-asset split is coming.)
+              Coverage is partial — readings were extracted from {preview.pagesScanned ? `pages 1–${preview.pagesScanned}` : 'the first pages'}{preview.pageCount ? ` of ${preview.pageCount}` : ''}. Later pages weren't parsed; some assets or readings may be missing.
+            </div>
+          )}
+          {isMulti && (
+            <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 8, background: '#eef2ff', border: '1px solid #c7d2fe', color: '#3730a3', fontSize: 'var(--font-size-sm)' }}>
+              This report covers <strong>{preview.sections.length} assets</strong>. Match each section below to the right equipment (or create a new asset), then commit once — every asset is imported together.
             </div>
           )}
           {preview.ocr && (
@@ -122,83 +329,67 @@ export default function TestReportImport() {
               ✨ The structured parser came back thin on this report, so AI recovered <strong>{preview.aiAdded} additional reading{preview.aiAdded === 1 ? '' : 's'}</strong> (marked <em>AI</em>). AI can misread — please verify these before committing.
             </div>
           )}
+
+          {/* Shared header: test date + vendor */}
           <div className="card mb-16"><div className="card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 260px' }}>
-              <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Asset this report belongs to</label>
-              <select className="input" value={assetId} onChange={e => setAssetId(e.target.value)} style={{ width: '100%' }}>
-                <option value="">— select asset —</option>
-                {assets.map(a => <option key={a.id} value={a.id}>{a.label}{a.serial ? ` · ${a.serial}` : ''}</option>)}
-              </select>
-              {preview.assetMatch
-                ? <div style={{ fontSize: 11, color: '#15803d', marginTop: 3 }}>Matched by serial {preview.meta.serialNumber}</div>
-                : preview.meta?.serialNumber && <div style={{ fontSize: 11, color: '#92400e', marginTop: 3 }}>No asset matched serial {preview.meta.serialNumber} — pick one.</div>}
-            </div>
             <div>
               <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Test date</label>
               <input type="date" className="input" value={testDate} onChange={e => setTestDate(e.target.value)} style={{ width: 160 }} />
             </div>
             <div>
               <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Vendor</label>
-              <input type="text" className="input" value={vendor} onChange={e => setVendor(e.target.value)} style={{ width: 160 }} />
+              <input type="text" className="input" value={vendor} onChange={e => setVendor(e.target.value)} style={{ width: 200 }} />
             </div>
           </div></div>
 
-          <div className="card mb-16">
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <div className="card-title">Extracted measurements ({s.total})</div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                <span style={{ color: '#b91c1c', fontWeight: 700 }}>{s.red} RED</span> · <span style={{ color: '#92400e', fontWeight: 700 }}>{s.yellow} YELLOW</span> · {s.green} GREEN · {s.deficienciesToCreate} deficiencies will be created
+          {/* ── Multi-asset: per-section accordion ─────────────────────────── */}
+          {isMulti ? preview.sections.map((sec, i) => (
+            <details key={i} className="card mb-16" open={i === 0}>
+              <summary className="card-header" style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <span className="card-title">{sec.label || `Section ${i + 1}`}</span>
+                {summaryChips(sec.summary)}
+              </summary>
+              <div className="card-body">
+                <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Attach this section to</label>
+                {assetPicker({ value: sel[i] ?? CREATE, onChange: v => setSelAt(i, v), candidates: sec.assetCandidates, allowCreate: true })}
+                {sec.assetMatch && sel[i] === sec.assetMatch.id && (
+                  <div style={{ fontSize: 11, color: '#15803d', marginTop: 3 }}>
+                    Suggested: {sec.assetMatch.label}{sec.assetMatch.reason ? ` (${sec.assetMatch.reason.replace(/_/g, ' ')})` : ''}{sec.assetMatch.lastTestedAt ? ` · last tested ${fmtDate(sec.assetMatch.lastTestedAt)}` : ''} — same device?
+                  </div>
+                )}
+                {sel[i] === CREATE && createAssetForm(i)}
+                <div style={{ marginTop: 14 }}>{readingsTable(sec.measurementIndices)}</div>
               </div>
-            </div>
-            <div className="card-body" style={{ overflowX: 'auto' }}>
-              {s.total === 0 && <div style={{ color: 'var(--color-text-secondary)' }}>No measurements detected. The PDF may be a scan (image) rather than a text report.</div>}
-              {s.total > 0 && (() => {
-                const idx = rows.map((r, i) => [r, i]);
-                const diag = idx.filter(([r]) => (r.kind || 'D') !== 'R');
-                const ref  = idx.filter(([r]) => (r.kind || 'D') === 'R');
-                const headRow = (
-                  <thead><tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)' }}>
-                    <th></th><th>Measurement</th><th>Ph</th><th>Value</th><th>Expected</th><th>Result</th>
-                  </tr></thead>
-                );
-                const renderRows = (list) => list.map(([r, i]) => (
-                  <tr key={i} style={{ borderTop: '1px solid var(--color-border)' }}>
-                    <td><input type="checkbox" checked={r.include} onChange={() => setRow(i, { include: !r.include })} /></td>
-                    <td>{r.label}</td>
-                    <td>{r.phase || '—'}</td>
-                    <td>{r.asFoundValue ?? '—'} {r.asFoundUnit || ''}</td>
-                    <td style={{ color: 'var(--color-text-secondary)' }}>{r.expectedRange || '—'}</td>
-                    <td>
-                      <select value={r.passFail || ''} onChange={e => setRow(i, { passFail: e.target.value || null })}
-                        style={{ color: PF_COLORS[r.passFail] || 'inherit', fontWeight: 700, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, padding: '2px 4px' }}>
-                        <option value="">—</option><option value="GREEN">GREEN</option><option value="YELLOW">YELLOW</option><option value="RED">RED</option>
-                      </select>
-                    </td>
-                  </tr>
-                ));
-                return (
-                  <>
-                    <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse' }}>
-                      {headRow}<tbody>{renderRows(diag.length ? diag : idx)}</tbody>
-                    </table>
-                    {diag.length > 0 && ref.length > 0 && (
-                      <details style={{ marginTop: 14 }}>
-                        <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', userSelect: 'none' }}>
-                          Additional readings &amp; nameplate data ({ref.length}) — voltages, currents, temps, settings; stored for reference, not compliance-critical
-                        </summary>
-                        <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse', marginTop: 8, opacity: 0.8 }}>
-                          {headRow}<tbody>{renderRows(ref)}</tbody>
-                        </table>
-                      </details>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
+            </details>
+          )) : (
+            /* ── Single asset: flat picker + table ─────────────────────────── */
+            <>
+              <div className="card mb-16"><div className="card-body">
+                <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Asset this report belongs to</label>
+                <div style={{ maxWidth: 420 }}>{assetPicker({ value: assetId, onChange: setAssetId, candidates: preview.assetCandidates, allowCreate: false })}</div>
+                {preview.assetMatch
+                  ? <div style={{ fontSize: 11, color: '#15803d', marginTop: 3 }}>
+                      Matched {preview.assetMatch.label}{preview.assetMatch.reason ? ` by ${preview.assetMatch.reason.replace(/_/g, ' ')}` : ''}{preview.assetMatch.lastTestedAt ? ` · last tested ${fmtDate(preview.assetMatch.lastTestedAt)}` : ''} — same device?
+                    </div>
+                  : preview.meta?.serialNumber && <div style={{ fontSize: 11, color: '#92400e', marginTop: 3 }}>No asset matched serial {preview.meta.serialNumber} — pick one.</div>}
+              </div></div>
+
+              <div className="card mb-16">
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div className="card-title">Extracted measurements ({s.total})</div>
+                  {summaryChips(s)}
+                </div>
+                <div className="card-body" style={{ overflowX: 'auto' }}>
+                  {s.total === 0
+                    ? <div style={{ color: 'var(--color-text-secondary)' }}>No measurements detected. The PDF may be a scan (image) rather than a text report.</div>
+                    : readingsTable(null)}
+                </div>
+              </div>
+            </>
+          )}
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" disabled={busy} onClick={commit}>{busy ? 'Committing…' : 'Commit & generate fix list'}</button>
+            <button className="btn btn-primary" disabled={busy} onClick={commit}>{busy ? 'Committing…' : (isMulti ? 'Commit all & generate fix list' : 'Commit & generate fix list')}</button>
             <button className="btn btn-secondary" onClick={reset} disabled={busy}>Start over</button>
           </div>
         </>
@@ -211,17 +402,38 @@ export default function TestReportImport() {
             <CheckCircle2 size={24} style={{ color: 'var(--color-success)' }} />
             <h2 style={{ margin: 0, fontSize: 18 }}>Here's what we found</h2>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '12px 16px', marginBottom: 18, borderRadius: 8,
-            background: 'var(--color-success-bg, #f0fdf4)', border: '1px solid var(--color-success-border, #bbf7d0)' }}>
-            <div style={{ flex: 1, minWidth: 240, fontSize: 'var(--font-size-sm)' }}>
-              <strong>{result.measurementsCreated} measurement{result.measurementsCreated !== 1 ? 's' : ''} recorded.</strong>{' '}
-              {result.deficienciesCreated > 0
-                ? <>We flagged <strong>{result.deficienciesCreated} deficienc{result.deficienciesCreated !== 1 ? 'ies' : 'y'}</strong> from out-of-spec readings
-                    {' '}({result.deficiencyBySeverity.IMMEDIATE} immediate, {result.deficiencyBySeverity.RECOMMENDED} recommended, {result.deficiencyBySeverity.ADVISORY} advisory).</>
-                : <>All readings within spec — no deficiencies.</>}
+
+          {result.totals ? (
+            /* Multi-section result */
+            <>
+              <div style={{ padding: '12px 16px', marginBottom: 18, borderRadius: 8, background: 'var(--color-success-bg, #f0fdf4)', border: '1px solid var(--color-success-border, #bbf7d0)', fontSize: 'var(--font-size-sm)' }}>
+                Imported <strong>{result.totals.assetsCommitted} asset{result.totals.assetsCommitted !== 1 ? 's' : ''}</strong>
+                {result.totals.assetsCreated > 0 ? ` (${result.totals.assetsCreated} newly created)` : ''}: <strong>{result.totals.measurementsCreated}</strong> readings recorded, <strong>{result.totals.deficienciesCreated}</strong> deficienc{result.totals.deficienciesCreated !== 1 ? 'ies' : 'y'} flagged.
+              </div>
+              <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
+                {result.sections.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 'var(--font-size-sm)' }}>
+                    <span>{r.label || `Asset ${i + 1}`}{r.created ? <em style={{ color: 'var(--color-text-secondary)' }}> · new</em> : ''} — {r.measurementsCreated} readings, {r.deficienciesCreated} deficiencies</span>
+                    <Link to={`/assets/${r.assetId}`} className="btn btn-secondary btn-sm">View asset →</Link>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            /* Single-asset result */
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '12px 16px', marginBottom: 18, borderRadius: 8,
+              background: 'var(--color-success-bg, #f0fdf4)', border: '1px solid var(--color-success-border, #bbf7d0)' }}>
+              <div style={{ flex: 1, minWidth: 240, fontSize: 'var(--font-size-sm)' }}>
+                <strong>{result.measurementsCreated} measurement{result.measurementsCreated !== 1 ? 's' : ''} recorded.</strong>{' '}
+                {result.deficienciesCreated > 0
+                  ? <>We flagged <strong>{result.deficienciesCreated} deficienc{result.deficienciesCreated !== 1 ? 'ies' : 'y'}</strong> from out-of-spec readings
+                      {' '}({result.deficiencyBySeverity.IMMEDIATE} immediate, {result.deficiencyBySeverity.RECOMMENDED} recommended, {result.deficiencyBySeverity.ADVISORY} advisory).</>
+                  : <>All readings within spec — no deficiencies.</>}
+              </div>
+              <Link to={`/assets/${result.assetId}`} className="btn btn-primary btn-sm">View asset trends →</Link>
             </div>
-            <Link to={`/assets/${result.assetId}`} className="btn btn-primary btn-sm">View asset trends →</Link>
-          </div>
+          )}
+
           <div style={{ display: 'flex', gap: 8 }}>
             <Link to="/deficiencies?resolved=false" className="btn btn-secondary">View fix-it list</Link>
             <button className="btn btn-secondary" onClick={reset}>Import another report</button>
