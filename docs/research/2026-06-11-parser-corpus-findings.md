@@ -32,3 +32,25 @@ PowerDB does NOT lay out a `Test | Phase | Value | Unit | Limit | Result` column
 
 ## Bottom line
 The pdfplumber engine + geometry approach is the right foundation (it cleanly read the grid cells — the data is all there). The MAPPING layer was tuned to the wrong layout. Retuning to PowerDB's key-value-grid reality is a focused, well-understood next chunk now that we can see the real structure — and it doubles as the multi-asset segmentation (W5) groundwork.
+
+---
+## UPDATE 2026-06-12 — retune shipped + verified live
+Tuned `pyextract` against the real corpus (19 reports in `electrical tests/` + 8 completed in `2nd batch/`) and deployed. Results vs baseline:
+
+| report | baseline meas | tuned meas | header (serial/mfr/date) |
+|---|---|---|---|
+| SAMPLE JOB (PowerDB) | 10 (garbage) | ~38 | 27805 / Ferranti Packard / 2008-02-08 ✓ |
+| DEKRA breaker 135pp | 1 | ~21 | — / Changcheng Electrical Group / 2023-08-01 ✓ |
+| smart-ground | 0 | ~46 | — |
+| Trench VT (scan, OCR layer) | 1 | ~9 | 13027 ✓ |
+
+What changed:
+1. **Header extraction** rewritten with per-field validation: serials must carry a digit (rejects USED/Meter/SHUNT), a stopword reject-list, ALLCAPS-cut (PowerDB labels/sections are uppercase), `(cid:N)` glyph stripping. Baseline garbage (`mfr=LABEL: AS FOUND`, `serial=USED`) → correct serial/mfr/date on most.
+2. **General value+unit reading capture** (`_inline_readings`): every `<label> <value> <unit>` in the text layer, with phase from connection tokens (L1-G, T1-T2, X1-X5). Conservative unit typing — only diagnostic units (MΩ→insulation_resistance, µΩ→contact_resistance, ppm→DGA) get a semantic NETA type; ambiguous units (V, A, %, Ω, Hz, °) get a generic `*_reading` type so a stray voltage is never mistaken for a power-factor result (protects the trend/deficiency engine).
+3. **Performance**: real reports were timing out (36s) on the CPU-limited container → failing open to pdfjs. Split page budgets (text 18 / cells 4 / tables 4) + 45s bridge timeout → SAMPLE JOB 36s→16s; `source: pdfplumber` confirmed live.
+
+Honest remaining gaps (need the brother's reports / bigger build):
+- **Multi-asset segmentation** (one PDF = one facility) NOT done — the 40+pp PowerDB job is read as one asset within the page budget; segmentation = gem W5.
+- **Scanned reports** (Hanford, NY PSC) have no text layer → 0 capture → need OCR (gem W1).
+- **EICR / load-bank** column tables under-captured (their values live in column-header tables the inline pass misses); per-format column vocab would help.
+- Measurement *classification* is coarse for ambiguous units — intentional (human-in-the-loop preview verifies). Per-PowerDB-form templates would sharpen it; that needs real filled reports as fixtures.

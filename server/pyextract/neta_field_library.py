@@ -51,6 +51,7 @@ HEADER_STOPWORDS = {
     "humidity", "weather", "voltage", "frequency", "max", "available", "ratio",
     "year", "bushing", "equipment", "wps", "std", "ieee", "system", "switchyard",
     "compliant", "grade", "class", "series", "m&te", "cal", "due", "customer",
+    "copyright", "function", "signature", "name", "reference", "position",
 }
 
 # Measurement vocabulary: label -> canonical type, default unit, bad direction,
