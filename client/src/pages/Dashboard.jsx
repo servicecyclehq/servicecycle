@@ -226,6 +226,7 @@ function MaintenanceHorizon({ navigate }) {
   // past-due months are shown) through 36 months out, regardless of how much
   // data came back.
   const now0 = new Date();
+  const currentYm = ymKey(now0);
   const start = new Date(now0.getFullYear(), 0, 1);
   const monthsSpan = now0.getMonth() + HORIZON_MONTHS;
   const cells = [];
@@ -315,8 +316,11 @@ function MaintenanceHorizon({ navigate }) {
                         borderRadius: 5, cursor: 'pointer', position: 'relative',
                         background: horizonColor(c.due),
                         border: '1px solid var(--color-border)',
-                        // Red ring on overdue months (only possible for the current month).
-                        boxShadow: c.overdue > 0 ? '0 0 0 2px var(--color-danger, #dc2626)' : 'none',
+                        // Green ring marks the current month; red ring marks
+                        // past-due/overdue months (current month wins if both).
+                        boxShadow: c.ym === currentYm
+                          ? '0 0 0 2px var(--color-emerald, #10b981)'
+                          : (c.overdue > 0 ? '0 0 0 2px var(--color-danger, #dc2626)' : 'none'),
                         transition: 'transform 0.1s',
                       }}
                       onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.2)'; }}
@@ -349,6 +353,12 @@ function MaintenanceHorizon({ navigate }) {
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', position: 'relative' }}>
                   <span style={{ position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)', width: 5, height: 5, borderRadius: '50%', background: 'var(--color-warning, #b45309)' }} />
                 </span> needs outage
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', boxShadow: '0 0 0 2px var(--color-emerald, #10b981)' }} /> current month
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', boxShadow: '0 0 0 2px var(--color-danger, #dc2626)' }} /> overdue
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', boxShadow: '0 0 0 2px var(--color-danger, #dc2626)' }} /> overdue
