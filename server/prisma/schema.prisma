@@ -1490,6 +1490,56 @@ model AiUsage {
   @@map("ai_usage")
 }
 
+// ─── Extraction telemetry (#4) + report fingerprint / dedupe (#5) ──────────────
+// One row per extraction across every ingest + scan path (PDF test-report
+// preview, nameplate OCR, photo inspect). Captures engine / coverage /
+// confidence at extraction time and the human corrections + commit outcome at
+// commit time — the proprietary labeled-correction dataset an acquirer
+// underwrites ("12k reports, 94% field accuracy, improving monthly"). The
+// sha256 + committedAt pair also powers re-import dedupe (#5): a prior commit of
+// the same bytes in the same account is the "imported 2026-03-03 — re-import
+// anyway?" signal.
+//
+// Deliberately FK-less (accountId/userId are plain scalars) so the migration is
+// a single additive CREATE TABLE — telemetry is fire-and-forget and must never
+// add write-path coupling or FK contention to the ingest hot path.
+model ExtractionEvent {
+  id              String    @id @default(uuid())
+  accountId       String
+  userId          String?
+  kind            String    // 'test_report' | 'nameplate' | 'photo_inspect'
+  engine          String    // source: pdfplumber | pdfplumber-ocr | pdfjs | pdfplumber+ai | ai | vision
+  ocr             Boolean   @default(false)
+  aiUsed          Boolean   @default(false)
+  // Coverage — un-backfillable QA signal + honest multi-asset truncation flag.
+  pageCount       Int?
+  pagesScanned    Int?
+  truncated       Boolean   @default(false)
+  assetSections   Int?
+  fieldsExtracted Int       @default(0) // readings (test_report) or nameplate fields parsed
+  // Confidence distribution at extraction.
+  confMin         Float?
+  confMean        Float?
+  redCount        Int?
+  yellowCount     Int?
+  greenCount      Int?
+  // Fingerprint / dedupe (#5).
+  sha256          String?
+  // Filled at commit — correction capture (the labeled training signal).
+  committedAt     DateTime?
+  fieldsCommitted Int?
+  fieldsCorrected Int?
+  corrections     Json?     // [{ field, before, after, formFamily }]
+  reviewMs        Int?
+  createdAt       DateTime  @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([kind, createdAt])
+  @@index([accountId, sha256]) // dedupe lookup (#5)
+  @@index([accountId, committedAt]) // KPI: parsed + committed counts
+  @@map("extraction_events")
+}
+
 // ─── Consultant Access ────────────────────────────────────────────────────────
 // Explicit grants allowing a consultant user (Maintenance Vendor account
 // manager) to access a tenant account. Not on by default — admin must invite

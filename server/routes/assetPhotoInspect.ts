@@ -55,6 +55,7 @@ const { checkAndIncrement: checkAiQuota, refundIncrement: refundAiQuota } = requ
 const { aiIpLimiter }      = require('../middleware/aiIpLimit');
 const { buildInspectContext, inspectPhoto } = require('../lib/photoInspect');
 const { uploadFile }       = require('../lib/storage');
+const { recordExtraction } = require('../lib/extractionTelemetry'); // #4 telemetry (scan paths)
 import prisma from '../lib/prisma';
 
 // ─── Upload handling ──────────────────────────────────────────────────────────
@@ -290,6 +291,17 @@ router.post('/photo-inspect', aiPreGate, aiIpLimiter, photoInspectLimiter, photo
       observations:       analysis.visibleCondition.observations.length,
     });
 
+    // #4 telemetry: one extraction row for the vision scan path too, so QA/field
+    // accuracy is measured across EVERY ingest + scan path, not just PDFs.
+    const _confMap: any = { high: 0.9, medium: 0.6, low: 0.3 };
+    void recordExtraction({
+      accountId, userId, kind: 'photo_inspect', engine: String(model || 'vision'), aiUsed: true,
+      fieldsExtracted: Array.isArray(analysis?.identification?.nameplate)
+        ? analysis.identification.nameplate.length
+        : Object.keys(analysis?.identification?.nameplate || {}).length,
+      confMean: _confMap[String(analysis?.identification?.confidence || '').toLowerCase()] ?? null,
+    });
+
     return res.json({
       success: true,
       data: {
@@ -472,6 +484,21 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
     if (assetId) {
       void logActivity(assetId, userId, accountId, 'nameplate_ocr', {
         manufacturer: fields.manufacturer, model: fields.model,
+      });
+    }
+
+    // #4 telemetry: nameplate OCR is a scan path too — log engine/coverage/
+    // confidence so field accuracy is measured here as well. fieldsExtracted =
+    // non-null nameplate fields; confMean from the green/yellow/red rubric.
+    {
+      const _cMap: any = { high: 0.9, medium: 0.6, low: 0.3 };
+      const _present = KEYS.filter((k) => fields[k] != null);
+      const _confs = _present.map((k) => _cMap[confidence[k]] ?? 0.6);
+      void recordExtraction({
+        accountId, userId: userId || null, kind: 'nameplate', engine: 'nameplate-vision', aiUsed: true,
+        fieldsExtracted: _present.length,
+        confMean: _confs.length ? _confs.reduce((a: number, b: number) => a + b, 0) / _confs.length : null,
+        confMin: _confs.length ? Math.min(..._confs) : null,
       });
     }
 

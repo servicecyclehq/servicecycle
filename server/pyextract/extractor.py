@@ -17,6 +17,7 @@ table-cell association work across report designs.
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -417,14 +418,27 @@ def extract_measurements(cells, page_tables, full_text=""):
 
 
 # Per-stage page budgets, tuned so the WHOLE extraction stays well under the
-# bridge timeout even on a CPU-limited container under load. The cheap, high-
-# value text/inline pass runs broadly; the EXPENSIVE ruled-table line-detection
+# bridge timeout even on a CPU-limited container under load.
+#
+# The contradiction this fixes: a NETA/PowerDB job report covers many devices,
+# each opening with a SUBSTATION…POSITION block. The old 18-page TEXT cap meant
+# the multi-asset detector could see (and the UI warn about) only sections in
+# the first 18 pages, AND every reading for a later device was silently dropped
+# — the warning claimed "3 assets" while the extraction had quietly truncated
+# two of them. The cheap text/inline pass is what feeds both section detection
+# AND multi-asset readings, so it must cover the WHOLE document.
+#
+# So the cheap, high-value text pass now runs broadly (up to MAX_TEXT_PAGES,
+# governed by a wall-clock budget so a pathological 400-page scan still bails
+# before the bridge timeout). The EXPENSIVE passes — ruled-table line-detection
 # (which barely helps real PowerDB key-value grids) and word-geometry cell
-# splitting run only on the early pages. A 135pp DEKRA / 41pp PowerDB job that
-# previously took 36s (→ timeout → pdfjs fallback) now finishes in a few.
-MAX_TEXT_PAGES = 18   # extract_text → inline value+unit pass (cheap)
-MAX_CELL_PAGES = 4    # _page_cells → header extraction (nameplate is page 1-2)
-MAX_TABLE_PAGES = 4   # extract_tables → column-table pass (expensive)
+# splitting — stay capped to the early pages where the header/nameplate live.
+# When the time budget forces us to stop early we report pages_scanned <
+# page_count + truncated=True so the warning is always honest about coverage.
+MAX_TEXT_PAGES = 200   # extract_text → inline value+unit pass (cheap) — covers full multi-asset jobs
+MAX_CELL_PAGES = 4     # _page_cells → header extraction (nameplate is page 1-2)
+MAX_TABLE_PAGES = 4    # extract_tables → column-table pass (expensive)
+TEXT_TIME_BUDGET_S = 30.0  # stop the text sweep past this; leaves headroom under the 45s bridge timeout
 
 
 OCR_PAGES = 3   # OCR is slow (render + tesseract); cap hard to stay under timeout
@@ -454,9 +468,22 @@ def _ocr_text(path, max_pages=OCR_PAGES):
 def extract_fields(path: str, mode: str = "all"):
     cells, line_tables, full_text = [], [], []
     table_settings = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
+    page_count = 0
+    pages_scanned = 0
+    truncated = False
+    started = time.monotonic()
     with pdfplumber.open(path) as pdf:
+        page_count = len(pdf.pages)
         for i, page in enumerate(pdf.pages[:MAX_TEXT_PAGES]):
+            # Cheap text sweep runs across the whole document so multi-asset
+            # sections and their inline readings are never silently dropped —
+            # but bail if the wall-clock budget is exhausted, recording that we
+            # stopped short (truncated) rather than lying about coverage.
+            if i > 0 and (time.monotonic() - started) > TEXT_TIME_BUDGET_S:
+                truncated = True
+                break
             full_text.append(page.extract_text() or "")
+            pages_scanned = i + 1
             if i < MAX_CELL_PAGES:
                 cells.extend(_page_cells(page))
             if i < MAX_TABLE_PAGES:
@@ -464,6 +491,10 @@ def extract_fields(path: str, mode: str = "all"):
                     line_tables.extend(page.extract_tables(table_settings) or [])
                 except Exception:
                     pass
+    # If MAX_TEXT_PAGES itself (not the clock) capped a longer document, that's
+    # also truncation — flag it so the UI/telemetry know coverage is partial.
+    if pages_scanned < page_count:
+        truncated = True
     text = "\n".join(full_text)
 
     # W1 OCR fallback: a scanned report has little/no text layer. Render + OCR
@@ -488,4 +519,6 @@ def extract_fields(path: str, mode: str = "all"):
     asset_sections = max(1, len(sections))
 
     return {"fields": header, "measurements": measurements, "full_text": text,
-            "ocr": ocr_used, "asset_sections": asset_sections}
+            "ocr": ocr_used, "asset_sections": asset_sections,
+            "page_count": page_count, "pages_scanned": pages_scanned,
+            "truncated": truncated}

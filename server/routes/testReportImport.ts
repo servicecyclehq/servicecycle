@@ -21,6 +21,7 @@ const prisma = require('../lib/prisma').default;
 const { extractPdfText, parseTestReport, severityFor, evaluate } = require('../lib/testReportParse');
 const { runDeterministic } = require('../lib/testReportExtract'); // V4 pdfplumber engine
 const { aiFillReadings } = require('../lib/aiTestReportExtract'); // W1-AI gap-fill (deterministic-first)
+const { sha256Hex, confStats, recordExtraction, findPriorImport, recordCommit } = require('../lib/extractionTelemetry'); // #4 telemetry + #5 fingerprint
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const upload = multer({
@@ -40,15 +41,27 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No PDF uploaded' });
 
+    // #5 fingerprint: hash the raw bytes once, then ask whether this exact
+    // report has already been committed in this account. Surfaced to the client
+    // as `priorImport` so the UI can warn "imported <date> — re-import anyway?"
+    // instead of silently double-importing a year's readings. Advisory only —
+    // never blocks the preview.
+    const sha256 = sha256Hex(req.file.buffer);
+    const priorImport = await findPriorImport({ accountId: req.user.accountId, sha256 });
+
     // V4: deterministic pdfplumber engine first (geometry + ruled tables); fall
     // OPEN to the pdfjs text-regex parser if Python is unavailable or yields
     // nothing, so ingest works even without the Python runtime.
     let meta: any, measurements: any[], source: string;
     let assetSections = 1, ocr = false;
+    let pageCount: number | null = null, pagesScanned: number | null = null, truncated = false;
     const py = await runDeterministic(req.file.buffer);
     if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
       source = py.ocr ? 'pdfplumber-ocr' : 'pdfplumber';
       assetSections = py.asset_sections || 1;
+      pageCount = py.page_count ?? null;
+      pagesScanned = py.pages_scanned ?? null;
+      truncated = !!py.truncated;
       ocr = !!py.ocr;
       const f = py.fields || {};
       meta = {
@@ -132,7 +145,27 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
       green:  measurements.filter((x: any) => x.passFail === 'GREEN').length,
       deficienciesToCreate: measurements.filter((x: any) => severityFor(x.passFail, x.critical)).length,
     };
-    return res.json({ success: true, data: { meta, assetMatch, measurements, source, summary, assetSections, ocr, aiUsed, aiAdded } });
+
+    // #4 telemetry: log engine / coverage / confidence for this extraction. The
+    // returned id is echoed back on commit so the human corrections can be
+    // stitched to this exact extraction. Fail-open — a null id just means the
+    // correction signal won't be captured for this one.
+    const stats = confStats(measurements);
+    const extractionId = await recordExtraction({
+      accountId: req.user.accountId, userId: req.user.id,
+      kind: 'test_report', engine: source, ocr, aiUsed,
+      pageCount, pagesScanned, truncated, assetSections,
+      fieldsExtracted: measurements.length,
+      confMin: stats.confMin, confMean: stats.confMean,
+      redCount: stats.redCount, yellowCount: stats.yellowCount, greenCount: stats.greenCount,
+      sha256,
+    });
+
+    return res.json({ success: true, data: {
+      meta, assetMatch, measurements, source, summary, assetSections, ocr, aiUsed, aiAdded,
+      pageCount, pagesScanned, truncated, extractionId,
+      priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
+    } });
   } catch (err) {
     console.error('[testReport/preview]', err);
     return res.status(500).json({ success: false, error: 'Failed to read the PDF. Is it a text-based test report (not a scan)?' });
@@ -143,7 +176,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
 router.post('/commit', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
-    const { assetId, testDate, vendor, techName, measurements } = req.body;
+    const { assetId, testDate, vendor, techName, measurements, extractionId, corrections, reviewMs } = req.body;
     if (!assetId) return res.status(400).json({ success: false, error: 'assetId required' });
     if (!Array.isArray(measurements) || measurements.length === 0) {
       return res.status(400).json({ success: false, error: 'measurements required' });
@@ -237,6 +270,19 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
     }
 
     const deficienciesCreated = defBySeverity.IMMEDIATE + defBySeverity.RECOMMENDED + defBySeverity.ADVISORY;
+
+    // #4 correction capture: stamp the extraction row from preview with the
+    // commit outcome and the human's field-level edits. `corrections` is an
+    // optional client-supplied diff ([{ field, before, after, formFamily }]);
+    // older clients that don't send it still record the committed count + close
+    // the row for the #5 dedupe check. Fire-and-forget.
+    await recordCommit({
+      extractionId,
+      fieldsCommitted: measurementsCreated,
+      corrections: Array.isArray(corrections) ? corrections : undefined,
+      reviewMs: Number.isFinite(Number(reviewMs)) ? Number(reviewMs) : null,
+    });
+
     return res.status(201).json({
       success: true,
       data: { workOrderId: wo.id, assetId, measurementsCreated, deficienciesCreated, trendDeficiencies, deficiencyBySeverity: defBySeverity },
