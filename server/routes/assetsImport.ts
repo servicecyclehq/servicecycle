@@ -701,7 +701,9 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
     if (ctx.error) return res.status(ctx.error.status).json(ctx.error.body);
 
     const createMissingSites = String(req.body.createMissingSites || '').toLowerCase() === 'true';
-    const autoApplySchedules = String(req.body.autoApplySchedules || '').toLowerCase() === 'true';
+    // N5: default ON — a freshly imported asset with no maintenance program is
+    // invisible to compliance. Opt OUT explicitly with autoApplySchedules='false'.
+    const autoApplySchedules = String(req.body.autoApplySchedules ?? 'true').toLowerCase() !== 'false';
 
     if (!createMissingSites && ctx.unknownSites.length > 0) {
       return res.status(400).json({
@@ -885,25 +887,32 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
         }
 
         // Auto-apply the global NFPA 70B task matrix to the new assets —
-        // mirrors POST /api/schedules/bulk-apply: GLOBAL definitions only
-        // (accountId NULL), nextDueDate stays null until the first completion,
-        // skipDuplicates makes it idempotent.
+        // GLOBAL definitions only (accountId NULL). N5: baseline the first
+        // occurrence one base (C2) interval out so each asset lands with a
+        // LIVE, compliant program (not unbaselined limbo); skipDuplicates
+        // makes it idempotent. Track which assets got a program so the
+        // result screen can report coverage (N4 action list).
         let schedulesCreated = 0;
+        const assetsWithProgram = new Set();
         if (autoApplySchedules && createdAssets.length > 0) {
           const types = [...new Set(createdAssets.map(a => a.equipmentType))];
           const taskDefs = await tx.maintenanceTaskDefinition.findMany({
             where:  { accountId: null, archivedAt: null, equipmentType: { in: types } },
-            select: { id: true, equipmentType: true },
+            select: { id: true, equipmentType: true, intervalC2Months: true },
           });
           const defsByType = new Map();
           for (const d of taskDefs) {
             if (!defsByType.has(d.equipmentType)) defsByType.set(d.equipmentType, []);
             defsByType.get(d.equipmentType).push(d);
           }
+          const now = new Date();
+          const addMonths = (base, m) => { const d = new Date(base); d.setMonth(d.getMonth() + (m || 12)); return d; };
           const scheduleRows = [];
           for (const a of createdAssets) {
-            for (const def of defsByType.get(a.equipmentType) || []) {
-              scheduleRows.push({ accountId, assetId: a.id, taskDefinitionId: def.id });
+            const defs = defsByType.get(a.equipmentType) || [];
+            if (defs.length > 0) assetsWithProgram.add(a.id);
+            for (const def of defs) {
+              scheduleRows.push({ accountId, assetId: a.id, taskDefinitionId: def.id, nextDueDate: addMonths(now, def.intervalC2Months) });
             }
           }
           if (scheduleRows.length > 0) {
@@ -915,16 +924,20 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
           }
         }
 
-        return { created, sitesCreated, schedulesCreated, createdAssets };
+        return { created, sitesCreated, schedulesCreated, createdAssets,
+                 assetsWithProgramCount: assetsWithProgram.size };
       }, { timeout: 60000 });
     } catch (txErr) {
       console.error('POST /api/assets/import/commit — transaction failed:', txErr);
       return res.status(500).json({ success: false, error: `Import failed: ${txErr.message}` });
     }
 
-    const { created, sitesCreated, schedulesCreated, createdAssets } = txResult;
+    const { created, sitesCreated, schedulesCreated, createdAssets, assetsWithProgramCount } = txResult;
     const skipped = skippedRows.length;
     const failed  = errorRows.length;
+    // N4: an import's payoff is the work it surfaces, not the row count. Report
+    // how many assets now carry a maintenance program vs. landed without one.
+    const assetsWithoutProgram = Math.max(0, created - (assetsWithProgramCount ?? 0));
 
     // Fire import webhook — fire-and-forget, never blocks the response.
     if (created > 0) {
@@ -950,6 +963,8 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
         step: 'commit',
         created, skipped, failed,
         sitesCreated, schedulesCreated,
+        assetsWithProgram: assetsWithProgramCount ?? 0,
+        assetsWithoutProgram,
         skippedRows,
         errors: errorRows,
         createMissingSites, autoApplySchedules,

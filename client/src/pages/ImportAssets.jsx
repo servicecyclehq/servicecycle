@@ -421,8 +421,26 @@ export default function ImportAssets() {
           <div className="card" style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <CheckCircle2 size={24} strokeWidth={1.75} style={{ color: 'var(--color-success)' }} />
-              <h2 style={{ fontSize: 'var(--font-size-lg, 18px)', margin: 0 }}>Import complete</h2>
+              <h2 style={{ fontSize: 'var(--font-size-lg, 18px)', margin: 0 }}>Here's what we found</h2>
             </div>
+
+            {/* N4: lead with the actionable outcome, not the row count. */}
+            {result.created > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+                padding: '12px 16px', marginBottom: 18, borderRadius: 8,
+                background: 'var(--color-success-bg, #f0fdf4)', border: '1px solid var(--color-success-border, #bbf7d0)' }}>
+                <div style={{ flex: 1, minWidth: 240, fontSize: 'var(--font-size-sm)' }}>
+                  <strong>{result.created} asset{result.created !== 1 ? 's' : ''} imported.</strong>{' '}
+                  {result.assetsWithProgram > 0
+                    ? <>{result.assetsWithProgram} now carr{result.assetsWithProgram !== 1 ? 'y' : 'ies'} an NFPA 70B maintenance program ({result.schedulesCreated} task{result.schedulesCreated !== 1 ? 's' : ''} scheduled).</>
+                    : <>No matching task templates for these equipment types.</>}
+                  {result.assetsWithoutProgram > 0 && (
+                    <> <span style={{ color: 'var(--color-warning, #92400e)', fontWeight: 600 }}>{result.assetsWithoutProgram} landed with no program — review them.</span></>
+                  )}
+                </div>
+                <Link to="/reports/compliance" className="btn btn-primary btn-sm">View your fix-it list →</Link>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 20 }}>
               <div>

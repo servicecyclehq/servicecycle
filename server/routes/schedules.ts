@@ -279,7 +279,7 @@ router.post('/bulk-apply', requireManager, async (req, res) => {
     const types = [...new Set(assets.map(a => a.equipmentType))];
     const taskDefs = await prisma.maintenanceTaskDefinition.findMany({
       where: { accountId: null, archivedAt: null, equipmentType: { in: types } },
-      select: { id: true, equipmentType: true },
+      select: { id: true, equipmentType: true, intervalC2Months: true },
     });
 
     const defsByType = new Map();
@@ -288,15 +288,21 @@ router.post('/bulk-apply', requireManager, async (req, res) => {
       defsByType.get(d.equipmentType).push(d);
     }
 
+    // Baseline the first occurrence one base (C2) interval out from today, so
+    // the asset lands with a LIVE, compliant program instead of unbaselined
+    // limbo (gem N5 — "upload your spreadsheet, get a complete NFPA 70B
+    // program"). The first real completion re-anchors the recurrence normally.
+    const now = new Date();
+    const addMonths = (base, m) => { const d = new Date(base); d.setMonth(d.getMonth() + (m || 12)); return d; };
+
     const rows = [];
     for (const asset of assets) {
       for (const def of defsByType.get(asset.equipmentType) || []) {
-        // nextDueDate stays null — no completion history yet; the first
-        // completion (or a manual anchor via PUT) starts the recurrence.
         rows.push({
           accountId:        req.user.accountId,
           assetId:          asset.id,
           taskDefinitionId: def.id,
+          nextDueDate:      addMonths(now, def.intervalC2Months),
         });
       }
     }
