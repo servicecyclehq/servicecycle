@@ -25,6 +25,28 @@ import './index.css';
 // classes auto-POST to /api/errors/render with kind='uncaught' or 'promise'.
 installGlobalErrorHandlers();
 
+// Stale-chunk auto-recovery. With PWA registerType:'autoUpdate', deploying a
+// new build purges the old hashed lazy chunks; a tab left open on the previous
+// build then 404s when it lazy-loads a route ("Failed to fetch dynamically
+// imported module") and the app shell crashes into the ErrorBoundary (header
+// and footer vanish with it). Vite fires `vite:preloadError` for exactly this —
+// reload ONCE (guarded against loops) to pick up the fresh build.
+(function installChunkReloadGuard() {
+  const KEY = 'sc_chunk_reload_at';
+  const CHUNK_RE = /(failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|chunkloaderror|loading chunk [\w-]+ failed)/i;
+  function recover() {
+    try {
+      const last = Number(sessionStorage.getItem(KEY) || 0);
+      if (Date.now() - last < 15000) return; // already reloaded recently — don't loop
+      sessionStorage.setItem(KEY, String(Date.now()));
+    } catch (_e) { /* storage blocked — accept the small loop risk over a dead shell */ }
+    window.location.reload();
+  }
+  window.addEventListener('vite:preloadError', (e) => { try { e.preventDefault(); } catch (_e) {} recover(); });
+  window.addEventListener('error', (e) => { if (e && CHUNK_RE.test(e.message)) recover(); });
+  window.addEventListener('unhandledrejection', (e) => { if (e && e.reason && CHUNK_RE.test(e.reason.message)) recover(); });
+})();
+
 // Register the PWA service worker (no-op in dev — see import note above).
 // immediate:true so updates are checked on every load, matching autoUpdate.
 registerSW({ immediate: true });
