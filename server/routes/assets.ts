@@ -28,6 +28,7 @@ const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 // Shared per-type value coercion — the asset write path enforces the exact
 // same rules as the Settings → Custom Fields CRUD so the two can't drift.
 const { validateValueForDefinition } = require('./customFields');
+const { resolveAsset } = require('../lib/assetIdentity'); // #3 fuzzy asset identity resolution
 import prisma from '../lib/prisma';
 
 // ─── Condition helpers ────────────────────────────────────────────────────────
@@ -700,6 +701,44 @@ router.get('/:id/test-history', async (req, res) => {
   } catch (err) {
     console.error('Get asset test-history error:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch test history' });
+  }
+});
+
+// ─── POST /api/assets/identity-check ──────────────────────────────────────────
+// #3 warn-before-create: the nameplate-scan / field add-equipment flow calls
+// this AFTER OCR and BEFORE creating, so a scan of an existing serial offers a
+// one-tap "same device?" confirm instead of silently spawning a duplicate.
+// Read-only, manager+ (same tier as create). Returns the ranked candidate list
+// with match reason + last-tested context; an empty list means "safe to create
+// new". This is a non-breaking addition — POST /api/assets is unchanged.
+const IdentityCheckSchema = z.object({
+  serialNumber:  emptyToUndef(z.string().max(120)).optional(),
+  siteId:        UuidStr.optional(),
+  equipmentType: emptyToUndef(z.string().max(60)).optional(),
+  positionId:    UuidStr.optional(),
+  manufacturer:  emptyToUndef(z.string().max(120)).optional(),
+  model:         emptyToUndef(z.string().max(120)).optional(),
+});
+router.post('/identity-check', requireManager, async (req, res) => {
+  const parsed = validateBody(req, res, IdentityCheckSchema);
+  if (!parsed) return;
+  try {
+    const { best, candidates } = await resolveAsset({
+      accountId: req.user.accountId,
+      serialNumber:  parsed.serialNumber,
+      siteId:        parsed.siteId,
+      equipmentType: parsed.equipmentType,
+      positionId:    parsed.positionId,
+      manufacturer:  parsed.manufacturer,
+      model:         parsed.model,
+    });
+    // duplicate = a serial-based hit; site/type-only matches are weaker context
+    // and shouldn't, on their own, block creating a genuinely new asset.
+    const isDuplicate = !!best && (best.reason === 'serial_exact' || best.reason === 'serial_fuzzy');
+    return res.json({ success: true, data: { isDuplicate, best, candidates } });
+  } catch (err) {
+    console.error('[assets/identity-check] failed:', err);
+    return res.status(500).json({ success: false, error: 'Identity check failed' });
   }
 });
 

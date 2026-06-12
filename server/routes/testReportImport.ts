@@ -22,6 +22,7 @@ const { extractPdfText, parseTestReport, severityFor, evaluate } = require('../l
 const { runDeterministic } = require('../lib/testReportExtract'); // V4 pdfplumber engine
 const { aiFillReadings } = require('../lib/aiTestReportExtract'); // W1-AI gap-fill (deterministic-first)
 const { sha256Hex, confStats, recordExtraction, findPriorImport, recordCommit } = require('../lib/extractionTelemetry'); // #4 telemetry + #5 fingerprint
+const { resolveAsset } = require('../lib/assetIdentity'); // #3 fuzzy asset identity resolution
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const upload = multer({
@@ -127,15 +128,33 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
       }
     }
 
-    // Best-effort asset match by serial number within the account.
-    let assetMatch = null;
-    if (meta.serialNumber) {
-      const a = await prisma.asset.findFirst({
-        where: { accountId: req.user.accountId, archivedAt: null,
-                 serialNumber: { equals: meta.serialNumber, mode: 'insensitive' } },
-        select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true, site: { select: { name: true } } },
+    // #3 identity resolution: fuzzy-match the parsed serial to an existing
+    // asset (exact → O/0,I/1 normalized → site/type fallback) instead of the
+    // old exact-only equals, so a year of readings can't silently attach to the
+    // wrong device — and the UI can offer a one-tap "same device?" confirm.
+    // `assetMatch` stays the single best candidate (backward-compatible shape);
+    // `assetCandidates` is the new ranked list the confirm step renders.
+    let assetMatch: any = null;
+    let assetCandidates: any[] = [];
+    if (meta.serialNumber || meta.manufacturer || meta.model) {
+      const { best, candidates } = await resolveAsset({
+        accountId: req.user.accountId,
+        serialNumber: meta.serialNumber,
+        manufacturer: meta.manufacturer,
+        model: meta.model,
       });
-      if (a) assetMatch = { id: a.id, label: assetLabel(a), serialNumber: a.serialNumber, equipmentType: a.equipmentType, siteName: a.site?.name || null };
+      assetCandidates = candidates.map((c: any) => ({
+        id: c.id, label: c.label, serialNumber: c.serialNumber, equipmentType: c.equipmentType,
+        siteName: c.siteName, positionName: c.positionName, lastTestedAt: c.lastTestedAt,
+        reason: c.reason, confidence: c.confidence,
+      }));
+      if (best) {
+        assetMatch = {
+          id: best.id, label: best.label, serialNumber: best.serialNumber,
+          equipmentType: best.equipmentType, siteName: best.siteName,
+          reason: best.reason, confidence: best.confidence, lastTestedAt: best.lastTestedAt,
+        };
+      }
     }
 
     const summary = {
@@ -162,7 +181,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
     });
 
     return res.json({ success: true, data: {
-      meta, assetMatch, measurements, source, summary, assetSections, ocr, aiUsed, aiAdded,
+      meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, ocr, aiUsed, aiAdded,
       pageCount, pagesScanned, truncated, extractionId,
       priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
     } });
