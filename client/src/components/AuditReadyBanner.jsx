@@ -1,0 +1,73 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AuditReadyBanner.jsx — gem V5 "Inspector's here". The panic-moment
+// affordance: at a glance, are we audit-ready? and one click to pull the NFPA
+// 70B EMP program (PDF + immutable, hash-chained snapshot). Readiness is fed by
+// the Path-to-100 gap engine so it tells the truth in advance about whether the
+// program would look good or embarrassing when opened.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { ShieldCheck, ShieldAlert, FileDown } from 'lucide-react';
+import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import Toast from './Toast';
+
+export default function AuditReadyBanner() {
+  const { role } = useAuth();
+  const canExport = ['admin', 'manager'].includes(role);
+  const [gap, setGap] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    api.get('/api/compliance/path-to-100').then(r => setGap(r.data.data)).catch(() => {});
+  }, []);
+
+  async function downloadEmp() {
+    setBusy(true);
+    try {
+      const res = await api.post('/api/compliance/emp-document', {}, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = `nfpa-70b-emp-program-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setToast({ message: e?.response?.status === 403 ? 'Ask a manager to export the program' : 'Export failed', type: 'error' });
+    } finally { setBusy(false); }
+  }
+
+  const ready = gap && gap.summary.fullyCompliant;
+  const items = gap ? gap.summary.totalActions : 0;
+  const Icon = ready ? ShieldCheck : ShieldAlert;
+  const bg = ready ? 'var(--color-success-bg, #f0fdf4)' : '#fffbeb';
+  const border = ready ? 'var(--color-success-border, #bbf7d0)' : '#fde68a';
+  const color = ready ? '#15803d' : '#92400e';
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      padding: '12px 16px', marginBottom: 16, borderRadius: 10, background: bg, border: `1px solid ${border}` }}>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <Icon size={22} style={{ color }} />
+      <div style={{ flex: 1, minWidth: 240 }}>
+        <div style={{ fontWeight: 700, color: 'var(--color-text)' }}>
+          {gap == null ? 'Checking audit readiness…'
+            : ready ? 'Audit-ready — your NFPA 70B program is complete'
+            : `${items} item${items !== 1 ? 's' : ''} would look incomplete to an inspector`}
+        </div>
+        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+          {ready
+            ? 'Pull your written Electrical Maintenance Program any time — hash-chained, timestamped evidence.'
+            : <>Close them on the <Link to="/reports/compliance">Path to 100%</Link> before the inspector opens the report.</>}
+        </div>
+      </div>
+      {canExport && (
+        <button className="btn btn-primary btn-sm" onClick={downloadEmp} disabled={busy}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <FileDown size={15} /> {busy ? 'Generating…' : 'Get my program'}
+        </button>
+      )}
+    </div>
+  );
+}

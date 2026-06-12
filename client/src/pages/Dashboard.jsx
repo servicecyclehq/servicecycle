@@ -17,6 +17,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import WelcomeTourPanel from '../components/WelcomeTourPanel';
 import PathTo100 from '../components/PathTo100';
+import AuditReadyBanner from '../components/AuditReadyBanner';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { CriticalityBadge } from './AssetsList';
@@ -357,9 +358,6 @@ function MaintenanceHorizon({ navigate }) {
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', boxShadow: '0 0 0 2px var(--color-emerald, #10b981)' }} /> current month
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', boxShadow: '0 0 0 2px var(--color-danger, #dc2626)' }} /> overdue
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-border)', boxShadow: '0 0 0 2px var(--color-danger, #dc2626)' }} /> overdue
@@ -803,6 +801,11 @@ export default function Dashboard() {
 
         {data && data.assetCount > 0 && (
           <>
+            {/* V5 "Inspector's here" readiness + one-click EMP, and V6 fix-it
+                list — verbs before counts, both above the KPI tiles. */}
+            <AuditReadyBanner />
+            <PathTo100 compact />
+
             {/* ── KPI tiles ─────────────────────────────────────────────── */}
             {/* B1 (2026-06-11): severity reads left→right — Overdue leads,
                 then the open-IMMEDIATE count, then the due windows. */}
@@ -883,9 +886,6 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-
-            {/* ── Path to 100% — the compliance gap as a to-do list (N2) ─── */}
-            <PathTo100 compact />
 
             {/* ── Priority assets (critical / high value / by volume) ───── */}
             <PriorityAssetsCard navigate={navigate} />
