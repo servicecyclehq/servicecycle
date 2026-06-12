@@ -80,3 +80,28 @@ Persona tags: **SM** = service manager, **FT** = field tech/consultant.
 3. **Batch 3 (server/seed):** G1, G2, F3, F5; F2c (Field Mode LOTO).
 4. **Batch 4:** F1 copy, F2a/F2b (field filters + camera), F4, H1 sweep, H2 legal logo.
 5. **Decisions:** I1–I3 with Dustin.
+
+---
+
+## J. Outage Plan Generator (NEW 2026-06-11 â€” greenlit, build next session)
+Enhance the existing Outage Planner into a date-anchored, scope-aware, configurable outage work-list generator. Builds on existing parts: OutagePlannerPage, OutageConsolidationCard, BlackoutWindow model, Asset.fedFromAssetId power-path graph, schedules + condition ratings.
+
+- **Inputs:** a planned outage DATE (e.g. `plan 2027 outage for July 4th`) + a de-energization SCOPE (whole facility / site / a bus / a switchboard).
+- **Candidate set = union of configurable rules (checkboxes, per-location/per-outage):**
+  - Due-by-date: everything coming due between now (or last outage) and the target date. [default ON]
+  - Carry-over: items deferred / not completed since the LAST outage (look back to last year's window). [default ON]
+  - **Opportunistic ("while de-energized"): every device that loses power within the chosen scope, via the power-path graph, REGARDLESS of due status** (e.g. all 10 breakers on a switchboard, not just the 6 that are C3). [**default ON** per Dustin â€” `we'd test all of them for sure`]
+  - Optional filters: condition >= C2/C3, criticality threshold, by standard.
+- **Output / surfacing (the key ask):** one clean Outage Plan artifact grouped **Location -> Panel/Equipment -> Device**, each device showing its test/task list, condition, and WHY it's included (due / overdue / carry-over / opportunistic). Exportable to PDF/Excel for the service manager + customer; check-off list for the field team; one click to create the BlackoutWindow + spawn Work Orders from the selected set.
+- **Personas:** Service Manager sets date/scope, tunes checkboxes, exports; Field/Consultant team executes the device-by-device checklist on outage day.
+- Build: (1) date anchor + scope picker, (2) opportunistic power-path expansion, (3) carry-over lookback, (4) configurable-criteria checkboxes, (5) grouped exportable plan + generate-WOs. Mostly assembling existing pieces.
+
+## K. Still-open decisions (I1-I3) + optional follow-ups (carry forward)
+- I1 Ask-ServiceCycle-AI help chatbot â€” UNDECIDED.
+- I2 Contractor grading/scoring â€” UNDECIDED (contractors might see it).
+- I3 More than 6 equipment templates? â€” UNDECIDED.
+- Quote timeline 3mo/6mo as first-class data (needs a small Prisma enum migration; currently mapped to next_budget_cycle + saved to notes).
+- Weather: add a sidebar indicator? (currently surfaces via DisasterBanner only).
+- Make the uploads-dir permission fix reproducible in the repo (compose/entrypoint) â€” was fixed live on the droplet (chmod 777 /root/ServiceCycle/uploads) so snapshots + document uploads work; a fresh deploy would re-hit it.
+- Standalone `Northwind Foods` account (powerdb@demo.local) still exists alongside the merged copy under admin â€” harmless, removable.
+- Full LapseIQ-leftovers audit â€” deferred (needs Dustin's OK to touch LapseIQ-named files/dirs).
