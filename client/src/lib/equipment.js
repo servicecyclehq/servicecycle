@@ -112,6 +112,23 @@ export const IEEE_STATUS_META = {
 };
 
 /**
+ * Map an AI/free-text equipment-type guess to a canonical EquipmentType enum
+ * key, or null if no confident match. Tries: exact key, normalized key
+ * (uppercase + non-alnum→_), then case-insensitive label match. Shared by the
+ * NewAsset and FieldNewAsset photo-identify flows (#12).
+ */
+export function matchEquipmentType(guess) {
+  if (!guess) return null;
+  const raw = String(guess).trim();
+  if (EQUIPMENT_TYPE_LABELS[raw]) return raw;
+  const up = raw.toUpperCase().replace(/[\s/()-]+/g, '_').replace(/_+/g, '_');
+  if (EQUIPMENT_TYPE_LABELS[up]) return up;
+  const byLabel = Object.entries(EQUIPMENT_TYPE_LABELS)
+    .find(([, label]) => label.toLowerCase() === raw.toLowerCase());
+  return byLabel ? byLabel[0] : null;
+}
+
+/**
  * Human label for an asset: "Square D QED-2 #SN-4417" style — manufacturer +
  * model + serial, falling back to the equipment-type label when the
  * nameplate identity fields are all blank.

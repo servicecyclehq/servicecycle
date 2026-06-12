@@ -11,22 +11,42 @@
 // bare asset (site + type + schedules) still stands — they can scan it later.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../api/client';
-import { EQUIPMENT_TYPE_LABELS } from '../../lib/equipment';
+import { EQUIPMENT_TYPE_LABELS, matchEquipmentType } from '../../lib/equipment';
 import NameplateReview from '../../components/NameplateReview';
+import { useAuth } from '../../context/AuthContext';
+import { useAiConsent } from '../../context/AiConsentContext';
 
 const LAST_SITE_KEY = 'sc_field_last_site';
 
+const CONF_META = {
+  high:   { color: '#15803d', label: 'high confidence' },
+  medium: { color: '#92400e', label: 'medium confidence — please confirm' },
+  low:    { color: '#b91c1c', label: 'low confidence — please confirm' },
+};
+
 export default function FieldNewAsset() {
   const navigate = useNavigate();
+  const { aiEnabled, aiConfigured, features } = useAuth();
+  const { requestConsent } = useAiConsent();
+  // Same gate as NewAsset's photo-identify panel: the feature, AI on, a provider
+  // configured. Server enforces consent/quota/budget independently.
+  const aiIdentifyAvailable = !!(features?.maintenance_brief && aiEnabled && aiConfigured);
+
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState('');
   const [equipmentType, setEquipmentType] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [newAssetId, setNewAssetId] = useState(null); // set after create → opens the scan modal
+
+  // #12 AI type-guess: snap first, the type select pre-fills from the photo.
+  const identifyInputRef = useRef(null);
+  const [identifyBusy, setIdentifyBusy] = useState(false);
+  const [identifyError, setIdentifyError] = useState(null);
+  const [typeGuess, setTypeGuess] = useState(null); // { type, confidence, raw }
 
   useEffect(() => {
     api.get('/api/sites')
@@ -41,6 +61,45 @@ export default function FieldNewAsset() {
   }, []);
 
   const typeOptions = Object.entries(EQUIPMENT_TYPE_LABELS).sort((a, b) => a[1].localeCompare(b[1]));
+
+  function onIdentifyPick(e) {
+    const f = e.target.files && e.target.files[0];
+    if (f) requestConsent(() => runIdentify(f));
+    if (identifyInputRef.current) identifyInputRef.current.value = '';
+  }
+
+  // Snap a photo → photo-inspect type guess → pre-select the equipment type
+  // (confidence-flagged). The tech confirms by tapping Create & scan. The
+  // detailed nameplate plate is captured by the NameplateReview modal after.
+  async function runIdentify(file) {
+    setIdentifyBusy(true); setIdentifyError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      if (siteId) fd.append('siteId', siteId);
+      const res = await api.post('/api/assets/photo-inspect', fd);
+      const ident = res.data?.data?.analysis?.identification || {};
+      const typeKey = matchEquipmentType(ident.equipmentTypeGuess);
+      if (typeKey) {
+        setEquipmentType(typeKey);
+        setTypeGuess({ type: typeKey, confidence: String(ident.confidence || '').toLowerCase(), raw: ident.equipmentTypeGuess });
+      } else {
+        setIdentifyError('Could not identify the type from that photo — pick it below.');
+      }
+    } catch (err) {
+      const status = err.response?.status;
+      const data = err.response?.data;
+      if (status === 429 && data?.error === 'ai_daily_cap_reached') {
+        const { count, cap } = data.data || {};
+        setIdentifyError(`Daily AI limit reached${cap ? ` (${count}/${cap})` : ''} — pick the type below.`);
+      } else {
+        setIdentifyError(data?.error === 'ai_consent_required' ? 'AI consent is required — pick the type below.'
+          : 'Could not identify from the photo — pick the type below.');
+      }
+    } finally {
+      setIdentifyBusy(false);
+    }
+  }
 
   async function createAndScan() {
     if (!siteId) { setError('Pick a site first.'); return; }
@@ -78,8 +137,38 @@ export default function FieldNewAsset() {
       </select>
       {siteId && <div style={{ fontSize: 12, color: '#15803d', marginTop: 4 }}>Remembered for your next add this session.</div>}
 
+      {aiIdentifyAvailable && (
+        <>
+          <label style={lbl}>Identify it for me (optional)</label>
+          <input
+            ref={identifyInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={onIdentifyPick}
+            style={{ display: 'none' }}
+          />
+          <button
+            type="button"
+            onClick={() => identifyInputRef.current && identifyInputRef.current.click()}
+            disabled={identifyBusy}
+            style={{ width: '100%', padding: '12px', borderRadius: 10, border: '1px solid #c4b5fd',
+              background: '#f5f3ff', color: '#6d28d9', fontWeight: 700, fontSize: 14, cursor: 'pointer', minHeight: 48 }}
+          >
+            {identifyBusy ? 'Identifying…' : '📷 Snap to identify the type'}
+          </button>
+          {typeGuess && CONF_META[typeGuess.confidence] && (
+            <div style={{ fontSize: 12.5, marginTop: 6, color: CONF_META[typeGuess.confidence].color }}>
+              AI thinks: <strong>{EQUIPMENT_TYPE_LABELS[typeGuess.type] || typeGuess.type}</strong>
+              {' '}· {CONF_META[typeGuess.confidence].label}. Confirm or change below.
+            </div>
+          )}
+          {identifyError && <div style={{ fontSize: 12.5, marginTop: 6, color: '#b91c1c' }}>{identifyError}</div>}
+        </>
+      )}
+
       <label style={lbl}>Equipment type</label>
-      <select className="form-control" value={equipmentType} onChange={e => setEquipmentType(e.target.value)} style={{ width: '100%', minHeight: 48 }}>
+      <select className="form-control" value={equipmentType} onChange={e => { setEquipmentType(e.target.value); setTypeGuess(null); }} style={{ width: '100%', minHeight: 48 }}>
         <option value="">— Select a type —</option>
         {typeOptions.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
       </select>
