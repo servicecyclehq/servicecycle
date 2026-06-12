@@ -117,6 +117,11 @@ export default function TestReportImport() {
               This was a scanned report — readings were recovered by OCR and may contain errors. Please verify each before committing.
             </div>
           )}
+          {preview.aiUsed && preview.aiAdded > 0 && (
+            <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 8, background: '#faf5ff', border: '1px solid #e9d5ff', color: '#7e22ce', fontSize: 'var(--font-size-sm)' }}>
+              ✨ The structured parser came back thin on this report, so AI recovered <strong>{preview.aiAdded} additional reading{preview.aiAdded === 1 ? '' : 's'}</strong> (marked <em>AI</em>). AI can misread — please verify these before committing.
+            </div>
+          )}
           <div className="card mb-16"><div className="card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
             <div style={{ flex: '1 1 260px' }}>
               <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Asset this report belongs to</label>

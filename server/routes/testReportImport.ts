@@ -20,6 +20,7 @@ const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
 const { extractPdfText, parseTestReport, severityFor, evaluate } = require('../lib/testReportParse');
 const { runDeterministic } = require('../lib/testReportExtract'); // V4 pdfplumber engine
+const { aiFillReadings } = require('../lib/aiTestReportExtract'); // W1-AI gap-fill (deterministic-first)
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const upload = multer({
@@ -73,6 +74,46 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
       measurements = parsed.measurements;
     }
 
+    // ── W1-AI: deterministic-first AI gap-fill ────────────────────────────────
+    // Fires ONLY when the deterministic + OCR pass came back thin (few total
+    // readings, or a full fall-through to the pdfjs text parser). Recovers the
+    // readings the regex/geometry passes missed via the configured LLM (Gemini
+    // free-tier cascade by default). Fail-open: any error leaves the
+    // deterministic result untouched. Net-new rows only — an AI row never
+    // overwrites or duplicates a deterministic reading.
+    let aiUsed = false;
+    let aiAdded = 0;
+    const MIN_READINGS = Number(process.env.AI_INGEST_MIN_READINGS || 8);
+    const lowCoverage = source === 'pdfjs' || measurements.length < MIN_READINGS;
+    if (process.env.AI_ENABLED !== 'false' && lowCoverage) {
+      try {
+        const aiText = await extractPdfText(req.file.buffer); // text-layer; scans (OCR) yield none → skipped
+        if (aiText && aiText.trim().length > 60) {
+          const filled = await aiFillReadings(aiText);
+          if (filled.ok && filled.measurements.length) {
+            const seen = new Set(
+              measurements.map((m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`),
+            );
+            for (const m of filled.measurements) {
+              const key = `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              if (!m.passFail && m.expectedRange != null && m.asFoundValue != null) {
+                m.passFail = evaluate(Number(m.asFoundValue), m.expectedRange);
+              }
+              measurements.push(m);
+              aiAdded++;
+            }
+            aiUsed = aiAdded > 0;
+            if (aiUsed && source !== 'pdfjs') source = `${source}+ai`;
+            else if (aiUsed) source = 'ai';
+          }
+        }
+      } catch (e: any) {
+        console.warn('[testReport/preview] AI gap-fill skipped:', e && e.message ? e.message : String(e));
+      }
+    }
+
     // Best-effort asset match by serial number within the account.
     let assetMatch = null;
     if (meta.serialNumber) {
@@ -91,7 +132,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
       green:  measurements.filter((x: any) => x.passFail === 'GREEN').length,
       deficienciesToCreate: measurements.filter((x: any) => severityFor(x.passFail, x.critical)).length,
     };
-    return res.json({ success: true, data: { meta, assetMatch, measurements, source, summary, assetSections, ocr } });
+    return res.json({ success: true, data: { meta, assetMatch, measurements, source, summary, assetSections, ocr, aiUsed, aiAdded } });
   } catch (err) {
     console.error('[testReport/preview]', err);
     return res.status(500).json({ success: false, error: 'Failed to read the PDF. Is it a text-based test report (not a scan)?' });
