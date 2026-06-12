@@ -17,13 +17,21 @@ import { useAuth } from '../context/AuthContext';
 import Toast from './Toast';
 
 const KIND_META = {
-  overdue:     { bg: '#fff1f1', color: '#b91c1c', label: 'Overdue' },
-  unbaselined: { bg: '#fffbeb', color: '#92400e', label: 'Needs baseline' },
-  uncovered:   { bg: '#eff6ff', color: '#1d4ed8', label: 'No program' },
+  overdue:         { bg: '#fff1f1', color: '#b91c1c', label: 'Overdue' },
+  unbaselined:     { bg: '#fffbeb', color: '#92400e', label: 'Needs baseline' },
+  uncovered:       { bg: '#eff6ff', color: '#1d4ed8', label: 'No program' },
+  emp_coordinator: { bg: '#f5f3ff', color: '#6d28d9', label: 'EMP §4.2' },
+  emp_review:      { bg: '#f5f3ff', color: '#6d28d9', label: 'EMP §4.2' },
 };
 
 function ActionButton({ row, busy, onRun }) {
   const labels = { create_wo: 'Create work order', baseline: 'Record last service', apply_template: 'Apply template' };
+  // EMP program gaps are fixed on the settings page, not via an inline API call.
+  if (row.action.type === 'emp_settings') {
+    return (
+      <Link to="/settings?tab=emp" className="btn btn-secondary btn-sm">Open EMP settings</Link>
+    );
+  }
   return (
     <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onRun(row)}>
       {busy ? '…' : (labels[row.action.type] || 'Fix')}
@@ -118,6 +126,7 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
               {data.summary.totalActions} task{data.summary.totalActions !== 1 ? 's' : ''} stand between you and 100%
               {' '}· <strong>{data.summary.overdueCount}</strong> overdue, <strong>{data.summary.unbaselinedCount}</strong> need baselining,
               {' '}<strong>{data.summary.uncoveredCount}</strong> uncovered asset{data.summary.uncoveredCount !== 1 ? 's' : ''}
+              {data.summary.empGapCount > 0 && <>{' '}· <strong>{data.summary.empGapCount}</strong> EMP §4.2 gap{data.summary.empGapCount !== 1 ? 's' : ''}</>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {rows.map((row, i) => {
@@ -127,7 +136,7 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
                     padding: '8px 0', borderTop: '1px solid var(--color-border)' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: m.bg, color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span>
-                    <Link to={`/assets/${row.assetId}`} style={{ flex: 1, minWidth: 200, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+                    <Link to={row.assetId ? `/assets/${row.assetId}` : '/settings?tab=emp'} style={{ flex: 1, minWidth: 200, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
                       {row.title}
                     </Link>
                     {row.siteName && <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{row.siteName}</span>}

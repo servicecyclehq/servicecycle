@@ -554,7 +554,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
   const now  = new Date();
   const assetScope = { archivedAt: null, inService: true, ...(siteId ? { siteId } : {}) };
 
-  const [schedules, uncoveredAssets, totalAssets] = await Promise.all([
+  const [schedules, uncoveredAssets, totalAssets, empSettingRows] = await Promise.all([
     // Active schedules (current / overdue / unbaselined) on live assets.
     prisma.maintenanceSchedule.findMany({
       where: { accountId, isActive: true, asset: assetScope },
@@ -581,7 +581,81 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
       },
     }),
     prisma.asset.count({ where: { accountId, ...assetScope } }),
+    // EMP §4.2 program-level settings (account-wide; only surfaced on the
+    // whole-account view, not a single-site filter — the EMP is one per account).
+    siteId ? Promise.resolve([]) : prisma.accountSetting.findMany({
+      where: { accountId, key: { in: ['EMP_COORDINATOR_USER_ID', 'EMP_LAST_REVIEWED_AT'] } },
+      select: { key: true, value: true },
+    }),
   ]);
+
+  // ── EMP §4.2 program gaps (NFPA 70B) ──────────────────────────────────────
+  // Two literal §4.2 requirements that live at the program level rather than on
+  // any one asset: a named EMP coordinator, and a periodic program review whose
+  // interval cannot exceed five years. Surfaced as one-click gap items on the
+  // whole-account Path-to-100 (skipped for a single-site filter). Folded into
+  // the obligation denominator below so "clear the list → 100%" still holds.
+  const empSettings: any = {};
+  for (const r of (empSettingRows || [])) empSettings[r.key] = r.value;
+
+  const empGaps = [];
+  if (!siteId) {
+    // Coordinator: missing, blank, or pointing at a user no longer on the account.
+    let coordinatorOk = false;
+    if (empSettings.EMP_COORDINATOR_USER_ID) {
+      const coord = await prisma.user.findFirst({
+        where:  { id: empSettings.EMP_COORDINATOR_USER_ID, accountId },
+        select: { id: true },
+      });
+      coordinatorOk = !!coord;
+    }
+    if (!coordinatorOk) {
+      empGaps.push({
+        kind: 'emp_coordinator',
+        title: 'No EMP coordinator named — required by NFPA 70B §4.2',
+        standardRef: 'NFPA 70B §4.2',
+        action: { type: 'emp_settings', field: 'coordinator' },
+        sortKey: [-1, 0, 0],
+      });
+    }
+
+    // Program review: never reviewed, overdue, or due within 180 days (5-yr max).
+    let lastReviewedAt = null;
+    if (empSettings.EMP_LAST_REVIEWED_AT) {
+      const d = new Date(empSettings.EMP_LAST_REVIEWED_AT);
+      if (!Number.isNaN(d.getTime())) lastReviewedAt = d;
+    }
+    if (!lastReviewedAt) {
+      empGaps.push({
+        kind: 'emp_review',
+        title: 'No EMP program review on record — NFPA 70B §4.2 requires periodic review (5-year max)',
+        standardRef: 'NFPA 70B §4.2',
+        action: { type: 'emp_settings', field: 'lastReviewedAt' },
+        sortKey: [-1, 0, 1],
+      });
+    } else {
+      const nextReviewDue = new Date(lastReviewedAt);
+      nextReviewDue.setUTCFullYear(nextReviewDue.getUTCFullYear() + 5);
+      const daysToReview = Math.round((nextReviewDue.getTime() - now.getTime()) / DAY_MS);
+      if (daysToReview < 0) {
+        empGaps.push({
+          kind: 'emp_review',
+          title: `EMP program review overdue by ${-daysToReview}d — NFPA 70B §4.2 (5-year max)`,
+          standardRef: 'NFPA 70B §4.2',
+          action: { type: 'emp_settings', field: 'lastReviewedAt' },
+          sortKey: [-1, 0, 1],
+        });
+      } else if (daysToReview <= 180) {
+        empGaps.push({
+          kind: 'emp_review',
+          title: `EMP review due in ${daysToReview}d (5-year max, NFPA 70B §4.2)`,
+          standardRef: 'NFPA 70B §4.2',
+          action: { type: 'emp_settings', field: 'lastReviewedAt' },
+          sortKey: [-1, 0, 1],
+        });
+      }
+    }
+  }
 
   let current = 0, overdue = 0, unbaselined = 0;
   const coveredAssetIds = new Set();
@@ -602,7 +676,8 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
   }
 
   const uncoveredCount = uncoveredAssets.length;
-  const denom = current + overdue + unbaselined + uncoveredCount;
+  const empGapCount = empGaps.length;
+  const denom = current + overdue + unbaselined + uncoveredCount + empGapCount;
   const overallRate = denom > 0 ? Math.round((current / denom) * 1000) / 10 : 100;
   const pointPerUnit = denom > 0 ? Math.round((100 / denom) * 10) / 10 : 0;
 
@@ -615,6 +690,20 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
   // Build the ranked action list. Precedence: overdue (most-overdue first) →
   // unbaselined → uncovered (highest criticality first).
   const actions = [];
+
+  // Program-level EMP gaps sort to the very top (sortKey[0] === -1) and each
+  // recovers one obligation unit, same as a covered asset or current schedule.
+  for (const g of empGaps) {
+    actions.push({
+      ...g,
+      assetId: null,
+      assetName: null,
+      equipmentType: null,
+      siteName: null,
+      criticalityScore: null,
+      pointsRecovered: pointPerUnit,
+    });
+  }
 
   overdueRows.sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime());
   for (const s of overdueRows) {
@@ -688,6 +777,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
       overdueCount: overdue,
       unbaselinedCount: unbaselined,
       uncoveredCount,
+      empGapCount,
       fullyCompliant: totalActions === 0,
     },
   };
