@@ -43,9 +43,12 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
     // OPEN to the pdfjs text-regex parser if Python is unavailable or yields
     // nothing, so ingest works even without the Python runtime.
     let meta: any, measurements: any[], source: string;
+    let assetSections = 1, ocr = false;
     const py = await runDeterministic(req.file.buffer);
     if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
       source = py.ocr ? 'pdfplumber-ocr' : 'pdfplumber';
+      assetSections = py.asset_sections || 1;
+      ocr = !!py.ocr;
       const f = py.fields || {};
       meta = {
         serialNumber: f.serialNumber || null, model: f.model || null,
@@ -88,7 +91,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
       green:  measurements.filter((x: any) => x.passFail === 'GREEN').length,
       deficienciesToCreate: measurements.filter((x: any) => severityFor(x.passFail, x.critical)).length,
     };
-    return res.json({ success: true, data: { meta, assetMatch, measurements, source, summary } });
+    return res.json({ success: true, data: { meta, assetMatch, measurements, source, summary, assetSections, ocr } });
   } catch (err) {
     console.error('[testReport/preview]', err);
     return res.status(500).json({ success: false, error: 'Failed to read the PDF. Is it a text-based test report (not a scan)?' });

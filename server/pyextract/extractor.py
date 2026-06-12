@@ -468,4 +468,13 @@ def extract_fields(path: str, mode: str = "all"):
     if ocr_used:                       # OCR readings are lower-confidence
         for m in measurements:
             m["confidence"] = min(m.get("confidence", 0.6), 0.5)
-    return {"fields": header, "measurements": measurements, "full_text": text, "ocr": ocr_used}
+
+    # Multi-asset detection (gem W5 safety valve): a NETA/PowerDB job report
+    # covers many devices, each opening with a SUBSTATION…POSITION… block. Count
+    # distinct sections so the UI can warn that these readings span >1 asset
+    # (full per-asset split is roadmap). Default 1 for a single-asset report.
+    sections = set(re.findall(r"SUBSTATION\s+([\w.-]+)\s+POSITION\s+([\w.-]+)", text, re.I))
+    asset_sections = max(1, len(sections))
+
+    return {"fields": header, "measurements": measurements, "full_text": text,
+            "ocr": ocr_used, "asset_sections": asset_sections}
