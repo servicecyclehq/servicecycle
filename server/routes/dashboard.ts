@@ -78,9 +78,11 @@ router.get('/', async (req, res) => {
         },
       }),
 
-      // Widget 4: recent work orders
+      // Widget 4: recent work orders. V7: exclude synthetic WOs created by
+      // test-report ingest (they're evidence records, not field jobs) so they
+      // don't crowd out real work in the recency feed.
       prisma.workOrder.findMany({
-        where: { accountId },
+        where: { accountId, NOT: { notes: { contains: '[ingest:test_report]' } } },
         orderBy: { updatedAt: 'desc' },
         take: 8,
         include: {

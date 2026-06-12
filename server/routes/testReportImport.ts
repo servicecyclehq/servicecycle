@@ -112,7 +112,7 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
     // WorkOrder is the parent of TestMeasurements (no standalone TestEvent model).
     const wo = await prisma.workOrder.create({
       data: { accountId, assetId, status: 'COMPLETE', scheduledDate: when, completedDate: when,
-              notes: `Test report ingest${vendor ? ` — ${vendor}` : ''}${techName ? ` (${techName})` : ''}` },
+              notes: `[ingest:test_report] Test report ingest${vendor ? ` — ${vendor}` : ''}${techName ? ` (${techName})` : ''}` },
       select: { id: true },
     });
 
