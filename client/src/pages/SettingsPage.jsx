@@ -41,7 +41,7 @@ const DEFAULT_MODELS = {
   anthropic:    'claude-haiku-4-5-20251001',
   openai:       'gpt-4o-mini',
   azure_openai: '',
-  gemini:       'gemini-1.5-flash',
+  gemini:       'gemini-2.5-flash', // 1.5-flash was retired by Google (404s)
 };
 
 export default function SettingsPage() {
@@ -527,6 +527,38 @@ export default function SettingsPage() {
             Select which AI service processes your uploaded documents and test reports.
             Each provider requires its own API key.
           </p>
+
+          {/* BYO-AI framing + free-key how-to (with the data-policy caveat). */}
+          <div style={{ background: 'var(--color-bg-subtle, #f8fafc)', border: '1px solid var(--color-border)', borderRadius: 10, padding: '14px 16px', marginBottom: 18, fontSize: 13.5, lineHeight: 1.55 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Bring your own AI key — you stay in control</div>
+            <p style={{ margin: '0 0 8px' }}>
+              ServiceCycle never bills you for AI. The key you add here is <strong>yours</strong>: data goes
+              straight from your instance to your AI provider under <strong>your</strong> agreement, in
+              <strong> your</strong> data-residency region, on <strong>your</strong> spend. No ServiceCycle-controlled
+              data path, no per-call markup.
+            </p>
+            <details>
+              <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--color-primary, #2563eb)' }}>
+                Don’t have a key? Get a free one in ~2 minutes
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <p style={{ margin: '0 0 6px' }}>
+                  <strong>Google Gemini (free tier):</strong> visit <em>aistudio.google.com</em> → “Get API key” →
+                  create the key → paste it below with Provider set to <em>Google Gemini</em>.
+                </p>
+                <p style={{ margin: '0 0 8px' }}>
+                  <strong>Groq (free tier, fast):</strong> visit <em>console.groq.com/keys</em> → “Create API Key”
+                  (the key starts with <code>gsk_</code>).
+                </p>
+                <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>
+                  <strong>Before using a free tier on real data:</strong> free tiers may use submitted data to
+                  improve the provider’s models; paid tiers generally do not. Check your organization’s data policy
+                  first. Because the agreement is between you and the provider, where your data goes — and how it’s
+                  used — is your decision, not ours.
+                </p>
+              </div>
+            </details>
+          </div>
 
           <div style={formGrid}>
             <div style={fieldGroup}>

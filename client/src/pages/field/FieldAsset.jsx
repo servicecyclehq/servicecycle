@@ -25,6 +25,7 @@ import { fieldMutate } from '../../lib/fieldApi';
 import { useAuth } from '../../context/AuthContext';
 import { useAiConsent } from '../../context/AiConsentContext';
 import Toast from '../../components/Toast';
+import NameplateReview from '../../components/NameplateReview';
 import {
   EQUIPMENT_TYPE_LABELS, CONDITION_META, SEVERITY_META, WO_STATUS_META,
   assetLabel, fmtDate,
@@ -344,6 +345,7 @@ export default function FieldAsset() {
   const [ocrResult,  setOcrResult]  = useState(null);  // extracted fields object
   const [ocrError,   setOcrError]   = useState(null);
   const [ocrApplied, setOcrApplied] = useState(false);
+  const [npModal, setNpModal] = useState(false); // confidence-review nameplate scan modal
 
   const fetchData = useCallback(() => {
     api.get(`/api/field/asset/${id}`)
@@ -1100,13 +1102,18 @@ export default function FieldAsset() {
         />
 
         {!ocrBusy && !ocrResult && (
-          <button
-            type="button"
-            onClick={() => ocrInputRef.current?.click()}
-            style={{ ...fatBtn, background: '#7c3aed', color: '#fff', border: 'none' }}
-          >
-            📷 Scan nameplate
-          </button>
+          <>
+            <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 10 }}>
+              Snap the plate — AI reads it and asks you to confirm the flagged fields before anything saves.
+            </div>
+            <button
+              type="button"
+              onClick={() => setNpModal(true)}
+              style={{ ...fatBtn, background: '#7c3aed', color: '#fff', border: 'none' }}
+            >
+              📷 Scan nameplate
+            </button>
+          </>
         )}
 
         {ocrBusy && (
@@ -1183,6 +1190,16 @@ export default function FieldAsset() {
           </div>
         )}
       </SectionCard>
+
+      {/* Confidence-review nameplate scan (scan → R/Y/G review → save photo+data). */}
+      {npModal && (
+        <NameplateReview
+          assetId={id}
+          assetLabel={[asset?.manufacturer, asset?.model].filter(Boolean).join(' ') || asset?.equipmentType || 'this asset'}
+          onClose={() => setNpModal(false)}
+          onSaved={() => { setNpModal(false); setToast({ message: 'Nameplate saved to asset', type: 'success' }); fetchData(); }}
+        />
+      )}
 
       {/* ── Bottom-sheet: complete task ────────────────────────────────────── */}
       {sheetSchedule && (
