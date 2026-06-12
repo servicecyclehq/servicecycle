@@ -69,6 +69,9 @@ export default function NewAsset() {
   const photoPanelAvailable = !!(features?.maintenance_brief && aiEnabled && aiConfigured);
 
   const [sites, setSites]         = useState([]);
+  const [showNewSite, setShowNewSite] = useState(false);
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newSiteBusy, setNewSiteBusy] = useState(false);
   const [siteTree, setSiteTree]   = useState(null); // GET /api/sites/:id payload
   const [treeLoading, setTreeLoading] = useState(false);
   const [error, setError]   = useState('');
@@ -300,6 +303,26 @@ export default function NewAsset() {
     // this session / silenced, else opens the app-level AiConsentModal first.
     requestConsent(runPhotoInspect);
   };
+
+  async function createSite() {
+    const name = newSiteName.trim();
+    if (!name || newSiteBusy) return;
+    setNewSiteBusy(true);
+    try {
+      const res = await api.post('/api/sites', { name });
+      const site = res.data?.data?.site || res.data?.data;
+      if (site?.id) {
+        setSites(prev => [...prev, { id: site.id, name: site.name }].sort((a, b) => a.name.localeCompare(b.name)));
+        setF('siteId', site.id);
+        setShowNewSite(false);
+        setNewSiteName('');
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.response?.data?.message || 'Could not create the site.');
+    } finally {
+      setNewSiteBusy(false);
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -558,7 +581,14 @@ export default function NewAsset() {
           )}
 
           <div className="card mb-16">
-            <div className="card-header"><div className="card-title">Location</div></div>
+            <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="card-title">Location</div>
+              {!showNewSite && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowNewSite(true)}>
+                  + New site
+                </button>
+              )}
+            </div>
             <div className="card-body">
               <div className="form-row">
                 <div className="form-group">
@@ -573,8 +603,30 @@ export default function NewAsset() {
                     <option value="">— Select a site —</option>
                     {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                  {sites.length === 0 && (
-                    <div className="form-hint">No sites yet — create one under Sites first.</div>
+                  {sites.length === 0 && !showNewSite && (
+                    <div className="form-hint">No sites yet — use “+ New site” to create one.</div>
+                  )}
+                  {showNewSite && (
+                    <div style={{ marginTop: 8, padding: 10, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-bg-subtle, #f8fafc)' }}>
+                      <label className="form-label" style={{ fontSize: 12 }}>New site name</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          className="form-control"
+                          value={newSiteName}
+                          onChange={e => setNewSiteName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createSite(); } }}
+                          placeholder="e.g. North Substation"
+                          autoFocus
+                        />
+                        <button type="button" className="btn btn-primary btn-sm" onClick={createSite} disabled={newSiteBusy || !newSiteName.trim()}>
+                          {newSiteBusy ? '…' : 'Create'}
+                        </button>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setShowNewSite(false); setNewSiteName(''); }}>
+                          Cancel
+                        </button>
+                      </div>
+                      <div className="form-hint">Creates the site and selects it. Add buildings/areas later under Sites.</div>
+                    </div>
                   )}
                 </div>
                 <div className="form-group">
