@@ -45,7 +45,7 @@ const prisma  = require('../lib/prisma').default;
 const { requireManager, requireAdmin } = require('../middleware/roles');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { downloadFile } = require('../lib/storage');
-const { buildStandardsSummary, buildStandardReport, buildOverdueReport } = require('../lib/complianceReport');
+const { buildStandardsSummary, buildStandardReport, buildOverdueReport, buildComplianceGap } = require('../lib/complianceReport');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 
@@ -122,6 +122,25 @@ router.get('/overdue-report', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/overdue-report]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build overdue report.' });
+  }
+});
+
+// ── GET /path-to-100?siteId= ──────────────────────────────────────────────────
+// Gem N2 — the honest compliance picture + the ranked to-do list that closes
+// it. Returns schedule complianceRate AND asset coverageRate (the flatter the
+// headline hides), a blended overallRate, and the exact point-weighted actions
+// (complete overdue / baseline / apply template) that walk the account to 100%.
+// Any authenticated role — this is a read.
+
+router.get('/path-to-100', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const gap = await buildComplianceGap(prisma, req.user.accountId, { siteId });
+    return res.json({ success: true, data: gap });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/path-to-100]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build path-to-100.' });
   }
 });
 

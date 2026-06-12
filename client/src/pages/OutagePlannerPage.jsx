@@ -128,7 +128,7 @@ export default function OutagePlannerPage() {
   const [committing, setCommitting] = useState(false);
   const [toast, setToast]     = useState(null);
 
-  useEffect(() => { api.get('/api/sites').then(r => setSites(r.data.data || [])).catch(() => {}); }, []);
+  useEffect(() => { api.get('/api/sites').then(r => setSites(r.data?.data?.sites || [])).catch(() => {}); }, []);
 
   const queryString = useMemo(() => {
     const p = new URLSearchParams();

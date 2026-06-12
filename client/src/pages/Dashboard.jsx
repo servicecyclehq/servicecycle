@@ -16,6 +16,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import WelcomeTourPanel from '../components/WelcomeTourPanel';
+import PathTo100 from '../components/PathTo100';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { CriticalityBadge } from './AssetsList';
@@ -870,8 +871,18 @@ export default function Dashboard() {
                     active schedules not overdue · {data.scheduleCount ?? 0} schedule{(data.scheduleCount ?? 0) !== 1 ? 's' : ''}
                   </span>
                 </div>
+                {data.coverageRate != null && (
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                    Coverage <strong style={{ color: complianceColor(data.coverageRate) }}>{data.coverageRate}%</strong>
+                    {' '}({data.coveredAssets}/{(data.coveredAssets ?? 0) + (data.uncoveredAssets ?? 0)} assets) ·
+                    {' '}true rate <strong>{data.overallComplianceRateHonest ?? data.overallComplianceRate}%</strong>
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* ── Path to 100% — the compliance gap as a to-do list (N2) ─── */}
+            <PathTo100 compact />
 
             {/* ── Priority assets (critical / high value / by volume) ───── */}
             <PriorityAssetsCard navigate={navigate} />

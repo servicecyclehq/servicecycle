@@ -123,6 +123,29 @@ router.get('/', async (req, res) => {
     const deficiencyBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
     for (const g of openDeficiencies) deficiencyBySeverity[g.severity] = g._count._all;
 
+    // ── Coverage + honest compliance (gem N2 anti-flatter) ────────────────────
+    // The tile above ("active schedules not overdue") silently ignores assets
+    // that carry NO schedule at all — so an account can read 100% while live
+    // equipment sits untracked. Surface a coverage % beside it, and a blended
+    // overallRate that counts uncovered assets + unbaselined schedules as gaps.
+    const coveredAssets = await prisma.asset.count({
+      where: { accountId, archivedAt: null, inService: true, schedules: { some: { isActive: true } } },
+    });
+    const inServiceAssets = await prisma.asset.count({
+      where: { accountId, archivedAt: null, inService: true },
+    });
+    const uncoveredAssets = Math.max(0, inServiceAssets - coveredAssets);
+    const coverageRate = inServiceAssets === 0 ? 100 : Math.round((coveredAssets / inServiceAssets) * 100);
+
+    let curCount = 0, odCount = 0, ubCount = 0;
+    for (const s of siteRollup) {
+      if (!s.nextDueDate) ubCount++;
+      else if (new Date(s.nextDueDate) < now) odCount++;
+      else curCount++;
+    }
+    const honestDenom = curCount + odCount + ubCount + uncoveredAssets;
+    const overallComplianceRateHonest = honestDenom === 0 ? 100 : Math.round((curCount / honestDenom) * 100);
+
     return res.json({
       success: true,
       data: {
@@ -130,6 +153,10 @@ router.get('/', async (req, res) => {
         deficiencies: deficiencyBySeverity,
         complianceBySite,
         overallComplianceRate: overallTotal === 0 ? 100 : Math.round(((overallTotal - overallOverdue) / overallTotal) * 100),
+        overallComplianceRateHonest,
+        coverageRate,
+        coveredAssets,
+        uncoveredAssets,
         recentWorkOrders,
         upcoming,
         assetCount,

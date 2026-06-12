@@ -19,6 +19,7 @@ import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
+import PathTo100 from '../components/PathTo100';
 import { fmtDate } from '../lib/equipment';
 
 // Same thresholds as Dashboard's SiteComplianceRow.
@@ -102,6 +103,9 @@ export default function ComplianceStandardsReport() {
             {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
+
+        {/* Path to 100% — the ranked fix-it list that closes the gap (N2). */}
+        <PathTo100 siteId={siteId || null} />
 
         {loading ? (
           <div className="loading">Loading compliance summary…</div>

@@ -520,10 +520,184 @@ async function buildOverdueReport(prisma, accountId, { siteId = null } = {} as a
   };
 }
 
+// ── buildComplianceGap (gem N2 — "Path to 100%") ──────────────────────────────
+
+/** Minimal asset display label (mirrors client assetLabel). */
+function gapAssetLabel(a) {
+  const base = [a.manufacturer, a.model].filter(Boolean).join(' ');
+  const serial = a.serialNumber ? ` #${a.serialNumber}` : '';
+  return base ? base + serial : (a.equipmentType || 'Asset');
+}
+
+/**
+ * The honest compliance picture + the ranked to-do list that closes it.
+ *
+ * The headline complianceRate (current / (current + overdue)) flatters: it
+ * ignores schedules that were never baselined AND assets that carry no
+ * schedule at all (so a facility with one current schedule reads 100% while
+ * 40 transformers sit untracked). This function exposes BOTH the schedule
+ * compliance rate and an asset coverage rate, blends them into a single
+ * honest `overallRate`, and returns the exact actions — each tagged with the
+ * points it recovers — that walk the account to 100%.
+ *
+ * Obligation model: D = current + overdue + unbaselined + uncoveredAssets.
+ *   overallRate = current / D.   Each unmet obligation is worth 100/D points;
+ *   fixing it (complete overdue work / baseline a schedule / apply a template
+ *   to an uncovered asset) recovers exactly that many points, so clearing the
+ *   whole list lands on 100%.
+ *
+ * @returns { generatedAt, scope, compliance, coverage, overallRate,
+ *            pointsToFull, actions[], summary }
+ */
+async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50 } = {} as any) {
+  const site = await resolveSite(prisma, accountId, siteId);
+  const now  = new Date();
+  const assetScope = { archivedAt: null, inService: true, ...(siteId ? { siteId } : {}) };
+
+  const [schedules, uncoveredAssets, totalAssets] = await Promise.all([
+    // Active schedules (current / overdue / unbaselined) on live assets.
+    prisma.maintenanceSchedule.findMany({
+      where: { accountId, isActive: true, asset: assetScope },
+      select: {
+        id: true, nextDueDate: true, assetId: true,
+        taskDefinition: { select: { taskName: true, standardRef: true } },
+        asset: {
+          select: {
+            id: true, equipmentType: true, manufacturer: true, model: true,
+            serialNumber: true, criticalityScore: true, governingCondition: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
+    // In-service, non-archived assets with ZERO active schedules — invisible
+    // to the per-standard math entirely. The credibility hole.
+    prisma.asset.findMany({
+      where: { accountId, ...assetScope, schedules: { none: { isActive: true } } },
+      select: {
+        id: true, equipmentType: true, manufacturer: true, model: true,
+        serialNumber: true, criticalityScore: true,
+        site: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.asset.count({ where: { accountId, ...assetScope } }),
+  ]);
+
+  let current = 0, overdue = 0, unbaselined = 0;
+  const coveredAssetIds = new Set();
+  const overdueRows = [];
+  const unbaselinedRows = [];
+
+  for (const s of schedules) {
+    coveredAssetIds.add(s.assetId);
+    if (!s.nextDueDate) {
+      unbaselined += 1;
+      unbaselinedRows.push(s);
+    } else if (s.nextDueDate < now) {
+      overdue += 1;
+      overdueRows.push(s);
+    } else {
+      current += 1;
+    }
+  }
+
+  const uncoveredCount = uncoveredAssets.length;
+  const denom = current + overdue + unbaselined + uncoveredCount;
+  const overallRate = denom > 0 ? Math.round((current / denom) * 1000) / 10 : 100;
+  const pointPerUnit = denom > 0 ? Math.round((100 / denom) * 10) / 10 : 0;
+
+  const rated = current + overdue;
+  const complianceRate = rated > 0 ? Math.round((current / rated) * 1000) / 10 : null;
+  const coveredAssets  = coveredAssetIds.size;
+  const coverageDenom  = totalAssets;
+  const coverageRate   = coverageDenom > 0 ? Math.round((coveredAssets / coverageDenom) * 1000) / 10 : 100;
+
+  // Build the ranked action list. Precedence: overdue (most-overdue first) →
+  // unbaselined → uncovered (highest criticality first).
+  const actions = [];
+
+  overdueRows.sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime());
+  for (const s of overdueRows) {
+    const days = Math.floor((now.getTime() - s.nextDueDate.getTime()) / DAY_MS);
+    actions.push({
+      kind: 'overdue',
+      scheduleId: s.id,
+      assetId: s.asset.id,
+      assetName: gapAssetLabel(s.asset),
+      equipmentType: s.asset.equipmentType,
+      siteName: s.asset.site ? s.asset.site.name : null,
+      criticalityScore: s.asset.criticalityScore,
+      title: `${s.taskDefinition.taskName} — ${days}d overdue on ${gapAssetLabel(s.asset)}`,
+      standardRef: s.taskDefinition.standardRef,
+      pointsRecovered: pointPerUnit,
+      action: { type: 'create_wo', assetId: s.asset.id, scheduleId: s.id },
+      sortKey: [0, -days, -(s.asset.criticalityScore || 0)],
+    });
+  }
+  for (const s of unbaselinedRows) {
+    actions.push({
+      kind: 'unbaselined',
+      scheduleId: s.id,
+      assetId: s.asset.id,
+      assetName: gapAssetLabel(s.asset),
+      equipmentType: s.asset.equipmentType,
+      siteName: s.asset.site ? s.asset.site.name : null,
+      criticalityScore: s.asset.criticalityScore,
+      title: `Baseline ${s.taskDefinition.taskName} on ${gapAssetLabel(s.asset)} (no first completion yet)`,
+      standardRef: s.taskDefinition.standardRef,
+      pointsRecovered: pointPerUnit,
+      action: { type: 'baseline', scheduleId: s.id },
+      sortKey: [1, 0, -(s.asset.criticalityScore || 0)],
+    });
+  }
+  uncoveredAssets.sort((a, b) => (b.criticalityScore || 0) - (a.criticalityScore || 0));
+  for (const a of uncoveredAssets) {
+    actions.push({
+      kind: 'uncovered',
+      assetId: a.id,
+      assetName: gapAssetLabel(a),
+      equipmentType: a.equipmentType,
+      siteName: a.site ? a.site.name : null,
+      criticalityScore: a.criticalityScore,
+      title: `${gapAssetLabel(a)} has no maintenance program — apply its NFPA 70B task set`,
+      standardRef: null,
+      pointsRecovered: pointPerUnit,
+      action: { type: 'apply_template', assetId: a.id },
+      sortKey: [2, 0, -(a.criticalityScore || 0)],
+    });
+  }
+
+  actions.sort((x, y) => {
+    for (let i = 0; i < 3; i++) { const d = x.sortKey[i] - y.sortKey[i]; if (d !== 0) return d; }
+    return 0;
+  });
+  const totalActions = actions.length;
+  const trimmed = actions.slice(0, limit).map(({ sortKey, ...rest }) => rest);
+
+  return {
+    generatedAt: now,
+    scope: { siteId: site ? site.id : null, siteName: site ? site.name : null },
+    compliance: { rate: complianceRate, current, overdue, unbaselined },
+    coverage:   { rate: coverageRate, coveredAssets, totalAssets: coverageDenom, uncoveredAssets: uncoveredCount },
+    overallRate,
+    pointsToFull: Math.round((100 - overallRate) * 10) / 10,
+    actions: trimmed,
+    summary: {
+      totalActions,
+      shown: trimmed.length,
+      overdueCount: overdue,
+      unbaselinedCount: unbaselined,
+      uncoveredCount,
+      fullyCompliant: totalActions === 0,
+    },
+  };
+}
+
 module.exports = {
   buildStandardsSummary,
   buildStandardReport,
   buildOverdueReport,
+  buildComplianceGap,
   ACCOUNT_DEFINED_CODE,
 };
 
