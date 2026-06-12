@@ -55,6 +55,7 @@ export default function TestReportImport() {
   const [testDate, setTestDate] = useState('');
   const [vendor, setVendor] = useState('');
   const [techName, setTechName] = useState('');
+  const [isAcceptanceTest, setIsAcceptanceTest] = useState(false); // #27 year-0 baseline
   const [result, setResult] = useState(null);
 
   useEffect(() => {
@@ -130,7 +131,7 @@ export default function TestReportImport() {
   async function commit() {
     const corrections = buildCorrections();
     const reviewMs = previewedAt ? Date.now() - previewedAt : null;
-    const base = { testDate, vendor, techName, extractionId: preview?.extractionId || null, corrections, reviewMs };
+    const base = { testDate, vendor, techName, isAcceptanceTest, extractionId: preview?.extractionId || null, corrections, reviewMs };
 
     if (isMulti) {
       // Build the per-section payload; only sections with included readings ship.
@@ -379,6 +380,15 @@ export default function TestReportImport() {
             <div>
               <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Vendor</label>
               <input type="text" className="input" value={vendor} onChange={e => setVendor(e.target.value)} style={{ width: 200 }} />
+            </div>
+            <div style={{ alignSelf: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--font-size-sm)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={isAcceptanceTest} onChange={e => setIsAcceptanceTest(e.target.checked)} />
+                <span>Acceptance / commissioning test <span style={{ color: 'var(--color-text-secondary)' }}>(year-0 baseline)</span></span>
+              </label>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2, maxWidth: 320 }}>
+                Anchors trend math to this report and skips year-over-year flags — NFPA 70B baseline.
+              </div>
             </div>
           </div></div>
 

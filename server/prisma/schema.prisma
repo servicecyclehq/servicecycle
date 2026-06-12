@@ -908,6 +908,11 @@ model WorkOrder {
   ambientTempC     Decimal? @db.Decimal(5, 1)
   humidityPct      Decimal? @db.Decimal(5, 1)
   testEquipment    Json?
+  // #27 NFPA 70B year-0 baseline: an acceptance / commissioning test is the
+  // trend anchor for the asset's life (vs. "first maintenance test wins").
+  // Set on test-report ingest; the test-history endpoint surfaces it as the
+  // baseline event and the ingest path skips YoY trend flags on it.
+  isAcceptanceTest Boolean  @default(false)
   reportPdfUrl     String? // contractor-issued test report (also attachable via Document)
   notes            String?
   createdAt        DateTime         @default(now())

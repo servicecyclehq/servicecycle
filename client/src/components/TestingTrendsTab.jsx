@@ -416,6 +416,11 @@ export default function TestingTrendsTab({ asset }) {
                 {events.map((ev) => (
                   <th key={ev.id} style={{ textAlign: 'right' }}>
                     {fmtDate(ev.date)}
+                    {ev.isBaseline && (
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#6d28d9' }}>
+                        {ev.isAcceptanceTest ? 'BASELINE (acceptance)' : 'BASELINE'}
+                      </div>
+                    )}
                   </th>
                 ))}
               </tr>
@@ -456,7 +461,14 @@ export default function TestingTrendsTab({ asset }) {
       {[...events].reverse().map((ev) => (
         <div className="card mb-16" key={ev.id}>
           <div className="card-header">
-            <div className="card-title">Test Event · {fmtDate(ev.date)}</div>
+            <div className="card-title">
+              Test Event · {fmtDate(ev.date)}
+              {ev.isBaseline && (
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#6d28d9', background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: 10, padding: '1px 8px' }}>
+                  {ev.isAcceptanceTest ? 'Year-0 baseline · acceptance test' : 'Year-0 baseline'}
+                </span>
+              )}
+            </div>
             <span className="card-subtitle" style={{ display: 'block' }}>
               {[ev.vendor, ev.techName].filter(Boolean).join(' · ') || 'Test report'}
             </span>

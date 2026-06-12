@@ -288,13 +288,16 @@ class HttpableError extends Error {
 async function commitAssetReadings(db: any, p: {
   accountId: string; assetId: string; when: Date;
   vendor?: string; techName?: string; measurements: any[];
+  isAcceptanceTest?: boolean;
 }) {
   const { accountId, assetId, when, vendor, techName, measurements } = p;
+  const isAcceptanceTest = !!p.isAcceptanceTest;
 
   // WorkOrder is the parent of TestMeasurements (no standalone TestEvent model).
   const wo = await db.workOrder.create({
     data: { accountId, assetId, status: 'COMPLETE', scheduledDate: when, completedDate: when,
-            notes: `[ingest:test_report] Test report ingest${vendor ? ` — ${vendor}` : ''}${techName ? ` (${techName})` : ''}` },
+            isAcceptanceTest,
+            notes: `[ingest:test_report]${isAcceptanceTest ? '[acceptance]' : ''} Test report ingest${vendor ? ` — ${vendor}` : ''}${techName ? ` (${techName})` : ''}` },
     select: { id: true },
   });
 
@@ -342,8 +345,11 @@ async function commitAssetReadings(db: any, p: {
         },
       });
       defBySeverity[sev]++;
-    } else if (val != null) {
+    } else if (val != null && !isAcceptanceTest) {
       // No hard pass/fail issue — check the year-over-year trend (W4).
+      // Skipped for an acceptance test: a year-0 baseline IS the anchor, so it
+      // has nothing legitimate to trend against (and if backfilled after later
+      // tests it must not be compared to newer readings).
       const dir = BAD_DIRECTION[String(x.measurementType)];
       const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}`);
       if (dir && prior != null && prior !== 0) {
@@ -379,6 +385,7 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const { assetId, testDate, vendor, techName, measurements, sections, extractionId, corrections, reviewMs } = req.body;
+    const isAcceptanceTest = !!req.body.isAcceptanceTest; // #27 year-0 baseline (whole report)
     const when = testDate ? new Date(testDate) : new Date();
     if (isNaN(when.getTime())) return res.status(400).json({ success: false, error: 'Invalid testDate' });
 
@@ -417,7 +424,7 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
             });
             targetId = na.id; created = true;
           }
-          const r = await commitAssetReadings(tx, { accountId, assetId: targetId, when, vendor, techName, measurements: s.measurements });
+          const r = await commitAssetReadings(tx, { accountId, assetId: targetId, when, vendor, techName, measurements: s.measurements, isAcceptanceTest });
           out.push({ ...r, created, label: s.label || null });
         }
         return out;
@@ -446,7 +453,7 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
     const asset = await prisma.asset.findFirst({ where: { id: assetId, accountId, archivedAt: null }, select: { id: true } });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
-    const r = await commitAssetReadings(prisma, { accountId, assetId, when, vendor, techName, measurements });
+    const r = await commitAssetReadings(prisma, { accountId, assetId, when, vendor, techName, measurements, isAcceptanceTest });
 
     // #4 correction capture: stamp the extraction row from preview with the
     // commit outcome + the human's field-level edits. Older clients that don't

@@ -676,9 +676,18 @@ router.get('/:id/test-history', async (req, res) => {
       },
     });
 
+    // #27 year-0 baseline anchor: the (earliest) acceptance/commissioning test
+    // if one exists, otherwise the earliest test event. Events are already
+    // sorted oldest→newest, so the first matching id wins.
+    const baselineEventId =
+      (workOrders.find((wo) => wo.isAcceptanceTest)?.id) ||
+      (workOrders[0]?.id) || null;
+
     const events = workOrders.map((wo) => ({
       id:       wo.id,
       date:     wo.completedDate || wo.scheduledDate || wo.createdAt,
+      isAcceptanceTest: wo.isAcceptanceTest,
+      isBaseline: wo.id === baselineEventId,
       vendor:   wo.contractor?.name || null,
       techName: wo.assignedTech?.name || null,
       measurements: wo.measurements.map((m) => ({
@@ -697,7 +706,7 @@ router.get('/:id/test-history', async (req, res) => {
       })),
     }));
 
-    res.json({ success: true, data: { events } });
+    res.json({ success: true, data: { events, baselineEventId } });
   } catch (err) {
     console.error('Get asset test-history error:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch test history' });
