@@ -405,25 +405,30 @@ def extract_measurements(cells, page_tables, full_text=""):
     return out
 
 
-# Cap pages processed so the ruled-table extraction (the slow part) stays well
-# under the Node bridge's call timeout on big reports (a 135pp DEKRA / 41pp
-# PowerDB job would otherwise time out and fail open to the pdfjs parser). The
-# important content — nameplate, first asset's tests — is in the early pages;
-# multi-asset segmentation past this is gem W5/roadmap.
-MAX_EXTRACT_PAGES = 40
+# Per-stage page budgets, tuned so the WHOLE extraction stays well under the
+# bridge timeout even on a CPU-limited container under load. The cheap, high-
+# value text/inline pass runs broadly; the EXPENSIVE ruled-table line-detection
+# (which barely helps real PowerDB key-value grids) and word-geometry cell
+# splitting run only on the early pages. A 135pp DEKRA / 41pp PowerDB job that
+# previously took 36s (→ timeout → pdfjs fallback) now finishes in a few.
+MAX_TEXT_PAGES = 18   # extract_text → inline value+unit pass (cheap)
+MAX_CELL_PAGES = 4    # _page_cells → header extraction (nameplate is page 1-2)
+MAX_TABLE_PAGES = 4   # extract_tables → column-table pass (expensive)
 
 
 def extract_fields(path: str, mode: str = "all"):
     cells, line_tables, full_text = [], [], []
     table_settings = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
     with pdfplumber.open(path) as pdf:
-        for page in pdf.pages[:MAX_EXTRACT_PAGES]:
+        for i, page in enumerate(pdf.pages[:MAX_TEXT_PAGES]):
             full_text.append(page.extract_text() or "")
-            cells.extend(_page_cells(page))
-            try:
-                line_tables.extend(page.extract_tables(table_settings) or [])
-            except Exception:
-                pass
+            if i < MAX_CELL_PAGES:
+                cells.extend(_page_cells(page))
+            if i < MAX_TABLE_PAGES:
+                try:
+                    line_tables.extend(page.extract_tables(table_settings) or [])
+                except Exception:
+                    pass
     text = "\n".join(full_text)
     header = extract_header(cells, text)
     measurements = extract_measurements(cells, line_tables, text)  # already deduped
