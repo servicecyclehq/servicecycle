@@ -710,6 +710,8 @@ export default function FleetDashboard() {
   const [reps, setReps] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [unseenCount, setUnseenCount] = useState(0);
+  const [path100, setPath100] = useState(null); // #23 fleet path-to-100
+  const [path100Loading, setPath100Loading] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'oem_admin') {
@@ -736,6 +738,13 @@ export default function FleetDashboard() {
     api.get('/api/fleet/inbox?unseenOnly=true&limit=1')
       .then((r) => setUnseenCount(r.data.total ?? 0))
       .catch(() => {});
+
+    // #23 fleet path-to-100 — ranked compliance gap across the book.
+    setPath100Loading(true);
+    api.get('/api/fleet/path-to-100')
+      .then((r) => setPath100(r.data))
+      .catch(() => {})
+      .finally(() => setPath100Loading(false));
   }, []);
 
   const toggle = useCallback((id) => {
@@ -767,6 +776,7 @@ export default function FleetDashboard() {
 
   const topTabs = [
     { key: 'overview', label: 'Overview' },
+    { key: 'path100', label: 'Path to 100%' },
     { key: 'inbox', label: unseenCount > 0 ? `Inbox (${unseenCount})` : 'Inbox' },
     { key: 'accounts', label: 'Accounts & Invites' },
   ];
@@ -947,6 +957,54 @@ export default function FleetDashboard() {
           </div>
 
         </>
+      )}
+
+      {/* ── PATH TO 100% TAB (#23) ── */}
+      {activeTab === 'path100' && (
+        <div style={{ marginTop: 8 }}>
+          <p style={styles.subtitle}>
+            Every customer ranked by how far they are from 100% compliant — worst first. Each row is a
+            ready-made action list that is also genuinely the customer's compliance need.
+            {path100?.summary ? ` ${path100.summary.totalActions} total actions across ${path100.summary.customerCount} accounts.` : ''}
+          </p>
+          {path100Loading && !path100 ? (
+            <div style={styles.loading}>Loading compliance gaps…</div>
+          ) : !path100 || path100.customers.length === 0 ? (
+            <div style={{ color: 'var(--color-text-secondary)' }}>No customer accounts to rank yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {path100.customers.map((c) => {
+                const rate = c.overallRate;
+                const rateColor = rate == null ? '#64748b' : rate >= 90 ? '#15803d' : rate >= 70 ? '#92400e' : '#b91c1c';
+                return (
+                  <div key={c.accountId}
+                    onClick={() => { setActiveTab('overview'); setExpandedId(c.accountId); }}
+                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+                      padding: '12px 14px', border: '1px solid var(--color-border)', borderRadius: 10, background: 'var(--color-surface, #fff)' }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: rateColor, minWidth: 64 }}>
+                      {rate == null ? '—' : `${rate}%`}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontWeight: 700 }}>{c.companyName}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                        {c.error ? 'Could not compute gap'
+                          : c.fullyCompliant ? 'Fully compliant — nothing to fix'
+                          : `${c.totalActions} action${c.totalActions === 1 ? '' : 's'} to 100% · ${c.overdueCount} overdue, ${c.uncoveredCount} uncovered${c.empGapCount ? `, ${c.empGapCount} EMP` : ''}`}
+                        {c.serviceRepName ? ` · rep: ${c.serviceRepName}` : ''}
+                      </div>
+                      {c.topActions && c.topActions.length > 0 && (
+                        <div style={{ fontSize: 11.5, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                          Next: {c.topActions[0].title}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--color-primary, #2563eb)' }}>Open →</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── INBOX TAB ── */}

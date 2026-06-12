@@ -13,6 +13,7 @@
 const router = require('express').Router();
 import prisma from '../lib/prisma';
 const { requireOemAdmin } = require('../middleware/roles');
+const { buildComplianceGap } = require('../lib/complianceReport');
 
 const DAY_MS = 86_400_000;
 
@@ -234,6 +235,76 @@ router.get('/dashboard', async (req, res) => {
   } catch (err: any) {
     console.error('[fleet/dashboard]', err);
     res.status(500).json({ error: 'Fleet dashboard query failed' });
+  }
+});
+
+// ── GET /api/fleet/path-to-100 — ranked compliance gap across the book ───────
+// #23: runs the per-account buildComplianceGap (the honest rate + the exact
+// action list) for every customer in the OEM's book and ranks them worst-first.
+// For the contractor this is a sales pipeline that IS the customer's compliance
+// need. oem_admin only (the customer-vs-channel wall). No dollar estimate yet —
+// the gap engine is action-based; cost modeling lives in /forecast.
+router.get('/path-to-100', async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const callerAccount = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { partnerOrgId: true, partnerOrg: { select: { id: true, name: true } } },
+    });
+    const accountWhere: any = { status: 'active' };
+    if (callerAccount?.partnerOrgId) accountWhere.partnerOrgId = callerAccount.partnerOrgId;
+
+    const accounts = await prisma.account.findMany({
+      where: accountWhere,
+      select: { id: true, companyName: true, serviceRepName: true },
+      orderBy: { companyName: 'asc' },
+    });
+    if (accounts.length === 0) {
+      return res.json({ partnerOrg: callerAccount?.partnerOrg ?? null, customers: [] });
+    }
+
+    // Per-account gap. limit:3 keeps each payload to its top actions; the
+    // summary numbers (rate, total actions, breakdown) are always complete.
+    const rows = await Promise.all(accounts.map(async (a: any) => {
+      try {
+        const gap = await buildComplianceGap(prisma, a.id, { limit: 3 });
+        return {
+          accountId: a.id,
+          companyName: a.companyName,
+          serviceRepName: a.serviceRepName || null,
+          overallRate: gap.overallRate,
+          pointsToFull: gap.pointsToFull,
+          totalActions: gap.summary.totalActions,
+          overdueCount: gap.summary.overdueCount,
+          unbaselinedCount: gap.summary.unbaselinedCount,
+          uncoveredCount: gap.summary.uncoveredCount,
+          empGapCount: gap.summary.empGapCount,
+          fullyCompliant: gap.summary.fullyCompliant,
+          topActions: gap.actions.map((x: any) => ({ kind: x.kind, title: x.title })),
+        };
+      } catch (e: any) {
+        console.error('[fleet/path-to-100] gap failed for', a.id, e?.message || e);
+        return { accountId: a.id, companyName: a.companyName, error: true, overallRate: null, totalActions: null };
+      }
+    }));
+
+    // Rank: worst compliance first (most to gain), then most actions.
+    rows.sort((x: any, y: any) => {
+      const rx = x.overallRate == null ? 999 : x.overallRate;
+      const ry = y.overallRate == null ? 999 : y.overallRate;
+      if (rx !== ry) return rx - ry;
+      return (y.totalActions || 0) - (x.totalActions || 0);
+    });
+
+    const totalActions = rows.reduce((n: number, r: any) => n + (r.totalActions || 0), 0);
+    return res.json({
+      partnerOrg: callerAccount?.partnerOrg ?? null,
+      customers: rows,
+      summary: { customerCount: rows.length, totalActions },
+    });
+  } catch (err) {
+    console.error('[fleet/path-to-100]', err);
+    return res.status(500).json({ error: 'Fleet path-to-100 query failed' });
   }
 });
 
