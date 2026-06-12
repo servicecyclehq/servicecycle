@@ -365,27 +365,24 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
 
   const { accountId, id: userId } = req.user;
 
-  // AI consent — same guard as photo_inspect (tech already acknowledged in field mode).
-  try {
-    await ensureAiConsent(userId, accountId, req);
-  } catch (consentErr: any) {
-    return res.status(403).json({ success: false, error: consentErr.code || 'ai_consent_required' });
-  }
+  // AI consent — same gate as photo_inspect. ensureAiConsent(req,res) returns
+  // a boolean and sends its OWN 403 (ai_consent_required / _outdated) when the
+  // user hasn't acknowledged the current provider+version.
+  if (!(await ensureAiConsent(req, res))) return;
 
-  // Demo AI budget guard.
-  try {
-    await ensureAiBudget(accountId);
-  } catch (budgetErr: any) {
-    return res.status(503).json({ success: false, error: budgetErr.code || 'ai_demo_budget_exhausted', message: budgetErr.message });
-  }
+  // Demo AI budget guard — returns false and sends its own 503 when the
+  // monthly-$/daily-call fuse is tripped.
+  if (!ensureAiBudget(req, res, 'ocr_nameplate')) return;
 
   try {
+    // completeWithImage routes by provider (gemini → _geminiImage) and uses
+    // ONLY `prompt` for images — settings.system is ignored — so the JSON
+    // schema instructions must travel inside the prompt itself.
     const { text } = await completeWithImage({
       imageBuffer: req.file.buffer,
       mediaType:   req.file.mimetype,
-      prompt:      'Extract the nameplate fields from this equipment photo.',
+      prompt:      `${OCR_SYSTEM}\n\nRead this equipment nameplate and respond with ONLY the JSON object described above.`,
       maxTokens:   512,
-      settings:    { system: OCR_SYSTEM },
     });
 
     const fields = parseJSON(text, 'ocr-nameplate');
