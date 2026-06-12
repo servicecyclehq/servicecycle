@@ -405,11 +405,19 @@ def extract_measurements(cells, page_tables, full_text=""):
     return out
 
 
+# Cap pages processed so the ruled-table extraction (the slow part) stays well
+# under the Node bridge's call timeout on big reports (a 135pp DEKRA / 41pp
+# PowerDB job would otherwise time out and fail open to the pdfjs parser). The
+# important content — nameplate, first asset's tests — is in the early pages;
+# multi-asset segmentation past this is gem W5/roadmap.
+MAX_EXTRACT_PAGES = 40
+
+
 def extract_fields(path: str, mode: str = "all"):
     cells, line_tables, full_text = [], [], []
     table_settings = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
     with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
+        for page in pdf.pages[:MAX_EXTRACT_PAGES]:
             full_text.append(page.extract_text() or "")
             cells.extend(_page_cells(page))
             try:
@@ -418,14 +426,5 @@ def extract_fields(path: str, mode: str = "all"):
                 pass
     text = "\n".join(full_text)
     header = extract_header(cells, text)
-    measurements = extract_measurements(cells, line_tables, text)
-
-    # de-dupe (label, phase, value) keeping highest confidence
-    seen = {}
-    for m in measurements:
-        k = (m.get("measurementType"), m.get("phase"), m.get("asFoundValue"))
-        if k not in seen or m.get("confidence", 0) > seen[k].get("confidence", 0):
-            seen[k] = m
-    measurements = list(seen.values())
-
+    measurements = extract_measurements(cells, line_tables, text)  # already deduped
     return {"fields": header, "measurements": measurements, "full_text": text}

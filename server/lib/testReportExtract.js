@@ -16,7 +16,7 @@ const crypto = require('crypto');
 
 const PY = process.env.PYEXTRACT_PYTHON || 'python3';
 const RUN = path.join(__dirname, '..', 'pyextract', 'run.py');
-const TIMEOUT_MS = parseInt(process.env.PYEXTRACT_TIMEOUT_MS || '20000', 10);
+const TIMEOUT_MS = parseInt(process.env.PYEXTRACT_TIMEOUT_MS || '30000', 10);
 
 // Run the Python extractor on a PDF buffer. Async, non-blocking, fail-open.
 function runDeterministic(buffer) {
