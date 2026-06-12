@@ -25,6 +25,7 @@ import pdfplumber
 from neta_field_library import (
     DTYPE_PATTERNS, MEASUREMENT_VOCAB, HEADER_FIELDS, MEASUREMENT_COLUMNS,
     RESULT_TOKENS, HEADER_STOPWORDS, normalize_unit,
+    MEASUREMENT_LIBRARY, CRITICAL_TYPES, classify_label,
 )
 
 Y_TOL = 3.0
@@ -294,18 +295,26 @@ def _phase_of(s):
 
 
 def _classify(label, unit):
-    """-> (measurementType, critical, unit). Known measurement label wins;
-    else infer from the unit; else a generic slug of the label."""
-    low = _norm(label)
-    for lbl, v in MEASUREMENT_VOCAB.items():
-        if lbl in low:
-            return v["type"], v["critical"], (normalize_unit(unit) if unit else v["unit"])
+    """-> (measurementType, critical, unit, kind). The full MEASUREMENT_LIBRARY
+    label match wins (correct NETA type + diagnostic/reference kind); else the
+    clearly-diagnostic units get a semantic type; else ambiguous units become a
+    generic *_reading marked REFERENCE so a stray voltage never reads as a test
+    result; else a generic slug, reference."""
     nu = normalize_unit(unit) if unit else None
+    e = classify_label(label)
+    if e:
+        crit = e["type"] in CRITICAL_TYPES
+        return e["type"], crit, (nu or e["unit"]), e["kind"]
+    # clearly-diagnostic units (unambiguous) → semantic type, diagnostic
+    if nu == "MΩ":  return "insulation_resistance", False, nu, "D"
+    if nu == "µΩ":  return "contact_resistance", True, nu, "D"
+    if nu == "mΩ":  return "winding_resistance", False, nu, "D"
+    if nu == "ppm": return "dissolved_gas", False, nu, "D"
+    # ambiguous units → generic reading, REFERENCE (de-emphasized)
     if nu and nu in UNIT_TYPE:
-        t, crit = UNIT_TYPE[nu]
-        return t, crit, nu
-    slug = re.sub(r"[^a-z0-9]+", "_", low).strip("_")[:40] or "reading"
-    return slug, False, nu
+        return UNIT_TYPE[nu][0], False, nu, "R"
+    slug = re.sub(r"[^a-z0-9]+", "_", _norm(label)).strip("_")[:40] or "reading"
+    return slug, False, nu, "R"
 
 
 def _inline_readings(text):
@@ -322,12 +331,13 @@ def _inline_readings(text):
         except ValueError:
             continue
         unit = m.group(3)
-        mt, crit, u = _classify(label, unit)
+        mt, crit, u, kind = _classify(label, unit)
         out.append({
             "measurementType": mt, "label": label.title(),
             "phase": _phase_of(label) or _phase_of(m.group(0)),
             "asFoundValue": val, "asFoundUnit": u,
-            "expectedRange": None, "passFail": None, "critical": crit, "confidence": 0.6,
+            "expectedRange": None, "passFail": None, "critical": crit,
+            "kind": kind, "confidence": 0.6,
         })
     return out
 
@@ -369,11 +379,12 @@ def _column_tables(page_tables):
                 elif role == "result":
                     rec["passFail"] = parse_value("result", cv)
             if rec["label"] and (rec["asFoundValue"] is not None or rec["passFail"]):
-                mt, crit, u = _classify(rec["label"], rec["asFoundUnit"])
+                mt, crit, u, kind = _classify(rec["label"], rec["asFoundUnit"])
                 rec["measurementType"] = mt
                 rec["critical"] = crit
                 rec["asFoundUnit"] = rec["asFoundUnit"] or u
                 rec["phase"] = rec["phase"] or _phase_of(rec["label"])
+                rec["kind"] = kind
                 rec["confidence"] = 0.9
                 out.append(rec)
     return out

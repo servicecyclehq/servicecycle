@@ -147,30 +147,48 @@ export default function TestReportImport() {
             </div>
             <div className="card-body" style={{ overflowX: 'auto' }}>
               {s.total === 0 && <div style={{ color: 'var(--color-text-secondary)' }}>No measurements detected. The PDF may be a scan (image) rather than a text report.</div>}
-              {s.total > 0 && (
-                <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse' }}>
+              {s.total > 0 && (() => {
+                const idx = rows.map((r, i) => [r, i]);
+                const diag = idx.filter(([r]) => (r.kind || 'D') !== 'R');
+                const ref  = idx.filter(([r]) => (r.kind || 'D') === 'R');
+                const headRow = (
                   <thead><tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)' }}>
                     <th></th><th>Measurement</th><th>Ph</th><th>Value</th><th>Expected</th><th>Result</th>
                   </tr></thead>
-                  <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={i} style={{ borderTop: '1px solid var(--color-border)' }}>
-                        <td><input type="checkbox" checked={r.include} onChange={() => setRow(i, { include: !r.include })} /></td>
-                        <td>{r.label}</td>
-                        <td>{r.phase || '—'}</td>
-                        <td>{r.asFoundValue ?? '—'} {r.asFoundUnit || ''}</td>
-                        <td style={{ color: 'var(--color-text-secondary)' }}>{r.expectedRange || '—'}</td>
-                        <td>
-                          <select value={r.passFail || ''} onChange={e => setRow(i, { passFail: e.target.value || null })}
-                            style={{ color: PF_COLORS[r.passFail] || 'inherit', fontWeight: 700, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, padding: '2px 4px' }}>
-                            <option value="">—</option><option value="GREEN">GREEN</option><option value="YELLOW">YELLOW</option><option value="RED">RED</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                );
+                const renderRows = (list) => list.map(([r, i]) => (
+                  <tr key={i} style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <td><input type="checkbox" checked={r.include} onChange={() => setRow(i, { include: !r.include })} /></td>
+                    <td>{r.label}</td>
+                    <td>{r.phase || '—'}</td>
+                    <td>{r.asFoundValue ?? '—'} {r.asFoundUnit || ''}</td>
+                    <td style={{ color: 'var(--color-text-secondary)' }}>{r.expectedRange || '—'}</td>
+                    <td>
+                      <select value={r.passFail || ''} onChange={e => setRow(i, { passFail: e.target.value || null })}
+                        style={{ color: PF_COLORS[r.passFail] || 'inherit', fontWeight: 700, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, padding: '2px 4px' }}>
+                        <option value="">—</option><option value="GREEN">GREEN</option><option value="YELLOW">YELLOW</option><option value="RED">RED</option>
+                      </select>
+                    </td>
+                  </tr>
+                ));
+                return (
+                  <>
+                    <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse' }}>
+                      {headRow}<tbody>{renderRows(diag.length ? diag : idx)}</tbody>
+                    </table>
+                    {diag.length > 0 && ref.length > 0 && (
+                      <details style={{ marginTop: 14 }}>
+                        <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', userSelect: 'none' }}>
+                          Additional readings &amp; nameplate data ({ref.length}) — voltages, currents, temps, settings; stored for reference, not compliance-critical
+                        </summary>
+                        <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse', marginTop: 8, opacity: 0.8 }}>
+                          {headRow}<tbody>{renderRows(ref)}</tbody>
+                        </table>
+                      </details>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 

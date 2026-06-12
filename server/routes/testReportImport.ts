@@ -62,7 +62,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
           measurementType: x.measurementType, label: x.label || x.measurementType,
           phase: x.phase || null, asFoundValue: x.asFoundValue, asFoundUnit: x.asFoundUnit,
           expectedRange: x.expectedRange, testVoltage: x.testVoltage || null,
-          passFail: pf, critical: !!x.critical, confidence: x.confidence,
+          passFail: pf, critical: !!x.critical, kind: x.kind || 'D', confidence: x.confidence,
         };
       });
     } else {
