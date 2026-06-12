@@ -47,6 +47,7 @@ export default function FieldNewAsset() {
   const [identifyBusy, setIdentifyBusy] = useState(false);
   const [identifyError, setIdentifyError] = useState(null);
   const [typeGuess, setTypeGuess] = useState(null); // { type, confidence, raw }
+  const [dupWarn, setDupWarn] = useState(null); // #3/#6 identity-check best match
 
   useEffect(() => {
     api.get('/api/sites')
@@ -72,7 +73,7 @@ export default function FieldNewAsset() {
   // (confidence-flagged). The tech confirms by tapping Create & scan. The
   // detailed nameplate plate is captured by the NameplateReview modal after.
   async function runIdentify(file) {
-    setIdentifyBusy(true); setIdentifyError(null);
+    setIdentifyBusy(true); setIdentifyError(null); setDupWarn(null);
     try {
       const fd = new FormData();
       fd.append('file', file);
@@ -85,6 +86,18 @@ export default function FieldNewAsset() {
         setTypeGuess({ type: typeKey, confidence: String(ident.confidence || '').toLowerCase(), raw: ident.equipmentTypeGuess });
       } else {
         setIdentifyError('Could not identify the type from that photo — pick it below.');
+      }
+      // #3/#6 warn-before-create: if the scanned serial already matches an asset,
+      // offer to open it instead of spawning a duplicate.
+      const serial = String(ident.serialNumber || '').trim();
+      if (serial) {
+        try {
+          const chk = await api.post('/api/assets/identity-check', {
+            serialNumber: serial, siteId: siteId || undefined, equipmentType: typeKey || undefined,
+          });
+          const d = chk.data?.data;
+          if (d?.isDuplicate && d.best) setDupWarn(d.best);
+        } catch (_e) { /* identity-check is advisory — never block create */ }
       }
     } catch (err) {
       const status = err.response?.status;
@@ -165,6 +178,28 @@ export default function FieldNewAsset() {
           )}
           {identifyError && <div style={{ fontSize: 12.5, marginTop: 6, color: '#b91c1c' }}>{identifyError}</div>}
         </>
+      )}
+
+      {dupWarn && (
+        <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 10, border: '1px solid #fbbf24', background: '#fffbeb' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#92400e' }}>You may already have this device</div>
+          <div style={{ fontSize: 12.5, color: '#92400e', marginTop: 4 }}>
+            That serial matches <strong>{dupWarn.label}</strong>
+            {dupWarn.siteName ? ` at ${dupWarn.siteName}` : ''}
+            {dupWarn.lastTestedAt ? ` (last tested ${new Date(dupWarn.lastTestedAt).toLocaleDateString()})` : ''}.
+            {' '}Same device?
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => navigate(`/field/asset/${dupWarn.id}`)}
+              style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              Open {dupWarn.label} instead
+            </button>
+            <button type="button" onClick={() => setDupWarn(null)}
+              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #d6b91e', background: '#fff', color: '#92400e', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              No, it's a new asset
+            </button>
+          </div>
+        </div>
       )}
 
       <label style={lbl}>Equipment type</label>
