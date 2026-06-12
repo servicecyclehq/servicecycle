@@ -54,3 +54,9 @@ Honest remaining gaps (need the brother's reports / bigger build):
 - **Scanned reports** (Hanford, NY PSC) have no text layer → 0 capture → need OCR (gem W1).
 - **EICR / load-bank** column tables under-captured (their values live in column-header tables the inline pass misses); per-format column vocab would help.
 - Measurement *classification* is coarse for ambiguous units — intentional (human-in-the-loop preview verifies). Per-PowerDB-form templates would sharpen it; that needs real filled reports as fixtures.
+
+## UPDATE 2 (overnight) — OCR + multi-asset detection shipped
+- **W1 OCR** shipped: image (`tesseract-ocr` + `tesseract-ocr-data-eng` + `pypdfium2` + `pytesseract` on alpine, build-verified). When a PDF has no text layer (`len(text)<100`), the first OCR_PAGES (3) are rasterized via pypdfium2 + OCR'd, then header/inline-parsed; `source=pdfplumber-ocr`, confidence ≤0.5. Verified: Hanford true scan (0 before) → readings (13.8 kV, test date) in 22s. AI-fallback half NOT built (demo runs AI_ENABLED=false — needs an API key).
+- **W5 safety valve** shipped: `extract_fields` counts distinct `SUBSTATION…POSITION…` sections (`asset_sections`); the preview warns "this report covers N assets" so a multi-asset job's readings aren't silently attached to one asset. Verified: SAMPLE JOB → assetSections=3. FULL per-asset split/commit UI + contractor bulk ingest = remaining W5 (needs UX design).
+- Live on demo: SAMPLE JOB `source=pdfplumber`, 38 readings, header serial 27805 / Ferranti Packard / 2008-02-08, assetSections=3.
+- Known cosmetic: techName sometimes grabs "COPYRIGHT ©…" (first-token stopword not rejected) — minor, human verifies.
