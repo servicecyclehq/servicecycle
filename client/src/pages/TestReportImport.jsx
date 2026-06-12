@@ -22,6 +22,18 @@ import { takePendingImport } from '../lib/pendingImport';
 import { EQUIPMENT_TYPE_LABELS, fmtDate } from '../lib/equipment';
 
 const PF_COLORS = { GREEN: '#15803d', YELLOW: '#92400e', RED: '#b91c1c' };
+// #10 confidence triage — same red/yellow/green review the nameplate flow uses.
+// The parser emits a 0..1 confidence per reading (0.9 ruled-table, 0.6 inline,
+// ≤0.5 OCR); map to the shared traffic-light so the user reviews the few
+// uncertain rows instead of re-reading all of them.
+const CONF_DOT = { high: '#16a34a', medium: '#d97706', low: '#dc2626' };
+const CONF_LABEL = { high: 'high confidence', medium: 'double-check', low: 'verify' };
+function confLevel(c) {
+  if (typeof c !== 'number') return 'medium'; // unknown (e.g. pdfjs fallback) → review
+  if (c >= 0.85) return 'high';
+  if (c >= 0.55) return 'medium';
+  return 'low';
+}
 const CREATE = '__create__';
 const TYPE_OPTIONS = Object.entries(EQUIPMENT_TYPE_LABELS).sort((a, b) => a[1].localeCompare(b[1]));
 
@@ -177,39 +189,67 @@ export default function TestReportImport() {
     if (!idx.length) return <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>No readings in this section.</div>;
     const diag = idx.filter(([r]) => (r.kind || 'D') !== 'R');
     const ref = idx.filter(([r]) => (r.kind || 'D') === 'R');
+    // #10 triage: diagnostic readings the parser was unsure about float to the
+    // top for review; the confident ones collapse so the user verifies the few
+    // that matter instead of re-reading every row.
+    const flagged = diag.filter(([r]) => confLevel(r.confidence) !== 'high');
+    const confident = diag.filter(([r]) => confLevel(r.confidence) === 'high');
     const headRow = (
       <thead><tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)' }}>
-        <th></th><th>Measurement</th><th>Ph</th><th>Value</th><th>Expected</th><th>Result</th>
+        <th></th><th></th><th>Measurement</th><th>Ph</th><th>Value</th><th>Expected</th><th>Result</th>
       </tr></thead>
     );
-    const renderRows = (list) => list.map(([r, i]) => (
-      <tr key={i} style={{ borderTop: '1px solid var(--color-border)' }}>
-        <td><input type="checkbox" checked={r.include} onChange={() => setRow(i, { include: !r.include })} /></td>
-        <td>{r.label}</td>
-        <td>{r.phase || '—'}</td>
-        <td>{r.asFoundValue ?? '—'} {r.asFoundUnit || ''}</td>
-        <td style={{ color: 'var(--color-text-secondary)' }}>{r.expectedRange || '—'}</td>
-        <td>
-          <select value={r.passFail || ''} onChange={e => setRow(i, { passFail: e.target.value || null })}
-            style={{ color: PF_COLORS[r.passFail] || 'inherit', fontWeight: 700, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, padding: '2px 4px' }}>
-            <option value="">—</option><option value="GREEN">GREEN</option><option value="YELLOW">YELLOW</option><option value="RED">RED</option>
-          </select>
-        </td>
-      </tr>
-    ));
+    const renderRows = (list) => list.map(([r, i]) => {
+      const lvl = confLevel(r.confidence);
+      return (
+        <tr key={i} style={{ borderTop: '1px solid var(--color-border)', background: lvl === 'low' ? '#fef2f2' : 'transparent' }}>
+          <td><input type="checkbox" checked={r.include} onChange={() => setRow(i, { include: !r.include })} /></td>
+          <td title={CONF_LABEL[lvl]}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 999, background: CONF_DOT[lvl] }} /></td>
+          <td>{r.label}</td>
+          <td>{r.phase || '—'}</td>
+          <td>{r.asFoundValue ?? '—'} {r.asFoundUnit || ''}</td>
+          <td style={{ color: 'var(--color-text-secondary)' }}>{r.expectedRange || '—'}</td>
+          <td>
+            <select value={r.passFail || ''} onChange={e => setRow(i, { passFail: e.target.value || null })}
+              style={{ color: PF_COLORS[r.passFail] || 'inherit', fontWeight: 700, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, padding: '2px 4px' }}>
+              <option value="">—</option><option value="GREEN">GREEN</option><option value="YELLOW">YELLOW</option><option value="RED">RED</option>
+            </select>
+          </td>
+        </tr>
+      );
+    });
+    const tableOf = (list, extraStyle) => (
+      <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse', ...(extraStyle || {}) }}>
+        {headRow}<tbody>{renderRows(list)}</tbody>
+      </table>
+    );
     return (
       <>
-        <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse' }}>
-          {headRow}<tbody>{renderRows(diag.length ? diag : idx)}</tbody>
-        </table>
-        {diag.length > 0 && ref.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+          <span><strong>Review {flagged.length}</strong> of {diag.length} reading{diag.length === 1 ? '' : 's'}</span>
+          <span style={{ display: 'inline-flex', gap: 10 }}>
+            {['high', 'medium', 'low'].map(c => (
+              <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 999, background: CONF_DOT[c] }} /> {CONF_LABEL[c]}
+              </span>
+            ))}
+          </span>
+        </div>
+        {flagged.length > 0 ? tableOf(flagged) : <div style={{ color: '#15803d', fontSize: 'var(--font-size-sm)', padding: '4px 0' }}>✓ The parser was confident on every reading — give them a glance and commit.</div>}
+        {confident.length > 0 && (
+          <details style={{ marginTop: 12 }} open={flagged.length === 0}>
+            <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', userSelect: 'none' }}>
+              {flagged.length > 0 ? `${confident.length} high-confidence reading${confident.length === 1 ? '' : 's'}` : `All ${confident.length} reading${confident.length === 1 ? '' : 's'}`}
+            </summary>
+            {tableOf(confident, { marginTop: 8 })}
+          </details>
+        )}
+        {ref.length > 0 && (
           <details style={{ marginTop: 14 }}>
             <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', userSelect: 'none' }}>
               Additional readings &amp; nameplate data ({ref.length}) — voltages, currents, temps, settings; stored for reference, not compliance-critical
             </summary>
-            <table style={{ width: '100%', fontSize: 'var(--font-size-sm)', borderCollapse: 'collapse', marginTop: 8, opacity: 0.8 }}>
-              {headRow}<tbody>{renderRows(ref)}</tbody>
-            </table>
+            {tableOf(ref, { marginTop: 8, opacity: 0.8 })}
           </details>
         )}
       </>
