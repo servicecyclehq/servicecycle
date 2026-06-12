@@ -61,6 +61,7 @@ const COLUMNS = [
   { id: 'location',     label: 'Location' },
   { id: 'mfgModel',     label: 'Manufacturer / Model' },
   { id: 'serial',       label: 'Serial #' },
+  { id: 'nameplate',    label: 'Nameplate' },
   { id: 'address',      label: 'Address' },
   { id: 'owner',        label: 'Owner' },
   { id: 'repairCost',    label: 'Repair Cost' },
@@ -71,6 +72,7 @@ const DEFAULT_VISIBILITY = {
   equipment: true, mfgModel: true, serial: false, location: true,
   address: false, owner: false, condition: true, criticality: true,
   repairCost: false, priorityScore: false, nextDue: true, openDef: true, service: true,
+  nameplate: true,
 };
 const COL_LABELS = Object.fromEntries(COLUMNS.map(c => [c.id, c.label]));
 // D6: ColumnPicker selection persists here (bump the suffix if ids change).
@@ -713,6 +715,7 @@ export default function AssetsList() {
                       {colVis.location    && <th>Location</th>}
                       {colVis.mfgModel    && <th>Manufacturer / Model</th>}
                       {colVis.serial      && <th>Serial #</th>}
+                      {colVis.nameplate   && <th title="Whether a nameplate photo has been captured for this asset">Nameplate</th>}
                       {colVis.address     && (
                         <th title="Whether this asset's site has a street address on record">Address</th>
                       )}
@@ -793,6 +796,7 @@ export default function AssetsList() {
                             value={colFilters.serial} onChange={v => setColFilter('serial', v)} />
                         </th>
                       )}
+                      {colVis.nameplate && <th style={FILTER_TH_STYLE} />}
                       {colVis.address && (
                         <th style={FILTER_TH_STYLE}>
                           <HeaderFilter label="Address" type="multi" options={ADDRESS_OPTIONS}
@@ -899,6 +903,9 @@ export default function AssetsList() {
                             </td>
                           )}
                           {colVis.serial      && <td className="td-muted">{a.serialNumber || '—'}</td>}
+                          {colVis.nameplate   && <td style={{ textAlign: 'center' }}>{a.nameplateData && a.nameplateData._scan
+                            ? <span title="Nameplate captured" style={{ color: '#16a34a', fontWeight: 700 }}>✓</span>
+                            : <span title="No nameplate captured yet" style={{ color: '#d1d5db' }}>—</span>}</td>}
                           {colVis.address     && (
                             <td title={hasAddress
                               ? `${[a.site?.address, a.site?.city, a.site?.state, a.site?.postalCode].filter(Boolean).join(', ')}`

@@ -61,21 +61,20 @@ import prisma from '../lib/prisma';
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10MB
 
-const ACCEPTED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MIME_EXT: any = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+// HEIC/HEIF accepted — iPhones shoot HEIC by default and this container's sharp
+// build carries libheif, so lib/imageNormalize transcodes to JPEG (and applies
+// EXIF rotation) before the model call / storage rather than blocking the tech.
+const ACCEPTED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+const MIME_EXT: any = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'jpg', 'image/heif': 'jpg' };
 
 const photoUpload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: MAX_PHOTO_BYTES, files: 1 },
   fileFilter: (req, file, cb) => {
     const mt = (file.mimetype || '').toLowerCase();
-    if (mt === 'image/heic' || mt === 'image/heif' || /\.heic$|\.heif$/i.test(file.originalname || '')) {
-      return cb(new Error('HEIC/HEIF photos are not supported — convert to JPEG or PNG first (iPhone: Settings → Camera → Formats → Most Compatible).'));
-    }
-    if (!ACCEPTED_MIME.has(mt)) {
-      return cb(new Error('Only JPEG, PNG, or WebP images are accepted.'));
-    }
-    return cb(null, true);
+    const heicName = /\.heic$|\.heif$/i.test(file.originalname || '');
+    if (ACCEPTED_MIME.has(mt) || heicName) return cb(null, true);
+    return cb(new Error('Only JPEG, PNG, WebP, or HEIC images are accepted.'));
   },
 });
 
@@ -150,6 +149,16 @@ async function logActivity(assetId, userId, accountId, action, details = null) {
 router.post('/photo-inspect', aiPreGate, aiIpLimiter, photoInspectLimiter, photoUploadMiddleware, async (req, res) => {
   if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
     return res.status(400).json({ success: false, error: 'An image file is required (multipart field "image").' });
+  }
+
+  // EXIF-rotate + transcode HEIC→JPEG + cap size before the vision call and
+  // before the photo is persisted on the asset's document timeline.
+  try {
+    const { normalizeImage } = require('../lib/imageNormalize');
+    const _n = await normalizeImage(req.file.buffer, req.file.mimetype);
+    req.file.buffer = _n.buffer; req.file.mimetype = _n.mimeType;
+  } catch (ne: any) {
+    return res.status(400).json({ success: false, error: ne.message || 'Could not process that image.' });
   }
 
   // Optional context fields arrive as multipart text fields.
@@ -387,12 +396,19 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
   if (!ensureAiBudget(req, res, 'ocr_nameplate')) return;
 
   try {
+    // Normalize first: EXIF-rotate, transcode HEIC→JPEG, cap size. A decode
+    // failure (e.g. a corrupt upload) becomes a 400 the tech can act on.
+    const { normalizeImage } = require('../lib/imageNormalize');
+    let img: any;
+    try { img = await normalizeImage(req.file.buffer, req.file.mimetype); }
+    catch (ne: any) { return res.status(400).json({ success: false, error: ne.message || 'Could not process that image.' }); }
+
     // completeWithImage routes by provider (gemini → _geminiImage) and uses
     // ONLY `prompt` for images — settings.system is ignored — so the JSON
     // schema instructions must travel inside the prompt itself.
     const { text } = await completeWithImage({
-      imageBuffer: req.file.buffer,
-      mediaType:   req.file.mimetype,
+      imageBuffer: img.buffer,
+      mediaType:   img.mimeType,
       prompt:      `${OCR_SYSTEM}\n\nRead this equipment nameplate and respond with ONLY the JSON object described above.`,
       // gemini-2.5-flash is a thinking model — reasoning tokens draw down the
       // SAME output budget, so 512 silently truncated the JSON on denser

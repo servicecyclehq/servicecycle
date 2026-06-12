@@ -1364,12 +1364,12 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
     let photoDocId: string | null = prevScan?.photoDocumentId || null;
     if (req.file?.buffer?.length) {
       try {
-        const mt = (req.file.mimetype || '').toLowerCase();
-        const ext = mt.includes('png') ? 'png' : mt.includes('webp') ? 'webp' : 'jpg';
-        const filename = `nameplate-${Date.now()}.${ext}`;
-        const { storageKey } = await _npUpload(accountId, asset.id, filename, req.file.buffer, req.file.mimetype);
+        const { normalizeImage } = require('../lib/imageNormalize');
+        const _n = await normalizeImage(req.file.buffer, req.file.mimetype); // EXIF-rotate, HEIC→JPEG, size cap
+        const filename = `nameplate-${Date.now()}.jpg`;
+        const { storageKey } = await _npUpload(accountId, asset.id, filename, _n.buffer, _n.mimeType);
         const doc = await prisma.document.create({
-          data: { accountId, assetId: asset.id, filename, filePath: storageKey, fileType: req.file.mimetype, uploadedBy: req.user.id },
+          data: { accountId, assetId: asset.id, filename, filePath: storageKey, fileType: _n.mimeType, uploadedBy: req.user.id },
           select: { id: true },
         });
         // Re-scan replaces — drop the prior nameplate photo.
