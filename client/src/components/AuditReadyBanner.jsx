@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { ShieldCheck, ShieldAlert, FileDown } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
 
 export default function AuditReadyBanner() {
@@ -26,15 +27,21 @@ export default function AuditReadyBanner() {
 
   async function downloadEmp() {
     setBusy(true);
+    setToast({ message: 'Generating your EMP program and anchoring its hash…', type: 'info' });
     try {
-      const res = await api.post('/api/compliance/emp-document', {}, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = `nfpa-70b-emp-program-${new Date().toISOString().slice(0, 10)}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      window.URL.revokeObjectURL(url);
+      // Two-step: POST renders the EMP + persists an immutable snapshot, then
+      // GET streams that snapshot's PDF (integrity-checked, any role).
+      const res = await api.post('/api/compliance/emp-document');
+      const snap = res.data?.data?.snapshot || {};
+      if (!snap.id) throw new Error('No document produced');
+      const base = import.meta.env.VITE_API_URL ?? '';
+      await downloadAuthedFile(
+        `${base}/api/compliance/snapshots/${snap.id}/download`,
+        snap.filename || `nfpa-70b-emp-program-${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
+      setToast({ message: 'Program downloaded — hash recorded in the audit log.', type: 'success' });
     } catch (e) {
-      setToast({ message: e?.response?.status === 403 ? 'Ask a manager to export the program' : 'Export failed', type: 'error' });
+      setToast({ message: e?.response?.status === 403 ? 'Ask a manager to export the program' : (e.message || 'Export failed'), type: 'error' });
     } finally { setBusy(false); }
   }
 
