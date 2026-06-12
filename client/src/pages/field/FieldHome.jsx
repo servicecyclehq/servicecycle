@@ -220,6 +220,22 @@ export default function FieldHome() {
         Scan equipment
       </button>
 
+      {/* ── Add new equipment from a nameplate photo ───────────────────────── */}
+      <button
+        type="button"
+        onClick={() => navigate('/field/new')}
+        style={{
+          boxSizing: 'border-box', width: '100%', minHeight: 56,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          background: '#fff', color: 'var(--color-primary)',
+          border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-lg, 12px)', cursor: 'pointer',
+          fontSize: 16, fontWeight: 700, marginBottom: 12,
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        + Add equipment
+      </button>
+
       {/* ── Outbox status chip ─────────────────────────────────────────────── */}
       {pending > 0 && (
         <button
