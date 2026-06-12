@@ -729,11 +729,11 @@ export default function Sidebar() {
         {/* CMMS Import Hub — migrate data from Maximo / SAP PM / Oracle EAM. */}
         {(user?.role === 'admin' || user?.role === 'manager') && (
           <NavLink
-            to="/import"
+            to="/add-data"
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
           >
             {Icons.cmmsImport}
-            Import Data
+            Add data
           </NavLink>
         )}
 

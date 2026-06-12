@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { FileText, UploadCloud, CheckCircle2 } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { takePendingImport } from '../lib/pendingImport';
 
 const PF_COLORS = { GREEN: '#15803d', YELLOW: '#92400e', RED: '#b91c1c' };
 
@@ -37,8 +38,7 @@ export default function TestReportImport() {
     }).catch(() => {});
   }, []);
 
-  async function onFile(e) {
-    const file = e.target.files?.[0];
+  async function previewFile(file) {
     if (!file) return;
     setBusy(true); setError('');
     try {
@@ -57,6 +57,11 @@ export default function TestReportImport() {
       setError(err?.response?.data?.error || 'Failed to read the PDF');
     } finally { setBusy(false); }
   }
+
+  function onFile(e) { previewFile(e.target.files?.[0]); }
+
+  // W2: if the "Add data" door handed us a file, preview it automatically.
+  useEffect(() => { const f = takePendingImport(); if (f) previewFile(f); }, []);
 
   function setRow(i, patch) { setRows(rs => rs.map((r, idx) => idx === i ? { ...r, ...patch } : r)); }
 
