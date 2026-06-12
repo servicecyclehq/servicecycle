@@ -60,6 +60,17 @@ FROM node:20-alpine AS runtime
 RUN apk add --no-cache openssl postgresql-client wget \
  && rm -rf /var/cache/apk/*
 
+# Python + pdfplumber for the deterministic PDF test-report extractor
+# (pyextract/, gem V4). Wheels-only (--only-binary=:all:) so a missing wheel
+# fails the build loudly instead of shipping a broken extractor; the import
+# check confirms it. Ingest fails open to the pdfjs parser if this is absent,
+# so it can never break the running app.
+RUN apk add --no-cache python3 py3-pip \
+ && pip install --no-cache-dir --break-system-packages --only-binary=:all: \
+      "pdfplumber>=0.11" "pypdf>=4.0" \
+ && python3 -c "import pdfplumber; print('pyextract deps OK', pdfplumber.__version__)" \
+ && rm -rf /root/.cache /var/cache/apk/*
+
 # Run as the unprivileged `node` user shipped in the base image.
 # /app is owned by node so the process can write to ./uploads and ./backups
 # when those are bind-mounted.
