@@ -756,6 +756,26 @@ const TASKS = [
     requiresEnergized: false, requiresOutage: true, neta: true, netaLevel: 'LEVEL_II',
     description: 'Phase-to-phase and phase-to-ground per NETA Table 100.1. [ENCODED FROM PRACTICE — VERIFY]',
   },
+
+  // ── ARC_FLASH_PANEL (equipment carrying an arc-flash hazard label/study) ───
+  // Closes the last EquipmentType-enum gap (every other type already seeds a
+  // 70B/NETA template). Arc-flash maintenance is governed by NFPA 70E, not 70B:
+  // the incident-energy label must stay legible and the underlying study must be
+  // reviewed at least every five years. The per-study record model is #25.
+  {
+    code: 'AF_LABEL_VERIFY', equipmentType: 'ARC_FLASH_PANEL', name: 'Arc-flash warning label verification',
+    standardKey: 'NFPA 70E', ref: 'NFPA 70E:2024 §130.5(H) (equipment labeled with incident energy / arc-flash boundary; labels maintained legible)',
+    c1: 24, c2: 12, c3: 6,
+    requiresEnergized: false, requiresOutage: false, neta: false, netaLevel: null,
+    description: 'Confirm the arc-flash warning label is present, legible, and matches the current incident-energy study (incident energy or PPE category, arc-flash boundary, working distance, available fault current and study date). Replace damaged or stale labels. [ENCODED FROM PRACTICE — VERIFY]',
+  },
+  {
+    code: 'AF_STUDY_REVIEW', equipmentType: 'ARC_FLASH_PANEL', name: 'Arc-flash risk assessment review/update',
+    standardKey: 'NFPA 70E', ref: 'NFPA 70E:2024 §130.5(G) (arc-flash risk assessment reviewed at intervals not to exceed 5 years, or on a major system change)',
+    c1: 60, c2: 60, c3: 36,
+    requiresEnergized: false, requiresOutage: false, neta: false, netaLevel: null,
+    description: 'Review the arc-flash incident-energy study and update it if the electrical distribution system has changed (5-year maximum interval). Mandate-fixed ceiling — condition may compress it but never stretch it beyond five years.',
+  },
 ];
 
 const prisma = new PrismaClient();
