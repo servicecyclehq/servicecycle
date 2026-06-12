@@ -339,6 +339,11 @@ def _inline_readings(text):
             "asFoundValue": val, "asFoundUnit": u,
             "expectedRange": None, "passFail": None, "critical": crit,
             "kind": kind, "confidence": 0.6,
+            # Character offset of this reading in the full text — used by the
+            # multi-asset split (#1) to attribute the reading to the
+            # SUBSTATION/POSITION section it physically sits under. Stripped
+            # before the result leaves extract_measurements.
+            "_off": m.start(),
         })
     return out
 
@@ -391,6 +396,53 @@ def _column_tables(page_tables):
     return out
 
 
+# A NETA/PowerDB job report covers many devices, each opening with a
+# "SUBSTATION <id> POSITION <id>" block. This is the boundary the one-upload =
+# one-facility split (#1) keys on.
+_SECTION_RE = re.compile(r"SUBSTATION\s+([\w.-]+)\s+POSITION\s+([\w.-]+)", re.I)
+
+
+def _build_sections(text):
+    """Parse the SUBSTATION/POSITION section structure of a report.
+
+    A section header can repeat across continuation pages, so sections are
+    CANONICALIZED by (substation, position) label in first-appearance order —
+    every occurrence maps to one canonical section, never a duplicate. Returns
+    (raw_spans, sections):
+      raw_spans  ordered [{start, canon}] — each header occurrence + its
+                 canonical section index, for offset → section attribution
+      sections   deduped [{idx, substation, position, label}]
+    Both empty for a single-asset report (no headers), leaving the legacy flat
+    path completely unaffected."""
+    raw_spans = []
+    sections = []
+    canon = {}
+    for m in _SECTION_RE.finditer(text or ""):
+        label = "%s / %s" % (m.group(1), m.group(2))
+        if label not in canon:
+            canon[label] = len(sections)
+            sections.append({
+                "idx": len(sections), "substation": m.group(1),
+                "position": m.group(2), "label": label,
+            })
+        raw_spans.append({"start": m.start(), "canon": canon[label]})
+    return raw_spans, sections
+
+
+def _section_for_offset(off, raw_spans):
+    """Canonical section index for a reading at char-offset `off`: the last
+    header starting at or before it. Readings before the first header (report
+    cover / global nameplate) attach to the first section; the human confirms
+    in the split UI."""
+    idx = 0
+    for s in raw_spans:
+        if s["start"] <= off:
+            idx = s["canon"]
+        else:
+            break
+    return idx
+
+
 def extract_measurements(cells, page_tables, full_text=""):
     table_out = _column_tables(page_tables)              # clean column tables
     inline_out = _inline_readings(full_text)             # general value+unit pass
@@ -414,6 +466,20 @@ def extract_measurements(cells, page_tables, full_text=""):
             continue
         seen.add(k)
         out.append(m)
+
+    # ── Multi-asset section attribution (#1) ──────────────────────────────────
+    # Tag each surviving reading with the SUBSTATION/POSITION section it sits
+    # under so the preview can split one upload into per-asset blocks. Only
+    # happens when the report actually has section headers; a single-asset
+    # report leaves `section` = None and the flat path is unchanged. Column-table
+    # readings (no offset) attribute to the first section.
+    raw_spans, _sections = _build_sections(full_text)
+    for m in out:
+        off = m.pop("_off", None)
+        if raw_spans:
+            m["section"] = _section_for_offset(off, raw_spans) if off is not None else 0
+        else:
+            m["section"] = None
     return out
 
 
@@ -515,10 +581,11 @@ def extract_fields(path: str, mode: str = "all"):
     # covers many devices, each opening with a SUBSTATION…POSITION… block. Count
     # distinct sections so the UI can warn that these readings span >1 asset
     # (full per-asset split is roadmap). Default 1 for a single-asset report.
-    sections = set(re.findall(r"SUBSTATION\s+([\w.-]+)\s+POSITION\s+([\w.-]+)", text, re.I))
+    _raw_spans, sections = _build_sections(text)
     asset_sections = max(1, len(sections))
 
     return {"fields": header, "measurements": measurements, "full_text": text,
             "ocr": ocr_used, "asset_sections": asset_sections,
+            "sections": sections,
             "page_count": page_count, "pages_scanned": pages_scanned,
             "truncated": truncated}

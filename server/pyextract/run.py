@@ -30,6 +30,7 @@ def main():
             "has_text_layer": has_text,
             "ocr": bool(r.get("ocr")),
             "asset_sections": r.get("asset_sections", 1),
+            "sections": r.get("sections", []),
             "page_count": r.get("page_count"),
             "pages_scanned": r.get("pages_scanned"),
             "truncated": bool(r.get("truncated")),

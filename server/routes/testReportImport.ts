@@ -36,6 +36,48 @@ function assetLabel(a: any): string {
   return [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || 'Asset';
 }
 
+function shapeCandidate(c: any) {
+  return {
+    id: c.id, label: c.label, serialNumber: c.serialNumber, equipmentType: c.equipmentType,
+    siteName: c.siteName, positionName: c.positionName, lastTestedAt: c.lastTestedAt,
+    reason: c.reason, confidence: c.confidence,
+  };
+}
+
+// #1 per-section asset matching. A SUBSTATION/POSITION block rarely carries its
+// own serial, so it's matched by the position/substation tag against existing
+// EquipmentPosition names and serials. The first section additionally tries the
+// document-level serial via the #3 resolver (the report header usually names
+// the lead device). Returns the same candidate shape as the whole-doc match.
+async function resolveSectionAsset(accountId: string, def: any, docSerial: string | null) {
+  if (docSerial) {
+    const r = await resolveAsset({ accountId, serialNumber: docSerial });
+    if (r.best) return { best: shapeCandidate(r.best), candidates: r.candidates.map(shapeCandidate) };
+  }
+  const terms = [def.position, def.substation].filter(Boolean);
+  if (!terms.length) return { best: null, candidates: [] };
+  const rows = await prisma.asset.findMany({
+    where: {
+      accountId, archivedAt: null,
+      OR: [
+        ...terms.map((t: string) => ({ position: { name: { equals: t, mode: 'insensitive' } } })),
+        ...terms.map((t: string) => ({ serialNumber: { contains: t, mode: 'insensitive' } })),
+      ],
+    },
+    select: {
+      id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true,
+      site: { select: { name: true } }, position: { select: { name: true } },
+    },
+    take: 5,
+  });
+  const candidates = rows.map((a: any) => shapeCandidate({
+    id: a.id, label: assetLabel(a), serialNumber: a.serialNumber, equipmentType: a.equipmentType,
+    siteName: a.site?.name || null, positionName: a.position?.name || null,
+    lastTestedAt: null, reason: 'section_name', confidence: 'medium',
+  }));
+  return { best: candidates[0] || null, candidates };
+}
+
 // ── POST /preview ─────────────────────────────────────────────────────────────
 // V7: any authenticated role can preview (read-only); commit stays manager+.
 router.post('/preview', upload.single('file'), async (req: any, res: any) => {
@@ -56,10 +98,12 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
     let meta: any, measurements: any[], source: string;
     let assetSections = 1, ocr = false;
     let pageCount: number | null = null, pagesScanned: number | null = null, truncated = false;
+    let sectionDefs: any[] = []; // #1 canonical SUBSTATION/POSITION sections from the extractor
     const py = await runDeterministic(req.file.buffer);
     if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
       source = py.ocr ? 'pdfplumber-ocr' : 'pdfplumber';
       assetSections = py.asset_sections || 1;
+      sectionDefs = Array.isArray(py.sections) ? py.sections : [];
       pageCount = py.page_count ?? null;
       pagesScanned = py.pages_scanned ?? null;
       truncated = !!py.truncated;
@@ -78,6 +122,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
           phase: x.phase || null, asFoundValue: x.asFoundValue, asFoundUnit: x.asFoundUnit,
           expectedRange: x.expectedRange, testVoltage: x.testVoltage || null,
           passFail: pf, critical: !!x.critical, kind: x.kind || 'D', confidence: x.confidence,
+          section: (x.section === null || x.section === undefined) ? null : Number(x.section), // #1 SUBSTATION/POSITION index
         };
       });
     } else {
@@ -157,13 +202,41 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
       }
     }
 
-    const summary = {
-      total: measurements.length,
-      red:    measurements.filter((x: any) => x.passFail === 'RED').length,
-      yellow: measurements.filter((x: any) => x.passFail === 'YELLOW').length,
-      green:  measurements.filter((x: any) => x.passFail === 'GREEN').length,
-      deficienciesToCreate: measurements.filter((x: any) => severityFor(x.passFail, x.critical)).length,
-    };
+    const sliceSummary = (list: any[]) => ({
+      total: list.length,
+      red:    list.filter((x: any) => x.passFail === 'RED').length,
+      yellow: list.filter((x: any) => x.passFail === 'YELLOW').length,
+      green:  list.filter((x: any) => x.passFail === 'GREEN').length,
+      deficienciesToCreate: list.filter((x: any) => severityFor(x.passFail, x.critical)).length,
+    });
+    const summary = sliceSummary(measurements);
+
+    // #1 one-upload = one-facility: when the report spans >1 SUBSTATION/POSITION
+    // section, group readings per section and resolve each to an existing asset
+    // so the split UI can match-or-create per device. `measurements` (flat) and
+    // the whole-doc `assetMatch` are untouched — the single-asset path and any
+    // client that ignores `sections` keep working exactly as before.
+    let sections: any[] = [];
+    if (sectionDefs.length > 1) {
+      const buckets = new Map<number, number[]>();
+      measurements.forEach((m: any, i: number) => {
+        const sidx = (m.section === null || m.section === undefined) ? 0 : m.section;
+        if (!buckets.has(sidx)) buckets.set(sidx, []);
+        buckets.get(sidx)!.push(i);
+      });
+      sections = await Promise.all(sectionDefs.map(async (def: any, idx: number) => {
+        const measurementIndices = buckets.get(idx) || [];
+        const secMeas = measurementIndices.map((i) => measurements[i]);
+        const { best, candidates } = await resolveSectionAsset(
+          req.user.accountId, def, idx === 0 ? meta.serialNumber : null,
+        );
+        return {
+          idx, substation: def.substation, position: def.position, label: def.label,
+          measurementIndices, summary: sliceSummary(secMeas),
+          assetMatch: best, assetCandidates: candidates,
+        };
+      }));
+    }
 
     // #4 telemetry: log engine / coverage / confidence for this extraction. The
     // returned id is echoed back on commit so the human corrections can be
@@ -181,7 +254,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
     });
 
     return res.json({ success: true, data: {
-      meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, ocr, aiUsed, aiAdded,
+      meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, sections, ocr, aiUsed, aiAdded,
       pageCount, pagesScanned, truncated, extractionId,
       priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
     } });
@@ -191,122 +264,203 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
   }
 });
 
+// W4 trend flags: which direction is "worse" per measurement type, and the
+// year-over-year percentage that turns an in-spec reading into an ADVISORY.
+const BAD_DIRECTION: any = {
+  insulation_resistance: 'down', polarization_index: 'down', dielectric_absorption_ratio: 'down',
+  contact_resistance: 'up', winding_resistance: 'up', power_factor: 'up', dissipation_factor: 'up',
+  dissolved_gas: 'up', excitation_current: 'up', ground_resistance: 'up',
+};
+const TREND_PCT = 15;
+
+// Thrown inside the multi-section $transaction to abort the whole commit with a
+// specific HTTP status (e.g. a bad section asset id) — never a half-written
+// facility. The handler's catch maps `httpStatus` to the response.
+class HttpableError extends Error {
+  httpStatus: number;
+  constructor(status: number, message: string) { super(message); this.httpStatus = status; }
+}
+
+// Write ONE asset's readings: a COMPLETE WorkOrder parent + TestMeasurement
+// rows + auto Deficiency rows (hard pass/fail and the year-over-year trend
+// flag). `db` is a prisma client OR a $transaction client, so the multi-section
+// path can write every asset atomically. Returns the per-asset summary.
+async function commitAssetReadings(db: any, p: {
+  accountId: string; assetId: string; when: Date;
+  vendor?: string; techName?: string; measurements: any[];
+}) {
+  const { accountId, assetId, when, vendor, techName, measurements } = p;
+
+  // WorkOrder is the parent of TestMeasurements (no standalone TestEvent model).
+  const wo = await db.workOrder.create({
+    data: { accountId, assetId, status: 'COMPLETE', scheduledDate: when, completedDate: when,
+            notes: `[ingest:test_report] Test report ingest${vendor ? ` — ${vendor}` : ''}${techName ? ` (${techName})` : ''}` },
+    select: { id: true },
+  });
+
+  // Most recent PRIOR reading per (measurementType, phase) for the trend flag.
+  const priorRows = await db.testMeasurement.findMany({
+    where: { accountId, asFoundValue: { not: null }, workOrder: { assetId } },
+    select: { measurementType: true, phase: true, asFoundValue: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  const priorByKey = new Map<string, number>();
+  for (const r of priorRows as any[]) {
+    const k = `${r.measurementType}|${r.phase || ''}`;
+    if (!priorByKey.has(k)) priorByKey.set(k, Number(r.asFoundValue));
+  }
+
+  let measurementsCreated = 0;
+  let trendDeficiencies = 0;
+  const defBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
+  for (const x of measurements) {
+    const raw = x.asFoundValue;
+    const val = (raw != null && raw !== '') ? Number(raw) : null;
+    const passFail = ['GREEN', 'YELLOW', 'RED'].includes(x.passFail) ? x.passFail : null;
+    await db.testMeasurement.create({
+      data: {
+        accountId, workOrderId: wo.id,
+        measurementType: String(x.measurementType || 'measurement'),
+        phase: x.phase || null,
+        asFoundValue: (val != null && !isNaN(val)) ? val : null,
+        asFoundUnit: x.asFoundUnit || null,
+        passFail,
+        expectedRange: x.expectedRange || null,
+        testVoltage: x.testVoltage || null,
+        notes: x.notes || null,
+      },
+    });
+    measurementsCreated++;
+
+    const sev = severityFor(passFail, !!x.critical);
+    if (sev) {
+      await db.deficiency.create({
+        data: {
+          accountId, assetId, workOrderId: wo.id, severity: sev,
+          description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${x.asFoundValue ?? '?'}${x.asFoundUnit || ''}${x.expectedRange ? ` — expected ${x.expectedRange}` : ''}`,
+          correctiveAction: 'Flagged from test report ingest — review reading and schedule corrective work.',
+        },
+      });
+      defBySeverity[sev]++;
+    } else if (val != null) {
+      // No hard pass/fail issue — check the year-over-year trend (W4).
+      const dir = BAD_DIRECTION[String(x.measurementType)];
+      const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}`);
+      if (dir && prior != null && prior !== 0) {
+        const pct = ((val - prior) / Math.abs(prior)) * 100;
+        const worse = (dir === 'up' && pct >= TREND_PCT) || (dir === 'down' && pct <= -TREND_PCT);
+        if (worse) {
+          await db.deficiency.create({
+            data: {
+              accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
+              description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''} trending ${dir === 'up' ? 'up' : 'down'} ${Math.abs(Math.round(pct))}% since last test (${prior}→${val}${x.asFoundUnit || ''}) — still in spec, monitor`,
+              correctiveAction: 'Trend flag from test-report ingest — watch for continued degradation before next cycle.',
+            },
+          });
+          defBySeverity.ADVISORY++;
+          trendDeficiencies++;
+        }
+      }
+    }
+  }
+
+  const deficienciesCreated = defBySeverity.IMMEDIATE + defBySeverity.RECOMMENDED + defBySeverity.ADVISORY;
+  return { workOrderId: wo.id, assetId, measurementsCreated, deficienciesCreated, trendDeficiencies, deficiencyBySeverity: defBySeverity };
+}
+
 // ── POST /commit ──────────────────────────────────────────────────────────────
+// Two shapes:
+//   legacy single-asset  { assetId, measurements[], testDate?, vendor?, techName? }
+//   #1 multi-section      { sections: [{ assetId? | createAsset:{siteId,equipmentType,
+//                          manufacturer?,model?,serialNumber?}, measurements[] }], ... }
+// The multi-section form writes every asset in ONE transaction — one upload =
+// one facility, all-or-nothing. The legacy form is byte-for-byte unchanged.
 router.post('/commit', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
-    const { assetId, testDate, vendor, techName, measurements, extractionId, corrections, reviewMs } = req.body;
+    const { assetId, testDate, vendor, techName, measurements, sections, extractionId, corrections, reviewMs } = req.body;
+    const when = testDate ? new Date(testDate) : new Date();
+    if (isNaN(when.getTime())) return res.status(400).json({ success: false, error: 'Invalid testDate' });
+
+    // ── Multi-section path (#1): one upload → many assets, atomically ──────────
+    if (Array.isArray(sections)) {
+      if (sections.length === 0) return res.status(400).json({ success: false, error: 'sections required' });
+      // Validate everything up front so we never half-commit.
+      for (let i = 0; i < sections.length; i++) {
+        const s = sections[i];
+        if (!s || !Array.isArray(s.measurements) || s.measurements.length === 0)
+          return res.status(400).json({ success: false, error: `section ${i}: measurements required` });
+        if (!s.assetId && !s.createAsset)
+          return res.status(400).json({ success: false, error: `section ${i}: assetId or createAsset required` });
+        if (s.createAsset && (!s.createAsset.siteId || !s.createAsset.equipmentType))
+          return res.status(400).json({ success: false, error: `section ${i}: createAsset needs siteId and equipmentType` });
+      }
+
+      const results = await prisma.$transaction(async (tx: any) => {
+        const out: any[] = [];
+        for (const s of sections) {
+          let targetId = s.assetId;
+          let created = false;
+          if (targetId) {
+            const a = await tx.asset.findFirst({ where: { id: targetId, accountId, archivedAt: null }, select: { id: true } });
+            if (!a) throw new HttpableError(404, `Asset not found: ${targetId}`);
+          } else {
+            const c = s.createAsset;
+            const site = await tx.site.findFirst({ where: { id: c.siteId, accountId, archivedAt: null }, select: { id: true } });
+            if (!site) throw new HttpableError(400, `Site not found: ${c.siteId}`);
+            const na = await tx.asset.create({
+              data: {
+                accountId, siteId: c.siteId, equipmentType: c.equipmentType,
+                manufacturer: c.manufacturer || null, model: c.model || null, serialNumber: c.serialNumber || null,
+              },
+              select: { id: true },
+            });
+            targetId = na.id; created = true;
+          }
+          const r = await commitAssetReadings(tx, { accountId, assetId: targetId, when, vendor, techName, measurements: s.measurements });
+          out.push({ ...r, created, label: s.label || null });
+        }
+        return out;
+      });
+
+      const totals = results.reduce((acc: any, r: any) => {
+        acc.measurementsCreated += r.measurementsCreated;
+        acc.deficienciesCreated += r.deficienciesCreated;
+        acc.assetsCreated += r.created ? 1 : 0;
+        return acc;
+      }, { measurementsCreated: 0, deficienciesCreated: 0, assetsCreated: 0, assetsCommitted: results.length });
+
+      await recordCommit({
+        extractionId, fieldsCommitted: totals.measurementsCreated,
+        corrections: Array.isArray(corrections) ? corrections : undefined,
+        reviewMs: Number.isFinite(Number(reviewMs)) ? Number(reviewMs) : null,
+      });
+      return res.status(201).json({ success: true, data: { sections: results, totals } });
+    }
+
+    // ── Legacy single-asset path (unchanged contract) ─────────────────────────
     if (!assetId) return res.status(400).json({ success: false, error: 'assetId required' });
     if (!Array.isArray(measurements) || measurements.length === 0) {
       return res.status(400).json({ success: false, error: 'measurements required' });
     }
     const asset = await prisma.asset.findFirst({ where: { id: assetId, accountId, archivedAt: null }, select: { id: true } });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
-    const when = testDate ? new Date(testDate) : new Date();
-    if (isNaN(when.getTime())) return res.status(400).json({ success: false, error: 'Invalid testDate' });
 
-    // WorkOrder is the parent of TestMeasurements (no standalone TestEvent model).
-    const wo = await prisma.workOrder.create({
-      data: { accountId, assetId, status: 'COMPLETE', scheduledDate: when, completedDate: when,
-              notes: `[ingest:test_report] Test report ingest${vendor ? ` — ${vendor}` : ''}${techName ? ` (${techName})` : ''}` },
-      select: { id: true },
-    });
-
-    // W4: trend-based deficiencies. Pull the most recent PRIOR reading per
-    // (measurementType, phase) so a value that's still in spec but moving the
-    // wrong way year-over-year ("C-phase IR down 40% — won't pass next year")
-    // becomes an ADVISORY now, not a surprise next cycle. bad='up' → higher is
-    // worse; bad='down' → lower is worse.
-    const BAD_DIRECTION: any = {
-      insulation_resistance: 'down', polarization_index: 'down', dielectric_absorption_ratio: 'down',
-      contact_resistance: 'up', winding_resistance: 'up', power_factor: 'up', dissipation_factor: 'up',
-      dissolved_gas: 'up', excitation_current: 'up', ground_resistance: 'up',
-    };
-    const TREND_PCT = 15;
-    const priorRows = await prisma.testMeasurement.findMany({
-      where: { accountId, asFoundValue: { not: null }, workOrder: { assetId } },
-      select: { measurementType: true, phase: true, asFoundValue: true, createdAt: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    const priorByKey = new Map<string, number>();
-    for (const r of priorRows as any[]) {
-      const k = `${r.measurementType}|${r.phase || ''}`;
-      if (!priorByKey.has(k)) priorByKey.set(k, Number(r.asFoundValue));
-    }
-
-    let measurementsCreated = 0;
-    let trendDeficiencies = 0;
-    const defBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
-    for (const x of measurements) {
-      const raw = x.asFoundValue;
-      const val = (raw != null && raw !== '') ? Number(raw) : null;
-      const passFail = ['GREEN', 'YELLOW', 'RED'].includes(x.passFail) ? x.passFail : null;
-      await prisma.testMeasurement.create({
-        data: {
-          accountId, workOrderId: wo.id,
-          measurementType: String(x.measurementType || 'measurement'),
-          phase: x.phase || null,
-          asFoundValue: (val != null && !isNaN(val)) ? val : null,
-          asFoundUnit: x.asFoundUnit || null,
-          passFail,
-          expectedRange: x.expectedRange || null,
-          testVoltage: x.testVoltage || null,
-          notes: x.notes || null,
-        },
-      });
-      measurementsCreated++;
-
-      const sev = severityFor(passFail, !!x.critical);
-      if (sev) {
-        await prisma.deficiency.create({
-          data: {
-            accountId, assetId, workOrderId: wo.id, severity: sev,
-            description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${x.asFoundValue ?? '?'}${x.asFoundUnit || ''}${x.expectedRange ? ` — expected ${x.expectedRange}` : ''}`,
-            correctiveAction: 'Flagged from test report ingest — review reading and schedule corrective work.',
-          },
-        });
-        defBySeverity[sev]++;
-      } else if (val != null) {
-        // No hard pass/fail issue — check the year-over-year trend (W4).
-        const dir = BAD_DIRECTION[String(x.measurementType)];
-        const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}`);
-        if (dir && prior != null && prior !== 0) {
-          const pct = ((val - prior) / Math.abs(prior)) * 100;
-          const worse = (dir === 'up' && pct >= TREND_PCT) || (dir === 'down' && pct <= -TREND_PCT);
-          if (worse) {
-            await prisma.deficiency.create({
-              data: {
-                accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
-                description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''} trending ${dir === 'up' ? 'up' : 'down'} ${Math.abs(Math.round(pct))}% since last test (${prior}→${val}${x.asFoundUnit || ''}) — still in spec, monitor`,
-                correctiveAction: 'Trend flag from test-report ingest — watch for continued degradation before next cycle.',
-              },
-            });
-            defBySeverity.ADVISORY++;
-            trendDeficiencies++;
-          }
-        }
-      }
-    }
-
-    const deficienciesCreated = defBySeverity.IMMEDIATE + defBySeverity.RECOMMENDED + defBySeverity.ADVISORY;
+    const r = await commitAssetReadings(prisma, { accountId, assetId, when, vendor, techName, measurements });
 
     // #4 correction capture: stamp the extraction row from preview with the
-    // commit outcome and the human's field-level edits. `corrections` is an
-    // optional client-supplied diff ([{ field, before, after, formFamily }]);
-    // older clients that don't send it still record the committed count + close
-    // the row for the #5 dedupe check. Fire-and-forget.
+    // commit outcome + the human's field-level edits. Older clients that don't
+    // send `corrections` still record the committed count + close the row for
+    // the #5 dedupe check. Fire-and-forget.
     await recordCommit({
-      extractionId,
-      fieldsCommitted: measurementsCreated,
+      extractionId, fieldsCommitted: r.measurementsCreated,
       corrections: Array.isArray(corrections) ? corrections : undefined,
       reviewMs: Number.isFinite(Number(reviewMs)) ? Number(reviewMs) : null,
     });
 
-    return res.status(201).json({
-      success: true,
-      data: { workOrderId: wo.id, assetId, measurementsCreated, deficienciesCreated, trendDeficiencies, deficiencyBySeverity: defBySeverity },
-    });
-  } catch (err) {
+    return res.status(201).json({ success: true, data: r });
+  } catch (err: any) {
+    if (err && err.httpStatus) return res.status(err.httpStatus).json({ success: false, error: err.message });
     console.error('[testReport/commit]', err);
     return res.status(500).json({ success: false, error: 'Failed to commit test report' });
   }
