@@ -737,6 +737,17 @@ export default function Sidebar() {
           </NavLink>
         )}
 
+        {/* Test-report PDF ingest (R1) — contractor's report → fix list. */}
+        {(user?.role === 'admin' || user?.role === 'manager') && (
+          <NavLink
+            to="/test-reports/import"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.reports}
+            Import Test Report
+          </NavLink>
+        )}
+
         {/* Fleet Dashboard — OEM cross-account view. oem_admin role only. */}
         {user?.role === 'oem_admin' && (
           <NavLink

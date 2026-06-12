@@ -180,6 +180,7 @@ const workOrderRoutes       = require('./routes/workOrders');   // execution
 const deficiencyRoutes      = require('./routes/deficiencies'); // findings
 const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
 const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
+const testReportImportRoutes = require('./routes/testReportImport'); // R1 PDF test-report ingest
 const workOrdersImportRoutes = require('./routes/workOrdersImport'); // WO history import
 const deficienciesImportRoutes = require('./routes/deficienciesImport'); // findings import
 const schedulesImportRoutes  = require('./routes/schedulesImport'); // schedule history import
@@ -1126,6 +1127,7 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
 // isn't swallowed by the assets router's /:id param route.
 app.use('/api/assets/labels',   authenticateToken, assetLabelRoutes);
 app.use('/api/assets/import',   authenticateToken, ingestLimiter, assetsImportRoutes);
+app.use('/api/test-reports/import', authenticateToken, ingestLimiter, testReportImportRoutes);
 app.use('/api/assets',          authenticateToken, assetRoutes);
 // AI maintenance brief — second router on the same mount; paths don't
 // collide (POST /:id/brief only), Express falls through. aiIpLimiter is

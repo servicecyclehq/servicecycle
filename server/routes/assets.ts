@@ -1094,6 +1094,46 @@ router.get('/:id/interval-preview', async (req, res) => {
   }
 });
 
+// ─── GET /api/assets/:id/test-history ─────────────────────────────────────────
+// Test measurements grouped into events (one per parent work order) for the
+// Testing & Trends tab. Populated by the PDF test-report ingest (R1).
+router.get('/:id/test-history', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.id, accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const rows = await prisma.testMeasurement.findMany({
+      where: { accountId, workOrder: { assetId: req.params.id } },
+      select: {
+        id: true, measurementType: true, phase: true, asFoundValue: true, asFoundUnit: true,
+        asLeftValue: true, passFail: true, expectedRange: true, testVoltage: true, notes: true,
+        workOrder: { select: { id: true, completedDate: true, scheduledDate: true, contractor: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const byWo = new Map<string, any>();
+    for (const r of rows as any[]) {
+      const wo = r.workOrder;
+      if (!byWo.has(wo.id)) {
+        byWo.set(wo.id, { id: wo.id, date: wo.completedDate || wo.scheduledDate, vendor: wo.contractor?.name || null, techName: null, measurements: [] });
+      }
+      byWo.get(wo.id).measurements.push({
+        id: r.id, measurementType: r.measurementType, phase: r.phase,
+        value: r.asFoundValue != null ? Number(r.asFoundValue) : (r.asLeftValue != null ? Number(r.asLeftValue) : null),
+        unit: r.asFoundUnit || null, passFail: r.passFail, expectedRange: r.expectedRange,
+        testVoltage: r.testVoltage, notes: r.notes,
+      });
+    }
+    const events = [...byWo.values()].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return res.json({ success: true, data: { events } });
+  } catch (err) {
+    console.error('[assets/test-history]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load test history' });
+  }
+});
+
 // ─── POST /api/assets/:id/archive ─────────────────────────────────────────────
 // Soft-delete: history (work orders, lab samples, deficiencies) stays
 // addressable; the list view simply stops showing the asset by default.

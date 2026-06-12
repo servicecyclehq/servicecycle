@@ -93,6 +93,7 @@ const AssetsList              = lazyWithReload(() => import('./pages/AssetsList'
 const AssetDetail             = lazyWithReload(() => import('./pages/AssetDetail'));
 const NewAsset                = lazyWithReload(() => import('./pages/NewAsset'));
 const ImportAssets            = lazyWithReload(() => import('./pages/ImportAssets'));
+const TestReportImport        = lazyWithReload(() => import('./pages/TestReportImport'));
 const ArchivedAssets          = lazyWithReload(() => import('./pages/ArchivedAssets'));
 const SitesList               = lazyWithReload(() => import('./pages/SitesList'));
 const SiteDetail              = lazyWithReload(() => import('./pages/SiteDetail'));
@@ -286,6 +287,11 @@ function AppRoutes() {
             <Route path="assets/import"      element={
               <RequireRole roles={['admin', 'manager']}>
                 <ImportAssets />
+              </RequireRole>
+            } />
+            <Route path="test-reports/import" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <TestReportImport />
               </RequireRole>
             } />
             <Route path="assets/archived"    element={<ArchivedAssets />} />
