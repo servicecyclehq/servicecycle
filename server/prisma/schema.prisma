@@ -887,6 +887,10 @@ model WorkOrder {
   accountId        String
   scheduleId       String? // null for ad-hoc / corrective work
   assetId          String
+  // #22 closed-loop attribution: set when this WO was auto-created from an
+  // accepted QuoteRequest, so "quotes via ServiceCycle -> completed work" is a
+  // queryable number and completion clears the originating compliance gap.
+  quoteRequestId   String?
   contractorId     String?
   assignedTechId   String?
   // Minimum NETA cert level required for this job (from the task definition
@@ -923,6 +927,7 @@ model WorkOrder {
   account      Account              @relation(fields: [accountId], references: [id])
   schedule     MaintenanceSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   asset        Asset                @relation(fields: [assetId], references: [id])
+  quoteRequest QuoteRequest?        @relation(fields: [quoteRequestId], references: [id], onDelete: SetNull)
   contractor   Contractor?          @relation(fields: [contractorId], references: [id])
   assignedTech ContractorTech?      @relation(fields: [assignedTechId], references: [id])
   measurements TestMeasurement[]
@@ -1944,6 +1949,7 @@ model QuoteRequest {
   account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   asset       Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
   requestedBy User    @relation("QuoteRequestCreator", fields: [requestedById], references: [id])
+  workOrders  WorkOrder[]
 
   @@index([accountId])
   @@index([accountId, status])

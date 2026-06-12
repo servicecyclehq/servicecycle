@@ -347,7 +347,7 @@ router.patch('/:id/status', requireManager, async (req, res) => {
     // Verify ownership
     const existing = await prisma.quoteRequest.findFirst({
       where:  { id: req.params.id, accountId: req.user.accountId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, assetId: true },
     });
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
 
@@ -365,7 +365,44 @@ router.patch('/:id/status', requireManager, async (req, res) => {
       include: { asset: { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } } },
     });
 
-    return res.json({ success: true, data: updated });
+    // #22 close the quote -> work -> green loop. On the first transition into
+    // 'accepted', auto-create a work order bound to this quote (attribution)
+    // and, when the asset has an active schedule, link the most-overdue one so
+    // completing the WO rolls that schedule forward and clears compliance.
+    let createdWorkOrder = null;
+    if (status === 'accepted' && existing.status !== 'accepted') {
+      try {
+        const already = await prisma.workOrder.findFirst({
+          where:  { accountId: req.user.accountId, quoteRequestId: existing.id },
+          select: { id: true },
+        });
+        if (!already) {
+          // Prefer the most-overdue active schedule; else the soonest-due.
+          const sched = await prisma.maintenanceSchedule.findFirst({
+            where:   { accountId: req.user.accountId, assetId: existing.assetId, isActive: true, nextDueDate: { not: null } },
+            orderBy: { nextDueDate: 'asc' },
+            select:  { id: true },
+          });
+          createdWorkOrder = await prisma.workOrder.create({
+            data: {
+              accountId:      req.user.accountId,
+              assetId:        existing.assetId,
+              scheduleId:     sched?.id ?? null,
+              quoteRequestId: existing.id,
+              status:         'SCHEDULED',
+              scheduledDate:  now,
+              notes:          `[quote:${existing.id}] Auto-created from accepted quote.`,
+            },
+            select: { id: true, status: true, scheduleId: true, scheduledDate: true },
+          });
+        }
+      } catch (woErr: any) {
+        // Never fail the accept on the side-effect; surface nothing to break the lifecycle.
+        console.error('[quoteRequests accept->WO]', woErr?.message || woErr);
+      }
+    }
+
+    return res.json({ success: true, data: updated, workOrder: createdWorkOrder });
   } catch (err) {
     console.error('[quoteRequests PATCH /:id/status]', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
