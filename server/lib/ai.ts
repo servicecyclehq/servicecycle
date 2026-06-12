@@ -615,6 +615,10 @@ async function _groqImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTo
     {
       model,
       max_tokens: maxTokens,
+      // JSON mode — forces syntactically valid JSON. The smaller Llama-4 model
+      // otherwise emits malformed JSON on the nested {value,confidence} schema.
+      // Requires the literal word "json" in the prompt (the OCR prompt has it).
+      response_format: { type: 'json_object' },
       messages: [{
         role: 'user',
         content: [
