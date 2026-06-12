@@ -382,10 +382,24 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
       imageBuffer: req.file.buffer,
       mediaType:   req.file.mimetype,
       prompt:      `${OCR_SYSTEM}\n\nRead this equipment nameplate and respond with ONLY the JSON object described above.`,
-      maxTokens:   512,
+      // gemini-2.5-flash is a thinking model — reasoning tokens draw down the
+      // SAME output budget, so 512 silently truncated the JSON on denser
+      // plates (response came back cut off → JSON.parse failed). 1536 leaves
+      // room for the model to think AND still emit the ~150-token object.
+      maxTokens:   1536,
     });
 
-    const fields = parseJSON(text, 'ocr-nameplate');
+    let fields;
+    try {
+      fields = parseJSON(text, 'ocr-nameplate');
+    } catch (parseErr) {
+      // Robust fallback: if the model wrapped the JSON in prose or fences,
+      // pull the first balanced {...} object out and parse that. Only a
+      // genuinely truncated/empty response falls through to the 500 below.
+      const m = (text || '').match(/\{[\s\S]*\}/);
+      if (!m) throw parseErr;
+      fields = JSON.parse(m[0]);
+    }
 
     // Optional: fire-and-forget activity log if assetId provided
     const assetId = (req.body?.assetId || '').trim();

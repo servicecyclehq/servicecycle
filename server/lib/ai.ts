@@ -69,7 +69,7 @@ function resolveSettings(settings: any = {}) {
     anthropic:    'claude-haiku-4-5',
     openai:       'gpt-4o-mini',
     azure_openai: settings.azureDeployment || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
-    gemini:       'gemini-1.5-flash',
+    gemini:       'gemini-2.5-flash',
   };
 
   // L2: AI_MODEL_OVERRIDE (env) wins over every other source — including the
@@ -474,7 +474,15 @@ async function _azureComplete({ system, user, maxTokens, s }) {
 // surface immediately without cascading — we don't waste calls on other
 // models when the request is structurally broken.
 
-const DEFAULT_GEMINI_CASCADE = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash'];
+// 2026-06-12: gemini-1.5-flash was RETIRED by Google — it now 404s on v1beta
+// generateContent, which silently broke the cascade's last hop (when the two
+// 2.5 models hit their daily free quota, the fallback 404'd → hard failure).
+// Replaced with the 2.0 flash family: each model name carries its OWN
+// independent free-tier daily (RPD) bucket, so cascading across four distinct
+// models multiplies daily headroom AND every entry is a live model. Keep this
+// list to currently-available model ids (verify via ListModels) — a dead id
+// here re-introduces the same silent-failure bug.
+const DEFAULT_GEMINI_CASCADE = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
 
 function _resolveGeminiCascade(primaryModel) {
   const raw = (process.env.GEMINI_MODEL_CASCADE || DEFAULT_GEMINI_CASCADE.join(','))
