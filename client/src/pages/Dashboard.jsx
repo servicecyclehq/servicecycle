@@ -859,22 +859,26 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="card" style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                {/* V2: ONE honest number leads. This counts overdue,
+                    unbaselined AND entirely-uncovered assets as gaps, so it
+                    can't read 100% while live equipment sits untracked. The
+                    schedule-only rate moves into the explainer below. */}
                 <div className="stat-tile-label" style={{ marginBottom: 4 }}>
-                  Overall compliance rate
+                  Compliance <span title="Counts overdue + unbaselined schedules and assets with no program as gaps — the honest, audit-ready number." style={{ cursor: 'help', color: 'var(--color-text-secondary)' }}>ⓘ</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                  <span className="stat-tile-value" style={{ color: complianceColor(data.overallComplianceRate ?? 100) }}>
-                    {data.overallComplianceRate ?? 100}%
-                  </span>
+                  {(() => { const honest = data.overallComplianceRateHonest ?? data.overallComplianceRate ?? 100; return (
+                    <span className="stat-tile-value" style={{ color: complianceColor(honest) }}>{honest}%</span>
+                  ); })()}
                   <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                    active schedules not overdue · {data.scheduleCount ?? 0} schedule{(data.scheduleCount ?? 0) !== 1 ? 's' : ''}
+                    current · covered · baselined
                   </span>
                 </div>
                 {data.coverageRate != null && (
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
                     Coverage <strong style={{ color: complianceColor(data.coverageRate) }}>{data.coverageRate}%</strong>
-                    {' '}({data.coveredAssets}/{(data.coveredAssets ?? 0) + (data.uncoveredAssets ?? 0)} assets) ·
-                    {' '}true rate <strong>{data.overallComplianceRateHonest ?? data.overallComplianceRate}%</strong>
+                    {' '}({data.coveredAssets}/{(data.coveredAssets ?? 0) + (data.uncoveredAssets ?? 0)} assets)
+                    {' · '}of scheduled tasks, {data.overallComplianceRate ?? 100}% not overdue
                   </div>
                 )}
               </div>

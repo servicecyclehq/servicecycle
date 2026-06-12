@@ -23,7 +23,7 @@ const KIND_META = {
 };
 
 function ActionButton({ row, busy, onRun }) {
-  const labels = { create_wo: 'Create work order', baseline: 'Mark baselined', apply_template: 'Apply template' };
+  const labels = { create_wo: 'Create work order', baseline: 'Record last service', apply_template: 'Apply template' };
   return (
     <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onRun(row)}>
       {busy ? '…' : (labels[row.action.type] || 'Fix')}
@@ -62,8 +62,16 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
         await api.post('/api/work-orders', { assetId: a.assetId, scheduleId: a.scheduleId, scheduledDate: new Date().toISOString().slice(0, 10) });
         setToast({ message: 'Work order created', type: 'success' });
       } else if (a.type === 'baseline') {
-        await api.post(`/api/schedules/${a.scheduleId}/complete`, {});
-        setToast({ message: 'Schedule baselined', type: 'success' });
+        // V3 evidence-grade: never fabricate a completion. Ask for the REAL
+        // last-service date; blank = "never/unknown" -> schedule goes due-now.
+        const ans = window.prompt(
+          'When was this task last actually performed?\n\nEnter the real date as YYYY-MM-DD.\nLeave blank if it has never been done / you don’t know (it will be marked due now).',
+          ''
+        );
+        if (ans === null) { setBusyId(null); return; } // cancelled
+        const lastServiceDate = ans.trim() || null;
+        const r = await api.post(`/api/schedules/${a.scheduleId}/baseline`, { lastServiceDate });
+        setToast({ message: r.data?.data?.baselined ? 'Recorded last-service date' : 'Marked due now', type: 'success' });
       } else if (a.type === 'apply_template') {
         const r = await api.post('/api/schedules/bulk-apply', { assetId: a.assetId });
         setToast({ message: `Applied template — ${r.data?.data?.created ?? 0} task(s) added`, type: 'success' });

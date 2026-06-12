@@ -288,13 +288,12 @@ router.post('/bulk-apply', requireManager, async (req, res) => {
       defsByType.get(d.equipmentType).push(d);
     }
 
-    // Baseline the first occurrence one base (C2) interval out from today, so
-    // the asset lands with a LIVE, compliant program instead of unbaselined
-    // limbo (gem N5 — "upload your spreadsheet, get a complete NFPA 70B
-    // program"). The first real completion re-anchors the recurrence normally.
-    const now = new Date();
-    const addMonths = (base, m) => { const d = new Date(base); d.setMonth(d.getMonth() + (m || 12)); return d; };
-
+    // Evidence-grade baselining (gem V3): applying a program creates the
+    // schedules but leaves them UNBASELINED (nextDueDate = null) — we have no
+    // proof any maintenance was ever done, so they must NOT read as compliant.
+    // Path-to-100 surfaces them as "needs baseline" and the per-schedule
+    // baseline action records the REAL last-service date (or marks due-now).
+    // Manufacturing a green interval here was "compliance by import."
     const rows = [];
     for (const asset of assets) {
       for (const def of defsByType.get(asset.equipmentType) || []) {
@@ -302,7 +301,7 @@ router.post('/bulk-apply', requireManager, async (req, res) => {
           accountId:        req.user.accountId,
           assetId:          asset.id,
           taskDefinitionId: def.id,
-          nextDueDate:      addMonths(now, def.intervalC2Months),
+          // nextDueDate intentionally omitted (null) — unverified until baselined
         });
       }
     }
@@ -459,6 +458,56 @@ router.post('/:id/complete', requireManager, async (req, res) => {
   } catch (err) {
     console.error('Complete schedule error:', err);
     res.status(500).json({ success: false, error: 'Failed to complete schedule' });
+  }
+});
+
+// ── POST /:id/baseline ────────────────────────────────────────────────────────
+// Evidence-grade baselining (gem V3). Records the REAL date a task was last
+// performed (sets lastCompletedDate + recomputes nextDueDate from it), OR —
+// when the user answers "never / unknown" — marks the schedule due-now WITHOUT
+// fabricating a completion record. This replaces the old one-click "Mark
+// baselined" that silently stamped lastCompletedDate = today for work nobody
+// claimed happened. Body: { lastServiceDate?: 'YYYY-MM-DD' | null }.
+router.post('/:id/baseline', requireManager, async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const lastServiceDate = req.body ? req.body.lastServiceDate : undefined;
+
+    const schedule = await prisma.maintenanceSchedule.findFirst({
+      where: { id: req.params.id, accountId },
+      include: { taskDefinition: true, asset: true },
+    });
+    if (!schedule) return res.status(404).json({ success: false, error: 'Schedule not found' });
+
+    if (lastServiceDate) {
+      const when = new Date(lastServiceDate);
+      if (Number.isNaN(when.getTime())) return res.status(400).json({ success: false, error: 'Invalid lastServiceDate' });
+      if (when.getTime() > Date.now()) return res.status(400).json({ success: false, error: 'Last-service date cannot be in the future' });
+      const cond = effectiveCondition(schedule.asset, schedule);
+      const nextDueDate = computeNextDueDate(when, schedule.taskDefinition, cond);
+      const updated = await prisma.maintenanceSchedule.update({
+        where: { id: schedule.id },
+        data: { lastCompletedDate: when, nextDueDate, lastPerformedByName: (req.user.name || 'Baselined (asserted)') },
+        include: scheduleInclude,
+      });
+      writeActivityLog({
+        assetId: schedule.assetId, userId: req.user.id, accountId,
+        action: 'schedule_baselined',
+        details: { scheduleId: schedule.id, taskCode: schedule.taskDefinition.taskCode, assertedLastService: when, nextDueDate },
+      });
+      return res.json({ success: true, data: { schedule: updated, baselined: true } });
+    }
+
+    // "never / unknown" → genuinely due now; NO fabricated completion record.
+    const updated = await prisma.maintenanceSchedule.update({
+      where: { id: schedule.id },
+      data: { nextDueDate: new Date() },
+      include: scheduleInclude,
+    });
+    return res.json({ success: true, data: { schedule: updated, dueNow: true } });
+  } catch (err) {
+    console.error('Baseline schedule error:', err);
+    res.status(500).json({ success: false, error: 'Failed to baseline schedule' });
   }
 });
 

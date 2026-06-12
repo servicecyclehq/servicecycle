@@ -887,32 +887,31 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
         }
 
         // Auto-apply the global NFPA 70B task matrix to the new assets —
-        // GLOBAL definitions only (accountId NULL). N5: baseline the first
-        // occurrence one base (C2) interval out so each asset lands with a
-        // LIVE, compliant program (not unbaselined limbo); skipDuplicates
-        // makes it idempotent. Track which assets got a program so the
-        // result screen can report coverage (N4 action list).
+        // GLOBAL definitions only (accountId NULL). V3 evidence-grade: the
+        // schedules land UNBASELINED (nextDueDate = null) — we have no proof
+        // any maintenance was done on freshly-imported gear, so they must not
+        // read as compliant. They show on Path-to-100 as "needs baseline";
+        // recording the real last-service date (manual or via report ingest)
+        // is what makes them current. skipDuplicates keeps it idempotent.
         let schedulesCreated = 0;
         const assetsWithProgram = new Set();
         if (autoApplySchedules && createdAssets.length > 0) {
           const types = [...new Set(createdAssets.map(a => a.equipmentType))];
           const taskDefs = await tx.maintenanceTaskDefinition.findMany({
             where:  { accountId: null, archivedAt: null, equipmentType: { in: types } },
-            select: { id: true, equipmentType: true, intervalC2Months: true },
+            select: { id: true, equipmentType: true },
           });
           const defsByType = new Map();
           for (const d of taskDefs) {
             if (!defsByType.has(d.equipmentType)) defsByType.set(d.equipmentType, []);
             defsByType.get(d.equipmentType).push(d);
           }
-          const now = new Date();
-          const addMonths = (base, m) => { const d = new Date(base); d.setMonth(d.getMonth() + (m || 12)); return d; };
           const scheduleRows = [];
           for (const a of createdAssets) {
             const defs = defsByType.get(a.equipmentType) || [];
             if (defs.length > 0) assetsWithProgram.add(a.id);
             for (const def of defs) {
-              scheduleRows.push({ accountId, assetId: a.id, taskDefinitionId: def.id, nextDueDate: addMonths(now, def.intervalC2Months) });
+              scheduleRows.push({ accountId, assetId: a.id, taskDefinitionId: def.id }); // unbaselined
             }
           }
           if (scheduleRows.length > 0) {

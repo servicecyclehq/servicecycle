@@ -162,6 +162,10 @@ function formatCustomValue(def, value) {
 // performedByName ('name / employer') auditors expect on maintenance records.
 function CompleteScheduleModal({ schedule, onClose, onConfirm, busy }) {
   const [performedByName, setPerformedByName] = useState('');
+  // V3: capture the REAL date the work was performed (defaults to today, but
+  // editable so a historical service can be recorded honestly). This is the
+  // manual update path on the asset card; report ingest is the other path.
+  const [completedDate, setCompletedDate] = useState(new Date().toISOString().slice(0, 10));
   return (
     <div
       role="dialog" aria-modal="true" aria-label="Mark task complete"
@@ -172,7 +176,7 @@ function CompleteScheduleModal({ schedule, onClose, onConfirm, busy }) {
       }}
     >
       <form
-        onSubmit={e => { e.preventDefault(); onConfirm(performedByName.trim() || null); }}
+        onSubmit={e => { e.preventDefault(); onConfirm(performedByName.trim() || null, completedDate); }}
         onClick={e => e.stopPropagation()}
         style={{
           background: 'var(--color-surface)', color: 'var(--color-text)',
@@ -184,8 +188,15 @@ function CompleteScheduleModal({ schedule, onClose, onConfirm, busy }) {
           Mark task complete?
         </div>
         <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>
-          Records "{schedule.taskDefinition?.taskName || 'this task'}" as completed today
+          Records "{schedule.taskDefinition?.taskName || 'this task'}" as completed on the date below
           and rolls the next due date forward by the condition-appropriate interval.
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>
+            Date performed
+          </label>
+          <input type="date" className="form-control" max={new Date().toISOString().slice(0, 10)}
+            value={completedDate} onChange={e => setCompletedDate(e.target.value)} style={{ width: 180 }} />
         </div>
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>
@@ -632,13 +643,15 @@ export default function AssetDetail() {
     }
   }
 
-  // Confirmation + optional performedByName captured by CompleteScheduleModal.
-  async function handleCompleteSchedule(schedule, performedByName) {
+  // Confirmation + performedByName + real completion date from CompleteScheduleModal.
+  async function handleCompleteSchedule(schedule, performedByName, completedDate) {
     if (busy) return;
     setBusy(true);
     try {
-      await api.post(`/api/schedules/${schedule.id}/complete`,
-        performedByName ? { performedByName } : {});
+      const body = {};
+      if (performedByName) body.performedByName = performedByName;
+      if (completedDate) body.completedDate = completedDate;
+      await api.post(`/api/schedules/${schedule.id}/complete`, body);
       setCompletingSchedule(null);
       setToast({ message: 'Maintenance completion recorded.', variant: 'success', duration: 4000 });
       refetchAll();
@@ -1318,7 +1331,7 @@ export default function AssetDetail() {
           schedule={completingSchedule}
           busy={busy}
           onClose={() => setCompletingSchedule(null)}
-          onConfirm={(performedByName) => handleCompleteSchedule(completingSchedule, performedByName)}
+          onConfirm={(performedByName, completedDate) => handleCompleteSchedule(completingSchedule, performedByName, completedDate)}
         />
       )}
       <Toast toast={toast} onClose={() => setToast(null)} />
