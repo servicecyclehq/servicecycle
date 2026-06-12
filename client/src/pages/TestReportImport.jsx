@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { FileText, UploadCloud, CheckCircle2 } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -40,6 +40,13 @@ const TYPE_OPTIONS = Object.entries(EQUIPMENT_TYPE_LABELS).sort((a, b) => a[1].l
 export default function TestReportImport() {
   useDocumentTitle('Import Test Report');
 
+  // #14 contractor bulk ingest: when an oem_admin arrives from the Fleet
+  // Dashboard with ?targetAccountId, every request is scoped to that customer
+  // account so the report seeds/updates the customer's facility.
+  const [searchParams] = useSearchParams();
+  const targetAccountId = searchParams.get('targetAccountId') || null;
+  const targetCustomer = searchParams.get('customer') || null;
+
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -59,13 +66,19 @@ export default function TestReportImport() {
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    api.get('/api/assets').then(r => {
-      const d = r.data?.data;
-      const list = Array.isArray(d) ? d : (d?.assets || d?.items || []);
-      setAssets(list.map(a => ({ id: a.id, label: [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || a.serialNumber || a.id, serial: a.serialNumber })));
-    }).catch(() => {});
-    api.get('/api/sites').then(r => setSites(r.data?.data?.sites || [])).catch(() => {});
-  }, []);
+    // In OEM cross-account mode the local /api/assets list is the OEM's own and
+    // would be wrong to offer; the preview's assetCandidates (resolved against
+    // the target account) are the authoritative match source instead.
+    if (!targetAccountId) {
+      api.get('/api/assets').then(r => {
+        const d = r.data?.data;
+        const list = Array.isArray(d) ? d : (d?.assets || d?.items || []);
+        setAssets(list.map(a => ({ id: a.id, label: [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || a.serialNumber || a.id, serial: a.serialNumber })));
+      }).catch(() => {});
+    }
+    const sitesUrl = targetAccountId ? `/api/sites?targetAccountId=${encodeURIComponent(targetAccountId)}` : '/api/sites';
+    api.get(sitesUrl).then(r => setSites(r.data?.data?.sites || [])).catch(() => {});
+  }, [targetAccountId]);
 
   const isMulti = !!(preview?.sections && preview.sections.length > 1);
 
@@ -75,6 +88,7 @@ export default function TestReportImport() {
     try {
       const fd = new FormData();
       fd.append('file', file);
+      if (targetAccountId) fd.append('targetAccountId', targetAccountId);
       const res = await api.post('/api/test-reports/import/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const d = res.data.data;
       setPreview(d);
@@ -131,7 +145,7 @@ export default function TestReportImport() {
   async function commit() {
     const corrections = buildCorrections();
     const reviewMs = previewedAt ? Date.now() - previewedAt : null;
-    const base = { testDate, vendor, techName, isAcceptanceTest, extractionId: preview?.extractionId || null, corrections, reviewMs };
+    const base = { testDate, vendor, techName, isAcceptanceTest, extractionId: preview?.extractionId || null, corrections, reviewMs, ...(targetAccountId ? { targetAccountId } : {}) };
 
     if (isMulti) {
       // Build the per-section payload; only sections with included readings ship.
@@ -328,6 +342,12 @@ export default function TestReportImport() {
         Upload the PowerDB / Megger / NETA test report your contractor emailed you. ServiceCycle reads it,
         pulls the measurements, and hands back the list of things to fix — no manual data entry.
       </p>
+
+      {targetAccountId && (
+        <div style={{ padding: '10px 14px', background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: 8, color: '#5b21b6', marginBottom: 16, fontSize: 'var(--font-size-sm)' }}>
+          Ingesting for <strong>{targetCustomer || 'a fleet customer'}</strong>. Matches and new assets are written to that customer's account, not yours.
+        </div>
+      )}
 
       {error && <div style={{ padding: '12px 16px', background: '#fff1f1', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', marginBottom: 16 }}>{error}</div>}
 

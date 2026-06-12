@@ -84,13 +84,18 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No PDF uploaded' });
 
+    // #14: oem_admin may preview against a fleet customer account (targetAccountId).
+    let accountId: string;
+    try { accountId = await resolveIngestAccount(req); }
+    catch (e: any) { return res.status(e.httpStatus || 400).json({ success: false, error: e.message }); }
+
     // #5 fingerprint: hash the raw bytes once, then ask whether this exact
     // report has already been committed in this account. Surfaced to the client
     // as `priorImport` so the UI can warn "imported <date> — re-import anyway?"
     // instead of silently double-importing a year's readings. Advisory only —
     // never blocks the preview.
     const sha256 = sha256Hex(req.file.buffer);
-    const priorImport = await findPriorImport({ accountId: req.user.accountId, sha256 });
+    const priorImport = await findPriorImport({ accountId, sha256 });
 
     // V4: deterministic pdfplumber engine first (geometry + ruled tables); fall
     // OPEN to the pdfjs text-regex parser if Python is unavailable or yields
@@ -183,7 +188,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
     let assetCandidates: any[] = [];
     if (meta.serialNumber || meta.manufacturer || meta.model) {
       const { best, candidates } = await resolveAsset({
-        accountId: req.user.accountId,
+        accountId,
         serialNumber: meta.serialNumber,
         manufacturer: meta.manufacturer,
         model: meta.model,
@@ -228,7 +233,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
         const measurementIndices = buckets.get(idx) || [];
         const secMeas = measurementIndices.map((i) => measurements[i]);
         const { best, candidates } = await resolveSectionAsset(
-          req.user.accountId, def, idx === 0 ? meta.serialNumber : null,
+          accountId, def, idx === 0 ? meta.serialNumber : null,
         );
         return {
           idx, substation: def.substation, position: def.position, label: def.label,
@@ -244,7 +249,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
     // correction signal won't be captured for this one.
     const stats = confStats(measurements);
     const extractionId = await recordExtraction({
-      accountId: req.user.accountId, userId: req.user.id,
+      accountId, userId: req.user.id,
       kind: 'test_report', engine: source, ocr, aiUsed,
       pageCount, pagesScanned, truncated, assetSections,
       fieldsExtracted: measurements.length,
@@ -280,6 +285,11 @@ class HttpableError extends Error {
   httpStatus: number;
   constructor(status: number, message: string) { super(message); this.httpStatus = status; }
 }
+
+// #14 contractor bulk ingest: oem_admin may ingest into a fleet customer
+// account via targetAccountId (validated in lib/oemTargetAccount).
+const { resolveTargetAccount } = require('../lib/oemTargetAccount');
+const resolveIngestAccount = resolveTargetAccount;
 
 // Write ONE asset's readings: a COMPLETE WorkOrder parent + TestMeasurement
 // rows + auto Deficiency rows (hard pass/fail and the year-over-year trend
@@ -381,9 +391,19 @@ async function commitAssetReadings(db: any, p: {
 //                          manufacturer?,model?,serialNumber?}, measurements[] }], ... }
 // The multi-section form writes every asset in ONE transaction — one upload =
 // one facility, all-or-nothing. The legacy form is byte-for-byte unchanged.
-router.post('/commit', requireManager, async (req: any, res: any) => {
+// Auth: account writers (admin/manager) on their own account, OR an oem_admin
+// committing into one of its fleet customer accounts (#14, via targetAccountId).
+router.post('/commit', async (req: any, res: any) => {
   try {
-    const accountId = req.user.accountId;
+    const isWriter = ['admin', 'manager'].includes(req.user.role);
+    const isOem = req.user.role === 'oem_admin';
+    const hasTarget = !!(req.body && req.body.targetAccountId);
+    if (!isWriter && !(isOem && hasTarget)) {
+      return res.status(403).json({ success: false, error: 'Not permitted to commit this report' });
+    }
+    let accountId: string;
+    try { accountId = await resolveIngestAccount(req); }
+    catch (e: any) { return res.status(e.httpStatus || 400).json({ success: false, error: e.message }); }
     const { assetId, testDate, vendor, techName, measurements, sections, extractionId, corrections, reviewMs } = req.body;
     const isAcceptanceTest = !!req.body.isAcceptanceTest; // #27 year-0 baseline (whole report)
     const when = testDate ? new Date(testDate) : new Date();

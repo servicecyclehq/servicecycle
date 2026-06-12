@@ -23,6 +23,7 @@
 const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
+const { resolveTargetAccount } = require('../lib/oemTargetAccount');
 
 // ─── Activity logging helper ──────────────────────────────────────────────────
 // Non-fatal fire-and-forget. Site-level events have no assetId — the log row
@@ -49,7 +50,13 @@ function isUniqueViolation(err) {
 // ?archived=true shows ONLY archived sites; default excludes them.
 router.get('/', async (req, res) => {
   try {
-    const where: any = { accountId: req.user.accountId };
+    // #14: an oem_admin can list a fleet customer's sites via ?targetAccountId
+    // (so the cross-account ingest flow can create assets at the right site).
+    let scopedAccountId: string;
+    try { scopedAccountId = await resolveTargetAccount(req); }
+    catch (e: any) { return res.status(e.httpStatus || 400).json({ success: false, error: e.message }); }
+
+    const where: any = { accountId: scopedAccountId };
     if (req.query.archived === 'true') where.NOT = { archivedAt: null };
     else where.archivedAt = null;
 
@@ -71,7 +78,7 @@ router.get('/', async (req, res) => {
       // (resolved rows fall out of the filter), so one fetch + JS tally
       // beats N per-site count queries.
       prisma.deficiency.findMany({
-        where:  { accountId: req.user.accountId, resolvedAt: null },
+        where:  { accountId: scopedAccountId, resolvedAt: null },
         select: { asset: { select: { siteId: true } } },
       }),
     ]);

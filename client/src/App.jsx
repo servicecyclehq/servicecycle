@@ -293,7 +293,7 @@ function AppRoutes() {
               </RequireRole>
             } />
             <Route path="test-reports/import" element={
-              <RequireRole roles={['admin', 'manager']}>
+              <RequireRole roles={['admin', 'manager', 'oem_admin']}>
                 <TestReportImport />
               </RequireRole>
             } />

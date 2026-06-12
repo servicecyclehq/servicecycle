@@ -998,6 +998,11 @@ export default function FleetDashboard() {
                         </div>
                       )}
                     </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/test-reports/import?targetAccountId=${encodeURIComponent(c.accountId)}&customer=${encodeURIComponent(c.companyName)}`); }}
+                      style={{ fontSize: 12, fontWeight: 700, color: '#6d28d9', background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
+                      Ingest report
+                    </button>
                     <div style={{ fontSize: 12, color: 'var(--color-primary, #2563eb)' }}>Open →</div>
                   </div>
                 );
