@@ -1186,6 +1186,91 @@ router.get('/:id/test-history', async (req, res) => {
   }
 });
 
+// ─── Incident / protective-device-operation log (#24, EMP element 9) ──────────
+// Quick-log breaker trips, relay operations, and alarms from field mode + the
+// asset detail. NFPA 70B §9.3.1 condition criteria reference unaddressed
+// notifications, so an open (unresolved) incident is a C2/C3 input and the
+// EMP's incident-feedback section reads from this stream.
+const INCIDENT_TYPES = ['PROTECTIVE_TRIP', 'RELAY_OPERATION', 'ALARM', 'ARC_FLASH_EVENT', 'OTHER'];
+const IncidentCreateSchema = z.object({
+  type:       z.enum(INCIDENT_TYPES as any).optional(),
+  occurredAt: emptyToUndef(z.string().max(40)).optional(),
+  note:       emptyToUndef(z.string().max(2000)).optional(),
+});
+const IncidentPatchSchema = z.object({
+  resolved:   z.boolean().optional(),
+  note:       emptyToUndef(z.string().max(2000)).optional(),
+});
+
+// GET /:id/incidents — newest first, account-scoped.
+router.get('/:id/incidents', async (req, res) => {
+  try {
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.id, accountId: req.user.accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const incidents = await prisma.incidentLog.findMany({
+      where:   { assetId: asset.id, accountId: req.user.accountId },
+      orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const openCount = incidents.filter((i: any) => !i.resolvedAt).length;
+    return res.json({ success: true, data: { incidents, openCount } });
+  } catch (err) {
+    console.error('[assets/incidents:list]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load incidents' });
+  }
+});
+
+// POST /:id/incidents — log an incident (manager+, same tier as other writes).
+router.post('/:id/incidents', requireManager, async (req, res) => {
+  const parsed = validateBody(req, res, IncidentCreateSchema);
+  if (!parsed) return;
+  try {
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.id, accountId: req.user.accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    let occurredAt = new Date();
+    if (parsed.occurredAt) {
+      const d = new Date(parsed.occurredAt);
+      if (isNaN(d.getTime())) return res.status(400).json({ success: false, error: 'Invalid occurredAt' });
+      occurredAt = d;
+    }
+    const incident = await prisma.incidentLog.create({
+      data: {
+        accountId: req.user.accountId, assetId: asset.id,
+        type: (parsed.type as any) || 'OTHER',
+        occurredAt, note: parsed.note || null,
+        createdById: req.user.id,
+      },
+    });
+    return res.status(201).json({ success: true, data: { incident } });
+  } catch (err) {
+    console.error('[assets/incidents:create]', err);
+    return res.status(500).json({ success: false, error: 'Failed to log incident' });
+  }
+});
+
+// PATCH /:id/incidents/:incidentId — resolve/reopen or edit the note.
+router.patch('/:id/incidents/:incidentId', requireManager, async (req, res) => {
+  const parsed = validateBody(req, res, IncidentPatchSchema);
+  if (!parsed) return;
+  try {
+    const existing = await prisma.incidentLog.findFirst({
+      where:  { id: req.params.incidentId, assetId: req.params.id, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Incident not found' });
+    const data: any = {};
+    if (parsed.resolved !== undefined) {
+      data.resolvedAt   = parsed.resolved ? new Date() : null;
+      data.resolvedById = parsed.resolved ? req.user.id : null;
+    }
+    if (parsed.note !== undefined) data.note = parsed.note || null;
+    const incident = await prisma.incidentLog.update({ where: { id: existing.id }, data });
+    return res.json({ success: true, data: { incident } });
+  } catch (err) {
+    console.error('[assets/incidents:patch]', err);
+    return res.status(500).json({ success: false, error: 'Failed to update incident' });
+  }
+});
+
 // ─── POST /api/assets/:id/archive ─────────────────────────────────────────────
 // Soft-delete: history (work orders, lab samples, deficiencies) stays
 // addressable; the list view simply stops showing the asset by default.

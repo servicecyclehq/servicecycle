@@ -259,14 +259,19 @@ async function buildEmpData(prisma, accountId) {
     resolved: resolvedCount,
   };
 
-  // ── incident feedback: regulatory-breach flags + deficiency stats ──
-  const regulatoryBreachFlags = await prisma.activityLog.count({
-    where: { accountId, action: 'regulatory_breach_flagged' },
-  });
+  // ── incident feedback: regulatory-breach flags + deficiency stats +
+  //    logged protective-device operations / alarms (#24, EMP element 9) ──
+  const [regulatoryBreachFlags, incidentLogTotal, incidentLogOpen] = await Promise.all([
+    prisma.activityLog.count({ where: { accountId, action: 'regulatory_breach_flagged' } }),
+    prisma.incidentLog.count({ where: { accountId } }),
+    prisma.incidentLog.count({ where: { accountId, resolvedAt: null } }),
+  ]);
   const incidentFeedback = {
     regulatoryBreachFlags,
     openDeficiencies:     correctiveMeasures.openTotal,
     resolvedDeficiencies: resolvedCount,
+    loggedIncidents:      incidentLogTotal,
+    openIncidents:        incidentLogOpen,
   };
 
   // ── records retention + program review ──
@@ -750,6 +755,14 @@ function writeSection8Incidents(doc, ctx, empData) {
     `conditions and open findings (currently ${i.openDeficiencies} open, ` +
     `${i.resolvedDeficiencies} resolved) inform condition re-ratings, which in turn ` +
     'compress or extend maintenance intervals per Section 3.');
+  if (i.loggedIncidents > 0) {
+    paragraph(doc, ctx,
+      'Third, protective-device operations, relay trips, and alarms logged by field ' +
+      `personnel (${i.loggedIncidents} recorded, ${i.openIncidents} unaddressed) provide ` +
+      'ground-truth incident feedback between test cycles. Per NFPA 70B §9.3.1, an ' +
+      'unaddressed protective-device operation is an input to the condition assessment ' +
+      'of the affected equipment.');
+  }
   paragraph(doc, ctx,
     'Formal incident investigations (equipment failure events, electrical incidents, ' +
     'near misses) that occur outside the platform should be summarized by the program ' +

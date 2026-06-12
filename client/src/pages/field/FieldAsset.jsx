@@ -26,6 +26,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useAiConsent } from '../../context/AiConsentContext';
 import Toast from '../../components/Toast';
 import NameplateReview from '../../components/NameplateReview';
+import IncidentLogCard from '../../components/IncidentLogCard';
 import {
   EQUIPMENT_TYPE_LABELS, CONDITION_META, SEVERITY_META, WO_STATUS_META,
   assetLabel, fmtDate,
@@ -707,6 +708,11 @@ export default function FieldAsset() {
 
       {/* ── LOTO — written procedure at the equipment ──────────────────────── */}
       <FieldLotoSection assetId={id} />
+
+      {/* ── Incidents / protective-device operations (#24) ─────────────────── */}
+      <div style={{ marginBottom: 16 }}>
+        <IncidentLogCard assetId={id} compact />
+      </div>
 
       {/* ── (b) Photo inspect — ONLINE ONLY ────────────────────────────────── */}
       {photoFeature && (

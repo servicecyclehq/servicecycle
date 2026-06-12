@@ -315,6 +315,7 @@ model Account {
   fallbackRep            User?                @relation("FallbackRep", fields: [fallbackRepId], references: [id], onDelete: SetNull)
   partnerInvites         PartnerInvite[]
   partnerEventLogs       PartnerEventLog[]
+  incidentLogs           IncidentLog[]
 
   @@map("accounts")
 }
@@ -749,6 +750,7 @@ model Asset {
   customFieldValues CustomFieldValue[]
   quoteRequests     QuoteRequest[]
   lotoProcs         LotoProc[]
+  incidentLogs      IncidentLog[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -1000,6 +1002,43 @@ model Deficiency {
   @@index([assetId])
   @@index([workOrderId])
   @@map("deficiencies")
+}
+
+// ─── Incident / protective-device-operation log (#24, NFPA 70B EMP element 9) ──
+// Quick field/asset log of breaker trips, relay operations, and alarms. NFPA
+// 70B requires the program to USE incident feedback (§9.3.1 condition criteria
+// reference unaddressed notifications); this is the ground-truth stream between
+// test cycles that feeds the EMP's incident section and condition assessment.
+
+enum IncidentType {
+  PROTECTIVE_TRIP // breaker / protective device tripped
+  RELAY_OPERATION // protective relay operated
+  ALARM           // alarm / annunciator activation
+  ARC_FLASH_EVENT // arc-flash / arcing event
+  OTHER
+}
+
+model IncidentLog {
+  id           String       @id @default(uuid())
+  accountId    String
+  assetId      String
+  type         IncidentType @default(OTHER)
+  occurredAt   DateTime
+  note         String?
+  // Resolution / acknowledgement — an unaddressed incident is a C2/C3 input.
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id])
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([assetId])
+  @@index([accountId, resolvedAt])
+  @@map("incident_logs")
 }
 
 // ─── System Studies ───────────────────────────────────────────────────────────

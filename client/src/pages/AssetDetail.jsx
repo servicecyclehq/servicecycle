@@ -41,6 +41,7 @@ import QuoteRequestButton from '../components/QuoteRequestButton';
 import AssetLotoCard from '../components/AssetLotoCard';
 import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import NameplateCard from '../components/NameplateCard';
+import IncidentLogCard from '../components/IncidentLogCard';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -838,6 +839,9 @@ export default function AssetDetail() {
             }}
           />
         )}
+
+        {/* ── Incidents / protective-device operations (#24) ───────────────── */}
+        <IncidentLogCard assetId={asset.id} />
 
         {/* ── Open Deficiencies ─────────────────────────────────────────────── */}
         <div className="card mb-16">
