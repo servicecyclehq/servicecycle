@@ -5,37 +5,37 @@
  * workOrders.ts) and the alert engine import these; keeping them pure means
  * the due-date logic is unit-testable without a database.
  *
- * The model, per NFPA 70B:2023 (condition of maintenance) and ANSI/NETA MTS
- * Appendix B (frequency of maintenance tests):
+ * The model:
  *
- *   C2 (fair)  — the BASE interval. MaintenanceTaskDefinition.intervalC2Months
- *                carries the published NETA Appendix B value and is always set.
- *   C1 (good)  — interval stretches. NETA Appendix B multiplier ×2.5 against
- *                the C2 base, with a hard 60-month ceiling: no task may go
- *                more than 5 years between performances regardless of how
- *                healthy the equipment looks.
- *   C3 (poor)  — interval compresses. Multiplier ×0.25 against the C2 base,
- *                with a 12-month ceiling (poor-condition equipment is looked
- *                at no less than annually) and a 1-month floor so rounding
- *                can never produce a zero/negative interval.
+ *   C1/C2/C3 per-condition intervals come from NFPA 70B:2023 Table 9.2.2 — a
+ *   FIXED per-equipment, per-task-category interval table (NOT a multiplier
+ *   formula). The seed (seed-standards.js → seventyBInterval) writes these
+ *   explicit intervalC1/C2/C3Months onto every task definition (e.g. the
+ *   dominant row 60/36/12; IR thermography + visual 12/12/6; UPS 12/6/3;
+ *   grounding electrical testing 60/36/36).
  *
- * Seed data carries explicit intervalC1Months / intervalC3Months where NETA
- * publishes exact columns; when those are null we DERIVE from the C2 base
- * using the multipliers above. Tenant-defined custom tasks typically only
- * supply intervalC2Months and rely on the derivation.
+ *   The ×2.5 / ×0.25 MULTIPLIERS below are the corner values of the ANSI/NETA
+ *   MTS Appendix B 3×3 matrix (equipment condition × reliability requirement),
+ *   NOT NFPA 70B. They are used ONLY as a DERIVATION FALLBACK for custom /
+ *   tenant tasks that supply just intervalC2Months and no explicit C1/C3 —
+ *   intervalMonthsFor() always prefers an explicit column when present, so the
+ *   70B Table 9.2.2 values win for every seeded task.
  *
  * Which condition applies to a schedule:
  *   schedule.conditionOverride ?? asset.governingCondition
- * where governingCondition is the worst of the asset's three NFPA 70B axes
- * (physical / criticality / environment) — recomputed by the route layer on
- * every condition write (see worstCondition below).
+ * where governingCondition is the worst of the asset's three NFPA 70B condition
+ * axes — physical / criticality / ENVIRONMENT (the environment axis is what
+ * makes an outdoor-in-the-elements unit land on a tighter interval than a
+ * climate-controlled one) — recomputed by the route layer on every condition
+ * write (see worstCondition below).
  */
 
 const { addMonths } = require('date-fns');
 
-// ── Standard constants (NFPA 70B:2023 / NETA MTS Appendix B) ─────────────────
-const C1_MULTIPLIER = 2.5; // C1 stretches the base interval ×2.5
-const C3_MULTIPLIER = 0.25; // C3 compresses the base interval ×0.25
+// ── Derivation-fallback constants — ANSI/NETA MTS Appendix B matrix corners,
+// used only when a task lacks an explicit 70B Table 9.2.2 column (custom tasks).
+const C1_MULTIPLIER = 2.5; // C1 stretches the base interval ×2.5 (NETA App. B)
+const C3_MULTIPLIER = 0.25; // C3 compresses the base interval ×0.25 (NETA App. B)
 const C1_CEILING_MONTHS = 60; // C1 hard ceiling — never beyond 5 years
 const C3_CEILING_MONTHS = 12; // C3 hard ceiling — poor gear seen at least annually
 const C3_FLOOR_MONTHS = 1; // rounding guard — an interval can never hit zero

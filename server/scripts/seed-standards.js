@@ -760,6 +760,29 @@ const TASKS = [
 
 const prisma = new PrismaClient();
 
+// NFPA 70B:2023 Table 9.2.2 — fixed per-equipment, per-task-category intervals
+// (months), adopted as the seed basis instead of the NETA-multiplier derivation.
+// The 3-axis condition assessment (physical / criticality / ENVIRONMENT, worst
+// governs) still selects WHICH column applies, so a unit in harsh outdoor
+// conditions lands on C3 and gets the tight interval — the environment scaling
+// runs on top of the standard's numbers. Returns null to KEEP a task's existing
+// interval (operational / NFPA 110 time-based tasks are not 70B condition-based).
+function seventyBInterval(t) {
+  const code = (t.code || '').toUpperCase();
+  const name = (t.name || '').toLowerCase();
+  const eq   = t.equipmentType || '';
+  // preserve operational / NFPA 110 cadence tasks (monthly exercise, annual load
+  // bank, fuel analysis, full-system transfer, battery discharge, etc.)
+  if (/monthly|exercise|load bank|fuel|full[ -]?system|discharge|quarterly|weekly|annual/.test(name)) return null;
+  if ((t.c2 == null ? 99 : t.c2) <= 2) return null;  // sub-quarterly base = operational
+  const isThermo = code.includes('IR_THERMO') || /thermograph|infrared/.test(name);
+  const isVisual = /visual|inspection|torque/.test(name) || code.includes('VISUAL');
+  if (isThermo || isVisual)        return { c1: 12, c2: 12, c3: 6 };   // ALL-equipment IR + visual
+  if (eq === 'UPS_BATTERY')        return { c1: 12, c2: 6,  c3: 3 };   // UPS cleaning/testing
+  if (eq === 'GROUNDING_SYSTEM')   return { c1: 60, c2: 36, c3: 36 };  // grounding electrical testing (C3 not compressed)
+  return { c1: 60, c2: 36, c3: 12 };                                   // dominant 70B Table 9.2.2 row
+}
+
 async function seedStandards(prismaClient) {
   const db = prismaClient || prisma;
 
@@ -779,6 +802,7 @@ async function seedStandards(prismaClient) {
   // Postgres, so we enforce idempotency in code via findFirst-then-update.
   let created = 0, updated = 0;
   for (const t of TASKS) {
+    const iv = seventyBInterval(t) || { c1: t.c1, c2: t.c2, c3: t.c3 };
     const data = {
       accountId:             null,
       standardId:            standardIdByCode[t.standardKey] || null,
@@ -786,9 +810,9 @@ async function seedStandards(prismaClient) {
       taskName:              t.name,
       taskCode:              t.code,
       description:           t.description || null,
-      intervalC1Months:      t.c1,
-      intervalC2Months:      t.c2,
-      intervalC3Months:      t.c3,
+      intervalC1Months:      iv.c1,
+      intervalC2Months:      iv.c2,
+      intervalC3Months:      iv.c3,
       requiresOutage:        !!t.requiresOutage,
       requiresEnergized:     !!t.requiresEnergized,
       requiresNetaCertified: !!t.neta,
