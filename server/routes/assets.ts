@@ -1318,6 +1318,110 @@ router.get('/:id/activity', async (req, res) => {
   }
 });
 
+// ─── Nameplate scan: save / clear (W3 confidence-reviewed onboarding) ─────────
+// The tech scans a nameplate (POST /api/assets/:id/ocr-nameplate returns
+// per-field values + confidence), reviews the red/yellow/green fields, then
+// commits HERE. We persist the reviewed flat values to Asset.nameplateData
+// (back-compat with the brief + seeds) and stash the confidence map + the saved
+// photo reference under a reserved `_scan` key. DELETE clears it for the
+// "attached to the wrong asset" case (delete here → re-scan on the right one).
+const _npMulter = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+const { uploadFile: _npUpload, deleteFile: _npDelete } = require('../lib/storage');
+const NP_KEYS = ['manufacturer','model','serialNumber','voltage','kva','amperage','phases','frequency','year','enclosureRating'];
+
+async function _deleteNameplatePhoto(accountId: string, documentId: string) {
+  try {
+    const doc = await prisma.document.findFirst({ where: { id: documentId, accountId }, select: { id: true, filePath: true } });
+    if (!doc) return;
+    try { await _npDelete(doc.filePath); } catch (_e) { /* storage best-effort */ }
+    await prisma.document.delete({ where: { id: doc.id } });
+  } catch (e: any) { console.error('[nameplate] prior photo delete failed:', e?.message); }
+}
+
+router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({
+      where: { id: req.params.id, accountId, archivedAt: null },
+      select: { id: true, nameplateData: true },
+    });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    let fields: any = {}, confidence: any = {};
+    try { fields = JSON.parse(req.body?.fields || '{}'); } catch (_e) { /* tolerate */ }
+    try { confidence = JSON.parse(req.body?.confidence || '{}'); } catch (_e) { /* tolerate */ }
+
+    const values: any = {};
+    for (const k of NP_KEYS) {
+      const v = fields[k];
+      if (v !== null && v !== undefined && String(v).trim() !== '') values[k] = v;
+    }
+
+    const prevScan: any = (asset.nameplateData && typeof asset.nameplateData === 'object')
+      ? (asset.nameplateData as any)._scan : null;
+
+    let photoKey: string | null = prevScan?.photoKey || null;
+    let photoDocId: string | null = prevScan?.photoDocumentId || null;
+    if (req.file?.buffer?.length) {
+      try {
+        const mt = (req.file.mimetype || '').toLowerCase();
+        const ext = mt.includes('png') ? 'png' : mt.includes('webp') ? 'webp' : 'jpg';
+        const filename = `nameplate-${Date.now()}.${ext}`;
+        const { storageKey } = await _npUpload(accountId, asset.id, filename, req.file.buffer, req.file.mimetype);
+        const doc = await prisma.document.create({
+          data: { accountId, assetId: asset.id, filename, filePath: storageKey, fileType: req.file.mimetype, uploadedBy: req.user.id },
+          select: { id: true },
+        });
+        // Re-scan replaces — drop the prior nameplate photo.
+        if (prevScan?.photoDocumentId && prevScan.photoDocumentId !== doc.id) {
+          await _deleteNameplatePhoto(accountId, prevScan.photoDocumentId);
+        }
+        photoKey = storageKey; photoDocId = doc.id;
+      } catch (e: any) { console.error('[nameplate] photo persist failed (non-fatal):', e?.message); }
+    }
+
+    const nameplateData: any = {
+      ...values,
+      _scan: {
+        confidence, photoDocumentId: photoDocId, photoKey,
+        scannedAt: new Date().toISOString(), scannedBy: req.user.id,
+      },
+    };
+    // Lift the identity fields onto the top-level columns too (search/match).
+    const top: any = { nameplateData };
+    if (values.manufacturer) top.manufacturer = String(values.manufacturer);
+    if (values.model)        top.model        = String(values.model);
+    if (values.serialNumber) top.serialNumber = String(values.serialNumber);
+    await prisma.asset.update({ where: { id: asset.id }, data: top });
+
+    void prisma.activityLog.create({ data: { assetId: asset.id, userId: req.user.id, accountId, action: 'nameplate_saved', details: { fields: Object.keys(values), hasPhoto: !!photoDocId } } }).catch(() => {});
+    return res.json({ success: true, data: { nameplateData } });
+  } catch (err) {
+    console.error('[assets/nameplate POST]', err);
+    return res.status(500).json({ success: false, error: 'Failed to save nameplate' });
+  }
+});
+
+router.delete('/:id/nameplate', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({
+      where: { id: req.params.id, accountId, archivedAt: null },
+      select: { id: true, nameplateData: true },
+    });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const prevScan: any = (asset.nameplateData && typeof asset.nameplateData === 'object')
+      ? (asset.nameplateData as any)._scan : null;
+    if (prevScan?.photoDocumentId) await _deleteNameplatePhoto(accountId, prevScan.photoDocumentId);
+    await prisma.asset.update({ where: { id: asset.id }, data: { nameplateData: null } });
+    void prisma.activityLog.create({ data: { assetId: asset.id, userId: req.user.id, accountId, action: 'nameplate_cleared', details: {} } }).catch(() => {});
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[assets/nameplate DELETE]', err);
+    return res.status(500).json({ success: false, error: 'Failed to clear nameplate' });
+  }
+});
+
 module.exports = router;
 
 export {};

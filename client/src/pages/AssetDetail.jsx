@@ -40,6 +40,7 @@ import ConditionIntervalCard from '../components/ConditionIntervalCard';
 import QuoteRequestButton from '../components/QuoteRequestButton';
 import AssetLotoCard from '../components/AssetLotoCard';
 import AssetDocumentsCard from '../components/AssetDocumentsCard';
+import NameplateCard from '../components/NameplateCard';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -245,7 +246,7 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
     requiresPredictiveMaintenance: !!asset.requiresPredictiveMaintenance,
   });
   const [nameplate, setNameplate] = useState(() => {
-    const entries = Object.entries(asset.nameplateData || {});
+    const entries = Object.entries(asset.nameplateData || {}).filter(([k]) => !k.startsWith('_'));
     return entries.length > 0
       ? entries.map(([key, value]) => ({ key, value: String(value ?? '') }))
       : [{ key: '', value: '' }];
@@ -283,8 +284,12 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
     const nameplateData = {};
     for (const { key, value } of nameplate) {
       const k = key.trim();
-      if (k) nameplateData[k] = value;
+      if (k && !k.startsWith('_')) nameplateData[k] = value;
     }
+    // Preserve the nameplate scan metadata (photo ref + confidence) — the
+    // key/value editor intentionally hides it, so re-merge it so a plain
+    // details edit never wipes the saved nameplate photo.
+    if (asset.nameplateData && asset.nameplateData._scan) nameplateData._scan = asset.nameplateData._scan;
     setSaving(true); setError('');
     try {
       const res = await api.put(`/api/assets/${asset.id}`, {
@@ -711,7 +716,9 @@ export default function AssetDetail() {
     asset.position ? (asset.position.code ? `${asset.position.code} — ${asset.position.name}` : asset.position.name) : null,
   ].filter(Boolean).join(' › ');
 
-  const nameplateEntries = Object.entries(asset.nameplateData || {});
+  // Filter the reserved `_scan` key (confidence + photo ref from the nameplate
+  // scan flow) — it renders in the dedicated NameplateCard, not the raw list.
+  const nameplateEntries = Object.entries(asset.nameplateData || {}).filter(([k]) => !k.startsWith('_'));
   const schedules    = asset.schedules || [];
   // Group schedules by governing standard. Standards sort alphabetically;
   // account-defined custom tasks always sink to the bottom.
@@ -1217,6 +1224,9 @@ export default function AssetDetail() {
         {/* Same self-gating as the brief card (maintenance_brief feature +
             aiEnabled + aiConfigured). Apply actions refetch the asset. */}
         <PhotoInspectCard asset={asset} onApplied={refetchAll} />
+
+        {/* ── Nameplate photo + AI-parsed fields (scan → review → save) ──────── */}
+        <NameplateCard asset={asset} canEdit={canWrite} onChanged={refetchAll} />
 
         {/* ── Nameplate ─────────────────────────────────────────────────────── */}
         <div className="card mb-16">

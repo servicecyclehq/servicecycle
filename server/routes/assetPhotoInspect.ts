@@ -319,11 +319,21 @@ router.post('/photo-inspect', aiPreGate, aiIpLimiter, photoInspectLimiter, photo
 // Auth: authenticateToken applied at mount point in index.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Each field returns BOTH a value and the model's self-assessed confidence so
+// the client can flag the low/medium fields for a human to verify while still
+// in front of the nameplate (red/yellow/green review-before-save). This mirrors
+// the LapseIQ contract-ingestion review pattern.
 const OCR_SYSTEM = `You are an expert electrical equipment nameplate reader.
-Your job is to extract structured data from photos of equipment nameplates.
+Extract structured data from a photo of an equipment nameplate.
 Respond ONLY with a JSON object — no markdown fences, no prose.
 
-Extract these fields (use null for any field not visible or legible):
+For EACH field below return an object: { "value": <value-or-null>, "confidence": "high" | "medium" | "low" }.
+Confidence rubric:
+- "high"   — the characters are crisp and unambiguous.
+- "medium" — legible but partly obscured / glare / you inferred the formatting.
+- "low"    — barely legible or guessed, OR the field is not visibly present (then value = null).
+
+Fields and their value types:
 {
   "manufacturer":    string | null,   // company name on nameplate
   "model":           string | null,   // model number or designation
@@ -337,8 +347,10 @@ Extract these fields (use null for any field not visible or legible):
   "enclosureRating": string | null    // NEMA or IP rating e.g. "NEMA 12" or "IP54"
 }
 
+Example element: "manufacturer": { "value": "Square D", "confidence": "high" }
+
 Rules:
-- Be precise; do not guess if the field is not legible.
+- NEVER guess a value you cannot actually see — use { "value": null, "confidence": "low" }.
 - For voltage, preserve the full string from the nameplate.
 - For kva, return only the number (e.g. 75, not "75 kVA").
 - If multiple values appear (e.g. dual-voltage transformer), use the primary.`;
@@ -389,28 +401,49 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
       maxTokens:   1536,
     });
 
-    let fields;
+    let parsed: any;
     try {
-      fields = parseJSON(text, 'ocr-nameplate');
+      parsed = parseJSON(text, 'ocr-nameplate');
     } catch (parseErr) {
       // Robust fallback: if the model wrapped the JSON in prose or fences,
       // pull the first balanced {...} object out and parse that. Only a
       // genuinely truncated/empty response falls through to the 500 below.
       const m = (text || '').match(/\{[\s\S]*\}/);
       if (!m) throw parseErr;
-      fields = JSON.parse(m[0]);
+      parsed = JSON.parse(m[0]);
     }
 
-    // Optional: fire-and-forget activity log if assetId provided
+    // Split each field's { value, confidence } cell into a flat values map and
+    // a parallel confidence map (high|medium|low) the client renders as
+    // green/yellow/red so the tech verifies the uncertain fields before saving.
+    // Tolerant of a model that regresses to flat values (present=medium).
+    const KEYS = ['manufacturer','model','serialNumber','voltage','kva','amperage','phases','frequency','year','enclosureRating'];
+    const normConf = (c: any) => (c === 'high' || c === 'medium' || c === 'low') ? c : null;
+    const fields: any = {};
+    const confidence: any = {};
+    for (const k of KEYS) {
+      const cell = parsed ? parsed[k] : null;
+      if (cell && typeof cell === 'object' && 'value' in cell) {
+        fields[k] = (cell.value === '' ? null : cell.value) ?? null;
+        confidence[k] = fields[k] == null ? 'low' : (normConf(cell.confidence) || 'medium');
+      } else {
+        fields[k] = (cell === '' ? null : cell) ?? null;
+        confidence[k] = fields[k] == null ? 'low' : 'medium';
+      }
+    }
+    // Deterministic sanity downgrades — cheap guards the model can't talk past.
+    if (fields.serialNumber && !/\d/.test(String(fields.serialNumber))) confidence.serialNumber = 'low';
+    if (fields.year != null && !(Number(fields.year) >= 1900 && Number(fields.year) <= 2100)) confidence.year = 'low';
+    if (fields.phases != null && ![1, 3].includes(Number(fields.phases))) confidence.phases = 'low';
+
     const assetId = (req.body?.assetId || '').trim();
     if (assetId) {
       void logActivity(assetId, userId, accountId, 'nameplate_ocr', {
-        manufacturer: fields.manufacturer,
-        model:        fields.model,
+        manufacturer: fields.manufacturer, model: fields.model,
       });
     }
 
-    return res.json({ success: true, data: fields });
+    return res.json({ success: true, data: { fields, confidence } });
   } catch (err: any) {
     console.error('[ocr-nameplate] error:', err.message);
     return res.status(500).json({ success: false, error: 'Failed to read nameplate — try a clearer photo.' });

@@ -279,9 +279,14 @@ async function buildBriefContext(prisma, accountId, assetId) {
     reason:         _clean(bw.reason, counter, 200),
   }));
 
-  // Nameplate is operator-entered JSONB — sanitize the serialized form.
-  const nameplate = asset.nameplateData && typeof asset.nameplateData === 'object'
-    ? _clean(JSON.stringify(asset.nameplateData), counter, 600)
+  // Nameplate is operator-entered JSONB — sanitize the serialized form. Strip
+  // the reserved `_scan` key (confidence map + photo ref from the nameplate
+  // scan flow) so that internal metadata never reaches the model.
+  const _np = asset.nameplateData && typeof asset.nameplateData === 'object'
+    ? Object.fromEntries(Object.entries(asset.nameplateData).filter(([k]) => !k.startsWith('_')))
+    : null;
+  const nameplate = _np && Object.keys(_np).length
+    ? _clean(JSON.stringify(_np), counter, 600)
     : null;
 
   const context = {
