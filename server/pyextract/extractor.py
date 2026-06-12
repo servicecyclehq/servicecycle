@@ -416,6 +416,30 @@ MAX_CELL_PAGES = 4    # _page_cells → header extraction (nameplate is page 1-2
 MAX_TABLE_PAGES = 4   # extract_tables → column-table pass (expensive)
 
 
+OCR_PAGES = 3   # OCR is slow (render + tesseract); cap hard to stay under timeout
+
+
+def _ocr_text(path, max_pages=OCR_PAGES):
+    """Rasterize + OCR the first pages of a SCANNED (no text layer) PDF — gem
+    W1. Deterministic (tesseract, no AI). Returns '' if the OCR toolchain is
+    unavailable, so callers fail open exactly as before."""
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except Exception:
+        return ""
+    out = []
+    try:
+        pdf = pdfium.PdfDocument(path)
+        for i in range(min(len(pdf), max_pages)):
+            pil = pdf[i].render(scale=2.0).to_pil()
+            out.append(pytesseract.image_to_string(pil))
+        pdf.close()
+    except Exception:
+        return ""
+    return "\n".join(out)
+
+
 def extract_fields(path: str, mode: str = "all"):
     cells, line_tables, full_text = [], [], []
     table_settings = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
@@ -430,6 +454,18 @@ def extract_fields(path: str, mode: str = "all"):
                 except Exception:
                     pass
     text = "\n".join(full_text)
+
+    # W1 OCR fallback: a scanned report has little/no text layer. Render + OCR
+    # the first pages and run the header + inline passes on that instead.
+    ocr_used = False
+    if len(text.strip()) < 100:
+        ocr = _ocr_text(path)
+        if len(ocr.strip()) >= 40:
+            text, cells, line_tables, ocr_used = ocr, [], [], True
+
     header = extract_header(cells, text)
     measurements = extract_measurements(cells, line_tables, text)  # already deduped
-    return {"fields": header, "measurements": measurements, "full_text": text}
+    if ocr_used:                       # OCR readings are lower-confidence
+        for m in measurements:
+            m["confidence"] = min(m.get("confidence", 0.6), 0.5)
+    return {"fields": header, "measurements": measurements, "full_text": text, "ocr": ocr_used}

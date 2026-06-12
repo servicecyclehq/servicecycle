@@ -65,10 +65,11 @@ RUN apk add --no-cache openssl postgresql-client wget \
 # fails the build loudly instead of shipping a broken extractor; the import
 # check confirms it. Ingest fails open to the pdfjs parser if this is absent,
 # so it can never break the running app.
-RUN apk add --no-cache python3 py3-pip \
+RUN apk add --no-cache python3 py3-pip tesseract-ocr \
  && pip install --no-cache-dir --break-system-packages --only-binary=:all: \
-      "pdfplumber>=0.11" "pypdf>=4.0" \
- && python3 -c "import pdfplumber; print('pyextract deps OK', pdfplumber.__version__)" \
+      "pdfplumber>=0.11" "pypdf>=4.0" "pypdfium2>=4.0" "pytesseract>=0.3" \
+ && python3 -c "import pdfplumber, pypdfium2, pytesseract; print('pyextract deps OK', pdfplumber.__version__)" \
+ && tesseract --version | head -1 \
  && rm -rf /root/.cache /var/cache/apk/*
 
 # Run as the unprivileged `node` user shipped in the base image.

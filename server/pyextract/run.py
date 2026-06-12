@@ -28,6 +28,7 @@ def main():
             "fields": fields,
             "measurements": r["measurements"],
             "has_text_layer": has_text,
+            "ocr": bool(r.get("ocr")),
         }, default=str))
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)}))

@@ -45,7 +45,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
     let meta: any, measurements: any[], source: string;
     const py = await runDeterministic(req.file.buffer);
     if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
-      source = 'pdfplumber';
+      source = py.ocr ? 'pdfplumber-ocr' : 'pdfplumber';
       const f = py.fields || {};
       meta = {
         serialNumber: f.serialNumber || null, model: f.model || null,
