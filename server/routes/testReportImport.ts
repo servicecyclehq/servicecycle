@@ -116,7 +116,30 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
       select: { id: true },
     });
 
+    // W4: trend-based deficiencies. Pull the most recent PRIOR reading per
+    // (measurementType, phase) so a value that's still in spec but moving the
+    // wrong way year-over-year ("C-phase IR down 40% — won't pass next year")
+    // becomes an ADVISORY now, not a surprise next cycle. bad='up' → higher is
+    // worse; bad='down' → lower is worse.
+    const BAD_DIRECTION: any = {
+      insulation_resistance: 'down', polarization_index: 'down', dielectric_absorption_ratio: 'down',
+      contact_resistance: 'up', winding_resistance: 'up', power_factor: 'up', dissipation_factor: 'up',
+      dissolved_gas: 'up', excitation_current: 'up', ground_resistance: 'up',
+    };
+    const TREND_PCT = 15;
+    const priorRows = await prisma.testMeasurement.findMany({
+      where: { accountId, asFoundValue: { not: null }, workOrder: { assetId } },
+      select: { measurementType: true, phase: true, asFoundValue: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    const priorByKey = new Map<string, number>();
+    for (const r of priorRows as any[]) {
+      const k = `${r.measurementType}|${r.phase || ''}`;
+      if (!priorByKey.has(k)) priorByKey.set(k, Number(r.asFoundValue));
+    }
+
     let measurementsCreated = 0;
+    let trendDeficiencies = 0;
     const defBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
     for (const x of measurements) {
       const raw = x.asFoundValue;
@@ -147,13 +170,32 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
           },
         });
         defBySeverity[sev]++;
+      } else if (val != null) {
+        // No hard pass/fail issue — check the year-over-year trend (W4).
+        const dir = BAD_DIRECTION[String(x.measurementType)];
+        const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}`);
+        if (dir && prior != null && prior !== 0) {
+          const pct = ((val - prior) / Math.abs(prior)) * 100;
+          const worse = (dir === 'up' && pct >= TREND_PCT) || (dir === 'down' && pct <= -TREND_PCT);
+          if (worse) {
+            await prisma.deficiency.create({
+              data: {
+                accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
+                description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''} trending ${dir === 'up' ? 'up' : 'down'} ${Math.abs(Math.round(pct))}% since last test (${prior}→${val}${x.asFoundUnit || ''}) — still in spec, monitor`,
+                correctiveAction: 'Trend flag from test-report ingest — watch for continued degradation before next cycle.',
+              },
+            });
+            defBySeverity.ADVISORY++;
+            trendDeficiencies++;
+          }
+        }
       }
     }
 
     const deficienciesCreated = defBySeverity.IMMEDIATE + defBySeverity.RECOMMENDED + defBySeverity.ADVISORY;
     return res.status(201).json({
       success: true,
-      data: { workOrderId: wo.id, assetId, measurementsCreated, deficienciesCreated, deficiencyBySeverity: defBySeverity },
+      data: { workOrderId: wo.id, assetId, measurementsCreated, deficienciesCreated, trendDeficiencies, deficiencyBySeverity: defBySeverity },
     });
   } catch (err) {
     console.error('[testReport/commit]', err);
