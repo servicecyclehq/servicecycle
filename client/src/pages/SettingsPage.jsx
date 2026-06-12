@@ -78,6 +78,8 @@ export default function SettingsPage() {
     // v0.18.0: opt-in upstream anonymous feedback sync (AccountSetting KV).
     // Admin-only. When true, thumbs ratings are forwarded to the upstream feedback endpoint.
     aiFeedbackUpstreamEnabled: false,
+    // #16: auto-email the leave-behind PDF on WO completion (AccountSetting KV).
+    autoSendLeaveBehind: false,
     // Phase 4: per-user boolean column. "Don't ask me each session"
     // suppresses the AI consent modal entirely for THIS user.
     aiConsentSilenced:       false,
@@ -123,6 +125,8 @@ export default function SettingsPage() {
             aiBriefEnabled:             !!s.aiBriefEnabled,
             // v0.18.0: opt-in upstream feedback sync
             aiFeedbackUpstreamEnabled:  !!s.aiFeedbackUpstreamEnabled,
+            // #16: auto-send leave-behind on WO completion
+            autoSendLeaveBehind:        !!s.autoSendLeaveBehind,
             // Phase 4: per-user "don't ask me each session" — comes from
             // /api/auth/me via AuthContext (NOT /api/settings). Pulled
             // from the user prop below via a separate effect.
@@ -793,6 +797,39 @@ export default function SettingsPage() {
               Leave blank to hide per-employee KPIs. Range: 0 - 1,000,000.
             </p>
           </div>
+        </section>
+
+        <section style={{ marginBottom: '2rem' }}>
+          <h2 style={sectionHeading}>Reports</h2>
+          <p style={sectionDesc}>
+            Automatically email the service-completion leave-behind (what we found / fixed / to budget for)
+            to your account contacts whenever a work order is completed. Admin-only.
+          </p>
+          <label style={{ ...toggleRow, maxWidth: 560 }}>
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                Auto-send leave-behind on completion
+              </div>
+              <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem', marginTop: 2 }}>
+                Sends the PDF to your service-rep contact and active admins/managers. Off by default.
+              </div>
+            </div>
+            <div
+              role="switch"
+              aria-checked={form.autoSendLeaveBehind === true}
+              tabIndex={isAdmin ? 0 : -1}
+              onClick={() => isAdmin && set('autoSendLeaveBehind', !form.autoSendLeaveBehind)}
+              onKeyDown={e => e.key === ' ' && isAdmin && set('autoSendLeaveBehind', !form.autoSendLeaveBehind)}
+              style={{
+                ...toggle,
+                background: form.autoSendLeaveBehind === true ? 'var(--accent)' : 'var(--color-text-muted)',
+                cursor: isAdmin ? 'pointer' : 'not-allowed',
+                opacity: isAdmin ? 1 : 0.6,
+              }}
+            >
+              <div style={{ ...toggleThumb, transform: form.autoSendLeaveBehind === true ? 'translateX(20px)' : 'translateX(2px)' }} />
+            </div>
+          </label>
         </section>
 
         </div>{/* end General tab */}

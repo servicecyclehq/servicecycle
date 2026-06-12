@@ -658,6 +658,13 @@ router.put('/:id', requireManager, async (req, res) => {
         }).catch(console.error);
       }
 
+      // #16: auto-email the leave-behind PDF to account contacts when opted in
+      // (fire-and-forget; the helper no-ops unless auto_send_leave_behind=true).
+      {
+        const { maybeAutoSendLeaveBehind } = require('../lib/leaveBehindAutoSend');
+        maybeAutoSendLeaveBehind(req.user.accountId, existing.id).catch(console.error);
+      }
+
       return res.json({ success: true, data: { workOrder } });
     }
 

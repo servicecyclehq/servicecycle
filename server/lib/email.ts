@@ -44,7 +44,7 @@ function setRuntimeBrevoKey(key) { _runtimeBrevoKey = (typeof key === 'string' &
 // a process manager actually takes effect on the next send.
 function getFrom() { return process.env.EMAIL_FROM || null; }
 
-async function sendEmail({ to, subject, html }) {
+async function sendEmail({ to, subject, html, attachments }) {
   // L4: feedback bypass for EMAIL_MOCK.
   // Subjects starting with '[ServiceCycle Feedback]' bypass the mock so
   // operator feedback always reaches the inbox even on the demo box. The
@@ -69,7 +69,7 @@ async function sendEmail({ to, subject, html }) {
   );
 
   if (!isFeedback && !isEarlyAccess && process.env.EMAIL_MOCK === 'true') {
-    console.log(`\nðŸ“§ [EMAIL MOCK]\n  To: ${to}\n  Subject: ${subject}\n`);
+    console.log(`\nðŸ“§ [EMAIL MOCK]\n  To: ${to}\n  Subject: ${subject}${Array.isArray(attachments) && attachments.length ? `\n  Attachments: ${attachments.map((a) => a.name).join(', ')}` : ''}\n`);
     return;
   }
 
@@ -101,12 +101,23 @@ async function sendEmail({ to, subject, html }) {
   const recipient = parseAddress(to);
   if (!sender || !recipient) throw new Error('email: malformed EMAIL_FROM or recipient');
 
-  const body = {
+  const body: any = {
     sender,
     to: [recipient],
     subject,
     htmlContent: html,
   };
+
+  // Optional file attachments (Brevo: [{ content: base64, name }]). Used by the
+  // #16 leave-behind auto-send. Buffers are base64-encoded here.
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    body.attachment = attachments
+      .filter((a) => a && a.content && a.name)
+      .map((a) => ({
+        name:    a.name,
+        content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : String(a.content),
+      }));
+  }
 
   // S3-FN-01 (v0.74.1): AbortController + 10s timeout so a hung Brevo
   // response cannot stall the Node process indefinitely.

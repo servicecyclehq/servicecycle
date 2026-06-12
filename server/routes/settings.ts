@@ -220,6 +220,10 @@ router.get('/', requireAdmin, async (req, res) => {
     // boolean so the React toggle can bind directly.
     const aiFeedbackUpstreamEnabled = dbRows['ai_feedback_upstream_enabled'] === 'true';
 
+    // #16: auto-email the leave-behind PDF to account contacts on WO completion.
+    // AccountSetting KV 'auto_send_leave_behind' = 'true'|'false'; default off.
+    const autoSendLeaveBehind = dbRows['auto_send_leave_behind'] === 'true';
+
     // Ingest usage (for admin display and freemium metering)
     const ingestCount = parseInt(dbRows['AI_INGEST_COUNT'] || '0', 10);
     const ingestLimit = parseInt(dbRows['AI_INGEST_LIMIT'] || '10', 10);
@@ -269,6 +273,8 @@ router.get('/', requireAdmin, async (req, res) => {
         fteCount,
         // v0.18.0: opt-in upstream feedback sync (AccountSetting KV).
         aiFeedbackUpstreamEnabled,
+        // #16: auto-send leave-behind on WO completion (AccountSetting KV).
+        autoSendLeaveBehind,
       },
     });
   } catch (err) {
@@ -357,7 +363,14 @@ router.put('/', async (req, res) => {
       aiFeedbackUpstreamUpdate = (v === true || v === 'true');
     }
 
-    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && fteCountUpdate === null) {
+    // #16: auto-send leave-behind toggle — admin-only AccountSetting KV.
+    let autoSendLeaveBehindUpdate = null;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'autoSendLeaveBehind') && isAdmin) {
+      const v = req.body.autoSendLeaveBehind;
+      autoSendLeaveBehindUpdate = (v === true || v === 'true');
+    }
+
+    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && autoSendLeaveBehindUpdate === null && fteCountUpdate === null) {
       return res.status(400).json({ success: false, error: 'No valid settings provided' });
     }
 
@@ -466,6 +479,16 @@ router.put('/', async (req, res) => {
         where:  { accountId_key: { accountId: req.user.accountId, key } },
         update: { value: String(aiFeedbackUpstreamUpdate) },
         create: { accountId: req.user.accountId, key, value: String(aiFeedbackUpstreamUpdate) },
+      });
+    }
+
+    // #16: persist auto-send-leave-behind toggle as AccountSetting KV.
+    if (autoSendLeaveBehindUpdate !== null) {
+      const key = 'auto_send_leave_behind';
+      await prisma.accountSetting.upsert({
+        where:  { accountId_key: { accountId: req.user.accountId, key } },
+        update: { value: String(autoSendLeaveBehindUpdate) },
+        create: { accountId: req.user.accountId, key, value: String(autoSendLeaveBehindUpdate) },
       });
     }
 
