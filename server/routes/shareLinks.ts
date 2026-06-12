@@ -1,0 +1,115 @@
+/**
+ * routes/shareLinks.ts — #21 auditor / insurer share links (authenticated mgmt).
+ *
+ * A manager creates a time-boxed, revocable token that exposes a read-only,
+ * watermarked compliance package (honest number + Path-to-100 + the latest
+ * hash-chained snapshot) to an underwriter/auditor without an account. The
+ * public read endpoint lives in routes/shareLinkPublic.
+ *
+ * Auth: requireManager (admin/manager). TENANCY: every query is accountId-scoped.
+ */
+
+const router = require('express').Router();
+const crypto = require('crypto');
+import prisma from '../lib/prisma';
+const { requireManager } = require('../middleware/roles');
+const { buildComplianceGap } = require('../lib/complianceReport');
+
+const DEFAULT_DAYS = 14;
+const MAX_DAYS = 90;
+
+/**
+ * The read-only compliance package an auditor/insurer sees. No PII beyond the
+ * company name + compliance posture. Shared by the public route.
+ */
+async function buildSharePackage(accountId: string) {
+  const now = new Date();
+  const [account, gap, latestSnapshot] = await Promise.all([
+    prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
+    buildComplianceGap(prisma, accountId, { limit: 10 }),
+    prisma.complianceSnapshot.findFirst({
+      where:   { accountId },
+      orderBy: { createdAt: 'desc' },
+      select:  { id: true, kind: true, createdAt: true, sha256: true },
+    }),
+  ]);
+  return {
+    companyName: account?.companyName || 'Facility',
+    generatedAt: now,
+    overallRate: gap.overallRate,
+    compliance:  gap.compliance,
+    coverage:    gap.coverage,
+    summary:     gap.summary,
+    topActions:  gap.actions.map((a: any) => ({ kind: a.kind, title: a.title })),
+    latestSnapshot: latestSnapshot
+      ? { kind: latestSnapshot.kind, date: latestSnapshot.createdAt, sha256: latestSnapshot.sha256 }
+      : null,
+  };
+}
+
+// ── POST /api/share-links — create a time-boxed link ─────────────────────────
+router.post('/', requireManager, async (req: any, res: any) => {
+  try {
+    const body = req.body || {};
+    let days = Number(body.days);
+    if (!Number.isFinite(days) || days <= 0) days = DEFAULT_DAYS;
+    days = Math.min(days, MAX_DAYS);
+    const label = typeof body.label === 'string' ? body.label.slice(0, 120) : null;
+
+    const token = crypto.randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + days * 86_400_000);
+    const link = await prisma.shareLink.create({
+      data: {
+        accountId: req.user.accountId, token, label,
+        kind: 'compliance_package', expiresAt, createdById: req.user.id,
+      },
+      select: { id: true, token: true, label: true, expiresAt: true, createdAt: true },
+    });
+    return res.status(201).json({ success: true, data: { ...link, path: `/share/${link.token}` } });
+  } catch (err: any) {
+    console.error('[shareLinks:create]', err?.message || err);
+    return res.status(500).json({ success: false, error: 'Failed to create share link' });
+  }
+});
+
+// ── GET /api/share-links — list this account's links ─────────────────────────
+router.get('/', requireManager, async (req: any, res: any) => {
+  try {
+    const now = new Date();
+    const links = await prisma.shareLink.findMany({
+      where:   { accountId: req.user.accountId },
+      orderBy: { createdAt: 'desc' },
+      select:  { id: true, token: true, label: true, expiresAt: true, revokedAt: true, viewCount: true, lastViewedAt: true, createdAt: true },
+    });
+    const decorated = links.map((l: any) => ({
+      ...l,
+      path: `/share/${l.token}`,
+      active: !l.revokedAt && l.expiresAt > now,
+    }));
+    return res.json({ success: true, data: { links: decorated } });
+  } catch (err: any) {
+    console.error('[shareLinks:list]', err?.message || err);
+    return res.status(500).json({ success: false, error: 'Failed to load share links' });
+  }
+});
+
+// ── POST /api/share-links/:id/revoke — kill a link immediately ───────────────
+router.post('/:id/revoke', requireManager, async (req: any, res: any) => {
+  try {
+    const existing = await prisma.shareLink.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true, revokedAt: true },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
+    if (!existing.revokedAt) {
+      await prisma.shareLink.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
+    }
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('[shareLinks:revoke]', err?.message || err);
+    return res.status(500).json({ success: false, error: 'Failed to revoke share link' });
+  }
+});
+
+module.exports = router;
+module.exports.buildSharePackage = buildSharePackage;

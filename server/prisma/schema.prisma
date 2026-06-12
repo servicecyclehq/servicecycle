@@ -316,6 +316,7 @@ model Account {
   partnerInvites         PartnerInvite[]
   partnerEventLogs       PartnerEventLog[]
   incidentLogs           IncidentLog[]
+  shareLinks             ShareLink[]
 
   @@map("accounts")
 }
@@ -1021,6 +1022,31 @@ enum IncidentType {
   ALARM           // alarm / annunciator activation
   ARC_FLASH_EVENT // arc-flash / arcing event
   OTHER
+}
+
+// ─── Auditor / insurer share link (#21) ───────────────────────────────────────
+// A time-boxed, revocable, read-only token that exposes a watermarked
+// compliance package (honest number + Path-to-100 + latest snapshot) to an
+// underwriter or auditor without giving them an account. No PII beyond the
+// company name and compliance posture is exposed through the public view.
+model ShareLink {
+  id           String    @id @default(uuid())
+  accountId    String
+  token        String    @unique
+  kind         String    @default("compliance_package")
+  label        String? // recipient/underwriter name, shown in the watermark
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdById  String?
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([token])
+  @@map("share_links")
 }
 
 model IncidentLog {

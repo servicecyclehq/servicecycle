@@ -1255,6 +1255,12 @@ app.use('/api/fleet', authenticateToken, fleetDashboardRoutes);
 const partnerInvitePublicRoutes = require('./routes/partnerInvitePublic');
 app.use('/api/invite', partnerInvitePublicRoutes);
 
+// ── Auditor/insurer share links (#21) — authed management + public read ──────
+const shareLinkRoutes = require('./routes/shareLinks');
+app.use('/api/share-links', authenticateToken, shareLinkRoutes);
+const shareLinkPublicRoutes = require('./routes/shareLinkPublic');
+app.use('/api/public/share', shareLinkPublicRoutes); // no auth — token is the credential
+
 // ── Quote Request — per-asset service quote lifecycle ────────────────────────
 app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 
