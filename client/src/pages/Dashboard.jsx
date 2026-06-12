@@ -177,8 +177,12 @@ function MaintenanceHorizon({ navigate }) {
 
   useEffect(() => {
     let cancelled = false;
-    const from = ymKey(new Date());
-    api.get('/api/dashboard/calendar', { params: { from, months: HORIZON_MONTHS, density: 1 } })
+    const now = new Date();
+    // Start at January of the current year so already-elapsed months (which
+    // hold past-due / overdue schedules) are surfaced instead of left blank.
+    const from = ymKey(new Date(now.getFullYear(), 0, 1));
+    const monthsSpan = now.getMonth() + HORIZON_MONTHS; // backfilled months + 36 forward
+    api.get('/api/dashboard/calendar', { params: { from, months: monthsSpan, density: 1 } })
       .then(res => {
         if (cancelled) return;
         const d = res.data?.data || {};
@@ -218,10 +222,14 @@ function MaintenanceHorizon({ navigate }) {
 
   if (failed) return null; // optional widget — fail silent rather than alarm
 
-  // Build the 36 cells regardless of how much data came back.
-  const start = new Date();
+  // Build cells from January of the current year (so already-elapsed,
+  // past-due months are shown) through 36 months out, regardless of how much
+  // data came back.
+  const now0 = new Date();
+  const start = new Date(now0.getFullYear(), 0, 1);
+  const monthsSpan = now0.getMonth() + HORIZON_MONTHS;
   const cells = [];
-  for (let i = 0; i < HORIZON_MONTHS; i++) {
+  for (let i = 0; i < monthsSpan; i++) {
     const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
     const ym = ymKey(d);
     const stats = byMonth?.get(ym) || { due: 0, outage: 0, overdue: 0 };
@@ -253,9 +261,9 @@ function MaintenanceHorizon({ navigate }) {
     <div className="card" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
       <div className="card-header">
         <div>
-          <div className="card-title">Maintenance horizon — next 36 months</div>
+          <div className="card-title">Maintenance horizon</div>
           <div className="card-subtitle">
-            Schedules coming due per month — click a month to open it in the calendar
+            Schedules due per month, this year through 3 years out — past-due months ringed in red; click any month to open it
           </div>
         </div>
       </div>
