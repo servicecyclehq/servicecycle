@@ -36,6 +36,7 @@ import MaintenanceBriefCard from '../components/MaintenanceBriefCard';
 import PhotoInspectCard from '../components/PhotoInspectCard';
 import PowerPathCard from '../components/PowerPathCard';
 import OutageConsolidationCard from '../components/OutageConsolidationCard';
+import ConditionIntervalCard from '../components/ConditionIntervalCard';
 import QuoteRequestButton from '../components/QuoteRequestButton';
 import AssetLotoCard from '../components/AssetLotoCard';
 import AssetDocumentsCard from '../components/AssetDocumentsCard';
@@ -1076,6 +1077,9 @@ export default function AssetDetail() {
             })
           )}
         </div>
+
+        {/* ── Condition-based interval engine (R3) ──────────────────────────── */}
+        <ConditionIntervalCard asset={asset} canWrite={canWrite} onApplied={refetchAll} />
 
         {/* ── Outage Consolidation Planner ──────────────────────────────────── */}
         {/* Self-gating: renders null when there are no outage-requiring tasks

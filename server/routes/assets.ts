@@ -47,6 +47,9 @@ const worstCondition = (a, b, c) =>
 // Canonical EquipmentType list — single source of truth in lib/equipmentTypes
 // (mirrors the Prisma enum; this file used to carry its own copy and drifted).
 const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
+// R3: condition-based interval engine — recompute schedule due dates when an
+// asset's governing condition changes (close the loop) + power what-if preview.
+const { computeNextDueDate, intervalMonthsFor } = require('../lib/maintenanceInterval');
 
 // Redundancy posture vocabulary (Asset.redundancyStatus is a String column;
 // the route layer owns the enum).
@@ -998,10 +1001,96 @@ router.put('/:id', requireManager, async (req, res) => {
       });
     }
 
-    res.json({ success: true, data: { asset } });
+    // ── R3: close the loop — recompute schedule due dates on condition change ──
+    // Previously a condition change updated governingCondition but left every
+    // schedule's nextDueDate anchored to the OLD interval until the next
+    // completion. Now a C2→C3 change tightens intervals (×0.25) immediately.
+    // Schedules with a per-schedule conditionOverride are left alone (their
+    // override wins over the asset's governing condition).
+    let schedulesRecomputed = 0;
+    if (governingTo) {
+      const scheds = await prisma.maintenanceSchedule.findMany({
+        where: { assetId: req.params.id, accountId: req.user.accountId, isActive: true, conditionOverride: null },
+        select: {
+          id: true, lastCompletedDate: true, nextDueDate: true,
+          taskDefinition: { select: { intervalC1Months: true, intervalC2Months: true, intervalC3Months: true } },
+        },
+      });
+      const nowTs = new Date();
+      for (const s of scheds) {
+        let nd;
+        if (s.lastCompletedDate)      nd = computeNextDueDate(s.lastCompletedDate, s.taskDefinition, governingTo);
+        else if (s.nextDueDate)       nd = computeNextDueDate(nowTs, s.taskDefinition, governingTo); // re-project a baselined (uncompleted) schedule
+        else                          nd = null;
+        if (s.nextDueDate || s.lastCompletedDate) {
+          await prisma.maintenanceSchedule.update({ where: { id: s.id }, data: { nextDueDate: nd } });
+          schedulesRecomputed++;
+        }
+      }
+    }
+
+    res.json({ success: true, data: { asset, schedulesRecomputed } });
   } catch (err) {
     console.error('Update asset error:', err);
     res.status(500).json({ success: false, error: 'Failed to update asset' });
+  }
+});
+
+// ─── GET /api/assets/:id/interval-preview?condition=C1|C2|C3 ──────────────────
+// R3 what-if: "if this asset were C3, here's how each schedule's interval +
+// next-due would shift." Read-only — powers the one-tap condition proposal on
+// AssetDetail. Schedules with a per-schedule conditionOverride don't move
+// (their override governs regardless of the asset condition).
+router.get('/:id/interval-preview', async (req, res) => {
+  try {
+    const requested = String(req.query.condition || '').toUpperCase();
+    if (!['C1', 'C2', 'C3'].includes(requested)) {
+      return res.status(400).json({ success: false, error: 'condition must be C1, C2 or C3' });
+    }
+    const asset = await prisma.asset.findFirst({
+      where: { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true, governingCondition: true },
+    });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const scheds = await prisma.maintenanceSchedule.findMany({
+      where: { assetId: req.params.id, accountId: req.user.accountId, isActive: true },
+      select: {
+        id: true, conditionOverride: true, lastCompletedDate: true, nextDueDate: true,
+        taskDefinition: { select: { taskName: true, intervalC1Months: true, intervalC2Months: true, intervalC3Months: true } },
+      },
+    });
+
+    const now = new Date();
+    let sumCurrent = 0, sumProjected = 0, affected = 0;
+    const rows = scheds.map((s) => {
+      const td = s.taskDefinition;
+      const currentCond   = s.conditionOverride || asset.governingCondition || 'C2';
+      const projectedCond = s.conditionOverride || requested; // override wins → unchanged
+      const currentIv   = intervalMonthsFor(td, currentCond);
+      const projectedIv = intervalMonthsFor(td, projectedCond);
+      const projectedNextDue = s.lastCompletedDate
+        ? computeNextDueDate(s.lastCompletedDate, td, projectedCond)
+        : (s.nextDueDate ? computeNextDueDate(now, td, projectedCond) : null);
+      if (!s.conditionOverride) { sumCurrent += currentIv; sumProjected += projectedIv; affected++; }
+      return {
+        scheduleId: s.id, taskName: td.taskName, hasOverride: !!s.conditionOverride,
+        currentCondition: currentCond, currentIntervalMonths: currentIv, currentNextDue: s.nextDueDate,
+        projectedCondition: projectedCond, projectedIntervalMonths: projectedIv, projectedNextDue,
+      };
+    });
+
+    const intervalChangePct = sumCurrent > 0 ? Math.round(((sumProjected - sumCurrent) / sumCurrent) * 100) : 0;
+    return res.json({
+      success: true,
+      data: {
+        assetId: asset.id, currentGoverning: asset.governingCondition, requestedCondition: requested,
+        affectedCount: affected, intervalChangePct, schedules: rows,
+      },
+    });
+  } catch (err) {
+    console.error('Interval preview error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to build interval preview' });
   }
 });
 
