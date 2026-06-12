@@ -250,7 +250,7 @@ function MaintenanceHorizon({ navigate }) {
   const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
   return (
-    <div className="card" style={{ marginBottom: 0 }}>
+    <div className="card" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
       <div className="card-header">
         <div>
           <div className="card-title">Maintenance horizon — next 36 months</div>
@@ -259,7 +259,7 @@ function MaintenanceHorizon({ navigate }) {
           </div>
         </div>
       </div>
-      <div style={{ padding: '12px 16px 16px' }}>
+      <div style={{ padding: '12px 16px 16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         {byMonth === null ? (
           <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '8px 0' }}>
             Loading horizon…
@@ -268,8 +268,8 @@ function MaintenanceHorizon({ navigate }) {
           <>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'auto repeat(12, 20px)',
-              gap: '5px 4px',
+              gridTemplateColumns: 'auto repeat(12, 30px)',
+              gap: '9px 6px',
               alignItems: 'center',
               justifyContent: 'start',
               overflowX: 'auto',
@@ -303,8 +303,8 @@ function MaintenanceHorizon({ navigate }) {
                       aria-label={tip}
                       onClick={() => navigate(`/calendar?from=${c.ym}`)}
                       style={{
-                        width: 20, height: 20, padding: 0,
-                        borderRadius: 4, cursor: 'pointer', position: 'relative',
+                        width: 30, height: 30, padding: 0,
+                        borderRadius: 5, cursor: 'pointer', position: 'relative',
                         background: horizonColor(c.due),
                         border: '1px solid var(--color-border)',
                         // Red ring on overdue months (only possible for the current month).
@@ -872,7 +872,7 @@ export default function Dashboard() {
             <div style={{
               display: 'grid',
               gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-              gap: 16, marginBottom: 20, alignItems: 'start',
+              gap: 16, marginBottom: 20, alignItems: 'stretch',
             }}>
               <MaintenanceHorizon navigate={navigate} />
               <div className="card" style={{ marginBottom: 0 }}>
