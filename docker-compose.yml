@@ -303,6 +303,10 @@ services:
       AI_DAILY_CAP_PER_USER_ASK:           ${AI_DAILY_CAP_PER_USER_ASK:-}
       AI_DAILY_CAP_PER_USER_BRIEF:         ${AI_DAILY_CAP_PER_USER_BRIEF:-}
       AI_DAILY_CAP_PER_USER_BRIEF_SEARCH:  ${AI_DAILY_CAP_PER_USER_BRIEF_SEARCH:-}
+      # Demo nameplate-scan preview cap (AI camera scans only; deterministic
+      # doc import stays free). Per-action override works regardless of
+      # DEMO_MODE, so the gated demo can cap scans without the full sandbox.
+      AI_DAILY_CAP_PER_USER_NAMEPLATE_SCAN: ${AI_DAILY_CAP_PER_USER_NAMEPLATE_SCAN:-}
 
       # Phase 4 v0.4.4 — per-brief output budget. Auto-defaults to 1800 in
       # DEMO_MODE, 2250 on self-host (more headroom for complex contracts;

@@ -37,8 +37,21 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
   const [values, setValues] = useState(null);       // { field: value }
   const [conf, setConf] = useState({});             // { field: high|medium|low }
   const [touched, setTouched] = useState({});       // fields the tech edited → verified
+  const [remaining, setRemaining] = useState(null); // preview scans left today (null = unlimited)
+  const [capped, setCapped] = useState(false);      // hit the preview scan cap
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
+  // Read the per-user nameplate-scan quota so we can show "N preview scans left"
+  // before they tap, and the BYO-AI wall once they're out.
+  useEffect(() => {
+    api.get('/api/ai/usage/me')
+      .then(r => {
+        const n = r.data?.data?.actions?.nameplate_scan?.remaining;
+        if (typeof n === 'number') { setRemaining(n); if (n <= 0) setCapped(true); }
+      })
+      .catch(() => {});
+  }, []);
 
   function pick(e) {
     const f = e.target.files?.[0];
@@ -64,10 +77,12 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
       setValues(Object.fromEntries(FIELDS.map(([k]) => [k, fields[k] ?? ''])));
       setConf(d.confidence || {});
       setTouched({});
+      if (typeof d.scansRemaining === 'number') setRemaining(d.scansRemaining);
     } catch (err) {
       const s = err.response?.status; const e = err.response?.data;
-      if (s === 503) setError(e?.message || 'AI is unavailable on this instance right now.');
-      else if (s === 429) setError('Daily AI limit reached — try again later, or enter the fields by hand.');
+      if (s === 429 && e?.error === 'ai_daily_cap_reached') { setCapped(true); setRemaining(0); }
+      else if (s === 503) setError(e?.message || 'AI is unavailable on this instance right now.');
+      else if (s === 429) setError('Too many requests right now — try again in a moment.');
       else if (e?.error === 'ai_consent_required' || e?.error === 'ai_consent_outdated') setError('AI consent needed — accept the dialog and rescan.');
       else setError(e?.message || e?.error || 'Could not read that photo — try a clearer, straight-on shot.');
     } finally { setBusy(false); }
@@ -109,16 +124,29 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
         </div>
 
         <div style={{ padding: 20, overflowY: 'auto' }}>
-          {!values && (
+          {!values && capped && (
+            <div style={{ padding: '6px 0' }}>
+              <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', color: '#6b21a8', borderRadius: 10, padding: '16px 18px', fontSize: 14, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>You've used your preview nameplate scans.</div>
+                Nameplate AI runs on <strong>your own AI key</strong> — your data, your provider, your control. Connect one in <strong>Settings → AI</strong> to scan without limits (free provider options work too). You can still type the fields in by hand below — no AI required.
+              </div>
+            </div>
+          )}
+          {!values && !capped && (
             <div style={{ textAlign: 'center', padding: '10px 0 4px' }}>
               <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16, textAlign: 'left' }}>
                 Take or upload a photo of the equipment nameplate. <strong>AI will read it and ask you to review the fields before anything is saved</strong> — so a bad read never silently lands on the asset.
               </div>
               {preview && <img src={preview} alt="" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 14, border: '1px solid #e5e7eb' }} />}
-              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={pick} style={{ display: 'none' }} />
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={pick} style={{ display: 'none' }} />
               <button onClick={() => fileRef.current?.click()} disabled={busy} style={btnPrimary}>
                 {busy ? 'Reading nameplate…' : preview ? 'Choose a different photo' : '📷 Take / upload photo'}
               </button>
+              {remaining != null && (
+                <div style={{ marginTop: 10, fontSize: 12, color: remaining <= 1 ? '#b45309' : '#6b7280' }}>
+                  {remaining} preview scan{remaining === 1 ? '' : 's'} left today
+                </div>
+              )}
             </div>
           )}
 

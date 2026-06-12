@@ -379,6 +379,7 @@ const ocrUploadMiddleware = photoUpload.single('image');
 router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddleware, async (req: any, res: any) => {
   const { completeWithImage, parseJSON } = require('../lib/ai');
   const { ensureAiBudget } = require('../lib/aiBudgetGuard');
+  const { checkAndIncrement: meterScan, refundIncrement: refundScan } = require('../lib/aiQuota');
 
   if (!req.file) {
     return res.status(400).json({ success: false, error: 'No image uploaded. Send the photo as multipart field "image".' });
@@ -394,6 +395,21 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
   // Demo AI budget guard — returns false and sends its own 503 when the
   // monthly-$/daily-call fuse is tripped.
   if (!ensureAiBudget(req, res, 'ocr_nameplate')) return;
+
+  // Demo scan meter — per-user daily cap on AI nameplate scans. ONLY the AI
+  // camera scan is metered; the deterministic PDF/document import path is free
+  // (it's the moat — never throttle it). Cap is env-tunable
+  // (AI_DAILY_CAP_PER_USER_NAMEPLATE_SCAN); UNLIMITED on self-host / BYO-AI.
+  // Refunded in the catch below so a failed read never burns a preview scan.
+  const scan = await meterScan(userId, 'nameplate_scan', accountId, req.user.role);
+  if (!scan.ok) {
+    return res.status(429).json({
+      success: false,
+      error:   'ai_daily_cap_reached',
+      message: `You've used all ${scan.cap} of your preview nameplate scans.`,
+      data:    { count: scan.count, cap: scan.cap, resetAt: scan.resetAt },
+    });
+  }
 
   try {
     // Normalize first: EXIF-rotate, transcode HEIC→JPEG, cap size. A decode
@@ -459,8 +475,9 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
       });
     }
 
-    return res.json({ success: true, data: { fields, confidence } });
+    return res.json({ success: true, data: { fields, confidence, scansRemaining: Number.isFinite(scan.cap) ? Math.max(0, scan.cap - scan.count) : null } });
   } catch (err: any) {
+    void refundScan(userId, 'nameplate_scan', accountId); // a failed read must not burn a preview scan
     console.error('[ocr-nameplate] error:', err.message);
     return res.status(500).json({ success: false, error: 'Failed to read nameplate — try a clearer photo.' });
   }
