@@ -42,6 +42,7 @@ const crypto = require('crypto');
 const { uploadFile, deleteFile } = require('./storage');
 const { buildStandardsSummary, buildStandardReport } = require('./complianceReport');
 const { renderSnapshotPdf } = require('./compliancePdf');
+const { getAccountBranding } = require('./partnerBranding');
 
 // ── small helpers (moved verbatim from routes/compliance.ts) ──────────────────
 
@@ -259,11 +260,14 @@ async function generateSnapshot(prisma, {
 
   const scopeDescription =
     `${standardCode || 'All standards'} — ${site ? site.name : 'all sites'}`;
+  const branding = await getAccountBranding(accountId); // #15 co-brand
   const pdfBuffer = await renderSnapshotPdf(bundles, {
     snapshotId,
     accountName:      account ? account.companyName : 'Account',
     generatedByName:  userName || 'Unknown user',
     generatedAtIso:   generatedAt.toISOString(),
+    brandName:        branding?.name || null,
+    brandColor:       branding?.primaryColor || null,
     scopeDescription,
     standardEditions: bundles.map((b) =>
       b.standard.edition ? `${b.standard.code} (${b.standard.edition})` : b.standard.code

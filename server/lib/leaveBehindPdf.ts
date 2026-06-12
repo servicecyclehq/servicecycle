@@ -21,6 +21,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+import { coBrandLine, type PartnerBranding } from './partnerBranding';
 
 // ── Palette (matches compliancePdf.ts house style) ───────────────────────────
 const C = {
@@ -112,6 +113,8 @@ export interface LeaveBehindData {
     rateMax: number | null;
     rateServiceType: string | null;
   }>;
+  // #15 co-branding — null for direct (non-channel) accounts.
+  branding?: PartnerBranding | null;
 }
 
 export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
@@ -131,7 +134,9 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     const W = PAGE.contentW;
 
     // ── Header band ──────────────────────────────────────────────────────────
-    doc.rect(0, 0, PAGE.width, 72).fill(C.bg);
+    // #15 co-brand: use the contractor's accent color for the band when present.
+    const headerBg = data.branding?.primaryColor || C.bg;
+    doc.rect(0, 0, PAGE.width, 72).fill(headerBg);
     doc.font(FONT_BOLD).fontSize(16).fillColor(C.textOnDark)
        .text('Service Completion Report', M, 18, { width: W });
     doc.font(FONT_REG).fontSize(9).fillColor(C.textMuted)
@@ -139,7 +144,7 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
        .text(`Work Order ${data.workOrder.id.slice(-8).toUpperCase()} · Completed ${data.workOrder.completedDate ? new Date(data.workOrder.completedDate).toLocaleDateString() : '—'}`, M, 48);
 
     doc.font(FONT_REG).fontSize(8).fillColor(C.textMuted)
-       .text('Prepared by ServiceCycle · This document is a summary leave-behind for the facility representative.', M, 60, { width: W });
+       .text(`${coBrandLine(data.branding)} · This document is a summary leave-behind for the facility representative.`, M, 60, { width: W });
 
     y = 84;
 

@@ -29,6 +29,7 @@ const router = require('express').Router();
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 const prisma = require('../lib/prisma').default;
+const { getAccountBranding } = require('../lib/partnerBranding');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -101,7 +102,7 @@ function filenameSlug(s) {
 }
 
 // Render one label at grid slot (col, row) on the current page.
-function drawLabel(doc, x, y, asset, qrPng) {
+function drawLabel(doc, x, y, asset, qrPng, brandName) {
   // QR block, left.
   doc.image(qrPng, x + QR_PAD, y + QR_PAD, { width: QR_SIZE, height: QR_SIZE });
 
@@ -141,9 +142,11 @@ function drawLabel(doc, x, y, asset, qrPng) {
   doc.font(FONT_REG).fontSize(6.5).fillColor(TEXT_MUTED);
   doc.text(fitText(doc, condLine, tw - (cx - tx)), cx, y + 43, { lineBreak: false });
 
-  // Footer — tiny brand mark, bottom of the text block.
+  // Footer — tiny brand mark, bottom of the text block. #15 co-brand: the
+  // contractor's name in front of the ServiceCycle mark when present.
   doc.font(FONT_REG).fontSize(5.5).fillColor(TEXT_FAINT);
-  doc.text('ServiceCycle', tx, y + GRID.labelH - 11, { lineBreak: false });
+  const footerText = brandName ? `${brandName} · ServiceCycle` : 'ServiceCycle';
+  doc.text(fitText(doc, footerText, tw), tx, y + GRID.labelH - 11, { lineBreak: false });
   doc.fillColor('#000000');
 }
 
@@ -246,6 +249,9 @@ router.get('/', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
+    const branding = await getAccountBranding(accountId); // #15 co-brand
+    const brandName = branding?.name || null;
+
     const doc = new PDFDocument({
       size: 'LETTER',
       margin: 0,            // grid is positioned absolutely; no auto page breaks
@@ -301,7 +307,7 @@ router.get('/', async (req, res) => {
 
       // Per-label try/catch — one malformed row must not take the sheet down.
       try {
-        drawLabel(doc, x, y, assets[i], qrPngs[i]);
+        drawLabel(doc, x, y, assets[i], qrPngs[i], brandName);
       } catch (err) {
         try {
           console.error('[assetLabels] label render failed; skipping.',

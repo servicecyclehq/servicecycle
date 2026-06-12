@@ -13,6 +13,7 @@
 const router = require('express').Router({ mergeParams: true });
 import prisma from '../lib/prisma';
 import { renderLeaveBehindPdf } from '../lib/leaveBehindPdf';
+import { getAccountBranding } from '../lib/partnerBranding';
 
 // Map asset EquipmentType to rate-card service type
 function equipToServiceType(equipmentType: string): string {
@@ -136,11 +137,13 @@ router.post('/', async (req: any, res: any) => {
     });
 
     // ── Render PDF ─────────────────────────────────────────────────────────
+    const branding = await getAccountBranding(accountId); // #15 co-brand
     const pdfBuffer = await renderLeaveBehindPdf({
       workOrder:           wo as any,
       deficiencies:        sortedDefs,
       openQuoteRequests:   openQuotes as any,
       modernizationAssets,
+      branding,
     });
 
     const filename = `leave-behind-${id.slice(-8).toUpperCase()}.pdf`;

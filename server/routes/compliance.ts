@@ -48,6 +48,7 @@ const { downloadFile } = require('../lib/storage');
 const { buildStandardsSummary, buildStandardReport, buildOverdueReport, buildComplianceGap } = require('../lib/complianceReport');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
+const { getAccountBranding } = require('../lib/partnerBranding');
 
 const router = express.Router();
 
@@ -215,11 +216,14 @@ router.post('/emp-document', requireManager, async (req, res) => {
     const snapshotId  = crypto.randomUUID();
     const generatedAt = new Date();
 
+    const branding = await getAccountBranding(accountId); // #15 co-brand
     const pdfBuffer = await renderEmpPdf(empData, {
       snapshotId,
       accountName:     empData.accountName,
       generatedByName: req.user.name || 'Unknown user',
       generatedAtIso:  generatedAt.toISOString(),
+      brandName:       branding?.name || null,
+      brandColor:      branding?.primaryColor || null,
     });
 
     const filename = `servicecycle-emp-document-${utcStamp(generatedAt)}.pdf`;
