@@ -57,6 +57,21 @@ const FONT_BOLD = 'Helvetica-Bold';
 const TEXT_MUTED = '#5b6373';
 const TEXT_FAINT = '#9aa3b2';
 
+// #7 condition-of-maintenance label (NFPA 70B §4.2 / Annex). The standard's EMP
+// element list calls for the equipment to carry its condition designation and
+// the date that condition was established. The NETA decal (a completed work
+// order's netaDecal result) supplies the Serviceable / Limited / Non-serviceable
+// designation; the asset's governingCondition supplies the C1/C2/C3 rating.
+const DECAL_DESIGNATION: any = { GREEN: 'Serviceable', YELLOW: 'Limited Service', RED: 'Non-serviceable' };
+const DECAL_COLOR: any = { GREEN: '#16a34a', YELLOW: '#d97706', RED: '#dc2626' };
+
+function fmtShortDate(d: any): string | null {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 // Truncate `s` so it renders within `maxW` at the doc's current font/size.
 // pdfkit's lineBreak:false happily overflows the box, so we measure.
 function fitText(doc, s, maxW) {
@@ -105,9 +120,30 @@ function drawLabel(doc, x, y, asset, qrPng) {
   doc.font(FONT_REG).fontSize(7).fillColor(TEXT_MUTED);
   doc.text(fitText(doc, asset.serialNumber ? `S/N ${asset.serialNumber}` : 'S/N —', tw), tx, y + 32, { lineBreak: false });
 
+  // Line 4 — #7 condition of maintenance: [decal swatch] designation · Cn · est. date.
+  // NFPA 70B wants the designation AND the date it was established on the gear.
+  const decal = asset._decal;
+  const gov = asset.governingCondition || 'C2';
+  const designation = decal ? DECAL_DESIGNATION[decal] : null;
+  const estDate = fmtShortDate(asset._decalDate);
+  const condParts = [];
+  if (designation) condParts.push(designation);
+  condParts.push(gov);
+  let condLine = condParts.join(' · ');
+  if (estDate) condLine += ` · est. ${estDate}`;
+  let cx = tx;
+  if (decal && DECAL_COLOR[decal]) {
+    doc.save();
+    doc.rect(tx, y + 44, 5, 5).fill(DECAL_COLOR[decal]);
+    doc.restore();
+    cx = tx + 8;
+  }
+  doc.font(FONT_REG).fontSize(6.5).fillColor(TEXT_MUTED);
+  doc.text(fitText(doc, condLine, tw - (cx - tx)), cx, y + 43, { lineBreak: false });
+
   // Footer — tiny brand mark, bottom of the text block.
   doc.font(FONT_REG).fontSize(5.5).fillColor(TEXT_FAINT);
-  doc.text('ServiceCycle', tx, y + GRID.labelH - 12, { lineBreak: false });
+  doc.text('ServiceCycle', tx, y + GRID.labelH - 11, { lineBreak: false });
   doc.fillColor('#000000');
 }
 
@@ -160,7 +196,7 @@ router.get('/', async (req, res) => {
       where,
       select: {
         id: true, equipmentType: true, manufacturer: true, model: true,
-        serialNumber: true,
+        serialNumber: true, governingCondition: true,
         site:     { select: { id: true, name: true } },
         position: { select: { name: true, code: true } },
       },
@@ -170,6 +206,24 @@ router.get('/', async (req, res) => {
 
     if (assets.length === 0) {
       return res.status(404).json({ success: false, error: 'No assets match the requested label set' });
+    }
+
+    // #7: the condition designation + "date established" come from each asset's
+    // most recent completed work order that recorded a NETA decal. One query for
+    // the whole sheet; first row per asset wins (ordered newest-first).
+    const decalRows = await prisma.workOrder.findMany({
+      where: { accountId, assetId: { in: assets.map((a: any) => a.id) }, netaDecal: { not: null } },
+      select: { assetId: true, netaDecal: true, completedDate: true, scheduledDate: true },
+      orderBy: { completedDate: 'desc' },
+    });
+    const decalByAsset = new Map<string, any>();
+    for (const w of decalRows) {
+      if (!decalByAsset.has(w.assetId)) decalByAsset.set(w.assetId, w);
+    }
+    for (const a of assets as any[]) {
+      const w = decalByAsset.get(a.id);
+      a._decal = w ? w.netaDecal : null;
+      a._decalDate = w ? (w.completedDate || w.scheduledDate) : null;
     }
 
     // Generate every QR PNG BEFORE opening the response — a qrcode failure
