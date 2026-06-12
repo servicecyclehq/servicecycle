@@ -656,19 +656,18 @@ function CapExForecastPanel() {
     <div className="card" style={{ marginBottom: 20, padding: '20px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-          Estimated Electrical CapEx Exposure
+          Equipment reliability &amp; end-of-life outlook
         </h3>
         <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
-          Budget planning estimates only — not binding quotes
+          Reliability planning — not a quote or sales offer
         </span>
       </div>
       <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-        Assets approaching end-of-life based on IEEE/NFPA/NETA equipment-life models and
-        condition ratings recorded in the system. Cost ranges reflect published service benchmarks
-        and will vary by site, equipment configuration, and local labor. <strong>These figures
-        are for budget planning only and do not constitute a formal quote, engineering assessment,
-        or guarantee of equipment condition.</strong> Consult a licensed electrical engineer
-        before making capital replacement decisions.
+        Assets approaching end-of-life based on IEEE/NFPA/NETA equipment-life models and the
+        condition ratings recorded in the system. Plan ahead so aging equipment is replaced on
+        your schedule — before it fails. The budget ranges below are rough planning estimates only;
+        they <strong>do not constitute a quote, engineering assessment, or guarantee of equipment
+        condition.</strong> Consult a licensed electrical engineer before any capital decision.
       </p>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         {forecast.filter((f) => f.assetCount > 0).map((f) => (
@@ -683,13 +682,13 @@ function CapExForecastPanel() {
               {f.year}
             </div>
             <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-primary)' }}>
-              {fmt(f.minCents)}
+              {f.assetCount} asset{f.assetCount !== 1 ? 's' : ''}
             </div>
             <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '2px 0 6px' }}>
-              to {fmt(f.maxCents)}
+              approaching end-of-life
             </div>
             <div style={{ fontSize: 11, color: 'var(--color-text-tertiary, var(--color-text-secondary))' }}>
-              {f.assetCount} asset{f.assetCount !== 1 ? 's' : ''}
+              Budget planning est. {fmt(f.minCents)}–{fmt(f.maxCents)}
             </div>
           </div>
         ))}
