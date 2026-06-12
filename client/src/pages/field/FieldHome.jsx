@@ -17,7 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../api/client';
 import { flushOutbox, useOutboxStatus } from '../../lib/fieldApi';
-import { assetLabel, fmtDate, SEVERITY_META, WO_STATUS_META } from '../../lib/equipment';
+import { assetLabel, fmtDate, EQUIPMENT_TYPE_LABELS, SEVERITY_META, WO_STATUS_META } from '../../lib/equipment';
 import { daysUntil } from '../../lib/urgency';
 
 const SITE_KEY = 'servicecycle_field_site';
@@ -132,6 +132,11 @@ export default function FieldHome() {
   // All four sections start open — the tech sees the whole day at a glance
   // and collapses what they don't care about.
   const [openSec, setOpenSec] = useState({ overdue: true, dueSoon: true, wo: true, def: true });
+  // Quick filters (2026-06-11): equipment type narrows every section's rows;
+  // the due-status chips show only the Overdue / Due soon section. Both are
+  // client-side over the already-fetched summary.
+  const [typeFilter, setTypeFilter] = useState('');
+  const [dueFilter, setDueFilter]   = useState(''); // '' | 'overdue' | 'dueSoon'
 
   useEffect(() => {
     api.get('/api/sites')
@@ -163,10 +168,30 @@ export default function FieldHome() {
   const toggle = (k) => setOpenSec(p => ({ ...p, [k]: !p[k] }));
   const go = (assetId) => navigate(`/field/asset/${assetId}`);
 
-  const overdue = summary?.overdue || [];
-  const dueSoon = summary?.dueSoon || [];
-  const workOrders = summary?.openWorkOrders || [];
-  const deficiencies = summary?.openDeficiencies || [];
+  const byType = (rows) => (typeFilter ? rows.filter(r => r.asset?.equipmentType === typeFilter) : rows);
+  const overdue = byType(summary?.overdue || []);
+  const dueSoon = byType(summary?.dueSoon || []);
+  const workOrders = byType(summary?.openWorkOrders || []);
+  const deficiencies = byType(summary?.openDeficiencies || []);
+
+  // Equipment types present in today's summary (unfiltered) — drives the
+  // quick-filter select so it only offers types the tech can actually see.
+  const typeOptions = [...new Set(
+    ['overdue', 'dueSoon', 'openWorkOrders', 'openDeficiencies']
+      .flatMap(k => summary?.[k] || [])
+      .map(r => r.asset?.equipmentType)
+      .filter(Boolean)
+  )].sort((a, b) => (EQUIPMENT_TYPE_LABELS[a] || a).localeCompare(EQUIPMENT_TYPE_LABELS[b] || b));
+
+  const dueChip = (active) => ({
+    flex: 1, minHeight: 44, boxSizing: 'border-box', padding: '0 12px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    fontSize: 14, fontWeight: 700, borderRadius: 'var(--radius)', cursor: 'pointer',
+    background: active ? 'var(--color-primary)' : 'var(--color-surface)',
+    color: active ? '#fff' : 'var(--color-text-secondary)',
+    border: `1px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+    WebkitTapHighlightColor: 'transparent',
+  });
 
   return (
     <div>
@@ -253,6 +278,50 @@ export default function FieldHome() {
         </button>
       </div>
 
+      {/* ── Quick filters: equipment type + due status ─────────────────────── */}
+      {summary && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+          {typeOptions.length > 0 && (
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}
+              aria-label="Filter by equipment type"
+              style={{
+                minHeight: 44, boxSizing: 'border-box', padding: '0 12px',
+                fontSize: 14, fontWeight: 600,
+                color: typeFilter ? 'var(--color-primary)' : 'var(--color-text)',
+                background: 'var(--color-surface)',
+                border: `1px solid ${typeFilter ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              <option value="">All equipment types</option>
+              {typeOptions.map(t => (
+                <option key={t} value={t}>{EQUIPMENT_TYPE_LABELS[t] || t}</option>
+              ))}
+            </select>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              aria-pressed={dueFilter === 'overdue'}
+              onClick={() => setDueFilter(f => (f === 'overdue' ? '' : 'overdue'))}
+              style={dueChip(dueFilter === 'overdue')}
+            >
+              {dueFilter === 'overdue' ? '✓ ' : ''}Overdue only
+            </button>
+            <button
+              type="button"
+              aria-pressed={dueFilter === 'dueSoon'}
+              onClick={() => setDueFilter(f => (f === 'dueSoon' ? '' : 'dueSoon'))}
+              style={dueChip(dueFilter === 'dueSoon')}
+            >
+              {dueFilter === 'dueSoon' ? '✓ ' : ''}Due soon only
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div role="alert" style={{
           padding: '12px 14px', marginBottom: 12, borderRadius: 'var(--radius)',
@@ -270,6 +339,7 @@ export default function FieldHome() {
 
       {summary && (
         <>
+          {(!dueFilter || dueFilter === 'overdue') && (
           <Section title="Overdue" accent="#dc2626" count={overdue.length}
             open={openSec.overdue} onToggle={() => toggle('overdue')}>
             {overdue.map((row, i) => (
@@ -283,7 +353,9 @@ export default function FieldHome() {
               />
             ))}
           </Section>
+          )}
 
+          {(!dueFilter || dueFilter === 'dueSoon') && (
           <Section title="Due soon" accent="#d97706" count={dueSoon.length}
             open={openSec.dueSoon} onToggle={() => toggle('dueSoon')}>
             {dueSoon.map((row, i) => (
@@ -297,7 +369,9 @@ export default function FieldHome() {
               />
             ))}
           </Section>
+          )}
 
+          {!dueFilter && (
           <Section title="Open work orders" accent="#2563eb" count={workOrders.length}
             open={openSec.wo} onToggle={() => toggle('wo')}>
             {workOrders.map((row, i) => {
@@ -314,7 +388,9 @@ export default function FieldHome() {
               );
             })}
           </Section>
+          )}
 
+          {!dueFilter && (
           <Section title="Open deficiencies" accent="#7c3aed" count={deficiencies.length}
             open={openSec.def} onToggle={() => toggle('def')}>
             {deficiencies.map((row, i) => {
@@ -331,6 +407,7 @@ export default function FieldHome() {
               );
             })}
           </Section>
+          )}
         </>
       )}
 

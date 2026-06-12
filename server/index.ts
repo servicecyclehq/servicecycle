@@ -443,9 +443,9 @@ const cspDirectives = {
   defaultSrc:    ["'none'"],
   scriptSrc:     ["'self'"],                                     // S3: same-origin scripts only
   styleSrc:      ["'self'"],                                     // S3: same-origin styles only
-  imgSrc:        ["'self'", 'data:', 'https://*.servicecycle.com'],   // L6: + marketing assets
-  connectSrc:    ["'self'", 'https://*.servicecycle.com'],            // L6: + sister subdomains for XHR/fetch
-  fontSrc:       ["'self'", 'https://*.servicecycle.com'],            // L6: + future marketing CDN fonts
+  imgSrc:        ["'self'", 'data:', 'https://*.servicecycle.app'],   // L6: + marketing assets
+  connectSrc:    ["'self'", 'https://*.servicecycle.app'],            // L6: + sister subdomains for XHR/fetch
+  fontSrc:       ["'self'", 'https://*.servicecycle.app'],            // L6: + future marketing CDN fonts
   objectSrc:     ["'none'"],
   baseUri:       ["'none'"],
   formAction:    ["'self'"],
@@ -1065,7 +1065,7 @@ app.get('/.well-known/security.txt', (req, res) => {
   res.set('Content-Type', 'text/plain; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=86400');
   res.send([
-    'Contact: mailto:security@servicecycle.com',
+    'Contact: mailto:security@servicecycle.app',
     'Preferred-Languages: en',
     // 90-day disclosure window per SECURITY.md.
     'Policy: https://github.com/servicecyclehq/servicecycle/blob/main/SECURITY.md',

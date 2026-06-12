@@ -117,7 +117,7 @@ describe('Block Kit digest builder', () => {
   test('returns text fallback + block kit array', () => {
     const out = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.servicecycle.com',
+      appUrl: 'https://servicecycle.app',
     });
     expect(typeof out.text).toBe('string');
     expect(Array.isArray(out.blocks)).toBe(true);
@@ -127,7 +127,7 @@ describe('Block Kit digest builder', () => {
   test('header reports correct asset count (groups by asset id)', () => {
     const out = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.servicecycle.com',
+      appUrl: 'https://servicecycle.app',
     });
     const header = out.blocks.find(b => b.type === 'header');
     expect(header.text.text).toMatch(/2 assets/);
@@ -136,17 +136,17 @@ describe('Block Kit digest builder', () => {
   test('asset block links use the /assets/:id deep-link URL', () => {
     const out = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.servicecycle.com',
+      appUrl: 'https://servicecycle.app',
     });
     const sectionBlocks = out.blocks.filter(b => b.type === 'section');
-    expect(sectionBlocks.some(b => b.text.text.includes('https://demo.servicecycle.com/assets/a-1'))).toBe(true);
-    expect(sectionBlocks.some(b => b.text.text.includes('https://demo.servicecycle.com/assets/a-2'))).toBe(true);
+    expect(sectionBlocks.some(b => b.text.text.includes('https://servicecycle.app/assets/a-1'))).toBe(true);
+    expect(sectionBlocks.some(b => b.text.text.includes('https://servicecycle.app/assets/a-2'))).toBe(true);
   });
 
   test('section lines include the task name and alert-type label', () => {
     const out = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.servicecycle.com',
+      appUrl: 'https://servicecycle.app',
     });
     const allText = out.blocks.filter(b => b.type === 'section').map(b => b.text.text).join('\n');
     expect(allText).toContain('Annual oil analysis');

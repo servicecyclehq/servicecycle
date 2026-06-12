@@ -491,7 +491,7 @@ export default function NewAsset() {
                       <input
                         ref={photoInputRef}
                         type="file"
-                        accept="image/jpeg,image/png,image/webp"
+                        accept="image/*"
                         capture="environment"
                         aria-label="Equipment photo"
                         onChange={handlePhotoFileChange}

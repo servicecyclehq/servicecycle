@@ -598,19 +598,33 @@ export default function AssetDetail() {
   async function handleApplyTemplate() {
     if (!await confirm({
       title: 'Apply NFPA 70B schedule template?',
-      message: 'Pairs this asset with every standard NFPA 70B maintenance task for its equipment type. Existing schedules are kept — the operation is idempotent.',
+      message: 'Adds the standard NFPA 70B / NETA maintenance schedule for this equipment type — one schedule per standard task. Existing schedules are kept — the operation is idempotent.',
       confirmLabel: 'Apply template',
     })) return;
+    // Snapshot the current schedule ids so the success toast can name exactly
+    // which tasks the template added (the bulk-apply response only carries a
+    // count — we diff against a refetch instead of changing the API).
+    const prevIds = new Set((asset?.schedules || []).map(s => s.id));
     try {
       const res = await api.post('/api/schedules/bulk-apply', { assetId: id });
       const created = res.data.data?.created ?? 0;
-      setToast({
-        message: created > 0
-          ? `${created} schedule${created !== 1 ? 's' : ''} added from the NFPA 70B template.`
-          : 'No new schedules to add — the template is already fully applied.',
-        variant: 'success',
-        duration: 5000,
-      });
+      let message;
+      if (created > 0) {
+        let names = [];
+        try {
+          const r2 = await api.get(`/api/assets/${id}`);
+          names = (r2.data.data?.asset?.schedules || [])
+            .filter(s => !prevIds.has(s.id))
+            .map(s => s.taskDefinition?.taskName)
+            .filter(Boolean);
+        } catch { /* fall back to the count-only message */ }
+        message = names.length > 0
+          ? `Added ${created} maintenance schedule${created !== 1 ? 's' : ''}: ${names.join(', ')}`
+          : `Added ${created} maintenance schedule${created !== 1 ? 's' : ''} from the NFPA 70B / NETA template.`;
+      } else {
+        message = 'No new schedules to add — this asset already has every template task for its equipment type.';
+      }
+      setToast({ message, variant: 'success', duration: 8000 });
       refetchAll();
     } catch (err) {
       setToast({ message: err.response?.data?.error || 'Failed to apply template.', variant: 'error' });
@@ -751,7 +765,12 @@ export default function AssetDetail() {
             <button type="button" className="btn btn-secondary" onClick={() => setEditing(v => !v)}>
               {editing ? 'Close editor' : 'Edit'}
             </button>
-            <button type="button" className="btn btn-secondary" onClick={handleApplyTemplate}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleApplyTemplate}
+              title="Adds the standard NFPA 70B / NETA maintenance schedule for this equipment type."
+            >
               Apply schedule template
             </button>
             <button
@@ -915,7 +934,14 @@ export default function AssetDetail() {
         {/* ── Maintenance Schedules ─────────────────────────────────────────── */}
         <div className="card mb-16">
           <div className="card-header">
-            <div className="card-title">Maintenance Schedules ({schedules.length})</div>
+            <div>
+              <div className="card-title">Maintenance Schedules ({schedules.length})</div>
+              {canWrite && (
+                <div className="card-subtitle">
+                  “Apply schedule template” adds the standard NFPA 70B / NETA maintenance schedule for this equipment type.
+                </div>
+              )}
+            </div>
           </div>
           {schedules.length === 0 ? (
             <div className="card-body">

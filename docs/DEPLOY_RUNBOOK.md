@@ -32,7 +32,7 @@ Caddy (installed separately, on the host) terminates TLS and proxies the domain 
 
 - Size: **2 GB RAM minimum, 4 GB recommended** (server and db each have a 1 GB mem_limit; the build itself needs headroom). 2 vCPU, 50 GB disk.
 - OS: Ubuntu 24.04 LTS.
-- Point an **A record** for your demo hostname (e.g. `demo.servicecycle.com`) at the droplet IP before you start Caddy (Let's Encrypt needs it resolving).
+- Point an **A record** for your demo hostname (e.g. `servicecycle.app`) at the droplet IP before you start Caddy (Let's Encrypt needs it resolving).
 
 SSH in and install Docker + the Compose plugin:
 
@@ -121,7 +121,7 @@ POSTGRES_PASSWORD=<from step 3>
 JWT_SECRET=<from step 3, >=32 chars>
 MASTER_KEY=<from step 3, 44-char base64>
 NODE_ENV=production
-CLIENT_URL=https://demo.servicecycle.com        # required in prod; locks CORS to this origin
+CLIENT_URL=https://servicecycle.app        # required in prod; locks CORS to this origin
 
 # ---- Demo-friendly (no external accounts needed) ----
 EMAIL_MOCK=true            # otherwise BREVO_API_KEY is required in prod
@@ -130,7 +130,7 @@ REGISTRATION_OPEN=false    # demo accounts are seeded, not self-signup
 
 # ---- Behind Caddy (reverse proxy) ----
 TRUST_PROXY=127.0.0.1      # Caddy runs on the host; trust the local hop so per-IP rate limits see real client IPs
-VITE_API_URL=https://demo.servicecycle.com
+VITE_API_URL=https://servicecycle.app
 # API stays bound to 127.0.0.1 by default so only Caddy can reach it.
 # Set SERVICECYCLE_HOST_BIND=0.0.0.0 ONLY if you must hit :3001 directly from another box.
 ```
@@ -194,7 +194,7 @@ Verified result: 14 standards + 85 task definitions, then 1 account / 4 users / 
 Install Caddy on the host and create `/etc/caddy/Caddyfile`:
 
 ```
-demo.servicecycle.com {
+servicecycle.app {
     encode gzip
     handle /api/* {
         reverse_proxy 127.0.0.1:3001
@@ -216,8 +216,8 @@ sudo systemctl reload caddy
 Caddy fetches a Let's Encrypt cert automatically once the A record resolves. The ACME challenge connects back to your hostname, so **DNS must point at the droplet and have propagated before you start Caddy**, or issuance fails. Verify first:
 
 ```bash
-dig +short A demo.servicecycle.com     # must return the droplet IP
-dig +short AAAA demo.servicecycle.com  # if you set an AAAA record, it must also be correct (or omit it)
+dig +short A servicecycle.app     # must return the droplet IP
+dig +short AAAA servicecycle.app  # if you set an AAAA record, it must also be correct (or omit it)
 ```
 
 Lower the record TTL to ~300s before cutover so you can correct mistakes quickly. Confirm the client and server container host ports match what Caddy proxies (`docker compose ps`); by default the API is on 127.0.0.1:3001. Adjust the client port in the Caddyfile to whatever the client service publishes.
@@ -237,8 +237,8 @@ Optional belt-and-suspenders security headers (the app already sets HSTS/nosniff
 ## 8. Verify
 
 ```bash
-curl -fsS https://demo.servicecycle.com/api/health   # liveness, no DB
-curl -fsS https://demo.servicecycle.com/api/ready    # readiness, checks DB connectivity
+curl -fsS https://servicecycle.app/api/health   # liveness, no DB
+curl -fsS https://servicecycle.app/api/ready    # readiness, checks DB connectivity
 ```
 
 Then open the domain in a browser and log in as `admin@demo.local / Admin1234!`.

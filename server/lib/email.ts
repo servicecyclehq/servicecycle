@@ -164,7 +164,7 @@ function assetDisplayName(asset) {
 function welcomeHtml({ name, companyName, appUrl }) {
   const safeName = name || 'there';
   const safeCompany = companyName || 'your team';
-  const safeUrl = appUrl || 'https://demo.servicecycle.com';
+  const safeUrl = appUrl || 'https://servicecycle.app';
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:24px;">
@@ -348,7 +348,7 @@ bash install.sh</pre>
 
   <p style="margin:28px 0 0;font-size:11px;color:#475569;line-height:1.6;">
     You're receiving this because you submitted the early-access form at
-    servicecycle.com. We don't add anyone to a marketing list — this is a
+    servicecycle.app. We don't add anyone to a marketing list — this is a
     one-shot transactional reply.
   </p>
 </div>`;

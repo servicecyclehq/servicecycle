@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * L6: CSP allowlist for *.servicecycle.com on connect-src, img-src, font-src.
+ * L6: CSP allowlist for *.servicecycle.app on connect-src, img-src, font-src.
  *
  * Static-source assertion. The cspDirectives object lives in server/index.ts
  * which is the boot file (not safely require-able in a unit test because it
@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 
-describe('L6: CSP allowlist *.servicecycle.com on connect-src / img-src / font-src', () => {
+describe('L6: CSP allowlist *.servicecycle.app on connect-src / img-src / font-src', () => {
   const src = fs.readFileSync(
     path.join(__dirname, '..', 'index.ts'),
     'utf8',
@@ -31,15 +31,15 @@ describe('L6: CSP allowlist *.servicecycle.com on connect-src / img-src / font-s
     expect(block.length).toBeGreaterThan(0);
   });
 
-  test('imgSrc includes https://*.servicecycle.com', () => {
+  test('imgSrc includes https://*.servicecycle.app', () => {
     expect(block).toMatch(/imgSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
   });
 
-  test('connectSrc includes https://*.servicecycle.com', () => {
+  test('connectSrc includes https://*.servicecycle.app', () => {
     expect(block).toMatch(/connectSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
   });
 
-  test('fontSrc includes https://*.servicecycle.com', () => {
+  test('fontSrc includes https://*.servicecycle.app', () => {
     expect(block).toMatch(/fontSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
   });
 

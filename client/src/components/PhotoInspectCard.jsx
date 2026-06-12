@@ -415,7 +415,7 @@ export default function PhotoInspectCard({ asset, onApplied }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/*"
             capture="environment"
             aria-label="Equipment photo"
             onChange={handleFileChange}

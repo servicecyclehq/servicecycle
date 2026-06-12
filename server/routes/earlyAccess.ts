@@ -41,8 +41,8 @@ const SubmitSchema = z.object({
   website: z.string().optional().nullable(),  // honeypot — must be empty
 }).strict();
 
-const INSTALL_SCRIPT_URL = process.env.SERVICECYCLE_INSTALL_URL || 'https://servicecycle.com/install.sh';
-const DEMO_URL           = process.env.SERVICECYCLE_DEMO_URL    || 'https://demo.servicecycle.com';
+const INSTALL_SCRIPT_URL = process.env.SERVICECYCLE_INSTALL_URL || 'https://servicecycle.app/install.sh';
+const DEMO_URL           = process.env.SERVICECYCLE_DEMO_URL    || 'https://servicecycle.app';
 
 // ── POST /api/early-access ──────────────────────────────────────────────────
 router.post('/', async (req, res) => {
@@ -79,7 +79,7 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     console.error('[earlyAccess] DB insert failed:', err);
-    return res.status(500).json({ success: false, error: 'Could not record your request — please email support@servicecycle.com directly.' });
+    return res.status(500).json({ success: false, error: 'Could not record your request — please email support@servicecycle.app directly.' });
   }
 
   // Fire both emails in parallel; neither blocks the response. Failures

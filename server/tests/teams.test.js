@@ -146,7 +146,7 @@ describe('Teams MessageCard digest builder', () => {
   test('returns a MessageCard envelope', () => {
     const card = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.servicecycle.com',
+      appUrl: 'https://servicecycle.app',
     });
     expect(card['@type']).toBe('MessageCard');
     expect(card['@context']).toBe('http://schema.org/extensions');
@@ -158,7 +158,7 @@ describe('Teams MessageCard digest builder', () => {
   test('title reports correct asset count (groups by asset id)', () => {
     const card = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.servicecycle.com',
+      appUrl: 'https://servicecycle.app',
     });
     expect(card.title).toMatch(/2 assets/);
   });
@@ -166,11 +166,11 @@ describe('Teams MessageCard digest builder', () => {
   test('asset sections deep-link to the right /assets/:id URLs', () => {
     const card = buildAlertDigest(fakeAlertItems(), {
       accountName: 'Acme Co',
-      appUrl: 'https://demo.servicecycle.com',
+      appUrl: 'https://servicecycle.app',
     });
     const titles = card.sections.map(s => s.activityTitle).filter(Boolean).join(' ');
-    expect(titles).toContain('https://demo.servicecycle.com/assets/a-1');
-    expect(titles).toContain('https://demo.servicecycle.com/assets/a-2');
+    expect(titles).toContain('https://servicecycle.app/assets/a-1');
+    expect(titles).toContain('https://servicecycle.app/assets/a-2');
   });
 
   test('escalation alerts drive the red theme color', () => {

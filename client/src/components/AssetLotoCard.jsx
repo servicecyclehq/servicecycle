@@ -84,6 +84,7 @@ export default function AssetLotoCard({ asset, canWrite }) {
           }}>
             <LotoProcForm
               assetId={asset.id}
+              equipmentType={asset.equipmentType}
               proc={editing === 'new' ? null : editing}
               onSaved={handleSaved}
               onCancel={() => setEditing(null)}

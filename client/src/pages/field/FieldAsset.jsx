@@ -149,6 +149,148 @@ function FieldLeaveBehindButton({ woId }) {
   );
 }
 
+// ── LOTO (lockout/tagout) — compact field read view ───────────────────────────
+// Techs need the written procedure at the equipment, not back at the desk.
+// Fetches the same GET /api/assets/:id/loto the desktop AssetLotoCard uses and
+// renders ACTIVE procedures read-only: energy sources first (what to isolate),
+// then the ordered steps. Drafts/archived are noted but not rendered — only an
+// approved (active) procedure should be followed in the field.
+const LOTO_CAT_LABELS = {
+  shutdown: 'Shutdown', isolation: 'Isolation', lockout: 'Lockout',
+  verify: 'Verify', restore: 'Restore', release: 'Release',
+};
+function FieldLotoSection({ assetId }) {
+  const [procs, setProcs] = useState(null); // null = loading
+  const [err, setErr] = useState(null);
+  const [openId, setOpenId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProcs(null);
+    setErr(null);
+    api.get(`/api/assets/${assetId}/loto`)
+      .then(r => {
+        if (cancelled) return;
+        const all = r.data?.data || [];
+        setProcs(all);
+        const active = all.filter(p => p.status === 'active');
+        if (active.length === 1) setOpenId(active[0].id); // single proc opens itself
+      })
+      .catch(e => { if (!cancelled) setErr(e?.response?.data?.error || 'Failed to load LOTO procedures.'); });
+    return () => { cancelled = true; };
+  }, [assetId]);
+
+  const active = (procs || []).filter(p => p.status === 'active');
+  const drafts = (procs || []).filter(p => p.status === 'draft');
+
+  return (
+    <SectionCard title="🔒 Lockout / Tagout" accent="#ea580c">
+      <div style={{ padding: 14 }}>
+        {procs === null && !err && (
+          <div style={{ fontSize: 13.5, color: 'var(--color-text-secondary)' }}>Loading procedures…</div>
+        )}
+        {err && (
+          <div role="alert" style={{
+            padding: '10px 12px', borderRadius: 10, fontSize: 13.5,
+            background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b',
+          }}>
+            {err}
+          </div>
+        )}
+        {procs !== null && !err && active.length === 0 && (
+          <div style={{
+            padding: '10px 12px', borderRadius: 10, fontSize: 13.5, lineHeight: 1.5,
+            background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e',
+          }}>
+            <strong>No approved LOTO procedure on file for this asset.</strong>{' '}
+            Do not rely on memory — OSHA 1910.147 requires a written procedure.
+            {drafts.length > 0 && ` (${drafts.length} draft${drafts.length !== 1 ? 's' : ''} pending approval on the full site.)`}
+          </div>
+        )}
+        {active.map(p => {
+          const open = openId === p.id;
+          const sources = p.energySources || [];
+          const steps = [...(p.steps || [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          return (
+            <div key={p.id} style={{ border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 10, overflow: 'hidden' }}>
+              <button
+                type="button"
+                onClick={() => setOpenId(open ? null : p.id)}
+                aria-expanded={open}
+                style={{
+                  all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: '100%',
+                  minHeight: 52, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10,
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--color-text)' }}>{p.title}</div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                    Rev {p.version || 1} · {sources.length} energy source{sources.length !== 1 ? 's' : ''} · {steps.length} step{steps.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+                <Chip label="Active ✓" color="#15803d" bg="#f0fdf4" />
+                <span aria-hidden="true" style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{open ? '▾' : '▸'}</span>
+              </button>
+              {open && (
+                <div style={{ borderTop: '1px solid var(--color-border)', padding: '10px 12px', fontSize: 13.5 }}>
+                  {sources.length > 0 && (
+                    <>
+                      <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-secondary)', marginBottom: 6 }}>
+                        ⚡ Energy sources to isolate
+                      </div>
+                      {sources.map((s2, i) => (
+                        <div key={s2.id || i} style={{ padding: '6px 0', borderBottom: '1px solid var(--color-border)', lineHeight: 1.5 }}>
+                          <div style={{ fontWeight: 600, color: 'var(--color-text)' }}>
+                            {i + 1}. {s2.description}
+                            <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}> ({s2.energyType})</span>
+                          </div>
+                          <div style={{ color: 'var(--color-text-secondary)', fontSize: 12.5 }}>
+                            Isolate at <strong style={{ color: 'var(--color-text)' }}>{s2.isolationPoint}</strong> — {s2.isolationMethod}.
+                            Verify: {s2.verificationMethod}
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-secondary)', margin: '12px 0 6px' }}>
+                    📋 Steps — follow in order
+                  </div>
+                  {steps.map((st, i) => (
+                    <div key={st.id || i} style={{ display: 'flex', gap: 10, padding: '6px 0', borderBottom: i < steps.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
+                      <span style={{
+                        flexShrink: 0, width: 24, height: 24, borderRadius: 999,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 800,
+                        background: 'var(--color-bg)', color: 'var(--color-text-secondary)',
+                        border: '1px solid var(--color-border)',
+                      }}>
+                        {i + 1}
+                      </span>
+                      <div style={{ lineHeight: 1.5, minWidth: 0 }}>
+                        <span style={{ color: 'var(--color-text)' }}>{st.instruction}</span>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
+                          {st.category && <Chip label={LOTO_CAT_LABELS[st.category] || st.category} color="#475569" bg="#f1f5f9" />}
+                          {st.requiresVerification && <Chip label="Verify & record" color="#92400e" bg="#fef3c7" />}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {p.notes && (
+                    <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+                      Notes: {p.notes}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
 export default function FieldAsset() {
   const { id } = useParams();
   const { aiEnabled, aiConfigured, features } = useAuth();
@@ -561,6 +703,9 @@ export default function FieldAsset() {
         })}
       </SectionCard>
 
+      {/* ── LOTO — written procedure at the equipment ──────────────────────── */}
+      <FieldLotoSection assetId={id} />
+
       {/* ── (b) Photo inspect — ONLINE ONLY ────────────────────────────────── */}
       {photoFeature && (
         <SectionCard title="📷 Photo inspect">
@@ -577,7 +722,7 @@ export default function FieldAsset() {
                 <input
                   ref={photoInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/*"
                   capture="environment"
                   onChange={handlePhotoPick}
                   disabled={photoBusy}
@@ -946,7 +1091,7 @@ export default function FieldAsset() {
         <input
           ref={ocrInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/*"
           capture="environment"
           onChange={handleOcrPick}
           disabled={ocrBusy}

@@ -115,7 +115,7 @@ function buildSpec() {
       version: require('../package.json').version,
       description: 'Auto-generated from server/schemas/registry.js. Covers all internal /api endpoints. Do not hand-edit â€” run `npm run openapi:build`.',
     },
-    servers: [{ url: 'https://demo.servicecycle.com' }],
+    servers: [{ url: 'https://servicecycle.app' }],
     paths,
   };
   return { spec, stats: { total, precise, paths: Object.keys(paths).length } };

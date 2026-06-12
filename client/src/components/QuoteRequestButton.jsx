@@ -43,12 +43,29 @@ const DRIVER_OPTIONS = [
   { value: 'budgetary',          label: 'Budgetary / planning purposes only',  emergency: false },
 ];
 
+// Timeline options (2026-06-11 copy pass). The server's QuoteTimeline enum is
+// fixed at immediately | within_1_week | within_30_days | next_budget_cycle,
+// so the finer-grained labels MAP onto those values (`value` is what we
+// submit). Options whose label is more specific than the enum value set
+// `appendNote: true` — the exact wording is prepended to the notes field so
+// the service rep still sees precisely what the customer picked.
 const TIMELINE_OPTIONS = [
-  { value: 'immediately',        label: 'Immediately (same day / next available)' },
-  { value: 'within_1_week',      label: 'Within 1 week' },
-  { value: 'within_30_days',     label: 'Within 30 days' },
-  { value: 'next_budget_cycle',  label: 'Next budget cycle (no urgency)' },
+  { id: 'immediately',     value: 'immediately',       label: 'Immediately (emergency)' },
+  { id: 'within_1_week',   value: 'within_1_week',     label: 'Within a week' },
+  { id: 'within_30_days',  value: 'within_30_days',    label: 'Within a month' },
+  { id: 'within_3_months', value: 'next_budget_cycle', label: 'Within 3 months',      appendNote: true },
+  { id: 'within_6_months', value: 'next_budget_cycle', label: 'Within 6 months',      appendNote: true },
+  { id: 'planned',         value: 'next_budget_cycle', label: 'Planned — no urgency' },
 ];
+
+// Display labels for the server enum values (request history rows carry the
+// stored enum, not the form option id).
+const TIMELINE_VALUE_LABELS = {
+  immediately:       'Immediately (emergency)',
+  within_1_week:     'Within a week',
+  within_30_days:    'Within a month',
+  next_budget_cycle: 'Planned / longer horizon',
+};
 
 const STATUS_META = {
   requested: { label: 'Requested',  color: '#3b82f6', bg: '#eff6ff' },
@@ -124,18 +141,26 @@ export default function QuoteRequestButton({ asset }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!driver || !timeline) return;
+    // Map the form option onto the server's fixed QuoteTimeline enum; when the
+    // label is finer-grained than the enum, carry the exact wording in notes.
+    const tlOpt = TIMELINE_OPTIONS.find(t => t.id === timeline);
+    if (!tlOpt) return;
+    const mergedNotes = [
+      tlOpt.appendNote ? `Requested timeline: ${tlOpt.label}.` : null,
+      notes || null,
+    ].filter(Boolean).join('\n');
     setSubmitting(true);
     try {
       await api.post('/api/quote-requests', {
         assetId:  asset.id,
         driver,
-        timeline,
+        timeline:        tlOpt.value,
         outageAvailable: outageAvailable !== '' ? outageAvailable === 'yes' : undefined,
         outageWindow:    outageWindow    || undefined,
         budgeted:        budgeted        !== '' ? budgeted === 'yes' : undefined,
         budgetNotes:     budgetNotes     || undefined,
         attachmentNotes: attachmentNotes || undefined,
-        notes:           notes           || undefined,
+        notes:           mergedNotes     || undefined,
       });
       setToast({ message: isEmergency ? 'Emergency request submitted — call your rep now!' : 'Quote request submitted successfully', type: 'success' });
       resetForm();
@@ -243,7 +268,7 @@ export default function QuoteRequestButton({ asset }) {
               >
                 <option value="">— Select timeline —</option>
                 {TIMELINE_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.id} value={o.id}>{o.label}</option>
                 ))}
               </select>
             </div>
@@ -382,7 +407,7 @@ export default function QuoteRequestButton({ asset }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {history.slice(0, 5).map(qr => {
               const driverLabel = DRIVER_OPTIONS.find(d => d.value === qr.driver)?.label || qr.driver;
-              const timelineLabel = TIMELINE_OPTIONS.find(t => t.value === qr.timeline)?.label || qr.timeline;
+              const timelineLabel = TIMELINE_VALUE_LABELS[qr.timeline] || qr.timeline;
               return (
                 <div key={qr.id} style={{
                   display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',

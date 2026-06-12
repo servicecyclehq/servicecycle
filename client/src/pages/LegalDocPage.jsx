@@ -44,6 +44,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import BrandMark from '../components/BrandMark';
 
 // Flip to true to re-take docs down for further revision; the
 // takedown-notice JSX below the early return is preserved so the
@@ -60,7 +61,7 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
         <header style={s.nav}>
           <div style={s.navInner}>
             <Link to="/" style={s.logo}>
-              <span style={s.logoMark}>L</span>
+              <BrandMark size={30} variant="light" />
               <span style={s.logoText}>ServiceCycle</span>
             </Link>
             <button style={s.navCta} onClick={() => navigate('/login')}>Sign in</button>
@@ -152,7 +153,7 @@ export default function LegalDocPage({ source, lastUpdated, draftBanner = true }
       <header style={s.nav}>
         <div style={s.navInner}>
           <Link to="/" style={s.logo}>
-            <span style={s.logoMark}>L</span>
+            <BrandMark size={30} variant="light" />
             <span style={s.logoText}>ServiceCycle</span>
           </Link>
           <button style={s.navCta} onClick={() => navigate('/login')}>Sign in</button>

@@ -67,13 +67,13 @@ describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () 
 
   test('feedback email bypasses the mock - actually fires the HTTP call', async () => {
     await sendEmail({
-      to:      'demofeedback@servicecycle.com',
+      to:      'demofeedback@servicecycle.app',
       subject: '[ServiceCycle Feedback] bug - Demo Admin (admin)',
       html:    '<p>thing is broken</p>',
     });
     expect(fetchCalls()).toBe(1);
     expect(lastUrl()).toBe('https://api.brevo.com/v3/smtp/email');
-    expect(lastBody().to[0].email).toBe('demofeedback@servicecycle.com');
+    expect(lastBody().to[0].email).toBe('demofeedback@servicecycle.app');
     expect(lastBody().subject).toMatch(/^\[ServiceCycle Feedback\]/);
     expect(lastBody().sender.email).toBe('noreply@example.test');
   });
@@ -81,7 +81,7 @@ describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () 
   test('feedback bypass still respects EMAIL_MOCK=false (already a real send)', async () => {
     process.env.EMAIL_MOCK = 'false';
     await sendEmail({
-      to:      'demofeedback@servicecycle.com',
+      to:      'demofeedback@servicecycle.app',
       subject: '[ServiceCycle Feedback] feature request',
       html:    '<p>idea</p>',
     });
@@ -92,7 +92,7 @@ describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () 
     delete process.env.BREVO_API_KEY;
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await sendEmail({
-      to:      'demofeedback@servicecycle.com',
+      to:      'demofeedback@servicecycle.app',
       subject: '[ServiceCycle Feedback] bug',
       html:    '<p>hi</p>',
     });
@@ -112,7 +112,7 @@ describe('L4: lib/email sendEmail() - feedback subject bypasses EMAIL_MOCK', () 
     process.env.RESEND_API_KEY = 're_legacy_xxxx';
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await sendEmail({
-      to:      'demofeedback@servicecycle.com',
+      to:      'demofeedback@servicecycle.app',
       subject: '[ServiceCycle Feedback] still here',
       html:    '<p>hi</p>',
     });

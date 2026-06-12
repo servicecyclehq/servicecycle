@@ -201,7 +201,7 @@ function drawFooter(doc) {
     doc.moveTo(PAGE.margin, y).lineTo(doc.page.width - PAGE.margin, y)
        .strokeColor(COLORS.border).lineWidth(0.5).stroke();
     doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
-       .text('servicecycle.com - generated help reference', PAGE.margin, y + 4, { align: 'left', lineBreak: false });
+       .text('servicecycle.app - generated help reference', PAGE.margin, y + 4, { align: 'left', lineBreak: false });
     doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
        .text(`Page ${doc.bufferedPageRange().start + doc.page.number}`, PAGE.margin, y + 4, { align: 'right', lineBreak: false });
   } finally {

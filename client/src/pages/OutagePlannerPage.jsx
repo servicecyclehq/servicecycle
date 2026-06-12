@@ -306,13 +306,32 @@ export default function OutagePlannerPage() {
             <Bolt size={22} strokeWidth={1.75} />
             Outage Planner
           </h1>
-          <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 0' }}>
-            All assets with outage-requiring maintenance tasks due within ±90 days — grouped by site so you can consolidate multiple assets into one planned shutdown window.
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 0', maxWidth: 720, lineHeight: 1.6 }}>
+            Some maintenance tasks — insulation testing, breaker servicing, busway inspection — can only
+            be done with the equipment de-energized. Each de-energization is an <strong>outage window</strong>:
+            a planned shutdown that interrupts the power your facility depends on. This planner finds every
+            asset with outage-requiring tasks due within ±90 days and groups them by site, so instead of
+            shutting the same site down once per task, you schedule <em>one</em> window that knocks out all
+            of them together.
           </p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={load} disabled={loading}>
           {loading ? 'Loading…' : 'Refresh'}
         </button>
+      </div>
+
+      {/* How to read this page — brief helper for the key sections. */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: '6px 24px',
+        padding: '10px 14px', marginBottom: 20, borderRadius: 8,
+        background: 'var(--color-bg-secondary, var(--color-bg))',
+        border: '1px solid var(--color-border)',
+        fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', lineHeight: 1.6,
+      }}>
+        <span><strong style={{ color: 'var(--color-text)' }}>⚡ Shutdowns avoided</strong> — how many separate de-energizations you skip by combining a site&rsquo;s tasks into one window.</span>
+        <span><strong style={{ color: 'var(--color-text)' }}>Status pills</strong> — <span style={{ color: '#b91c1c', fontWeight: 600 }}>Overdue</span> is past its due date, <span style={{ color: '#92400e', fontWeight: 600 }}>Due soon</span> falls inside the next 90 days, Upcoming is further out but still in the window.</span>
+        <span><strong style={{ color: 'var(--color-text)' }}>Schedule consolidated outage</strong> — pick a date and which assets to include; one work order per asset is created, all on the same outage date.</span>
+        <span><strong style={{ color: 'var(--color-text)' }}>WO open</strong> — that asset already has a work order in flight; including it again may duplicate effort.</span>
       </div>
 
       {loading && (

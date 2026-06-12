@@ -250,7 +250,7 @@ function MaintenanceHorizon({ navigate }) {
   const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
   return (
-    <div className="card" style={{ marginBottom: 20 }}>
+    <div className="card" style={{ marginBottom: 0 }}>
       <div className="card-header">
         <div>
           <div className="card-title">Maintenance horizon — next 36 months</div>
@@ -863,9 +863,76 @@ export default function Dashboard() {
                 never sit below a recency feed. */}
             <CapExForecastPanel />
 
-            {/* ── 36-month maintenance horizon — B2 (2026-06-11): promoted
-                from dead last; planning texture belongs above the rollups. */}
-            <MaintenanceHorizon navigate={navigate} />
+            {/* ── 36-month maintenance horizon + recent work orders ───────
+                B2 (2026-06-11): horizon promoted from dead last; planning
+                texture belongs above the rollups.
+                Layout pass (2026-06-11): the horizon shrinks to ~half page
+                width and Recent Work Orders sits beside it in a two-column
+                row — filling the empty bottom-right gap B4 left behind. */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: 16, marginBottom: 20, alignItems: 'start',
+            }}>
+              <MaintenanceHorizon navigate={navigate} />
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div className="card-header">
+                  <div>
+                    <div className="card-title">Recent work orders</div>
+                    <div className="card-subtitle">
+                      Most recently updated jobs
+                    </div>
+                  </div>
+                  <button className="btn btn-secondary btn-sm" onClick={() => navigate('/work-orders')}>
+                    View all
+                  </button>
+                </div>
+                {recentWOs.length === 0 ? (
+                  <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-ui)' }}>
+                    No work orders yet
+                  </div>
+                ) : (
+                  <div style={{ padding: '4px 16px 12px' }}>
+                    {recentWOs.slice(0, 5).map(wo => {
+                      const m = metaOf(WO_STATUS_META, wo.status);
+                      const go = () => navigate(`/work-orders/${wo.id}`);
+                      return (
+                        <div
+                          key={wo.id}
+                          className="hover-row"
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 8px', borderBottom: '1px solid var(--color-border)', borderRadius: 0, cursor: 'pointer' }}
+                          onClick={go} role="button" tabIndex={0} onKeyDown={kbdActivate(go)}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 'var(--font-size-ui)', fontWeight: 600, color: 'var(--color-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {assetLabel(wo.asset)}
+                            </div>
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {wo.schedule?.taskDefinition?.taskName ? `${wo.schedule.taskDefinition.taskName} · ` : ''}
+                              {wo.contractor?.name || 'Unassigned'}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <span style={{
+                              display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+                              fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '0.01em', whiteSpace: 'nowrap',
+                              background: m.bg || 'var(--color-surface)',
+                              color: m.color || 'var(--color-text-secondary)',
+                              border: `1px solid color-mix(in srgb, ${m.color || 'var(--color-border)'} 40%, transparent)`,
+                            }}>
+                              {m.label || wo.status}
+                            </span>
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 3 }}>
+                              {fmtDate(wo.updatedAt)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* ── Compliance by site ─────────────────────────────────────── */}
             {bySite.length > 0 && (
@@ -960,72 +1027,10 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* ── Recent work orders ─────────────────────────────────────── */}
-            {/* B4 (2026-06-11): demoted to last + resized — pure recency
-                feed, capped at 5 rows and ~half width. The reclaimed space
-                stays empty for now (a later batch fills it). */}
-            <div className="card" style={{ marginBottom: 20, maxWidth: isMobile ? undefined : 560 }}>
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Recent work orders</div>
-                  <div className="card-subtitle">
-                    Most recently updated jobs
-                  </div>
-                </div>
-                <button className="btn btn-secondary btn-sm" onClick={() => navigate('/work-orders')}>
-                  View all
-                </button>
-              </div>
-              {recentWOs.length === 0 ? (
-                <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-ui)' }}>
-                  No work orders yet
-                </div>
-              ) : (
-                <div style={{ padding: '4px 16px 12px' }}>
-                  {recentWOs.slice(0, 5).map(wo => {
-                    const m = metaOf(WO_STATUS_META, wo.status);
-                    const go = () => navigate(`/work-orders/${wo.id}`);
-                    return (
-                      <div
-                        key={wo.id}
-                        className="hover-row"
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 8px', borderBottom: '1px solid var(--color-border)', borderRadius: 0, cursor: 'pointer' }}
-                        onClick={go} role="button" tabIndex={0} onKeyDown={kbdActivate(go)}
-                      >
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 'var(--font-size-ui)', fontWeight: 600, color: 'var(--color-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {assetLabel(wo.asset)}
-                          </div>
-                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {wo.schedule?.taskDefinition?.taskName ? `${wo.schedule.taskDefinition.taskName} · ` : ''}
-                            {wo.contractor?.name || 'Unassigned'}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <span style={{
-                            display: 'inline-block', padding: '3px 10px', borderRadius: 999,
-                            fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '0.01em', whiteSpace: 'nowrap',
-                            background: m.bg || 'var(--color-surface)',
-                            color: m.color || 'var(--color-text-secondary)',
-                            border: `1px solid color-mix(in srgb, ${m.color || 'var(--color-border)'} 40%, transparent)`,
-                          }}>
-                            {m.label || wo.status}
-                          </span>
-                          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 3 }}>
-                            {fmtDate(wo.updatedAt)}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
           </>
         )}
       </div>
     </>
   );
 }
-// 2026-06-11: dashboard IA pass (B1–B4, A3–A5) — see docs/MASTER_PUNCH_LIST_2026-06-11.md
+// 2026-06-11: dashboard IA pass (B1–B4, A3–A5) + horizon/recent-WO two-column row — see docs/MASTER_PUNCH_LIST_2026-06-11.md
