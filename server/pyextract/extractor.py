@@ -24,7 +24,7 @@ import pdfplumber
 
 from neta_field_library import (
     DTYPE_PATTERNS, MEASUREMENT_VOCAB, HEADER_FIELDS, MEASUREMENT_COLUMNS,
-    RESULT_TOKENS, normalize_unit,
+    RESULT_TOKENS, HEADER_STOPWORDS, normalize_unit,
 )
 
 Y_TOL = 3.0
@@ -167,12 +167,59 @@ def _below_cell(cells, cell, xtol=50):
     return cands[0] if cands else None
 
 
-# --- header / nameplate fields (serial, model, mfr, date, vendor, tech) ---
+# --- header / nameplate fields (serial, model, mfr, date, customer, …) -------
+def _hdr_reject(raw):
+    low = raw.lower().strip()
+    if not low:
+        return True
+    toks = [t.strip(".,:;()") for t in re.split(r"[\s/]+", low) if t]
+    if toks and all(t in HEADER_STOPWORDS or t == "" for t in toks):
+        return True   # value is made entirely of label/boilerplate words
+    return False
+
+
+def _cut_allcaps(raw):
+    """Stop a value at the next ALL-CAPS word (PowerDB labels/section headers
+    are uppercase), so 'Ferranti Packard YEAR 1958 BUSHING' -> 'Ferranti Packard'."""
+    toks = raw.split()
+    keep = []
+    for i, t in enumerate(toks):
+        core = re.sub(r"[^A-Za-z]", "", t)
+        if i > 0 and len(core) >= 3 and core.isupper():
+            break
+        keep.append(t)
+    return " ".join(keep).strip(" ,.-:|")
+
+
+def _hdr_valid(dtype, raw):
+    raw = re.sub(r"\(cid:\d+\)", "", raw)
+    raw = raw.strip(" :#-|.\t\r\n")
+    if not raw or _hdr_reject(raw):
+        return None
+    if dtype == "date":
+        return parse_value("date", raw)
+    if dtype == "serial":
+        # a real serial almost always carries a digit — rejects USED / Meter /
+        # SHUNT / TYPE / "number" that the old regex grabbed off blank labels.
+        tok = raw.split()[0].strip(",.;:")
+        if not re.search(r"\d", tok) or not (3 <= len(tok) <= 40):
+            return None
+        return tok
+    if dtype == "id":
+        v = _cut_allcaps(raw.split("  ")[0].strip())
+        return v if v and 1 <= len(v) <= 40 and not _hdr_reject(v) else None
+    if dtype == "name":
+        v = _cut_allcaps(raw)
+        return v if v and 2 <= len(v) <= 60 and not _hdr_reject(v) else None
+    return raw
+
+
 def extract_header(cells, text):
-    """Regex over the text layer. A value is captured after its label and
-    STOPS at the next known label keyword (or a 2+ space gap / newline), so on
-    a line packing several 'Label: value' pairs ('Manufacturer: ABB  Model: X
-    Serial: Y') each value keeps to itself instead of swallowing the rest."""
+    """Regex over the text layer with per-field validation. A value is captured
+    after its label, STOPS at the next known label / 2-space gap / newline, and
+    must pass a plausibility check for its type (serials need a digit; nothing
+    made only of label/boilerplate words survives). Handles the
+    several-pairs-per-line PowerDB nameplate layout."""
     stops = set()
     for f in HEADER_FIELDS:
         for lbl in f["labels"]:
@@ -192,75 +239,102 @@ def extract_header(cells, text):
             m = pat.search(text)
             if not m:
                 continue
-            raw = m.group(1).strip(" :#-|")
-            if not raw:
-                continue
-            val = raw if f["dtype"] == "string" else parse_value(f["dtype"], raw)
-            if val:
-                out[f["key"]] = {"value": val, "raw": raw, "confidence": 0.85}
+            v = _hdr_valid(f["dtype"], m.group(1))
+            if v:
+                out[f["key"]] = {"value": v, "raw": m.group(1).strip(), "confidence": 0.85}
                 break
     return out
 
 
-# --- measurements: label-row pass + ruled-table pass ---
+# --- measurements ---
 _PHASE_RE = re.compile(r"\bPh(?:ase)?\.?\s*([ABCN](?:-[ABCN])?)\b", re.I)
+# connection / terminal tokens that encode a phase in NETA/PowerDB reports
+_CONN_RE = re.compile(r"\b([HXLT]\d?-[A-Z0-9]{1,3}|[ABC]-[ABCGN])\b")
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
-_UNIT_RE = re.compile(r"\d[\d.,]*\s*(M\s?ohm|Mohm|MΩ|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|ppm|%|VDC|kV|sec|A)\b", re.I)
-_EXPECT_RE = re.compile(r"(?:Expected|Limit|Min(?:imum)?|Spec)\.?\s*[:=]?\s*([<>]=?\s*[\d.]+\s*[A-Za-zΩµ%]*)", re.I)
-_RESULT_RE = re.compile(r"\b(GREEN|YELLOW|RED|PASS|FAIL|MARGINAL|SAT|UNSAT)\b", re.I)
+_NUM = r"-?\d[\d,]*(?:\.\d+)?"
+_UNIT = (r"(?:M\s?Ω|MΩ|Mohm|megohm|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|ppm|kVDC|VDC|"
+         r"kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A)")
+_INLINE_RE = re.compile(r"([A-Za-z][\w .,/&()+#-]{0,28}?)\s*[:=]?\s*(" + _NUM + r")\s*(" + _UNIT + r")(?![A-Za-z0-9])")
+_EXPECT_RE = re.compile(r"(?:Expected|Limit|Min(?:imum)?|Spec|Acceptance|Nameplate)\.?\s*[:=]?\s*([<>]=?\s*[\d.]+\s*[A-Za-zΩµ%]*)", re.I)
+_RESULT_RE = re.compile(r"\b(GREEN|YELLOW|RED|PASS(?:ED)?|FAIL(?:ED)?|MARGINAL|SAT|UNSAT|ACCEPTABLE|DEFICIENT)\b", re.I)
+
+# Infer a measurementType from a unit when the label is unknown. Only the
+# DIAGNOSTIC units (insulation/contact/winding resistance, DGA) get a semantic
+# NETA type — those are unambiguous and safe to feed the trend/deficiency
+# engine. Ambiguous units (V, A, %, Ω, Hz, °) get a GENERIC type so a stray
+# voltage or ambient-temperature reading is never mistaken for a power-factor
+# or insulation result. A real label (e.g. "Power Factor … %") still upgrades
+# the type via MEASUREMENT_VOCAB before this fallback runs.
+UNIT_TYPE = {
+    "MΩ": ("insulation_resistance", False), "µΩ": ("contact_resistance", True),
+    "mΩ": ("winding_resistance", False), "ppm": ("dissolved_gas", False),
+    "kΩ": ("resistance", False), "Ω": ("resistance", False),
+    "%": ("percent_reading", False),
+    "V": ("voltage_reading", False), "VDC": ("voltage_reading", False),
+    "kV": ("voltage_reading", False), "kVDC": ("voltage_reading", False),
+    "A": ("current_reading", False), "mA": ("current_reading", False), "kA": ("current_reading", False),
+    "sec": ("time_reading", False), "ms": ("time_reading", False), "Hz": ("frequency_reading", False),
+    "°C": ("temperature_reading", False), "°F": ("temperature_reading", False),
+}
 
 
 def _label_in(text_low):
-    """Return (label, vocab) if a measurement label appears at/near the start."""
-    for lbl in MEASUREMENT_VOCAB:
-        if text_low.startswith(lbl) or (" " + lbl) in text_low[:len(lbl) + 6]:
-            return lbl, MEASUREMENT_VOCAB[lbl]
-    # also allow label anywhere in a short cell
     for lbl in MEASUREMENT_VOCAB:
         if lbl in text_low:
             return lbl, MEASUREMENT_VOCAB[lbl]
     return None, None
 
 
-def extract_measurements(cells, page_tables):
-    label_out = []
+def _phase_of(s):
+    m = _PHASE_RE.search(s)
+    if m:
+        return m.group(1).upper()
+    m = _CONN_RE.search(s)
+    return m.group(1).upper() if m else None
 
-    # Pass 1: labeled rows (cell whose text contains a known measurement label)
-    for cell in cells:
-        low = _norm(cell["text"])
-        lbl, vocab = _label_in(low)
-        if not lbl:
+
+def _classify(label, unit):
+    """-> (measurementType, critical, unit). Known measurement label wins;
+    else infer from the unit; else a generic slug of the label."""
+    low = _norm(label)
+    for lbl, v in MEASUREMENT_VOCAB.items():
+        if lbl in low:
+            return v["type"], v["critical"], (normalize_unit(unit) if unit else v["unit"])
+    nu = normalize_unit(unit) if unit else None
+    if nu and nu in UNIT_TYPE:
+        t, crit = UNIT_TYPE[nu]
+        return t, crit, nu
+    slug = re.sub(r"[^a-z0-9]+", "_", low).strip("_")[:40] or "reading"
+    return slug, False, nu
+
+
+def _inline_readings(text):
+    """General pass: every <label> <value> <unit> in the text layer. Captures
+    real PowerDB / prose / load-bank readings the ruled-table pass misses."""
+    out = []
+    for m in _INLINE_RE.finditer(text):
+        label = m.group(1).strip(" :=.-,/#")
+        if not re.search(r"[A-Za-z]", label):
             continue
-        rest = cell["text"]
-        phase_m = _PHASE_RE.search(rest)
-        unit_m = _UNIT_RE.search(rest)
-        # first number that isn't part of the phase token
-        after = rest
-        nums = _NUM_RE.findall(after.split(lbl, 1)[-1] if lbl in after.lower() else after)
-        value = float(nums[0]) if nums else None
-        expect_m = _EXPECT_RE.search(rest)
-        res_m = _RESULT_RE.search(rest)
-        result = parse_value("result", res_m.group(1)) if res_m else None
-        if value is None and result is None:
+        label = " ".join(label.split()[-4:])  # keep the last few words, not a whole sentence
+        try:
+            val = float(m.group(2).replace(",", ""))
+        except ValueError:
             continue
-        label_out.append({
-            "measurementType": vocab["type"],
-            "label": lbl.title(),
-            "phase": phase_m.group(1).upper() if phase_m else None,
-            "asFoundValue": value,
-            "asFoundUnit": normalize_unit(unit_m.group(1)) if unit_m else vocab["unit"],
-            "expectedRange": expect_m.group(1).strip() if expect_m else None,
-            "passFail": result,
-            "critical": vocab["critical"],
-            "confidence": 0.9 if (value is not None and result) else 0.75,
+        unit = m.group(3)
+        mt, crit, u = _classify(label, unit)
+        out.append({
+            "measurementType": mt, "label": label.title(),
+            "phase": _phase_of(label) or _phase_of(m.group(0)),
+            "asFoundValue": val, "asFoundUnit": u,
+            "expectedRange": None, "passFail": None, "critical": crit, "confidence": 0.6,
         })
+    return out
 
-    # Pass 2: ruled tables (PowerDB forms are ruled). Map header columns to the
-    # measurement column roles; emit one measurement per data row. Tables are
-    # higher fidelity than the labeled-row pass (they carry phase + expected +
-    # result per row), so when present they WIN — pass 1 is the fallback for
-    # prose-style reports with no ruled measurement table.
-    table_out = []
+
+def _column_tables(page_tables):
+    """Clean header->column tables (synthetic samples, EICR-style schedules)."""
+    out = []
     for tbl in page_tables:
         if not tbl or len(tbl) < 2:
             continue
@@ -284,8 +358,7 @@ def extract_measurements(cells, page_tables):
                 if role == "description":
                     rec["label"] = cv
                 elif role == "phase":
-                    pm = _PHASE_RE.search(cv) or re.match(r"\s*([ABCN])\b", cv)
-                    rec["phase"] = (pm.group(1).upper() if pm else (cv[:1].upper() if cv[:1].upper() in "ABCN" else None))
+                    rec["phase"] = _phase_of(cv) or (cv[:1].upper() if cv[:1].upper() in "ABCN" else None)
                 elif role == "value":
                     nm = _NUM_RE.search(cv)
                     rec["asFoundValue"] = float(nm.group(0)) if nm else None
@@ -295,19 +368,41 @@ def extract_measurements(cells, page_tables):
                     rec["expectedRange"] = cv or None
                 elif role == "result":
                     rec["passFail"] = parse_value("result", cv)
-            if rec["label"]:
-                lbl, vocab = _label_in(_norm(rec["label"]))
-                if vocab:
-                    rec["measurementType"] = vocab["type"]
-                    rec["critical"] = vocab["critical"]
-                    rec["asFoundUnit"] = rec["asFoundUnit"] or vocab["unit"]
-                else:
-                    rec["measurementType"] = re.sub(r"[^a-z0-9]+", "_", _norm(rec["label"]))[:40] or "measurement"
-                    rec["critical"] = False
-                if rec["asFoundValue"] is not None or rec["passFail"]:
-                    rec["confidence"] = 0.9
-                    table_out.append(rec)
-    return table_out if table_out else label_out
+            if rec["label"] and (rec["asFoundValue"] is not None or rec["passFail"]):
+                mt, crit, u = _classify(rec["label"], rec["asFoundUnit"])
+                rec["measurementType"] = mt
+                rec["critical"] = crit
+                rec["asFoundUnit"] = rec["asFoundUnit"] or u
+                rec["phase"] = rec["phase"] or _phase_of(rec["label"])
+                rec["confidence"] = 0.9
+                out.append(rec)
+    return out
+
+
+def extract_measurements(cells, page_tables, full_text=""):
+    table_out = _column_tables(page_tables)              # clean column tables
+    inline_out = _inline_readings(full_text)             # general value+unit pass
+    combined = table_out + inline_out
+    # Which (type, value, unit) triples already have a PHASED reading (from the
+    # richer column-table pass) — used to drop the inline pass's phase-less
+    # duplicate of the same value.
+    phased = set()
+    for m in combined:
+        if m.get("phase"):
+            phased.add((m.get("measurementType"), m.get("asFoundValue"), m.get("asFoundUnit")))
+    combined.sort(key=lambda m: -m.get("confidence", 0))   # best first
+    seen = set()
+    out = []
+    for m in combined:
+        tvu = (m.get("measurementType"), m.get("asFoundValue"), m.get("asFoundUnit"))
+        if not m.get("phase") and tvu in phased:
+            continue   # inline duplicate of a phased column-table reading
+        k = (m.get("measurementType"), m.get("phase"), m.get("asFoundValue"), m.get("asFoundUnit"))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(m)
+    return out
 
 
 def extract_fields(path: str, mode: str = "all"):
@@ -323,7 +418,7 @@ def extract_fields(path: str, mode: str = "all"):
                 pass
     text = "\n".join(full_text)
     header = extract_header(cells, text)
-    measurements = extract_measurements(cells, line_tables)
+    measurements = extract_measurements(cells, line_tables, text)
 
     # de-dupe (label, phase, value) keeping highest confidence
     seen = {}

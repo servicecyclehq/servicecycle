@@ -26,14 +26,32 @@ DTYPE_PATTERNS = {
 
 # Header / nameplate fields on a test report. dtype drives validation.
 HEADER_FIELDS = [
-    {"key": "serialNumber", "dtype": "id",     "labels": ["serial number", "serial no", "serial", "s/n", "sn"]},
-    {"key": "model",        "dtype": "id",     "labels": ["model", "type/model", "catalog number", "cat no"]},
-    {"key": "manufacturer", "dtype": "string", "labels": ["manufacturer", "mfr", "make"]},
+    {"key": "serialNumber", "dtype": "serial", "labels": ["serial number", "serial no", "serial #", "serial", "s/n", "sn"]},
+    {"key": "model",        "dtype": "id",     "labels": ["model number", "model no", "model", "catalog number", "catalog no", "cat no", "type/model", "part/style no"]},
+    {"key": "manufacturer", "dtype": "name",   "labels": ["manufacturer", "mfr"]},
     {"key": "testDate",     "dtype": "date",   "labels": ["test date", "date of test", "date tested", "date"]},
-    {"key": "vendor",       "dtype": "string", "labels": ["vendor", "test company", "tested by company", "company", "service provider"]},
-    {"key": "techName",     "dtype": "string", "labels": ["technician", "tested by", "test technician", "tech"]},
-    {"key": "equipmentType","dtype": "string", "labels": ["equipment", "equipment type", "apparatus", "device type"]},
+    {"key": "vendor",       "dtype": "name",   "labels": ["vendor", "test company", "tested by company", "service provider", "company"]},
+    {"key": "techName",     "dtype": "name",   "labels": ["technician", "tested by", "test technician", "test engineer", "inspector", "tech"]},
+    {"key": "customer",     "dtype": "name",   "labels": ["customer", "client"]},
+    {"key": "owner",        "dtype": "name",   "labels": ["owner representative", "owner"]},
+    {"key": "substation",   "dtype": "id",     "labels": ["substation", "s/s"]},
+    {"key": "position",     "dtype": "id",     "labels": ["position", "feeder", "circuit designation", "bay"]},
+    {"key": "location",     "dtype": "name",   "labels": ["eqpt. location", "equipment location", "location"]},
+    {"key": "equipmentType","dtype": "name",   "labels": ["equipment type", "apparatus type", "device type", "apparatus"]},
 ]
+
+# Words/fragments that are NEVER a real header value (they are labels, table
+# headers, or boilerplate the old regex grabbed by mistake).
+HEADER_STOPWORDS = {
+    "as", "found", "left", "label", "used", "forms", "meter", "grade", "no",
+    "number", "type", "test", "model", "serial", "date", "page", "of", "the",
+    "and", "n/a", "na", "none", "tbd", "see", "below", "above", "yes", "rating",
+    "class", "data", "nameplate", "description", "condition", "inspected",
+    "manufacturer", "customer", "owner", "address", "telephone", "temperature",
+    "humidity", "weather", "voltage", "frequency", "max", "available", "ratio",
+    "year", "bushing", "equipment", "wps", "std", "ieee", "system", "switchyard",
+    "compliant", "grade", "class", "series", "m&te", "cal", "due", "customer",
+}
 
 # Measurement vocabulary: label -> canonical type, default unit, bad direction,
 # whether RED is safety-critical (drives IMMEDIATE vs RECOMMENDED deficiency).
