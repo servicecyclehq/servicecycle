@@ -577,6 +577,30 @@ router.put('/:id', requireManager, async (req, res) => {
         }));
       }
 
+      // 2b. Outage loop (gem V1): an outage-plan WO covers a device's WHOLE
+      // task list, recorded in an [outage-sched:id,...] marker in its notes.
+      // Roll EVERY one forward on completion — not just the primary scheduleId
+      // — so the device leaves the outage fully current instead of with one
+      // task done and the rest still overdue.
+      const outageMarker = /\[outage-sched:([^\]]+)\]/.exec(existing.notes || '');
+      if (outageMarker) {
+        const extraIds = outageMarker[1].split(',').map((s: string) => s.trim())
+          .filter((id: string) => id && id !== existing.scheduleId);
+        if (extraIds.length) {
+          const extras = await prisma.maintenanceSchedule.findMany({
+            where: { id: { in: extraIds }, accountId: req.user.accountId, assetId: existing.assetId, isActive: true },
+            include: { taskDefinition: true },
+          });
+          for (const s of extras) {
+            const rolled = recomputeScheduleDates(s.taskDefinition, assetAfter, s, completedAt);
+            ops.push(prisma.maintenanceSchedule.update({
+              where: { id: s.id },
+              data: { lastCompletedDate: rolled.lastCompletedDate, nextDueDate: rolled.nextDueDate },
+            }));
+          }
+        }
+      }
+
       // 3. The work order itself.
       ops.push(prisma.workOrder.update({
         where: { id: existing.id },

@@ -499,7 +499,12 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
           scheduleId: scheduleIds[0] || null,
           scheduledDate: when,
           status: 'SCHEDULED',
-          notes: `Outage plan ${when.toISOString().slice(0,10)} — ${scheduleIds.length} task(s)` + (notes ? `\n${notes}` : ''),
+          // [outage-sched:...] marker lets the WO COMPLETE transition roll EVERY
+          // task on this device forward (gem V1 — close the outage loop), not
+          // just the primary scheduleId.
+          notes: `Outage plan ${when.toISOString().slice(0,10)} — ${scheduleIds.length} task(s)` +
+                 (scheduleIds.length ? `\n[outage-sched:${scheduleIds.join(',')}]` : '') +
+                 (notes ? `\n${notes}` : ''),
         },
         select: { id: true, assetId: true },
       });
