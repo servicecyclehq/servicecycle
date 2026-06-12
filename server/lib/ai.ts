@@ -482,7 +482,19 @@ async function _azureComplete({ system, user, maxTokens, s }) {
 // models multiplies daily headroom AND every entry is a live model. Keep this
 // list to currently-available model ids (verify via ListModels) — a dead id
 // here re-introduces the same silent-failure bug.
-const DEFAULT_GEMINI_CASCADE = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+// Quality-first, then quantity, then two self-healing aliases. The 2.5 + 2.0
+// families each carry an INDEPENDENT free-tier daily (RPD) bucket, so cascading
+// across all four multiplies daily headroom. The trailing `*-latest` aliases
+// always resolve to a live model, so this cascade can never hard-fail the way
+// it did when gemini-1.5-flash was retired (404) — at worst they re-hit an
+// already-exhausted bucket. NOTE: free buckets are small; a true bulk-ingest
+// need is solved by a customer's own key (BYO-AI, Settings) or a paid tier, not
+// by adding more free models here. Verify ids via ListModels before editing.
+const DEFAULT_GEMINI_CASCADE = [
+  'gemini-2.5-flash', 'gemini-2.5-flash-lite',
+  'gemini-2.0-flash', 'gemini-2.0-flash-lite',
+  'gemini-flash-latest', 'gemini-flash-lite-latest',
+];
 
 function _resolveGeminiCascade(primaryModel) {
   const raw = (process.env.GEMINI_MODEL_CASCADE || DEFAULT_GEMINI_CASCADE.join(','))
