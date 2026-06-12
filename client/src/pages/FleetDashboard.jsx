@@ -10,6 +10,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { fmtDate } from '../lib/equipment';
+import FlywheelExplainer from '../components/FlywheelExplainer';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function msAgo(dateStr) {
@@ -803,6 +804,12 @@ export default function FleetDashboard() {
       {/* ── OVERVIEW TAB ── */}
       {activeTab === 'overview' && (
         <>
+          {/* R5: name the two-sided flywheel + surface its entry points. */}
+          <FlywheelExplainer
+            onOnboard={() => setActiveTab('accounts')}
+            onPipeline={() => setActiveTab('inbox')}
+            accountCount={data?.accounts?.length}
+          />
           {/* Fleet totals bar — D3 (2026-06-11): severity-first order,
               IMMEDIATE → Overdue → Svc Opps → Accounts w/ issues → Open WOs
               → Total Assets. */}
