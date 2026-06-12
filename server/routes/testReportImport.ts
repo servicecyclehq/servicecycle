@@ -25,11 +25,16 @@ const { sha256Hex, confStats, recordExtraction, findPriorImport, recordCommit } 
 const { resolveAsset } = require('../lib/assetIdentity'); // #3 fuzzy asset identity resolution
 
 const MAX_BYTES = 10 * 1024 * 1024;
+// #20 photo-of-paper: accept a phone photo of a paper field sheet alongside
+// PDFs. Images are wrapped into a single-page PDF below so the same OCR + parse
+// pipeline reads them.
+const ACCEPTED_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
+const IMAGE_RE = /\.(jpe?g|png|heic|heif|webp)$/i;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: MAX_BYTES, files: 1 },
   fileFilter: (req: any, file: any, cb: any) =>
-    /\.pdf$/i.test(file.originalname || '') ? cb(null, true) : cb(new Error('Only .pdf files are accepted')),
+    ACCEPTED_RE.test(file.originalname || '') ? cb(null, true) : cb(new Error('Upload a .pdf or a photo (JPG/PNG/HEIC)')),
 });
 
 function assetLabel(a: any): string {
@@ -82,7 +87,21 @@ async function resolveSectionAsset(accountId: string, def: any, docSerial: strin
 // V7: any authenticated role can preview (read-only); commit stays manager+.
 router.post('/preview', upload.single('file'), async (req: any, res: any) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'No PDF uploaded' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+
+    // #20 photo-of-paper: if the upload is an image, wrap it into a single-page
+    // PDF so the rest of the pipeline (OCR + parse + sections) reads it unchanged.
+    let photoOfPaper = false;
+    if (IMAGE_RE.test(req.file.originalname || '')) {
+      try {
+        const { imageToPdf } = require('../lib/imageToPdf');
+        req.file.buffer = await imageToPdf(req.file.buffer, req.file.mimetype || 'image/jpeg');
+        req.file.mimetype = 'application/pdf';
+        photoOfPaper = true;
+      } catch (e: any) {
+        return res.status(400).json({ success: false, error: 'Could not process that photo. Try a clearer, well-lit image.' });
+      }
+    }
 
     // #14: oem_admin may preview against a fleet customer account (targetAccountId).
     let accountId: string;
@@ -260,7 +279,7 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
 
     return res.json({ success: true, data: {
       meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, sections, ocr, aiUsed, aiAdded,
-      pageCount, pagesScanned, truncated, extractionId,
+      pageCount, pagesScanned, truncated, extractionId, photoOfPaper,
       priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
     } });
   } catch (err) {

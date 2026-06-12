@@ -355,8 +355,11 @@ export default function TestReportImport() {
       {step === 1 && (
         <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}>
           <UploadCloud size={40} strokeWidth={1.25} style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }} />
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>{busy ? 'Reading PDF…' : 'Drop a test-report PDF or choose a file'}</div>
-          <input type="file" accept="application/pdf,.pdf" onChange={onFile} disabled={busy} />
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>{busy ? 'Reading…' : 'Drop a test-report PDF — or a photo of a paper field sheet'}</div>
+          <input type="file" accept="application/pdf,.pdf,image/*" capture="environment" onChange={onFile} disabled={busy} />
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>
+            PDF, or a clear photo (JPG/PNG/HEIC) of a printed or hand-written sheet.
+          </div>
         </div></div>
       )}
 
@@ -380,7 +383,12 @@ export default function TestReportImport() {
               This report covers <strong>{preview.sections.length} assets</strong>. Match each section below to the right equipment (or create a new asset), then commit once — every asset is imported together.
             </div>
           )}
-          {preview.ocr && (
+          {preview.photoOfPaper && (
+            <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 'var(--font-size-sm)' }}>
+              Read from your photo of a paper sheet — OCR of photos (especially hand-writing) is error-prone. Verify every reading before committing.
+            </div>
+          )}
+          {preview.ocr && !preview.photoOfPaper && (
             <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', fontSize: 'var(--font-size-sm)' }}>
               This was a scanned report — readings were recovered by OCR and may contain errors. Please verify each before committing.
             </div>
