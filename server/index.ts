@@ -1139,6 +1139,8 @@ app.use('/api/assets',          authenticateToken, assetBriefRoutes);
 app.use('/api/assets',          authenticateToken, assetPhotoInspectRoutes);
 const dgaIngestRoutes = require('./routes/dgaIngest'); // #28 transformer-oil DGA ingest
 app.use('/api/assets',          authenticateToken, dgaIngestRoutes);
+const thermographyIngestRoutes = require('./routes/thermographyIngest'); // #29 IR thermography ingest
+app.use('/api/assets',          authenticateToken, thermographyIngestRoutes);
 app.use('/api/sites',           authenticateToken, siteRoutes);
 app.use('/api/contractors',     authenticateToken, contractorRoutes);
 app.use('/api/schedules/import', authenticateToken, ingestLimiter, schedulesImportRoutes);

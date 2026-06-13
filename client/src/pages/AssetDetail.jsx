@@ -43,6 +43,14 @@ import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import NameplateCard from '../components/NameplateCard';
 import IncidentLogCard from '../components/IncidentLogCard';
 import DgaImportCard from '../components/DgaImportCard';
+import ThermographyImportCard from '../components/ThermographyImportCard';
+
+// IR thermography applies to energized distribution equipment (a 70B annual task).
+const IR_TYPES = new Set([
+  'SWITCHGEAR', 'SWITCHBOARD', 'PANELBOARD', 'MCC', 'BUSWAY', 'CIRCUIT_BREAKER',
+  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'DISCONNECT_SWITCH', 'FUSE_GEAR',
+  'TRANSFER_SWITCH', 'GENERATOR', 'MOTOR', 'UPS_BATTERY', 'VFD',
+]);
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -847,6 +855,11 @@ export default function AssetDetail() {
         {/* ── Oil / DGA import (#28) — oil-filled transformers ─────────────── */}
         {asset.equipmentType === 'TRANSFORMER_LIQUID' && (
           <DgaImportCard assetId={asset.id} canWrite={canWrite} onChanged={refetchAll} />
+        )}
+
+        {/* ── IR thermography import (#29) — energized distribution gear ────── */}
+        {IR_TYPES.has(asset.equipmentType) && (
+          <ThermographyImportCard assetId={asset.id} canWrite={canWrite} onChanged={refetchAll} />
         )}
 
         {/* ── Open Deficiencies ─────────────────────────────────────────────── */}
