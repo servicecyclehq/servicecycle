@@ -236,6 +236,22 @@ export default function FieldHome() {
         + Add equipment
       </button>
 
+      {/* ── Batch nameplate capture — walk the floor, build the register ─────── */}
+      <button
+        type="button"
+        onClick={() => navigate('/field/batch')}
+        style={{
+          boxSizing: 'border-box', width: '100%', minHeight: 56,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          background: '#fff', color: '#7c3aed',
+          border: '2px solid #c4b5fd', borderRadius: 'var(--radius-lg, 12px)', cursor: 'pointer',
+          fontSize: 16, fontWeight: 700, marginBottom: 12,
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        📷 Batch add (many nameplates)
+      </button>
+
       {/* ── Outbox status chip ─────────────────────────────────────────────── */}
       {pending > 0 && (
         <button

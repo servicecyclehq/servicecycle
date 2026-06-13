@@ -135,6 +135,7 @@ const FieldHome               = lazyWithReload(() => import('./pages/field/Field
 const FieldScan               = lazyWithReload(() => import('./pages/field/FieldScan'));
 const FieldAsset              = lazyWithReload(() => import('./pages/field/FieldAsset'));
 const FieldNewAsset           = lazyWithReload(() => import('./pages/field/FieldNewAsset'));
+const FieldBatchNameplate     = lazyWithReload(() => import('./pages/field/FieldBatchNameplate')); // #13 batch nameplate
 
 const SetupWizardPage         = lazyWithReload(() => import('./pages/SetupWizardPage'));   // (S8) first-run operator wizard
 const PrivacyPage             = lazyWithReload(() => import('./pages/PrivacyPage'));       // (A2) public, mounted outside Layout shell
@@ -269,6 +270,7 @@ function AppRoutes() {
             <Route index element={<FieldHome />} />
             <Route path="scan" element={<FieldScan />} />
             <Route path="new" element={<FieldNewAsset />} />
+            <Route path="batch" element={<FieldBatchNameplate />} />
             <Route path="asset/:id" element={<FieldAsset />} />
           </Route>
 
