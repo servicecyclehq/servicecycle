@@ -42,6 +42,7 @@ import AssetLotoCard from '../components/AssetLotoCard';
 import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import NameplateCard from '../components/NameplateCard';
 import IncidentLogCard from '../components/IncidentLogCard';
+import DgaImportCard from '../components/DgaImportCard';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -842,6 +843,11 @@ export default function AssetDetail() {
 
         {/* ── Incidents / protective-device operations (#24) ───────────────── */}
         <IncidentLogCard assetId={asset.id} />
+
+        {/* ── Oil / DGA import (#28) — oil-filled transformers ─────────────── */}
+        {asset.equipmentType === 'TRANSFORMER_LIQUID' && (
+          <DgaImportCard assetId={asset.id} canWrite={canWrite} onChanged={refetchAll} />
+        )}
 
         {/* ── Open Deficiencies ─────────────────────────────────────────────── */}
         <div className="card mb-16">

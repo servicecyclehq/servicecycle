@@ -1137,6 +1137,8 @@ app.use('/api/assets',          authenticateToken, assetBriefRoutes);
 // Photo inspection — vision AI on uploaded equipment photos. Same fall-
 // through mount pattern; gating (consent/quota/budget) lives in the router.
 app.use('/api/assets',          authenticateToken, assetPhotoInspectRoutes);
+const dgaIngestRoutes = require('./routes/dgaIngest'); // #28 transformer-oil DGA ingest
+app.use('/api/assets',          authenticateToken, dgaIngestRoutes);
 app.use('/api/sites',           authenticateToken, siteRoutes);
 app.use('/api/contractors',     authenticateToken, contractorRoutes);
 app.use('/api/schedules/import', authenticateToken, ingestLimiter, schedulesImportRoutes);
