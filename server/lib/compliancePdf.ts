@@ -191,6 +191,27 @@ function drawCoverPage(doc, reportBundles, meta) {
      .text('DOCUMENT INTEGRITY', PAGE.margin + 12, y + 12, { width: noteInnerW, lineBreak: false });
   doc.fillColor(COLORS.text).font(FONT_REG).fontSize(10)
      .text(noteText, PAGE.margin + 12, y + 28, { width: noteInnerW, lineGap: 2 });
+
+  // Estimate disclaimer — this report leaves the building, so it must not read
+  // as a certification. The rates are computed against the standard editions
+  // listed above as configured in ServiceCycle on the generation date, which
+  // may lag the current published edition.
+  y += noteH + 14;
+  const disText =
+    'ESTIMATE — NOT A CERTIFICATION. Compliance figures are an estimate computed against the ' +
+    'standard editions listed above, as configured in ServiceCycle on the generation date. Those ' +
+    'requirements may lag the current published edition. This document is not a legal certification, ' +
+    'engineering assessment, or guarantee of compliance. Verify against the current published standard ' +
+    'and have a qualified professional review before relying on it.';
+  doc.font(FONT_REG).fontSize(9);
+  const disH = doc.heightOfString(disText, { width: noteInnerW, lineGap: 2 }) + 34;
+  doc.rect(PAGE.margin, y, PAGE.contentW, disH).fill('#fffbeb');
+  doc.rect(PAGE.margin, y, 3, disH).fill('#b45309');
+  doc.rect(PAGE.margin, y, PAGE.contentW, disH).strokeColor('#fde68a').lineWidth(0.75).stroke();
+  doc.fillColor('#92400e').font(FONT_BOLD).fontSize(9)
+     .text('SCOPE & LIMITATIONS', PAGE.margin + 12, y + 10, { width: noteInnerW, lineBreak: false });
+  doc.fillColor(COLORS.text).font(FONT_REG).fontSize(9)
+     .text(disText, PAGE.margin + 12, y + 24, { width: noteInnerW, lineGap: 2 });
 }
 
 // ── per-standard section ──────────────────────────────────────────────────────

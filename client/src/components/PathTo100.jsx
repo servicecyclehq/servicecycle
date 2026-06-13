@@ -118,7 +118,7 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
             <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               {metric(
                 `${data.overallRate}%`, 'Overall',
-                'Overall compliance — the real, audit-ready number. It counts EVERYTHING that should be happening: maintenance that is overdue, equipment not set up for tracking yet, and required program paperwork (EMP, NFPA 70B §4.2). This only hits 100% when the to-do list below is empty.',
+                'Estimated overall compliance. It counts EVERYTHING that should be happening: maintenance that is overdue, equipment not set up for tracking yet, and required program paperwork (EMP, NFPA 70B §4.2). This only hits 100% when the to-do list below is empty. An estimate against the standard editions configured in ServiceCycle — not a legal certification; verify against the current published edition.',
                 overallColor,
               )}
               {metric(

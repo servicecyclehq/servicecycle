@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import WelcomeTourPanel from '../components/WelcomeTourPanel';
 import PathTo100 from '../components/PathTo100';
 import AuditReadyBanner from '../components/AuditReadyBanner';
+import ComplianceDocsCard from '../components/ComplianceDocsCard';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { CriticalityBadge } from './AssetsList';
@@ -805,6 +806,7 @@ export default function Dashboard() {
                 list — verbs before counts, both above the KPI tiles. */}
             <AuditReadyBanner />
             <PathTo100 compact />
+            <ComplianceDocsCard />
 
             {/* ── KPI tiles ─────────────────────────────────────────────── */}
             {/* B1 (2026-06-11): severity reads left→right — Overdue leads,
