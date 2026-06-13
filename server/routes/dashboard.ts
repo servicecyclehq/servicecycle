@@ -24,6 +24,9 @@
 
 const router = require('express').Router();
 import prisma from '../lib/prisma';
+// Single source of truth for the compliance rates (overall / schedule / coverage)
+// so the dashboard tile can never drift from the Path-to-100 card.
+const { buildComplianceGap } = require('../lib/complianceReport');
 
 const DAY_MS = 86_400_000;
 
@@ -125,28 +128,20 @@ router.get('/', async (req, res) => {
     const deficiencyBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
     for (const g of openDeficiencies) deficiencyBySeverity[g.severity] = g._count._all;
 
-    // ── Coverage + honest compliance (gem N2 anti-flatter) ────────────────────
-    // The tile above ("active schedules not overdue") silently ignores assets
-    // that carry NO schedule at all — so an account can read 100% while live
-    // equipment sits untracked. Surface a coverage % beside it, and a blended
-    // overallRate that counts uncovered assets + unbaselined schedules as gaps.
-    const coveredAssets = await prisma.asset.count({
-      where: { accountId, archivedAt: null, inService: true, schedules: { some: { isActive: true } } },
-    });
-    const inServiceAssets = await prisma.asset.count({
-      where: { accountId, archivedAt: null, inService: true },
-    });
-    const uncoveredAssets = Math.max(0, inServiceAssets - coveredAssets);
-    const coverageRate = inServiceAssets === 0 ? 100 : Math.round((coveredAssets / inServiceAssets) * 100);
-
-    let curCount = 0, odCount = 0, ubCount = 0;
-    for (const s of siteRollup) {
-      if (!s.nextDueDate) ubCount++;
-      else if (new Date(s.nextDueDate) < now) odCount++;
-      else curCount++;
-    }
-    const honestDenom = curCount + odCount + ubCount + uncoveredAssets;
-    const overallComplianceRateHonest = honestDenom === 0 ? 100 : Math.round((curCount / honestDenom) * 100);
+    // ── Compliance rates — reuse buildComplianceGap so the dashboard tile and
+    //    the Path-to-100 card are ALWAYS the same numbers (they used to be
+    //    computed twice and drift on EMP-gap inclusion + rounding):
+    //      overallRate     = honest overall: current / (current + overdue +
+    //                        unbaselined + uncovered assets + EMP §4.2 gaps)
+    //      compliance.rate = schedule compliance among tracked tasks only
+    //      coverage.rate   = assets that have any program / total assets
+    const gap = await buildComplianceGap(prisma, accountId);
+    const overallComplianceRateHonest = gap.overallRate;        // honest, audit-ready
+    const scheduleComplianceRate      = gap.compliance.rate;    // tracked-tasks-only
+    const coverageRate                = gap.coverage.rate;
+    const coveredAssets               = gap.coverage.coveredAssets;
+    const totalAssets                 = gap.coverage.totalAssets;
+    const uncoveredAssets             = gap.coverage.uncoveredAssets;
 
     return res.json({
       success: true,
@@ -154,10 +149,14 @@ router.get('/', async (req, res) => {
         dueCounts: { due30, due60, due90, overdue: overdueSchedules },
         deficiencies: deficiencyBySeverity,
         complianceBySite,
+        // Legacy flattering rate (active schedules not overdue) — kept for the
+        // per-site drill-in tooltip; NOT the headline.
         overallComplianceRate: overallTotal === 0 ? 100 : Math.round(((overallTotal - overallOverdue) / overallTotal) * 100),
         overallComplianceRateHonest,
+        scheduleComplianceRate,
         coverageRate,
         coveredAssets,
+        totalAssets,
         uncoveredAssets,
         recentWorkOrders,
         upcoming,

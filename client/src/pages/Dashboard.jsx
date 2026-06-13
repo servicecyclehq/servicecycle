@@ -842,48 +842,23 @@ export default function Dashboard() {
               />
             </div>
 
-            {/* ── Deficiencies by severity + overall compliance ─────────── */}
-            {/* A3/A4 (2026-06-11): condensed — inline count·label tiles, and
-                the compliance % sized like the KPI tiles instead of 36px. */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16, marginBottom: 20 }}>
-              <div className="card" style={{ padding: '10px 16px' }}>
-                <div className="stat-tile-label" style={{ marginBottom: 7 }}>
-                  Open deficiencies by severity
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'].map(sev => (
-                    <SeverityTile
-                      key={sev}
-                      severity={sev}
-                      count={defs[sev] || 0}
-                      onClick={() => navigate(`/deficiencies?severity=${sev}&resolved=false`)}
-                    />
-                  ))}
-                </div>
+            {/* ── Open deficiencies by severity ──────────────────────────── */}
+            {/* The compliance %s (overall / schedule / coverage) live in the
+                Path to 100% Compliance card above — no need to repeat the same
+                numbers here, so this row is just the deficiency breakdown. */}
+            <div className="card" style={{ padding: '10px 16px', marginBottom: 20 }}>
+              <div className="stat-tile-label" style={{ marginBottom: 7 }}>
+                Open deficiencies by severity
               </div>
-              <div className="card" style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                {/* V2: ONE honest number leads. This counts overdue,
-                    unbaselined AND entirely-uncovered assets as gaps, so it
-                    can't read 100% while live equipment sits untracked. The
-                    schedule-only rate moves into the explainer below. */}
-                <div className="stat-tile-label" style={{ marginBottom: 4 }}>
-                  Compliance <span title="Counts overdue + unbaselined schedules and assets with no program as gaps — the honest, audit-ready number." style={{ cursor: 'help', color: 'var(--color-text-secondary)' }}>ⓘ</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                  {(() => { const honest = data.overallComplianceRateHonest ?? data.overallComplianceRate ?? 100; return (
-                    <span className="stat-tile-value" style={{ color: complianceColor(honest) }}>{honest}%</span>
-                  ); })()}
-                  <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                    current · covered · baselined
-                  </span>
-                </div>
-                {data.coverageRate != null && (
-                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                    Coverage <strong style={{ color: complianceColor(data.coverageRate) }}>{data.coverageRate}%</strong>
-                    {' '}({data.coveredAssets}/{(data.coveredAssets ?? 0) + (data.uncoveredAssets ?? 0)} assets)
-                    {' · '}of scheduled tasks, {data.overallComplianceRate ?? 100}% not overdue
-                  </div>
-                )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'].map(sev => (
+                  <SeverityTile
+                    key={sev}
+                    severity={sev}
+                    count={defs[sev] || 0}
+                    onClick={() => navigate(`/deficiencies?severity=${sev}&resolved=false`)}
+                  />
+                ))}
               </div>
             </div>
 

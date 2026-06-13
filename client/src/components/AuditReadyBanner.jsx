@@ -81,7 +81,7 @@ export default function AuditReadyBanner() {
         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
           {ready
             ? 'Pull your written Electrical Maintenance Program any time — hash-chained, timestamped evidence.'
-            : <>Close them on the <Link to="/reports/compliance">Path to 100%</Link> before the inspector opens the report.</>}
+            : <>Close them on the <Link to="/reports/compliance">Path to 100% Compliance</Link> list before the inspector opens the report.</>}
         </div>
       </div>
       {canExport && (

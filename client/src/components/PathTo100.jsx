@@ -103,15 +103,23 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <Target size={18} />
-        <div className="card-title" style={{ flex: 1 }}>Path to 100%</div>
+        <div className="card-title" style={{ flex: 1 }}>Path to 100% Compliance</div>
         <div style={{ display: 'flex', gap: 16, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <span title="Honest rate: counts uncovered assets + unbaselined schedules as gaps"
-            style={{ fontSize: 22, fontWeight: 800, color: data.overallRate >= 90 ? '#15803d' : data.overallRate >= 70 ? '#92400e' : '#b91c1c' }}>
-            {data.overallRate}%
+          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <span title="Overall compliance — the honest, audit-ready number: current work ÷ everything that should be tracked (overdue tasks, schedules not yet baselined, in-service assets with no program at all, and EMP §4.2 program items). Hits 100% only when the list below is clear."
+              style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.05, color: data.overallRate >= 90 ? '#15803d' : data.overallRate >= 70 ? '#92400e' : '#b91c1c' }}>
+              {data.overallRate}%
+            </span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Overall compliance</span>
           </span>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-            Compliance {data.compliance.rate ?? '—'}% · Coverage {data.coverage.rate}%
-            {' '}({data.coverage.coveredAssets}/{data.coverage.totalAssets} assets)
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+            <span title="Of the maintenance tasks already being tracked, the share that are NOT overdue. Ignores assets with no program, so it always reads higher than overall compliance.">
+              Schedule compliance <strong>{data.compliance.rate ?? '—'}%</strong> ⓘ
+            </span>
+            {' · '}
+            <span title="Share of in-service assets that have any maintenance program at all.">
+              Coverage <strong>{data.coverage.rate}%</strong> ({data.coverage.coveredAssets}/{data.coverage.totalAssets} assets) ⓘ
+            </span>
           </span>
         </div>
       </div>
