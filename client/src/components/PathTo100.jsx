@@ -104,24 +104,34 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <Target size={18} />
         <div className="card-title" style={{ flex: 1 }}>Path to 100% Compliance</div>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-            <span title="Overall compliance — the honest, audit-ready number: current work ÷ everything that should be tracked (overdue tasks, schedules not yet baselined, in-service assets with no program at all, and EMP §4.2 program items). Hits 100% only when the list below is clear."
-              style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.05, color: data.overallRate >= 90 ? '#15803d' : data.overallRate >= 70 ? '#92400e' : '#b91c1c' }}>
-              {data.overallRate}%
+        {(() => {
+          const overallColor = data.overallRate >= 90 ? '#15803d' : data.overallRate >= 70 ? '#92400e' : '#b91c1c';
+          // label + value + plain-English hover. Hover (the title attr) shows on
+          // desktop; the inline label keeps it clear on touch where there's no hover.
+          const metric = (value, label, title, color) => (
+            <span title={title} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', cursor: 'help' }}>
+              <span style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.05, color: color || 'var(--color-text)' }}>{value}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>{label} ⓘ</span>
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--color-text-secondary)' }}>Overall compliance</span>
-          </span>
-          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
-            <span title="Of the maintenance tasks already being tracked, the share that are NOT overdue. Ignores assets with no program, so it always reads higher than overall compliance.">
-              Schedule compliance <strong>{data.compliance.rate ?? '—'}%</strong> ⓘ
-            </span>
-            {' · '}
-            <span title="Share of in-service assets that have any maintenance program at all.">
-              Coverage <strong>{data.coverage.rate}%</strong> ({data.coverage.coveredAssets}/{data.coverage.totalAssets} assets) ⓘ
-            </span>
-          </span>
-        </div>
+          );
+          return (
+            <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {metric(
+                `${data.overallRate}%`, 'Overall',
+                'Overall compliance — the real, audit-ready number. It counts EVERYTHING that should be happening: maintenance that is overdue, equipment not set up for tracking yet, and required program paperwork (EMP, NFPA 70B §4.2). This only hits 100% when the to-do list below is empty.',
+                overallColor,
+              )}
+              {metric(
+                `${data.compliance.rate ?? '—'}%`, 'On-time',
+                'Maintenance on-time — of the tasks we are ALREADY tracking, the share that are not overdue. It ignores equipment that has no schedule yet, so it always looks better than Overall.',
+              )}
+              {metric(
+                `${data.coverage.rate}%`, `Tracked ${data.coverage.coveredAssets}/${data.coverage.totalAssets}`,
+                `Equipment tracked — how much of your equipment is set up for maintenance tracking at all. Here, ${data.coverage.coveredAssets} of ${data.coverage.totalAssets} assets have a program; the other ${data.coverage.totalAssets - data.coverage.coveredAssets} are not being watched yet.`,
+              )}
+            </div>
+          );
+        })()}
       </div>
       <div className="card-body">
         {fully ? (
