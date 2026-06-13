@@ -745,6 +745,16 @@ const ingestLimiter = rateLimit({
   message: { success: false, error: 'Too many upload requests — please wait before trying again.' },
 });
 
+// #17 public parser-as-funnel: strict per-IP cap (unauthenticated endpoint).
+const publicParseLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max:      10,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator:    _clientIpKey,
+  message: { success: false, error: 'Too many reports from this network — try again in an hour or create a free account.' },
+});
+
 // v0.67.10 (audit High, 2026-05-22): per-IP rate limit STACKED on top
 // of per-user limiters for AI endpoints. Without this, a /register
 // cycle that creates a fresh user every minute resets the per-user
@@ -1264,6 +1274,10 @@ const shareLinkRoutes = require('./routes/shareLinks');
 app.use('/api/share-links', authenticateToken, shareLinkRoutes);
 const shareLinkPublicRoutes = require('./routes/shareLinkPublic');
 app.use('/api/public/share', shareLinkPublicRoutes); // no auth — token is the credential
+
+// #17 public parser-as-funnel — no auth, strict per-IP rate limit.
+const publicParseRoutes = require('./routes/publicParse');
+app.use('/api/public', publicParseLimiter, publicParseRoutes);
 
 // ── Quote Request — per-asset service quote lifecycle ────────────────────────
 app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);

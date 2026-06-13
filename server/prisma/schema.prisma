@@ -1049,6 +1049,26 @@ model ShareLink {
   @@map("share_links")
 }
 
+// ─── Public parser-as-funnel lead (#17) ───────────────────────────────────────
+// A prospect who dropped a report on the public, email-gated parser page. No
+// account yet — this is top-of-funnel lead capture. Raw IP is never stored
+// (hashed for abuse tracking only); the parsed report itself is not retained.
+model PublicParseLead {
+  id               String   @id @default(uuid())
+  email            String
+  fileName         String?
+  source           String? // deterministic engine that read it
+  measurementCount Int      @default(0)
+  findingsCount    Int      @default(0)
+  criticalCount    Int      @default(0)
+  ipHash           String? // sha256 of IP — abuse signal, not PII
+  createdAt        DateTime @default(now())
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("public_parse_leads")
+}
+
 model IncidentLog {
   id           String       @id @default(uuid())
   accountId    String
