@@ -853,6 +853,46 @@ function seventyBInterval(t) {
   return { c1: 60, c2: 36, c3: 12 };                                   // dominant 70B Table 9.2.2 row
 }
 
+// ── NFPA 70B:2023 per-equipment chapter map (Ch 11-38) ──────────────────────
+// The 2023 edition reorganized 70B so each equipment type has its own
+// maintenance chapter. We cite the CHAPTER (not stale pre-2023 §x.y sub-numbers
+// from the old Recommended Practice) for honest provenance. Equipment governed
+// by a different standard (ATS=NFPA 110, fire pump=NFPA 25, arc flash=NFPA 70E,
+// surge arrester=NETA) is absent here and keeps its existing citation.
+const NFPA70B_CHAPTER = {
+  TRANSFORMER_LIQUID: 'Ch 11 (Power & Distribution Transformers)',
+  TRANSFORMER_DRY:    'Ch 11 (Power & Distribution Transformers)',
+  SWITCHGEAR:         'Ch 12 (Substations & Switchgear)',
+  PANELBOARD:         'Ch 13 (Panelboards & Switchboards)',
+  SWITCHBOARD:        'Ch 13 (Panelboards & Switchboards)',
+  BUSWAY:             'Ch 14 (Busways)',
+  CIRCUIT_BREAKER:    'Ch 15 (Circuit Breakers)',
+  FUSE_GEAR:          'Ch 16 (Fuses)',
+  DISCONNECT_SWITCH:  'Ch 17 (Switches)',
+  CABLE_LV:           'Ch 18 (Power Cables & Conductors)',
+  CABLE_MV_HV:        'Ch 18 (Power Cables & Conductors)',
+  CABLE_TRAY:         'Ch 19 (Cable Tray)',
+  GROUNDING_SYSTEM:   'Ch 20 (Grounding & Bonding)',
+  GROUND_FAULT_PROTECTION: 'Ch 21 (GFCI & GFP)',
+  EMERGENCY_LIGHTING: 'Ch 22 (Lighting)',
+  UPS_BATTERY:        'Ch 25 (UPS)',
+  MOTOR:              'Ch 27 (Rotating Equipment)',
+  GENERATOR:          'Ch 27 (Rotating Equipment)',
+  MCC:                'Ch 28 (Motor Control Equipment)',
+  VFD:                'Ch 28 (Motor Control Equipment)',
+  PROTECTION_RELAY:   'Ch 35 (Protective Relays)',
+  BATTERY_SYSTEM:     'Ch 36 (Stationary Standby Batteries)',
+};
+
+// Replace a stale "NFPA 70B:2023 §x.y" citation with the correct 2023 chapter
+// for the equipment type. NETA/IEEE/other refs and prose 70B refs are untouched.
+function correct70bRef(ref, equipmentType) {
+  if (!ref) return ref;
+  const chapter = NFPA70B_CHAPTER[equipmentType];
+  if (!chapter) return ref;
+  return ref.replace(/NFPA 70B:2023 §[0-9.]+/g, `NFPA 70B:2023 ${chapter}`);
+}
+
 async function seedStandards(prismaClient) {
   const db = prismaClient || prisma;
 
@@ -887,7 +927,7 @@ async function seedStandards(prismaClient) {
       requiresEnergized:     !!t.requiresEnergized,
       requiresNetaCertified: !!t.neta,
       netaCertLevelMin:      t.netaLevel || null,
-      standardRef:           t.ref,
+      standardRef:           correct70bRef(t.ref, t.equipmentType),
     };
     const existing = await db.maintenanceTaskDefinition.findFirst({
       where: { accountId: null, taskCode: t.code, equipmentType: t.equipmentType },
@@ -916,4 +956,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { seedStandards, STANDARDS, TASKS };
+module.exports = { seedStandards, STANDARDS, TASKS, NFPA70B_CHAPTER, correct70bRef };
