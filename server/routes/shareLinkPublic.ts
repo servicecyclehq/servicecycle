@@ -9,6 +9,7 @@
 
 const router = require('express').Router();
 import prisma from '../lib/prisma';
+const crypto = require('crypto');
 const { buildSharePackage } = require('./shareLinks');
 
 router.get('/:token', async (req: any, res: any) => {
@@ -31,6 +32,20 @@ router.get('/:token', async (req: any, res: any) => {
     prisma.shareLink.update({
       where: { id: link.id },
       data:  { viewCount: { increment: 1 }, lastViewedAt: now },
+    }).catch(() => {});
+
+    // Per-view access record into the tamper-evident audit chain so the owner
+    // can later prove who viewed shared compliance data, and the view rides the
+    // same hash chain + SIEM export as every other audit event. IP is hashed
+    // (not stored raw) for privacy; the public token itself is never logged.
+    const ipHash = crypto.createHash('sha256').update(String(req.ip || '')).digest('hex').slice(0, 16);
+    const ua = String(req.headers['user-agent'] || '').slice(0, 300);
+    prisma.activityLog.create({
+      data: {
+        accountId: link.accountId,
+        action:    'share_link_viewed',
+        details:   { shareLinkId: link.id, label: link.label || null, ipHash, userAgent: ua },
+      },
     }).catch(() => {});
 
     return res.json({

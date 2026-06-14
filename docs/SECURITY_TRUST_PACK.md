@@ -50,3 +50,40 @@ A licensed-instance seam exists (`planType=licensed`) for customers who require 
 ---
 
 *Contact your ServiceCycle representative for the current pen-test attestation and a deployment-specific architecture diagram.*
+
+## Audit-chain independent verification (2026-06-14)
+
+The per-account activity log is a SHA-256 hash chain: each row stores
+`rowHash = sha256(prevHash | canonical(row))` over its stable fields (id,
+accountId, assetId, action, details, createdAt). The design is intentionally
+**hash-only â€” there is no secret signing key**, so there is no key to leak or to
+store separately; tamper evidence comes from chain continuity, not from a
+secret. (An insider with BOTH database and app-server access who rewrites the
+whole chain is out of scope, as documented in lib/activityLogChain.)
+
+**Independent verifier.** Auditors do not have to trust the running server. Hand
+them `server/scripts/verify-audit-chain.js` (a self-contained file using only
+Node's built-in crypto) plus an NDJSON export from
+`GET /api/activity/export?format=ndjson`:
+
+```
+node verify-audit-chain.js servicecycle-audit-YYYY-MM-DD.ndjson
+# exit 0 = intact, 1 = a row was altered or the sequence has a gap/insert
+```
+
+It re-derives every `rowHash` from scratch and checks that each row links to the
+previous one, proving no row was altered, inserted, deleted, or reordered within
+the exported slice. The server also runs a nightly internal verifier
+(`GET /api/admin/audit-chain/verify`).
+
+**Share-link access logging.** Every view of a public auditor/underwriter share
+link is recorded as a `share_link_viewed` event in this same chain (with a
+hashed IP + user-agent), so a customer can prove who accessed shared compliance
+data, and the access ride the same tamper-evident log and SIEM export.
+
+**Future enhancement â€” external time anchoring.** Periodically anchoring a chain
+head hash to an external RFC-3161 timestamp authority (or a public ledger) would
+let an auditor prove the chain existed at a point in time without trusting our
+clock. Not yet enabled (it requires outbound egress + a TSA endpoint decision on
+the locked-down deployment); the hash chain is the current tamper-evidence
+mechanism.
