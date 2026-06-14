@@ -408,6 +408,18 @@ async function _seedAccount() {
     data: { accountId: account.id, key: 'ONBOARDING_COMPLETE', value: 'true' },
   });
 
+  // Lean demo: advanced surfaces OFF and the full NETA battery OFF (the code is
+  // intact behind per-account flags — lib/accountFeatures / lib/leanProgram).
+  // Defaults are already OFF, but write them explicitly so the demo is
+  // reproducible and survives any future default flip.
+  await prisma.accountSetting.createMany({
+    data: [
+      'dga_import', 'thermography_import', 'qemw_wallet',
+      'arc_flash_studies', 'enterprise_trust', 'neta_full_battery',
+    ].map((f) => ({ accountId: account.id, key: `feature.${f}`, value: 'false' })),
+    skipDuplicates: true,
+  });
+
   // ── Sites / hierarchy ─────────────────────────────────────────────────────
   // Riverside Plant: the full five-level chain.
   const riverside = await prisma.site.create({ data: {
