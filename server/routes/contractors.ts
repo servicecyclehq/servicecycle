@@ -75,6 +75,117 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ─── GET /api/contractors/qemw-wallet ─────────────────────────────────────────
+// #37 QEMW credential wallet: the whole-account technician roster with credential
+// status (QEMW + NETA ETT + 70E qualified-person + thermographer) AND the
+// assignment-vs-requirement gap ("3 jobs next month require a certified tech; 2
+// qualified techs available"). ANSI/NETA EMW-2026 first-mover window. Any
+// authenticated role (read). NOTE: must be declared BEFORE GET /:id so the
+// literal path isn't captured by the :id param.
+const QEMW_EXPIRING_DAYS = 60; // matches the qemwAlerts 60d expiry tier
+router.get('/qemw-wallet', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const now = new Date();
+    const windowDays = Math.min(365, Math.max(1, parseInt(String(req.query.windowDays || '30'), 10) || 30));
+    const windowEnd = new Date(now.getTime() + windowDays * 86_400_000);
+
+    const [techs, requireQemwRow, upcomingNetaJobs] = await Promise.all([
+      prisma.contractorTech.findMany({
+        where: { contractor: { accountId } },
+        orderBy: [{ name: 'asc' }],
+        select: {
+          id: true, name: true, email: true, title: true,
+          netaCertLevel: true,
+          qualifiedPersonDesignatedAt: true, trainingExpiresAt: true,
+          thermographerCertLevel: true,
+          qemwCertNumber: true, qemwExpiresAt: true, qemwIssuingBody: true,
+          contractor: { select: { id: true, name: true } },
+        },
+      }),
+      prisma.accountSetting.findFirst({ where: { accountId, key: 'REQUIRE_QEMW' }, select: { value: true } }),
+      // Jobs in the window that require a NETA-certified tech (the QEMW-relevant
+      // population): active schedules due soon on live assets with a
+      // requiresNetaCertified task definition.
+      prisma.maintenanceSchedule.count({
+        where: {
+          accountId, isActive: true,
+          nextDueDate: { gte: now, lte: windowEnd },
+          asset: { archivedAt: null, inService: true },
+          taskDefinition: { requiresNetaCertified: true },
+        },
+      }),
+    ]);
+
+    function qemwStatus(t: any): { status: string; daysUntilExpiry: number | null } {
+      if (!t.qemwCertNumber) return { status: 'none', daysUntilExpiry: null };
+      if (!t.qemwExpiresAt) return { status: 'valid', daysUntilExpiry: null };
+      const days = Math.ceil((new Date(t.qemwExpiresAt).getTime() - now.getTime()) / 86_400_000);
+      if (days < 0) return { status: 'expired', daysUntilExpiry: days };
+      if (days <= QEMW_EXPIRING_DAYS) return { status: 'expiring', daysUntilExpiry: days };
+      return { status: 'valid', daysUntilExpiry: days };
+    }
+    function trainingStatus(t: any): string {
+      if (!t.trainingExpiresAt) return 'unknown';
+      const days = Math.ceil((new Date(t.trainingExpiresAt).getTime() - now.getTime()) / 86_400_000);
+      if (days < 0) return 'expired';
+      if (days <= QEMW_EXPIRING_DAYS) return 'expiring';
+      return 'current';
+    }
+
+    const roster = techs.map((t: any) => {
+      const q = qemwStatus(t);
+      return {
+        id: t.id,
+        name: t.name,
+        email: t.email,
+        title: t.title,
+        contractorId: t.contractor?.id ?? null,
+        contractorName: t.contractor?.name ?? null,
+        netaCertLevel: t.netaCertLevel,
+        qualifiedPersonDesignatedAt: t.qualifiedPersonDesignatedAt,
+        thermographerCertLevel: t.thermographerCertLevel,
+        trainingExpiresAt: t.trainingExpiresAt,
+        trainingStatus: trainingStatus(t),
+        qemwCertNumber: t.qemwCertNumber,
+        qemwExpiresAt: t.qemwExpiresAt,
+        qemwIssuingBody: t.qemwIssuingBody,
+        qemwStatus: q.status,
+        qemwDaysUntilExpiry: q.daysUntilExpiry,
+      };
+    });
+
+    const counts = { valid: 0, expiring: 0, expired: 0, none: 0 };
+    for (const r of roster) counts[r.qemwStatus as keyof typeof counts]++;
+    // "Qualified and available" = a currently-honourable QEMW (valid or expiring
+    // but not yet expired). Expired does not count as coverage.
+    const qualifiedTechsAvailable = counts.valid + counts.expiring;
+    const requireQemw = requireQemwRow?.value === 'true';
+
+    res.json({
+      success: true,
+      data: {
+        techs: roster,
+        summary: {
+          totalTechs: roster.length,
+          qemwValid: counts.valid,
+          qemwExpiring: counts.expiring,
+          qemwExpired: counts.expired,
+          qemwNone: counts.none,
+          requireQemw,
+          windowDays,
+          upcomingCertifiedJobs: upcomingNetaJobs,
+          qualifiedTechsAvailable,
+          hasCoverageGap: upcomingNetaJobs > 0 && qualifiedTechsAvailable === 0,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('QEMW wallet error:', err);
+    res.status(500).json({ success: false, error: 'Failed to build QEMW wallet' });
+  }
+});
+
 // ─── GET /api/contractors/:id ─────────────────────────────────────────────────
 // Full contractor card: tech roster + recent work order history.
 router.get('/:id', async (req, res) => {

@@ -178,12 +178,18 @@ export default function ContractorsList() {
             {loading ? 'Loading…' : `${contractors.length} testing & maintenance compan${contractors.length !== 1 ? 'ies' : 'y'}`}
           </div>
         </div>
-        {canWrite && (
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-            <Plus size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-            Add contractor
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn" onClick={() => navigate('/contractors/qemw-wallet')}>
+            <BadgeCheck size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+            QEMW wallet
           </button>
-        )}
+          {canWrite && (
+            <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+              <Plus size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              Add contractor
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="page-body">

@@ -102,6 +102,7 @@ const SitesList               = lazyWithReload(() => import('./pages/SitesList')
 const SiteDetail              = lazyWithReload(() => import('./pages/SiteDetail'));
 const ContractorsList         = lazyWithReload(() => import('./pages/ContractorsList'));
 const ContractorDetail        = lazyWithReload(() => import('./pages/ContractorDetail'));
+const QemwWallet              = lazyWithReload(() => import('./pages/QemwWallet'));
 const WorkOrdersList          = lazyWithReload(() => import('./pages/WorkOrdersList'));
 const WorkOrderDetail         = lazyWithReload(() => import('./pages/WorkOrderDetail'));
 const ComplianceCalendar      = lazyWithReload(() => import('./pages/ComplianceCalendar'));
@@ -313,6 +314,7 @@ function AppRoutes() {
             <Route path="sites"              element={<SitesList />} />
             <Route path="sites/:id"          element={<SiteDetail />} />
             <Route path="contractors"        element={<ContractorsList />} />
+            <Route path="contractors/qemw-wallet" element={<QemwWallet />} />
             <Route path="contractors/:id"    element={<ContractorDetail />} />
             <Route path="work-orders"        element={<WorkOrdersList />} />
             <Route path="work-orders/:id"    element={<WorkOrderDetail />} />
