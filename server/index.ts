@@ -697,12 +697,21 @@ function _clientIpKey(req) {
   return `ip:${ipKeyGenerator(req.ip)}`;
 }
 
+// (D2/D3) Retry-After handler + per-user-when-authenticated limiter key. Logic
+// lives in lib/rateLimitHelpers (dependency-injected, unit-tested); the JWT is
+// already verified in `limit` below, so per-user keying adds no new trust.
+const { rateLimitHandler, buildRateLimitKey } = require('./lib/rateLimitHelpers');
+function _rateLimitKey(req) {
+  return buildRateLimitKey(req, { verifyToken, clientIpKey: _clientIpKey });
+}
+
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  standardHeaders: true,   // RateLimit-* headers + Retry-After on 429
+  standardHeaders: true,   // RateLimit-* headers
   legacyHeaders:   false,
-  // Key by normalized IP only — no unverified JWT decoding in key path.
-  keyGenerator: _clientIpKey,
+  // (D3) Verified-JWT → per-user key; anonymous → per-IP key.
+  keyGenerator: _rateLimitKey,
+  handler: rateLimitHandler, // (D2) Retry-After
   // Pass-2 audit P0 (2026-05-17): bypass this limiter entirely for the
   // /api/v1/* public-API surface. Those routes authenticate via plaintext
   // API keys (NOT JWTs) and have their own per-key apiKeyLimiter (60/min).
@@ -743,6 +752,7 @@ const ingestLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders:   false,
+  handler: rateLimitHandler, // (D2) Retry-After
   message: { success: false, error: 'Too many upload requests — please wait before trying again.' },
 });
 
@@ -753,6 +763,7 @@ const publicParseLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   keyGenerator:    _clientIpKey,
+  handler: rateLimitHandler, // (D2) Retry-After
   message: { success: false, error: 'Too many reports from this network — try again in an hour or create a free account.' },
 });
 
@@ -770,6 +781,7 @@ const aiIpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   keyGenerator:    _clientIpKey,
+  handler: rateLimitHandler, // (D2) Retry-After
   message: { success: false, error: 'Too many AI requests from this network -- try again in an hour.' },
 });
 
@@ -783,6 +795,7 @@ const feedbackLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   keyGenerator: (req) => `user:${req.user.id}`,
+  handler: rateLimitHandler, // (D2) Retry-After
   message: { success: false, error: 'Too many feedback submissions — please try again later.' },
 });
 
@@ -799,6 +812,7 @@ const exportLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   keyGenerator: (req) => `user:${req.user.id}`,
+  handler: rateLimitHandler, // (D2) Retry-After
   message: { success: false, error: 'Too many exports — please wait a moment before trying again.' },
 });
 
@@ -815,6 +829,7 @@ const leaveBehindLimiter = rateLimit({
   // at startup. req.user is normally set (authenticateToken runs first); the
   // IP path is a defensive fallback.
   keyGenerator: (req) => `user:${req.user?.id || ipKeyGenerator(req.ip)}`,
+  handler: rateLimitHandler, // (D2) Retry-After
   message: { success: false, error: 'Too many PDF requests — please wait before generating another leave-behind.' },
 });
 
