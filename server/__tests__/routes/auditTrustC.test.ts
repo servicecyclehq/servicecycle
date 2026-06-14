@@ -95,4 +95,43 @@ describe('C2 share-link view is audit-logged', () => {
   });
 });
 
+describe('C1 verifier — multi-account chains + pending rows', () => {
+  // build one account's chain (independent prev) as export lines
+  function chainFor(accountId: string, items: any[]): string[] {
+    let prev: string | null = null;
+    return items.map((r) => {
+      const canonRow = { id: r.id, accountId, assetId: null, action: r.action, details: r.details ?? null, createdAt: r.ts };
+      const rowHash = verifier.computeRowHash(prev, verifier.canonical(canonRow));
+      const line = JSON.stringify({ id: r.id, ts: r.ts, action: r.action, accountId, assetId: null, details: r.details ?? null, prevHash: prev, rowHash });
+      prev = rowHash;
+      return line;
+    });
+  }
+
+  test('two interleaved account chains both verify', () => {
+    const a = chainFor('accA', [
+      { id: 'a1', action: 'login', ts: '2026-06-14T00:00:00.000Z' },
+      { id: 'a2', action: 'asset_created', ts: '2026-06-14T00:02:00.000Z' },
+    ]);
+    const b = chainFor('accB', [
+      { id: 'b1', action: 'login', ts: '2026-06-14T00:01:00.000Z' },
+      { id: 'b2', action: 'asset_created', ts: '2026-06-14T00:03:00.000Z' },
+    ]);
+    // interleave in global createdAt order, as a real export would
+    const interleaved = [a[0], b[0], a[1], b[1]];
+    const r = verifier.verifyLines(interleaved);
+    expect(r.ok).toBe(true);
+    expect(r.chains).toBe(2);
+  });
+
+  test('pending (unsettled, rowHash=null) rows are not breaks', () => {
+    const a = chainFor('accA', [{ id: 'a1', action: 'login', ts: '2026-06-14T00:00:00.000Z' }]);
+    const pendingLine = JSON.stringify({ id: 'p1', ts: '2026-06-14T00:05:00.000Z', action: 'login', accountId: 'accA', assetId: null, details: null, prevHash: null, rowHash: null });
+    const r = verifier.verifyLines([...a, pendingLine]);
+    expect(r.ok).toBe(true);
+    expect(r.pending).toBe(1);
+    expect(r.total).toBe(1);
+  });
+});
+
 export {};

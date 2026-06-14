@@ -12,14 +12,17 @@
  * trust the running server, the database, or any ServiceCycle code to confirm
  * the log has not been altered.
  *
- * What it proves on a contiguous export slice:
+ * The audit log is a SEPARATE SHA-256 hash chain PER account (cross-tenant /
+ * global events use accountId=null as their own chain). This verifier groups
+ * rows by accountId and checks each chain independently:
  *   1. Integrity  - every row's rowHash == sha256(prevHash | canonical(row)),
  *      so no field of any row was changed after the fact.
- *   2. Continuity - each row's prevHash == the previous row's rowHash, so no row
- *      was inserted, deleted, or reordered within the slice.
- * Genesis (prevHash === null on the very first row) is only assertable on a
- * full-from-start export; on a filtered slice the first row's prevHash is taken
- * as given and continuity is checked from there.
+ *   2. Continuity - within an account chain each row's prevHash == the previous
+ *      row's rowHash, so no row was inserted, deleted, or reordered.
+ * Rows whose rowHash is not yet set are "pending" (the background settle job
+ * hasn't chained them) and are reported, never treated as a break. Continuity
+ * assumes a FULL per-account export (a date-filtered subset can legitimately
+ * omit rows and is not continuity-checkable).
  *
  * Usage:
  *   node verify-audit-chain.js audit.ndjson      # verify a file
@@ -64,38 +67,50 @@ function fromExportLine(o) {
     assetId:   o.assetId ?? null,
     action:    o.action,
     details:   o.details ?? null,
-    // export uses `ts`; the chain hashes the createdAt ISO string
-    createdAt: o.ts,
+    createdAt: o.ts,           // export uses `ts`; the chain hashes the createdAt ISO string
     prevHash:  o.prevHash ?? null,
     rowHash:   o.rowHash ?? null,
   };
 }
 
 /**
- * Verify an array of NDJSON strings (or parsed objects). Returns
- * { ok, total, breaks:[{index,id,reason}] }.
+ * Verify an array of NDJSON strings (or parsed objects). Groups by accountId
+ * (global = accountId null) and verifies each chain. Returns
+ * { ok, total, pending, chains, breaks:[{accountId,id,reason}] }.
  */
 function verifyLines(lines) {
-  const rows = [];
+  const all = [];
   for (const line of lines) {
     const s = typeof line === "string" ? line.trim() : line;
     if (!s) continue;
-    rows.push(typeof s === "string" ? fromExportLine(JSON.parse(s)) : fromExportLine(s));
+    all.push(typeof s === "string" ? fromExportLine(JSON.parse(s)) : fromExportLine(s));
   }
+  const pending = all.filter((r) => !r.rowHash);
+  const settled = all.filter((r) => r.rowHash);
+
+  const groups = new Map();
+  for (const r of settled) {
+    const k = r.accountId == null ? "__global__" : r.accountId;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+
   const breaks = [];
-  let prevRowHash = null;
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    const expected = computeRowHash(r.prevHash, canonical(r));
-    if (r.rowHash !== expected) {
-      breaks.push({ index: i, id: r.id, reason: "rowHash mismatch (row altered)" });
+  for (const [acct, rows] of groups) {
+    let prevRowHash = null;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const expected = computeRowHash(r.prevHash, canonical(r));
+      if (r.rowHash !== expected) {
+        breaks.push({ accountId: acct, id: r.id, reason: "rowHash mismatch (row altered)" });
+      }
+      if (i > 0 && (r.prevHash || null) !== prevRowHash) {
+        breaks.push({ accountId: acct, id: r.id, reason: "prevHash does not link to previous row in this account chain (gap/insert/reorder)" });
+      }
+      prevRowHash = r.rowHash;
     }
-    if (i > 0 && (r.prevHash || null) !== prevRowHash) {
-      breaks.push({ index: i, id: r.id, reason: "prevHash does not link to previous row (gap/insert/reorder)" });
-    }
-    prevRowHash = r.rowHash;
   }
-  return { ok: breaks.length === 0, total: rows.length, breaks };
+  return { ok: breaks.length === 0, total: settled.length, pending: pending.length, chains: groups.size, breaks };
 }
 
 function main(argv) {
@@ -118,13 +133,15 @@ function main(argv) {
     console.error("Parse error:", e.message);
     process.exit(2);
   }
+  const tail = `${result.total} settled rows across ${result.chains} account chain(s)` +
+               (result.pending ? `, ${result.pending} pending (unsettled, not yet chained)` : "");
   if (result.ok) {
-    console.log(`OK - audit chain intact across ${result.total} rows.`);
+    console.log(`OK - audit chain intact: ${tail}.`);
     process.exit(0);
   }
-  console.error(`BREAK - ${result.breaks.length} problem(s) across ${result.total} rows:`);
+  console.error(`BREAK - ${result.breaks.length} problem(s) over ${tail}:`);
   for (const b of result.breaks.slice(0, 50)) {
-    console.error(`  row ${b.index} (id=${b.id}): ${b.reason}`);
+    console.error(`  account ${b.accountId} (id=${b.id}): ${b.reason}`);
   }
   process.exit(1);
 }
