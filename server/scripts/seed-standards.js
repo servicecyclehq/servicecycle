@@ -11,6 +11,16 @@
  *   node server/scripts/seed-standards.js          — CLI
  *   const { seedStandards } = require(...);        — programmatic
  *
+ * ── STARTING DEFAULTS, NOT AUTHORITY ───────────────────────────────────────
+ * This matrix is a labeled STARTING DEFAULT — adjust to the manufacturer's
+ * recommended procedure and your facility's program. NFPA 70B defers routine
+ * intervals to the manufacturer's manual + the EMP, so each asset's interval
+ * is an editable default (PUT /api/schedules/:id conditionOverride / lead
+ * times), not a fixed mandate. By default a new asset gets the LEAN PM program
+ * (clean / lube / insulation-resistance "megger" / visual + IR + routine
+ * operational tests); the full NETA test battery is opt-in per account
+ * (neta_full_battery flag, lib/leanProgram + lib/accountFeatures).
+ *
  * ── PROVENANCE / REVIEW NOTE (read before trusting the numbers) ─────────────
  * Intervals encode the NFPA 70B:2023 condition-of-maintenance model:
  *   C1 (good)  — extended interval, ceiling 60 months

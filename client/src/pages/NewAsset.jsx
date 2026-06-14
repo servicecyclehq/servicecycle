@@ -382,12 +382,12 @@ export default function NewAsset() {
 
       const applyTemplate = await confirm({
         title: templateApplied
-          ? `Apply the full NFPA 70B matrix too?`
-          : 'Apply NFPA 70B schedule template?',
+          ? `Apply the standard program too?`
+          : 'Apply the starting maintenance program?',
         message: templateApplied
-          ? `The template "${templateApplied.name}" has already applied ${templateTaskIds.length} task(s). Apply the full NFPA 70B matrix for this equipment type on top?`
-          : 'This pairs the asset with every standard NFPA 70B maintenance task for its equipment type. You can add or remove individual schedules later. Re-running is safe — existing pairings are kept.',
-        confirmLabel: 'Apply template',
+          ? `The template "${templateApplied.name}" has already applied ${templateTaskIds.length} task(s). Apply the standard starting program for this equipment type on top?`
+          : 'This pairs the asset with a lean starting PM program for its equipment type (clean / lube / insulation-resistance "megger" / visual, plus IR and routine tests). These are starting defaults — adjust each interval to the manufacturer and your program. You can add or remove schedules later; re-running is safe — existing pairings are kept.',
+        confirmLabel: 'Apply program',
         cancelLabel: 'Skip for now',
       });
       if (applyTemplate) {

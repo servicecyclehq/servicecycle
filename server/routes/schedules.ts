@@ -37,6 +37,11 @@ const prisma = require('../lib/prisma').default;
 // — guards the bulk-apply filter so a bad string 400s instead of throwing in
 // Prisma.
 const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
+// Lean-program split: a new asset gets the lean PM set (clean/lube/megger/
+// visual + IR + routine operational tests) by default; the full NETA test
+// battery is added only when the account's neta_full_battery flag is on.
+const { filterTaskDefsForProgram } = require('../lib/leanProgram');
+const { resolveAccountFeatures } = require('../lib/accountFeatures');
 
 // ── zod schemas ──────────────────────────────────────────────────────────────
 const ConditionEnum = z.enum(['C1', 'C2', 'C3']);
@@ -277,10 +282,17 @@ router.post('/bulk-apply', requireManager, async (req, res) => {
 
     // Global task matrix rows for the equipment types in play.
     const types = [...new Set(assets.map(a => a.equipmentType))];
-    const taskDefs = await prisma.maintenanceTaskDefinition.findMany({
+    const allTaskDefs = await prisma.maintenanceTaskDefinition.findMany({
       where: { accountId: null, archivedAt: null, equipmentType: { in: types } },
-      select: { id: true, equipmentType: true, intervalC2Months: true },
+      select: { id: true, equipmentType: true, intervalC2Months: true, taskCode: true },
     });
+
+    // Lean by default: drop the full NETA test battery unless the account has
+    // neta_full_battery on. The seeded matrix is a "starting default" the
+    // customer adjusts to the manufacturer / their program; the expensive
+    // de-energized NETA battery is opt-in.
+    const features = await resolveAccountFeatures(req.user.accountId);
+    const taskDefs = filterTaskDefsForProgram(allTaskDefs, { fullBattery: !!features.neta_full_battery });
 
     const defsByType = new Map();
     for (const d of taskDefs) {

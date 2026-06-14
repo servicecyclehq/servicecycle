@@ -624,9 +624,9 @@ export default function AssetDetail() {
 
   async function handleApplyTemplate() {
     if (!await confirm({
-      title: 'Apply NFPA 70B schedule template?',
-      message: 'Adds the standard NFPA 70B / NETA maintenance schedule for this equipment type — one schedule per standard task. Existing schedules are kept — the operation is idempotent.',
-      confirmLabel: 'Apply template',
+      title: 'Apply the starting maintenance program?',
+      message: 'Adds a lean starting PM program for this equipment type (clean / lube / insulation-resistance "megger" / visual, plus IR and routine tests). These are starting defaults — adjust each interval to the manufacturer and your program. Existing schedules are kept — the operation is idempotent.',
+      confirmLabel: 'Apply program',
     })) return;
     // Snapshot the current schedule ids so the success toast can name exactly
     // which tasks the template added (the bulk-apply response only carries a
