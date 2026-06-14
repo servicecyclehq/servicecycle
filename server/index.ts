@@ -1057,6 +1057,27 @@ app.get('/api/ready', async (req, res) => {
       checks.anthropic = anthropicKey ? 'non_anthropic_provider' : 'not_configured';
     }
   }
+  // Ingest-worker liveness. A silently-dead in-process worker would otherwise
+  // pass a green readiness check while the ingest pipeline stalls. Always
+  // reported in the body; only flips readiness to 503 under ?deep=1 so the
+  // container health probe (shallow) never restart-loops the web tier on a
+  // merely-slow worker (recoverStaleJobs already re-queues stuck jobs).
+  try {
+    const { getIngestWorkerStatus } = require('./lib/ingestWorker');
+    const w = getIngestWorkerStatus();
+    if (!w.started) {
+      checks.ingestWorker = 'not_started';
+    } else if (w.ageMs == null) {
+      checks.ingestWorker = 'no_tick_yet';
+    } else {
+      const staleMs = Math.max(90_000, (w.pollMs || 4000) * 6);
+      const isStale = w.ageMs > staleMs;
+      checks.ingestWorker = isStale ? `stale: ${Math.round(w.ageMs / 1000)}s` : 'ok';
+      if (isStale && deep) status = 503;
+    }
+  } catch (e) {
+    checks.ingestWorker = `error: ${(e as any).message}`;
+  }
   res.status(status).json({
     success: status === 200,
     data: {

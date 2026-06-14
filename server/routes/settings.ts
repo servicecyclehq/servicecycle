@@ -327,6 +327,23 @@ router.put('/', async (req, res) => {
       return true;
     });
 
+    // SSRF guard (matches the webhook create-time check): an account admin can
+    // set a custom Azure AI endpoint, which becomes a server-side fetch target.
+    // Reject endpoints that resolve to a private / link-local / cloud-metadata
+    // host so a compromised admin can't point the server at an internal URL.
+    // Self-host deployments that legitimately point at an internal inference
+    // box opt out with ALLOW_INTERNAL_AI_ENDPOINT=true.
+    const azureEp = req.body?.AZURE_OPENAI_ENDPOINT;
+    if (typeof azureEp === 'string' && azureEp.trim() && !/^[•]+$/.test(azureEp) &&
+        process.env.ALLOW_INTERNAL_AI_ENDPOINT !== 'true') {
+      const { validateWebhookUrl } = require('../lib/webhook');
+      const { valid, reason } = await validateWebhookUrl(azureEp.trim())
+        .catch(() => ({ valid: false, reason: 'validation-error' }));
+      if (!valid) {
+        return res.status(400).json({ success: false, error: `AI endpoint blocked: ${reason}` });
+      }
+    }
+
     // Phase 4: aiBriefEnabled is a real Account column. Admin-only,
     // handled separately from the KV settings branch since it doesn't
     // share the upsert path. Accept Boolean, 'true', 'false' to match

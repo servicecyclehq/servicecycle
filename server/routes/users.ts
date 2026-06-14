@@ -426,6 +426,11 @@ router.put('/:id', requireAdmin, async (req, res) => {
       updateData.role = role;
       // Reset feature flags to the new role's defaults whenever role changes
       updateData.featureFlags = defaultFlagsForRole(role);
+      // Security: a role change (especially a demotion) must invalidate the
+      // user's existing access token immediately rather than letting the old
+      // privileges linger until the JWT's ~1h TTL. Bumping tokenEpoch makes the
+      // auth middleware reject the stale token on the very next request.
+      if (role !== target.role) updateData.tokenEpoch = { increment: 1 };
     }
 
     const user = await prisma.user.update({

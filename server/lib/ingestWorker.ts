@@ -126,10 +126,15 @@ async function recoverStaleJobs(): Promise<number> {
 
 let _timer: any = null;
 let _running = false;
+// Liveness heartbeat — updated at the end of every tick. /api/ready reads it
+// (getIngestWorkerStatus) so a silently-dead worker shows up as degraded
+// instead of a green health check hiding a stalled ingest pipeline.
+let _lastTickAt: Date | null = null;
 
 /** Start the in-process poller. Idempotent. */
 function startIngestWorker() {
   if (_timer) return;
+  _lastTickAt = new Date(); // count "started" as the first heartbeat
   _timer = setInterval(async () => {
     if (_running) return; // never overlap ticks
     _running = true;
@@ -143,6 +148,7 @@ function startIngestWorker() {
     } catch (e: any) {
       console.error('[ingestWorker] tick error:', e && e.message ? e.message : e);
     } finally {
+      _lastTickAt = new Date(); // a tick completed (even on error) — worker alive
       _running = false;
     }
   }, POLL_MS);
@@ -154,6 +160,20 @@ function stopIngestWorker() {
   if (_timer) { clearInterval(_timer); _timer = null; }
 }
 
+/**
+ * Liveness snapshot for the readiness probe. `started` = the poller is
+ * installed; `ageMs` = ms since the last completed tick (null if never run).
+ * A large ageMs while started=true means the event loop or the tick is wedged.
+ */
+function getIngestWorkerStatus() {
+  return {
+    started:    !!_timer,
+    lastTickAt: _lastTickAt,
+    ageMs:      _lastTickAt ? (Date.now() - _lastTickAt.getTime()) : null,
+    pollMs:     POLL_MS,
+  };
+}
+
 module.exports = {
   claimNextJobId,
   runIngestJob,
@@ -161,6 +181,7 @@ module.exports = {
   recoverStaleJobs,
   startIngestWorker,
   stopIngestWorker,
+  getIngestWorkerStatus,
   MAX_ATTEMPTS,
 };
 
