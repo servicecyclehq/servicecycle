@@ -31,8 +31,25 @@
  */
 
 const express           = require('express');
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireAdmin } = require('../middleware/roles');
 import prisma from '../lib/prisma';
+
+// #35 SIEM export cap — a single pull returns at most this many rows (oldest
+// first). A SIEM ingests on a schedule with dateFrom/dateTo windows, so this
+// caps memory without losing coverage.
+const SIEM_EXPORT_MAX = 50000;
+
+function cefEscapeHeader(s: any): string {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+function cefEscapeExt(s: any): string {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/\n/g, ' ');
+}
+// Higher CEF severity for security-relevant events; default 3 (informational).
+const CEF_SEVERITY: any = {
+  login_failed: 6, permission_denied: 6, admin_password_reset: 7,
+  compliance_snapshot_integrity_failure: 9,
+};
 
 const router = express.Router();
 
@@ -289,6 +306,76 @@ router.get('/distinct/:column', requireManager, async (req, res) => {
   } catch (err) {
     console.error('[activity\\distinct] failed for column', column, ':', err);
     return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ── GET /api/activity/export ─────────────────────────────────────────────────
+// #35 Enterprise trust pack — SIEM-exportable audit log. The per-account
+// hash chain (prevHash/rowHash) already exists; this packages it for ingestion
+// by Splunk/ArcSight/etc. Admin-only (it's the security feed). Supports
+// ?format=ndjson (default) | cef and the same dateFrom/dateTo/action filters as
+// the list view. Rows are oldest-first so a SIEM appends in chain order; each
+// row carries rowHash + prevHash so the SIEM stores tamper-evident events.
+router.get('/export', requireAdmin, async (req, res) => {
+  try {
+    const format = String(req.query.format || 'ndjson').toLowerCase();
+    if (!['ndjson', 'cef'].includes(format)) {
+      return res.status(400).json({ success: false, error: "format must be 'ndjson' or 'cef'" });
+    }
+    const limit = Math.min(SIEM_EXPORT_MAX, Math.max(1, parseInt(req.query.limit || String(SIEM_EXPORT_MAX), 10) || SIEM_EXPORT_MAX));
+    const where = buildWhere(req);
+
+    const rows = await prisma.activityLog.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+      include: { user: { select: { id: true, email: true, role: true } } },
+    });
+
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'cef') {
+      res.set('Content-Type', 'text/plain; charset=utf-8');
+      res.set('Content-Disposition', `attachment; filename="servicecycle-audit-${stamp}.cef"`);
+      res.set('X-Content-Type-Options', 'nosniff');
+      const lines = rows.map((r: any) => {
+        const sev  = CEF_SEVERITY[r.action] ?? 3;
+        const name = ACTION_LABELS[r.action] || r.action;
+        const ext  = [
+          `rt=${new Date(r.createdAt).getTime()}`,
+          r.user?.email ? `suser=${cefEscapeExt(r.user.email)}` : '',
+          r.userId ? `suid=${cefEscapeExt(r.userId)}` : '',
+          r.assetId ? `cs1Label=assetId cs1=${cefEscapeExt(r.assetId)}` : '',
+          `cs2Label=rowHash cs2=${cefEscapeExt(r.rowHash || '')}`,
+          `cs3Label=prevHash cs3=${cefEscapeExt(r.prevHash || '')}`,
+          `externalId=${cefEscapeExt(r.id)}`,
+        ].filter(Boolean).join(' ');
+        return `CEF:0|ServiceCycle|ServiceCycle|1.0|${cefEscapeHeader(r.action)}|${cefEscapeHeader(name)}|${sev}|${ext}`;
+      });
+      return res.send(lines.join('\n') + (lines.length ? '\n' : ''));
+    }
+
+    // NDJSON (default) — one JSON event per line.
+    res.set('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="servicecycle-audit-${stamp}.ndjson"`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    const lines = rows.map((r: any) => JSON.stringify({
+      id:          r.id,
+      ts:          r.createdAt,
+      action:      r.action,
+      actorUserId: r.userId,
+      actorEmail:  r.user?.email || null,
+      actorRole:   r.user?.role || null,
+      accountId:   r.accountId,
+      assetId:     r.assetId,
+      details:     r.details ?? null,
+      prevHash:    r.prevHash || null,
+      rowHash:     r.rowHash || null,
+    }));
+    return res.send(lines.join('\n') + (lines.length ? '\n' : ''));
+  } catch (err) {
+    console.error('Activity export error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to export activity log' });
   }
 });
 
