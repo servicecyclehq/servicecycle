@@ -23,6 +23,7 @@ const { runDeterministic } = require('../lib/testReportExtract'); // V4 pdfplumb
 const { aiFillReadings } = require('../lib/aiTestReportExtract'); // W1-AI gap-fill (deterministic-first)
 const { sha256Hex, confStats, recordExtraction, findPriorImport, recordCommit } = require('../lib/extractionTelemetry'); // #4 telemetry + #5 fingerprint
 const { resolveAsset } = require('../lib/assetIdentity'); // #3 fuzzy asset identity resolution
+const { buildTestReportPreview } = require('../lib/testReportPreview'); // #2 shared buffer->preview builder
 
 const MAX_BYTES = 10 * 1024 * 1024;
 // #20 photo-of-paper: accept a phone photo of a paper field sheet alongside
@@ -37,251 +38,34 @@ const upload = multer({
     ACCEPTED_RE.test(file.originalname || '') ? cb(null, true) : cb(new Error('Upload a .pdf or a photo (JPG/PNG/HEIC)')),
 });
 
-function assetLabel(a: any): string {
-  return [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || 'Asset';
-}
-
-function shapeCandidate(c: any) {
-  return {
-    id: c.id, label: c.label, serialNumber: c.serialNumber, equipmentType: c.equipmentType,
-    siteName: c.siteName, positionName: c.positionName, lastTestedAt: c.lastTestedAt,
-    reason: c.reason, confidence: c.confidence,
-  };
-}
-
-// #1 per-section asset matching. A SUBSTATION/POSITION block rarely carries its
-// own serial, so it's matched by the position/substation tag against existing
-// EquipmentPosition names and serials. The first section additionally tries the
-// document-level serial via the #3 resolver (the report header usually names
-// the lead device). Returns the same candidate shape as the whole-doc match.
-async function resolveSectionAsset(accountId: string, def: any, docSerial: string | null) {
-  if (docSerial) {
-    const r = await resolveAsset({ accountId, serialNumber: docSerial });
-    if (r.best) return { best: shapeCandidate(r.best), candidates: r.candidates.map(shapeCandidate) };
-  }
-  const terms = [def.position, def.substation].filter(Boolean);
-  if (!terms.length) return { best: null, candidates: [] };
-  const rows = await prisma.asset.findMany({
-    where: {
-      accountId, archivedAt: null,
-      OR: [
-        ...terms.map((t: string) => ({ position: { name: { equals: t, mode: 'insensitive' } } })),
-        ...terms.map((t: string) => ({ serialNumber: { contains: t, mode: 'insensitive' } })),
-      ],
-    },
-    select: {
-      id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true,
-      site: { select: { name: true } }, position: { select: { name: true } },
-    },
-    take: 5,
-  });
-  const candidates = rows.map((a: any) => shapeCandidate({
-    id: a.id, label: assetLabel(a), serialNumber: a.serialNumber, equipmentType: a.equipmentType,
-    siteName: a.site?.name || null, positionName: a.position?.name || null,
-    lastTestedAt: null, reason: 'section_name', confidence: 'medium',
-  }));
-  return { best: candidates[0] || null, candidates };
-}
-
 // ── POST /preview ─────────────────────────────────────────────────────────────
 // V7: any authenticated role can preview (read-only); commit stays manager+.
+// The buffer -> preview pipeline lives in lib/testReportPreview (shared with the
+// #2 async ingest worker); this handler owns only request concerns.
 router.post('/preview', upload.single('file'), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
-
-    // #20 photo-of-paper: if the upload is an image, wrap it into a single-page
-    // PDF so the rest of the pipeline (OCR + parse + sections) reads it unchanged.
-    let photoOfPaper = false;
-    if (IMAGE_RE.test(req.file.originalname || '')) {
-      try {
-        const { imageToPdf } = require('../lib/imageToPdf');
-        req.file.buffer = await imageToPdf(req.file.buffer, req.file.mimetype || 'image/jpeg');
-        req.file.mimetype = 'application/pdf';
-        photoOfPaper = true;
-      } catch (e: any) {
-        return res.status(400).json({ success: false, error: 'Could not process that photo. Try a clearer, well-lit image.' });
-      }
-    }
 
     // #14: oem_admin may preview against a fleet customer account (targetAccountId).
     let accountId: string;
     try { accountId = await resolveIngestAccount(req); }
     catch (e: any) { return res.status(e.httpStatus || 400).json({ success: false, error: e.message }); }
 
-    // #5 fingerprint: hash the raw bytes once, then ask whether this exact
-    // report has already been committed in this account. Surfaced to the client
-    // as `priorImport` so the UI can warn "imported <date> — re-import anyway?"
-    // instead of silently double-importing a year's readings. Advisory only —
-    // never blocks the preview.
-    const sha256 = sha256Hex(req.file.buffer);
-    const priorImport = await findPriorImport({ accountId, sha256 });
-
-    // V4: deterministic pdfplumber engine first (geometry + ruled tables); fall
-    // OPEN to the pdfjs text-regex parser if Python is unavailable or yields
-    // nothing, so ingest works even without the Python runtime.
-    let meta: any, measurements: any[], source: string;
-    let assetSections = 1, ocr = false;
-    let pageCount: number | null = null, pagesScanned: number | null = null, truncated = false;
-    let sectionDefs: any[] = []; // #1 canonical SUBSTATION/POSITION sections from the extractor
-    const py = await runDeterministic(req.file.buffer);
-    if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
-      source = py.ocr ? 'pdfplumber-ocr' : 'pdfplumber';
-      assetSections = py.asset_sections || 1;
-      sectionDefs = Array.isArray(py.sections) ? py.sections : [];
-      pageCount = py.page_count ?? null;
-      pagesScanned = py.pages_scanned ?? null;
-      truncated = !!py.truncated;
-      ocr = !!py.ocr;
-      const f = py.fields || {};
-      meta = {
-        serialNumber: f.serialNumber || null, model: f.model || null,
-        manufacturer: f.manufacturer || null, testDate: f.testDate || null,
-        vendor: f.vendor || null, techName: f.techName || null,
-      };
-      measurements = py.measurements.map((x: any) => {
-        let pf = ['GREEN', 'YELLOW', 'RED'].includes(x.passFail) ? x.passFail : null;
-        if (!pf && x.expectedRange != null && x.asFoundValue != null) pf = evaluate(Number(x.asFoundValue), x.expectedRange);
-        return {
-          measurementType: x.measurementType, label: x.label || x.measurementType,
-          phase: x.phase || null, asFoundValue: x.asFoundValue, asFoundUnit: x.asFoundUnit,
-          expectedRange: x.expectedRange, testVoltage: x.testVoltage || null,
-          passFail: pf, critical: !!x.critical, kind: x.kind || 'D', confidence: x.confidence,
-          section: (x.section === null || x.section === undefined) ? null : Number(x.section), // #1 SUBSTATION/POSITION index
-        };
+    let data;
+    try {
+      data = await buildTestReportPreview(req.file.buffer, {
+        accountId, userId: req.user.id,
+        originalName: req.file.originalname, mimetype: req.file.mimetype,
       });
-    } else {
-      source = 'pdfjs';
-      const text = await extractPdfText(req.file.buffer);
-      const parsed = parseTestReport(text);
-      meta = parsed.meta;
-      measurements = parsed.measurements;
-    }
-
-    // ── W1-AI: deterministic-first AI gap-fill ────────────────────────────────
-    // Fires ONLY when the deterministic + OCR pass came back thin (few total
-    // readings, or a full fall-through to the pdfjs text parser). Recovers the
-    // readings the regex/geometry passes missed via the configured LLM (Gemini
-    // free-tier cascade by default). Fail-open: any error leaves the
-    // deterministic result untouched. Net-new rows only — an AI row never
-    // overwrites or duplicates a deterministic reading.
-    let aiUsed = false;
-    let aiAdded = 0;
-    const MIN_READINGS = Number(process.env.AI_INGEST_MIN_READINGS || 8);
-    const lowCoverage = source === 'pdfjs' || measurements.length < MIN_READINGS;
-    if (process.env.AI_ENABLED !== 'false' && lowCoverage) {
-      try {
-        const aiText = await extractPdfText(req.file.buffer); // text-layer; scans (OCR) yield none → skipped
-        if (aiText && aiText.trim().length > 60) {
-          const filled = await aiFillReadings(aiText);
-          if (filled.ok && filled.measurements.length) {
-            const seen = new Set(
-              measurements.map((m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`),
-            );
-            for (const m of filled.measurements) {
-              const key = `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              if (!m.passFail && m.expectedRange != null && m.asFoundValue != null) {
-                m.passFail = evaluate(Number(m.asFoundValue), m.expectedRange);
-              }
-              measurements.push(m);
-              aiAdded++;
-            }
-            aiUsed = aiAdded > 0;
-            if (aiUsed && source !== 'pdfjs') source = `${source}+ai`;
-            else if (aiUsed) source = 'ai';
-          }
-        }
-      } catch (e: any) {
-        console.warn('[testReport/preview] AI gap-fill skipped:', e && e.message ? e.message : String(e));
+    } catch (e: any) {
+      // Image-wrap failure has a friendlier message than a generic parse failure.
+      if (IMAGE_RE.test(req.file.originalname || '')) {
+        return res.status(400).json({ success: false, error: 'Could not process that photo. Try a clearer, well-lit image.' });
       }
+      throw e;
     }
 
-    // #3 identity resolution: fuzzy-match the parsed serial to an existing
-    // asset (exact → O/0,I/1 normalized → site/type fallback) instead of the
-    // old exact-only equals, so a year of readings can't silently attach to the
-    // wrong device — and the UI can offer a one-tap "same device?" confirm.
-    // `assetMatch` stays the single best candidate (backward-compatible shape);
-    // `assetCandidates` is the new ranked list the confirm step renders.
-    let assetMatch: any = null;
-    let assetCandidates: any[] = [];
-    if (meta.serialNumber || meta.manufacturer || meta.model) {
-      const { best, candidates } = await resolveAsset({
-        accountId,
-        serialNumber: meta.serialNumber,
-        manufacturer: meta.manufacturer,
-        model: meta.model,
-      });
-      assetCandidates = candidates.map((c: any) => ({
-        id: c.id, label: c.label, serialNumber: c.serialNumber, equipmentType: c.equipmentType,
-        siteName: c.siteName, positionName: c.positionName, lastTestedAt: c.lastTestedAt,
-        reason: c.reason, confidence: c.confidence,
-      }));
-      if (best) {
-        assetMatch = {
-          id: best.id, label: best.label, serialNumber: best.serialNumber,
-          equipmentType: best.equipmentType, siteName: best.siteName,
-          reason: best.reason, confidence: best.confidence, lastTestedAt: best.lastTestedAt,
-        };
-      }
-    }
-
-    const sliceSummary = (list: any[]) => ({
-      total: list.length,
-      red:    list.filter((x: any) => x.passFail === 'RED').length,
-      yellow: list.filter((x: any) => x.passFail === 'YELLOW').length,
-      green:  list.filter((x: any) => x.passFail === 'GREEN').length,
-      deficienciesToCreate: list.filter((x: any) => severityFor(x.passFail, x.critical)).length,
-    });
-    const summary = sliceSummary(measurements);
-
-    // #1 one-upload = one-facility: when the report spans >1 SUBSTATION/POSITION
-    // section, group readings per section and resolve each to an existing asset
-    // so the split UI can match-or-create per device. `measurements` (flat) and
-    // the whole-doc `assetMatch` are untouched — the single-asset path and any
-    // client that ignores `sections` keep working exactly as before.
-    let sections: any[] = [];
-    if (sectionDefs.length > 1) {
-      const buckets = new Map<number, number[]>();
-      measurements.forEach((m: any, i: number) => {
-        const sidx = (m.section === null || m.section === undefined) ? 0 : m.section;
-        if (!buckets.has(sidx)) buckets.set(sidx, []);
-        buckets.get(sidx)!.push(i);
-      });
-      sections = await Promise.all(sectionDefs.map(async (def: any, idx: number) => {
-        const measurementIndices = buckets.get(idx) || [];
-        const secMeas = measurementIndices.map((i) => measurements[i]);
-        const { best, candidates } = await resolveSectionAsset(
-          accountId, def, idx === 0 ? meta.serialNumber : null,
-        );
-        return {
-          idx, substation: def.substation, position: def.position, label: def.label,
-          measurementIndices, summary: sliceSummary(secMeas),
-          assetMatch: best, assetCandidates: candidates,
-        };
-      }));
-    }
-
-    // #4 telemetry: log engine / coverage / confidence for this extraction. The
-    // returned id is echoed back on commit so the human corrections can be
-    // stitched to this exact extraction. Fail-open — a null id just means the
-    // correction signal won't be captured for this one.
-    const stats = confStats(measurements);
-    const extractionId = await recordExtraction({
-      accountId, userId: req.user.id,
-      kind: 'test_report', engine: source, ocr, aiUsed,
-      pageCount, pagesScanned, truncated, assetSections,
-      fieldsExtracted: measurements.length,
-      confMin: stats.confMin, confMean: stats.confMean,
-      redCount: stats.redCount, yellowCount: stats.yellowCount, greenCount: stats.greenCount,
-      sha256,
-    });
-
-    return res.json({ success: true, data: {
-      meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, sections, ocr, aiUsed, aiAdded,
-      pageCount, pagesScanned, truncated, extractionId, photoOfPaper,
-      priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
-    } });
+    return res.json({ success: true, data });
   } catch (err) {
     console.error('[testReport/preview]', err);
     return res.status(500).json({ success: false, error: 'Failed to read the PDF. Is it a text-based test report (not a scan)?' });

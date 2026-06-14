@@ -317,8 +317,50 @@ model Account {
   partnerEventLogs       PartnerEventLog[]
   incidentLogs           IncidentLog[]
   shareLinks             ShareLink[]
+  ingestJobs             IngestJob[]
 
   @@map("accounts")
+}
+
+// ─── Async ingest jobs (#2) ────────────────────────────────────────────────────
+// Moves facility-scale document ingest off the HTTP request: an upload is stored
+// and enqueued, an in-process worker (lib/ingestWorker) claims it with
+// SELECT ... FOR UPDATE SKIP LOCKED, runs the SHARED buffer->preview builder
+// (lib/testReportPreview) across all pages, and stores the preview `result` for
+// the client to poll + review-then-commit. Underpins #34 backfill and #6 email-in.
+enum IngestJobStatus {
+  queued
+  processing
+  done
+  failed
+}
+
+model IngestJob {
+  id              String          @id @default(uuid())
+  accountId       String
+  createdById     String? // uploader (nullable for system/email-in)
+  kind            String          @default("test_report") // test_report | backfill | email_in
+  status          IngestJobStatus @default(queued)
+  fileKey         String // storage key of the persisted upload
+  fileName        String?
+  // #14: when an oem_admin enqueues into a fleet customer account, the worker
+  // builds the preview against this target (validated at enqueue time).
+  targetAccountId String?
+  progress        Int             @default(0) // 0-100
+  phase           String? // human-readable stage for the polling UI
+  result          Json? // the preview payload (same shape as POST /preview data)
+  error           String?
+  attempts        Int             @default(0)
+  startedAt       DateTime? // claim timestamp (drives stale-claim recovery)
+  finishedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([accountId, createdAt])
+  @@map("ingest_jobs")
 }
 
 // ─── OEM Partner Organizations ───────────────────────────────────────────────

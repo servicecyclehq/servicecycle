@@ -181,6 +181,7 @@ const deficiencyRoutes      = require('./routes/deficiencies'); // findings
 const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
 const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
 const testReportImportRoutes = require('./routes/testReportImport'); // R1 PDF test-report ingest
+const ingestJobsRoutes = require('./routes/ingestJobs'); // #2 async ingest jobs
 const workOrdersImportRoutes = require('./routes/workOrdersImport'); // WO history import
 const deficienciesImportRoutes = require('./routes/deficienciesImport'); // findings import
 const schedulesImportRoutes  = require('./routes/schedulesImport'); // schedule history import
@@ -1138,6 +1139,7 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
 app.use('/api/assets/labels',   authenticateToken, assetLabelRoutes);
 app.use('/api/assets/import',   authenticateToken, ingestLimiter, assetsImportRoutes);
 app.use('/api/test-reports/import', authenticateToken, ingestLimiter, testReportImportRoutes);
+app.use('/api/ingest', authenticateToken, ingestLimiter, ingestJobsRoutes); // #2 async ingest jobs
 app.use('/api/assets',          authenticateToken, assetRoutes);
 // AI maintenance brief — second router on the same mount; paths don't
 // collide (POST /:id/brief only), Express falls through. aiIpLimiter is
@@ -2071,6 +2073,14 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
       }
     }), { timezone: 'UTC' });
     console.log('[Cron] Arc flash integrity scheduled — runs daily at 09:30 UTC');
+
+    // ── #2 Async ingest worker — in-process poller (no Redis) ───────────────
+    try {
+      const { startIngestWorker } = require('./lib/ingestWorker');
+      startIngestWorker();
+    } catch (e) {
+      console.error('[ingestWorker] failed to start:', (e as any).message);
+    }
 
     // ── #30 Customer weekly digest — Mondays 13:00 UTC ──────────────────────
     // Opt-in per account (AccountSetting customer_weekly_digest='true'). The
