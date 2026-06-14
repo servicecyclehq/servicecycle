@@ -205,6 +205,24 @@ const TASKS = [
     requiresEnergized: false, requiresOutage: true, neta: true, netaLevel: 'LEVEL_II',
     description: 'Stator/rotor IR with polarization index per IEEE 43 minimum values.',
   },
+  {
+    // #26: NFPA 110 starting-battery monthly inspection — a top survey citation
+    // (a genset that will not crank fails the whole EPSS). Mandate-fixed monthly.
+    code: 'GEN_BATTERY_INSPECT', equipmentType: 'GENERATOR', name: 'Monthly starting-battery inspection',
+    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.3.6 (storage battery: electrolyte, terminals, charger, specific gravity)',
+    c1: 1, c2: 1, c3: 1,
+    requiresEnergized: false, requiresOutage: false, neta: false, netaLevel: null,
+    description: 'Inspect the engine starting battery monthly: electrolyte level + specific gravity (lead-acid), terminal corrosion/torque, charger output voltage/current, and float/equalize state. A starting-battery failure is the single most common cause of a failed EPSS start.',
+  },
+  {
+    // #26: NFPA 110 engine fluids/filters annual service per the manufacturer
+    // schedule (§8.3 maintenance + operational test program).
+    code: 'GEN_ENGINE_SERVICE', equipmentType: 'GENERATOR', name: 'Annual engine service (oil, filters, coolant)',
+    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.3 (prime mover maintenance per manufacturer schedule)',
+    c1: 12, c2: 12, c3: 6,
+    requiresEnergized: false, requiresOutage: false, neta: false, netaLevel: null,
+    description: 'Change engine oil + oil/fuel/air filters, sample coolant (SCA/glycol/freeze point), inspect belts/hoses/jacket-water heater, and verify governor/cooling per the manufacturer service schedule. NFPA 110 requires the prime mover be maintained per the manufacturer program.',
+  },
 
   // ═══════════════════════════════════════════════════════════════════════════
   // SECOND WAVE (2026-06-07) — remaining equipment types.
@@ -452,6 +470,15 @@ const TASKS = [
 
   // ── UPS_BATTERY ────────────────────────────────────────────────────────────
   {
+    // #26: IEEE 1188 monthly tier for VRLA strings — string-level float +
+    // charger + ambient, distinct from the quarterly per-jar ohmic below.
+    code: 'UPS_BATT_MONTHLY_STRING', equipmentType: 'UPS_BATTERY', name: 'Monthly string float voltage + charger check',
+    standardKey: 'IEEE 1188', ref: 'IEEE 1188-2005 monthly (string float V, charger output, ambient, visual)',
+    c1: 1, c2: 1, c3: 1,
+    requiresEnergized: true, requiresOutage: false, neta: false, netaLevel: null,
+    description: 'IEEE 1188-2005 monthly checks for VRLA strings: overall float voltage, charger output voltage + current, ambient temperature, and a visual scan for jar swelling, leakage, or post corrosion. The per-jar ohmic readings are the separate quarterly task.',
+  },
+  {
     code: 'UPS_BATT_OHMIC', equipmentType: 'UPS_BATTERY', name: 'Battery ohmic/impedance test (quarterly)',
     standardKey: 'IEEE 1188', ref: 'IEEE 1188-2005 (VRLA quarterly ohmic) / NETA MTS-2023 §7.18.1',
     // IEEE-recommended quarterly cadence (verified 2026-06-07 research) — C1
@@ -483,6 +510,16 @@ const TASKS = [
   },
 
   // ── BATTERY_SYSTEM (stationary strings + chargers) ─────────────────────────
+  {
+    // #26: IEEE 450 monthly tier — distinct from the quarterly per-cell task
+    // below (the standards review flagged that folding monthly into quarterly is
+    // coarser than IEEE 450's 3-tier program). String-level only.
+    code: 'BATT_MONTHLY_STRING', equipmentType: 'BATTERY_SYSTEM', name: 'Monthly string float voltage + charger check',
+    standardKey: 'IEEE 450', ref: 'IEEE 450-2010 monthly (string float V, charger output, ambient, visual)',
+    c1: 1, c2: 1, c3: 1,
+    requiresEnergized: true, requiresOutage: false, neta: false, netaLevel: null,
+    description: 'IEEE 450-2010 monthly checks: overall string float voltage at the terminals, charger output voltage + current, ambient/pilot-cell temperature, and a visual scan for leakage, swelling, or corrosion. The per-cell readings are the separate quarterly task.',
+  },
   {
     code: 'BATT_OHMIC_FLOAT', equipmentType: 'BATTERY_SYSTEM', name: 'Quarterly ohmic + per-cell float voltage',
     standardKey: 'IEEE 450', ref: 'IEEE 450-2010 (vented) / IEEE 1188-2005 (VRLA) — quarterly per-cell float V, temperature, ohmic',
