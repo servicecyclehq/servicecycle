@@ -203,7 +203,7 @@ def main():
         for tier in ("clean", "scan", "photo"):
             with open(base + "_%s.gt.json" % tier, "w", encoding="utf-8") as fh:
                 json.dump(gt, fh)
-            manifest.append({"pdf": base + "_%s.pdf" % tier, "img": imgs.get(tier), "gt": base + "_%s.gt.json" % tier, "tier": tier, "font": font})
+            manifest.append({"pdf": os.path.basename(base) + "_%s.pdf" % tier, "img": (os.path.basename(imgs[tier]) if imgs.get(tier) else None), "gt": os.path.basename(base) + "_%s.gt.json" % tier, "tier": tier, "font": font})
     with open(os.path.join(args.out, "manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
     print("generated %d reports x 3 tiers = %d PDFs into %s" % (args.count, args.count * 3, args.out))

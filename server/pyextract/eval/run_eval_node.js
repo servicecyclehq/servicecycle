@@ -50,7 +50,7 @@ async function main() {
   const manifest = JSON.parse(fs.readFileSync(path.join(corpus, 'manifest.json'), 'utf8'));
   const agg = {};
   for (const e of manifest) {
-    const R = (f) => path.join(corpus, path.basename(f));
+    const R = (f) => path.join(corpus, String(f).split(/[\\/]/).pop());
     const input = R((e.tier === 'clean') ? e.pdf : (e.img || e.pdf));
     const originalName = path.basename(input);
     const mimetype = input.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
