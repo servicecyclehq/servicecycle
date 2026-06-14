@@ -216,20 +216,35 @@ async function aiFillReadingsFromImage(imageBuffer: Buffer, opts: any = {}) {
     console.warn('[aiTestReport] image preprocess failed:', e && e.message ? e.message.slice(0, 160) : String(e));
     return { ok: false, measurements: [] };
   }
-  let resp: any;
-  try {
-    resp = await ai.completeWithImage({ imageBuffer: processed, mediaType: 'image/jpeg', prompt: VISION_PROMPT, maxTokens: opts.maxTokens || 3072 });
-  } catch (e: any) {
-    console.warn('[aiTestReport] vision call failed:', e && e.message ? e.message.slice(0, 200) : String(e));
-    return { ok: false, measurements: [] };
+  // One vision attempt: call -> parse. Returns the parsed JSON or null on any
+  // failure (call error OR unparseable body). `settings` lets us force a
+  // specific provider on the retry.
+  const attempt = async (settings: any, tag: string) => {
+    let resp: any;
+    try {
+      resp = await ai.completeWithImage({ imageBuffer: processed, mediaType: 'image/jpeg', prompt: VISION_PROMPT, maxTokens: opts.maxTokens || 3072, settings });
+    } catch (e: any) {
+      console.warn(`[aiTestReport] vision call failed (${tag}):`, e && e.message ? e.message.slice(0, 200) : String(e));
+      return null;
+    }
+    try {
+      return ai.parseJSON(resp && resp.text ? resp.text : '', 'ai');
+    } catch (e: any) {
+      console.warn(`[aiTestReport] vision non-JSON response (${tag}):`, e && e.message ? e.message.slice(0, 160) : String(e));
+      return null;
+    }
+  };
+
+  // Primary provider first. If it throws OR returns junk the model didn't refuse
+  // (e.g. Gemini's last cascade model answers but not as JSON), fall to Groq's
+  // vision model so a quota-throttled primary doesn't sink the whole extraction.
+  let arr: any = await attempt({}, 'primary');
+  const primary = (process.env.AI_PROVIDER || '').toLowerCase();
+  if (arr == null && process.env.GROQ_API_KEY && primary !== 'groq') {
+    console.warn('[aiTestReport] vision: primary unusable → retrying on groq');
+    arr = await attempt({ provider: 'groq' }, 'groq');
   }
-  let arr: any;
-  try {
-    arr = ai.parseJSON(resp && resp.text ? resp.text : '', 'ai');
-  } catch (e: any) {
-    console.warn('[aiTestReport] vision non-JSON response:', e && e.message ? e.message.slice(0, 160) : String(e));
-    return { ok: false, measurements: [] };
-  }
+  if (arr == null) return { ok: false, measurements: [] };
   const c = _coerceResult(arr);
   return { ok: true, measurements: _mapMeasurements(c.measurements), fields: _mapFields(c.fields) };
 }

@@ -273,7 +273,24 @@ async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSy
   } else if (s.provider === 'azure_openai') {
     result = await _azureComplete({ system, user, maxTokens, s });
   } else if (s.provider === 'gemini') {
-    result = await _geminiComplete({ system, user, maxTokens, s });
+    // Cross-provider TEXT fallback (Gemini → Groq), mirroring completeWithImage.
+    // _geminiComplete cascades across Gemini's OWN models first; if the WHOLE
+    // free-tier family is quota-exhausted it throws — at which point we fall to
+    // Groq so the gap-fill keeps working on a second provider's free tier
+    // instead of failing the extraction. Only on quota exhaustion; a structural
+    // error (auth, bad request) still surfaces. Configurable via AI_TEXT_FALLBACK.
+    try {
+      result = await _geminiComplete({ system, user, maxTokens, s });
+    } catch (err: any) {
+      const exhausted = _isGeminiQuotaError(err) || /exhausted their free-tier/i.test(err?.message || '');
+      const fb = (process.env.AI_TEXT_FALLBACK || 'groq').toLowerCase();
+      if (exhausted && fb === 'groq' && process.env.GROQ_API_KEY) {
+        console.warn('[ai] gemini text quota exhausted → falling back to groq text');
+        result = await groqProvider.complete({ system, user, maxTokens, task, settings: s });
+      } else {
+        throw err;
+      }
+    }
   } else {
     throw new Error(`[ai] Unknown AI_PROVIDER: "${s.provider}". Valid options: cloudflare, anthropic, openai, azure_openai, gemini`);
   }
