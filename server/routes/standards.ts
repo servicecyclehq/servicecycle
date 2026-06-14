@@ -92,6 +92,56 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ─── GET /api/standards/tracked ───────────────────────────────────────────────
+// Which standards THIS account tracks. trackedCodes=null means "all" (default).
+// Any authenticated role may read (drives the Settings panel + future gating).
+router.get('/tracked', async (req: any, res: any) => {
+  try {
+    const { getTrackedStandardCodes } = require('../lib/trackedStandards');
+    const trackedCodes = await getTrackedStandardCodes(req.user.accountId);
+    res.json({ success: true, data: { trackedCodes, allTracked: trackedCodes == null } });
+  } catch (err) {
+    console.error('Get tracked standards error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch tracked standards' });
+  }
+});
+
+// ─── PUT /api/standards/tracked ───────────────────────────────────────────────
+// Admin-only. Body { codes: string[] | null }. null (or allTracked:true) clears
+// the override back to "track all". Codes are validated against the standards
+// library so a typo can't silently disable everything.
+router.put('/tracked', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { TRACKED_STANDARDS_KEY } = require('../lib/trackedStandards');
+    const body = req.body || {};
+    // null / allTracked → delete the row (revert to "all").
+    if (body.allTracked === true || body.codes === null) {
+      await prisma.accountSetting.deleteMany({ where: { accountId: req.user.accountId, key: TRACKED_STANDARDS_KEY } });
+      return res.json({ success: true, data: { trackedCodes: null, allTracked: true } });
+    }
+    if (!Array.isArray(body.codes)) {
+      return res.status(400).json({ success: false, error: 'codes must be an array of standard codes (or null/allTracked to track all)' });
+    }
+    const requested = [...new Set(body.codes.map((c: any) => String(c)))];
+    // Validate against the standards library (codes, not editions).
+    const known = await prisma.complianceStandard.findMany({ select: { code: true }, distinct: ['code'] });
+    const knownCodes = new Set(known.map((s: any) => s.code));
+    const invalid = requested.filter((c) => !knownCodes.has(c));
+    if (invalid.length) {
+      return res.status(400).json({ success: false, error: `Unknown standard code(s): ${invalid.join(', ')}` });
+    }
+    await prisma.accountSetting.upsert({
+      where:  { accountId_key: { accountId: req.user.accountId, key: TRACKED_STANDARDS_KEY } },
+      update: { value: JSON.stringify(requested) },
+      create: { accountId: req.user.accountId, key: TRACKED_STANDARDS_KEY, value: JSON.stringify(requested) },
+    });
+    res.json({ success: true, data: { trackedCodes: requested, allTracked: false } });
+  } catch (err) {
+    console.error('Set tracked standards error:', err);
+    res.status(500).json({ success: false, error: 'Failed to save tracked standards' });
+  }
+});
+
 // ─── GET /api/standards/task-definitions ──────────────────────────────────────
 // The task matrix visible to this tenant: global seed rows + the account's
 // own custom rows. Filters: equipmentType; includeArchived=true to show

@@ -42,6 +42,8 @@ const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
 // battery is added only when the account's neta_full_battery flag is on.
 const { filterTaskDefsForProgram } = require('../lib/leanProgram');
 const { resolveAccountFeatures } = require('../lib/accountFeatures');
+// Per-account "which standards do we track" gating (the wider-net lever).
+const { getTrackedStandardCodes, isStandardTracked } = require('../lib/trackedStandards');
 
 // ── zod schemas ──────────────────────────────────────────────────────────────
 const ConditionEnum = z.enum(['C1', 'C2', 'C3']);
@@ -284,15 +286,21 @@ router.post('/bulk-apply', requireManager, async (req, res) => {
     const types = [...new Set(assets.map(a => a.equipmentType))];
     const allTaskDefs = await prisma.maintenanceTaskDefinition.findMany({
       where: { accountId: null, archivedAt: null, equipmentType: { in: types } },
-      select: { id: true, equipmentType: true, intervalC2Months: true, taskCode: true },
+      select: { id: true, equipmentType: true, intervalC2Months: true, taskCode: true, standard: { select: { code: true } } },
     });
 
     // Lean by default: drop the full NETA test battery unless the account has
-    // neta_full_battery on. The seeded matrix is a "starting default" the
-    // customer adjusts to the manufacturer / their program; the expensive
-    // de-energized NETA battery is opt-in.
+    // neta_full_battery on. The seeded matrix is the industry-standard program
+    // the customer adjusts to the manufacturer; the expensive de-energized NETA
+    // battery is the optional, customer-required extended layer.
     const features = await resolveAccountFeatures(req.user.accountId);
-    const taskDefs = filterTaskDefsForProgram(allTaskDefs, { fullBattery: !!features.neta_full_battery });
+    let taskDefs = filterTaskDefsForProgram(allTaskDefs, { fullBattery: !!features.neta_full_battery });
+
+    // Standards gating: only apply tasks for standards this account tracks
+    // (null = track all, the default). Lets an account scope its program to the
+    // standards its facilities actually answer to.
+    const trackedCodes = await getTrackedStandardCodes(req.user.accountId);
+    taskDefs = taskDefs.filter((d: any) => isStandardTracked(trackedCodes, d.standard?.code));
 
     const defsByType = new Map();
     for (const d of taskDefs) {

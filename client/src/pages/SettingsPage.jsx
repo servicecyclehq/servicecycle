@@ -18,6 +18,7 @@ import BackupSection from '../components/settings/BackupSection.jsx'; // v0.91 P
 import EncryptionSection from '../components/settings/EncryptionSection.jsx'; // v0.91 Phase 1b cont'd
 import CustomFieldsSection from '../components/settings/CustomFieldsSection.jsx'; // v0.91 Phase 1b cont'd
 import EmpSection from '../components/settings/EmpSection.jsx'; // EMP / NFPA 70B §4.2 program settings
+import StandardsSection from '../components/settings/StandardsSection.jsx'; // which standards the account tracks
 import BrandingSection from '../components/settings/BrandingSection.jsx'; // white-label branding
 import PartnerSection from '../components/settings/PartnerSection.jsx'; // partner flywheel consent
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -1076,7 +1077,7 @@ export default function SettingsPage() {
       {/* ── Electrical Maintenance Program — emp tab ─────────────── */}
       {/* NFPA 70B:2023 §4.2 written-EMP settings: coordinator, retention
           policy, review interval, and document generation. */}
-      {activeTab === 'emp' && <EmpSection isAdmin={isAdmin} />}
+      {activeTab === 'emp' && <><EmpSection isAdmin={isAdmin} /><StandardsSection isAdmin={isAdmin} /></>}
 
       {/* ── White-label branding ─────────────────────────────────────────── */}
       {activeTab === 'branding' && <BrandingSection isAdmin={isAdmin} />}
