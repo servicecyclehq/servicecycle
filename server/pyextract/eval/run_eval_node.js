@@ -50,7 +50,8 @@ async function main() {
   const manifest = JSON.parse(fs.readFileSync(path.join(corpus, 'manifest.json'), 'utf8'));
   const agg = {};
   for (const e of manifest) {
-    const input = (e.tier === 'clean') ? e.pdf : (e.img || e.pdf);
+    const R = (f) => path.join(corpus, path.basename(f));
+    const input = R((e.tier === 'clean') ? e.pdf : (e.img || e.pdf));
     const originalName = path.basename(input);
     const mimetype = input.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
     let res;
@@ -59,7 +60,7 @@ async function main() {
     } catch (err) {
       res = { meta: {}, measurements: [], source: 'ERROR:' + ((err && err.message) || err) };
     }
-    const gt = JSON.parse(fs.readFileSync(e.gt, 'utf8'));
+    const gt = JSON.parse(fs.readFileSync(R(e.gt), 'utf8'));
     const s = scoreOne(gt, res);
     const t = e.tier;
     const a = agg[t] = agg[t] || { n: 0, fieldTotal: 0, fieldOk: 0, measTotal: 0, located: 0, phaseOk: 0, unitOk: 0, pfOk: 0, ai: 0, vision: 0 };
