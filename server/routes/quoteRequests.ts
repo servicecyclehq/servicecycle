@@ -402,6 +402,19 @@ router.patch('/:id/status', requireManager, async (req, res) => {
       }
     }
 
+    // Tier-1 loop notify: close the pull loop — tell the team a quote moved.
+    if (status === 'accepted' || status === 'declined') {
+      try {
+        const a: any = updated.asset;
+        const assetLabel = a ? ([a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || null) : null;
+        const { notifyQuoteStatusChanged } = require('../lib/loopNotify');
+        notifyQuoteStatusChanged(req.user.accountId, {
+          status, quoteId: updated.id, assetId: existing.assetId,
+          assetLabel, declineReason: (updated as any).declineReason || null,
+        }).catch(() => {});
+      } catch { /* never block the status response */ }
+    }
+
     return res.json({ success: true, data: updated, workOrder: createdWorkOrder });
   } catch (err) {
     console.error('[quoteRequests PATCH /:id/status]', err);

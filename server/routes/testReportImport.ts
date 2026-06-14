@@ -299,6 +299,15 @@ router.post('/commit', async (req: any, res: any) => {
         corrections: Array.isArray(corrections) ? corrections : undefined,
         reviewMs: Number.isFinite(Number(reviewMs)) ? Number(reviewMs) : null,
       });
+      // Tier-1 loop notify: a report landed -> tell the account team (fix list).
+      try {
+        const immediate = results.reduce((n: number, r: any) => n + (r.deficiencyBySeverity?.IMMEDIATE || 0), 0);
+        const { notifyReportIngested } = require('../lib/loopNotify');
+        notifyReportIngested(accountId, {
+          readings: totals.measurementsCreated, deficiencies: totals.deficienciesCreated,
+          immediate, assetLabel: `${totals.assetsCommitted} assets`, assetId: null,
+        }).catch(() => {});
+      } catch { /* never block the commit response */ }
       return res.status(201).json({ success: true, data: { sections: results, totals } });
     }
 
@@ -321,6 +330,15 @@ router.post('/commit', async (req: any, res: any) => {
       corrections: Array.isArray(corrections) ? corrections : undefined,
       reviewMs: Number.isFinite(Number(reviewMs)) ? Number(reviewMs) : null,
     });
+
+    // Tier-1 loop notify: a report landed -> tell the account team (fix list).
+    try {
+      const { notifyReportIngested } = require('../lib/loopNotify');
+      notifyReportIngested(accountId, {
+        readings: r.measurementsCreated, deficiencies: r.deficienciesCreated,
+        immediate: r.deficiencyBySeverity?.IMMEDIATE || 0, assetLabel: null, assetId,
+      }).catch(() => {});
+    } catch { /* never block the commit response */ }
 
     return res.status(201).json({ success: true, data: r });
   } catch (err: any) {
