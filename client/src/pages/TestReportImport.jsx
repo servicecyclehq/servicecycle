@@ -50,6 +50,7 @@ export default function TestReportImport() {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [phase, setPhase] = useState(''); // #2 async ingest progress text
   const [preview, setPreview] = useState(null);
   const [rows, setRows] = useState([]);
   const [original, setOriginal] = useState([]);   // #4: snapshot for the correction diff
@@ -82,39 +83,72 @@ export default function TestReportImport() {
 
   const isMulti = !!(preview?.sections && preview.sections.length > 1);
 
+  // Apply a preview payload (same shape from the sync /preview route OR the #2
+  // async ingest job result) to the review UI.
+  function applyPreview(d) {
+    setPreview(d);
+    setRows(d.measurements.map(m => ({ ...m, include: true })));
+    setOriginal(d.measurements.map(m => ({ passFail: m.passFail ?? null, asFoundValue: m.asFoundValue ?? null })));
+    setPreviewedAt(Date.now());
+    setAssetId(d.assetMatch?.id || '');
+    // Per-section selection + create-asset prefill (multi-asset reports).
+    if (d.sections && d.sections.length > 1) {
+      setSel(d.sections.map(sec => sec.assetMatch?.id || CREATE));
+      setCreateFields(d.sections.map((sec, i) => ({
+        siteId: '', equipmentType: '',
+        manufacturer: i === 0 ? (d.meta?.manufacturer || '') : '',
+        model:        i === 0 ? (d.meta?.model || '') : '',
+        serialNumber: i === 0 ? (d.meta?.serialNumber || '') : '',
+      })));
+    } else {
+      setSel([]); setCreateFields([]);
+    }
+    setTestDate(d.meta?.testDate || new Date().toISOString().slice(0, 10));
+    setVendor(d.meta?.vendor || '');
+    setTechName(d.meta?.techName || '');
+    setStep(2);
+  }
+
+  // #2: large multi-page jobs go through the async queue (parse off the request)
+  // so a 40-page facility report can't time out; small single-asset files keep
+  // the instant sync path. The job result is the SAME shape as /preview.
+  const ASYNC_THRESHOLD_BYTES = 1.5 * 1024 * 1024;
+
+  async function previewAsync(file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (targetAccountId) fd.append('targetAccountId', targetAccountId);
+    setPhase('Uploading…');
+    const enq = await api.post('/api/ingest/jobs', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    const jobId = enq.data.data.jobId;
+    // Poll up to ~2 minutes (60 × 2s).
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const s = await api.get(`/api/ingest/jobs/${jobId}`);
+      const j = s.data.data;
+      setPhase(j.phase ? `${j.phase}… (${j.progress || 0}%)` : `Working… (${j.progress || 0}%)`);
+      if (j.status === 'done') { applyPreview(j.result); return; }
+      if (j.status === 'failed') throw new Error(j.error || 'Ingest failed');
+    }
+    throw new Error('Still processing — check back shortly under recent imports.');
+  }
+
   async function previewFile(file) {
     if (!file) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setPhase('');
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      if (targetAccountId) fd.append('targetAccountId', targetAccountId);
-      const res = await api.post('/api/test-reports/import/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const d = res.data.data;
-      setPreview(d);
-      setRows(d.measurements.map(m => ({ ...m, include: true })));
-      setOriginal(d.measurements.map(m => ({ passFail: m.passFail ?? null, asFoundValue: m.asFoundValue ?? null })));
-      setPreviewedAt(Date.now());
-      setAssetId(d.assetMatch?.id || '');
-      // Per-section selection + create-asset prefill (multi-asset reports).
-      if (d.sections && d.sections.length > 1) {
-        setSel(d.sections.map(sec => sec.assetMatch?.id || CREATE));
-        setCreateFields(d.sections.map((sec, i) => ({
-          siteId: '', equipmentType: '',
-          manufacturer: i === 0 ? (d.meta?.manufacturer || '') : '',
-          model:        i === 0 ? (d.meta?.model || '') : '',
-          serialNumber: i === 0 ? (d.meta?.serialNumber || '') : '',
-        })));
+      if (file.size > ASYNC_THRESHOLD_BYTES) {
+        await previewAsync(file);
       } else {
-        setSel([]); setCreateFields([]);
+        const fd = new FormData();
+        fd.append('file', file);
+        if (targetAccountId) fd.append('targetAccountId', targetAccountId);
+        const res = await api.post('/api/test-reports/import/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        applyPreview(res.data.data);
       }
-      setTestDate(d.meta?.testDate || new Date().toISOString().slice(0, 10));
-      setVendor(d.meta?.vendor || '');
-      setTechName(d.meta?.techName || '');
-      setStep(2);
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to read the PDF');
-    } finally { setBusy(false); }
+      setError(err?.response?.data?.error || err?.message || 'Failed to read the PDF');
+    } finally { setBusy(false); setPhase(''); }
   }
 
   function onFile(e) { previewFile(e.target.files?.[0]); }
@@ -355,10 +389,10 @@ export default function TestReportImport() {
       {step === 1 && (
         <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}>
           <UploadCloud size={40} strokeWidth={1.25} style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }} />
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>{busy ? 'Reading…' : 'Drop a test-report PDF — or a photo of a paper field sheet'}</div>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>{busy ? (phase || 'Reading…') : 'Drop a test-report PDF — or a photo of a paper field sheet'}</div>
           <input type="file" accept="application/pdf,.pdf,image/*" capture="environment" onChange={onFile} disabled={busy} />
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>
-            PDF, or a clear photo (JPG/PNG/HEIC) of a printed or hand-written sheet.
+            PDF, or a clear photo (JPG/PNG/HEIC) of a printed or hand-written sheet. Large multi-page reports parse in the background.
           </div>
         </div></div>
       )}
