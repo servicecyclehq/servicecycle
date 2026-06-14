@@ -1014,6 +1014,10 @@ model TestMeasurement {
   notes           String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  // Forensics/immutability: deleting a reading (evidence) is a SOFT delete -
+  // the row is retained with deletedAt set and excluded from all reads, so a
+  // reading can be reconstructed/recovered rather than truly vanishing.
+  deletedAt       DateTime?
 
   account   Account   @relation(fields: [accountId], references: [id])
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)

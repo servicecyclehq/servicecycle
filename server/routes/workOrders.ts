@@ -811,7 +811,7 @@ router.post('/:id/measurements', requireManager, async (req, res) => {
 router.put('/measurements/:mid', requireManager, async (req, res) => {
   try {
     const measurement = await prisma.testMeasurement.findFirst({
-      where: { id: req.params.mid, accountId: req.user.accountId },
+      where: { id: req.params.mid, accountId: req.user.accountId, deletedAt: null },
     });
     if (!measurement) return res.status(404).json({ success: false, error: 'Measurement not found' });
 
@@ -901,12 +901,14 @@ router.put('/measurements/:mid', requireManager, async (req, res) => {
 router.delete('/measurements/:mid', requireManager, async (req, res) => {
   try {
     const measurement = await prisma.testMeasurement.findFirst({
-      where: { id: req.params.mid, accountId: req.user.accountId },
+      where: { id: req.params.mid, accountId: req.user.accountId, deletedAt: null },
     });
     if (!measurement) return res.status(404).json({ success: false, error: 'Measurement not found' });
 
     const _wo = await prisma.workOrder.findUnique({ where: { id: measurement.workOrderId }, select: { assetId: true } });
-    await prisma.testMeasurement.delete({ where: { id: measurement.id } });
+    // Soft delete: retain the row (evidence) with deletedAt set; excluded from
+    // all reads. The reading can be reconstructed/recovered, never truly lost.
+    await prisma.testMeasurement.update({ where: { id: measurement.id }, data: { deletedAt: new Date() } });
 
     // Forensics: deleting a reading (evidence) must leave a trail of the deleted
     // values in the tamper-evident audit chain so a reading can never vanish

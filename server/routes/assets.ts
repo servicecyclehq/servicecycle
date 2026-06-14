@@ -667,12 +667,14 @@ router.get('/:id/test-history', async (req, res) => {
     }
 
     const workOrders = await prisma.workOrder.findMany({
-      where:   { assetId: asset.id, accountId: req.user.accountId, measurements: { some: {} } },
+      // Soft-deleted readings are excluded: only events with at least one live
+      // measurement, and only the live measurements within them.
+      where:   { assetId: asset.id, accountId: req.user.accountId, measurements: { some: { deletedAt: null } } },
       orderBy: [{ completedDate: 'asc' }, { createdAt: 'asc' }],
       include: {
         contractor:   { select: { name: true } },
         assignedTech: { select: { name: true } },
-        measurements: { orderBy: [{ measurementType: 'asc' }, { phase: 'asc' }] },
+        measurements: { where: { deletedAt: null }, orderBy: [{ measurementType: 'asc' }, { phase: 'asc' }] },
       },
     });
 
@@ -1156,7 +1158,7 @@ router.get('/:id/test-history', async (req, res) => {
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
     const rows = await prisma.testMeasurement.findMany({
-      where: { accountId, workOrder: { assetId: req.params.id } },
+      where: { accountId, deletedAt: null, workOrder: { assetId: req.params.id } },
       select: {
         id: true, measurementType: true, phase: true, asFoundValue: true, asFoundUnit: true,
         asLeftValue: true, passFail: true, expectedRange: true, testVoltage: true, notes: true,

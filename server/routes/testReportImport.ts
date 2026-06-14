@@ -130,7 +130,7 @@ async function commitAssetReadings(db: any, p: {
 
   // Most recent PRIOR reading per (measurementType, phase) for the trend flag.
   const priorRows = await db.testMeasurement.findMany({
-    where: { accountId, asFoundValue: { not: null }, workOrder: { assetId } },
+    where: { accountId, deletedAt: null, asFoundValue: { not: null }, workOrder: { assetId } },
     select: { measurementType: true, phase: true, asFoundValue: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   });

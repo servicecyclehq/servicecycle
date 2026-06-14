@@ -110,7 +110,7 @@ router.get('/kpis', requireAdmin, async (req, res) => {
       firstDef,
     ] = await Promise.all([
       safe(prisma.asset.count({ where: { accountId, archivedAt: null } }), 0),
-      safe(prisma.testMeasurement.count({ where: { accountId } }), 0),
+      safe(prisma.testMeasurement.count({ where: { accountId, deletedAt: null } }), 0),
       safe(prisma.extractionEvent.count({ where: { accountId, kind: 'test_report' } }), 0),
       safe(prisma.extractionEvent.aggregate({
         where: { accountId, kind: 'test_report', committedAt: { not: null } },

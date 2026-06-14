@@ -90,3 +90,22 @@ describe('forensics: document deletion is audit-logged', () => {
     expect(log.details.filename).toBe('evidence.pdf');
   });
 });
+describe('forensics: reading delete is a SOFT delete (recoverable, hidden from reads)', () => {
+  test('deleted reading is retained with deletedAt and excluded from test-history', async () => {
+    const wo = await prisma.workOrder.create({ data: { accountId: mgr.accountId, assetId, status: 'COMPLETE', completedDate: new Date() } });
+    const m = await prisma.testMeasurement.create({ data: { accountId: mgr.accountId, workOrderId: wo.id, measurementType: 'contact_resistance', asFoundValue: 12, asFoundUnit: 'uOhm' } });
+    const del = await request(app).delete(`/api/work-orders/measurements/${m.id}`).set('Authorization', `Bearer ${mgr.token}`);
+    expect(del.status).toBe(200);
+    // row retained, soft-deleted (immutable/recoverable)
+    const row = await prisma.testMeasurement.findUnique({ where: { id: m.id } });
+    expect(row).toBeTruthy();
+    expect(row.deletedAt).not.toBeNull();
+    // excluded from the live test-history read
+    const hist = await request(app).get(`/api/assets/${assetId}/test-history`).set('Authorization', `Bearer ${mgr.token}`);
+    expect(hist.status).toBe(200);
+    expect(JSON.stringify(hist.body).includes(m.id)).toBe(false);
+    // a second delete now 404s (already soft-deleted)
+    const del2 = await request(app).delete(`/api/work-orders/measurements/${m.id}`).set('Authorization', `Bearer ${mgr.token}`);
+    expect(del2.status).toBe(404);
+  });
+});
