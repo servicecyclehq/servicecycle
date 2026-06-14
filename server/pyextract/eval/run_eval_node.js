@@ -46,7 +46,7 @@ function scoreOne(gt, res) {
 async function main() {
   const [corpus, accountId, userId] = process.argv.slice(2);
   if (!corpus || !accountId) { console.error('usage: run_eval_node.js <corpus> <accountId> [userId]'); process.exit(2); }
-  const { buildTestReportPreview } = require('../testReportPreview');
+  const { buildTestReportPreview } = require('../../lib/testReportPreview');
   const manifest = JSON.parse(fs.readFileSync(path.join(corpus, 'manifest.json'), 'utf8'));
   const agg = {};
   for (const e of manifest) {
