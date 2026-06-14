@@ -1,0 +1,3 @@
+reportlab>=4
+Pillow>=10
+pytest>=7
