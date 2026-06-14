@@ -75,3 +75,18 @@ describe('forensics: reading mutations are audit-logged', () => {
 });
 
 export {};
+describe('forensics: document deletion is audit-logged', () => {
+  test('deleting a document records the deleted document metadata', async () => {
+    const doc = await prisma.document.create({
+      data: { accountId: mgr.accountId, filename: 'evidence.pdf', filePath: 'k-' + Date.now(), fileType: 'application/pdf', uploadedBy: mgr.id, assetId },
+    });
+    const res = await request(app)
+      .delete(`/api/documents/${doc.id}`)
+      .set('Authorization', `Bearer ${mgr.token}`);
+    expect(res.status).toBe(200);
+    const log = await waitForLog('document_deleted');
+    expect(log).toBeTruthy();
+    expect(log.details.documentId).toBe(doc.id);
+    expect(log.details.filename).toBe('evidence.pdf');
+  });
+});

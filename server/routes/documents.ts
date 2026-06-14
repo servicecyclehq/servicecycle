@@ -419,11 +419,20 @@ router.delete('/:documentId', requireManager, async (req, res) => {
   try {
     const doc = await prisma.document.findFirst({
       where:  { id: req.params.documentId, accountId: req.user.accountId },
-      select: { id: true, filePath: true },
+      select: { id: true, filePath: true, filename: true, docType: true, assetId: true, workOrderId: true },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
 
     await prisma.document.delete({ where: { id: req.params.documentId } });
+
+    // Forensics: a document can be compliance evidence (test-report scan, EMP,
+    // snapshot PDF). Deleting one must leave a trail in the tamper-evident audit
+    // chain so evidence can't vanish without a record. Fire-and-forget.
+    writeActivityLog({
+      userId: req.user.id, accountId: req.user.accountId, assetId: doc.assetId || null,
+      action: 'document_deleted',
+      details: { documentId: doc.id, filename: doc.filename || null, docType: doc.docType || null, workOrderId: doc.workOrderId || null },
+    });
     return res.json({ success: true });
   } catch (err) {
     console.error('[documents DELETE /:id]', err);
