@@ -837,6 +837,16 @@ const prisma = new PrismaClient();
 // conditions lands on C3 and gets the tight interval — the environment scaling
 // runs on top of the standard's numbers. Returns null to KEEP a task's existing
 // interval (operational / NFPA 110 time-based tasks are not 70B condition-based).
+// Per NFPA 70B:2023 Table 9.2.2, VISUAL INSPECTION runs on the annual 12/12/6
+// cadence ONLY for these product lines (transformers, switchgear/substations,
+// cable tray, grounding, GFCI/GFP, HV insulators). For every other product line
+// visual inspection follows the dominant 60/36/12 cadence like the other scopes
+// of work — verified against the primary source 2026-06-14.
+const VISUAL_ANNUAL_TYPES = new Set([
+  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR',
+  'CABLE_TRAY', 'GROUNDING_SYSTEM', 'GROUND_FAULT_PROTECTION',
+]);
+
 function seventyBInterval(t) {
   const code = (t.code || '').toUpperCase();
   const name = (t.name || '').toLowerCase();
@@ -846,11 +856,16 @@ function seventyBInterval(t) {
   if (/monthly|exercise|load bank|fuel|full[ -]?system|discharge|quarterly|weekly|annual/.test(name)) return null;
   if ((t.c2 == null ? 99 : t.c2) <= 2) return null;  // sub-quarterly base = operational
   const isThermo = code.includes('IR_THERMO') || /thermograph|infrared/.test(name);
-  const isVisual = /visual|inspection|torque/.test(name) || code.includes('VISUAL');
-  if (isThermo || isVisual)        return { c1: 12, c2: 12, c3: 6 };   // ALL-equipment IR + visual
+  // NOTE: 'torque' removed from the visual test — per Table 9.2.2 mechanical /
+  // torque work follows 60/36/12, not the annual visual cadence.
+  const isVisual = /visual|inspection/.test(name) || code.includes('VISUAL');
+  if (isThermo)                    return { c1: 12, c2: 12, c3: 6 };   // all-equipment IR row
+  if (isVisual)                    return VISUAL_ANNUAL_TYPES.has(eq)   // visual inspection row
+    ? { c1: 12, c2: 12, c3: 6 }
+    : { c1: 60, c2: 36, c3: 12 };
   if (eq === 'UPS_BATTERY')        return { c1: 12, c2: 6,  c3: 3 };   // UPS cleaning/testing
   if (eq === 'GROUNDING_SYSTEM')   return { c1: 60, c2: 36, c3: 36 };  // grounding electrical testing (C3 not compressed)
-  return { c1: 60, c2: 36, c3: 12 };                                   // dominant 70B Table 9.2.2 row
+  return { c1: 60, c2: 36, c3: 12 };                                   // dominant Table 9.2.2 row
 }
 
 // ── NFPA 70B:2023 per-equipment chapter map (Ch 11-38) ──────────────────────
@@ -956,4 +971,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { seedStandards, STANDARDS, TASKS, NFPA70B_CHAPTER, correct70bRef };
+module.exports = { seedStandards, STANDARDS, TASKS, NFPA70B_CHAPTER, correct70bRef, seventyBInterval, VISUAL_ANNUAL_TYPES };
