@@ -105,6 +105,20 @@ async function commitAssetReadings(db: any, p: {
 }) {
   const { accountId, assetId, when, vendor, techName, measurements } = p;
   const isAcceptanceTest = !!p.isAcceptanceTest;
+  const { checkMeasurementSanity } = require('../lib/measurementSanity');
+
+  // Compliance-by-import guard: a report must carry at least one USABLE reading
+  // (a numeric value OR an explicit pass/fail) before it can complete a work
+  // order and roll schedules to compliant. A date with only empty/label rows
+  // must not count as maintenance performed. (Empty measurement arrays are
+  // already rejected by the route; this catches non-empty-but-valueless rows.)
+  const hasUsableReading = measurements.some((x: any) => {
+    const v = (x.asFoundValue != null && x.asFoundValue !== '') ? Number(x.asFoundValue) : null;
+    return (v != null && !isNaN(v)) || ['GREEN', 'YELLOW', 'RED'].includes(x.passFail);
+  });
+  if (!hasUsableReading) {
+    throw new HttpableError(400, 'Report has no usable readings (a value or pass/fail) — refusing to mark maintenance complete.');
+  }
 
   // WorkOrder is the parent of TestMeasurements (no standalone TestEvent model).
   const wo = await db.workOrder.create({
@@ -128,6 +142,7 @@ async function commitAssetReadings(db: any, p: {
 
   let measurementsCreated = 0;
   let trendDeficiencies = 0;
+  let sanityFlags = 0;
   const defBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
   for (const x of measurements) {
     const raw = x.asFoundValue;
@@ -147,6 +162,25 @@ async function commitAssetReadings(db: any, p: {
       },
     });
     measurementsCreated++;
+
+    // Unit/scale sanity flag (non-blocking) — catch order-of-magnitude errors
+    // such as a contact resistance entered in mOhm that should be uOhm. Surfaced
+    // as an ADVISORY "data check" so a human verifies before the value is trusted
+    // in the trend; never blocks the commit.
+    if (val != null && !isNaN(val)) {
+      const sanity = checkMeasurementSanity(x.measurementType, val);
+      if (sanity) {
+        await db.deficiency.create({
+          data: {
+            accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
+            description: `[data check] ${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${sanity}`,
+            correctiveAction: 'Verify the reading and its unit against the source report before trusting the trend.',
+          },
+        });
+        defBySeverity.ADVISORY++;
+        sanityFlags++;
+      }
+    }
 
     const sev = severityFor(passFail, !!x.critical);
     if (sev) {
@@ -184,7 +218,7 @@ async function commitAssetReadings(db: any, p: {
   }
 
   const deficienciesCreated = defBySeverity.IMMEDIATE + defBySeverity.RECOMMENDED + defBySeverity.ADVISORY;
-  return { workOrderId: wo.id, assetId, measurementsCreated, deficienciesCreated, trendDeficiencies, deficiencyBySeverity: defBySeverity };
+  return { workOrderId: wo.id, assetId, measurementsCreated, deficienciesCreated, trendDeficiencies, sanityFlags, deficiencyBySeverity: defBySeverity };
 }
 
 // ── POST /commit ──────────────────────────────────────────────────────────────
