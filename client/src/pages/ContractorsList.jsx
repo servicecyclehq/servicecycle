@@ -143,7 +143,7 @@ function AddContractorModal({ onClose, onCreated }) {
 
 export default function ContractorsList() {
   useDocumentTitle('Contractors');
-  const { user } = useAuth();
+  const { user, accountFeatures } = useAuth();
   const navigate = useNavigate();
   // C1: row clicks record this list as the origin for the detail BackLink.
   const fromState = useFromState();
@@ -179,10 +179,12 @@ export default function ContractorsList() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" onClick={() => navigate('/contractors/qemw-wallet')}>
-            <BadgeCheck size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-            QEMW wallet
-          </button>
+          {accountFeatures.qemw_wallet && (
+            <button className="btn" onClick={() => navigate('/contractors/qemw-wallet')}>
+              <BadgeCheck size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              QEMW wallet
+            </button>
+          )}
           {canWrite && (
             <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
               <Plus size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />

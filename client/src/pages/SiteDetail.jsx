@@ -227,7 +227,7 @@ export default function SiteDetail() {
   // C1: asset links record this site as the origin so AssetDetail's BackLink
   // returns here instead of the global Assets list.
   const fromState = useFromState();
-  const { user } = useAuth();
+  const { user, accountFeatures } = useAuth();
   const confirm = useConfirm();
   const canWrite = ['admin', 'manager'].includes(user?.role);
 
@@ -824,7 +824,10 @@ export default function SiteDetail() {
           )}
         </div>
 
-        {/* ── System studies ─────────────────────────────────────────────── */}
+        {/* ── System studies (#25 arc-flash / coordination) ───────────────── */}
+        {/* Gated behind the per-account arc_flash_studies flag — code intact,
+            not rendered when the account has arc-flash management off. */}
+        {accountFeatures.arc_flash_studies && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-header">
             <div>
@@ -1020,6 +1023,7 @@ export default function SiteDetail() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       <Toast toast={toast} onClose={() => setToast(null)} />

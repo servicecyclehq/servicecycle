@@ -522,7 +522,7 @@ export default function AssetDetail() {
   // returns here (asset → work order → back to this asset).
   const fromState = useFromState();
   const confirm = useConfirm();
-  const { user, features } = useAuth();
+  const { user, features, accountFeatures } = useAuth();
   // See AssetsList: assets_write with contracts_write fallback until the
   // AuthContext flag catalog is retargeted.
   const canWrite = features.assets_write ?? features.contracts_write;
@@ -853,12 +853,15 @@ export default function AssetDetail() {
         <IncidentLogCard assetId={asset.id} />
 
         {/* ── Oil / DGA import (#28) — oil-filled transformers ─────────────── */}
-        {asset.equipmentType === 'TRANSFORMER_LIQUID' && (
+        {/* Gated behind the per-account dga_import flag (lib/accountFeatures) —
+            code intact, simply not rendered when the account has it off. */}
+        {accountFeatures.dga_import && asset.equipmentType === 'TRANSFORMER_LIQUID' && (
           <DgaImportCard assetId={asset.id} canWrite={canWrite} onChanged={refetchAll} />
         )}
 
         {/* ── IR thermography import (#29) — energized distribution gear ────── */}
-        {IR_TYPES.has(asset.equipmentType) && (
+        {/* Gated behind the per-account thermography_import flag. */}
+        {accountFeatures.thermography_import && IR_TYPES.has(asset.equipmentType) && (
           <ThermographyImportCard assetId={asset.id} canWrite={canWrite} onChanged={refetchAll} />
         )}
 

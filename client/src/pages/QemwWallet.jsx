@@ -8,9 +8,10 @@
  * Credential editing lives on the contractor detail page.
  */
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { BadgeCheck, ShieldAlert, ShieldCheck } from 'lucide-react';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const QEMW_STATUS_META = {
@@ -28,17 +29,25 @@ function fmtDate(d) {
 export default function QemwWallet() {
   useDocumentTitle('QEMW Wallet');
   const navigate = useNavigate();
+  const { accountFeatures } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Gate: when the account doesn't have the QEMW wallet enabled, redirect away
+  // (defense for direct navigation — the nav button is already hidden).
+  const walletEnabled = accountFeatures.qemw_wallet;
+
   useEffect(() => {
+    if (!walletEnabled) return;
     setLoading(true);
     api.get('/api/contractors/qemw-wallet')
       .then((r) => setData(r.data?.data || null))
       .catch(() => setError('Failed to load the QEMW wallet.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [walletEnabled]);
+
+  if (!walletEnabled) return <Navigate to="/contractors" replace />;
 
   const s = data?.summary;
   const techs = data?.techs || [];
