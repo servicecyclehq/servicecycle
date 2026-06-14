@@ -333,11 +333,18 @@ def _inline_readings(text):
             continue
         unit = m.group(3)
         mt, crit, u, kind = _classify(label, unit)
+        # Capture a trailing PASS/FAIL/GREEN-RED token on the SAME line. Borderless
+        # reports (reportlab drawString, PowerDB prose) have no ruled cells, so the
+        # _column_tables pass never sees the Result column — recover it here.
+        _nl = text.find("\n", m.end())
+        _tail = text[m.end(): _nl if _nl != -1 else len(text)]
+        _rm = _RESULT_RE.search(_tail)
+        pf = parse_value("result", _rm.group(0)) if _rm else None
         out.append({
             "measurementType": mt, "label": label.title(),
             "phase": _phase_of(label) or _phase_of(m.group(0)),
             "asFoundValue": val, "asFoundUnit": u,
-            "expectedRange": None, "passFail": None, "critical": crit,
+            "expectedRange": None, "passFail": pf, "critical": crit,
             "kind": kind, "confidence": 0.6,
             # Character offset of this reading in the full text — used by the
             # multi-asset split (#1) to attribute the reading to the
