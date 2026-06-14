@@ -752,6 +752,7 @@ model Asset {
   quoteRequests     QuoteRequest[]
   lotoProcs         LotoProc[]
   incidentLogs      IncidentLog[]
+  studyAssets       SystemStudyAsset[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -1133,11 +1134,43 @@ model SystemStudy {
   site         Site          @relation(fields: [siteId], references: [id])
   supersededBy SystemStudy?  @relation("StudyChain", fields: [supersededById], references: [id])
   supersedes   SystemStudy[] @relation("StudyChain")
+  coveredAssets SystemStudyAsset[]
 
   @@index([accountId])
   @@index([accountId, expiresAt])
   @@index([siteId, studyType])
   @@map("system_studies")
+}
+
+// ─── Arc-flash / system-study asset coverage (#25) ─────────────────────────────
+// Binds a SystemStudy (esp. arc_flash) to the assets/buses it covers, carrying
+// the per-bus incident-energy label data NFPA 70E §130.5(H) requires posted ON
+// the equipment (nominal voltage, arc-flash boundary, incident energy + working
+// distance OR PPE category, plus the study date). Assets are bound directly or
+// expanded down the power-path graph (feedsDownstream). One row per (study,
+// asset); the per-study 5-yr clock lives on SystemStudy.expiresAt.
+model SystemStudyAsset {
+  id                   String   @id @default(uuid())
+  accountId            String // denormalized for tenancy scoping (no Account back-rel needed)
+  studyId              String
+  assetId              String
+  busName              String? // bus / equipment designation on the study one-line
+  nominalVoltage       String? // e.g. "480V", "13.8kV"
+  incidentEnergyCalCm2 Decimal? @db.Decimal(10, 2) // cal/cm^2 at working distance
+  arcFlashBoundaryIn   Decimal? @db.Decimal(10, 1) // arc-flash boundary, inches
+  workingDistanceIn    Decimal? @db.Decimal(10, 1) // working distance, inches
+  ppeCategory          Int? // NFPA 70E PPE category 0-4 (null when incident-energy method used)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  study SystemStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  asset Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([studyId, assetId])
+  @@index([accountId])
+  @@index([studyId])
+  @@index([assetId])
+  @@map("system_study_assets")
 }
 
 // ─── Audit Visits + Recommendations ───────────────────────────────────────────

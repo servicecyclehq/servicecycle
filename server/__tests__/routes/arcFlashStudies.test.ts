@@ -1,0 +1,140 @@
+/**
+ * #25 Arc-flash first-class records — study asset coverage + incident-energy
+ * label export. Covers: binding a root bus with §130.5(H) label data, power-path
+ * downstream expansion, label-data completeness flagging, unbind, validation,
+ * and tenancy isolation.
+ */
+import request from 'supertest';
+import '../helpers/setup';
+import { createTestUser, type TestUser } from '../helpers/auth';
+
+let app: any;
+let prisma: any;
+let manager: TestUser;
+let other: TestUser;
+let siteId: string;
+let studyId: string;
+let rootAssetId: string;
+let childAssetId: string;
+let grandchildAssetId: string;
+
+beforeAll(async () => {
+  app = require('../../index').default ?? require('../../index');
+  prisma = require('../../lib/prisma').default;
+  manager = await createTestUser('manager');
+  other = await createTestUser('manager');
+
+  const site = await prisma.site.create({ data: { accountId: manager.accountId, name: `AF ${Date.now()}` } });
+  siteId = site.id;
+
+  // Power path: root SWGR -> child PANELBOARD -> grandchild BREAKER
+  const root = await prisma.asset.create({ data: { accountId: manager.accountId, siteId, equipmentType: 'SWITCHGEAR', serialNumber: 'AF-ROOT' } });
+  rootAssetId = root.id;
+  const child = await prisma.asset.create({ data: { accountId: manager.accountId, siteId, equipmentType: 'PANELBOARD', serialNumber: 'AF-CHILD', fedFromAssetId: root.id } });
+  childAssetId = child.id;
+  const gc = await prisma.asset.create({ data: { accountId: manager.accountId, siteId, equipmentType: 'CIRCUIT_BREAKER', serialNumber: 'AF-GC', fedFromAssetId: child.id } });
+  grandchildAssetId = gc.id;
+
+  const study = await request(app)
+    .post(`/api/sites/${siteId}/studies`)
+    .set('Authorization', `Bearer ${manager.token}`)
+    .send({ studyType: 'arc_flash', performedDate: '2024-01-15', peName: 'Jane PE', peLicense: 'PE-12345', method: 'IEEE 1584-2018' });
+  expect(study.status).toBe(201);
+  studyId = study.body.data.study.id;
+});
+
+afterAll(async () => {
+  for (const u of [manager, other]) {
+    const acc = u.accountId;
+    try { await prisma.systemStudyAsset.deleteMany({ where: { accountId: acc } }); } catch {}
+    try { await prisma.systemStudy.deleteMany({ where: { accountId: acc } }); } catch {}
+    try { await prisma.asset.deleteMany({ where: { accountId: acc } }); } catch {}
+    try { await prisma.site.deleteMany({ where: { accountId: acc } }); } catch {}
+    try { await prisma.user.delete({ where: { id: u.id } }); } catch {}
+    try { await prisma.account.delete({ where: { id: acc } }); } catch {}
+  }
+  await prisma.$disconnect();
+});
+
+const auth = (u: TestUser) => `Bearer ${u.token}`;
+
+describe('#25 arc-flash study asset coverage', () => {
+  test('binds a root bus with full §130.5(H) label data and expands downstream', async () => {
+    const res = await request(app)
+      .post(`/api/sites/studies/${studyId}/assets`)
+      .set('Authorization', auth(manager))
+      .send({
+        assetId: rootAssetId,
+        busName: 'SWGR-1 Main Bus',
+        nominalVoltage: '480V',
+        incidentEnergyCalCm2: 8.4,
+        arcFlashBoundaryIn: 36,
+        workingDistanceIn: 18,
+        includeDownstream: true,
+      });
+    expect(res.status).toBe(201);
+    // root + child + grandchild = 3 covered; 2 added via downstream
+    expect(res.body.data.coveredCount).toBe(3);
+    expect(res.body.data.downstreamAdded).toBe(2);
+  });
+
+  test('label-data export flags the root complete and downstream incomplete', async () => {
+    const res = await request(app)
+      .get(`/api/sites/studies/${studyId}/label-data`)
+      .set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    expect(res.body.data.coveredCount).toBe(3);
+    expect(res.body.data.completeCount).toBe(1);
+    expect(res.body.data.study.peName).toBe('Jane PE');
+    expect(res.body.data.study.expiresAt).toBeTruthy();
+    const root = res.body.data.labels.find((l: any) => l.assetId === rootAssetId);
+    expect(root.labelComplete).toBe(true);
+    expect(root.incidentEnergyCalCm2).toBe(8.4);
+    expect(root.nominalVoltage).toBe('480V');
+    const child = res.body.data.labels.find((l: any) => l.assetId === childAssetId);
+    expect(child.labelComplete).toBe(false);
+  });
+
+  test('a PPE-category-only label is also considered complete', async () => {
+    const res = await request(app)
+      .post(`/api/sites/studies/${studyId}/assets`)
+      .set('Authorization', auth(manager))
+      .send({ assetId: childAssetId, nominalVoltage: '208V', arcFlashBoundaryIn: 24, ppeCategory: 2 });
+    expect(res.status).toBe(201);
+    const labels = await request(app).get(`/api/sites/studies/${studyId}/label-data`).set('Authorization', auth(manager));
+    const child = labels.body.data.labels.find((l: any) => l.assetId === childAssetId);
+    expect(child.labelComplete).toBe(true);
+    expect(child.ppeCategory).toBe(2);
+  });
+
+  test('rejects an out-of-range ppeCategory and a missing assetId', async () => {
+    const bad1 = await request(app).post(`/api/sites/studies/${studyId}/assets`).set('Authorization', auth(manager)).send({ assetId: rootAssetId, ppeCategory: 9 });
+    expect(bad1.status).toBe(400);
+    const bad2 = await request(app).post(`/api/sites/studies/${studyId}/assets`).set('Authorization', auth(manager)).send({ busName: 'no asset' });
+    expect(bad2.status).toBe(400);
+  });
+
+  test('unbind drops coverage count', async () => {
+    const res = await request(app)
+      .delete(`/api/sites/studies/${studyId}/assets/${grandchildAssetId}`)
+      .set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    expect(res.body.data.coveredCount).toBe(2);
+  });
+
+  test('another account cannot bind to or read this study', async () => {
+    const bind = await request(app).post(`/api/sites/studies/${studyId}/assets`).set('Authorization', auth(other)).send({ assetId: rootAssetId });
+    expect(bind.status).toBe(404);
+    const read = await request(app).get(`/api/sites/studies/${studyId}/label-data`).set('Authorization', auth(other));
+    expect(read.status).toBe(404);
+  });
+
+  test('study list surfaces a coveredAssets count', async () => {
+    const res = await request(app).get(`/api/sites/${siteId}/studies`).set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    const s = res.body.data.studies.find((x: any) => x.id === studyId);
+    expect(s._count.coveredAssets).toBe(2);
+  });
+});
+
+export {};

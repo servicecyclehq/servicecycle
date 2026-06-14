@@ -24,6 +24,7 @@ const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
 const { resolveTargetAccount } = require('../lib/oemTargetAccount');
+const { resolveDownstreamAssetIds } = require('../lib/powerPath');
 
 // ─── Activity logging helper ──────────────────────────────────────────────────
 // Non-fatal fire-and-forget. Site-level events have no assetId — the log row
@@ -653,6 +654,8 @@ router.get('/:siteId/studies', async (req, res) => {
       include: {
         supersededBy: { select: { id: true, studyType: true, performedDate: true } },
         supersedes:   { select: { id: true, studyType: true, performedDate: true } },
+        // #25: how many assets/buses this study covers (label-data readiness).
+        _count:       { select: { coveredAssets: true } },
       },
     });
 
@@ -819,6 +822,210 @@ router.put('/studies/:id', requireManager, async (req, res) => {
   } catch (err) {
     console.error('Update system study error:', err);
     res.status(500).json({ success: false, error: 'Failed to update system study' });
+  }
+});
+
+// ═══ #25 Arc-flash study asset coverage + incident-energy labels ═══════════════
+// A SystemStudy (esp. arc_flash) covers a set of assets/buses. Each binding can
+// carry the NFPA 70E §130.5(H) label fields the standard requires posted ON the
+// equipment: nominal voltage, arc-flash boundary, incident energy + working
+// distance OR PPE category, plus the study date (from the parent study). The
+// power-path graph lets one root bus expand coverage to its whole downstream
+// tree in one call.
+
+// Coerce a numeric label field; '' / null clears, NaN / negative rejected.
+// Returns { ok, value } where value is undefined (skip), null (clear), or Number.
+function coerceLabelNum(raw) {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null || raw === '') return { ok: true, value: null };
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return { ok: false };
+  return { ok: true, value: n };
+}
+
+function assetLabel(a) {
+  if (!a) return 'Unknown asset';
+  return [a.manufacturer, a.model].filter(Boolean).join(' ')
+    || a.serialNumber
+    || a.equipmentType;
+}
+
+// ─── POST /api/sites/studies/:id/assets ───────────────────────────────────────
+// Bind one asset (and optionally its power-path downstream) to a study, with
+// per-bus incident-energy label data. Idempotent upsert on (studyId, assetId).
+// Body: { assetId, busName?, nominalVoltage?, incidentEnergyCalCm2?,
+//         arcFlashBoundaryIn?, workingDistanceIn?, ppeCategory?, includeDownstream? }
+router.post('/studies/:id/assets', requireManager, async (req, res) => {
+  try {
+    const study = await prisma.systemStudy.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true, accountId: true },
+    });
+    if (!study) return res.status(404).json({ success: false, error: 'Study not found' });
+
+    const {
+      assetId, busName, nominalVoltage,
+      incidentEnergyCalCm2, arcFlashBoundaryIn, workingDistanceIn,
+      ppeCategory, includeDownstream,
+    } = req.body;
+
+    if (!assetId) return res.status(400).json({ success: false, error: 'assetId is required' });
+
+    const rootAsset = await prisma.asset.findFirst({
+      where:  { id: assetId, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!rootAsset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const ie = coerceLabelNum(incidentEnergyCalCm2);
+    const afb = coerceLabelNum(arcFlashBoundaryIn);
+    const wd = coerceLabelNum(workingDistanceIn);
+    if (!ie.ok || !afb.ok || !wd.ok) {
+      return res.status(400).json({ success: false, error: 'Numeric label fields must be non-negative numbers' });
+    }
+    let ppe: number | null | undefined;
+    if (ppeCategory === undefined) ppe = undefined;
+    else if (ppeCategory === null || ppeCategory === '') ppe = null;
+    else {
+      const p = Number(ppeCategory);
+      if (!Number.isInteger(p) || p < 0 || p > 4) {
+        return res.status(400).json({ success: false, error: 'ppeCategory must be an integer 0-4' });
+      }
+      ppe = p;
+    }
+
+    // Upsert the ROOT binding with full label data.
+    const rootData: any = {
+      busName:        busName || null,
+      nominalVoltage: nominalVoltage || null,
+    };
+    if (ie.value !== undefined)  rootData.incidentEnergyCalCm2 = ie.value;
+    if (afb.value !== undefined) rootData.arcFlashBoundaryIn = afb.value;
+    if (wd.value !== undefined)  rootData.workingDistanceIn = wd.value;
+    if (ppe !== undefined)       rootData.ppeCategory = ppe;
+
+    await prisma.systemStudyAsset.upsert({
+      where:  { studyId_assetId: { studyId: study.id, assetId: rootAsset.id } },
+      update: rootData,
+      create: { ...rootData, accountId: study.accountId, studyId: study.id, assetId: rootAsset.id },
+    });
+
+    let downstreamAdded = 0;
+    if (includeDownstream) {
+      const ids = await resolveDownstreamAssetIds(req.user.accountId, rootAsset.id);
+      for (const id of ids) {
+        // createMany would skip duplicates but we want per-row safety + count.
+        const r = await prisma.systemStudyAsset.upsert({
+          where:  { studyId_assetId: { studyId: study.id, assetId: id } },
+          update: {}, // leave existing label data untouched
+          create: { accountId: study.accountId, studyId: study.id, assetId: id },
+        }).then(() => true).catch(() => false);
+        if (r) downstreamAdded++;
+      }
+    }
+
+    const count = await prisma.systemStudyAsset.count({ where: { studyId: study.id } });
+    await logActivity(req.user.id, req.user.accountId, 'arc_flash_study_assets_bound', {
+      studyId: study.id, rootAssetId: rootAsset.id, includeDownstream: !!includeDownstream, downstreamAdded,
+    });
+
+    res.status(201).json({ success: true, data: { studyId: study.id, rootAssetId: rootAsset.id, downstreamAdded, coveredCount: count } });
+  } catch (err) {
+    console.error('Bind study assets error:', err);
+    res.status(500).json({ success: false, error: 'Failed to bind study assets' });
+  }
+});
+
+// ─── DELETE /api/sites/studies/:id/assets/:assetId ────────────────────────────
+router.delete('/studies/:id/assets/:assetId', requireManager, async (req, res) => {
+  try {
+    const study = await prisma.systemStudy.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!study) return res.status(404).json({ success: false, error: 'Study not found' });
+
+    const link = await prisma.systemStudyAsset.findFirst({
+      where:  { studyId: study.id, assetId: req.params.assetId },
+      select: { id: true },
+    });
+    if (!link) return res.status(404).json({ success: false, error: 'Asset is not bound to this study' });
+
+    await prisma.systemStudyAsset.delete({ where: { id: link.id } });
+    const count = await prisma.systemStudyAsset.count({ where: { studyId: study.id } });
+    res.json({ success: true, data: { studyId: study.id, coveredCount: count } });
+  } catch (err) {
+    console.error('Unbind study asset error:', err);
+    res.status(500).json({ success: false, error: 'Failed to unbind study asset' });
+  }
+});
+
+// ─── GET /api/sites/studies/:id/label-data ────────────────────────────────────
+// NFPA 70E §130.5(H) incident-energy label export: per-bus rows ready to print
+// onto equipment labels, plus the study provenance (date, PE, method) every
+// label must reference. Any authenticated role may read.
+router.get('/studies/:id/label-data', async (req, res) => {
+  try {
+    const study = await prisma.systemStudy.findFirst({
+      where: { id: req.params.id, accountId: req.user.accountId },
+      include: {
+        site: { select: { id: true, name: true } },
+        coveredAssets: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            asset: { select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, siteId: true } },
+          },
+        },
+      },
+    });
+    if (!study) return res.status(404).json({ success: false, error: 'Study not found' });
+
+    const labels = study.coveredAssets.map((c: any) => {
+      const ie  = c.incidentEnergyCalCm2 != null ? Number(c.incidentEnergyCalCm2) : null;
+      const afb = c.arcFlashBoundaryIn != null ? Number(c.arcFlashBoundaryIn) : null;
+      const wd  = c.workingDistanceIn != null ? Number(c.workingDistanceIn) : null;
+      // A label is "complete" per §130.5(H) when it carries nominal voltage,
+      // arc-flash boundary, and EITHER incident energy + working distance OR a
+      // PPE category.
+      const hasEnergyMethod = ie != null && wd != null;
+      const hasPpeMethod    = c.ppeCategory != null;
+      const complete = !!c.nominalVoltage && afb != null && (hasEnergyMethod || hasPpeMethod);
+      return {
+        assetId:              c.assetId,
+        assetLabel:           assetLabel(c.asset),
+        equipmentType:        c.asset?.equipmentType ?? null,
+        busName:              c.busName,
+        nominalVoltage:       c.nominalVoltage,
+        incidentEnergyCalCm2: ie,
+        arcFlashBoundaryIn:   afb,
+        workingDistanceIn:    wd,
+        ppeCategory:          c.ppeCategory,
+        labelComplete:        complete,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        study: {
+          id:            study.id,
+          studyType:     study.studyType,
+          siteId:        study.siteId,
+          siteName:      study.site?.name ?? null,
+          performedDate: study.performedDate,
+          expiresAt:     study.expiresAt,
+          peName:        study.peName,
+          peLicense:     study.peLicense,
+          method:        study.method,
+        },
+        labels,
+        coveredCount:  labels.length,
+        completeCount: labels.filter((l) => l.labelComplete).length,
+      },
+    });
+  } catch (err) {
+    console.error('Study label-data error:', err);
+    res.status(500).json({ success: false, error: 'Failed to build label data' });
   }
 });
 

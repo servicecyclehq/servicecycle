@@ -2065,7 +2065,7 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
       pingHeartbeat('arcFlashIntegrity');
       try {
         const r = await runArcFlashIntegrity();
-        console.log(`[Cron][arcFlashIntegrity] Done — expired: ${r.expiredStudies}, loadGrowth: ${r.loadGrowthAlerts}, deficiency: ${r.deficiencyAlerts}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}`);
+        console.log(`[Cron][arcFlashIntegrity] Done — expired: ${r.expiredStudies}, perStudy: ${r.perStudyExpired}, loadGrowth: ${r.loadGrowthAlerts}, deficiency: ${r.deficiencyAlerts}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}`);
       } catch (e) {
         console.error('[Cron][arcFlashIntegrity] Error:', (e as any).message);
       }

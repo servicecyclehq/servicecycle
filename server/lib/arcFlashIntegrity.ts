@@ -124,6 +124,7 @@ async function maybeCreateArcFlashQuote(
 export interface ArcFlashIntegrityResult {
   accountsChecked:  number;
   expiredStudies:   number;
+  perStudyExpired:  number; // #25: per-study SystemStudy 5-yr expirations
   loadGrowthAlerts: number;
   deficiencyAlerts: number;
   quoteRequests:    number;
@@ -133,6 +134,7 @@ export interface ArcFlashIntegrityResult {
 export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
   let accountsChecked  = 0;
   let expiredStudies   = 0;
+  let perStudyExpired  = 0;
   let loadGrowthAlerts = 0;
   let deficiencyAlerts = 0;
   let quoteRequests    = 0;
@@ -140,6 +142,99 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
 
   const now = new Date();
   const quotedSet = new Set<string>();
+
+  // ── Path 0: per-study 5-year expiration (#25, NFPA 70E §130.5) ─────────────
+  // First-class SystemStudy arc_flash records each carry their own expiresAt
+  // (performedDate + 5yr). The account-level ARC_FLASH_STUDY_DATE setting
+  // (Path 1 below) is the legacy single-clock fallback; per-study records win
+  // for multi-site customers. We alert at the 6-month warning mark and at
+  // expiry, dedup per study via a study-scoped NotificationLog template, and
+  // bind the QuoteRequest to a covered asset when the study has coverage.
+  const studyCounter = { count: 0 };
+  const arcStudies = await prisma.systemStudy.findMany({
+    where: {
+      studyType:      'arc_flash',
+      supersededById: null, // only the active/latest study in each chain
+    },
+    select: {
+      id: true, accountId: true, siteId: true, performedDate: true, expiresAt: true,
+      coveredAssets: { select: { assetId: true }, take: 1 },
+    },
+  });
+
+  for (const study of arcStudies) {
+    const expiresAt = study.expiresAt ? new Date(study.expiresAt) : null;
+    if (!expiresAt || isNaN(expiresAt.getTime())) continue;
+
+    const msToExpiry = expiresAt.getTime() - now.getTime();
+    const expired    = msToExpiry <= 0;
+    const warn6mo    = !expired && msToExpiry <= 182 * MS_PER_DAY;
+    if (!expired && !warn6mo) continue;
+    perStudyExpired++;
+
+    const template = expired
+      ? `arc_flash_study_expired:${study.id}`
+      : `arc_flash_study_expiring:${study.id}`;
+    const alreadySent = await prisma.notificationLog.findFirst({
+      where: {
+        accountId: study.accountId, template,
+        sentAt: { gte: new Date(now.getTime() - 30 * MS_PER_DAY) },
+        status: 'sent',
+      },
+    });
+    if (alreadySent) continue;
+
+    const admins = await getAdmins(study.accountId);
+    if (admins.length === 0) continue;
+
+    // Prefer a covered asset; otherwise a representative distribution asset.
+    let targetAssetId = study.coveredAssets[0]?.assetId ?? null;
+    if (!targetAssetId) {
+      const rep = await prisma.asset.findFirst({
+        where: {
+          accountId: study.accountId, archivedAt: null,
+          equipmentType: { in: ['SWITCHGEAR', 'PANELBOARD', 'SWITCHBOARD', 'ARC_FLASH_PANEL'] },
+        },
+        select: { id: true },
+      });
+      targetAssetId = rep?.id ?? null;
+    }
+
+    const reason = expired
+      ? 'Arc flash study 5-year expiration (NFPA 70E §130.5)'
+      : 'Arc flash study approaching 5-year expiration';
+    const detail = expired
+      ? `Study performed ${new Date(study.performedDate).toLocaleDateString()} expired ${expiresAt.toLocaleDateString()}. NFPA 70E §130.5 requires review every 5 years or on system change.`
+      : `Study performed ${new Date(study.performedDate).toLocaleDateString()} expires ${expiresAt.toLocaleDateString()} (within 6 months). Plan the re-study now to avoid a compliance gap.`;
+
+    if (targetAssetId) {
+      await maybeCreateArcFlashQuote(
+        study.accountId, targetAssetId, admins[0].id,
+        `${reason}\n${detail}`,
+        `study:${study.id}`,
+        quotedSet, studyCounter,
+      );
+    }
+
+    const account = await prisma.account.findUnique({
+      where: { id: study.accountId }, select: { companyName: true },
+    });
+    const html    = buildArcFlashHtml(reason, account?.companyName ?? study.accountId, detail);
+    const subject = `[Arc Flash Alert] ${reason} — ${account?.companyName ?? study.accountId}`;
+    for (const admin of admins) {
+      try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; }
+      catch (e: any) { console.error(`[arcFlashIntegrity] email failed for ${redactEmail(admin.email)}:`, e.message); }
+    }
+    await prisma.notificationLog.create({
+      data: {
+        accountId: study.accountId, channel: 'email', template,
+        recipient: admins.map((a) => a.email).join(', '),
+        status: 'sent', alertCount: 1,
+      },
+    }).catch(() => {});
+    accountsChecked++;
+  }
+  quoteRequests += studyCounter.count;
 
   // ── Path 1: 5-year expiration (NFPA 70E §130.5) ───────────────────────────
   // Alert at 4yr 6mo (warning) and 5yr (critical).
@@ -374,5 +469,5 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
   }
   quoteRequests += qrCounter.count;
 
-  return { accountsChecked, expiredStudies, loadGrowthAlerts, deficiencyAlerts, quoteRequests, emailsSent };
+  return { accountsChecked, expiredStudies, perStudyExpired, loadGrowthAlerts, deficiencyAlerts, quoteRequests, emailsSent };
 }
