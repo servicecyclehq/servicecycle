@@ -72,8 +72,13 @@ function _classifyAxiosError(err) {
 }
 
 async function complete({ system, user, maxTokens = 1024, task, settings = {} }: any) {
-  if (task && task === 'extract') {
-    throw new ClientError('[groq] cascade not permitted for task=' + task + ' (Cloudflare-only per spec)');
+  // NOTE: the old v0.35.0 "extract is Cloudflare-only" guard was removed in
+  // ServiceCycle — test-report extraction deliberately falls to Groq when the
+  // Gemini primary is quota-exhausted (the cascade router decides WHEN to call
+  // us; the provider shouldn't second-guess the task). Set AI_BLOCK_GROQ_EXTRACT=1
+  // to restore the old behaviour.
+  if (task === 'extract' && process.env.AI_BLOCK_GROQ_EXTRACT === '1') {
+    throw new ClientError('[groq] cascade not permitted for task=' + task + ' (AI_BLOCK_GROQ_EXTRACT)');
   }
 
   // v0.36.7 (Pass-6 W2 MT-012b): consume the per-UTC-day Groq budget at
