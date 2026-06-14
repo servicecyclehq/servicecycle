@@ -194,13 +194,16 @@ def main():
         render_clean_pdf(report, base + "_clean.pdf", font)
         # scan / photo from a rendered image
         img = render_image(report, font)
+        imgs = {}
         for tier in ("scan", "photo"):
             di = degrade(img.copy(), tier, rng)
+            di.convert("RGB").save(base + "_%s.jpg" % tier, "JPEG", quality=70)
+            imgs[tier] = base + "_%s.jpg" % tier
             image_to_pdf(di, base + "_%s.pdf" % tier, rng=rng, tier=tier)
         for tier in ("clean", "scan", "photo"):
             with open(base + "_%s.gt.json" % tier, "w", encoding="utf-8") as fh:
                 json.dump(gt, fh)
-            manifest.append({"pdf": base + "_%s.pdf" % tier, "gt": base + "_%s.gt.json" % tier, "tier": tier, "font": font})
+            manifest.append({"pdf": base + "_%s.pdf" % tier, "img": imgs.get(tier), "gt": base + "_%s.gt.json" % tier, "tier": tier, "font": font})
     with open(os.path.join(args.out, "manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
     print("generated %d reports x 3 tiers = %d PDFs into %s" % (args.count, args.count * 3, args.out))

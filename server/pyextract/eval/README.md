@@ -49,3 +49,28 @@ Units alternate unicode (MOhm/microOhm) vs ASCII spellings; fonts vary per repor
 3. Investigate the ~55% clean reading_found (cap? second-type classification?).
 4. Confirm + fix the milli/mega unit normalization.
 5. Replay captured human corrections (#4) as a second, real-data eval split.
+## Two harnesses: deterministic-core vs full-pipeline
+`run_eval.py` tests ONLY the deterministic Python core (`run.py`) in isolation â€”
+useful for fast parser-logic iteration, but it does NOT exercise Tesseract OCR
+(unless installed locally) or the Node-side AI (Gemini/Groq text gap-fill +
+vision fallback). It will under-report on scan/photo tiers on a box without an
+OCR engine.
+
+`run_eval_node.js` tests the **REAL production pipeline**
+(`lib/testReportPreview.buildTestReportPreview`): deterministic parser + Tesseract
+OCR + Gemini/Groq text gap-fill + the image vision fallback. Run it INSIDE the
+server container, which has Tesseract + the AI keys + DB:
+
+```
+# 1) generate a corpus locally (gen.py needs reportlab/Pillow, dev-only)
+python gen.py --out corpus --count 10 --seed 1
+# 2) copy it into the running container, then run via tsx with the demo account
+tar -czf corpus.tgz corpus    &&    <upload>    &&    docker cp corpus.tgz servicecycle-server:/app/
+docker exec servicecycle-server sh -c "cd /app && tar -xzf corpus.tgz && \
+  node node_modules/tsx/dist/cli.mjs pyextract/eval/run_eval_node.js corpus <ACCOUNT_ID> <USER_ID>"
+```
+
+Clean tiers are fed as PDFs (text layer); scan/photo tiers are fed as the
+degraded IMAGES so the photo-of-paper -> OCR/vision path fires. The output's
+`ai/vision` column shows how often each AI fallback contributed per tier â€” that
+is how you see the vision fallback earning its keep on degraded inputs.
