@@ -224,6 +224,10 @@ router.get('/', requireAdmin, async (req, res) => {
     // AccountSetting KV 'auto_send_leave_behind' = 'true'|'false'; default off.
     const autoSendLeaveBehind = dbRows['auto_send_leave_behind'] === 'true';
 
+    // #30: customer-side weekly digest + quarterly CFO report opt-ins.
+    const customerWeeklyDigest = dbRows['customer_weekly_digest'] === 'true';
+    const customerQuarterlyCfo = dbRows['customer_quarterly_cfo'] === 'true';
+
     // Ingest usage (for admin display and freemium metering)
     const ingestCount = parseInt(dbRows['AI_INGEST_COUNT'] || '0', 10);
     const ingestLimit = parseInt(dbRows['AI_INGEST_LIMIT'] || '10', 10);
@@ -275,6 +279,9 @@ router.get('/', requireAdmin, async (req, res) => {
         aiFeedbackUpstreamEnabled,
         // #16: auto-send leave-behind on WO completion (AccountSetting KV).
         autoSendLeaveBehind,
+        // #30: customer digest + CFO report opt-ins (AccountSetting KV).
+        customerWeeklyDigest,
+        customerQuarterlyCfo,
       },
     });
   } catch (err) {
@@ -370,7 +377,19 @@ router.put('/', async (req, res) => {
       autoSendLeaveBehindUpdate = (v === true || v === 'true');
     }
 
-    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && autoSendLeaveBehindUpdate === null && fteCountUpdate === null) {
+    // #30: customer weekly digest + quarterly CFO opt-ins — admin-only KV.
+    let customerWeeklyDigestUpdate = null;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'customerWeeklyDigest') && isAdmin) {
+      const v = req.body.customerWeeklyDigest;
+      customerWeeklyDigestUpdate = (v === true || v === 'true');
+    }
+    let customerQuarterlyCfoUpdate = null;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'customerQuarterlyCfo') && isAdmin) {
+      const v = req.body.customerQuarterlyCfo;
+      customerQuarterlyCfoUpdate = (v === true || v === 'true');
+    }
+
+    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && autoSendLeaveBehindUpdate === null && customerWeeklyDigestUpdate === null && customerQuarterlyCfoUpdate === null && fteCountUpdate === null) {
       return res.status(400).json({ success: false, error: 'No valid settings provided' });
     }
 
@@ -489,6 +508,24 @@ router.put('/', async (req, res) => {
         where:  { accountId_key: { accountId: req.user.accountId, key } },
         update: { value: String(autoSendLeaveBehindUpdate) },
         create: { accountId: req.user.accountId, key, value: String(autoSendLeaveBehindUpdate) },
+      });
+    }
+
+    // #30: persist customer digest + CFO report opt-ins as AccountSetting KV.
+    if (customerWeeklyDigestUpdate !== null) {
+      const key = 'customer_weekly_digest';
+      await prisma.accountSetting.upsert({
+        where:  { accountId_key: { accountId: req.user.accountId, key } },
+        update: { value: String(customerWeeklyDigestUpdate) },
+        create: { accountId: req.user.accountId, key, value: String(customerWeeklyDigestUpdate) },
+      });
+    }
+    if (customerQuarterlyCfoUpdate !== null) {
+      const key = 'customer_quarterly_cfo';
+      await prisma.accountSetting.upsert({
+        where:  { accountId_key: { accountId: req.user.accountId, key } },
+        update: { value: String(customerQuarterlyCfoUpdate) },
+        create: { accountId: req.user.accountId, key, value: String(customerQuarterlyCfoUpdate) },
       });
     }
 

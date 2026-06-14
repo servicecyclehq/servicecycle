@@ -49,6 +49,8 @@ const { buildStandardsSummary, buildStandardReport, buildOverdueReport, buildCom
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
+const { buildCustomerDigest } = require('../lib/customerDigest');
+const { buildCfoReportData, renderCfoReportPdf } = require('../lib/cfoReport');
 
 const router = express.Router();
 
@@ -142,6 +144,46 @@ router.get('/path-to-100', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/path-to-100]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build path-to-100.' });
+  }
+});
+
+// ── GET /customer-digest ──────────────────────────────────────────────────────
+// #30 — the customer-side weekly heartbeat payload (preview of what the weekly
+// digest email contains): compliance trend, this-week deltas, next outage, top
+// items. Any authenticated role — this is a read.
+router.get('/customer-digest', async (req, res) => {
+  try {
+    const digest = await buildCustomerDigest(prisma, req.user.accountId);
+    return res.json({ success: true, data: digest });
+  } catch (err) {
+    console.error('[compliance/customer-digest]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build customer digest.' });
+  }
+});
+
+// ── GET /cfo-report.pdf ───────────────────────────────────────────────────────
+// #30 — the quarterly board-grade budget/compliance PDF, generated on demand.
+// Co-branded (#15). Not persisted/anchored (it is a derived summary, not audit
+// evidence — that's what /snapshots is for). Any authenticated role.
+router.get('/cfo-report.pdf', async (req, res) => {
+  try {
+    const data = await buildCfoReportData(prisma, req.user.accountId);
+    const branding = await getAccountBranding(req.user.accountId);
+    const pdf = await renderCfoReportPdf(data, {
+      generatedAtIso: data.generatedAt.toISOString(),
+      brandName:  branding?.name || null,
+      brandColor: branding?.primaryColor || null,
+    });
+    const filename = `servicecycle-cfo-report-${data.generatedAt.toISOString().slice(0, 10)}.pdf`;
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `attachment; filename="${filename}"`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Length', String(pdf.length));
+    res.set('Cache-Control', 'private, no-store');
+    return res.send(pdf);
+  } catch (err) {
+    console.error('[compliance/cfo-report]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build CFO report.' });
   }
 });
 

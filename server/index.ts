@@ -2072,6 +2072,35 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     }), { timezone: 'UTC' });
     console.log('[Cron] Arc flash integrity scheduled — runs daily at 09:30 UTC');
 
+    // ── #30 Customer weekly digest — Mondays 13:00 UTC ──────────────────────
+    // Opt-in per account (AccountSetting customer_weekly_digest='true'). The
+    // facility-side heartbeat between test seasons.
+    const { runCustomerDigestCron, runCustomerCfoCron } = require('./lib/customerDigest');
+    cron.schedule('0 13 * * 1', () => runOnce('customerDigest', async () => {
+      pingHeartbeat('customerDigest');
+      try {
+        const r = await runCustomerDigestCron();
+        console.log(`[Cron][customerDigest] Done — accounts: ${r.accountsProcessed}, emails: ${r.emailsSent}`);
+      } catch (e) {
+        console.error('[Cron][customerDigest] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Customer weekly digest scheduled — Mondays 13:00 UTC');
+
+    // ── #30 Quarterly CFO report email — 1st of Jan/Apr/Jul/Oct 14:00 UTC ────
+    // Opt-in per account (AccountSetting customer_quarterly_cfo='true'). Emails
+    // the board-grade compliance & budget PDF as an attachment.
+    cron.schedule('0 14 1 1,4,7,10 *', () => runOnce('customerCfo', async () => {
+      pingHeartbeat('customerCfo');
+      try {
+        const r = await runCustomerCfoCron();
+        console.log(`[Cron][customerCfo] Done — accounts: ${r.accountsProcessed}, emails: ${r.emailsSent}`);
+      } catch (e) {
+        console.error('[Cron][customerCfo] Error:', (e as any).message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Quarterly CFO report scheduled — 1st of quarter 14:00 UTC');
+
     // ── QEMW Credential Alerts (Task 26) — daily 10:00 UTC ──────────────────
     // Fires 60d + 14d expiry alerts; detects compliance gaps for REQUIRE_QEMW accounts.
     const { runQemwAlerts } = require('./lib/qemwAlerts');
