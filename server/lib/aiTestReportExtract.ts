@@ -108,7 +108,12 @@ async function aiFillReadings(rawText: string, opts: any = {}) {
     return { ok: false, measurements: [] };
   }
   if (!Array.isArray(arr)) return { ok: false, measurements: [] };
+  return { ok: true, measurements: _mapMeasurements(arr) };
+}
 
+// Shared mapping from the model's loose JSON array to our measurement shape.
+// Used by both the text gap-fill and the vision fallback.
+function _mapMeasurements(arr: any[]) {
   const out: any[] = [];
   for (const x of arr) {
     if (!x || typeof x !== 'object') continue;
@@ -135,9 +140,49 @@ async function aiFillReadings(rawText: string, opts: any = {}) {
     if (m.asFoundValue == null && !m.expectedRange) continue;
     out.push(m);
   }
-
-  return { ok: true, measurements: out };
+  return out;
 }
 
-module.exports = { aiFillReadings, scrubForAi, KNOWN_TYPES };
+// Vision fallback: send the report IMAGE to the multimodal model. Used when the
+// deterministic parser + OCR + text gap-fill all come back low-coverage, which
+// happens on photos/scans whose OCR text is too poor for the text path. The
+// vision providers have no separate system turn, so the extraction rules are
+// prepended to the prompt. Reuses the same provider cascade (Gemini/Groq/...)
+// as the nameplate photo-inspect feature. Never throws.
+const VISION_PROMPT = SYSTEM +
+  '\n\nThe input is an IMAGE of an electrical test report (a scan or phone photo). ' +
+  'Read every quantitative reading visible in the image and return the JSON array described above.';
+
+async function aiFillReadingsFromImage(imageBuffer: Buffer, opts: any = {}) {
+  if (process.env.AI_ENABLED === 'false') return { ok: false, measurements: [] };
+  if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) return { ok: false, measurements: [] };
+  let processed: Buffer;
+  try {
+    const sharp = require('sharp');
+    processed = await sharp(imageBuffer).rotate()
+      .resize(1568, 1568, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85 }).toBuffer();
+  } catch (e: any) {
+    console.warn('[aiTestReport] image preprocess failed:', e && e.message ? e.message.slice(0, 160) : String(e));
+    return { ok: false, measurements: [] };
+  }
+  let resp: any;
+  try {
+    resp = await ai.completeWithImage({ imageBuffer: processed, mediaType: 'image/jpeg', prompt: VISION_PROMPT, maxTokens: opts.maxTokens || 3072 });
+  } catch (e: any) {
+    console.warn('[aiTestReport] vision call failed:', e && e.message ? e.message.slice(0, 200) : String(e));
+    return { ok: false, measurements: [] };
+  }
+  let arr: any;
+  try {
+    arr = ai.parseJSON(resp && resp.text ? resp.text : '', 'ai');
+  } catch (e: any) {
+    console.warn('[aiTestReport] vision non-JSON response:', e && e.message ? e.message.slice(0, 160) : String(e));
+    return { ok: false, measurements: [] };
+  }
+  if (!Array.isArray(arr)) return { ok: false, measurements: [] };
+  return { ok: true, measurements: _mapMeasurements(arr) };
+}
+
+module.exports = { aiFillReadings, aiFillReadingsFromImage, scrubForAi, KNOWN_TYPES, _mapMeasurements };
 export {};

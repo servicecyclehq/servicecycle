@@ -16,7 +16,7 @@
 const prisma = require('./prisma').default;
 const { extractPdfText, parseTestReport, severityFor, evaluate } = require('./testReportParse');
 const { runDeterministic } = require('./testReportExtract');
-const { aiFillReadings } = require('./aiTestReportExtract');
+const { aiFillReadings, aiFillReadingsFromImage } = require('./aiTestReportExtract');
 const { sha256Hex, confStats, recordExtraction, findPriorImport } = require('./extractionTelemetry');
 const { resolveAsset } = require('./assetIdentity');
 
@@ -163,6 +163,35 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     }
   }
 
+  // W1-AI vision fallback: if coverage is STILL low and we have the original
+  // image (photo-of-paper upload), send the IMAGE to the multimodal model. The
+  // text gap-fill above cannot help when OCR produced little/no usable text —
+  // this reads the pixels directly (same Gemini/Groq cascade as nameplate scan).
+  let visionUsed = false;
+  let visionAdded = 0;
+  if (process.env.AI_ENABLED !== 'false' && photoOfPaper && measurements.length < MIN_READINGS) {
+    try {
+      const vres = await aiFillReadingsFromImage(inputBuffer, { mediaType: opts.mimetype });
+      if (vres.ok && vres.measurements.length) {
+        const seen = new Set(measurements.map((m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`));
+        for (const m of vres.measurements) {
+          const key = `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          if (!m.passFail && m.expectedRange != null && m.asFoundValue != null) {
+            m.passFail = evaluate(Number(m.asFoundValue), m.expectedRange);
+          }
+          measurements.push(m);
+          visionAdded++;
+        }
+        visionUsed = visionAdded > 0;
+        if (visionUsed) source = source.includes('ai') ? `${source}+vision` : `${source}+vision`;
+      }
+    } catch (e: any) {
+      console.warn('[testReportPreview] vision fallback skipped:', e && e.message ? e.message : String(e));
+    }
+  }
+
   // #3 identity resolution.
   let assetMatch: any = null;
   let assetCandidates: any[] = [];
@@ -224,6 +253,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
 
   return {
     meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, sections, ocr, aiUsed, aiAdded,
+    visionUsed, visionAdded,
     pageCount, pagesScanned, truncated, extractionId, photoOfPaper,
     priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
   };
