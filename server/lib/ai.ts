@@ -272,6 +272,11 @@ async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSy
     result = await _openaiComplete({ system, user, maxTokens, s });
   } else if (s.provider === 'azure_openai') {
     result = await _azureComplete({ system, user, maxTokens, s });
+  } else if (s.provider === 'groq') {
+    // First-class Groq text provider — lets callers force settings.provider='groq'
+    // as an explicit fallback. Groq reads GROQ_API_KEY itself and ignores a
+    // foreign model id, so passing the primary's resolved settings is safe.
+    result = await groqProvider.complete({ system, user, maxTokens, task, settings: s });
   } else if (s.provider === 'gemini') {
     // Cross-provider TEXT fallback (Gemini → Groq), mirroring completeWithImage.
     // _geminiComplete cascades across Gemini's OWN models first; if the WHOLE

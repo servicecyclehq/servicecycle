@@ -99,22 +99,34 @@ async function aiFillReadings(rawText: string, opts: any = {}) {
 
   const user = 'TEST REPORT TEXT:\n' + scrubForAi(rawText).slice(0, MAX_INPUT_CHARS);
 
-  let resp: any;
-  try {
-    resp = await ai.complete({ system: SYSTEM, user, maxTokens, task: 'extract' });
-  } catch (e: any) {
-    console.warn('[aiTestReport] model call failed:', e && e.message ? e.message.slice(0, 200) : String(e));
-    return { ok: false, measurements: [] };
-  }
+  // One text attempt: call -> parse -> coerce. Returns null on call/parse
+  // failure. `settings` lets us force a provider on the retry.
+  const attempt = async (settings: any, tag: string) => {
+    let resp: any;
+    try {
+      resp = await ai.complete({ system: SYSTEM, user, maxTokens, task: 'extract', settings });
+    } catch (e: any) {
+      console.warn(`[aiTestReport] model call failed (${tag}):`, e && e.message ? e.message.slice(0, 200) : String(e));
+      return null;
+    }
+    try {
+      return _coerceResult(ai.parseJSON(resp && resp.text ? resp.text : '', 'ai'));
+    } catch (e: any) {
+      console.warn(`[aiTestReport] non-JSON response (${tag}):`, e && e.message ? e.message.slice(0, 160) : String(e));
+      return null;
+    }
+  };
 
-  let arr: any;
-  try {
-    arr = ai.parseJSON(resp && resp.text ? resp.text : '', 'ai');
-  } catch (e: any) {
-    console.warn('[aiTestReport] non-JSON response:', e && e.message ? e.message.slice(0, 160) : String(e));
-    return { ok: false, measurements: [] };
+  let c = await attempt({}, 'primary');
+  // Retry on Groq if the primary failed OR succeeded-but-empty (a quota-throttled
+  // Gemini alias that answers with nothing no longer sinks the gap-fill).
+  const primary = (process.env.AI_PROVIDER || '').toLowerCase();
+  if (!_hasContent(c) && process.env.GROQ_API_KEY && primary !== 'groq') {
+    console.warn('[aiTestReport] text: primary returned nothing → retrying on groq');
+    const c2 = await attempt({ provider: 'groq' }, 'groq');
+    if (_hasContent(c2)) c = c2;
   }
-  const c = _coerceResult(arr);
+  if (!c) return { ok: false, measurements: [] };
   return { ok: true, measurements: _mapMeasurements(c.measurements), fields: _mapFields(c.fields) };
 }
 
@@ -124,6 +136,17 @@ function _coerceResult(j: any) {
   if (Array.isArray(j)) return { fields: {}, measurements: j };
   if (j && typeof j === 'object') return { fields: j.fields || {}, measurements: Array.isArray(j.measurements) ? j.measurements : [] };
   return { fields: {}, measurements: [] };
+}
+
+// Did a coerced {fields, measurements} actually recover anything? A primary
+// model that "succeeds" with an empty array/object (e.g. a quota-throttled
+// Gemini alias model that answers but finds nothing) is useless — callers use
+// this to decide whether to retry on Groq.
+function _hasContent(c: any) {
+  if (!c) return false;
+  if (Array.isArray(c.measurements) && c.measurements.length) return true;
+  const f = _mapFields(c.fields);
+  return Object.values(f).some((v) => v != null);
 }
 
 // Shared mapping from the model's loose JSON array to our measurement shape.
@@ -219,6 +242,8 @@ async function aiFillReadingsFromImage(imageBuffer: Buffer, opts: any = {}) {
   // One vision attempt: call -> parse. Returns the parsed JSON or null on any
   // failure (call error OR unparseable body). `settings` lets us force a
   // specific provider on the retry.
+  // One vision attempt: call -> parse -> coerce. Returns null on call/parse
+  // failure. `settings` lets us force a provider on the retry.
   const attempt = async (settings: any, tag: string) => {
     let resp: any;
     try {
@@ -228,24 +253,25 @@ async function aiFillReadingsFromImage(imageBuffer: Buffer, opts: any = {}) {
       return null;
     }
     try {
-      return ai.parseJSON(resp && resp.text ? resp.text : '', 'ai');
+      return _coerceResult(ai.parseJSON(resp && resp.text ? resp.text : '', 'ai'));
     } catch (e: any) {
       console.warn(`[aiTestReport] vision non-JSON response (${tag}):`, e && e.message ? e.message.slice(0, 160) : String(e));
       return null;
     }
   };
 
-  // Primary provider first. If it throws OR returns junk the model didn't refuse
-  // (e.g. Gemini's last cascade model answers but not as JSON), fall to Groq's
-  // vision model so a quota-throttled primary doesn't sink the whole extraction.
-  let arr: any = await attempt({}, 'primary');
+  // Primary provider first. If it throws, returns junk (non-JSON), OR succeeds
+  // with an empty extraction (a Gemini alias model that answers but finds
+  // nothing), fall to Groq's vision model so a quota-throttled primary doesn't
+  // sink the whole extraction.
+  let c = await attempt({}, 'primary');
   const primary = (process.env.AI_PROVIDER || '').toLowerCase();
-  if (arr == null && process.env.GROQ_API_KEY && primary !== 'groq') {
-    console.warn('[aiTestReport] vision: primary unusable → retrying on groq');
-    arr = await attempt({ provider: 'groq' }, 'groq');
+  if (!_hasContent(c) && process.env.GROQ_API_KEY && primary !== 'groq') {
+    console.warn('[aiTestReport] vision: primary unusable/empty → retrying on groq');
+    const c2 = await attempt({ provider: 'groq' }, 'groq');
+    if (_hasContent(c2)) c = c2;
   }
-  if (arr == null) return { ok: false, measurements: [] };
-  const c = _coerceResult(arr);
+  if (!c) return { ok: false, measurements: [] };
   return { ok: true, measurements: _mapMeasurements(c.measurements), fields: _mapFields(c.fields) };
 }
 
