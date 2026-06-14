@@ -1108,6 +1108,12 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
     // silent VersionSkewDetector / AuthContext crash on the client.
     const { validateResponse } = require('./lib/responseValidator');
     const { configSchema }     = require('./schemas/api');
+    // Per-account feature flags (lib/accountFeatures) — gates advanced product
+    // surfaces on the client with the same object the server resolves. Lean
+    // defaults (all OFF) so this never crashes /api/config for an account
+    // without override rows.
+    const { resolveAccountFeatures } = require('./lib/accountFeatures');
+    const accountFeatures = await resolveAccountFeatures(req.user?.accountId);
     const payload = {
       success: true,
       data: {
@@ -1116,6 +1122,7 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
         // v0.90.4: surface server's deployed version so the client can detect skew
         // between its baked-in build-id meta and reality. SPA polls this every 60s.
         servicecycleVersion: process.env.SERVICECYCLE_VERSION || null,
+        accountFeatures,
       },
     };
     res.json(validateResponse('/api/config', configSchema, payload, req));

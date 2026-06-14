@@ -33,6 +33,18 @@ const ALL_FEATURE_KEYS = [
   'communications', 'export', 'alerts',
 ];
 
+// ── Per-account feature flags (mirrors server/lib/accountFeatures.ts) ──────────
+// Distinct from the per-user features above: these gate whole product surfaces
+// per tenant (advanced ingest cards, QEMW wallet, arc-flash studies, enterprise
+// trust pack, and the full NETA test battery). Served on /api/config. Default
+// all-OFF (lean) so a surface only renders once the account explicitly enables
+// it — the same fail-closed posture the server uses.
+const ACCOUNT_FEATURE_KEYS = [
+  'dga_import', 'thermography_import', 'qemw_wallet',
+  'arc_flash_studies', 'enterprise_trust', 'neta_full_battery',
+];
+const ACCOUNT_FEATURE_DEFAULTS = Object.fromEntries(ACCOUNT_FEATURE_KEYS.map(k => [k, false]));
+
 /**
  * Computes the effective feature visibility for a user.
  * - featureFlags: what the admin has enabled (null = role defaults)
@@ -59,6 +71,8 @@ export function AuthProvider({ children }) {
   // banner renders for unauthenticated visitors too. We don't refresh on every
   // mount — the value flips only on operator action (env change + restart).
   const [demoMode, setDemoMode]             = useState(false);
+  // Per-account feature flags from /api/config (see ACCOUNT_FEATURE_DEFAULTS).
+  const [accountFeatures, setAccountFeatures] = useState(ACCOUNT_FEATURE_DEFAULTS);
   // Phase 4: AI provider name (env-set, server-exposed) for the consent modal.
   const [aiProvider, setAiProvider]         = useState('anthropic');
   // Pass-4 audit L3-07: current AI consent text version, surfaced by
@@ -93,6 +107,7 @@ export function AuthProvider({ children }) {
         } else if (key === 'config') {
           setAiEnabled(d?.aiEnabled !== false);
           if (d?.aiConfigured) setAiConfigured(true);
+          setAccountFeatures({ ...ACCOUNT_FEATURE_DEFAULTS, ...(d?.accountFeatures || {}) });
         }
       });
     } catch {
@@ -241,6 +256,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setOnboardingDone(true);
     setAiConfigured(false);
+    setAccountFeatures(ACCOUNT_FEATURE_DEFAULTS);
   };
 
   return (
@@ -261,6 +277,7 @@ export function AuthProvider({ children }) {
         dismissOnboarding,
         fetchAccountSettings,
         demoMode,
+        accountFeatures, // per-tenant surface gates (see ACCOUNT_FEATURE_DEFAULTS)
         aiProvider, // Phase 4: drives the consent modal's "<provider>" label
         aiConsentVersion, // Pass-4 audit L3-07: posted back on acknowledgment
       }}
