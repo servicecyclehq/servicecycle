@@ -134,4 +134,24 @@ describe('C1 verifier — multi-account chains + pending rows', () => {
   });
 });
 
+describe('C1 verifier — global (accountId=null) chain slice', () => {
+  function globalLine(id: string, ts: string, prev: string | null, action = 'login') {
+    const canonRow = { id, accountId: null, assetId: null, action, details: null, createdAt: ts };
+    const rowHash = verifier.computeRowHash(prev, verifier.canonical(canonRow));
+    return JSON.stringify({ id, ts, action, accountId: null, assetId: null, details: null, prevHash: prev, rowHash });
+  }
+  test('a gap in the global chain is NOT a break (continuity skipped for the slice)', () => {
+    const a = globalLine('g1', '2026-06-14T00:00:00.000Z', null);
+    const b = globalLine('g2', '2026-06-14T00:05:00.000Z', 'deadbeefnotlinked'); // prev points at a filtered-out row
+    const r = verifier.verifyLines([a, b]);
+    expect(r.ok).toBe(true);
+  });
+  test('a tampered global row IS a break (integrity is still checked)', () => {
+    const a = globalLine('g1', '2026-06-14T00:00:00.000Z', null);
+    const o = JSON.parse(a); o.action = 'TAMPERED';
+    const r = verifier.verifyLines([JSON.stringify(o)]);
+    expect(r.ok).toBe(false);
+  });
+});
+
 export {};

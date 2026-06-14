@@ -96,7 +96,20 @@ function verifyLines(lines) {
   }
 
   const breaks = [];
+  const notes = [];
   for (const [acct, rows] of groups) {
+    // Match the chain's construction order: (createdAt asc, id asc). The export
+    // sorts by createdAt only, so same-millisecond rows can arrive in a
+    // different order than they were chained; re-sort to remove that ambiguity.
+    rows.sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)));
+    // The global (accountId=null) chain holds cross-tenant events; an
+    // account-scoped export sees only the slice tied to this account's users, so
+    // its continuity legitimately has gaps and is NOT continuity-checkable here.
+    // We still verify the integrity (rowHash) of every global row.
+    const checkContinuity = acct !== "__global__";
+    if (!checkContinuity && rows.length) {
+      notes.push("global (accountId=null) chain: integrity verified; continuity skipped (account-scoped export sees only a slice of cross-tenant events)");
+    }
     let prevRowHash = null;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -104,13 +117,13 @@ function verifyLines(lines) {
       if (r.rowHash !== expected) {
         breaks.push({ accountId: acct, id: r.id, reason: "rowHash mismatch (row altered)" });
       }
-      if (i > 0 && (r.prevHash || null) !== prevRowHash) {
+      if (checkContinuity && i > 0 && (r.prevHash || null) !== prevRowHash) {
         breaks.push({ accountId: acct, id: r.id, reason: "prevHash does not link to previous row in this account chain (gap/insert/reorder)" });
       }
       prevRowHash = r.rowHash;
     }
   }
-  return { ok: breaks.length === 0, total: settled.length, pending: pending.length, chains: groups.size, breaks };
+  return { ok: breaks.length === 0, total: settled.length, pending: pending.length, chains: groups.size, breaks, notes };
 }
 
 function main(argv) {
@@ -135,6 +148,7 @@ function main(argv) {
   }
   const tail = `${result.total} settled rows across ${result.chains} account chain(s)` +
                (result.pending ? `, ${result.pending} pending (unsettled, not yet chained)` : "");
+  for (const n of (result.notes || [])) console.log("note: " + n);
   if (result.ok) {
     console.log(`OK - audit chain intact: ${tail}.`);
     process.exit(0);
