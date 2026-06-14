@@ -855,6 +855,12 @@ function seventyBInterval(t) {
   // bank, fuel analysis, full-system transfer, battery discharge, etc.)
   if (/monthly|exercise|load bank|fuel|full[ -]?system|discharge|quarterly|weekly|annual/.test(name)) return null;
   if ((t.c2 == null ? 99 : t.c2) <= 2) return null;  // sub-quarterly base = operational
+  // NFPA 70B:2023 Table 11.2 override: liquid-transformer insulating-fluid
+  // sampling/tests (DGA, oil quality, furan) run ANNUALLY (12/12/6), not on the
+  // general 60/36/12 electrical-testing cadence.
+  if (eq === 'TRANSFORMER_LIQUID' && /\boil\b|dga|dissolved gas|insulating fluid|furan/.test(name)) {
+    return { c1: 12, c2: 12, c3: 6 };
+  }
   const isThermo = code.includes('IR_THERMO') || /thermograph|infrared/.test(name);
   // NOTE: 'torque' removed from the visual test — per Table 9.2.2 mechanical /
   // torque work follows 60/36/12, not the annual visual cadence.

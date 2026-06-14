@@ -31,3 +31,13 @@ describe('Table 9.2.2 intervals', () => {
 });
 
 export {};
+describe('Table 11.2 transformer fluid-sampling override', () => {
+  const { seventyBInterval } = require('../../scripts/seed-standards');
+  test('DGA / oil sampling on liquid transformers is annual 12/12/6', () => {
+    expect(seventyBInterval({ equipmentType: 'TRANSFORMER_LIQUID', name: 'Dissolved gas analysis (DGA) oil sample', code: 'XFMR_DGA', c2: 12 })).toEqual({ c1: 12, c2: 12, c3: 6 });
+    expect(seventyBInterval({ equipmentType: 'TRANSFORMER_LIQUID', name: 'Oil quality screen', code: 'XFMR_OIL_QUALITY', c2: 12 })).toEqual({ c1: 12, c2: 12, c3: 6 });
+  });
+  test('non-fluid transformer electrical tests stay on 60/36/12', () => {
+    expect(seventyBInterval({ equipmentType: 'TRANSFORMER_LIQUID', name: 'Turns ratio (TTR) test', code: 'XFMR_TTR', c2: 36 })).toEqual({ c1: 60, c2: 36, c3: 12 });
+  });
+});
