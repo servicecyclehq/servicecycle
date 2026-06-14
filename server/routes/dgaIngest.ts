@@ -98,7 +98,7 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
           co2: gases.co2 ?? null, o2: gases.o2 ?? null, n2: gases.n2 ?? null,
           ieeeStatus: evaluation.ieeeStatus, faultCode: evaluation.faultCode,
           resultRating: evaluation.resultRating,
-          notes: `[ingest:dga] TDCG ${Math.round(evaluation.tdcg)} ppm; IEEE C57.104 Condition ${evaluation.overallCondition}${evaluation.faultLabel ? `; ${evaluation.faultLabel}` : ''}.`,
+          notes: `[ingest:dga] TDCG ${Math.round(evaluation.tdcg)} ppm; IEEE C57.104 legacy 4-condition screen (estimate) — Condition ${evaluation.overallCondition}${evaluation.faultLabel ? `; ${evaluation.faultLabel}` : ''}.`,
         },
         select: { id: true, sampleDate: true, ieeeStatus: true, faultCode: true, resultRating: true },
       });
@@ -109,7 +109,7 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
         await tx.deficiency.create({
           data: {
             accountId: req.user.accountId, assetId: asset.id, severity: sev as any,
-            description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}.`,
+            description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104 legacy 4-condition screen, estimate) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}.`,
             correctiveAction: evaluation.overallCondition >= 4
               ? 'Investigate immediately — schedule retest and electrical/internal inspection.'
               : 'Increase DGA sampling frequency and trend the key gases.',

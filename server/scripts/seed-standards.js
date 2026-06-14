@@ -64,7 +64,7 @@ const STANDARDS = [
   { code: 'NFPA 110',       edition: '2022', publisher: 'NFPA', title: 'Standard for Emergency and Standby Power Systems',              keyMandate: 'Generator monthly exercise, annual load bank, 3yr full test',      revisionCycle: '3yr' },
   { code: 'NETA MTS',       edition: '2023', publisher: 'NETA', title: 'Standard for Maintenance Testing Specifications',               keyMandate: 'Per-equipment test intervals (Appendix B matrix)',                 revisionCycle: '~4yr' },
   { code: 'NETA ATS',       edition: '2025', publisher: 'NETA', title: 'Standard for Acceptance Testing Specifications',                keyMandate: 'Acceptance testing on new installations',                          revisionCycle: '~4yr' },
-  { code: 'IEEE C57.104',   edition: '2019', publisher: 'IEEE', title: 'Guide for the Interpretation of Gases Generated in Mineral Oil-Immersed Transformers', keyMandate: 'DGA interpretation for liquid-filled transformers', revisionCycle: 'irregular' },
+  { code: 'IEEE C57.104',   edition: '2019', publisher: 'IEEE', title: 'Guide for the Interpretation of Gases Generated in Mineral Oil-Immersed Transformers', keyMandate: 'DGA interpretation — platform applies the LEGACY four-condition/TDCG screen (1991/2008 method); full C57.104-2019 percentile/O2:N2 model pending NETA-certified review', revisionCycle: 'irregular' },
   { code: 'IEEE 43',        edition: '2013', publisher: 'IEEE', title: 'Recommended Practice for Testing Insulation Resistance of Electric Machinery',         keyMandate: 'Insulation resistance for motors/generators',       revisionCycle: 'irregular' },
   { code: 'OSHA 1910-S',    edition: 'current', publisher: 'OSHA', title: '29 CFR 1910 Subpart S — Electrical',                          keyMandate: 'Fines $16,550/violation (serious), $165,514 (willful)',            revisionCycle: 'ongoing' },
   // ── Second wave (2026-06-07) ───────────────────────────────────────────────
@@ -127,10 +127,10 @@ const TASKS = [
   // ── TRANSFORMER_LIQUID ─────────────────────────────────────────────────────
   {
     code: 'XFMR_DGA', equipmentType: 'TRANSFORMER_LIQUID', name: 'Dissolved gas analysis (DGA) oil sample',
-    standardKey: 'IEEE C57.104', ref: 'IEEE C57.104-2019 / NFPA 70B:2023 §22.6',
+    standardKey: 'IEEE C57.104', ref: 'IEEE C57.104 (legacy 4-condition screen) / NFPA 70B:2023 §22.6',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: false, requiresOutage: false, neta: false, netaLevel: null,
-    description: 'Sample under normal load; lab analysis of H2/CH4/C2H2/C2H4/C2H6/CO/CO2 per IEEE C57.104 interpretation.',
+    description: 'Sample under normal load; lab analysis of H2/CH4/C2H2/C2H4/C2H6/CO/CO2. ServiceCycle scores it with the LEGACY four-condition/TDCG screen — an estimate, not the C57.104-2019 percentile method. [VERIFY against current edition]',
   },
   {
     code: 'XFMR_OIL_QUALITY', equipmentType: 'TRANSFORMER_LIQUID', name: 'Oil quality screen',
@@ -182,7 +182,7 @@ const TASKS = [
     standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.4.2.3 (required when monthly runs miss 30% loading)',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: false, netaLevel: null,
-    description: 'Supplemental load bank: 50% kW × 30min + 75% kW × 60min (continuous 90 min total).',
+    description: 'Supplemental load bank (NFPA 110:2022 §8.4.2.3 profile): 25% kW × 30min, 50% kW × 30min, 75% kW × 60min (two-hour stepped sequence). NOTE: the 2025 edition changed this to 50%×30 + 75%×60; verify against the edition in force.',
   },
   {
     code: 'GEN_FULL_SYSTEM_TEST', equipmentType: 'GENERATOR', name: '3-year full system test',

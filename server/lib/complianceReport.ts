@@ -677,7 +677,32 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
 
   const uncoveredCount = uncoveredAssets.length;
   const empGapCount = empGaps.length;
-  const denom = current + overdue + unbaselined + uncoveredCount + empGapCount;
+
+  // Weight each uncovered asset by the number of tasks its 70B template would
+  // create (global + account task definitions for its equipmentType). Without
+  // this, an uncovered asset counts as ONE gap but applying its template turns
+  // it into N unbaselined gaps — so a good action (apply template) would
+  // paradoxically DROP the overall rate. Weighting it N up front makes that
+  // step score-neutral; baselining each task is what then earns the points.
+  const uncoveredWeightByAsset = new Map();
+  let uncoveredWeight = uncoveredCount;
+  if (uncoveredCount > 0) {
+    const types = [...new Set(uncoveredAssets.map((a) => a.equipmentType).filter(Boolean))];
+    const tdGroups = types.length > 0 ? await prisma.maintenanceTaskDefinition.groupBy({
+      by: ['equipmentType'],
+      where: { equipmentType: { in: types }, OR: [{ accountId: null }, { accountId }] },
+      _count: { _all: true },
+    }) : [];
+    const sizeByType = new Map<string, number>(tdGroups.map((g: any) => [g.equipmentType, Number(g._count?._all) || 0]));
+    uncoveredWeight = 0;
+    for (const a of uncoveredAssets) {
+      const w = Math.max(1, sizeByType.get(a.equipmentType) || 1);
+      uncoveredWeightByAsset.set(a.id, w);
+      uncoveredWeight += w;
+    }
+  }
+
+  const denom = current + overdue + unbaselined + uncoveredWeight + empGapCount;
   const overallRate = denom > 0 ? Math.round((current / denom) * 1000) / 10 : 100;
   const pointPerUnit = denom > 0 ? Math.round((100 / denom) * 10) / 10 : 0;
 
@@ -750,7 +775,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
       criticalityScore: a.criticalityScore,
       title: `${gapAssetLabel(a)} has no maintenance program — apply its NFPA 70B task set`,
       standardRef: null,
-      pointsRecovered: pointPerUnit,
+      pointsRecovered: Math.round(pointPerUnit * (uncoveredWeightByAsset.get(a.id) || 1) * 10) / 10,
       action: { type: 'apply_template', assetId: a.id },
       sortKey: [2, 0, -(a.criticalityScore || 0)],
     });

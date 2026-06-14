@@ -26,10 +26,15 @@ export function severityForDeltaT(deltaT: number, reference: DeltaReference = 's
   if (!Number.isFinite(d) || d <= 0) return { priority: 4, severity: null, label: 'No measurable rise' };
 
   if (reference === 'ambient') {
-    // NETA over-ambient bands.
+    // NETA Table 100.18 over-ambient-air bands:
+    //   1-10 C  possible deficiency, investigate            (ADVISORY)
+    //   11-20 C probable deficiency, repair as time permits (RECOMMENDED)
+    //   21-40 C monitor until corrective measures           (ADVISORY / monitor)
+    //   >40 C   major discrepancy, repair immediately       (IMMEDIATE)
     if (d > 40) return { priority: 1, severity: 'IMMEDIATE', label: 'Major discrepancy — repair immediately' };
-    if (d > 20) return { priority: 2, severity: 'RECOMMENDED', label: 'Monitor / repair as time permits' };
-    if (d >= 1) return { priority: 3, severity: 'ADVISORY', label: 'Possible deficiency — investigate' };
+    if (d >= 21) return { priority: 3, severity: 'ADVISORY', label: 'Monitor until corrective measures' };
+    if (d >= 11) return { priority: 2, severity: 'RECOMMENDED', label: 'Probable deficiency — repair as time permits' };
+    if (d >= 1) return { priority: 4, severity: 'ADVISORY', label: 'Possible deficiency — investigate' };
     return { priority: 4, severity: null, label: 'Within normal range' };
   }
 

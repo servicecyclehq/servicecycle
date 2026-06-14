@@ -49,10 +49,11 @@ describe('#29 severityForDeltaT (NETA Table 100.18)', () => {
     expect(severityForDeltaT(25).severity).toBe('IMMEDIATE');
     expect(severityForDeltaT(0).severity).toBeNull();
   });
-  test('over-ambient bands', () => {
-    expect(severityForDeltaT(50, 'ambient').severity).toBe('IMMEDIATE');
-    expect(severityForDeltaT(25, 'ambient').severity).toBe('RECOMMENDED');
-    expect(severityForDeltaT(5, 'ambient').severity).toBe('ADVISORY');
+  test('over-ambient bands (NETA Table 100.18)', () => {
+    expect(severityForDeltaT(50, 'ambient').severity).toBe('IMMEDIATE');   // >40
+    expect(severityForDeltaT(25, 'ambient').severity).toBe('ADVISORY');    // 21-40 monitor
+    expect(severityForDeltaT(15, 'ambient').severity).toBe('RECOMMENDED'); // 11-20 repair as time permits
+    expect(severityForDeltaT(5, 'ambient').severity).toBe('ADVISORY');     // 1-10 possible
   });
 });
 
