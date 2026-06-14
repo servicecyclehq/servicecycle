@@ -148,7 +148,7 @@ async function buildStandardsSummary(prisma, accountId, { siteId = null } = {} a
     where: {
       accountId,
       isActive: true,
-      asset: { archivedAt: null, ...(siteId ? { siteId } : {}) },
+      asset: { archivedAt: null, inService: true, ...(siteId ? { siteId } : {}) },
     },
     select: {
       id:          true,
@@ -254,7 +254,7 @@ async function buildStandardReport(prisma, accountId, { standardCode, siteId = n
     where: {
       accountId,
       taskDefinition: taskDefinitionFilter,
-      asset: { archivedAt: null, ...(siteId ? { siteId } : {}) },
+      asset: { archivedAt: null, inService: true, ...(siteId ? { siteId } : {}) },
     },
     select: {
       id:                true,
@@ -415,7 +415,7 @@ async function buildOverdueReport(prisma, accountId, { siteId = null } = {} as a
   const site = await resolveSite(prisma, accountId, siteId);
   const now  = new Date();
 
-  const assetScope = { archivedAt: null, ...(siteId ? { siteId } : {}) };
+  const assetScope = { archivedAt: null, inService: true, ...(siteId ? { siteId } : {}) };
 
   const [schedules, deficiencies] = await Promise.all([
     prisma.maintenanceSchedule.findMany({
