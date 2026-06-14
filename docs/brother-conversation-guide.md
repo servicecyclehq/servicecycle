@@ -21,6 +21,14 @@ Context for why: the PDF parser is live but it's only been tuned on reports **we
 **1. "Can you get me 5–10 real test reports — PowerDB, Megger, whatever actually leaves your shop? Black out customer names, I don't care. The app reads these now, but I've only tested it on samples we made ourselves. I need real ones to break it."**
 → The golden corpus. Single most valuable thing he can hand over. If he agrees, nail down the *how* (email? Drive folder?) before the call ends.
 
+**1b. "Does your shop have licensed copies of the standards? If so, I need the actual PDFs/docs for four specific ones — the app estimates compliance against these and I want to calibrate it to the real tables instead of summaries."**
+→ This unblocks getting the compliance math from "estimate" to "correct." We default to whatever he can send (PDF/doc); do NOT make him fill out a sheet. The four we need, in priority order:
+  1. **NETA MTS-2023 — Appendix B** (the maintenance-test frequency matrix). Drives ~30 of our equipment-test intervals that are currently best-effort encodings.
+  2. **IEEE C57.104-2019** — the DGA interpretation tables (status limits, the 90th/95th-percentile values, the O₂/N₂-ratio split, rate-of-change tables). *Easier alternative:* a couple of his oil lab's actual DGA reports (SDMyers/Doble usually print the exact thresholds they score against).
+  3. **NFPA 70B-2023 — Table 9.2.2** (the condition-of-maintenance interval columns) — to verify our per-equipment C1/C2/C3 month values, incl. the grounding row we're holding.
+  4. **NFPA 110-2022 — §8.4** testing intervals (confirms the load-bank profile fix).
+→ Full provenance/error list is in docs/research/2026-06-14-standards-accuracy-review.md. With these in hand we do a second correction pass; without them, the DGA-2019 rebuild + the ~30 NETA App-B intervals stay flagged "estimate."
+
 **2. "When PowerDB finishes a job, can you export the actual data — CSV, XML, the database file — or is the PDF the only thing that ever leaves the building?"**
 → Decides whether we keep hardening PDF extraction or build a structured-import side door that's 10× more reliable. (Same question for Doble/OMICRON if he mentions them.)
 

@@ -97,9 +97,12 @@ RESULT_TOKENS = {
 }
 
 _UNIT_NORM = [
-    (re.compile(r"^(m\s?ohm|mohm|megohm|mΩ|meg)", re.I), "MΩ"),
-    (re.compile(r"^(u\s?ohm|uohm|µΩ|micro)", re.I), "µΩ"),
-    (re.compile(r"^(milliohm|mΩ)$", re.I), "mΩ"),
+    (re.compile(r"^(u\s?ohm|uohm|uΩ|µΩ|micro)", re.I), "µΩ"),
+    # milli -- CASE-SENSITIVE lowercase m, BEFORE the mega rule, so a milliohm
+    # reading is never normalized up to megohm (a 1e9 error). 'mohm'/'mΩ'
+    # (lowercase) and 'milliohm' map to mΩ; capital 'M...' falls through to mega.
+    (re.compile(r"^(milliohm|mΩ|m\s?ohm|mohm)$"), "mΩ"),
+    (re.compile(r"^(M\s?Ω|MΩ|Mohm|megohm|meg)", re.I), "MΩ"),
     (re.compile(r"^(k\s?ohm|kohm|kΩ)", re.I), "kΩ"),
     (re.compile(r"^(ohm|Ω)$", re.I), "Ω"),
     (re.compile(r"ppm", re.I), "ppm"),

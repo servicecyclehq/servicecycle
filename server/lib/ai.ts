@@ -62,7 +62,17 @@ const groqProvider        = require('./aiProviders/groq');
 
 function resolveSettings(settings: any = {}) {
   const provider = (settings.provider || process.env.AI_PROVIDER || 'anthropic').toLowerCase();
-  const apiKey   = settings.apiKey   || process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY;
+  // Provider-aware key resolution: read the conventionally-named env var for the
+  // active provider first (so a key set as GEMINI_API_KEY / GROQ_API_KEY / etc.
+  // is actually used), then fall back to the generic AI_API_KEY / ANTHROPIC_API_KEY.
+  const PROVIDER_KEY_ENV: any = {
+    gemini:       process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
+    groq:         process.env.GROQ_API_KEY,
+    openai:       process.env.OPENAI_API_KEY,
+    anthropic:    process.env.ANTHROPIC_API_KEY,
+    azure_openai: process.env.AZURE_OPENAI_API_KEY,
+  };
+  const apiKey = settings.apiKey || PROVIDER_KEY_ENV[provider] || process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY;
 
   const DEFAULT_MODELS = {
     cloudflare:   undefined, // resolved per-task by cloudflare.js

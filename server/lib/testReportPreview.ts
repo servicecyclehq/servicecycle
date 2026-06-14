@@ -135,12 +135,20 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   let aiUsed = false;
   let aiAdded = 0;
   const MIN_READINGS = Number(process.env.AI_INGEST_MIN_READINGS || 8);
+  // Fill any header field the deterministic parser missed from AI/vision output.
+  const mergeMeta = (f: any) => {
+    if (!f) return;
+    for (const k of ['serialNumber', 'manufacturer', 'model', 'testDate', 'vendor', 'techName']) {
+      if (!meta[k] && f[k]) meta[k] = f[k];
+    }
+  };
   const lowCoverage = source === 'pdfjs' || measurements.length < MIN_READINGS;
   if (process.env.AI_ENABLED !== 'false' && lowCoverage) {
     try {
       const aiText = await extractPdfText(buffer);
       if (aiText && aiText.trim().length > 60) {
         const filled = await aiFillReadings(aiText);
+        if (filled.ok) mergeMeta(filled.fields);
         if (filled.ok && filled.measurements.length) {
           const seen = new Set(measurements.map((m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`));
           for (const m of filled.measurements) {
@@ -172,6 +180,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   if (process.env.AI_ENABLED !== 'false' && photoOfPaper && measurements.length < MIN_READINGS) {
     try {
       const vres = await aiFillReadingsFromImage(inputBuffer, { mediaType: opts.mimetype });
+      if (vres.ok) mergeMeta(vres.fields);
       if (vres.ok && vres.measurements.length) {
         const seen = new Set(measurements.map((m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`));
         for (const m of vres.measurements) {
