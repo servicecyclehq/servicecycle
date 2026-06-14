@@ -872,6 +872,24 @@ router.put('/measurements/:mid', requireManager, async (req, res) => {
       data: updateData,
     });
 
+    // Forensics: a committed reading is evidence. Record the before/after of any
+    // edit in the tamper-evident audit chain so a value can never be changed
+    // silently (point-in-time reconstruction: what was the reading, who changed
+    // it, when). Fire-and-forget — never breaks the write.
+    try {
+      const _wo = await prisma.workOrder.findUnique({ where: { id: measurement.workOrderId }, select: { assetId: true } });
+      const before: any = {};
+      for (const k of Object.keys(updateData)) {
+        const v = (measurement as any)[k];
+        before[k] = (v && typeof v === 'object' && typeof v.toNumber === 'function') ? v.toNumber() : (v ?? null);
+      }
+      writeActivityLog({
+        userId: req.user.id, accountId: req.user.accountId, assetId: _wo?.assetId ?? null,
+        action: 'measurement_updated',
+        details: { measurementId: measurement.id, workOrderId: measurement.workOrderId, before, after: updateData },
+      });
+    } catch { /* audit logging must never break the write */ }
+
     res.json({ success: true, data: { measurement: updated } });
   } catch (err) {
     console.error('Update measurement error:', err);
@@ -887,7 +905,25 @@ router.delete('/measurements/:mid', requireManager, async (req, res) => {
     });
     if (!measurement) return res.status(404).json({ success: false, error: 'Measurement not found' });
 
+    const _wo = await prisma.workOrder.findUnique({ where: { id: measurement.workOrderId }, select: { assetId: true } });
     await prisma.testMeasurement.delete({ where: { id: measurement.id } });
+
+    // Forensics: deleting a reading (evidence) must leave a trail of the deleted
+    // values in the tamper-evident audit chain so a reading can never vanish
+    // without a record. Fire-and-forget.
+    const _num = (v: any) => (v && typeof v === 'object' && typeof v.toNumber === 'function') ? v.toNumber() : (v ?? null);
+    writeActivityLog({
+      userId: req.user.id, accountId: req.user.accountId, assetId: _wo?.assetId ?? null,
+      action: 'measurement_deleted',
+      details: {
+        measurementId: measurement.id, workOrderId: measurement.workOrderId,
+        deleted: {
+          measurementType: measurement.measurementType, phase: measurement.phase,
+          asFoundValue: _num(measurement.asFoundValue), asFoundUnit: measurement.asFoundUnit,
+          asLeftValue: _num(measurement.asLeftValue), passFail: measurement.passFail,
+        },
+      },
+    });
     res.json({ success: true });
   } catch (err) {
     console.error('Delete measurement error:', err);
