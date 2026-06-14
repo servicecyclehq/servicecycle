@@ -382,11 +382,11 @@ export default function NewAsset() {
 
       const applyTemplate = await confirm({
         title: templateApplied
-          ? `Apply the standard program too?`
-          : 'Apply the starting maintenance program?',
+          ? `Apply the industry-standard program too?`
+          : 'Apply the industry-standard maintenance program?',
         message: templateApplied
-          ? `The template "${templateApplied.name}" has already applied ${templateTaskIds.length} task(s). Apply the standard starting program for this equipment type on top?`
-          : 'This pairs the asset with a lean starting PM program for its equipment type (clean / lube / insulation-resistance "megger" / visual, plus IR and routine tests). These are starting defaults — adjust each interval to the manufacturer and your program. You can add or remove schedules later; re-running is safe — existing pairings are kept.',
+          ? `The template "${templateApplied.name}" has already applied ${templateTaskIds.length} task(s). Apply the industry-standard maintenance program (NFPA 70B) for this equipment type on top?`
+          : 'This pairs the asset with its industry-standard maintenance program (NFPA 70B) — inspection, cleaning, lubrication, insulation-resistance ("megger"), and infrared scanning, sized to this equipment type. Manufacturer instructions take precedence, so adjust each interval to the OEM and your program. Customers who require more extensive testing can enable the extended (NETA) battery. You can add or remove schedules later; re-running is safe — existing pairings are kept.',
         confirmLabel: 'Apply program',
         cancelLabel: 'Skip for now',
       });

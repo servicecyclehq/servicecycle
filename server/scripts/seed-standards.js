@@ -11,15 +11,18 @@
  *   node server/scripts/seed-standards.js          — CLI
  *   const { seedStandards } = require(...);        — programmatic
  *
- * ── STARTING DEFAULTS, NOT AUTHORITY ───────────────────────────────────────
- * This matrix is a labeled STARTING DEFAULT — adjust to the manufacturer's
- * recommended procedure and your facility's program. NFPA 70B defers routine
- * intervals to the manufacturer's manual + the EMP, so each asset's interval
- * is an editable default (PUT /api/schedules/:id conditionOverride / lead
- * times), not a fixed mandate. By default a new asset gets the LEAN PM program
- * (clean / lube / insulation-resistance "megger" / visual + IR + routine
- * operational tests); the full NETA test battery is opt-in per account
- * (neta_full_battery flag, lib/leanProgram + lib/accountFeatures).
+ * ── INDUSTRY-STANDARD REQUIREMENTS, ADJUSTABLE ─────────────────────────────
+ * This matrix is the INDUSTRY-STANDARD maintenance program (NFPA 70B:2023,
+ * the per-equipment chapters 11-38), condition-based per Table in Ch 9. It is
+ * an editable default, NOT a fixed mandate: NFPA 70B itself defers to the
+ * MANUFACTURER's recommended procedure when available, so each asset's interval
+ * is adjustable (PUT /api/schedules/:id conditionOverride / lead times) to the
+ * OEM manual + the facility's EMP. By default a new asset gets the industry-
+ * standard 70B program (inspection / clean / lube / insulation-resistance
+ * "megger" / IR + the routine operational tests). More EXTENSIVE testing — the
+ * full NETA MTS test battery — is the optional, customer-required layer ABOVE
+ * the 70B program, opt-in per account (neta_full_battery flag, lib/leanProgram
+ * + lib/accountFeatures).
  *
  * ── PROVENANCE / REVIEW NOTE (read before trusting the numbers) ─────────────
  * Intervals encode the NFPA 70B:2023 condition-of-maintenance model:

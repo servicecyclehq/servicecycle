@@ -1,14 +1,15 @@
 /**
  * lib/leanProgram.ts
  *
- * Splits the seeded NFPA 70B / NETA task matrix into the LEAN PM program
- * (clean / lube / insulation-resistance "megger" / visual, plus annual IR
- * thermography and the routine mandate-fixed operational tests) and the full
- * NETA test battery -- the high-cost, occasional, de-energized specialized
- * tests: contact/connection/pole resistance, breaker trip tests, relay
- * calibration & injection, TTR / SFRA / PD / winding resistance, MV cable
- * VLF & shield continuity, ground-resistance, surge-arrester leakage, and
- * GFP performance / coordination.
+ * Splits the seeded task matrix into the INDUSTRY-STANDARD program (NFPA 70B:
+ * inspection / clean / lube / insulation-resistance "megger" / visual, plus
+ * annual IR thermography and the routine mandate-fixed operational tests) and
+ * the EXTENDED testing layer -- the optional, customer-required NETA MTS test
+ * battery of high-cost, occasional, de-energized specialized tests: contact/
+ * connection/pole resistance, breaker trip tests, relay calibration & injection,
+ * TTR / SFRA / PD / winding resistance, MV cable VLF & shield continuity,
+ * ground-resistance, surge-arrester leakage, and GFP performance / coordination.
+ * (Code symbols keep the "lean" / "neta_full_battery" names for compatibility.)
  *
  * NFPA 70B defers routine intervals to the manufacturer procedure: the lean
  * program is what a PM tech does every visit, while the NETA battery is the

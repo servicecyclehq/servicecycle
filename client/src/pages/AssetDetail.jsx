@@ -624,8 +624,8 @@ export default function AssetDetail() {
 
   async function handleApplyTemplate() {
     if (!await confirm({
-      title: 'Apply the starting maintenance program?',
-      message: 'Adds a lean starting PM program for this equipment type (clean / lube / insulation-resistance "megger" / visual, plus IR and routine tests). These are starting defaults — adjust each interval to the manufacturer and your program. Existing schedules are kept — the operation is idempotent.',
+      title: 'Apply the industry-standard maintenance program?',
+      message: 'Adds this equipment type\'s industry-standard maintenance program (NFPA 70B) — inspection, cleaning, lubrication, insulation-resistance ("megger"), and infrared scanning. Manufacturer instructions take precedence, so adjust each interval to the OEM and your program. Customers who require more extensive testing can enable the extended (NETA) battery. Existing schedules are kept — the operation is idempotent.',
       confirmLabel: 'Apply program',
     })) return;
     // Snapshot the current schedule ids so the success toast can name exactly
