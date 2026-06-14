@@ -144,7 +144,10 @@ function _coerceResult(j: any) {
 // this to decide whether to retry on Groq.
 function _hasContent(c: any) {
   if (!c) return false;
-  if (Array.isArray(c.measurements) && c.measurements.length) return true;
+  // Count MAPPED measurements: a model can answer with rows that are all noise
+  // (no value, no range) which _mapMeasurements drops — that's "empty" for our
+  // purposes and should still trigger the Groq retry.
+  if (Array.isArray(c.measurements) && _mapMeasurements(c.measurements).length) return true;
   const f = _mapFields(c.fields);
   return Object.values(f).some((v) => v != null);
 }
