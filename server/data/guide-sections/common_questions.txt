@@ -1,0 +1,36 @@
+# Common questions answered
+
+Direct templates when the user's question matches.
+
+**"Why did the cancel-by date change?"**
+You probably edited `endDate`, `autoRenewalNoticeDays`, or flipped `autoRenewal`. The cancel-by is computed from those three fields; any change recalculates it. See `server/utils/dates.js::calculateCancelByDate`.
+
+**"Why is the review-by date so far out / so close in?"**
+The review-by is tiered by contract value. $100K+ → 180 days. $25K–$100K → 90 days. Under $25K → 30 days. Missing cost data → 60 days as a safe default. If the date looks wrong, check `costPerLicense` and `quantity` — they drive the tier. These tiers are the defaults; an admin can edit the breakpoints and the days per tier in Settings → General → Evaluation Lead Times, so an account may be using custom values.
+
+**"What do the green / amber / red contract colors mean?"**
+They reflect renewal urgency against the review-by (Evaluate-By) date, using one shared model across the contract header, the Key Dates chip, and the list-view day chips. Green = before the Evaluate-By date (on track). Amber = inside the Evaluate-By window (time to start the renewal). Red = 30 days or fewer to the end date, or overdue. Non-active contracts show neutral. Because the Evaluate-By date is value-tiered and those tiers are configurable in Settings → General → Evaluation Lead Times, changing the lead times moves when a contract turns amber.
+
+**"How do I import 200 contracts at once?"**
+Two paths. The CSV importer in `/settings` → Imports lets you map columns from your source spreadsheet to LapseIQ fields, save the mapping, and run it. The AI ingest pipeline at `/ingest` handles one document at a time but can run dozens in a session — drop them in, batch-approve high-confidence rows. For 200 spreadsheet rows, CSV is faster; for 200 PDFs of varying shape, AI ingest is the only reasonable path.
+
+**"Why didn't I get the alert email?"**
+Three things to check. (1) Your alert preference for that type — `/alerts`, scroll to Preferences. If `emailEnabled` is false, no mail goes out. (2) Whether `EMAIL_MOCK=true` is set on the instance — if so, alerts log to the server console instead of sending. (3) Whether a Resend API key and `EMAIL_FROM` are configured — without both, sending is skipped with a warning.
+
+**"Can I see all the contracts for one vendor?"**
+Yes — go to `/vendors/:id`. The Contracts tab on the vendor detail lists every contract attached to that vendor, with totals and a renewal cluster view if any contracts share a `coTermGroup`.
+
+**"How do I change the AI provider?"**
+Settings → AI & Extraction (admin only). Pick the provider, paste the API key, save. Or set `AI_PROVIDER` and `AI_API_KEY` in `.env` and restart. The full env-var matrix is documented at the top of `server/lib/ai.js`.
+
+**"What's the difference between an admin and a manager?"**
+Admins manage users, settings, custom fields, and consultant access. Managers do the renewal work — full read/write on contracts and vendors, can run Executive Spend reports, can't change account-level settings. Fastest mental model: managers do the work, admins configure the box.
+
+**"Why can't I edit this contract?"**
+Most likely you're a viewer (read-only) or a consultant (read-only with attribution). If you're a manager and you still can't edit, check whether the instance is in demo mode — `DEMO_MODE=true` blocks several mutation paths to keep the sandbox stable. Exact blocked operations: `server/middleware/demoGuard.js`.
+
+**"How do I track savings?"**
+On the contract detail, fill in `originalAsk` (the vendor's first quote) and `finalNegotiatedPrice` (what you actually paid). The dashboard YTD savings rollup picks up the delta. The negotiation log is where you record *how* you got there — back-and-forth, leverage points, concessions.
+
+**"What does the demo banner mean?"**
+You're on a `DEMO_MODE=true` instance. Most destructive actions are blocked, AI calls are capped at 2 per user per day, and the data resets nightly at 03:30. The instance is for evaluation only; install your own copy via the one-line installer for real use. Details: `docs/install.md`.

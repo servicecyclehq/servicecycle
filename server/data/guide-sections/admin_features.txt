@@ -1,0 +1,95 @@
+# Vendor news, activity log, CSV import/export, co-term groups, custom fields, backup, setup, 2FA, consultant, settings
+
+## Vendor news scanner
+
+**UI:** `/news` (full feed with vendor and watch-term filters). News badges on the vendor list and detail.
+**Engine:** `server/lib/newsScanner.js`. **Schema:** `VendorNews`, `UserNewsRead`, `UserNewsWatch`.
+
+A 6-hour cron polls curated RSS feeds: security publications, general tech press, channel publications, cloud-vendor blogs, business news, and 20 official status pages (AWS, Azure, GCP, Salesforce, Slack, Zoom, GitHub, Atlassian, Datadog, Okta, Snowflake, MongoDB, Zendesk, Cloudflare, ServiceNow, CrowdStrike, Palo Alto Networks, Box, Dropbox, DocuSign).
+
+Status-page items use a separate forced-vendor-attribution path because the article body never names the vendor — the scanner's `forceVendorTerms` config in the feed registry does the attribution.
+
+Articles are matched against vendor names stored in the account, then classified by the configured AI provider into one of: `security`, `outage`, `acquisition`, `pricing`, `new_feature`, `eol`, `legal`, or `general`. The classification path goes through the same `lib/ai.js` abstraction the rest of the AI features use. Each user can add up to 20 watch terms (`UserNewsWatch`).
+
+Read state is per-user (`UserNewsRead`). Set `NEWS_SCANNER_ENABLED=false` for an air-gapped deployment.
+
+## Activity log
+
+**UI:** `/activity` (manager/admin), per-contract feed on `/contracts/:id`.
+**Schema:** `ActivityLog`. **Lib:** `server/lib/activityLog.js`. **Pruning:** `server/lib/activityLogPrune.js`.
+
+Append-only audit trail. Status changes, field edits, document uploads, brief generations, owner assignments, checklist updates, consultant-access grants and revokes, custom field changes — every meaningful mutation writes a row. Security events (`login_failed`, `permission_denied`, `document_accessed`) captured with IP and reason where applicable.
+
+Configurable retention (`ACTIVITY_LOG_RETENTION_DAYS`, default 365) with a nightly prune at 03:00. The prune is logged itself.
+
+## CSV import / export
+
+**UI:** Imports tab in `/settings` (admin), Export button on `/contracts`.
+**API:** `server/routes/contracts.js` exposes `/export` with `?ids=` filtering plus the same query params as the list (`status`, `vendorId`, `search`).
+
+Repeatable column mappings let an admin save a profile per source spreadsheet. Custom contract fields are included in CSV exports, with the value coerced from the underlying text storage to its declared type. Every cell goes through formula-injection sanitization (the `=`, `+`, `-`, `@`, `\t`, `\r` prefixes that some spreadsheet apps treat as formulas).
+
+## Co-term groups
+
+**Schema:** `Contract.coTermGroup` (free-text identifier).
+**UI:** Grouped view in `/contracts`. **API:** `GET /api/contracts/coterm-summary`.
+
+A free-text identifier shared across contracts that should be negotiated as one event — for example, "Microsoft Q4 2027" or "Adobe FY26." Contracts sharing the same `coTermGroup` value belong to the same group. The summary endpoint surfaces combined renewal value and the cluster shape.
+
+This is *separate* from the vendor-level `cotermComplexity` rating, which describes how a vendor handles co-terms in general.
+
+## Custom fields
+
+**Admin UI:** `/settings` → Custom Fields tab.
+**API:** `server/routes/customFields.js`. **Schema:** `CustomFieldDefinition`, `CustomFieldValue`.
+
+Admin-defined fields that show up on every contract form. Six types: `text`, `textarea`, `number`, `date`, `checkbox`, `select`. Each definition has a display label (`name`), a slug (`fieldKey`, unique per account), help text, a required flag, options for select fields, and a display order. Soft-delete (`archivedAt`) — retiring a field doesn't lose existing values.
+
+Custom field values are stored as text and coerced to native type at the application boundary on read. Custom fields are included in CSV exports.
+
+## Backup
+
+**UI:** `/settings` → Storage & Backup. **API:** `server/routes/backup.js`. **Lib:** `server/lib/backup.js`, `server/lib/backupCrypto.js`.
+
+A nightly cron at 02:00 runs `pg_dump`, gzips the output, optionally wraps it in AES-256-GCM (when `BACKUP_ENCRYPTION=true`), and writes it to either local disk or an S3-compatible bucket. Each run logs to `BackupLog` (status, filename, size, storage key, error if any, manual or cron trigger). Decryption recovery script: `server/scripts/decrypt-backup.js`.
+
+Retention prune (`BACKUP_LOG_RETENTION_DAYS`, default 180) runs at 03:15.
+
+## Setup wizard, onboarding, feature flags
+
+**Setup wizard:** `/setup` (pre-auth, only reachable on a fresh instance). `server/routes/setup.js` + `client/src/pages/SetupWizardPage.jsx`. Four steps: account creation, email config, AI provider config, done. Until the wizard finishes, every `/api/*` request except `/api/health` and the setup endpoints themselves returns `503 needsSetup:true`. SPA redirects to `/setup`.
+
+**In-app onboarding:** `client/src/components/OnboardingWizard.jsx`. Post-login overlay for new admins. Per-user `onboardingDone` flag.
+
+**Feature flags:** `server/lib/featureFlags.js`. Ten admin-controlled per-user flags: `contracts_write`, `vendors_write`, `renewal_brief`, `contract_flags`, `communications`, `export`, `budget`, `ingest`, `alerts`, `news`. Plus a per-user `hiddenFeatures` JSON for things a user has chosen to hide from their own view. Effective visibility = admin-enabled AND not user-hidden.
+
+## Two-factor authentication
+
+**UI:** `/profile`. **API:** `server/routes/twoFactor.js`. **Lib:** `server/lib/totp.js`.
+
+Optional TOTP-based 2FA. The secret is stored AES-256-GCM-encrypted (`User.twoFactorSecret`). Backup codes stored as SHA-256 hashes (`User.twoFactorBackupCodes` JSON array). When 2FA is enabled, the login flow asks for the code after password verification. Describe the flow when asked; do not comment on cryptographic posture — that's a security question.
+
+## Consultant access
+
+**UI:** `/settings` → Users & Roles. **API:** `server/routes/consultant.js`. **Schema:** `ConsultantAccess`.
+
+Consultant is a first-class role. A consultant user is invited to a customer account by a customer admin. Read-only-with-attribution: same read access as a viewer (subject to scope restriction) but blocked from all writes. SPA shows an amber "Consultant Access — Changes are logged" banner whenever a consultant is viewing the account.
+
+Every grant and revoke writes to `ActivityLog`. The Users & Roles tab shows currently-active grants and supports instant revocation. When a user mentions a consultant or asks how to bring an external advisor in, point them at the Users & Roles tab — *not* at sharing a login.
+
+## Settings
+
+**UI:** `/settings` (admin only). Tabs:
+
+- **General** — company name, fiscal year start month.
+- **AI & Extraction** — provider selection, API key, model override, test-connection.
+- **Security** — 2FA enforcement settings, password reset audit.
+- **Storage & Backup** — local vs. S3 destination, backup encryption toggle, manual backup trigger.
+- **Encryption** — `ENCRYPT_DOCS` toggle status (read-only; env-driven).
+- **Imports** — saved CSV column mappings.
+- **Alerts** — global alert defaults; per-user prefs are on `/alerts`.
+- **Custom Fields** — define account-level custom contract fields.
+- **Users & Roles** — Team Members, Permissions, and Consultant Access in one tab.
+- **Account Data** — export-account-data and account-level operations.
+
+Implementation: `client/src/pages/SettingsPage.jsx` and `server/routes/settings.js`.

@@ -1,0 +1,57 @@
+# Reports
+
+The Reports hub at `/reports` is where the 6 canned reports live: Renewal Horizon, Risk Radar, Savings Ledger, License Wastage, Spend Ledger, and Executive Spend. All manager / admin only.
+
+## What you'll see
+
+**Reports hub** at `/reports` — card grid with one card per report, brief description, click to open.
+
+Each report has its own page (`/reports/<slug>`) with filters, table, summary tiles, and **CSV and PDF export** buttons in the header.
+
+## The six reports
+
+**Renewal Horizon** (`/reports/renewal-horizon`)
+Every contract ending in the next N days, classified by risk: `trap` (cancel-by already passed), `urgent` (cancel-by ≤ 14 days), `soon` (cancel-by ≤ 30 days), `ok`. Horizon length adjustable (default 90 days, max 365).
+
+**Risk Radar** (`/reports/risk-radar`)
+Three risk buckets in one report: (1) Auto-Renewal Traps — cancel-by date has already passed but contract is still active, (2) Expired Still Active — end date has passed but status is still active or under_review (a data-quality issue waiting to bite), (3) Co-Term Misaligned — contracts in the same `coTermGroup` whose end dates diverge by more than 30 days.
+
+**Savings Ledger** (`/reports/savings-ledger`)
+Every contract with `originalAsk` and/or `finalNegotiatedPrice` set. Computed savings = original − negotiated, savings %, category roll-up. Date-range filter for FY-anchored views.
+
+**License Wastage** (`/reports/license-wastage`)
+Every contract with both `seatsLicensed` and `seatsActivelyInUse` set. Computes utilization %, waste seats, and estimated $ wasted (waste seats × per-seat price). Sorted by largest waste first — the renewal targets you want to right-size.
+
+**Spend Ledger** (`/reports/spend-ledger`)
+Two modes: **actuals** (sum of Purchase Order amounts in the date range — what was actually invoiced) and **commitments** (sum of contract values starting in the period — what was committed-to). Roll-ups by vendor, category, and department. YoY comparison built in.
+
+**Executive Spend** (`/reports/executive-spend`)
+Backward-looking actuals roll-up, fiscal-year anchored, board-formatted PDF. Top-10 vendors and departments by spend, YoY delta, contract count by FY. The PDF visual identity matches the daily digest email so the format feels consistent across LapseIQ touchpoints.
+
+## Export formats
+
+All reports export **CSV**. The renewal-horizon, risk-radar, savings-ledger reports also export **PDF** (board-ready with the LapseIQ visual identity).
+
+Every cell goes through formula-injection sanitization (the `=`, `+`, `-`, `@`, `\t`, `\r` prefixes that Excel treats as formulas). So an attacker-uploaded vendor name like `=cmd|'/c calc'!A0` lands as plain text, not as an executed formula.
+
+## Common workflows
+
+**"What's our renewal pipeline for Q3?"** Renewal Horizon with horizon=90. Filter by date range as needed.
+
+**"Where are we leaving money on the table?"** License Wastage. Sort by estimated waste descending. Top of list is your right-sizing target list.
+
+**"Did we negotiate well this year?"** Savings Ledger with date range = current FY. Total Savings tile + per-category breakdown.
+
+**"Board wants spend by quarter."** Executive Spend, set fiscal year offset to current, export PDF. That's the board pack.
+
+**"Audit team needs an actuals reconciliation."** Spend Ledger in actuals mode, date range = audit period. Match against AP/invoice records.
+
+## When something looks wrong
+
+**A contract I expected to see isn't there.** Most reports default to non-archived, active or under-review contracts only. Check the filter. The Risk Radar shows `expired` contracts in its Expired-Active bucket, but Renewal Horizon excludes them.
+
+**License Wastage shows fewer contracts than expected.** It requires BOTH `seatsLicensed` AND `seatsActivelyInUse` to be set. Contracts where you haven't tracked utilization don't appear. Add the utilization fields to your standard intake checklist to fix.
+
+**The Executive Spend PDF takes a long time on first generation.** It walks every contract in the fiscal year window plus the prior year for YoY. Large accounts (1000+ contracts) can take 5-15 seconds. Subsequent generations of the same FY hit the cache and return in under a second.
+
+**Spend Ledger actuals don't match my AP system.** LapseIQ's actuals sum `PurchaseOrder.amount` for POs in the date range. Make sure you've imported all POs and that the `orderDate` field matches your AP cut-off date. AP-system reconciliation is the right audit step here.

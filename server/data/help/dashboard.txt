@@ -1,0 +1,41 @@
+# Dashboard
+
+The Dashboard is the morning-coffee view of your renewal portfolio: what needs attention today, what's coming this week, what the next 12 months look like.
+
+## What you'll see
+
+**Summary tiles across the top** — total active contracts, total annual spend, spend at risk (contracts ending in the next 90 days), auto-renewal traps closing this month, total negotiated savings YTD, and open alerts.
+
+**Needs Attention Today** — three sub-cards calling out the most time-sensitive items: cancel-by dates within 7 days, overdue reviews (review-by date has passed), and contracts expiring this calendar month.
+
+**Auto-Renewal Traps** — every active contract with an auto-renewal clause whose cancel-by window closes within 30 days. This is the panel you check first; missing one of these auto-renews you into another full term, often at an undisclosed price uplift.
+
+**Upcoming Renewals** — the next 8 contracts by end date within 90 days.
+
+**Spend by Vendor / Spend by Department** — top-8 rollups, useful for spotting concentration.
+
+**Renewals by Month** — a 12-month forward calendar of expected renewals, count and combined value per month. Read this before sales asks "what's our renewal pipeline looking like."
+
+## How the data lands here
+
+Every tile pulls live from contracts you have read access to. If you're a viewer with scope restriction, you'll only see contracts you're named the internal owner of — the totals reflect that scope.
+
+The "expired" status auto-applies when you load this page: any active contract whose end date is in the past flips to `expired` automatically. That's why some contracts disappear from "Active" the first time you open the dashboard after a long absence.
+
+## Common workflows
+
+**"What do I need to do today?"** — Read Needs Attention Today first. Anything red is overdue or closing this week.
+
+**"What's our biggest spend exposure?"** — Spend by Vendor + the YTD Savings tile. The delta between original-ask and final-negotiated-price across the year sits in the Savings tile.
+
+**"What's the renewal pipeline for Q3?"** — Renewals by Month. Hover or click into a month to drill into that bucket.
+
+**"I just signed in and the trap count is wrong."** — Trap counts only include contracts where (a) auto-renewal is on, (b) the cancel-by date is within the next 30 days, (c) status is active or under review. If a contract's cancel-by has already passed, it shows in the Risk Radar report, not on the dashboard.
+
+## When something looks wrong
+
+**A trap doesn't show up here.** Either the auto-renewal flag isn't set on that contract, or the cancel-by date is more than 30 days out (it'll surface as the date approaches), or the contract status is `expired` or `cancelled`.
+
+**Spend numbers don't match accounting.** The dashboard sums `costPerLicense × quantity` for active contracts. It doesn't know about prorated billing, partial-year deals, or contracts where you've already paid via a multi-year upfront. For accounting-grade actuals, use the Spend Ledger report.
+
+**Savings number looks low.** YTD savings = sum of (originalAsk − finalNegotiatedPrice) across all contracts where both fields are filled in. If your team isn't filling in `originalAsk` consistently, the number under-reports. Adding it as a custom field with required=true catches that.

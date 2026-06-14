@@ -1,0 +1,39 @@
+# Demo sandbox vs. self-host + roles & permissions
+
+## Demo sandbox vs. self-host
+
+Most LapseIQ users are running a self-hosted install. Some — especially during evaluation — are using the public demo at `demo.lapseiq.com`. Behavior differs in these specific ways; reach for this section anytime a user asks "why is the system doing X."
+
+| Behavior | Demo (`DEMO_MODE=true`) | Self-host (default) |
+| --- | --- | --- |
+| Email | Mocked to console (except `[LapseIQ Feedback]`-tagged messages, which bypass the mock so the demo operator gets real feedback) | Sent through Resend if `RESEND_API_KEY` and `EMAIL_FROM` are set |
+| AI provider key | Operator-supplied — typically a shared demo key the operator provisions for the public demo box | Operator's own — stored in `.env` or encrypted in `account_settings` |
+| AI daily cap | Forced to 2 calls per user per UTC day per action | Unlimited by default; operator-configurable |
+| AI model | Pinned via demo startup config | Operator-configurable via `AI_PROVIDER` and `AI_MODEL` |
+| Registration | Open to anyone who hits `/register` | Off unless `REGISTRATION_OPEN=true` |
+| Per-visitor sandbox | Yes — each visitor gets their own pre-seeded Account on registration; pruned after 5 days of inactivity (`DEMO_INACTIVITY_TTL_DAYS`) up to a hard cap (`DEMO_MAX_ACCOUNTS`, default 1000) | One Account per customer install; lifetime is the install's lifetime |
+| Nightly reset | 03:25 inactivity prune + 03:30 legacy seed reset | None |
+| Write guard | Most destructive operations blocked (DELETE, status→archived/cancelled, admin password resets of others, budget mutations); see `server/middleware/demoGuard.js` | All writes work normally subject to role |
+
+Other things worth knowing about the demo:
+
+- The `[LapseIQ Feedback]` subject prefix bypasses `EMAIL_MOCK` so demo visitors can submit feedback that actually reaches the operator.
+- The legacy seeded admin / manager / viewer / consultant accounts re-bcrypt their passwords on every nightly reset, so visitors who change them mid-day don't permanently lock the next visitor out.
+- Visitors can register their own per-visitor sandbox at `/register`. They get a fresh seeded Account with 12 demo vendors and roughly 30 contracts spanning four time-window buckets (overdue, this week, this month, this quarter).
+
+When a self-host user asks "where do I find the demo cap setting?" — they don't have one, and they shouldn't. Their cap is whatever they set `AI_DAILY_CAP_PER_USER` to, default unlimited.
+
+## Roles and permissions
+
+Four roles, in the order the schema declares them: `admin`, `manager`, `viewer`, `consultant`. Plus per-user feature flags (admin-set) and hidden features (user-set).
+
+| Role | Contracts | Vendors | Users | Settings | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Admin | Full | Full | Full | Full | Can grant/revoke consultant access; manages custom fields |
+| Manager | Full | Full | — | — | Can run reports including Executive Spend |
+| Viewer | Read-only | Read-only | — | — | Optionally `contractScopeRestricted`: sees only contracts they're named internal owner of |
+| Consultant | Read-only with attribution | Read-only with attribution | — | — | Amber banner in UI; every action logged with consultant attribution |
+
+Role enforcement is at the API layer — middleware in `server/middleware/roles.js` checks `req.user.role` before any mutation. Each 403 also writes a `permission_denied` row to `ActivityLog` so admins can see who tried to do what they couldn't.
+
+The four-role model is intentional. Consultant exists as a separate role from admin or manager because the read-only-with-attribution pattern is what lets a consulting practice work inside a customer's account without the customer worrying about scope creep. When a user asks "should so-and-so be a manager or a consultant" — manager if they're internal staff doing work; consultant if they're an external advisor.

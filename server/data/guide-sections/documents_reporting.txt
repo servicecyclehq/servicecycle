@@ -1,0 +1,47 @@
+# Document vault, communications, budget forecast, executive spend
+
+## Document vault
+
+**UI:** Documents panel on `/contracts/:id`.
+**API:** `server/routes/documents.js`. Storage: `server/lib/storage.js`. Encryption: `server/lib/docCrypto.js`.
+
+Documents are stored on the local filesystem by default (`STORAGE_DEST=local`, `STORAGE_LOCAL_PATH=./uploads`). For customers who want an external store, set `STORAGE_DEST=s3` and the `STORAGE_S3_*` variables — the layer is S3-API-compatible, so AWS S3, Backblaze B2, Wasabi, Cloudflare R2, and self-hosted MinIO all work.
+
+Each document is owned by an Account and may be linked to a Contract. The file path stored in the DB is the storage key, not a public URL. Download is served through `GET /api/documents/:id/file`, which checks ownership at the data layer before streaming — never served from a browsable directory.
+
+Optional encryption-at-rest (`ENCRYPT_DOCS=true`) wraps every new upload in AES-256-GCM with a per-document key derived via HKDF from the operator's `MASTER_KEY`. Existing unencrypted uploads remain readable, so the flip is non-destructive and reversible to mixed state. When the user asks "are my documents encrypted?", the honest answer is "only if the operator turned `ENCRYPT_DOCS` on at install — check `/settings` Encryption tab."
+
+**Versioning.** When a document is replaced, the old file is preserved and `version` increments. The unlink (admin-only) action reassigns a document from a contract to misc without deleting the file.
+
+## Communications log
+
+**Schema:** `Communication`. **UI:** Communications card on contract detail and vendor detail.
+
+Calls, meetings, notes, and emails (the `CommunicationType` enum) logged against a contract or a vendor. Each entry has a timestamp (`occurredAt`, user-supplied) and the user who created it. The log survives staff turnover — when the renewals manager who knew the vendor relationship leaves, the log is what their replacement reads.
+
+## Budget Forecast
+
+**UI:** `/budget`. **API:** `server/routes/budget.js`.
+
+Forward-looking projection of upcoming spend. For each `active` or `under_review` contract:
+
+- **Current unit price** = `costPerLicense`.
+- **Current qty** = `quantity`.
+- **Needed qty** = `budgetNeededQty` if set, otherwise current qty.
+- **Uplift %** = per-vendor `budgetUpliftPercent` (default 10) unless overridden per-contract.
+- **Projected unit price** = current × (1 + uplift/100).
+- **Projected total** = projected unit price × needed qty.
+- **Delta** = projected total − current total.
+
+Roll-ups by department (`?groupBy=department`) and by fiscal year. Excel export through `exceljs` with full formula-injection sanitization on every cell.
+
+Multi-year contracts use `PaymentSchedule` and `PaymentInstallment`. Three schedule types: `installment` (annual payments with explicit amounts and due dates), `paid_upfront` (full term paid at signing; renewal still required at end), `dismissed` (treated as standard annual recurring). When an installment is locked, the budget forecast respects the locked amount instead of recomputing.
+
+## Executive Spend Report
+
+**UI:** `/reports/executive-spend` (manager/admin only, sidebar entry under Contracts).
+**API:** `server/routes/reports.js`. PDF: `server/lib/pdfReport.js`. Fiscal year math: `server/lib/fiscalYear.js`.
+
+Backward-looking actuals to complement the forward-looking Budget Forecast. Fiscal year is anchored on `FISCAL_YEAR_START_MONTH` (env, default January). A contract counts toward FY X if its `startDate` falls within FY X. The report respects scope-restricted viewer rules — a restricted viewer sees only contracts they own.
+
+JSON and PDF formats both available. PDF visual identity matches the daily digest email so executives see a consistent style.

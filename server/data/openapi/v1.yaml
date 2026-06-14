@@ -1,0 +1,1426 @@
+openapi: 3.1.0
+
+info:
+  title: LapseIQ Public API
+  version: 1.0.0
+  description: |
+    Read-only REST API for LapseIQ — self-hosted contract renewal management.
+
+    **Base URL**: `https://<your-lapseiq-host>/api/v1`
+
+    All endpoints require an API key issued by a LapseIQ admin (Settings → API Keys).
+    Pass the key in the `Authorization` header as a Bearer token:
+
+    ```
+    Authorization: Bearer liq_<your-key>
+    ```
+
+    **Rate limit**: 60 requests per minute per API key.
+    Responses include standard `RateLimit-*` headers.
+
+    All responses use the envelope `{ "success": true, "data": ... }`.
+    List endpoints add a `pagination` object.
+    Error responses use `{ "success": false, "error": "..." }`.
+
+contact:
+  name: LapseIQ / ForgeRift LLC
+  url: https://lapseiq.com
+
+license:
+  name: Proprietary
+  url: https://lapseiq.com/legal/terms
+
+servers:
+  - url: https://demo.lapseiq.com/api/v1
+    description: Public demo instance (read-only seed data)
+  - url: https://{host}/api/v1
+    description: Your self-hosted instance
+    variables:
+      host:
+        default: localhost:3001
+        description: Hostname (and optional port) of your LapseIQ server
+
+# ─── Security ─────────────────────────────────────────────────────────────────
+
+components:
+  securitySchemes:
+    ApiKeyBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: LapseIQ API Key
+      description: |
+        API key generated in Settings → API Keys.
+        Keys start with the prefix `liq_` followed by 64 hex characters.
+
+  # ── Reusable schemas ────────────────────────────────────────────────────────
+
+  schemas:
+
+    Pagination:
+      type: object
+      required: [page, limit, total, pages]
+      properties:
+        page:  { type: integer, example: 1 }
+        limit: { type: integer, example: 50 }
+        total: { type: integer, example: 243 }
+        pages: { type: integer, example: 5 }
+
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, enum: [false] }
+        error:   { type: string, example: "Invalid API key" }
+
+    VendorSummary:
+      type: object
+      properties:
+        id:   { type: string, format: uuid }
+        name: { type: string, example: "Microsoft" }
+
+    CategorySummary:
+      type: object
+      properties:
+        id:   { type: string, format: uuid }
+        name: { type: string, example: "SaaS" }
+        slug: { type: string, example: "saas" }
+
+    ContractStatus:
+      type: string
+      enum: [active, under_review, renewed, cancelled, expired]
+
+    ContractSummary:
+      type: object
+      properties:
+        id:                   { type: string, format: uuid }
+        contractNumber:       { type: string, nullable: true }
+        product:              { type: string, example: "Microsoft 365 E3" }
+        status:               { $ref: '#/components/schemas/ContractStatus' }
+        startDate:            { type: string, format: date-time, nullable: true }
+        endDate:              { type: string, format: date-time, nullable: true }
+        autoRenewal:          { type: boolean }
+        autoRenewalNoticeDays: { type: integer, nullable: true }
+        cancelByDate:         { type: string, format: date-time, nullable: true }
+        quantity:             { type: integer, nullable: true }
+        costPerLicense:       { type: string, format: decimal, nullable: true, example: "42.00" }
+        totalValue:           { type: string, format: decimal, nullable: true, example: "50400.00" }
+        poNumber:             { type: string, nullable: true }
+        department:           { type: string, nullable: true }
+        team:                 { type: string, nullable: true }
+        notes:                { type: string, nullable: true }
+        coTermGroup:          { type: string, nullable: true }
+        createdAt:            { type: string, format: date-time }
+        updatedAt:            { type: string, format: date-time }
+        vendor:               { $ref: '#/components/schemas/VendorSummary' }
+        category:             { $ref: '#/components/schemas/CategorySummary', nullable: true }
+
+    ContractDetail:
+      allOf:
+        - $ref: '#/components/schemas/ContractSummary'
+        - type: object
+          properties:
+            customerNumber:       { type: string, nullable: true }
+            invoiceNumber:        { type: string, nullable: true }
+            requestor:            { type: string, nullable: true }
+            deliveryMethod:       { type: string, enum: [user, device, shared_pool], nullable: true }
+            resellerName:         { type: string, nullable: true }
+            resellerAccountNumber: { type: string, nullable: true }
+            resellerContactName:  { type: string, nullable: true }
+            resellerContactEmail: { type: string, format: email, nullable: true }
+            signatureStatus:      { type: string, enum: [pending, signed, declined], nullable: true }
+            signedAt:             { type: string, format: date-time, nullable: true }
+            signerName:           { type: string, nullable: true }
+            originalAsk:          { type: string, format: decimal, nullable: true }
+            finalNegotiatedPrice: { type: string, format: decimal, nullable: true }
+            seatsLicensed:        { type: integer, nullable: true }
+            seatsActivelyInUse:   { type: integer, nullable: true }
+            annualUpliftPercent:  { type: string, format: decimal, nullable: true }
+            renewalChecklist:     { type: object, nullable: true }
+            tags:
+              type: array
+              items:
+                type: object
+                properties:
+                  tag: { type: string }
+            flags:
+              type: array
+              items:
+                type: object
+                properties:
+                  flagType:    { type: string }
+                  description: { type: string }
+
+    VendorContact:
+      type: object
+      properties:
+        id:    { type: string, format: uuid }
+        name:  { type: string }
+        email: { type: string, format: email, nullable: true }
+        phone: { type: string, nullable: true }
+        title: { type: string, nullable: true }
+
+    VendorSummaryFull:
+      type: object
+      properties:
+        id:                   { type: string, format: uuid }
+        name:                 { type: string, example: "Microsoft" }
+        cotermComplexity:     { type: string, enum: [none, moderate, complex] }
+        notes:                { type: string, nullable: true }
+        budgetUpliftPercent:  { type: string, format: decimal, example: "10.00" }
+        supportEmail:         { type: string, format: email, nullable: true }
+        supportPhone:         { type: string, nullable: true }
+        supportPortalUrl:     { type: string, format: uri, nullable: true }
+        scorePriceFlexibility: { type: integer, minimum: 1, maximum: 5, nullable: true }
+        scoreSupport:         { type: integer, minimum: 1, maximum: 5, nullable: true }
+        scoreStrategicValue:  { type: integer, minimum: 1, maximum: 5, nullable: true }
+        scoreSatisfaction:    { type: integer, minimum: 1, maximum: 5, nullable: true }
+        createdAt:            { type: string, format: date-time }
+        updatedAt:            { type: string, format: date-time }
+
+    VendorDetail:
+      allOf:
+        - $ref: '#/components/schemas/VendorSummaryFull'
+        - type: object
+          properties:
+            cotermNotes: { type: string, nullable: true }
+            aliases:     { type: array, items: { type: string }, nullable: true }
+            contacts:
+              type: array
+              items: { $ref: '#/components/schemas/VendorContact' }
+            _count:
+              type: object
+              properties:
+                contracts: { type: integer }
+
+    UpcomingRenewalItem:
+      type: object
+      properties:
+        id:             { type: string, format: uuid }
+        contractNumber: { type: string, nullable: true }
+        product:        { type: string }
+        status:         { $ref: '#/components/schemas/ContractStatus' }
+        endDate:        { type: string, format: date-time, nullable: true }
+        cancelByDate:   { type: string, format: date-time, nullable: true }
+        autoRenewal:    { type: boolean }
+        autoRenewalNoticeDays: { type: integer, nullable: true }
+        totalValue:     { type: string, format: decimal, nullable: true }
+        vendor:         { $ref: '#/components/schemas/VendorSummary' }
+        category:       { $ref: '#/components/schemas/CategorySummary', nullable: true }
+
+  # ── Reusable parameters ─────────────────────────────────────────────────────
+
+  parameters:
+
+    PageParam:
+      name: page
+      in: query
+      description: 1-based page number
+      schema: { type: integer, minimum: 1, default: 1 }
+
+    LimitParam:
+      name: limit
+      in: query
+      description: Results per page (max 100)
+      schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+
+  # ── Reusable responses ──────────────────────────────────────────────────────
+
+  responses:
+
+    Unauthorized:
+      description: Missing, invalid, expired, or revoked API key
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { success: false, error: "Invalid API key" }
+
+    RateLimited:
+      description: Too many requests — 60/min per key
+      headers:
+        RateLimit-Limit:     { schema: { type: integer } }
+        RateLimit-Remaining: { schema: { type: integer } }
+        Retry-After:         { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+    NotFound:
+      description: Resource not found (or not visible to this API key's account)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+    BadRequest:
+      description: Invalid query parameters
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorResponse'
+              - type: object
+                properties:
+                  details: { type: object, description: "Per-field validation errors" }
+
+# ─── Security (global default) ────────────────────────────────────────────────
+
+security:
+  - ApiKeyBearer: []
+
+# ─── Paths ────────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ── Contracts ────────────────────────────────────────────────────────────────
+
+  /contracts:
+    get:
+      operationId: listContracts
+      summary: List contracts
+      description: |
+        Returns a paginated list of non-archived contracts for the account
+        associated with the API key. Results are sorted by `endDate` ascending
+        (earliest renewals first).
+      tags: [Contracts]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          description: Filter by contract status
+          schema: { $ref: '#/components/schemas/ContractStatus' }
+        - name: vendor
+          in: query
+          description: Case-insensitive substring match on vendor name
+          schema: { type: string, maxLength: 200, example: "Microsoft" }
+        - name: renewalBefore
+          in: query
+          description: |
+            Return only contracts whose `endDate` is on or before this date.
+            Accepts ISO 8601 (`2026-12-31T00:00:00Z`) or `YYYY-MM-DD`.
+          schema: { type: string, example: "2026-12-31" }
+      responses:
+        '200':
+          description: Paginated contract list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, pagination]
+                properties:
+                  success:    { type: boolean, enum: [true] }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ContractSummary' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /contracts/{id}:
+    get:
+      operationId: getContract
+      summary: Get a contract
+      description: Returns full detail for a single contract, including tags and risk flags.
+      tags: [Contracts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Contract UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Contract detail
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:    { $ref: '#/components/schemas/ContractDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  # ── Vendors ──────────────────────────────────────────────────────────────────
+
+  /vendors:
+    get:
+      operationId: listVendors
+      summary: List vendors
+      description: Returns a paginated list of vendors, sorted alphabetically by name.
+      tags: [Vendors]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated vendor list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, pagination]
+                properties:
+                  success:    { type: boolean, enum: [true] }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/VendorSummaryFull' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /vendors/{id}:
+    get:
+      operationId: getVendor
+      summary: Get a vendor
+      description: Returns full detail for a single vendor, including contacts and contract count.
+      tags: [Vendors]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Vendor UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Vendor detail
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:    { $ref: '#/components/schemas/VendorDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  # ── Reports ──────────────────────────────────────────────────────────────────
+
+  /reports/upcoming-renewals:
+    get:
+      operationId: upcomingRenewals
+      summary: Upcoming renewals report
+      description: |
+        Returns contracts renewing within the next `days` days (counting from now),
+        sorted ascending by `endDate`. Excludes cancelled and expired contracts,
+        and any archived contracts.
+
+        Use this endpoint to drive renewal dashboards, Slack digests, or
+        calendar/ticketing integrations.
+      tags: [Reports]
+      parameters:
+        - name: days
+          in: query
+          description: Look-ahead window in days (1–730, default 90)
+          schema: { type: integer, minimum: 1, maximum: 730, default: 90 }
+      responses:
+        '200':
+          description: Upcoming renewals list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/UpcomingRenewalItem' }
+                  meta:
+                    type: object
+                    properties:
+                      days:        { type: integer, example: 90 }
+                      windowStart: { type: string, format: date-time }
+                      windowEnd:   { type: string, format: date-time }
+                      count:       { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+
+  # ── Phase 3 Tier A Reports (v0.85.0) ─────────────────────────────────────────
+
+  /reports/total-addressable-waste:
+    get:
+      operationId: totalAddressableWaste
+      summary: Total addressable waste report
+      description: Contracts with low seat utilisation — surfaces licences being paid for but not used.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Waste summary with rows, category breakdown, and department breakdown
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/termination-window-violations:
+    get:
+      operationId: terminationWindowViolations
+      summary: Termination window violations report
+      description: Auto-renewing contracts where the cancellation deadline is missed, critical (14d), or warning (30d).
+      tags: [Reports]
+      responses:
+        '200':
+          description: Violations grouped into missed, critical, and warning buckets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/license-reclamation-roi:
+    get:
+      operationId: licenseReclamationRoi
+      summary: License reclamation ROI report
+      description: Contracts with unused seats — estimates annual savings if unused licences are reclaimed before renewal.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Reclamation candidates ranked by savings potential
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/cost-per-active-user:
+    get:
+      operationId: costPerActiveUser
+      summary: Cost-per-active-user report
+      description: Annual contract value divided by actively-used seats, with internal category benchmarks.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Per-contract cost-per-user rows plus category benchmark table
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/negotiation-effectiveness-by-owner:
+    get:
+      operationId: negotiationEffectivenessByOwner
+      summary: Negotiation effectiveness by owner report
+      description: Average savings rate per contract owner compared against portfolio average.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Per-owner savings rates and portfolio summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/vendor-negotiation-difficulty:
+    get:
+      operationId: vendorNegotiationDifficulty
+      summary: Vendor negotiation difficulty report
+      description: Vendors ranked by difficulty score 0-100 based on historical ask-vs-final-price data.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Vendor difficulty scores and tiers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  # ── Phase 3 Tier B Reports (v0.86.0) ─────────────────────────────────────────
+
+  /reports/price-escalation-radar:
+    get:
+      operationId: priceEscalationRadar
+      summary: Price escalation radar report
+      description: Contracts where current value has grown beyond the original ask, flagged above a configurable threshold.
+      tags: [Reports]
+      parameters:
+        - name: thresholdPct
+          in: query
+          description: Escalation percentage that triggers a flag (0-200, default 10)
+          schema: { type: number, minimum: 0, maximum: 200, default: 10 }
+      responses:
+        '200':
+          description: Escalation rows with flagged status and excess cost
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/multi-year-commitment-risk:
+    get:
+      operationId: multiYearCommitmentRisk
+      summary: Multi-year commitment risk report
+      description: Active contracts with terms 24+ months, classified into medium/high/critical tiers.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Long-term contracts with lock-in tier and remaining commitment value
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/contract-health-score:
+    get:
+      operationId: contractHealthScore
+      summary: Contract health score report
+      description: Every active contract scored 0-100 across four data-quality dimensions. Grade A=80+, B=60-79, C=40-59, D=20-39, F=0-19.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Per-contract health scores, grades, and portfolio summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/department-budget-allocation:
+    get:
+      operationId: departmentBudgetAllocation
+      summary: Department budget allocation report
+      description: Vendor spend broken down by department with 90-day renewal counts.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Department spend summary and contract list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/price-per-seat-benchmark:
+    get:
+      operationId: pricePerSeatBenchmark
+      summary: Price-per-seat benchmark report
+      description: Per-seat cost across quantity-based contracts vs. internal category average. Contracts 20%+ above average are flagged as outliers.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Per-seat costs with outlier flags and category averages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/gl-code-spend:
+    get:
+      operationId: glCodeSpend
+      summary: GL code spend breakdown report
+      description: Contract spend organised by general ledger code. Contracts without a GL code appear in an untagged bucket.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Spend by GL code with contract drill-down list per code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/walkaway-calculator:
+    get:
+      operationId: walkawayCalculator
+      summary: Walkaway calculator report
+      description: Compares renewal cost vs estimated switching cost. Returns renew/borderline/walkaway verdict per contract.
+      tags: [Reports]
+      parameters:
+        - name: horizonMonths
+          in: query
+          description: How many months ahead to look for renewals (1-24, default 12)
+          schema: { type: integer, minimum: 1, maximum: 24, default: 12 }
+        - name: switchCostPct
+          in: query
+          description: Override switch cost as percentage of renewal value (0-100). Omit for category defaults.
+          schema: { type: number, minimum: 0, maximum: 100 }
+      responses:
+        '200':
+          description: Per-contract walkaway verdicts and portfolio summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/portfolio-decision-dashboard:
+    get:
+      operationId: portfolioDecisionDashboard
+      summary: Portfolio decision dashboard report
+      description: All active contracts with AI negotiation verdicts from the in-session debate cache.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Full contract list with AI verdicts and portfolio summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/renewal-win-rate:
+    get:
+      operationId: renewalWinRate
+      summary: Renewal win rate report
+      description: Historical ask vs final negotiated price across completed contracts. Returns quarterly trend and top 20 best deals.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Quarterly savings trend and best-deal surface
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/contract-ownership:
+    get:
+      operationId: contractOwnership
+      summary: Contract ownership report
+      description: Active contracts organised by assigned owner. Surfaces unassigned contracts and overloaded owners (5+ renewals in 90 days).
+      tags: [Reports]
+      responses:
+        '200':
+          description: Ownership summary, per-owner rows, and unassigned contract list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+
+  # ── Phase 3 CSV exports (v0.87.0) ─────────────────────────────────────────────
+  # All report CSV routes live at /api/reports/{slug}/csv.
+  # They return Content-Type: text/csv with a Content-Disposition: attachment header.
+  # Authentication: session Bearer token (same as JSON report endpoints).
+
+  /reports/auto-renewal-exposure/csv:
+    get:
+      operationId: autoRenewalExposureCsv
+      summary: Auto-renewal exposure report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of auto-renewal exposure data
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/vendor-concentration/csv:
+    get:
+      operationId: vendorConcentrationCsv
+      summary: Vendor concentration report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of vendor concentration data
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/non-saas-categories/csv:
+    get:
+      operationId: nonSaasCategoriesCsv
+      summary: Non-SaaS categories report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of non-SaaS category spend
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/co-term-opportunity/csv:
+    get:
+      operationId: coTermOpportunityCsv
+      summary: Co-termination opportunity report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of co-termination groupings
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/renewal-commitment-forecast/csv:
+    get:
+      operationId: renewalCommitmentForecastCsv
+      summary: Renewal commitment forecast — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of renewal commitment forecast
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/vendor-heat-map/csv:
+    get:
+      operationId: vendorHeatMapCsv
+      summary: Vendor heat map report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of vendor heat map data
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/total-addressable-waste/csv:
+    get:
+      operationId: totalAddressableWasteCsv
+      summary: Total addressable waste report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of waste line items
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/termination-window-violations/csv:
+    get:
+      operationId: terminationWindowViolationsCsv
+      summary: Termination window violations report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of termination window violations
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/license-reclamation-roi/csv:
+    get:
+      operationId: licenseReclamationRoiCsv
+      summary: License reclamation ROI report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of reclamation ROI rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/cost-per-active-user/csv:
+    get:
+      operationId: costPerActiveUserCsv
+      summary: Cost-per-active-user report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of cost-per-user rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/negotiation-effectiveness-by-owner/csv:
+    get:
+      operationId: negotiationEffectivenessByOwnerCsv
+      summary: Negotiation effectiveness by owner — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of per-owner negotiation stats
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/vendor-negotiation-difficulty/csv:
+    get:
+      operationId: vendorNegotiationDifficultyCsv
+      summary: Vendor negotiation difficulty report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of per-vendor negotiation difficulty scores
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/price-escalation-radar/csv:
+    get:
+      operationId: priceEscalationRadarCsv
+      summary: Price escalation radar report — CSV export
+      tags: [Reports]
+      parameters:
+        - name: thresholdPct
+          in: query
+          description: Escalation % threshold (0-200, default 10)
+          schema: { type: number, minimum: 0, maximum: 200, default: 10 }
+      responses:
+        '200':
+          description: CSV file of escalation rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/multi-year-commitment-risk/csv:
+    get:
+      operationId: multiYearCommitmentRiskCsv
+      summary: Multi-year commitment risk report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of long-term commitment rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/contract-health-score/csv:
+    get:
+      operationId: contractHealthScoreCsv
+      summary: Contract health score report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of health score rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/department-budget-allocation/csv:
+    get:
+      operationId: departmentBudgetAllocationCsv
+      summary: Department budget allocation report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of department spend rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/price-per-seat-benchmark/csv:
+    get:
+      operationId: pricePerSeatBenchmarkCsv
+      summary: Price-per-seat benchmark report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of per-seat pricing rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/gl-code-spend/csv:
+    get:
+      operationId: glCodeSpendCsv
+      summary: GL code spend report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of GL code spend rows
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/walkaway-calculator/csv:
+    get:
+      operationId: walkawayCalculatorCsv
+      summary: Walkaway calculator report — CSV export
+      tags: [Reports]
+      parameters:
+        - name: horizonMonths
+          in: query
+          description: Renewal horizon in months (1-24, default 12)
+          schema: { type: integer, minimum: 1, maximum: 24, default: 12 }
+        - name: switchCostPct
+          in: query
+          description: Override switching cost as % of contract value
+          schema: { type: number, minimum: 0 }
+      responses:
+        '200':
+          description: CSV file of walkaway verdicts
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/portfolio-decision-dashboard/csv:
+    get:
+      operationId: portfolioDecisionDashboardCsv
+      summary: Portfolio decision dashboard — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of portfolio decisions
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/renewal-win-rate/csv:
+    get:
+      operationId: renewalWinRateCsv
+      summary: Renewal win rate report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of historical negotiation outcomes
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/contract-ownership/csv:
+    get:
+      operationId: contractOwnershipCsv
+      summary: Contract ownership report — CSV export
+      tags: [Reports]
+      responses:
+        '200':
+          description: CSV file of contracts by owner
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  # ── Phase 3 PDF exports (v0.87.0) ─────────────────────────────────────────────
+  # These five executive-grade PDF routes return application/pdf binary streams.
+  # Authentication: session Bearer token.
+
+  /reports/walkaway-calculator/pdf:
+    get:
+      operationId: walkawayCalculatorPdf
+      summary: Walkaway calculator report — PDF export
+      tags: [Reports]
+      parameters:
+        - name: horizonMonths
+          in: query
+          description: Renewal horizon in months (1-24, default 12)
+          schema: { type: integer, minimum: 1, maximum: 24, default: 12 }
+        - name: switchCostPct
+          in: query
+          description: Override switching cost as % of contract value
+          schema: { type: number, minimum: 0 }
+      responses:
+        '200':
+          description: PDF executive report
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/portfolio-decision-dashboard/pdf:
+    get:
+      operationId: portfolioDecisionDashboardPdf
+      summary: Portfolio decision dashboard — PDF export
+      tags: [Reports]
+      responses:
+        '200':
+          description: PDF executive report
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/contract-health-score/pdf:
+    get:
+      operationId: contractHealthScorePdf
+      summary: Contract health score report — PDF export
+      tags: [Reports]
+      responses:
+        '200':
+          description: PDF executive report
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/price-escalation-radar/pdf:
+    get:
+      operationId: priceEscalationRadarPdf
+      summary: Price escalation radar report — PDF export
+      tags: [Reports]
+      parameters:
+        - name: thresholdPct
+          in: query
+          description: Escalation % threshold (0-200, default 10)
+          schema: { type: number, minimum: 0, maximum: 200, default: 10 }
+      responses:
+        '200':
+          description: PDF executive report
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /reports/department-budget-allocation/pdf:
+    get:
+      operationId: departmentBudgetAllocationPdf
+      summary: Department budget allocation report — PDF export
+      tags: [Reports]
+      responses:
+        '200':
+          description: PDF executive report
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  # ── Exports ──────────────────────────────────────────────────────────────────
+  # Export endpoints live at /api/export/* (not /api/v1/*). They use the same
+  # session Bearer token as the web UI and return XLSX binary files.
+  # Authenticated users only; /activity additionally requires manager or admin role.
+  #
+  # NOTE: These endpoints use session auth (lapseiq_token cookie / Authorization
+  # header set by the web app), NOT a v1 API key. The base URL is /api/export,
+  # not /api/v1. Swagger UI's "Try it out" will not work unless you are already
+  # logged into the LapseIQ instance in the same browser session.
+
+  /export/contracts:
+    servers:
+      - url: https://demo.lapseiq.com/api
+        description: Public demo instance
+      - url: https://{host}/api
+        description: Your self-hosted instance
+        variables:
+          host:
+            default: localhost:3001
+    get:
+      operationId: exportContracts
+      summary: Export contracts as XLSX
+      description: |
+        Downloads an XLSX spreadsheet of contracts for the authenticated account.
+        Supports the same filter parameters as the Contracts list page. Results
+        are capped at 1,000 rows; `X-Truncated: 1` is set when the cap is hit.
+        Pass `?archived=1` to export archived contracts instead of active ones.
+
+        **Auth**: session Bearer token (from `lapseiq_token`), not a v1 API key.
+        **Rate limit**: 10 requests per minute per user (separate from the v1 limit).
+      tags: [Exports]
+      parameters:
+        - name: archived
+          in: query
+          description: '`1` or `true` to export archived contracts'
+          schema: { type: string, enum: ['0','1','true','false'] }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ContractStatus' }
+        - name: vendorId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 200 }
+        - name: columns
+          in: query
+          description: >
+            Comma-separated column IDs to include. Omit for all columns.
+            Valid IDs: vendor, product, contractNumber, customerNumber, poNumber,
+            owner, status, startDate, endDate, evaluationStart, cancelBy,
+            quantity, costPerLicense, value, autoRenewal, department, reseller, notes
+          schema: { type: string }
+        - name: vendorIn
+          in: query
+          description: CSV vendor name exact-matches (column filter)
+          schema: { type: string }
+        - name: statusIn
+          in: query
+          description: CSV status exact-matches
+          schema: { type: string }
+        - name: departmentIn
+          in: query
+          description: CSV department exact-matches
+          schema: { type: string }
+        - name: endDateFrom
+          in: query
+          description: Filter contracts with endDate >= this date (YYYY-MM-DD)
+          schema: { type: string, format: date }
+        - name: endDateTo
+          in: query
+          description: Filter contracts with endDate <= this date (YYYY-MM-DD)
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: XLSX file download
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="Contracts-2026-05-25.xlsx"' }
+            X-Truncated:
+              description: Set to `1` when result set was capped at 1,000 rows
+              schema: { type: string, enum: ['1'] }
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: Export generation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /export/vendors:
+    servers:
+      - url: https://demo.lapseiq.com/api
+        description: Public demo instance
+      - url: https://{host}/api
+        description: Your self-hosted instance
+        variables:
+          host:
+            default: localhost:3001
+    get:
+      operationId: exportVendors
+      summary: Export vendors as XLSX
+      description: |
+        Downloads an XLSX spreadsheet of vendors. Supports the same column-filter
+        parameters as the Vendors list page. Capped at 5,000 rows.
+
+        **Auth**: session Bearer token, not a v1 API key.
+        **Rate limit**: 10 requests per minute per user.
+      tags: [Exports]
+      parameters:
+        - name: nameIn
+          in: query
+          description: CSV vendor name exact-matches
+          schema: { type: string }
+        - name: typeIn
+          in: query
+          description: CSV vendor type exact-matches
+          schema: { type: string }
+        - name: complexityIn
+          in: query
+          description: 'CSV co-term complexity values: none, moderate, complex'
+          schema: { type: string }
+        - name: contractsMin
+          in: query
+          schema: { type: integer }
+        - name: contractsMax
+          in: query
+          schema: { type: integer }
+        - name: spendMin
+          in: query
+          schema: { type: number }
+        - name: spendMax
+          in: query
+          schema: { type: number }
+        - name: columns
+          in: query
+          description: >
+            Comma-separated column IDs to include. Omit for all columns.
+            Valid IDs: name, vendorType, cotermComplexity, contractCount,
+            activeSpend, lastContactedAt, cotermNotes
+          schema: { type: string }
+      responses:
+        '200':
+          description: XLSX file download
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="Vendors-2026-05-25.xlsx"' }
+            X-Truncated:
+              description: Set to `1` when result set was capped at 5,000 rows
+              schema: { type: string, enum: ['1'] }
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: Export generation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /export/activity:
+    servers:
+      - url: https://demo.lapseiq.com/api
+        description: Public demo instance
+      - url: https://{host}/api
+        description: Your self-hosted instance
+        variables:
+          host:
+            default: localhost:3001
+    get:
+      operationId: exportActivity
+      summary: Export activity log as XLSX
+      description: |
+        Downloads an XLSX spreadsheet of activity log entries. Requires manager
+        or admin role. Mirrors the filter parameters of `GET /api/activity`.
+
+        **Auth**: session Bearer token, not a v1 API key.
+        **Rate limit**: 10 requests per minute per user.
+        **Role**: manager or admin required.
+      tags: [Exports]
+      parameters:
+        - name: actionIn
+          in: query
+          description: CSV action-type filter (e.g. `contract_created,status_changed`)
+          schema: { type: string }
+        - name: action
+          in: query
+          description: Single action type (legacy; `actionIn` takes priority)
+          schema: { type: string }
+        - name: userIdIn
+          in: query
+          description: 'CSV user UUID filter; use `__BLANK__` to include system / deleted-user rows'
+          schema: { type: string }
+        - name: contractId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: dateFrom
+          in: query
+          schema: { type: string, format: date, example: '2026-01-01' }
+        - name: dateTo
+          in: query
+          schema: { type: string, format: date, example: '2026-12-31' }
+        - name: columns
+          in: query
+          description: 'CSV column IDs: date, action, user, contract, details'
+          schema: { type: string }
+      responses:
+        '200':
+          description: XLSX file download
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="ActivityLog-2026-05-25.xlsx"' }
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Forbidden — manager or admin role required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: Export generation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+tags:
+  - name: Contracts
+    description: Contract read operations
+  - name: Vendors
+    description: Vendor read operations
+  - name: Reports
+    description: Pre-built analytical reports
+  - name: Exports
+    description: 'XLSX export endpoints (session-auth; base path /api/export/ not /api/v1/)'

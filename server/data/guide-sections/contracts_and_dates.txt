@@ -1,0 +1,50 @@
+# Contracts — the operating unit of LapseIQ
+
+**UI:** `/contracts` (list), `/contracts/new` (create), `/contracts/:id` (detail), `/contracts/archived` (archived).
+**API:** `server/routes/contracts.js`. **Schema:** `Contract` model in `server/prisma/schema.prisma`.
+
+A contract has identity fields (contract number, customer/account number, PO, invoice number), financial fields (quantity, cost per license, denormalized `totalValue`), date fields (start, end, evaluation-start-by, cancel-by), auto-renewal terms, ownership (department, team, cost center, internal owner, end-user name and email), reseller details, savings tracking (original ask, final negotiated price, negotiation log), license utilization (seats licensed vs. seats actively in use, annual uplift %), signature tracking, and the renewal checklist JSON.
+
+## The three dates
+
+Date logic lives in `server/utils/dates.js`. Easy to confuse — keep them straight:
+
+- **`endDate`** — when the contract expires. The renewal date.
+- **`evaluationStartByDate`** — when you should *start* working the renewal. Calculated automatically from `endDate` and contract value: $100K+ → 180 days back, $25K–$100K → 90 days back, under $25K → 30 days back, no cost data → 60 days back. Higher-value contracts get a longer evaluation window because they involve more stakeholders. This is the field shown in the UI as the "review by" date. **Those tiers are the defaults, not hardcoded:** an admin can change the value breakpoints and the lead-time days in Settings → General → Evaluation Lead Times. Edits apply going forward — each contract's review-by recomputes the next time it's saved or renewed.
+- **`cancelByDate`** — only populated when `autoRenewal=true` and `autoRenewalNoticeDays` is set. It's `endDate` minus the notice days. This is the date you have to give notice by if you want to cancel. Miss it and the contract auto-renews. The auto-renewal trap panel on the dashboard exists specifically to surface this.
+
+When `endDate`, `costPerLicense`, `quantity`, or `autoRenewalNoticeDays` change, both auto-calculated dates recalculate.
+
+## Evaluate-By urgency colors
+
+LapseIQ colors each active contract by how close it is to its review-by (Evaluate-By) date, using one shared model so the contract header, the "Key Dates" chip, and the list-view day chips all color the same contract identically:
+
+- **Green** — before the Evaluate-By date. On track; no action needed yet.
+- **Amber** — at or past the Evaluate-By date but more than 30 days from `endDate`. The evaluation window is open; time to start working the renewal.
+- **Red** — 30 days or fewer to `endDate`, or already past it (overdue).
+
+Non-active contracts (`renewed`, `cancelled`, `expired`) render neutral. Because the Evaluate-By date is value-tiered and those tiers are admin-configurable in Settings → General → Evaluation Lead Times, changing the lead times shifts when a contract turns amber. The model lives in `client/src/lib/urgency.js`.
+
+## Status lifecycle
+
+A contract's `status` is one of `active`, `under_review`, `renewed`, `cancelled`, or `expired`. Contracts whose `endDate` falls in the past automatically flip to `expired` when the dashboard loads (`autoExpireContracts` in `server/routes/dashboard.js`). The `renewed` status is what you set when a successor contract has been signed; LapseIQ links the chain via `parentContractId`.
+
+## Practitioner note
+
+When a user asks about review-by versus cancel-by, the answer is almost always: they're different dates, both matter, and the cancel-by is the more dangerous one to miss. Review-by is when you start. Cancel-by is when the door closes. End date is when the bill comes either way.
+
+## Renewal workflow
+
+**UI:** Renewal Workflow card on `/contracts/:id` (Renewal Prep tab), shown as a 3×2 grid of numbered steps. Surfaces when the contract is `under_review` or within 90 days of `endDate`.
+**Schema:** `Contract.renewalChecklist` (JSON), `Contract.evaluationStartedById`, `Contract.evaluationStartedAt`.
+
+Six sequential steps: Renewal notice sent to vendor → Usage reviewed / quote requested → Proposal received → Under negotiation → Approved & awaiting signature → Signed / renewed. Each step records who marked it and when. When a contract first enters `under_review`, `evaluationStartedById` and `evaluationStartedAt` are auto-populated — useful when a manager wants to know who's driving each renewal.
+
+The Negotiation Log card on the same page is a free-form textarea backed by `Contract.negotiationLog`. The Renewal & Savings card surfaces `originalAsk`, `finalNegotiatedPrice`, and the computed delta. When `finalNegotiatedPrice` is below `originalAsk` and the contract is in a closed-won state, that delta rolls up into the dashboard's YTD savings number.
+
+## Bulk operations
+
+**UI:** Sticky toolbar in `/contracts` when one or more rows are selected.
+**API:** `PATCH /api/contracts/bulk` in `server/routes/contracts.js`.
+
+Bulk status change, owner assignment, and archive/restore across the contract list. Scope-restriction is enforced via id pre-resolution — a scoped viewer can't bulk-mutate ids they shouldn't be able to see.

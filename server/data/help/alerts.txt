@@ -1,0 +1,56 @@
+# Alerts
+
+Alerts are time-windowed reminders — daily digest emails, optional Slack/Teams pings, and the notification bell — that surface contracts approaching key dates.
+
+## What you'll see
+
+**Alerts page** at `/alerts`: every alert generated for contracts you have access to, plus your per-user preferences.
+
+**Notification bell** in the header: count of unacknowledged alerts. Click to expand.
+
+**Dashboard "Needs Attention Today"** panel: a curated subset of the most time-sensitive alerts — cancel-by within 7 days, overdue reviews, expiring this month.
+
+## Alert types
+
+Four configurable types, each with its own per-user preference for which days-before to fire on:
+
+- **`cancel_by`** — cancel-by date approaching (default: 60 / 30 / 7 days before)
+- **`renewal`** — end date approaching (default: 60 / 30 / 7 days before)
+- **`review_by`** — review-by date approaching (default: 30 / 14 days before)
+- **`payment_due`** — payment-schedule installment due (default: 30 / 14 / 7 days before)
+
+The defaults reflect industry-standard checkpoints: 60 days is the last realistic chance to cancel auto-renewal at most vendors, 30 days covers most cancellation windows, and 7 days is the final-warning fire for imminent deadlines. Review-by uses a tighter cadence because it's an internal-prep deadline, not a vendor-facing one.
+
+## How it works
+
+A nightly cron at 07:00 server time runs the alert engine. It walks every active contract, checks against per-user preferences, and queues alerts that should fire today. Each recipient gets **one email per run** — a daily summary, not one email per alert.
+
+Routing logic: a contract with an `internalOwnerId` delivers the digest to that owner. A contract without an owner falls back to all account admins. So nothing falls through the cracks if the assigned owner leaves.
+
+## Optional channels
+
+**Slack** and **Microsoft Teams** webhook digests mirror the email digest. Configure once in Settings → Slack/Teams → paste the webhook URL. The URL is SSRF-protected at the lib layer — only hooks.slack.com/services/* and outlook.office(365)?.com / *.webhook.office.com are accepted.
+
+The optional channels send the *same* digest content the email sends. Useful for teams that live in chat and don't want yet another inbox to monitor.
+
+## Common workflows
+
+**"I want quieter alerts — only 30 days out."** Alerts page → Preferences. Change the days-before list for each type. Set to just "30" to get a single reminder.
+
+**"I want louder alerts — give me 180 / 120 / 90 / 60 / 30."** Same Preferences UI; add the days you want. The defaults are conservative on purpose; if your team wants earlier signal, the override is one click away.
+
+**"I don't want email for renewal alerts, just the in-app bell."** Toggle `emailEnabled` off for that alert type. The bell counter still updates.
+
+**"I'm an admin and want to set the team-wide defaults."** Settings → Alerts → Global Defaults. New users inherit these. Existing users keep their own customized prefs (the system doesn't silently overwrite individual preferences).
+
+**"How do I send a daily digest to a Slack channel?"** Settings → Slack. Create an Incoming Webhook in your Slack workspace, paste the URL. Test the connection from the same screen. Once it's green, every nightly run mirrors to that channel.
+
+## When something looks wrong
+
+**No email for an alert I'm sure should fire.** Three things to check: (1) Your alert preference for that type — is `emailEnabled` true? (2) Is `EMAIL_MOCK=true` set on the instance? In demo mode it logs to console instead of sending. (3) Is `BREVO_API_KEY` and `EMAIL_FROM` configured? Without both, sending is skipped with a warning in the server logs.
+
+**The alert is in the digest but it's the wrong days-before count.** Per-user preferences override the global default. Check this user's Alert Preferences page.
+
+**Alert fired but for the wrong owner.** The engine reads `Contract.internalOwnerId` at the moment of firing. If you reassigned ownership between when the alert was scheduled and when it sent, the new owner gets it — by design.
+
+**Slack/Teams webhook returns 4xx.** Validation rejected the URL. Check it matches the per-provider allowlist exactly. A common gotcha: Slack webhook URLs start with `https://hooks.slack.com/services/` — anything else is rejected as SSRF-suspect.

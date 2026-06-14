@@ -1,0 +1,49 @@
+# AI features in detail
+
+## Provider abstraction
+
+`server/lib/ai.js`. Five providers supported, configured by environment variable:
+
+- `AI_PROVIDER=cloudflare` — Cloudflare Workers AI (demo default; primary). Per-task models: `@cf/mistralai/mistral-small-3.1-24b-instruct` for extract/brief, `@cf/meta/llama-3.1-8b-instruct` for ask/classify. Cascades through HuggingFace and Groq when CF returns 429 / 5xx / timeout for chat + classification only — extraction and brief stay CF-only because Mistral Small 24B is the quality bar.
+- `AI_PROVIDER=anthropic` — Claude (default model `claude-haiku-4-5`)
+- `AI_PROVIDER=openai` — OpenAI (default model `gpt-4o-mini`)
+- `AI_PROVIDER=azure_openai` — Azure OpenAI, runs inside the customer's own Azure tenant; requires `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_API_VERSION`
+- `AI_PROVIDER=gemini` — Google Gemini (default model `gemini-1.5-flash`)
+
+Resolution order for the active model: `AI_MODEL_OVERRIDE` env (operator emergency lever) → per-call `settings.model` → `AI_MODEL` env → provider default. The operator can switch providers without code changes — edit `.env` and restart.
+
+The customer brings their own API key. There is no shared LapseIQ AI key on a self-hosted install. The key is stored either in `.env` (`AI_API_KEY`) or encrypted at rest in `account_settings` via the Settings UI.
+
+When asked about which provider to choose: Anthropic Claude does extraction well at low cost; OpenAI is widely supported; Azure OpenAI is the right choice for procurement that requires AI inference inside an Azure tenant the customer already controls; Gemini is supported as an option. **Do not** speak to any provider's pricing, posture, or policies — point the user at that provider's own documentation.
+
+## Document extraction
+
+`server/lib/extractor.js::extractContractFields` produces a structured JSON object from contract document text or images. Schema includes vendor name, product, contract numbers, quantity, cost, dates, auto-renewal terms, PO/invoice numbers, department, requestor, delivery method, notes, vendor support contacts, reseller info, vendor contacts, and clause flags.
+
+Strict system prompt: "Be precise. Only extract what is clearly stated in the document. If a field is not present or unclear, set it to null — never guess or infer." Intentional — false data is worse than missing data when the user reviews the result anyway.
+
+## Signature / business card extraction
+
+`server/routes/signature.js`. POST `/api/signature/extract` accepts either a JSON body with pasted email-signature text or a multipart upload with a business-card image, returns the same JSON shape: `name`, `title`, `company`, `email`, `phone`, `fax`, `address`, `website`, `notes`. The route does not persist anything — the SPA's Signature Import modal shows extracted fields for review.
+
+The image route runs MIME-allowlist plus magic-byte verification before sending the image to the vision model (F015 hardening, May 2026 audit). Forged Content-Type headers don't reach the AI provider.
+
+## Renewal brief
+
+POST `/api/contracts/:id/brief` in `server/routes/contracts.js`. Generates an AI-written negotiation summary: key terms, renewal context, leverage points, risks, recommended approach. Result is cached on the contract (`renewalBrief`, `renewalBriefGeneratedAt`); refresh is opt-in via `?refresh=1`.
+
+Capped at 2 briefs per day per user on the demo (`DEMO_DEFAULT_CAPS.brief`). Self-hosted installs use the operator's own AI key with no LapseIQ-imposed cap by default.
+
+## Per-user-per-day quota
+
+`server/lib/aiQuota.js`. Atomic per-user-per-action-per-UTC-day cap implemented via PostgreSQL `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`. Three actions tracked: `ingest_extract`, `signature_extract`, `renewal_brief`.
+
+Default behavior on self-hosted: **unlimited** — operators bring their own AI key, credit spend is their concern. Operators who want a soft cap can set `AI_DAILY_CAP_PER_USER=N` in `.env`. The check is cap-then-act: increment fires *before* the AI call. If the increment pushes count over cap, it is rolled back so a hostile burst can't permanently pin the user above the cap.
+
+Demo mode forces `AI_DAILY_CAP_PER_USER=2` so a single visitor can't burn through the demo's shared key. When a user hits the cap, the API returns 402 with the count, cap, and reset timestamp (always next UTC midnight). SPA renders a toast: "You've used N/N of your daily AI calls. Resets at midnight UTC."
+
+## What the AI sees, what it doesn't
+
+When the user asks "does my data leave the building?" — the AI provider sees the text or image of one document at a time, plus the renewal-brief prompt-and-context. ForgeRift as a vendor never sees any of it. The customer can audit every outbound call from their own infrastructure.
+
+Set `AI_ENABLED=false` to disable AI features entirely. Manual entry and CSV import paths still work; document encryption-at-rest is independent of the AI feature flag.

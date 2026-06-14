@@ -1,0 +1,45 @@
+# Budget Forecast
+
+The Budget Forecast at `/budget` is the forward-looking projection of upcoming spend. Sister page to the Executive Spend Report (which is backward-looking actuals).
+
+## What you'll see
+
+**Top tile row** — total projected next-period spend, delta from current period, count of contracts contributing.
+
+**Per-contract projection table** — every active and under-review contract with: current unit price, current qty, needed qty, uplift %, projected unit price, projected total, delta vs current.
+
+**Roll-up tabs** — switch between flat list, department roll-up, and fiscal-year roll-up.
+
+**Export** — Excel export through `exceljs` with full formula-injection sanitization on every cell. Roll-ups, totals, and delta calculations all carry through.
+
+## How projections are calculated
+
+For each `active` or `under_review` contract:
+
+- **Current unit price** = `costPerLicense` on the record
+- **Current qty** = `quantity` on the record
+- **Needed qty** = the saved `budgetNeededQty` field if you set it, otherwise current qty
+- **Uplift %** = the per-vendor `budgetUpliftPercent` (defaults to 10%) unless overridden per-contract
+- **Projected unit price** = current × (1 + uplift / 100)
+- **Projected total** = projected unit price × needed qty
+- **Delta** = projected total − current total
+
+Multi-year contracts use the `PaymentSchedule` and `PaymentInstallment` models. Three schedule types: `installment` (annual payments with explicit amounts and due dates), `paid_upfront` (full term paid at signing; renewal still required at end), and `dismissed` (treated as standard annual recurring). When an installment is locked, the budget respects the locked amount instead of recomputing.
+
+## Common workflows
+
+**"Project Q3 budget for finance."** Open Budget Forecast. Toggle to Fiscal Year roll-up. Filter to FY in question. Export to Excel. Send.
+
+**"We're cutting headcount; recalculate budget."** Update `budgetNeededQty` on each affected contract (down from current). Refresh Budget Forecast — projected totals reflect the smaller seat count.
+
+**"Vendor X is bumping prices 12% next year, not 10%."** Override the per-contract uplift on each Vendor X contract. The Budget Forecast picks it up immediately.
+
+**"Show me only Engineering spend."** Toggle the Department roll-up tab. The projection shows just that department's contracts.
+
+## When something looks wrong
+
+**A multi-year contract is over-counting.** If the contract was signed `paid_upfront`, the budget treats it as already paid for the term. Check the Payment Schedule on the contract detail. If `paid_upfront` is correctly set, the projection only counts the renewal at end-of-term, not the annual ratable.
+
+**Projected total doesn't match what the vendor quoted.** The Budget Forecast uses LapseIQ's projection logic, which is conservative (current price × default uplift). The vendor's actual quote may include volume discounts, multi-year commits, or bundle pricing the model doesn't know about. Override `finalNegotiatedPrice` on the contract once you have the quote — the projection will use that on next renewal.
+
+**Department roll-up has an "Unassigned" bucket I want to clear.** Some contracts don't have a department set. Filter the contracts list to `department = null`, bulk-update to the right department, refresh budget.

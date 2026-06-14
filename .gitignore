@@ -107,4 +107,4 @@ audit-reports/*
 !audit-reports/0.90.9-*
 qa/
 .unlighthouse/
-data/
+data/jx.txt

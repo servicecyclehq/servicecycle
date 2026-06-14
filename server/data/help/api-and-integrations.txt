@@ -1,0 +1,132 @@
+# API & Integrations
+
+The public REST API and cloud / webhook integrations are how LapseIQ talks to the rest of your stack: BI tools pulling contract data, Zapier flows firing on renewal alerts, AWS / Azure / GCP marketplace purchases syncing nightly. Settings -> API & Integrations is where you mint keys, register webhook endpoints, and wire up cloud connectors.
+
+## Quick start — create an API key
+
+1. **Settings -> API & Integrations -> API Keys -> "Create key"**. Pick a descriptive name (e.g. "Looker BI - read-only"); the name shows up in audit logs alongside every request the key makes.
+2. **Copy the key immediately** — it's shown once and never again. Store it in your secret manager.
+3. **Send it as a bearer token** — `Authorization: Bearer lapseiq_xxxxxxxxxx` on every request to `/api/v1/*`.
+4. **Hit a probe endpoint** to confirm: `curl -H "Authorization: Bearer YOUR_KEY" https://your-instance/api/v1/contracts?limit=1`. A 200 with `{ success: true, data: { ... } }` means you're in.
+
+Keys are account-scoped — every endpoint sees only the data belonging to the account that minted the key. There are no per-key permissions yet; treat each key as full-read on its account's data.
+
+## Available endpoints
+
+The v1 API is read-only today (5 GETs). Write endpoints land in a future major version.
+
+- `GET /api/v1/contracts` — list contracts; supports `limit`, `cursor`, `vendor`, `status`, `endBefore`, `endAfter`.
+- `GET /api/v1/contracts/:id` — single contract with vendor + custom field expansions.
+- `GET /api/v1/vendors` — list vendors; supports `limit`, `cursor`, `q` (name search).
+- `GET /api/v1/vendors/:id` — single vendor with contract count + spend rollup.
+- `GET /api/v1/reports/:slug` — canned report data as JSON. Slug values mirror the in-app reports: `renewal-horizon`, `risk-radar`, `savings-ledger`, `license-wastage`, `spend-ledger`, `executive-spend`.
+
+The full OpenAPI 3 spec lives at `/api/v1/openapi.json` (machine-readable) and a browsable Swagger UI is mounted at `/docs/api`. Use the spec to auto-generate client SDKs in any language; use the UI to explore + send test requests from a browser.
+
+## Webhooks
+
+Webhooks send a signed JSON POST to a URL you provide whenever an alert fires (renewal due, cancel-by approaching, payment exception, etc.). Zapier, n8n, Make, or any custom HTTP listener.
+
+**Register an endpoint** at Settings -> API & Integrations -> Webhooks. Fill in:
+- **URL** — must be `https://` and resolve to a public IP (private RFC1918 ranges and metadata-service addresses are rejected at delivery time, SSRF guard).
+- **Label** — for your own bookkeeping; shows up in delivery history.
+
+You get back an HMAC secret on creation. Store it the same way you'd store a webhook signing secret from Stripe or GitHub.
+
+**Verify the signature** on every incoming POST: compute `HMAC-SHA256(secret, request_body)` and compare to the `X-Lapseiq-Signature` header. The `X-Lapseiq-Timestamp` header carries the delivery time (seconds since epoch); reject requests where the timestamp is more than 5 minutes off your clock. `X-Lapseiq-Delivery-Id` is a UUID per delivery — use it for idempotency on your side.
+
+
+**Signature verification — code samples:**
+
+```js
+// Node.js (Express / any framework)
+import crypto from 'crypto';
+
+app.post('/lapseiq-webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig       = req.headers['x-lapseiq-signature'];
+  const timestamp = req.headers['x-lapseiq-timestamp'];
+  const secret    = process.env.LAPSEIQ_WEBHOOK_SECRET;
+
+  // Reject stale deliveries (replay protection)
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {
+    return res.status(400).send('Timestamp too old');
+  }
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${req.body}`)
+    .digest('hex');
+
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  const event = JSON.parse(req.body);
+  // handle event.type ('contract.alert', 'contract.test', etc.)
+  res.status(200).send('OK');
+});
+```
+
+```python
+# Python (Flask)
+import hmac, hashlib, os, time
+from flask import request, abort
+
+@app.post('/lapseiq-webhook')
+def webhook():
+    sig       = request.headers.get('X-LapseIQ-Signature', '')
+    timestamp = request.headers.get('X-LapseIQ-Timestamp', '0')
+    secret    = os.environ['LAPSEIQ_WEBHOOK_SECRET'].encode()
+
+    # Reject stale deliveries (replay protection)
+    if abs(time.time() - float(timestamp)) > 300:
+        abort(400, 'Timestamp too old')
+
+    expected = hmac.new(secret, f'{timestamp}.'.encode() + request.data,
+                        hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(sig, expected):
+        abort(401, 'Invalid signature')
+
+    event = request.get_json(force=True)
+    # handle event['type']
+    return 'OK', 200
+```
+
+Note: the signed string is `{timestamp}.{raw_request_body}` — match Stripe's convention. Always pass the **raw** bytes to the HMAC (do not JSON.parse first).
+
+Failed deliveries retry with exponential backoff (3 attempts), then land in the dead-letter queue visible in the Webhooks tab. Successful deliveries also log there with response status + latency for the last 30 days.
+
+## Cloud connectors (AWS / Azure / GCP)
+
+Cloud connectors sync marketplace purchases nightly so your contracts inventory stays current without manual entry. Settings -> Integrations -> Cloud Connectors, pick a provider, paste credentials, click test, save. The nightly cron at 02:30 (in your account's timezone) walks the configured connectors and upserts contract rows.
+
+**AWS** — needs an IAM user with `aws-marketplace:View*` and `license-manager:ListReceivedLicenses` permissions.
+**Azure** — service principal credentials with `Microsoft.Marketplace/agreements/read` and `Microsoft.Consumption/usageDetails/read`.
+**GCP** — service account JSON with `cloudcommerceproducerprocurement.entitlements.list`.
+
+The `lastSyncAt` and `lastError` columns in the Connectors UI tell you whether last night's sync ran clean. Click "Sync Now" to trigger an out-of-band pull.
+
+## Common workflows
+
+**"I want a daily contract export to my data warehouse."** Mint an API key with a descriptive name. Cron-fetch `GET /api/v1/contracts?limit=500` (paginate via the `cursor` field in the response) into your warehouse. Schedule it after 03:00 in your account timezone so it runs after the cloud-connector sync.
+
+**"Zapier flow firing on every cancel-by alert, posting to Slack."** Register a webhook endpoint, paste the Zapier catch-hook URL, save. In Zapier, build the flow as `Webhook -> Slack message`. Use the HMAC secret to verify the signature in the Zapier step (paid feature on Zapier — on the free tier, leave verification off and rely on the unguessable webhook URL).
+
+**"Pull the Risk Radar report into our weekly QBR slide deck."** `GET /api/v1/reports/risk-radar` returns the same JSON the in-app report renders from. Pipe through any presentation-generation tool.
+
+**"Test a webhook before pointing my real Zapier flow at it."** Use a one-off receiver like `webhook.site` or `requestbin.com`. Register it as the URL, fire a test alert from the in-app Alerts page, watch it land. Once confirmed, swap the URL to the real Zapier hook.
+
+**"My BI tool requires an OpenAPI spec."** Point it at `https://your-instance/api/v1/openapi.json`. Most BI / API-explorer tools (Postman, Insomnia, Bruno) import directly from that URL.
+
+## When something looks wrong
+
+**API key returns 401 on every request.** Double-check the `Authorization: Bearer ` prefix (with the space). The header name is case-insensitive; the prefix is not. Also confirm the key wasn't revoked (Settings -> API & Integrations shows a "Revoked" tag on retired keys).
+
+**Webhook deliveries are landing in the DLQ.** Click into the DLQ row to see the response code + body from your endpoint. Common causes: (1) endpoint is responding non-2xx, (2) endpoint is timing out >10s, (3) endpoint URL has changed and you forgot to update LapseIQ. Fix and click "Retry" on the DLQ row.
+
+**Cloud connector says "connected" but no contracts are syncing.** Open the connector detail view — the `lastSyncAt` should be within the last 24 hours. If `lastError` is set, the credential probably lacks one of the read permissions listed above. Re-grant and re-test.
+
+**`/api/v1/openapi.json` returns 404.** Either you're on a pre-v0.37.1 release that doesn't serve the spec yet, or your reverse proxy isn't forwarding `/api/v1/*` correctly. `curl -v` will tell you which.
+
+**Swagger UI at /docs/api shows "Failed to load API definition".** The UI loads the spec from `/api/v1/openapi.json` — see the previous item. Also check browser DevTools -> Network for a CORS error if you're hitting the UI from a different origin than the API server.

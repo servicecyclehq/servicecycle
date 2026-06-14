@@ -1,0 +1,61 @@
+# Settings
+
+Settings at `/settings` is the admin control plane: company config, AI provider, security, storage, encryption, imports, alerts, custom fields, users & roles, and account data.
+
+## What you'll see
+
+Ten tabs, admin-only:
+
+**General** — company name, fiscal year start month, time zone.
+
+**AI & Extraction** — provider selection (`cloudflare`, `anthropic`, `openai`, `azure_openai`, `gemini`), API key (stored encrypted in `account_settings`), model override, test-connection button. Also where AI feature flags live (extract, brief, ask, classify).
+
+**Security** — 2FA enforcement (off / optional / required for admins / required for all), password reset audit log, session timeout.
+
+**Storage & Backup** — local vs S3 destination, backup encryption toggle, manual backup trigger, backup history.
+
+**Encryption** — status of `ENCRYPT_DOCS` (read-only; env-driven). If on, every uploaded document is AES-256-GCM-wrapped with a per-document key derived via HKDF from the operator's `MASTER_KEY`.
+
+**Imports** — saved CSV column-mapping profiles. Save a profile per source spreadsheet, run repeatedly without re-mapping.
+
+**Alerts** — global alert defaults (90 / 60 / 30 days for review/cancel/renewal). Per-user prefs override these on `/alerts`.
+
+**Custom Fields** — define account-level custom contract fields. Six types: text, textarea, number, date, checkbox, select. Soft-delete preserves values on existing contracts.
+
+**Users & Roles** — Team Members, Permissions, and Consultant Access in one consolidated tab. Invite users, manage roles (admin/manager/viewer/consultant), grant scope-restricted access, manage consultant grants.
+
+**Account Data** — export account data (full JSON dump), import account data, delete account.
+
+## Roles in 30 seconds
+
+**Admin** — full access. Manages users, settings, custom fields, consultant access.
+
+**Manager** — full read/write on contracts and vendors. Runs reports including Executive Spend. Can't change account-level settings.
+
+**Viewer** — read-only. With `contractScopeRestricted` flag, sees only contracts where they're the named internal owner.
+
+**Consultant** — read-only with attribution. Same scope as viewer but with an amber "Consultant Access — Changes are logged" banner. Every action writes to ActivityLog with consultant attribution. Used for external advisors brought in for a renewal cycle without needing a full account seat.
+
+Mental model: managers do the work, admins configure the box, consultants advise from the outside.
+
+## Common workflows
+
+**"I want to switch AI providers."** Settings → AI & Extraction. Pick provider from dropdown. Paste new API key. Click test connection. Save. No restart required for in-DB-keyed setups; restart required for `.env`-keyed setups.
+
+**"I need to add an 'Internal Project Code' field to every contract."** Settings → Custom Fields. Click "Add field". Name "Project Code", type `text`, slug `project_code`, required `true`. Save. Now every contract create/edit form shows the field.
+
+**"Invite the consulting firm to look at our Q3 renewals."** Settings → Users & Roles → Consultant Access tab → "Grant access". Enter their email, pick scope (full account or specific contracts), set expiration if desired. They get an invite email. When they log in, the amber banner appears and every action is logged.
+
+**"Set required 2FA for admins only."** Settings → Security → 2FA enforcement → "Required for admins". Existing admins get a one-time prompt to enroll on next login; new admins enroll during signup.
+
+**"Switch document storage from local to S3."** Settings → Storage & Backup. Pick S3, fill in bucket / region / access key / secret. Click test. Save. New uploads go to S3; existing local files stay local until you run the migration script.
+
+## When something looks wrong
+
+**"Test connection" for the AI provider fails.** Common causes: (1) key has trailing whitespace, (2) key is for the wrong tenant on Azure OpenAI, (3) provider's API is rate-limiting your IP, (4) the model name in the override doesn't match a real model. Check the server logs for the exact error from the provider.
+
+**Adding a custom field but it's not showing on the contract form.** The form fetches custom fields on mount. Reload the contract detail page. If still missing, check that `archivedAt` is null on the custom field definition.
+
+**Consultant access showing as "expired" but I just created it.** Check the expiration date you entered — common confusion is "in 30 days" interpreted as ISO date `2030-XX-XX` (year 2030) vs `2026-XX-XX + 30 days`. The picker is calendar-based; pick a specific date in the future.
+
+**S3 backups uploading but showing "failed" in the log.** The bucket policy may not have `s3:PutObject` for the IAM user attached to the key. Check the bucket policy and the IAM user permissions.

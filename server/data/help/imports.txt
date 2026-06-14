@@ -1,0 +1,80 @@
+# Imports
+
+There are three ways to get existing contract data into LapseIQ: drag-and-drop a PDF for AI extraction, upload a CSV with a saved column mapping, or call the API. This module covers the CSV path and the relationships between the three. See the AI Document Ingest module for the PDF / Word / image extraction details.
+
+## Quick start — CSV import
+
+1. **Settings -> Imports -> "Upload CSV"**. Pick your file (UTF-8 or CSV-with-BOM both work; common-spreadsheet exports from Excel and Google Sheets are accepted).
+2. **Map columns** — left column shows what LapseIQ expects (`vendor`, `product`, `endDate`, `costPerLicense`, etc.); right column is a dropdown of your CSV's headers. Map as many as apply; required fields are marked with a red asterisk.
+3. **Save the mapping as a profile** (recommended) — name it after the source spreadsheet so the next monthly drop is a one-click re-import instead of re-mapping every time.
+4. **Preview** — LapseIQ shows the first 10 rows with the mapping applied. Eyeball that vendors resolve correctly, dates parse as you expect, and costs aren't off by a decimal place.
+5. **Run import** — rows land as new contracts; existing contracts (matched on `vendor + product + startDate`) are updated, not duplicated.
+
+The import is atomic per row: a malformed row is skipped with a reason in the error log, the rest of the file still imports. The final screen tells you exactly how many rows created, how many updated, how many skipped, with download links to the error CSV.
+
+## The three import paths
+
+| Path | Best for | Speed | Accuracy |
+|---|---|---|---|
+| CSV upload | Bulk import of structured data you already have (ERP export, finance spreadsheet) | Fastest for >50 contracts | Highest — you control every field |
+| AI document ingest | Single PDFs you got from procurement / vendor portals | Fastest per individual document | Medium — review per-field confidence flags |
+| Public REST API | Automated nightly syncs from upstream systems | Continuous | Highest — your script controls validation |
+
+A common mature workflow: cloud connectors (AWS / Azure / GCP) pull marketplace contracts automatically every night; CSV import handles the quarterly finance export; AI ingest handles the one-off paper contracts that arrive in email.
+
+## Field mapping reference
+
+The canonical contract fields the CSV importer recognizes:
+
+**Required:** `vendor` (matched against existing vendors by name), `product`, `startDate`, `endDate`.
+
+**Pricing:** `costPerLicense`, `quantity`, `currency` (defaults to USD), `originalAsk`, `finalNegotiatedPrice` (the second two power the YTD Savings calculation).
+
+**Lifecycle:** `cancelByDate` (the most important field after end date — it drives auto-renewal-trap alerts), `reviewByDate`, `autoRenew` (true/false/yes/no — case-insensitive), `noticeDaysRequired`, `priceEscalationClause` (free text).
+
+**Org context:** `department`, `requestor`, `internalOwner` (email — links to a User if it matches one).
+
+**Reference numbers:** `contractNumber`, `customerNumber`, `poNumber`, `invoiceNumber`.
+
+**Custom fields:** any column whose header matches a custom-field slug you've defined under Settings -> Custom Fields is auto-mapped on the second import after the first defines the profile.
+
+Dates accept ISO `2026-05-19`, US `5/19/2026`, EU `19/05/2026`, and Excel serial dates. Booleans accept `true`/`false`/`yes`/`no`/`1`/`0`. Currency-formatted values like `$1,234.56` or `1.234,56` strip non-numeric characters before parsing.
+
+## Saved profiles
+
+Once you save a mapping, the next CSV from the same source uses it automatically — pick the profile from the dropdown on the upload screen and you're straight to the preview step. Profiles are account-scoped and shared across all admins.
+
+Useful conventions for profile names:
+- `Finance Q-end export` — quarterly drops from the finance team
+- `Vendor X reseller list` — monthly contract list from a specific reseller
+- `AWS Marketplace backfill` — one-time historical backfill that you'll likely never re-use but want documented
+
+Archive (don't delete) profiles you stop using — the activity log keeps a reference to the profile name on every historical import, and archiving keeps that reference resolvable.
+
+## Common workflows
+
+**"I have a 2,000-row export from our ERP — what's the order I should do this in?"** Open the file in Excel, sort by vendor, and tag any rows where the vendor name doesn't match an existing LapseIQ vendor. Bulk-create those vendors first (Settings -> Vendors -> Bulk Add, or just hand-create the top 5-10 then let the import auto-create the rest with the "Create missing vendors" checkbox). Then CSV-import the full file.
+
+**"My CSV has columns LapseIQ doesn't know about (e.g. 'PO Approval Chain')."** Either map them to a custom field you've already defined under Settings -> Custom Fields, or leave them unmapped — the importer ignores unmapped columns. Custom fields are the path if the column matters for filtering / reports.
+
+**"Re-importing the same CSV — will it duplicate everything?"** No. The import dedup key is `vendor + product + startDate`. A row matching an existing contract updates that contract (taking the new values for any mapped field); rows that don't match are created new. Use this on purpose: a monthly export becomes "fresh data overwrites stale".
+
+**"I want to bulk-update only the cancel-by date for 500 existing contracts."** CSV with just `vendor`, `product`, `startDate`, `cancelByDate`. The dedup match updates only the mapped fields — everything else stays untouched. Useful for a one-off correction pass.
+
+**"How does this interact with AI document ingest?"** Independent paths. CSV is structured-data-in; AI ingest is unstructured-document-in. The two converge at the same `Contract` records in the database. You can ingest a PDF for a contract that was originally CSV-imported and the document attaches to the existing contract record.
+
+**"I uploaded a CSV with bad dates and now half my contracts have weird end dates."** Settings -> Imports -> Import History shows every past import with a "Revert" button (available for 7 days post-import). Revert undoes just that import's changes, leaving pre-import state intact.
+
+## When something looks wrong
+
+**Import screen says "0 rows mapped" after I selected the file.** The first row of your CSV needs to be a header row. If your file starts with data, add a header row at the top (`vendor,product,endDate,...`) and re-upload.
+
+**"Date format not recognized" on rows that look fine to me.** The importer auto-detects the format from the first 10 valid rows. If your file mixes formats (some `5/19/2026`, some `2026-05-19`), the detector gets confused. Normalize to one format in Excel first, then re-upload.
+
+**Vendor field shows "(create new)" for every row even though I know these vendors exist.** Vendor matching is case-insensitive but does NOT do fuzzy matching across the CSV import — only exact normalized matches (trimmed whitespace, single-space-collapsed). "Microsoft, Inc." won't auto-match "Microsoft Corporation" the way the AI ingest path would. Pre-create the vendors with the exact spelling your CSV uses, or update your CSV first.
+
+**Imported 500 rows, only 312 ended up in /contracts.** Check the import-result screen — the gap is in the "skipped" count. The error CSV download has one row per skipped row with the reason (missing required field, parse error, date out of range, etc.). Fix and re-import just the skipped rows.
+
+**Custom field values aren't landing.** The CSV column header has to match the custom-field slug exactly (case-sensitive), not the display name. Check Settings -> Custom Fields for the slugs. Add them to your CSV header row and re-import.
+
+**"Revert" button is missing on an old import.** Reverts are available for 7 days post-import. Older imports are locked in to prevent unbounded historical drift. For surgical corrections beyond 7 days, do a follow-up CSV with the dedup key and the corrected values — the update path is your forward-only revert.

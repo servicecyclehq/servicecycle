@@ -1,0 +1,54 @@
+# Onboarding
+
+Onboarding is the path from a fresh LapseIQ instance (or a fresh demo account) to a working renewal calendar. This module covers both: first-run operator setup at `/setup`, and the in-app wizard that walks new users through their first vendor and contract.
+
+## Quick start — first-run operator (fresh self-host)
+
+The very first time anyone visits a self-hosted LapseIQ install, the server detects `accounts: 0` and routes every page to `/setup`. The five steps in order:
+
+1. **Create the first account** — company name, admin email, password. This becomes the root admin and the workspace name everywhere in the UI.
+2. **Pick an AI provider** (optional) — Cloudflare Workers AI, Anthropic, OpenAI, Azure OpenAI, or Gemini. Paste the API key. Click test. If you skip this step you can do it later under `Settings -> AI & Extraction`; the rest of LapseIQ works without AI.
+3. **Storage** — local filesystem (default) or S3 bucket. Local is fine for evaluation; S3 is the path for any deployment that survives a container rebuild without an external volume.
+4. **Encryption (optional)** — set `ENCRYPT_DOCS=true` and provide a `MASTER_KEY` in `.env` if you want at-rest encryption of every uploaded document. Once on, leaving it on is required — flipping it off mid-stream leaves existing documents unreadable.
+5. **Done** — the wizard logs you in as the admin and drops you on `/dashboard`. The in-app onboarding wizard takes over from there.
+
+If your instance was already set up by someone else, you'll never see `/setup`. You'll get an invite email instead — click the link, set your password, and you land on `/dashboard` directly.
+
+## Quick start — in-app wizard (new user inside an existing account)
+
+After your first login, the OnboardingWizard overlay walks admin and manager users through four steps. It does NOT show for viewers or consultants (they hit pages they can't write to, which would 403 on submit).
+
+1. **Add your first vendor** — name, optional contacts and notes. The normalizer matches case-insensitively, so "Microsoft" and "Microsoft Corporation" resolve to the same record.
+2. **Add your first contract** — pick the vendor, fill in product, dates (start / end / cancel-by), cost per license and quantity. End date and cancel-by are the two fields that drive every alert and dashboard tile, so even if you only know an approximate cancel-by, fill it in — you can refine later.
+3. **Invite teammates** — Settings -> Users & Roles. Roles are admin / manager / viewer / consultant; see the Settings module for the 30-second role primer.
+4. **Configure alerts** — Settings -> Alerts. Default windows are 90 / 60 / 30 days; per-user prefs override on `/alerts`.
+
+Dismissing the wizard does NOT mark onboarding complete — the "Continue setup" pill at the top of every page (except `/dashboard`) gives you a single click back to where you left off.
+
+## How the data lands here
+
+The first-run wizard writes directly to the database (Account + User + AccountSettings rows). It never sends data anywhere outside your install — Cloudflare is the one exception if you picked it as the AI provider, in which case the test-connection call hits Cloudflare's API to validate the key.
+
+The in-app wizard tracks progress via two `localStorage` keys: `lapseiq_onboarding_step` (the highest step the user has reached) and `lapseiq_setup_banner_dismissed` (per-session dismissal of the "Continue setup" pill). Logging out clears both via the `SESSION_KEYS` purge in `api/client.js`.
+
+## Common workflows
+
+**"I just stood up a fresh install on a droplet and I'm not seeing /setup."** Check that the database is reachable from the server container — `docker compose logs server` will show migration output. If migrations didn't run, no `accounts` table exists and the setup gate doesn't fire. Run `docker compose exec server npx prisma migrate deploy`.
+
+**"My first admin's email is wrong — how do I fix it?"** Settings -> Users & Roles, invite the correct admin email, log in as the new admin, then archive or delete the original user. Or, if you're comfortable with SQL, update the `users.email` row directly and restart the server so the session caches invalidate.
+
+**"How do I re-trigger the onboarding wizard for a teammate who dismissed it too early?"** Help & Share menu -> "Show welcome tour" re-opens the quick-start panel. For the full wizard, clear `lapseiq_onboarding_step` from their browser's localStorage and reload. (There's no admin button for this yet — backlog item.)
+
+**"I want a clean demo for a prospect — every step fresh."** On the demo deployment, register a new email — each demo signup gets its own account with the standard seed data. On a self-host, the cleanest path is a separate `compose project` (different `COMPOSE_PROJECT_NAME`) pointed at a separate database.
+
+**"Can I skip onboarding entirely and go straight to importing 200 contracts from a CSV?"** Yes. Dismiss the wizard. Settings -> Imports gives you the CSV upload path; the Imports help module covers it.
+
+## When something looks wrong
+
+**The /setup page keeps redirecting back to /setup after I fill it out.** The most common cause is the AI test-connection failing on step 2 and the form not advancing. Skip step 2 (you can configure AI later) and continue.
+
+**OnboardingWizard renders on every page load even after I completed it.** Check that `localStorage.getItem('lapseiq_onboarding_step')` returns `4` (the wizard's "done" sentinel). If it's missing, your browser is probably clearing localStorage on close — disable that in your browser settings or use a different profile.
+
+**"Continue setup" pill still shows after I completed every step.** The pill reads `onboardingDone` from `useAuth()`, which the server sets when the User row's `onboardingDoneAt` is populated. The setter fires when the wizard's final step is committed; if you only ever dismissed the wizard (via the X button) without reaching step 4, the flag never sets. Re-open the wizard from the dashboard and reach the final step.
+
+**The first user I created isn't getting admin permissions.** The very first user on a fresh install is always admin — the role field is set server-side regardless of what the form posts. If your first user is showing as `manager` or `viewer`, you probably weren't the first user (someone created an account before you). Check `SELECT email, role, "createdAt" FROM users ORDER BY "createdAt" ASC LIMIT 5;` against your database.
