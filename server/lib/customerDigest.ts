@@ -28,7 +28,7 @@ async function digestRecipients(prisma: any, accountId: string): Promise<{ compa
   });
   if (!account) return null;
   const recipients = await prisma.user.findMany({
-    where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: null } },
+    where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true },
     select: { email: true },
   });
   const emails = new Set<string>(recipients.map((r: any) => r.email).filter(Boolean));

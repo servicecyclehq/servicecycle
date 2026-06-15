@@ -398,7 +398,7 @@ async function _sendCustomerDigest(account: any) {
     if (off && off.value === 'false') return 0;
 
     const recips = await prisma.user.findMany({
-      where: { accountId: account.id, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: null } },
+      where: { accountId: account.id, role: { in: ['admin', 'manager'] }, isActive: true },
       select: { email: true },
     });
     const to = [...new Set((recips as any[]).map((r) => r.email).filter(Boolean))];
