@@ -2076,7 +2076,18 @@ async function resetAndSeedDemo(opts = {}) {
   await seedStandards(prisma);
   await _resetDemoAccount();
   const summary = await _seedAccount();
-  return { ...summary, trigger: opts.trigger || 'cli' };
+  // Partner-org "contractor with a sales team" book -- separate from the
+  // standalone Meridian account above, so the demo shows BOTH the manager
+  // roll-up / per-rep digest path and the standalone fallback. Best-effort:
+  // a failure here must never break the core Meridian seed.
+  let contractor = null;
+  try {
+    const { seedContractorBook } = require('./seedContractorBook');
+    contractor = await seedContractorBook(prisma);
+  } catch (e) {
+    console.error('[resetAndSeedDemo] contractor-book seed failed (non-fatal):', (e && e.message) || e);
+  }
+  return { ...summary, contractor, trigger: opts.trigger || 'cli' };
 }
 
 // -- CLI entry ----------------------------------------------------------------
