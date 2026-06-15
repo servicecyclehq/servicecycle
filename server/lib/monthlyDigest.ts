@@ -373,7 +373,7 @@ function customerDigestHtml(opts: any) {
     const rows = s.items.map((it: any) => {
       const when = it.daysUntil < 0 ? `${Math.abs(it.daysUntil)} days overdue` : `due in ${it.daysUntil} days`;
       const whenColor = it.daysUntil < 0 ? '#dc2626' : '#d97706';
-      return `<li style="margin:0 0 5px;font-size:13px;color:#334155;"><strong>${_esc(it.equipment)}</strong> &middot; ${_esc(it.task)} &mdash; <span style="color:${whenColor};font-weight:600;">${when}</span></li>`;
+      return `<li style="margin:0 0 6px;font-size:13px;color:#334155;line-height:1.5;"><strong>${_esc(it.task)}</strong> &mdash; <span style="color:${whenColor};font-weight:600;">${when}</span></li>`;
     }).join('');
     return `<div style="margin:0 0 14px;"><div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 6px;">${_esc(s.site)} &mdash; ${s.items.length} item${s.items.length === 1 ? '' : 's'} need${s.items.length === 1 ? 's' : ''} attention</div><ul style="margin:0;padding-left:18px;">${rows}</ul></div>`;
   }).join('');
@@ -393,9 +393,9 @@ function customerDigestHtml(opts: any) {
     + `<div style="padding:20px 26px;">`
     + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">${intro.g}</div>`
     + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">${intro.b}</div>`
-    + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 28px;border-collapse:collapse;">`
-    + `<tr>`
-    + `<td style="padding-left:44px;padding-right:20px;font-size:46px;font-weight:800;color:${overallColor};line-height:1;white-space:nowrap;vertical-align:middle;">${overallRate == null ? 'n/a' : overallRate + '%'}</td>`
+    + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 28px;"><tr>`
+    + `<td width="44" style="width:44px;font-size:1px;line-height:1px;">&nbsp;</td>`
+    + `<td style="padding-right:20px;font-size:46px;font-weight:800;color:${overallColor};line-height:1;white-space:nowrap;vertical-align:middle;">${overallRate == null ? 'n/a' : overallRate + '%'}</td>`
     + `<td style="font-size:13px;color:#475569;line-height:1.55;vertical-align:middle;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></td>`
     + `</tr></table>`
     + `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 14px;">Compliance by site</div>`
