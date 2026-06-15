@@ -347,12 +347,16 @@ function _thingsToDoBySite(items: any[]) {
 // template. `co` and `rep` arrive pre-escaped; `rep` is null when unassigned.
 // Selected by month (everyone gets the same one in a given month; it cycles),
 // or pinned via opts.introIndex for previews.
+// Standardized 2nd sentence across all variants; only the opener (1st sentence) rotates.
+function _introCloser(rep: string | null): string {
+  return rep ? ` Take a look below, and reach out to ${rep} with any questions.` : ' Take a look below.';
+}
 const CUSTOMER_INTROS: Array<(co: string, mo: string, rep: string | null) => { g: string; b: string }> = [
-  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Here's your maintenance summary for ${mo} &mdash; where your compliance stands and what's coming up. Take a look below${rep ? `, and reach out to ${rep} with any questions` : ''}.` }),
-  (co, mo, rep) => ({ g: `Hello ${co} team,`, b: `Your ${mo} maintenance recap is ready: a quick look at your compliance and the items on deck.${rep ? ` ${rep} is happy to help with any of it.` : ''}` }),
-  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Checking in with your monthly maintenance summary. Here's how things look and what's coming due.${rep ? ` Questions? ${rep} is just a reply away.` : ''}` }),
-  (co, mo, rep) => ({ g: `Hello ${co} team,`, b: `Here's your equipment maintenance update for ${mo}. Your compliance snapshot plus what needs scheduling is below.${rep ? ` Loop in ${rep} anytime.` : ''}` }),
-  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Time for your monthly maintenance check-in. Below is where you stand and what's ahead.${rep ? ` ${rep} can walk you through anything that needs attention.` : ''}` }),
+  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Here's your maintenance summary for ${mo} &mdash; where your compliance stands and what's coming up.${_introCloser(rep)}` }),
+  (co, mo, rep) => ({ g: `Hello ${co} team,`, b: `Your ${mo} maintenance recap is ready, with a quick look at your compliance and the items on deck.${_introCloser(rep)}` }),
+  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Checking in with your monthly maintenance summary &mdash; here's how things look and what's coming due.${_introCloser(rep)}` }),
+  (co, mo, rep) => ({ g: `Hello ${co} team,`, b: `Here's your equipment maintenance update for ${mo}, covering your compliance snapshot and what needs scheduling.${_introCloser(rep)}` }),
+  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Time for your monthly maintenance check-in on where you stand and what's ahead.${_introCloser(rep)}` }),
 ];
 
 function customerDigestHtml(opts: any) {
@@ -389,8 +393,8 @@ function customerDigestHtml(opts: any) {
     + `<div style="padding:20px 26px;">`
     + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">${intro.g}</div>`
     + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">${intro.b}</div>`
-    + `<div style="display:flex;align-items:center;gap:22px;margin:4px 0 28px;padding-left:14px;">`
-    + `<div style="font-size:46px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
+    + `<div style="display:flex;align-items:center;gap:22px;margin:4px 0 28px;padding-left:40px;">`
+    + `<div style="font-size:46px;font-weight:800;color:${overallColor};line-height:1;margin-left:8px;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
     + `<div style="font-size:13px;color:#475569;line-height:1.55;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></div></div>`
     + `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 14px;">Compliance by site</div>`
     + _complianceBars(chartRows)
