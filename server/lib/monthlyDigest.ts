@@ -369,8 +369,10 @@ function customerDigestHtml(opts: any) {
     + `<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:.08em;text-transform:uppercase;">ServiceCycle &middot; Monthly Summary</div>`
     + `<div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">${_esc(companyName)}</div>`
     + `<div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;">Your maintenance compliance for ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.</div></div>`
-    + `<div style="padding:18px 24px;">`
-    + `<div style="display:flex;align-items:center;gap:22px;margin:10px 0 28px;padding-left:14px;">`
+    + `<div style="padding:20px 26px;">`
+    + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">Hi ${_esc(companyName)} team,</div>`
+    + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">Here's your maintenance summary for ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} &mdash; where your compliance stands and what's coming up. Take a look below${repName ? `, and reach out to ${_esc(repName)} with any questions` : ''}.</div>`
+    + `<div style="display:flex;align-items:center;gap:22px;margin:4px 0 28px;padding-left:14px;">`
     + `<div style="font-size:46px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
     + `<div style="font-size:13px;color:#475569;line-height:1.55;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></div></div>`
     + `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 14px;">Compliance by site</div>`
