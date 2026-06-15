@@ -228,6 +228,9 @@ router.get('/', requireAdmin, async (req, res) => {
     const customerWeeklyDigest = dbRows['customer_weekly_digest'] === 'true';
     const customerQuarterlyCfo = dbRows['customer_quarterly_cfo'] === 'true';
 
+    // Rep-briefing cadence (default monthly): monthly|semimonthly|weekly|off.
+    const alertCadence = dbRows['alert_cadence'] || 'monthly';
+
     // Ingest usage (for admin display and freemium metering)
     const ingestCount = parseInt(dbRows['AI_INGEST_COUNT'] || '0', 10);
     const ingestLimit = parseInt(dbRows['AI_INGEST_LIMIT'] || '10', 10);
@@ -281,6 +284,7 @@ router.get('/', requireAdmin, async (req, res) => {
         autoSendLeaveBehind,
         // #30: customer digest + CFO report opt-ins (AccountSetting KV).
         customerWeeklyDigest,
+        alertCadence,
         customerQuarterlyCfo,
       },
     });
@@ -406,7 +410,18 @@ router.put('/', async (req, res) => {
       customerQuarterlyCfoUpdate = (v === true || v === 'true');
     }
 
-    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && autoSendLeaveBehindUpdate === null && customerWeeklyDigestUpdate === null && customerQuarterlyCfoUpdate === null && fteCountUpdate === null) {
+    // Rep-briefing cadence — admin-only KV (string: monthly|semimonthly|weekly|off).
+    let alertCadenceUpdate: any = null;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'alertCadence') && isAdmin) {
+      const { VALID_CADENCES } = require('../lib/alertCadence');
+      const v = String(req.body.alertCadence || '').trim().toLowerCase();
+      if (!VALID_CADENCES.includes(v)) {
+        return res.status(400).json({ success: false, error: `alertCadence must be one of ${VALID_CADENCES.join(', ')}` });
+      }
+      alertCadenceUpdate = v;
+    }
+
+    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && autoSendLeaveBehindUpdate === null && customerWeeklyDigestUpdate === null && customerQuarterlyCfoUpdate === null && alertCadenceUpdate === null && fteCountUpdate === null) {
       return res.status(400).json({ success: false, error: 'No valid settings provided' });
     }
 
@@ -543,6 +558,14 @@ router.put('/', async (req, res) => {
         where:  { accountId_key: { accountId: req.user.accountId, key } },
         update: { value: String(customerQuarterlyCfoUpdate) },
         create: { accountId: req.user.accountId, key, value: String(customerQuarterlyCfoUpdate) },
+      });
+    }
+    if (alertCadenceUpdate !== null) {
+      const key = 'alert_cadence';
+      await prisma.accountSetting.upsert({
+        where:  { accountId_key: { accountId: req.user.accountId, key } },
+        update: { value: alertCadenceUpdate },
+        create: { accountId: req.user.accountId, key, value: alertCadenceUpdate },
       });
     }
 

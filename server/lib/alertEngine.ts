@@ -118,6 +118,12 @@ function createTransport() {
 
 const FROM_ADDRESS = process.env.EMAIL_FROM || null;
 
+// Rep-facing daily digest (email/Slack/Teams) is OFF by default — the cadenced
+// repBriefing (default monthly) now owns rep outbound, so reps don't get a daily
+// firehose. In-app Alert rows, webhooks, and partner events still fire here.
+// Set ALERT_LEGACY_DIGEST=on to restore the old daily email/Slack/Teams digest.
+const LEGACY_DIGEST = process.env.ALERT_LEGACY_DIGEST === 'on';
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(d) {
@@ -577,6 +583,7 @@ async function runAlertEngine({ accountId }: any = {}) {
           }
         }
 
+        if (LEGACY_DIGEST) {
         for (const { user, alertItems: userAlerts } of recipientDigests.values()) {
           if (userAlerts.length === 0) continue;
           try {
@@ -617,6 +624,7 @@ async function runAlertEngine({ accountId }: any = {}) {
         } catch (teamsErr) {
           console.warn(`${pfx} Teams delivery skipped:`, teamsErr.message);
         }
+        } // end LEGACY_DIGEST gate — cadenced repBriefing owns rep email/Slack/Teams now
         try {
           await deliverWebhooks({ accountId: accId, alertItems });
         } catch (webhookErr) {
@@ -654,6 +662,6 @@ async function runAlertEngine({ accountId }: any = {}) {
   }
 }
 
-module.exports = { runAlertEngine, TIERS };
+module.exports = { runAlertEngine, TIERS, deliverSlackDigest, deliverTeamsDigest, deliverWebhooks };
 
 export {};

@@ -1569,6 +1569,19 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     }), { timezone: 'UTC' });
     console.log('[Cron] Alert engine scheduled (per-account) -- runs daily at 07:00')
 
+    // ── Cadenced rep briefing (daily check, watermark-gated) ────────────────
+    // Runs DAILY but only SENDS to an account once its alert_cadence interval
+    // has elapsed (default monthly; semimonthly/weekly/off configurable). The
+    // watermark makes a missed day self-heal -- no reliance on a once-a-month
+    // fire (engineering-guidelines sec.1). The 07:00 engine above keeps the
+    // in-app feed current; this is the throttled, forward-looking rep push.
+    cron.schedule('15 7 * * *', () => runOnce('repBriefing', async () => {
+      const { runRepBriefing } = require('./lib/repBriefing');
+      const summary = await runRepBriefing();
+      console.log('[Cron] Rep briefing:', JSON.stringify(summary));
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Rep briefing scheduled (watermark-gated) -- daily check at 07:15');
+
     // ── Regulatory news scanner (every 6 hours) ─────────────────────────────
     // Pulls OSHA newsroom + electrical trade press RSS, filters to
     // maintenance-compliance terms. Global rows; NEWS_SCANNER_ENABLED=false
