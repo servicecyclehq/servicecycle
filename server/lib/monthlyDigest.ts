@@ -188,9 +188,10 @@ function _complianceBars(chartRows: Array<{ label: string; rate: number | null; 
     const rateLabel = r.rate == null ? 'n/a' : `${r.rate}%`;
     const overdueTag = r.overdue > 0 ? `<span style="color:#dc2626;font-size:11px;font-weight:600;">${r.overdue} overdue</span>` : '';
     return `<div style="margin:0 0 10px;">`
-      + `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">`
-      + `<span style="font-size:13px;color:#1e293b;font-weight:600;">${_esc(r.label)}</span>`
-      + `<span style="font-size:12px;color:${color};font-weight:700;">${rateLabel}&nbsp;&nbsp;${overdueTag}</span></div>`
+      + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:4px;"><tr>`
+      + `<td style="font-size:13px;color:#1e293b;font-weight:600;text-align:left;">${_esc(r.label)}</td>`
+      + `<td style="font-size:12px;color:${color};font-weight:700;text-align:right;white-space:nowrap;">${rateLabel}${overdueTag ? `&nbsp;&nbsp;${overdueTag}` : ''}</td>`
+      + `</tr></table>`
       + `<div style="background:#f1f5f9;border-radius:4px;height:10px;overflow:hidden;">`
       + `<div style="width:${pct}%;height:10px;background:${color};border-radius:4px;"></div></div></div>`;
   }).join('');
