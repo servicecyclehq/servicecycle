@@ -343,10 +343,27 @@ function _thingsToDoBySite(items: any[]) {
   return out;
 }
 
+// Rotating greeting + intro copy so the monthly email doesn't read as one canned
+// template. `co` and `rep` arrive pre-escaped; `rep` is null when unassigned.
+// Selected by month (everyone gets the same one in a given month; it cycles),
+// or pinned via opts.introIndex for previews.
+const CUSTOMER_INTROS: Array<(co: string, mo: string, rep: string | null) => { g: string; b: string }> = [
+  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Here's your maintenance summary for ${mo} &mdash; where your compliance stands and what's coming up. Take a look below${rep ? `, and reach out to ${rep} with any questions` : ''}.` }),
+  (co, mo, rep) => ({ g: `Hello ${co} team,`, b: `Your ${mo} maintenance recap is ready: a quick look at your compliance and the items on deck.${rep ? ` ${rep} is happy to help with any of it.` : ''}` }),
+  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Checking in with your monthly maintenance summary. Here's how things look and what's coming due.${rep ? ` Questions? ${rep} is just a reply away.` : ''}` }),
+  (co, mo, rep) => ({ g: `Hello ${co} team,`, b: `Here's your equipment maintenance update for ${mo}. Your compliance snapshot plus what needs scheduling is below.${rep ? ` Loop in ${rep} anytime.` : ''}` }),
+  (co, mo, rep) => ({ g: `Hi ${co} team,`,    b: `Time for your monthly maintenance check-in. Below is where you stand and what's ahead.${rep ? ` ${rep} can walk you through anything that needs attention.` : ''}` }),
+];
+
 function customerDigestHtml(opts: any) {
   const { companyName, overallRate, chartRows, thingsToDo, repName, repPhone, generatedAt } = opts;
   const overallColor = _rateColor(overallRate);
   const totalItems = thingsToDo.reduce((n: number, s: any) => n + s.items.length, 0);
+  const monthLabel = generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const introIdx = Number.isInteger(opts.introIndex)
+    ? ((opts.introIndex % CUSTOMER_INTROS.length) + CUSTOMER_INTROS.length) % CUSTOMER_INTROS.length
+    : (generatedAt.getFullYear() * 12 + generatedAt.getMonth()) % CUSTOMER_INTROS.length;
+  const intro = CUSTOMER_INTROS[introIdx](_esc(companyName), monthLabel, repName ? _esc(repName) : null);
 
   const siteSections = thingsToDo.map((s: any) => {
     const rows = s.items.map((it: any) => {
@@ -370,8 +387,8 @@ function customerDigestHtml(opts: any) {
     + `<div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">${_esc(companyName)}</div>`
     + `<div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;">Your maintenance compliance for ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.</div></div>`
     + `<div style="padding:20px 26px;">`
-    + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">Hi ${_esc(companyName)} team,</div>`
-    + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">Here's your maintenance summary for ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} &mdash; where your compliance stands and what's coming up. Take a look below${repName ? `, and reach out to ${_esc(repName)} with any questions` : ''}.</div>`
+    + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">${intro.g}</div>`
+    + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">${intro.b}</div>`
     + `<div style="display:flex;align-items:center;gap:22px;margin:4px 0 28px;padding-left:14px;">`
     + `<div style="font-size:46px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
     + `<div style="font-size:13px;color:#475569;line-height:1.55;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></div></div>`
