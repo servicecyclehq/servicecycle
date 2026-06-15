@@ -1,5 +1,5 @@
 /**
- * digestExcel.ts — builds the monthly-digest Excel attachment as a Buffer
+ * digestExcel.ts  builds the monthly-digest Excel attachment as a Buffer
  * (for Brevo email attach), not an HTTP stream like lib/xlsxExport.ts.
  *
  * The Rep column is on EVERY row on purpose: it lets the sales manager open
@@ -16,16 +16,16 @@ export interface DigestRow {
   rep: string;
   company: string;
   site: string;
-  equipment: string;       // "Transformer · Square D / EZ-9"
+  equipment: string;       // "Transformer  Square D / EZ-9"
   serviceNeeded: string;   // task name
   dueDate: Date | null;    // nextDueDate
   status: string;          // "12d overdue" | "due in 30d"
   condition: string;       // C1 | C2 | C3
-  priorityScore: number | null; // DPS 1–25
-  trend: string;           // "⚠ worsening" | ""
+  priorityScore: number | null; // DPS 125
+  trend: string;           // " worsening" | ""
   estMinDollars: number | null;
   estMaxDollars: number | null;
-  rulPct: number | null;   // modernizationRiskScore × 100
+  rulPct: number | null;   // modernizationRiskScore  100
   ageYears: number | null;
   autoC3: boolean;
 }
@@ -40,7 +40,7 @@ const COLUMNS: Array<{ header: string; key: keyof DigestRow | 'estValue'; width:
   { header: 'Status',         key: 'status',        width: 14 },
   { header: 'Condition',      key: 'condition',     width: 11 },
   { header: 'Priority',       key: 'priorityScore', width: 10, type: 'number' },
-  { header: '⚠ Trend',        key: 'trend',         width: 16 },
+  { header: ' Trend',        key: 'trend',         width: 16 },
   { header: 'Est. value $',   key: 'estValue',      width: 20 },
   { header: 'RUL %',          key: 'rulPct',        width: 10, type: 'number' },
   { header: 'Age (yrs)',      key: 'ageYears',      width: 11, type: 'number' },
@@ -52,7 +52,7 @@ function estValueText(r: DigestRow): string {
   const min = r.estMinDollars ?? r.estMaxDollars ?? 0;
   const max = r.estMaxDollars ?? r.estMinDollars ?? 0;
   if (min === max) return `$${min.toLocaleString()}`;
-  return `$${min.toLocaleString()} – $${max.toLocaleString()}`;
+  return `$${min.toLocaleString()}  $${max.toLocaleString()}`;
 }
 
 /**
@@ -60,7 +60,7 @@ function estValueText(r: DigestRow): string {
  */
 export async function buildDigestXlsxBuffer(
   rows: DigestRow[],
-  { title = 'ServiceCycle — Monthly Service Digest' }: { title?: string } = {},
+  { title = 'ServiceCycle  Monthly Service Digest' }: { title?: string } = {},
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ServiceCycle';

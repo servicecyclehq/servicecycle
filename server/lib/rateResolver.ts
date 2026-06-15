@@ -1,14 +1,14 @@
 /**
- * rateResolver.ts — ServiceRateCard resolution shared across the digest,
+ * rateResolver.ts  ServiceRateCard resolution shared across the digest,
  * fleet forecast, and modernization alerts.
  *
  * Resolution hierarchy (most specific wins):
- *   account override (accountId = X)        → set by the contractor for this customer
- *   partner default  (partnerOrgId = P)     → the contractor's house pricing
- *   platform default (both null)            → seeded read-only benchmark
+ *   account override (accountId = X)         set by the contractor for this customer
+ *   partner default  (partnerOrgId = P)      the contractor's house pricing
+ *   platform default (both null)             seeded read-only benchmark
  *
  * One DB read per resolver (loads the three scopes in a single findMany), then
- * a pure lookup by serviceType. Build one resolver per account in a loop —
+ * a pure lookup by serviceType. Build one resolver per account in a loop 
  * cheap, and avoids an N+1 across a partner org's whole book.
  *
  * GAP closed alongside this (see routes/rateCards.ts): a manager-guarded CRUD
@@ -20,7 +20,7 @@ import prisma from './prisma';
 
 export interface RateRange { minCents: number; maxCents: number }
 
-// EquipmentType (Prisma enum) → ServiceRateCard.serviceType. Mirrors the
+// EquipmentType (Prisma enum)  ServiceRateCard.serviceType. Mirrors the
 // mapping in modernizationAlerts.ts; kept here so the digest, the rate-card
 // editor, and the forecast all speak one vocabulary. Unmapped types fall back
 // to INSPECTION (the lowest-cost generic service line).
@@ -58,7 +58,7 @@ export function mapEquipTypeToServiceType(equipmentType: string | null | undefin
 
 export function formatRange(r: RateRange | null | undefined): string | null {
   if (!r) return null;
-  return `$${(r.minCents / 100).toLocaleString()} – $${(r.maxCents / 100).toLocaleString()}`;
+  return `$${(r.minCents / 100).toLocaleString()}  $${(r.maxCents / 100).toLocaleString()}`;
 }
 
 export interface ResolvedRate extends RateRange {
@@ -69,7 +69,7 @@ export interface ResolvedRate extends RateRange {
 /**
  * Resolver scoped to ONE account. Loads the three rate-card scopes in a single
  * query and returns a pure lookup. `partnerOrgId` is optional (standalone
- * accounts have none) — pass it so partner-default pricing is honoured.
+ * accounts have none)  pass it so partner-default pricing is honoured.
  */
 export async function buildRateResolver(
   prismaClient: any,

@@ -1,21 +1,21 @@
-﻿export {};
+export {};
 /**
- * monthlyDigest.ts â€” the two-email monthly digest (manager roll-up + rep email)
+ * monthlyDigest.ts — the two-email monthly digest (manager roll-up + rep email)
  * on the shipped watermark cadence (lib/alertCadence.ts).
  *
  * This SPLITS the old single repBriefing into:
- *   â€¢ Manager roll-up â€” overall compliance %, a compliance bar chart (BY
+ *   • Manager roll-up — overall compliance %, a compliance bar chart (BY
  *     CUSTOMER for a partner org; BY SITE for a standalone account), totals
  *     (overdue count + pipeline $), and the full Excel of every rep's customers.
- *   â€¢ Rep email â€” that rep's book only: compliance across their customers, a
+ *   • Rep email — that rep's book only: compliance across their customers, a
  *     top-N action list WITH dollars, and the Excel filtered to just theirs.
  *
- * Org model (Model A) â€” PartnerOrg â†’ oem_admin (manager) / assignedRep â†’
- * Account (customer) â†’ Site â†’ Asset:
- *   â€¢ Manager recipients = the partner org's oem_admin users (covers all its
+ * Org model (Model A) — PartnerOrg → oem_admin (manager) / assignedRep →
+ * Account (customer) → Site → Asset:
+ *   • Manager recipients = the partner org's oem_admin users (covers all its
  *     customer accounts).
- *   â€¢ Rep recipients     = each user set as assignedRepId on â‰¥1 account.
- *   â€¢ Standalone fallback (no partnerOrgId, e.g. demo Meridian): manager =
+ *   • Rep recipients     = each user set as assignedRepId on ≥1 account.
+ *   • Standalone fallback (no partnerOrgId, e.g. demo Meridian): manager =
  *     the account's admins/managers; rep = account.serviceRepEmail.
  *
  * Cadence: the unit of throttling stays the CUSTOMER account (existing
@@ -23,7 +23,7 @@
  * that are due, sends the manager + rep emails covering exactly those, then
  * advances each account's watermark only after a successful send.
  *
- * Charts are inline HTML/CSS bars (green/amber/red by threshold) â€” no remote
+ * Charts are inline HTML/CSS bars (green/amber/red by threshold) — no remote
  * images (mail clients block them) and no attachments-as-images. Trend lines
  * are deferred to v2 (need history + an image pipeline).
  */
@@ -39,7 +39,7 @@ const { buildDigestXlsxBuffer } = require('./digestExcel');
 const LOOK_AHEAD_DAYS = 180;
 const APP_URL = () => process.env.CLIENT_URL || 'https://servicecycle.app';
 
-// â”€â”€ small helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── small helpers ─────────────────────────────────────────────────────────────
 
 function _daysUntil(due: any, now: Date) {
   return Math.ceil((new Date(due).getTime() - now.getTime()) / 86400000);
@@ -57,7 +57,7 @@ function _statusText(d: number) {
 function _assetEquip(a: any) {
   const type = a.equipmentType ? String(a.equipmentType).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Asset';
   const mm = [a.manufacturer, a.model].filter(Boolean).join(' / ');
-  return mm ? `${type} Â· ${mm}` : type;
+  return mm ? `${type} &middot; ${mm}` : type;
 }
 function _esc(s: any) {
   if (s == null) return '';
@@ -78,7 +78,7 @@ function _cadenceWord(c: string) {
   return c === 'weekly' ? 'weekly' : c === 'semimonthly' ? 'twice-monthly' : 'monthly';
 }
 
-// â”€â”€ per-account data gathering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── per-account data gathering ──────────────────────────────────────────────
 
 /**
  * Assemble everything the templates + Excel need for ONE customer account.
@@ -157,7 +157,7 @@ async function gatherAccountDigest(account: any, now: Date) {
       rep: repName, company: account.companyName, site: a.site?.name || 'Unassigned',
       equipment: _assetEquip(a), serviceNeeded: task, dueDate: s.nextDueDate,
       status: _statusText(d), condition: a.governingCondition || 'C2',
-      priorityScore: a.priorityScore ?? null, trend: trendingAssets.has(a.id) ? 'âš  worsening' : '',
+      priorityScore: a.priorityScore ?? null, trend: trendingAssets.has(a.id) ? '&#9888; worsening' : '',
       estMinDollars: estMin, estMaxDollars: estMax,
       rulPct: a.modernizationRiskScore != null ? Math.round(a.modernizationRiskScore * 100) : null,
       ageYears, autoC3: !!a.autoConditionC3,
@@ -170,7 +170,7 @@ async function gatherAccountDigest(account: any, now: Date) {
   try {
     const gap = await buildComplianceGap(prisma, account.id, { limit: 1 });
     complianceRate = gap?.compliance?.rate ?? null;
-  } catch { /* non-fatal â€” chart can render from per-site/customer rollup */ }
+  } catch { /* non-fatal — chart can render from per-site/customer rollup */ }
 
   return {
     accountId: account.id, companyName: account.companyName, repName,
@@ -178,7 +178,7 @@ async function gatherAccountDigest(account: any, now: Date) {
   };
 }
 
-// â”€â”€ HTML building blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HTML building blocks ─────────────────────────────────────────────────────
 
 function _complianceBars(chartRows: Array<{ label: string; rate: number | null; overdue: number }>) {
   if (!chartRows.length) return '<div style="color:#94a3b8;font-size:13px;padding:8px 0;">No rated schedules yet.</div>';
@@ -213,7 +213,7 @@ function _shell(headerKicker: string, headerTitle: string, headerSub: string, bo
 
 function _totalsStrip(overdueCount: number, pipelineMin: number, pipelineMax: number) {
   const pipe = pipelineMin && pipelineMax && pipelineMin !== pipelineMax
-    ? `${_money(pipelineMin)} â€“ ${_money(pipelineMax)}` : _money(pipelineMax || pipelineMin);
+    ? `${_money(pipelineMin)} &ndash; ${_money(pipelineMax)}` : _money(pipelineMax || pipelineMin);
   return `<div style="display:flex;gap:12px;margin:0 0 16px;">`
     + `<div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px;">`
     + `<div style="font-size:22px;font-weight:800;color:#dc2626;">${overdueCount}</div>`
@@ -223,7 +223,7 @@ function _totalsStrip(overdueCount: number, pipelineMin: number, pipelineMax: nu
     + `<div style="font-size:11px;color:#1e40af;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Service pipeline</div></div></div>`;
 }
 
-// â”€â”€ manager roll-up + rep templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── manager roll-up + rep templates ─────────────────────────────────────────
 
 function managerRollupHtml(opts: any) {
   const { scopeName, chartTitle, chartRows, overallRate, totals, generatedAt, cadence, repCount, customerCount } = opts;
@@ -231,11 +231,11 @@ function managerRollupHtml(opts: any) {
   const body =
     `<div style="display:flex;align-items:center;gap:14px;margin:0 0 16px;">`
     + `<div style="font-size:40px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
-    + `<div style="font-size:13px;color:#475569;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${customerCount} customer${customerCount === 1 ? '' : 's'} Â· ${repCount} rep${repCount === 1 ? '' : 's'} Â· ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span></div></div>`
+    + `<div style="font-size:13px;color:#475569;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${customerCount} customer${customerCount === 1 ? '' : 's'} &middot; ${repCount} rep${repCount === 1 ? '' : 's'} &middot; ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span></div></div>`
     + _totalsStrip(totals.overdueCount, totals.pipelineMin, totals.pipelineMax)
     + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
     + _complianceBars(chartRows);
-  return _shell('ServiceCycle â€” Manager Roll-up', `${scopeName}: monthly compliance`, 'Your whole book at a glance â€” full line-item detail in the attached spreadsheet.', body, cadence);
+  return _shell('ServiceCycle — Manager Roll-up', `${scopeName}: monthly compliance`, 'Your whole book at a glance — full line-item detail in the attached spreadsheet.', body, cadence);
 }
 
 function repEmailHtml(opts: any) {
@@ -244,13 +244,13 @@ function repEmailHtml(opts: any) {
 
   const rowsHtml = topItems.map((it: any) => {
     const est = it.estMin && it.estMax && it.estMin !== it.estMax
-      ? `${_money(it.estMin)} â€“ ${_money(it.estMax)}` : it.estMax ? _money(it.estMax) : 'â€”';
+      ? `${_money(it.estMin)} &ndash; ${_money(it.estMax)}` : it.estMax ? _money(it.estMax) : '—';
     const whenColor = it.daysUntil < 0 ? '#dc2626' : it.daysUntil <= 30 ? '#d97706' : '#475569';
-    const trend = it.trend ? ` <span style="color:#dc2626;font-size:11px;">âš  worsening</span>` : '';
+    const trend = it.trend ? ` <span style="color:#dc2626;font-size:11px;">&#9888; worsening</span>` : '';
     return `<tr><td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;">`
       + `<span style="font-weight:600;color:#1e293b;">${_esc(it.equipment)}</span> `
-      + `<span style="color:#94a3b8;font-size:12px;">Â· ${_esc(it.companyName)} Â· ${_esc(it.siteName)}</span><br>`
-      + `<span style="font-size:12px;color:#475569;">${_esc(it.task)} â€” <span style="color:${whenColor};font-weight:600;">${_esc(it.status)}</span> Â· ${_esc(it.condition)}${trend}</span></td>`
+      + `<span style="color:#94a3b8;font-size:12px;">&middot; ${_esc(it.companyName)} &middot; ${_esc(it.siteName)}</span><br>`
+      + `<span style="font-size:12px;color:#475569;">${_esc(it.task)} — <span style="color:${whenColor};font-weight:600;">${_esc(it.status)}</span> &middot; ${_esc(it.condition)}${trend}</span></td>`
       + `<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap;font-weight:700;color:#1d4ed8;font-size:13px;">${est}</td></tr>`;
   }).join('');
 
@@ -262,11 +262,11 @@ function repEmailHtml(opts: any) {
     + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
     + _complianceBars(chartRows)
     + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:20px 0 8px;">Top items to act on this month</div>`
-    + `<table style="width:100%;border-collapse:collapse;">${rowsHtml || '<tr><td style="padding:10px;color:#94a3b8;font-size:13px;">Nothing outstanding â€” nice.</td></tr>'}</table>`;
-  return _shell('ServiceCycle â€” Rep Digest', `${repName}: your month`, 'Your customers, ranked by what needs doing â€” full list attached.', body, cadence);
+    + `<table style="width:100%;border-collapse:collapse;">${rowsHtml || '<tr><td style="padding:10px;color:#94a3b8;font-size:13px;">Nothing outstanding — nice.</td></tr>'}</table>`;
+  return _shell('ServiceCycle — Rep Digest', `${repName}: your month`, 'Your customers, ranked by what needs doing — full list attached.', body, cadence);
 }
 
-// â”€â”€ send helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── send helpers ─────────────────────────────────────────────────────────────
 
 function _aggregate(bundles: any[]) {
   const items: any[] = [];
@@ -316,7 +316,7 @@ async function _deliverChannels(accountIds: string[], itemsByAccount: Map<string
   }
 }
 
-// â”€â”€ orchestrator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── orchestrator ──────────────────────────────────────────────────────────────
 
 async function runMonthlyDigest({ accountId, force }: any = {}) {
   const now = new Date();
@@ -333,7 +333,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
     due.push(acc);
   }
   if (due.length === 0) {
-    console.log(`[monthlyDigest] done â€” nothing due (${skipped} skipped)`);
+    console.log(`[monthlyDigest] done — nothing due (${skipped} skipped)`);
     return { managerEmails, repEmails, accountsCovered, skipped };
   }
 
@@ -358,7 +358,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
     return cadenceCache.get(id)!;
   };
 
-  // â”€â”€ Standalone accounts: manager = admins/managers; rep = serviceRepEmail â”€â”€
+  // ── Standalone accounts: manager = admins/managers; rep = serviceRepEmail ──
   for (const acc of standalone) {
     try {
       const bundle = await gatherAccountDigest(acc, now);
@@ -370,7 +370,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         prisma.user.findMany({ where: { accountId: acc.id, role: { in: ['admin', 'manager'] }, isActive: true }, select: { email: true } }),
       ]);
       const chartRows = bySite.map((s: any) => ({ label: s.siteName, rate: s.complianceRate, overdue: s.overdueCount }));
-      const xlsx = await buildDigestXlsxBuffer(bundle.rows, { title: `${acc.companyName} â€” Monthly Service Digest` });
+      const xlsx = await buildDigestXlsxBuffer(bundle.rows, { title: `${acc.companyName} — Monthly Service Digest` });
       const attach = { name: `servicecycle-digest-${now.toISOString().slice(0, 7)}.xlsx`, content: xlsx };
 
       const managerHtml = managerRollupHtml({
@@ -379,9 +379,9 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         repCount: 1, customerCount: 1,
       });
       const managerTo = [...new Set((managers as any[]).map((m) => m.email).filter(Boolean))];
-      if (await _sendEmails(managerTo, `Monthly compliance roll-up â€” ${acc.companyName}`, managerHtml, attach)) managerEmails++;
+      if (await _sendEmails(managerTo, `Monthly compliance roll-up — ${acc.companyName}`, managerHtml, attach)) managerEmails++;
 
-      // Rep email â†’ account.serviceRepEmail (the standalone "rep").
+      // Rep email → account.serviceRepEmail (the standalone "rep").
       if (acc.serviceRepEmail) {
         const repHtml = repEmailHtml({
           repName: acc.serviceRepName || 'Service Rep', chartTitle: 'Compliance by site', chartRows,
@@ -389,7 +389,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
           topItems: _topItems(bundle.items.map((it: any) => ({ ...it, companyName: acc.companyName }))),
           generatedAt: now, cadence,
         });
-        if (await _sendEmails([acc.serviceRepEmail], `Your service book â€” ${acc.companyName}`, repHtml, attach)) repEmails++;
+        if (await _sendEmails([acc.serviceRepEmail], `Your service book — ${acc.companyName}`, repHtml, attach)) repEmails++;
       }
 
       const itemsByAccount = new Map([[acc.id, bundle.items]]);
@@ -402,7 +402,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
     }
   }
 
-  // â”€â”€ Partner orgs: manager = oem_admin; rep = assignedRep user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Partner orgs: manager = oem_admin; rep = assignedRep user ──────────────
   for (const [orgId, orgAccounts] of partnerGroups) {
     try {
       // Attach rep name onto each account for gather/Excel.
@@ -418,7 +418,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         if (b) { bundles.push({ ...b, account: a }); itemsByAccount.set(a.id, b.items); }
       }
       if (bundles.length === 0) {
-        // Nothing on horizon for any due account â€” skip, don't advance watermark.
+        // Nothing on horizon for any due account — skip, don't advance watermark.
         skipped += orgAccounts.length;
         continue;
       }
@@ -439,12 +439,12 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
       const agg = _aggregate(bundles);
       const repNamesCovered = new Set(orgAccounts.map((a: any) => a._assignedRepName));
 
-      // Manager roll-up â€” one email to all oem_admins, full Excel.
+      // Manager roll-up — one email to all oem_admins, full Excel.
       const oemAdmins = await prisma.user.findMany({
         where: { role: 'oem_admin', isActive: true, account: { partnerOrgId: orgId } },
         select: { email: true },
       });
-      const managerXlsx = await buildDigestXlsxBuffer(agg.rows, { title: `${orgName} â€” Monthly Service Digest` });
+      const managerXlsx = await buildDigestXlsxBuffer(agg.rows, { title: `${orgName} — Monthly Service Digest` });
       const managerAttach = { name: `servicecycle-digest-${now.toISOString().slice(0, 7)}.xlsx`, content: managerXlsx };
       const managerHtml = managerRollupHtml({
         scopeName: orgName, chartTitle: 'Compliance by customer', chartRows: customerChart,
@@ -452,9 +452,9 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         repCount: repNamesCovered.size, customerCount: coveredIds.length,
       });
       const managerTo = [...new Set((oemAdmins as any[]).map((m) => m.email).filter(Boolean))];
-      if (await _sendEmails(managerTo, `Monthly compliance roll-up â€” ${orgName}`, managerHtml, managerAttach)) managerEmails++;
+      if (await _sendEmails(managerTo, `Monthly compliance roll-up — ${orgName}`, managerHtml, managerAttach)) managerEmails++;
 
-      // Rep emails â€” group covered accounts by assignedRep user.
+      // Rep emails — group covered accounts by assignedRep user.
       const byRep = new Map<string, any[]>();
       for (const b of bundles) {
         const repKey = b.account.assignedRepId || b.account.fallbackRepId || '__unassigned__';
@@ -463,7 +463,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
       }
       for (const [repKey, repBundles] of byRep) {
         const rep = repById.get(repKey);
-        if (!rep || !rep.email || !rep.isActive) continue; // unassigned bucket â†’ manager already has it
+        if (!rep || !rep.email || !rep.isActive) continue; // unassigned bucket → manager already has it
         const repAgg = _aggregate(repBundles);
         const repCustomerIds = repBundles.map((b) => b.account.id);
         const repByCustomer = await buildComplianceByCustomer(prisma, repCustomerIds, { now });
@@ -472,14 +472,14 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         for (const c of repByCustomer) { rc += c.currentCount || 0; ro += c.overdueCount || 0; }
         const repOverall = (rc + ro) > 0 ? Math.round((rc / (rc + ro)) * 1000) / 10 : null;
 
-        const repXlsx = await buildDigestXlsxBuffer(repAgg.rows, { title: `${rep.name} â€” Monthly Service Digest` });
+        const repXlsx = await buildDigestXlsxBuffer(repAgg.rows, { title: `${rep.name} — Monthly Service Digest` });
         const repAttach = { name: `servicecycle-digest-${now.toISOString().slice(0, 7)}.xlsx`, content: repXlsx };
         const repHtml = repEmailHtml({
           repName: rep.name || 'Rep', chartTitle: 'Compliance by customer', chartRows: repChart,
           overallRate: repOverall, totals: repAgg.totals, topItems: _topItems(repAgg.items),
           generatedAt: now, cadence,
         });
-        if (await _sendEmails([rep.email], `Your service book â€” ${repBundles.length} customer${repBundles.length === 1 ? '' : 's'}`, repHtml, repAttach)) repEmails++;
+        if (await _sendEmails([rep.email], `Your service book — ${repBundles.length} customer${repBundles.length === 1 ? '' : 's'}`, repHtml, repAttach)) repEmails++;
       }
 
       await _deliverChannels(coveredIds, itemsByAccount);
@@ -489,7 +489,7 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
     }
   }
 
-  console.log(`[monthlyDigest] done â€” ${managerEmails} manager + ${repEmails} rep emails, ${accountsCovered} accounts covered, ${skipped} skipped`);
+  console.log(`[monthlyDigest] done — ${managerEmails} manager + ${repEmails} rep emails, ${accountsCovered} accounts covered, ${skipped} skipped`);
   return { managerEmails, repEmails, accountsCovered, skipped };
 }
 

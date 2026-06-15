@@ -1,15 +1,15 @@
 /**
- * routes/rateCards.ts — manager-guarded CRUD for ACCOUNT-LEVEL ServiceRateCard
+ * routes/rateCards.ts  manager-guarded CRUD for ACCOUNT-LEVEL ServiceRateCard
  * overrides.
  *
- * GET  /api/rate-cards            — effective rates for the account (platform/
+ * GET  /api/rate-cards             effective rates for the account (platform/
  *                                   partner defaults merged with this account's
  *                                   overrides), each tagged with its source.
- * PUT  /api/rate-cards/:type      — upsert this account's override for a service
+ * PUT  /api/rate-cards/:type       upsert this account's override for a service
  *                                   line (minDollars/maxDollars, USD).
- * DELETE /api/rate-cards/:type    — drop the override, reverting to the default.
+ * DELETE /api/rate-cards/:type     drop the override, reverting to the default.
  *
- * Writes are strictly scoped to accountId overrides (partnerOrgId stays null) —
+ * Writes are strictly scoped to accountId overrides (partnerOrgId stays null) 
  * a customer admin can tune their own benchmark but can never mutate the
  * platform seed or another tenant's pricing. Manager+ only.
  */
@@ -20,7 +20,7 @@ const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
 const { buildRateResolver, SERVICE_TYPES } = require('../lib/rateResolver');
 
-// GET /api/rate-cards — effective, merged view for the editor.
+// GET /api/rate-cards  effective, merged view for the editor.
 router.get('/', requireManager, async (req: any, res: any) => {
   try {
     const account = await prisma.account.findUnique({
@@ -44,7 +44,7 @@ router.get('/', requireManager, async (req: any, res: any) => {
   }
 });
 
-// PUT /api/rate-cards/:serviceType — upsert the account override.
+// PUT /api/rate-cards/:serviceType  upsert the account override.
 router.put('/:serviceType', requireManager, async (req: any, res: any) => {
   try {
     const serviceType = String(req.params.serviceType || '').toUpperCase();
@@ -95,7 +95,7 @@ router.put('/:serviceType', requireManager, async (req: any, res: any) => {
   }
 });
 
-// DELETE /api/rate-cards/:serviceType — revert to default by dropping override.
+// DELETE /api/rate-cards/:serviceType  revert to default by dropping override.
 router.delete('/:serviceType', requireManager, async (req: any, res: any) => {
   try {
     const serviceType = String(req.params.serviceType || '').toUpperCase();
