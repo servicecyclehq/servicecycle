@@ -618,4 +618,4 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
   return { managerEmails, repEmails, customerEmails, accountsCovered, skipped };
 }
 
-module.exports = { runMonthlyDigest, gatherAccountDigest, managerRollupHtml, repEmailHtml };
+module.exports = { runMonthlyDigest, gatherAccountDigest, managerRollupHtml, repEmailHtml, customerDigestHtml, _thingsToDoBySite };
