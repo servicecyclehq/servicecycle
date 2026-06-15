@@ -393,9 +393,11 @@ function customerDigestHtml(opts: any) {
     + `<div style="padding:20px 26px;">`
     + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">${intro.g}</div>`
     + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">${intro.b}</div>`
-    + `<div style="display:flex;align-items:center;gap:22px;margin:4px 0 28px;padding-left:40px;">`
-    + `<div style="font-size:46px;font-weight:800;color:${overallColor};line-height:1;margin-left:8px;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
-    + `<div style="font-size:13px;color:#475569;line-height:1.55;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></div></div>`
+    + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 28px;border-collapse:collapse;">`
+    + `<tr>`
+    + `<td style="padding-left:44px;padding-right:20px;font-size:46px;font-weight:800;color:${overallColor};line-height:1;white-space:nowrap;vertical-align:middle;">${overallRate == null ? 'n/a' : overallRate + '%'}</td>`
+    + `<td style="font-size:13px;color:#475569;line-height:1.55;vertical-align:middle;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></td>`
+    + `</tr></table>`
     + `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 14px;">Compliance by site</div>`
     + _complianceBars(chartRows)
     + (siteSections
