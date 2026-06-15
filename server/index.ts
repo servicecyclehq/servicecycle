@@ -1234,6 +1234,7 @@ app.use('/api/bootstrap',       authenticateToken, bootstrapRoutes);
 app.use('/api/alerts',          authenticateToken, alertRoutes);
 app.use('/api/export',          authenticateToken, exportLimiter, exportRoutes); // XLSX/CSV export: assets + work orders (10/min/user)
 app.use('/api/settings',        authenticateToken, settingsRoutes);
+app.use('/api/rate-cards',      authenticateToken, require('./routes/rateCards'));
 // feedbackLimiter after authenticateToken so keyGenerator can use req.user.id (M10)
 app.use('/api/feedback',        authenticateToken, feedbackLimiter, feedbackRoutes);
 // H5: authenticateToken added at mount level; consultant.js also retains its
@@ -1575,12 +1576,12 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // watermark makes a missed day self-heal -- no reliance on a once-a-month
     // fire (engineering-guidelines sec.1). The 07:00 engine above keeps the
     // in-app feed current; this is the throttled, forward-looking rep push.
-    cron.schedule('15 7 * * *', () => runOnce('repBriefing', async () => {
-      const { runRepBriefing } = require('./lib/repBriefing');
-      const summary = await runRepBriefing();
-      console.log('[Cron] Rep briefing:', JSON.stringify(summary));
+    cron.schedule('15 7 * * *', () => runOnce('monthlyDigest', async () => {
+      const { runMonthlyDigest } = require('./lib/monthlyDigest');
+      const summary = await runMonthlyDigest();
+      console.log('[Cron] Monthly digest:', JSON.stringify(summary));
     }), { timezone: 'UTC' });
-    console.log('[Cron] Rep briefing scheduled (watermark-gated) -- daily check at 07:15');
+    console.log('[Cron] Monthly digest scheduled (watermark-gated) -- daily check at 07:15');
 
     // ── Regulatory news scanner (every 6 hours) ─────────────────────────────
     // Pulls OSHA newsroom + electrical trade press RSS, filters to
