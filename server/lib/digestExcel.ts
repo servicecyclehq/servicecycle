@@ -96,5 +96,54 @@ export async function buildDigestXlsxBuffer(
   return Buffer.from(buf);
 }
 
-module.exports = { buildDigestXlsxBuffer };
+// ── Customer-facing workbook ────────────────────────────────────────────────
+// Value-framed: the facility's own maintenance list. STRIPS every sales/internal
+// column (no dollars, no priority-to-sell, no RUL, no auto-C3) — just what needs
+// doing and when. Mirrors the customer email's "things to do", in spreadsheet form.
+const CUSTOMER_COLUMNS: Array<{ header: string; key: string; width: number; type?: string }> = [
+  { header: 'Site',           key: 'site',          width: 22 },
+  { header: 'Equipment',      key: 'equipment',     width: 30 },
+  { header: 'Service needed', key: 'serviceNeeded', width: 28 },
+  { header: 'Due date',       key: 'dueDate',       width: 14, type: 'date' },
+  { header: 'Status',         key: 'status',        width: 16 },
+  { header: 'Condition',      key: 'condition',     width: 11 },
+  { header: 'Trend',          key: 'trend',         width: 14 },
+];
+
+export async function buildCustomerXlsxBuffer(
+  rows: DigestRow[],
+  { title = 'ServiceCycle - Maintenance Summary' }: { title?: string } = {},
+): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ServiceCycle';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('Maintenance');
+
+  ws.columns = CUSTOMER_COLUMNS.map((c) => ({ header: c.header, key: c.key, width: c.width }));
+  const head = ws.getRow(1);
+  head.font = { bold: true };
+  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+
+  for (const r of rows) {
+    const rowObj: any = {
+      site: r.site || '',
+      equipment: r.equipment || '',
+      serviceNeeded: r.serviceNeeded || '',
+      dueDate: r.dueDate instanceof Date ? r.dueDate : (r.dueDate ? new Date(r.dueDate) : null),
+      status: r.status || '',
+      condition: r.condition || '',
+      trend: (r.trend && String(r.trend).trim()) ? 'Worsening' : '',
+    };
+    const row = ws.addRow(rowObj);
+    row.getCell(4).numFmt = 'yyyy-mm-dd';
+  }
+
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: CUSTOMER_COLUMNS.length } };
+
+  const buf = await wb.xlsx.writeBuffer();
+  return Buffer.from(buf);
+}
+
+module.exports = { buildDigestXlsxBuffer, buildCustomerXlsxBuffer };
 export {};

@@ -34,7 +34,7 @@ const { dueForBriefing, markBriefingSent, getCadence } = require('./alertCadence
 const { deliverTeamsDigest, deliverSlackDigest } = require('./alertEngine');
 const { buildRateResolver } = require('./rateResolver');
 const { buildComplianceGap, buildComplianceByCustomer, buildComplianceBySite } = require('./complianceReport');
-const { buildDigestXlsxBuffer } = require('./digestExcel');
+const { buildDigestXlsxBuffer, buildCustomerXlsxBuffer } = require('./digestExcel');
 
 const LOOK_AHEAD_DAYS = 180;
 const APP_URL = () => process.env.CLIENT_URL || 'https://servicecycle.app';
@@ -370,18 +370,18 @@ function customerDigestHtml(opts: any) {
     + `<div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">${_esc(companyName)}</div>`
     + `<div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;">Your maintenance compliance for ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.</div></div>`
     + `<div style="padding:18px 24px;">`
-    + `<div style="display:flex;align-items:center;gap:14px;margin:0 0 18px;">`
-    + `<div style="font-size:40px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
-    + `<div style="font-size:13px;color:#475569;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></div></div>`
-    + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 10px;">Compliance by site</div>`
+    + `<div style="display:flex;align-items:center;gap:22px;margin:10px 0 28px;padding-left:14px;">`
+    + `<div style="font-size:46px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
+    + `<div style="font-size:13px;color:#475569;line-height:1.55;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></div></div>`
+    + `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 14px;">Compliance by site</div>`
     + _complianceBars(chartRows)
     + (siteSections
-        ? `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:20px 0 10px;">Things to do</div>${siteSections}`
+        ? `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:28px 0 14px;">Things to do</div>${siteSections}`
         : `<div style="margin:18px 0;padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px;color:#166534;">You're all caught up &mdash; nothing needs attention right now.</div>`)
     + `<div style="margin:18px 0 0;padding:14px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:13px;color:#1e3a5f;">${contact}</div>`
     + `</div>`
     + `<div style="padding:16px 24px;border-top:1px solid #e2e8f0;"><a href="${appUrl}/dashboard" style="background:#0d4f6e;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">View your equipment &rarr;</a></div>`
-    + `<div style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;">You're receiving this monthly summary for ${_esc(companyName)}.</div>`
+    + `<div style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.5;">The attached spreadsheet lists everything on your maintenance schedule. You're receiving this monthly summary for ${_esc(companyName)}.</div>`
     + `</div></body></html>`;
 }
 
@@ -418,11 +418,15 @@ async function _sendCustomerDigest(account: any) {
     });
     const subject = `Your monthly compliance summary - ${account.companyName}`;
 
+    // Value-framed spreadsheet: the customer's full maintenance list (no $/sales cols).
+    const xlsx = await buildCustomerXlsxBuffer(bundle.rows, { title: `${account.companyName} - Maintenance Summary` });
+    const attach = { name: `servicecycle-maintenance-${now.toISOString().slice(0, 7)}.xlsx`, content: xlsx };
+
     // One email: primary admin in To, remaining admins + rep in Cc, rep as Reply-To.
     const ccList = [...to.slice(1)];
     if (repEmail) ccList.push(repEmail);
     try {
-      await sendEmail({ to: to[0], subject, html, cc: ccList.length ? ccList : undefined, replyTo: repEmail || undefined });
+      await sendEmail({ to: to[0], subject, html, attachments: [attach], cc: ccList.length ? ccList : undefined, replyTo: repEmail || undefined });
       return 1;
     } catch (e: any) {
       console.error('[monthlyDigest] customer email failed:', e?.message || e);
