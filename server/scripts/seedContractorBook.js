@@ -42,10 +42,10 @@ const CONDITION_SCORE = { C1: 2, C2: 3, C3: 4 };
 // asset = [equipmentType, manufacturer, model, condition, dueInDays, criticality(1-5), ageYears, rulScore, trend?]
 const MANAGER = { name: 'Sam Carter', email: 'sam.carter@apexpower.demo', role: 'oem_admin' };
 const REPS = [
-  { key: 'lin',    name: 'Sarah Lin',   email: 'sarah.lin@apexpower.demo' },
-  { key: 'torres', name: 'Mike Torres', email: 'mike.torres@apexpower.demo' },
-  { key: 'nair',   name: 'Priya Nair',  email: 'priya.nair@apexpower.demo' },
-  { key: 'cole',   name: 'Dan Cole',    email: 'dan.cole@apexpower.demo' },
+  { key: 'lin',    name: 'Sarah Lin',   email: 'sarah.lin@apexpower.demo',   phone: '(414) 555-0118' },
+  { key: 'torres', name: 'Mike Torres', email: 'mike.torres@apexpower.demo', phone: '(815) 555-0142' },
+  { key: 'nair',   name: 'Priya Nair',  email: 'priya.nair@apexpower.demo',  phone: '(630) 555-0177' },
+  { key: 'cole',   name: 'Dan Cole',    email: 'dan.cole@apexpower.demo',    phone: '(262) 555-0193' },
 ];
 
 const CUSTOMERS = [
@@ -150,16 +150,25 @@ async function seedContractorBook(prisma) {
     } });
   }
 
-  let assetCount = 0, schedCount = 0, defCount = 0;
+  let assetCount = 0, schedCount = 0, defCount = 0, customerAdmins = 0;
 
   for (const c of CUSTOMERS) {
     const rep = repByKey[c.rep];
     await prisma.account.create({ data: {
       id: c.id, companyName: c.name, status: 'active', planType: 'saas',
       partnerOrgId: ORG_ID, assignedRepId: rep.id, fallbackRepId: manager.id,
-      serviceRepName: rep.name, serviceRepEmail: rep.email, lastActiveAt: now,
+      serviceRepName: rep.name, serviceRepEmail: rep.email, serviceRepPhone: rep.phone, lastActiveAt: now,
     } });
     await prisma.accountSetting.create({ data: { accountId: c.id, key: 'ONBOARDING_COMPLETE', value: 'true' } });
+
+    // A facility admin (the customer's own person) so the value-framed customer
+    // digest has a TO recipient. Their digest is CC'd to the rep above.
+    const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 16);
+    await prisma.user.create({ data: {
+      accountId: c.id, name: `${c.name} Facilities`, email: `facilities@${slug}.demo`,
+      passwordHash: pw, role: 'admin', isActive: true,
+    } });
+    customerAdmins++;
 
     for (const s of c.sites) {
       const site = await prisma.site.create({ data: {
@@ -203,7 +212,7 @@ async function seedContractorBook(prisma) {
     }
   }
 
-  const summary = { orgId: ORG_ID, customers: CUSTOMERS.length, reps: REPS.length, assets: assetCount, schedules: schedCount, trends: defCount };
+  const summary = { orgId: ORG_ID, customers: CUSTOMERS.length, reps: REPS.length, customerAdmins, assets: assetCount, schedules: schedCount, trends: defCount };
   console.log('[seedContractorBook] done', JSON.stringify(summary));
   return summary;
 }

@@ -2139,20 +2139,14 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
       console.error('[ingestWorker] failed to start:', (e as any).message);
     }
 
-    // ── #30 Customer weekly digest — Mondays 13:00 UTC ──────────────────────
-    // Opt-in per account (AccountSetting customer_weekly_digest='true'). The
-    // facility-side heartbeat between test seasons.
-    const { runCustomerDigestCron, runCustomerCfoCron } = require('./lib/customerDigest');
-    cron.schedule('0 13 * * 1', () => runOnce('customerDigest', async () => {
-      pingHeartbeat('customerDigest');
-      try {
-        const r = await runCustomerDigestCron();
-        console.log(`[Cron][customerDigest] Done — accounts: ${r.accountsProcessed}, emails: ${r.emailsSent}`);
-      } catch (e) {
-        console.error('[Cron][customerDigest] Error:', (e as any).message);
-      }
-    }), { timezone: 'UTC' });
-    console.log('[Cron] Customer weekly digest scheduled — Mondays 13:00 UTC');
+    // ── Customer digest — RETIRED as a standalone weekly cron ───────────────
+    // The customer-facing digest is now the 3rd audience on the SAME monthly
+    // alert_cadence engine as the manager roll-up + rep digest (see
+    // lib/monthlyDigest.ts runMonthlyDigest -> _sendCustomerDigest: value-framed,
+    // TO facility admins, CC + Reply-To the rep). One cadence dial drives all
+    // three audiences. The legacy weekly runCustomerDigestCron stays in
+    // lib/customerDigest.ts for the preview endpoint but is no longer scheduled.
+    const { runCustomerCfoCron } = require('./lib/customerDigest');
 
     // ── #30 Quarterly CFO report email — 1st of Jan/Apr/Jul/Oct 14:00 UTC ────
     // Opt-in per account (AccountSetting customer_quarterly_cfo='true'). Emails

@@ -44,7 +44,7 @@ function setRuntimeBrevoKey(key) { _runtimeBrevoKey = (typeof key === 'string' &
 // a process manager actually takes effect on the next send.
 function getFrom() { return process.env.EMAIL_FROM || null; }
 
-async function sendEmail({ to, subject, html, attachments }) {
+async function sendEmail({ to, subject, html, attachments, cc, replyTo }) {
   // L4: feedback bypass for EMAIL_MOCK.
   // Subjects starting with '[ServiceCycle Feedback]' bypass the mock so
   // operator feedback always reaches the inbox even on the demo box. The
@@ -69,7 +69,10 @@ async function sendEmail({ to, subject, html, attachments }) {
   );
 
   if (!isFeedback && !isEarlyAccess && process.env.EMAIL_MOCK === 'true') {
-    console.log(`\nðŸ“§ [EMAIL MOCK]\n  To: ${to}\n  Subject: ${subject}${Array.isArray(attachments) && attachments.length ? `\n  Attachments: ${attachments.map((a) => a.name).join(', ')}` : ''}\n`);
+    const ccLine = Array.isArray(cc) && cc.length ? `\n  Cc: ${cc.join(', ')}` : '';
+    const rtLine = replyTo ? `\n  Reply-To: ${replyTo}` : '';
+    const atLine = Array.isArray(attachments) && attachments.length ? `\n  Attachments: ${attachments.map((a) => a.name).join(', ')}` : '';
+    console.log(`\n[EMAIL MOCK]\n  To: ${to}${ccLine}${rtLine}\n  Subject: ${subject}${atLine}\n`);
     return;
   }
 
@@ -117,6 +120,18 @@ async function sendEmail({ to, subject, html, attachments }) {
         name:    a.name,
         content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : String(a.content),
       }));
+  }
+
+  // Optional Cc (array of addresses) + Reply-To (single address). Used by the
+  // customer digest to CC the service rep and route replies to them rather
+  // than noreply@. Brevo: cc: [{email,name}], replyTo: {email,name}.
+  if (Array.isArray(cc) && cc.length > 0) {
+    const ccList = cc.map((c) => parseAddress(c)).filter(Boolean);
+    if (ccList.length > 0) body.cc = ccList;
+  }
+  if (replyTo) {
+    const rt = parseAddress(replyTo);
+    if (rt) body.replyTo = rt;
   }
 
   // S3-FN-01 (v0.74.1): AbortController + 10s timeout so a hung Brevo

@@ -316,11 +316,129 @@ async function _deliverChannels(accountIds: string[], itemsByAccount: Map<string
   }
 }
 
+// ── customer digest (3rd audience — value-framed, CC the rep) ───────────────
+//
+// HARD RULE: the customer email carries NO sales framing — no dollars, no
+// priority-to-sell, no "replacement opportunity" language. The customer sees
+// their compliance % + the plain "things to do" list. TO = the facility's own
+// admins/managers; CC + Reply-To = their service rep (the "your partner is
+// watching with you" trust signal + the call-opener). No Excel attachment.
+
+// Plain "things to do" grouped by site, from the actionable horizon items
+// (overdue + due within 90 days). Dollars/priority intentionally dropped.
+function _thingsToDoBySite(items: any[]) {
+  const actionable = items.filter((it) => ['overdue', 'd30', 'd60', 'd90'].includes(it.bucket));
+  const bySite = new Map<string, any[]>();
+  for (const it of actionable) {
+    const site = it.siteName || 'Unassigned';
+    if (!bySite.has(site)) bySite.set(site, []);
+    bySite.get(site)!.push(it);
+  }
+  const out: any[] = [];
+  for (const [site, list] of bySite) {
+    list.sort((a, b) => a.daysUntil - b.daysUntil);
+    out.push({ site, items: list });
+  }
+  out.sort((a, b) => b.items.length - a.items.length);
+  return out;
+}
+
+function customerDigestHtml(opts: any) {
+  const { companyName, overallRate, chartRows, thingsToDo, repName, repPhone, generatedAt } = opts;
+  const overallColor = _rateColor(overallRate);
+  const totalItems = thingsToDo.reduce((n: number, s: any) => n + s.items.length, 0);
+
+  const siteSections = thingsToDo.map((s: any) => {
+    const rows = s.items.map((it: any) => {
+      const when = it.daysUntil < 0 ? `${Math.abs(it.daysUntil)} days overdue` : `due in ${it.daysUntil} days`;
+      const whenColor = it.daysUntil < 0 ? '#dc2626' : '#d97706';
+      return `<li style="margin:0 0 5px;font-size:13px;color:#334155;"><strong>${_esc(it.equipment)}</strong> &middot; ${_esc(it.task)} &mdash; <span style="color:${whenColor};font-weight:600;">${when}</span></li>`;
+    }).join('');
+    return `<div style="margin:0 0 14px;"><div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 6px;">${_esc(s.site)} &mdash; ${s.items.length} item${s.items.length === 1 ? '' : 's'} need${s.items.length === 1 ? 's' : ''} attention</div><ul style="margin:0;padding-left:18px;">${rows}</ul></div>`;
+  }).join('');
+
+  const contact = repName
+    ? `Questions? Contact your service partner, <strong>${_esc(repName)}</strong>${repPhone ? ` at ${_esc(repPhone)}` : ''}. Just reply to this email and it goes straight to them.`
+    : `Questions? Reply to this email and your service partner will follow up.`;
+
+  const appUrl = APP_URL();
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
+    + `<body style="margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f8fafc;">`
+    + `<div style="max-width:660px;margin:24px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">`
+    + `<div style="background:#0d4f6e;padding:18px 24px;">`
+    + `<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:.08em;text-transform:uppercase;">ServiceCycle &middot; Monthly Summary</div>`
+    + `<div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">${_esc(companyName)}</div>`
+    + `<div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;">Your maintenance compliance for ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.</div></div>`
+    + `<div style="padding:18px 24px;">`
+    + `<div style="display:flex;align-items:center;gap:14px;margin:0 0 18px;">`
+    + `<div style="font-size:40px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
+    + `<div style="font-size:13px;color:#475569;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></div></div>`
+    + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 10px;">Compliance by site</div>`
+    + _complianceBars(chartRows)
+    + (siteSections
+        ? `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:20px 0 10px;">Things to do</div>${siteSections}`
+        : `<div style="margin:18px 0;padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px;color:#166534;">You're all caught up &mdash; nothing needs attention right now.</div>`)
+    + `<div style="margin:18px 0 0;padding:14px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:13px;color:#1e3a5f;">${contact}</div>`
+    + `</div>`
+    + `<div style="padding:16px 24px;border-top:1px solid #e2e8f0;"><a href="${appUrl}/dashboard" style="background:#0d4f6e;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">View your equipment &rarr;</a></div>`
+    + `<div style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;">You're receiving this monthly summary for ${_esc(companyName)}.</div>`
+    + `</div></body></html>`;
+}
+
+// Send ONE customer digest per account: TO = facility admins/managers, CC =
+// the rep (+ any extra facility admins), Reply-To = the rep. Returns 1 on send,
+// 0 when skipped (no facility recipients, or opted out). Default ON; an admin
+// can opt out with AccountSetting customer_digest='false'.
+async function _sendCustomerDigest(account: any) {
+  try {
+    const off = await prisma.accountSetting.findUnique({
+      where: { accountId_key: { accountId: account.id, key: 'customer_digest' } },
+      select: { value: true },
+    }).catch(() => null);
+    if (off && off.value === 'false') return 0;
+
+    const recips = await prisma.user.findMany({
+      where: { accountId: account.id, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: null } },
+      select: { email: true },
+    });
+    const to = [...new Set((recips as any[]).map((r) => r.email).filter(Boolean))];
+    if (to.length === 0) return 0; // no facility recipients yet (customers need logins)
+
+    const now = new Date();
+    const bundle = await gatherAccountDigest(account, now);
+    if (!bundle) return 0;
+    const bySite = await buildComplianceBySite(prisma, account.id, { now });
+    const chartRows = bySite.map((s: any) => ({ label: s.siteName, rate: s.complianceRate, overdue: s.overdueCount }));
+    const thingsToDo = _thingsToDoBySite(bundle.items);
+
+    const repEmail = account.serviceRepEmail || null;
+    const html = customerDigestHtml({
+      companyName: account.companyName, overallRate: bundle.complianceRate, chartRows, thingsToDo,
+      repName: account.serviceRepName || null, repPhone: account.serviceRepPhone || null, generatedAt: now,
+    });
+    const subject = `Your monthly compliance summary - ${account.companyName}`;
+
+    // One email: primary admin in To, remaining admins + rep in Cc, rep as Reply-To.
+    const ccList = [...to.slice(1)];
+    if (repEmail) ccList.push(repEmail);
+    try {
+      await sendEmail({ to: to[0], subject, html, cc: ccList.length ? ccList : undefined, replyTo: repEmail || undefined });
+      return 1;
+    } catch (e: any) {
+      console.error('[monthlyDigest] customer email failed:', e?.message || e);
+      return 0;
+    }
+  } catch (e: any) {
+    console.error('[monthlyDigest] customer digest failed for', account.id, e?.message || e);
+    return 0;
+  }
+}
+
 // ── orchestrator ──────────────────────────────────────────────────────────────
 
 async function runMonthlyDigest({ accountId, force }: any = {}) {
   const now = new Date();
-  let managerEmails = 0, repEmails = 0, accountsCovered = 0, skipped = 0;
+  let managerEmails = 0, repEmails = 0, customerEmails = 0, accountsCovered = 0, skipped = 0;
 
   const accounts = accountId
     ? await prisma.account.findMany({ where: { id: accountId } })
@@ -391,6 +509,9 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         });
         if (await _sendEmails([acc.serviceRepEmail], `Your service book — ${acc.companyName}`, repHtml, attach)) repEmails++;
       }
+
+      // Customer digest (value-framed; TO facility admins, CC + Reply-To the rep).
+      customerEmails += await _sendCustomerDigest(acc);
 
       const itemsByAccount = new Map([[acc.id, bundle.items]]);
       await _deliverChannels([acc.id], itemsByAccount);
@@ -482,6 +603,10 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         if (await _sendEmails([rep.email], `Your service book — ${repBundles.length} customer${repBundles.length === 1 ? '' : 's'}`, repHtml, repAttach)) repEmails++;
       }
 
+      // Customer digest per customer account (value-framed; TO facility admins,
+      // CC + Reply-To the assigned rep via account.serviceRepEmail).
+      for (const b of bundles) { customerEmails += await _sendCustomerDigest(b.account); }
+
       await _deliverChannels(coveredIds, itemsByAccount);
       for (const id of coveredIds) { await markBriefingSent(id, now); accountsCovered++; }
     } catch (e: any) {
@@ -489,8 +614,8 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
     }
   }
 
-  console.log(`[monthlyDigest] done — ${managerEmails} manager + ${repEmails} rep emails, ${accountsCovered} accounts covered, ${skipped} skipped`);
-  return { managerEmails, repEmails, accountsCovered, skipped };
+  console.log(`[monthlyDigest] done — ${managerEmails} manager + ${repEmails} rep + ${customerEmails} customer emails, ${accountsCovered} accounts covered, ${skipped} skipped`);
+  return { managerEmails, repEmails, customerEmails, accountsCovered, skipped };
 }
 
 module.exports = { runMonthlyDigest, gatherAccountDigest, managerRollupHtml, repEmailHtml };
