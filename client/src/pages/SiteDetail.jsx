@@ -15,13 +15,14 @@
 //   GET    /api/assets?siteId=
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Building2, Pencil, Trash2, Plus, Archive } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
+import StudyAssetBinding from '../components/StudyAssetBinding';
 import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
@@ -253,6 +254,8 @@ export default function SiteDetail() {
   const [editingStudyId, setEditingStudyId] = useState(null);
   const [studyForm, setStudyForm] = useState(EMPTY_STUDY);
   const [studySaving, setStudySaving] = useState(false);
+  // #25 client: which study's asset-binding / label panel is expanded.
+  const [expandedStudyId, setExpandedStudyId] = useState(null);
 
   useDocumentTitle(site ? site.name : 'Site');
 
@@ -974,7 +977,7 @@ export default function SiteDetail() {
                     <th>PE</th>
                     <th>Method</th>
                     <th>Report</th>
-                    {canWrite && <th style={{ textAlign: 'right' }}>Actions</th>}
+                    <th style={{ textAlign: 'right' }}>Assets / labels</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -982,7 +985,8 @@ export default function SiteDetail() {
                     const expStyle = studyExpiryStyle(st.expiresAt);
                     const expired = st.expiresAt && new Date(st.expiresAt) < new Date();
                     return (
-                      <tr key={st.id}>
+                      <Fragment key={st.id}>
+                      <tr>
                         <td>
                           <div style={{ fontWeight: 600 }}>{STUDY_TYPE_LABELS[st.studyType] || st.studyType}</div>
                           {(st.performedBy || st.trigger) && (
@@ -1008,14 +1012,31 @@ export default function SiteDetail() {
                             ? <a href={st.reportPdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>Open</a>
                             : <span className="text-muted">—</span>}
                         </td>
-                        {canWrite && (
-                          <td style={{ textAlign: 'right' }}>
-                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => openStudyForm(st)}>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button type="button" className="btn btn-secondary btn-sm"
+                            onClick={() => setExpandedStudyId(expandedStudyId === st.id ? null : st.id)}>
+                            {expandedStudyId === st.id ? 'Hide' : 'Assets'} ({st._count?.coveredAssets ?? 0})
+                          </button>
+                          {canWrite && (
+                            <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 6 }} onClick={() => openStudyForm(st)}>
                               Edit
                             </button>
-                          </td>
-                        )}
+                          )}
+                        </td>
                       </tr>
+                      {expandedStudyId === st.id && (
+                        <tr>
+                          <td colSpan={7} style={{ padding: '0 0 12px', background: 'transparent' }}>
+                            <StudyAssetBinding
+                              study={st}
+                              siteAssets={assets}
+                              canWrite={canWrite}
+                              onCoverageChange={() => fetchStudies()}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
