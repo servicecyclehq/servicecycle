@@ -401,6 +401,44 @@ function earlyAccessNotificationHtml({ name, email, company, timing, ipAddress, 
 </div>`;
 }
 
+// Auto-acknowledgment for an inbound emailed test report (#6 email-in). Sent at
+// receipt — the parse + asset-card commit runs asynchronously in the ingest
+// worker, so this confirms receipt and sets expectations rather than quoting a
+// final card count.
+function reportReceivedHtml({ companyName, siteName, reportCount, appUrl }) {
+  const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeCompany = esc(companyName) || 'your team';
+  const safeSite = esc(siteName) || '';
+  const safeUrl = appUrl || 'https://servicecycle.app';
+  const n = Number(reportCount) > 0 ? Number(reportCount) : 1;
+  const fileWord = n === 1 ? 'report' : 'reports';
+  const siteLine = safeSite
+    ? `for <strong style="color:#e2e8f0;">${safeSite}</strong> in the ${safeCompany} workspace`
+    : `in the ${safeCompany} workspace`;
+  return `
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
+  <div style="margin-bottom:24px;">
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
+  </div>
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Got it — thanks for sending that over.</h2>
+  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
+    We received your ${n} ${fileWord} ${siteLine}. No action needed on your end — here's what happens next:
+  </p>
+  <ol style="margin:0 0 24px;padding-left:22px;color:#94a3b8;font-size:14px;line-height:1.7;">
+    <li>We're reading every line automatically and matching each device to an asset card.</li>
+    <li>New equipment becomes a new card; readings update the existing ones.</li>
+    <li>Anything out of spec is flagged as a deficiency so it doesn't get missed.</li>
+  </ol>
+  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
+    Your cards are usually ready within a few minutes. You'll see them on the dashboard — no need to re-send.
+  </p>
+  <a href="${safeUrl}/dashboard" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+    Open my dashboard
+  </a>
+  <p style="margin:24px 0 0;font-size:11px;color:#334155;">You received this because a test report was emailed in to ServiceCycle. If that wasn't you, you can ignore this message.</p>
+</div>`;
+}
+
 module.exports = { setRuntimeBrevoKey,
   sendEmail,
   assetDisplayName,
@@ -411,6 +449,7 @@ module.exports = { setRuntimeBrevoKey,
   newViewerActivationHtml,
   earlyAccessReplyHtml,
   earlyAccessNotificationHtml,
+  reportReceivedHtml,
 };
 
 export {};

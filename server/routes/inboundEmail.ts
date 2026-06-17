@@ -23,12 +23,29 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const prisma = require('../lib/prisma').default;
 const { uploadFile } = require('../lib/storage');
+const { sendEmail, reportReceivedHtml } = require('../lib/email');
 
 const PDFISH_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
 const PDF_TYPES = /(application\/pdf|image\/(jpeg|png|heic|heif|webp))/i;
 
+// Senders we must never auto-reply to — replying would create a mail loop or
+// bounce against an unattended mailbox.
+const NO_REPLY_RE = /(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounce|notifications?@|^reports-)/i;
+
 function isReportAttachment(filename: string, contentType: string): boolean {
   return PDFISH_RE.test(filename || '') || PDF_TYPES.test(contentType || '');
+}
+
+// Pull a bare email address out of a Resend "from" field, which may be a string
+// ("Jane <jane@x.com>" or "jane@x.com") or an object ({ address|email, name }).
+function senderEmail(from: any): string | null {
+  if (!from) return null;
+  let raw = '';
+  if (typeof from === 'string') raw = from;
+  else if (typeof from === 'object') raw = from.address || from.email || '';
+  const m = String(raw).match(/<([^>]+)>/);
+  const addr = (m ? m[1] : raw).trim().toLowerCase();
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr) ? addr : null;
 }
 
 // Verify a Resend (Svix) webhook signature. secret = "whsec_<base64>".
@@ -129,7 +146,34 @@ router.post('/email', async (req: any, res: any) => {
       jobs.push(job.id);
     }
     console.log(`[inbound/email] queued ${jobs.length} auto-commit job(s) for ${account.slug}`);
-    return res.status(202).json({ ok: true, account: account.slug, jobs });
+
+    // Auto-acknowledge the sender (fail-open: an email error must never affect
+    // ingest). Skipped for unattended/automated senders to avoid mail loops.
+    let ackSent = false;
+    try {
+      const to = senderEmail(data.from);
+      if (to && !NO_REPLY_RE.test(to)) {
+        const [acct, site] = await Promise.all([
+          prisma.account.findUnique({ where: { id: account.accountId }, select: { companyName: true } }),
+          siteId ? prisma.site.findUnique({ where: { id: siteId }, select: { name: true } }) : Promise.resolve(null),
+        ]);
+        await sendEmail({
+          to,
+          subject: 'We received your test report — ServiceCycle',
+          html: reportReceivedHtml({
+            companyName: acct?.companyName,
+            siteName: site?.name,
+            reportCount: jobs.length,
+            appUrl: process.env.CLIENT_URL || 'https://servicecycle.app',
+          }),
+        });
+        ackSent = true;
+      }
+    } catch (e: any) {
+      console.warn('[inbound/email] ack send failed:', e && e.message ? e.message : e);
+    }
+
+    return res.status(202).json({ ok: true, account: account.slug, jobs, ackSent });
   } catch (err: any) {
     console.error('[inbound/email]', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, error: 'inbound processing failed' });
