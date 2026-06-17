@@ -31,10 +31,6 @@
          CSP (script-src 'self') allows it without an inline-script hash. Classic
          blocking script in <head> => runs before first paint (no FOUC). -->
     <script src="/theme-bootstrap.js?v=%BOOTSTRAP_VER%"></script>
-        <!-- v0.92.3: bootstrap prefetch externalized to /bootstrap-prefetch.js
-         (CSP script-src 'self'). Fires /api/bootstrap during head parse on
-         /assets, before React mounts. -->
-    <script src="/bootstrap-prefetch.js?v=%BOOTSTRAP_VER%"></script>
   </head>
   <body>
     <div id="root"></div>

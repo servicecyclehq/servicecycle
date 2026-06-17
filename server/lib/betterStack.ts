@@ -49,8 +49,8 @@ async function logEvent(eventName, fields: any = {}) {
   const payload = {
     dt:        new Date().toISOString(),
     event:     eventName,
-    service:   'lapseiq-server',
-    version:   process.env.LAPSEIQ_VERSION || 'unknown',
+    service:   'servicecycle-server',
+    version:   process.env.SERVICECYCLE_VERSION || 'unknown',
     env:       process.env.NODE_ENV || 'production',
     demo_mode: process.env.DEMO_MODE === 'true',
     ...fields,
@@ -85,7 +85,7 @@ async function logEvent(eventName, fields: any = {}) {
       headers: {
         'Authorization': `Bearer ${cfg.token}`,
         'Content-Type':  'application/json',
-        'User-Agent':    'LapseIQ-betterStack/1.0',
+        'User-Agent':    'ServiceCycle-betterStack/1.0',
       },
       body,
       signal: controller.signal,

@@ -115,7 +115,7 @@ router.post('/render', async (req, res) => {
         // v0.90.0: prefer server-side env over client-claimed version --
         // the server knows the deploy version with certainty; a stale client
         // bundle still reports the deploy that originally served its index.html.
-        appVersion:     trunc(process.env.SERVICECYCLE_VERSION || body.appVersion || body.lapseiqVersion, 32),
+        appVersion:     trunc(process.env.SERVICECYCLE_VERSION || body.appVersion, 32),
         ip:             trunc(ip, 64),
       },
     });

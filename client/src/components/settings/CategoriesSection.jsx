@@ -31,7 +31,7 @@ export default function CategoriesSection({ isAdmin }) {
   function load() {
     setLoading(true);
     fetch(`${API}/categories`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}` },
+      headers: { Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}` },
     }).then(r => r.json()).then(d => {
       if (d.success) setCategories(d.data.categories);
     }).finally(() => setLoading(false));
@@ -54,7 +54,7 @@ export default function CategoriesSection({ isAdmin }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(body),
       });
@@ -88,7 +88,7 @@ export default function CategoriesSection({ isAdmin }) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify(body),
       });
@@ -113,7 +113,7 @@ export default function CategoriesSection({ isAdmin }) {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('lapseiq_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('servicecycle_token')}`,
         },
         body: JSON.stringify({ archived }),
       });

@@ -81,7 +81,7 @@ function validateResponse(endpointName, schema, payload, req) {
         userId:         req && req.user && req.user.id        ? req.user.id        : null,
         accountId:      req && req.user && req.user.accountId ? req.user.accountId : null,
         userAgent:      req ? trunc(req.headers && req.headers['user-agent'], 500) : null,
-        lapseiqVersion: trunc(process.env.LAPSEIQ_VERSION, 32),
+        appVersion:     trunc(process.env.SERVICECYCLE_VERSION, 32),
         ip:             trunc(ip, 64),
       },
     }).catch((persistErr) => {
