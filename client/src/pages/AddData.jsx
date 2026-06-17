@@ -66,9 +66,9 @@ export default function AddData() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Database size={16} /> CMMS export</div>
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Maximo / SAP PM / Oracle EAM</div>
         </Link>
-        <div className="card" style={{ flex: '1 1 200px', padding: 16, opacity: 0.6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Mail size={16} /> Email-in</div>
-          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Forward reports to a per-account address — coming soon</div>
+        <div className="card" style={{ flex: '1 1 200px', padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Mail size={16} /> Email-in <span style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 700, color: 'var(--color-success)', border: '1px solid var(--color-success)', borderRadius: 4, padding: '1px 5px' }}>LIVE</span></div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Forward a test report to your account's <code>reports-…@servicecycle.app</code> address — it parses every line and creates the asset cards automatically. No upload step.</div>
         </div>
       </div>
     </div>

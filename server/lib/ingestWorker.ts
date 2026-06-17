@@ -43,6 +43,17 @@ async function claimNextJobId(): Promise<string | null> {
   return rows && rows.length ? rows[0].id : null;
 }
 
+// Default landing site for an auto-commit (email-in) job when the job carries no
+// explicit siteId: the account's oldest non-archived site.
+async function _firstSiteId(accountId: string): Promise<string | null> {
+  const s = await prisma.site.findFirst({
+    where: { accountId, archivedAt: null },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  return s ? s.id : null;
+}
+
 /**
  * Run one claimed job to a terminal state. `builder` is injectable for tests;
  * defaults to the shared test-report preview builder.
@@ -59,6 +70,34 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
       userId:    job.createdById || job.accountId,
       originalName: job.fileName || undefined,
     });
+
+    // #6 email-in: auto-commit the parsed report straight to asset cards (no
+    // human review). Best-effort — a commit failure annotates the result but the
+    // job still completes, so the parsed preview is never lost.
+    if (job.autoCommit) {
+      try {
+        await prisma.ingestJob.update({ where: { id: job.id }, data: { progress: 70, phase: 'creating asset cards' } });
+        const siteId = job.siteId || await _firstSiteId(job.targetAccountId || job.accountId);
+        if (!siteId) throw new Error('no site available to place inbound assets');
+        const { commitPreviewSections } = require('./commitTestReport');
+        const committed = await commitPreviewSections({
+          accountId: job.targetAccountId || job.accountId, siteId,
+          preview: result, originalName: job.fileName || undefined,
+        });
+        (result as any).autoCommitted = committed;
+        try {
+          const immediate = (committed.sections || []).reduce((n: number, s: any) => n + (s.deficiencyBySeverity?.IMMEDIATE || 0), 0);
+          const { notifyReportIngested } = require('./loopNotify');
+          notifyReportIngested(job.accountId, {
+            readings: committed.measurementsCreated, deficiencies: committed.deficienciesCreated,
+            immediate, assetLabel: `${committed.assetsCommitted} asset(s) from email`, assetId: null,
+          }).catch(() => {});
+        } catch { /* notify never blocks the job */ }
+      } catch (ce: any) {
+        (result as any).autoCommitError = ce && ce.message ? String(ce.message).slice(0, 300) : 'auto-commit failed';
+        console.error(`[ingestWorker] auto-commit failed for job ${job.id}:`, (result as any).autoCommitError);
+      }
+    }
 
     await prisma.ingestJob.update({
       where: { id: job.id },

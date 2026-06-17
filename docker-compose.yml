@@ -1,5 +1,5 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# ServiceCycle — docker-compose.yml (Sprint 5, B4)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ServiceCycle â€” docker-compose.yml (Sprint 5, B4)
 #
 # Single-machine self-hosted stack: Postgres + ServiceCycle API server + Vite
 # client (running `npm run preview` to serve the prebuilt SPA). All three
@@ -9,16 +9,16 @@
 #   http://localhost:3001/api/health    (server, JSON status/version/uptime)
 #   http://localhost:5173               (client, served by `vite preview`)
 #
-# Persistence model — read this before deploying:
+# Persistence model â€” read this before deploying:
 #
-#   1. Database — postgres_data  (named Docker volume, OS-managed)
+#   1. Database â€” postgres_data  (named Docker volume, OS-managed)
 #      Lives outside the container filesystem so postgres data survives
 #      `docker compose down`, image rebuilds, and Postgres minor-version
 #      upgrades. To FULLY wipe the database for a fresh start, run
-#      `docker compose down -v` — that explicitly destroys the named
+#      `docker compose down -v` â€” that explicitly destroys the named
 #      volume. Without `-v`, the volume is preserved.
 #
-#   2. Documents — ./uploads (bind mount)
+#   2. Documents â€” ./uploads (bind mount)
 #      Operator-facing host directory. Files persist on the host so they
 #      survive every container action (rebuild, prune, etc.). Backing up
 #      this directory + a recent pg_dump is a complete instance backup.
@@ -27,33 +27,33 @@
 #      image as well, but anything in there is overlaid (and shadowed)
 #      by the bind mount at runtime.
 #
-#   3. Backups — ./backups (bind mount)
+#   3. Backups â€” ./backups (bind mount)
 #      Where lib/backup.js writes nightly pg_dump.gz files (cron 02:00
 #      server time, 30-day retention). On the host so the operator can
 #      copy them off-box. If you delete this directory you lose backup
 #      history but not the live database.
 #
 # Required env vars (read from a .env file in the repo root, NOT the
-# server/ subtree — Compose's interpolation only sees the file beside
+# server/ subtree â€” Compose's interpolation only sees the file beside
 # this docker-compose.yml). See server/.env.example for the full list.
 #
 # Quick-start:
 #   1. cp server/.env.example .env
-#   2. Fill in JWT_SECRET (≥32 chars) and MASTER_KEY (44-char base64 of
+#   2. Fill in JWT_SECRET (â‰¥32 chars) and MASTER_KEY (44-char base64 of
 #      32 random bytes). Both are validated at server startup; weak or
 #      missing values refuse to boot. See .env.example header for
 #      generators.
 #   3. docker compose up --build
 #
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 services:
 
-  # ── Database ───────────────────────────────────────────────────────────────
+  # â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   db:
     image: postgres:16-alpine
     container_name: servicecycle-db
-    # Pass-6 container hardening — drops Linux caps, blocks privilege
+    # Pass-6 container hardening â€” drops Linux caps, blocks privilege
     # escalation, makes rootfs read-only with explicit tmpfs for the bits
     # postgres legitimately needs (/tmp for sorts, /var/run/postgresql for
     # the unix socket).
@@ -76,7 +76,7 @@ services:
         hard: 4096
     restart: unless-stopped
     # Cap container log retention so Docker's default unbounded json-file
-    # driver can't fill the host disk. ~10 MB × 3 files ≈ 30 MB per service.
+    # driver can't fill the host disk. ~10 MB Ã— 3 files â‰ˆ 30 MB per service.
     # Backstops the Privacy Policy "30-day server-log retention target" claim
     # by guaranteeing logs roll on size; operators wanting strict 30-day
     # time-based retention should layer a logrotate / fluent-bit pipeline
@@ -90,19 +90,19 @@ services:
       POSTGRES_DB:       ${POSTGRES_DB:-servicecycle}
       POSTGRES_USER:     ${POSTGRES_USER:-servicecycle}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-    # Pass-6 hardening — defense-in-depth against expensive-query DoS and
+    # Pass-6 hardening â€” defense-in-depth against expensive-query DoS and
     # leaked-credential investigations. The flags are documented as Postgres
     # GUCs (postgresql.org/docs/16/runtime-config.html) and override
     # postgresql.conf at startup. Any of these can be relaxed by setting the
-    # matching POSTGRES_* env var — the command line uses literal values so
+    # matching POSTGRES_* env var â€” the command line uses literal values so
     # operators wanting longer timeouts must edit this block, not just .env.
-    #   statement_timeout=30s — caps any single SQL statement at 30 seconds
-    #   lock_timeout=10s — caps time spent waiting to acquire a row/table lock
+    #   statement_timeout=30s â€” caps any single SQL statement at 30 seconds
+    #   lock_timeout=10s â€” caps time spent waiting to acquire a row/table lock
     #     (L6, 2026-06-09 audit) so a statement blocked on a lock fails fast
     #     instead of sitting until the 30s statement_timeout cap
-    #   idle_in_transaction_session_timeout=60s — kills idle held transactions
-    #   log_min_duration_statement=1000 — logs SQL text of statements >1s
-    #   log_connections=on / log_disconnections=on — connection-level audit trail
+    #   idle_in_transaction_session_timeout=60s â€” kills idle held transactions
+    #   log_min_duration_statement=1000 â€” logs SQL text of statements >1s
+    #   log_connections=on / log_disconnections=on â€” connection-level audit trail
     command:
       - "postgres"
       - "-c"
@@ -118,11 +118,11 @@ services:
       - "-c"
       - "log_disconnections=on"
     volumes:
-      # postgres_data — Postgres on-disk database files. Named Docker volume so
+      # postgres_data â€” Postgres on-disk database files. Named Docker volume so
       # data survives container rebuilds and Postgres minor-version upgrades.
       # Destroyed only by `docker compose down -v`.
       - postgres_data:/var/lib/postgresql/data
-    # Port not exposed by default — only the server needs DB access. Uncomment
+    # Port not exposed by default â€” only the server needs DB access. Uncomment
     # the ports block below if you want to point a local psql client at it.
     # ports:
     #   - "5432:5432"
@@ -133,7 +133,7 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── DB migrations (init container) ───────────────────────────────────────────
+  # â”€â”€ DB migrations (init container) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # 2026-06-10: mirrors docker-compose.ghcr.yml's server-migrate. Runs
   # `prisma migrate deploy` once (applies the squashed 20260606000000_init
   # baseline) and exits 0. The API server waits on
@@ -154,13 +154,13 @@ services:
       MASTER_KEY:   ${MASTER_KEY:?MASTER_KEY must be set in .env (44-char base64 of 32 random bytes)}
       NODE_ENV:     ${NODE_ENV:-production}
 
-  # ── API Server ─────────────────────────────────────────────────────────────
+  # â”€â”€ API Server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   server:
     build:
       context: ./server
       dockerfile: Dockerfile
     container_name: servicecycle-server
-    # Pass-6 container hardening — see db service for rationale. /tmp is
+    # Pass-6 container hardening â€” see db service for rationale. /tmp is
     # tmpfs so sharp/prisma/ephemeral writes still work on a read-only root.
     # 2026-06-10: cap_drop:ALL + read_only:true removed for parity with the db
     # service (see its note). no-new-privileges + tmpfs + limits retained.
@@ -196,7 +196,7 @@ services:
       # the password in one place. Use the in-network hostname `db`.
       DATABASE_URL: "postgresql://${POSTGRES_USER:-servicecycle}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-servicecycle}?connection_limit=${DB_CONNECTION_LIMIT:-10}&pool_timeout=${DB_POOL_TIMEOUT:-30}"
 
-      # Required — startup validation refuses to boot without these.
+      # Required â€” startup validation refuses to boot without these.
       JWT_SECRET:   ${JWT_SECRET:?JWT_SECRET must be set in .env (>=32 chars, see server/.env.example)}
       MASTER_KEY:   ${MASTER_KEY:?MASTER_KEY must be set in .env (44-char base64 of 32 random bytes)}
 
@@ -205,7 +205,7 @@ services:
       CLIENT_URL:   ${CLIENT_URL:-http://localhost:5173}
       NODE_ENV:     ${NODE_ENV:-production}
 
-      # Optional — security/CORP knob for split-domain hosting.
+      # Optional â€” security/CORP knob for split-domain hosting.
       CORP_POLICY:  ${CORP_POLICY:-same-site}
 
       # Trust X-Forwarded-* headers from a single hop in front (Caddy /
@@ -214,17 +214,24 @@ services:
       # NEVER enable on a directly-internet-exposed instance.
       TRUST_PROXY:  ${TRUST_PROXY:-false}
 
-      # Optional — demo sandbox flag. true → forces email mock, AI off,
+      # Optional â€” demo sandbox flag. true â†’ forces email mock, AI off,
       # registration open, nightly seed reset at 03:30 server time.
       DEMO_MODE:    ${DEMO_MODE:-false}
 
-      # Optional — open self-serve signup. DEMO_MODE forces this true.
+      # Optional â€” open self-serve signup. DEMO_MODE forces this true.
       REGISTRATION_OPEN: ${REGISTRATION_OPEN:-false}
 
       # CSP escape hatch for production debugging only.
       CSP_REPORT_ONLY:  ${CSP_REPORT_ONLY:-false}
 
-      # JWT lifetime — short defaults already in code; override here only
+      # #6 email-in webhook auth. INBOUND_WEBHOOK_SECRET = shared secret (sim /
+      # non-Resend providers). RESEND_* = live Resend inbound (Svix signature +
+      # Attachments API). All optional; the webhook fails closed without one.
+      INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET:-}
+      RESEND_WEBHOOK_SECRET:  ${RESEND_WEBHOOK_SECRET:-}
+      RESEND_API_KEY:         ${RESEND_API_KEY:-}
+
+      # JWT lifetime â€” short defaults already in code; override here only
       # for compliance-driven adjustments.
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-}
 
@@ -234,7 +241,7 @@ services:
 
       # Backup encryption (default true). Wraps pg_dump.gz with AES-256-GCM
       # using a key derived from MASTER_KEY. Decrypt via
-      # `node scripts/decrypt-backup.js <file>` — see docs/operator-playbook.md.
+      # `node scripts/decrypt-backup.js <file>` â€” see docs/operator-playbook.md.
       BACKUP_ENCRYPT: ${BACKUP_ENCRYPT:-true}
 
       # Document storage. Default is local filesystem; switch to s3 to
@@ -259,27 +266,27 @@ services:
       # is encrypted the flag cannot be flipped back without losing data.
       ENCRYPT_DOCS: ${ENCRYPT_DOCS:-false}
 
-      # Email — when EMAIL_MOCK=true the rest of the email vars are ignored.
+      # Email â€” when EMAIL_MOCK=true the rest of the email vars are ignored.
       EMAIL_MOCK:     ${EMAIL_MOCK:-true}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
       EMAIL_FROM:     ${EMAIL_FROM:-}
       SUPPORT_EMAIL:  ${SUPPORT_EMAIL:-}
 
-      # Slack — optional. Per-account configuration via Settings UI is the
+      # Slack â€” optional. Per-account configuration via Settings UI is the
       # primary surface; these env vars exist for operators who'd rather wire
       # one webhook up at the host level. SLACK_MOCK logs payloads to the
-      # console instead of sending — set true for local/CI.
+      # console instead of sending â€” set true for local/CI.
       SLACK_ENABLED:     ${SLACK_ENABLED:-false}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       SLACK_MOCK:        ${SLACK_MOCK:-false}
 
-      # AI — opt-in. AI_ENABLED=false runs the app without AI extraction
+      # AI â€” opt-in. AI_ENABLED=false runs the app without AI extraction
       # (manual contract entry still works).
       AI_ENABLED:    ${AI_ENABLED:-false}
       AI_PROVIDER:   ${AI_PROVIDER:-anthropic}
       AI_API_KEY:    ${AI_API_KEY:-}
       AI_MODEL:      ${AI_MODEL:-}
-      # Groq cross-provider fallback — free second tier behind Gemini. When
+      # Groq cross-provider fallback â€” free second tier behind Gemini. When
       # Gemini's daily free quota is exhausted, image reads (nameplate OCR) fall
       # to Groq's Llama-4 vision model. AI_VISION_FALLBACK defaults to groq.
       GROQ_API_KEY:        ${GROQ_API_KEY:-}
@@ -290,13 +297,13 @@ services:
       AZURE_OPENAI_ENDPOINT:   ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
 
-      # Phase 4 v0.4.x — Tavily web-search enrichment of the renewal
+      # Phase 4 v0.4.x â€” Tavily web-search enrichment of the renewal
       # brief's Market section. Optional: omit to disable enrichment
       # (brief still generates without it; the no-reference fallback
       # fires and the LLM leans on its training knowledge).
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
 
-      # Phase 4 v0.4.x — per-action AI daily-cap overrides. Self-host
+      # Phase 4 v0.4.x â€” per-action AI daily-cap overrides. Self-host
       # default is UNLIMITED; these matter only on shared instances.
       AI_DAILY_CAP_PER_USER:               ${AI_DAILY_CAP_PER_USER:-}
       AI_DAILY_CAP_PER_USER_EXTRACT:       ${AI_DAILY_CAP_PER_USER_EXTRACT:-}
@@ -308,12 +315,12 @@ services:
       # DEMO_MODE, so the gated demo can cap scans without the full sandbox.
       AI_DAILY_CAP_PER_USER_NAMEPLATE_SCAN: ${AI_DAILY_CAP_PER_USER_NAMEPLATE_SCAN:-}
 
-      # Phase 4 v0.4.4 — per-brief output budget. Auto-defaults to 1800 in
+      # Phase 4 v0.4.4 â€” per-brief output budget. Auto-defaults to 1800 in
       # DEMO_MODE, 2250 on self-host (more headroom for complex contracts;
       # customer using own API key). Set here to override either default.
       AI_BRIEF_MAX_TOKENS: ${AI_BRIEF_MAX_TOKENS:-}
 
-      # Vendor news scanner — opt-in nightly scrape.
+      # Vendor news scanner â€” opt-in nightly scrape.
       NEWS_SCANNER_ENABLED: ${NEWS_SCANNER_ENABLED:-false}
 
       # Stripe billing seam (Sprint 6). Unset on self-hosted licensed
@@ -330,7 +337,7 @@ services:
       # the container; the host-side port is configurable via SERVER_PORT.
       PORT: 3001
     volumes:
-      # ./uploads — document storage bind mount. Files written here by the
+      # ./uploads â€” document storage bind mount. Files written here by the
       # server (PDFs, Word docs, images) persist on the HOST so they survive
       # every container action. If you delete this directory all uploaded
       # contracts vanish. Backing it up + the latest pg_dump is a complete
@@ -338,23 +345,23 @@ services:
       # store entirely (uploads then go straight to S3).
       - ./uploads:/app/uploads
 
-      # ./backups — daily pg_dump.gz output written by lib/backup.js (cron
+      # ./backups â€” daily pg_dump.gz output written by lib/backup.js (cron
       # 02:00, retention 30 days). Bind-mounted to the host so operators can
       # copy backups off the machine. If you delete this directory you lose
       # backup HISTORY but the live database is untouched.
       - ./backups:/app/backups
 
-  # ── SPA / static client ────────────────────────────────────────────────────
+  # â”€â”€ SPA / static client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Runs `npm run preview` to serve the production build of the React app.
   # For a real deployment, replace this with an nginx stage that copies
-  # `client/dist` and adds proper cache headers — see docker-compose.prod.yml
+  # `client/dist` and adds proper cache headers â€” see docker-compose.prod.yml
   # for the nginx variant.
   client:
     build:
       context: ./client
       dockerfile: Dockerfile
     container_name: servicecycle-client
-    # Pass-6 container hardening (dev) — relaxed read_only because vite
+    # Pass-6 container hardening (dev) â€” relaxed read_only because vite
     # build writes to node_modules/.vite cache. Still drops Linux caps and
     # blocks privilege escalation. Production clients (compose.prod /
     # compose.ghcr) run nginx on a read-only rootfs.
@@ -384,7 +391,7 @@ services:
     # SERVICECYCLE_HOST_BIND=0.0.0.0 in .env if you need LAN access.
     ports:
       - "${SERVICECYCLE_HOST_BIND:-127.0.0.1}:${CLIENT_PORT:-5173}:5173"
-    # No persistent volumes — the client is fully derived from source.
+    # No persistent volumes â€” the client is fully derived from source.
     # The default client/Dockerfile boots `npm run dev` (Vite's hot-reload
     # server) for local development. For B4 we override the command to
     # produce a production build and serve it via `vite preview`. This is
@@ -397,7 +404,7 @@ services:
       - "npm run build && npm run preview -- --host 0.0.0.0 --port 5173"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 volumes:
   postgres_data:

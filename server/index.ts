@@ -600,6 +600,15 @@ app.use((err, req, res, next) => {
 // limit is safe to tighten globally. If a future bulk-JSON endpoint
 // legitimately needs >1mb it should mount express.json({limit:'5mb'}) on
 // its own router rather than reopening the global limit.
+// ── #6 email-in webhook ───────────────────────────────────────────────────────
+// Mounted BEFORE the global json parser and the /api auth + demo-write gates: it
+// authenticates by webhook signature (Resend/Svix) or a shared secret, needs a
+// larger body + the raw bytes for the Svix HMAC, and must not be blocked by the
+// demo-write guard. Its own parser captures req.rawBody for signature checks.
+app.use('/api/inbound',
+  express.json({ limit: '15mb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString('utf8'); } }),
+  require('./routes/inboundEmail'));
+
 app.use(express.json({ limit: '200kb' }));  // SEC-011 (Round-5)
 
 // Item 2: patch res.json to validate outgoing payload shapes (logs + render_errors in prod).
