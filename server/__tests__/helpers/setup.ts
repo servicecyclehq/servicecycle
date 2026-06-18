@@ -10,6 +10,8 @@ jest.mock('../../lib/email', () => ({
   inviteHtml:              jest.fn().mockReturnValue('<p>invite</p>'),
   newViewerActivationHtml: jest.fn().mockReturnValue('<p>activate</p>'),
   welcomeHtml:             jest.fn().mockReturnValue('<p>welcome</p>'),
+  // #6 email-in auto-acknowledgement template — inboundEmail.ts imports this.
+  reportReceivedHtml:      jest.fn().mockReturnValue('<p>received</p>'),
 }));
 
 export {};
