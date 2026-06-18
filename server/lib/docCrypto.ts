@@ -25,10 +25,10 @@
  *
  * ── Key derivation ────────────────────────────────────────────────────────────
  * A unique AES-256 key is derived for each document using HKDF-SHA256:
- *   key = HKDF(MASTER_KEY, salt=documentId, info='lapseiq-doc-v1', length=32)
+ *   key = HKDF(MASTER_KEY, salt=documentId, info='servicecycle-doc-v1', length=32)
  *
  * NOTE (ServiceCycle conversion): the HKDF `info` string is part of the key
- * derivation and MUST stay byte-identical ('lapseiq-doc-v1') — changing it
+ * derivation and MUST stay byte-identical ('servicecycle-doc-v1') — changing it
  * would silently re-key every document and make existing encrypted blobs
  * undecryptable. It is a version tag, not branding.
  *
@@ -80,7 +80,7 @@ function deriveDocumentKey(documentId) {
   }
 
   const salt = Buffer.from(documentId, 'utf8');
-  const info = Buffer.from('lapseiq-doc-v1', 'utf8');
+  const info = Buffer.from('servicecycle-doc-v1', 'utf8');
   return crypto.hkdfSync('sha256', keyMaterial, salt, info, KEY_LEN);
 }
 

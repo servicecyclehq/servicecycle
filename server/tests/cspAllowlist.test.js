@@ -32,15 +32,15 @@ describe('L6: CSP allowlist *.servicecycle.app on connect-src / img-src / font-s
   });
 
   test('imgSrc includes https://*.servicecycle.app', () => {
-    expect(block).toMatch(/imgSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
+    expect(block).toMatch(/imgSrc[\s\S]*?'https:\/\/\*\.servicecycle\.app'/);
   });
 
   test('connectSrc includes https://*.servicecycle.app', () => {
-    expect(block).toMatch(/connectSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
+    expect(block).toMatch(/connectSrc[\s\S]*?'https:\/\/\*\.servicecycle\.app'/);
   });
 
   test('fontSrc includes https://*.servicecycle.app', () => {
-    expect(block).toMatch(/fontSrc[\s\S]*?'https:\/\/\*\.servicecycle\.com'/);
+    expect(block).toMatch(/fontSrc[\s\S]*?'https:\/\/\*\.servicecycle\.app'/);
   });
 
   test("scriptSrc deliberately stays 'self' only — no marketing JS", () => {
@@ -48,10 +48,10 @@ describe('L6: CSP allowlist *.servicecycle.app on connect-src / img-src / font-s
     // doesn't poison the assertion.
     const line = block.match(/scriptSrc[^\n]*/)[0];
     expect(line).toMatch(/'self'/);
-    expect(line).not.toMatch(/servicecycle\.com|lapseiq\.com/);
+    expect(line).not.toMatch(/servicecycle\.app|servicecycle\.com/);
   });
 
-  test('no stale lapseiq.com hosts survive in the CSP block', () => {
-    expect(block).not.toMatch(/lapseiq\.com/);
+  test('no stale lapseiq.com / wrong-TLD hosts survive in the CSP block', () => {
+    expect(block).not.toMatch(/lapseiq\.com|servicecycle\.com/);
   });
 });

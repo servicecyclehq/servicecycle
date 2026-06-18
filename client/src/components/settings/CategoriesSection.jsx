@@ -143,7 +143,7 @@ export default function CategoriesSection({ isAdmin }) {
       <p className={sectionDesc}>
         Tag every contract with what kind of commitment it is — SaaS subscription, telecom,
         insurance, lease, hardware maintenance, supplier agreement, anything. The 9 system
-        defaults ship with LapseIQ; rename, recolor, or replace them, and add your own.
+        defaults ship with ServiceCycle; rename, recolor, or replace them, and add your own.
         Behavioural defaults (typical notice period, whether contracts in this category
         auto-renew) pre-fill the new-contract form when you pick the category.
       </p>

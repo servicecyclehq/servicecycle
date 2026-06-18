@@ -1,10 +1,10 @@
-# LapseIQ brand system
+# ServiceCycle brand system
 
 **Version:** 1.1 · **Locked:** 2026-05-12 · **v0.91 palette update:** 2026-05-27 · **Direction:** Quietly Modern
 
-This document defines the LapseIQ brand identity — palette, typography,
+This document defines the ServiceCycle brand identity — palette, typography,
 logo system, and usage rules. Single source of truth. When something
-visual ships under the LapseIQ name (in-product, marketing site,
+visual ships under the ServiceCycle name (in-product, marketing site,
 documents, signage, social), it pulls from this doc.
 
 If a brand decision isn't in here, default to **restraint**. The brand
@@ -15,9 +15,9 @@ not flashy ones. Premium feel comes from craft, not noise.
 
 ## Logo system
 
-LapseIQ has **three** primary lockups. All share the same brand mark
+ServiceCycle has **three** primary lockups. All share the same brand mark
 (a horizontal petrol bar with a vertical emerald tick) and the same
-wordmark ("lapseiq" in Inter Medium with tight tracking).
+wordmark ("servicecycle" in Inter Medium with tight tracking).
 
 ### Lockup 1 — Horizontal (primary)
 
@@ -158,7 +158,7 @@ Reserved for state communication. Use these — do not invent.
 
 ### Dark mode palette (v0.91 — LOCKED)
 
-LapseIQ ships a dark mode. Light/dark switching changes **colours only** —
+ServiceCycle ships a dark mode. Light/dark switching changes **colours only** —
 type, spacing, radius, motion, and component dimensions are identical
 across modes. The dark-mode token map:
 
@@ -339,7 +339,7 @@ ease-out. Linear feels mechanical; bouncy feels juvenile.
 
 ## What the brand sounds like
 
-The visual brand has a voice. When writing for LapseIQ — product
+The visual brand has a voice. When writing for ServiceCycle — product
 copy, marketing, documentation, error messages — match the visual
 restraint. Quietly confident. Plain English. No marketing-ese.
 

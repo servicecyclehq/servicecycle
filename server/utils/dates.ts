@@ -1,5 +1,5 @@
 /**
- * Date calculation utilities for LapseIQ contract management.
+ * Date calculation utilities for ServiceCycle contract management.
  *
  * Evaluation-start-by date tiers (based on total contract value). These are the
  * BUILT-IN DEFAULTS; an account can override the breakpoints + lead times via

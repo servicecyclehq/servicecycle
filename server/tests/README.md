@@ -1,4 +1,4 @@
-# LapseIQ test harness
+# ServiceCycle test harness
 
 This is a scaffold, not full coverage. The goal is regression protection
 on the highest-value fixes shipped during the 2026-05-02 security pass:

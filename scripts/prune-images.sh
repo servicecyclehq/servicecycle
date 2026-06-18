@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # scripts/prune-images.sh
 # ---------------------------------------------------------------------------
-# LapseIQ Docker image retention. Keeps the newest N semver-tagged images per
+# ServiceCycle Docker image retention. Keeps the newest N semver-tagged images per
 # repo (client + server) and removes everything older. Safe by construction:
 #   - never deletes an image used by a RUNNING container (current + anything up)
 #   - never deletes the :latest tag
-#   - only ever touches ghcr.io/<owner>/lapseiq-{client,server} vX.Y.Z tags
+#   - only ever touches ghcr.io/<owner>/servicecycle-{client,server} vX.Y.Z tags
 #
-# Why this exists: the lapseiq-vps MCP intentionally blocks `docker rmi`, so
+# Why this exists: the servicecycle-vps MCP intentionally blocks `docker rmi`, so
 # retention can't be driven through it. This runs natively on the droplet
 # (cron and/or as the last step of a deploy), where it isn't allowlist-gated.
 #
@@ -16,14 +16,14 @@
 #   DRYRUN=1 ./prune-images.sh         # print what WOULD be deleted, do nothing
 #
 # Recommended cron (daily 04:10 UTC):
-#   10 4 * * * KEEP=6 /root/lapseiq-src/scripts/prune-images.sh >> /var/log/lapseiq-prune.log 2>&1
+#   10 4 * * * KEEP=6 /root/servicecycle-src/scripts/prune-images.sh >> /var/log/servicecycle-prune.log 2>&1
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 KEEP="${KEEP:-6}"
 DRYRUN="${DRYRUN:-0}"
 OWNER="${GHCR_OWNER:-forgerift}"
-REPOS=("ghcr.io/${OWNER}/lapseiq-client" "ghcr.io/${OWNER}/lapseiq-server")
+REPOS=("ghcr.io/${OWNER}/servicecycle-client" "ghcr.io/${OWNER}/servicecycle-server")
 
 # Images referenced by running containers — never delete these.
 INUSE="$(docker ps --format '{{.Image}}' | sort -u)"

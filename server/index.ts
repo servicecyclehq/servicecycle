@@ -260,7 +260,7 @@ const { pingHeartbeat }     = require('./lib/heartbeat'); // (Pass-5 Tier 4 / Ag
 //     envs, or uniformly with the legacy AI_DAILY_CAP_PER_USER. We
 //     deliberately do NOT pin AI_DAILY_CAP_PER_USER here — that would
 //     override the per-action defaults and revert everyone to a uniform
-//     low cap. The asymmetry matters because Ask LapseIQ is conversational
+//     low cap. The asymmetry matters because Ask ServiceCycle is conversational
 //     (visitors send 4-5 questions) while extract is "demo this once".
 //     Renewal-brief generation has no daily cap — only the 30/hour
 //     briefLimiter in routes/contracts.js — matching the published Demo
@@ -328,14 +328,14 @@ const app = express();
 app.use(compression({ threshold: 1024, level: 6 }));  // PERF-003 (Round-5)
 
 // ── Trust proxy (B1) ────────────────────────────────────────────────────────
-// When LapseIQ runs behind nginx/caddy/traefik (the recommended deployment
+// When ServiceCycle runs behind nginx/caddy/traefik (the recommended deployment
 // shape — see docs/install.md), Express sees the proxy's IP on every request
 // instead of the real client. This breaks per-IP rate limiting (every caller
 // collapses to one bucket) and pollutes ActivityLog with the proxy address
 // instead of the actual originator.
 //
 // TRUST_PROXY=true tells Express to trust the LAST hop and read the original
-// client IP from X-Forwarded-For. Only enable when LapseIQ is actually fronted
+// client IP from X-Forwarded-For. Only enable when ServiceCycle is actually fronted
 // by a reverse proxy you control — turning it on for a directly-exposed
 // instance lets clients spoof their IP via the header.
 //
@@ -391,7 +391,7 @@ try {
 }
 
 // H6 (audit High, 2026-05-22): warn on every boot when HEALTHCHECKS_PING_KEY
-// is unset AND DEMO_MODE !== 'true'. Without the ping key, all 12 LapseIQ
+// is unset AND DEMO_MODE !== 'true'. Without the ping key, all 12 ServiceCycle
 // crons run silently -- nothing pages oncall if alertEngine stops firing
 // for a week. Demo droplet exempted because demo doesn't have an oncall
 // rotation. Mirrors the BACKUP_DEST=local pattern just above.
@@ -435,9 +435,9 @@ if (process.env.DEMO_MODE !== 'true' && !process.env.HEALTHCHECKS_PING_KEY) {
 // HSTS is gated on NODE_ENV=production: enabling HSTS over plain HTTP (e.g.
 // localhost dev) is harmless but pointless, and we don't want operators to
 // accidentally cache an HSTS pin against a domain they later move off TLS.
-// L6: extend connect-src, img-src, and font-src with the LapseIQ marketing
-// zone (*.lapseiq.com) so the demo SPA can fetch from sister subdomains —
-// e.g. lapseiq.com/install.sh links rendered in the help menu, marketing
+// L6: extend connect-src, img-src, and font-src with the ServiceCycle marketing
+// zone (*.servicecycle.app) so the demo SPA can fetch from sister subdomains —
+// e.g. servicecycle.app/install.sh links rendered in the help menu, marketing
 // hero images embedded in upcoming docs panes, or future fonts served from
 // the marketing CDN. script-src deliberately stays 'self' only — no third
 // party should ever ship JS into the running app.
@@ -547,8 +547,8 @@ app.use(helmet({
 // fallback to localhost only fires in dev.
 //
 // v0.7.4: CLIENT_URL now accepts a comma-separated list so a single instance
-// can serve multiple front-end origins (e.g. demo.lapseiq.com + lapseiq.com
-// + www.lapseiq.com all proxying to the same backend, but cookies/sessions
+// can serve multiple front-end origins (e.g. servicecycle.app + servicecycle.app
+// + www.servicecycle.app all proxying to the same backend, but cookies/sessions
 // stay per-origin). Single-value CLIENT_URL is backward-compat.
 const CORS_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',')

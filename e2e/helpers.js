@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Shared helpers for LapseIQ E2E tests.
+ * Shared helpers for ServiceCycle E2E tests.
  *
  * The demo droplet prunes per-visitor accounts nightly (DEMO_MAX_ACCOUNTS
  * + 03:25 UTC sweep), so tests that register fresh visitors are

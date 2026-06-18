@@ -109,7 +109,7 @@ router.head('/modules/:slug/pdf', pdfLimiter, (req, res) => {
   if (markdown == null) {
     return res.status(503).end();
   }
-  const filename = `LapseIQ-Help-${slug}.pdf`;
+  const filename = `ServiceCycle-Help-${slug}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -131,7 +131,7 @@ router.get('/modules/:slug/pdf', pdfLimiter, (req, res) => {
     });
   }
 
-  const filename = `LapseIQ-Help-${slug}.pdf`;
+  const filename = `ServiceCycle-Help-${slug}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('X-Content-Type-Options', 'nosniff');

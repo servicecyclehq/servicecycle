@@ -59,22 +59,22 @@ const openapiLimiter = rateLimit({
 
 // The Swagger UI HTML shell. References to JS/CSS go through our own
 // /docs/api/assets/* mount, so there is no external network dependency.
-// Inline <style> + the swagger-ui.css below give us the LapseIQ chrome
+// Inline <style> + the swagger-ui.css below give us the ServiceCycle chrome
 // header without forking the upstream UI bundle.
 const SWAGGER_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LapseIQ API - Documentation</title>
+  <title>ServiceCycle API - Documentation</title>
   <link
     rel="stylesheet"
     href="/docs/api/assets/swagger-ui.css"
   />
   <style>
     body { margin: 0; padding: 0; background: #fafafa; }
-    .topbar { display: none; } /* hide the swagger logo header - LapseIQ chrome is implicit */
-    #lapseiq-header {
+    .topbar { display: none; } /* hide the swagger logo header - ServiceCycle chrome is implicit */
+    #servicecycle-header {
       background: #0d4f6e;
       color: #fff;
       padding: 14px 24px;
@@ -85,14 +85,14 @@ const SWAGGER_HTML = `<!DOCTYPE html>
       align-items: center;
       gap: 12px;
     }
-    #lapseiq-header a { color: #d8eaf2; text-decoration: none; margin-left: auto; font-weight: 500; font-size: 13px; }
-    #lapseiq-header a:hover { text-decoration: underline; }
-    #lapseiq-header a + a { margin-left: 16px; }
+    #servicecycle-header a { color: #d8eaf2; text-decoration: none; margin-left: auto; font-weight: 500; font-size: 13px; }
+    #servicecycle-header a:hover { text-decoration: underline; }
+    #servicecycle-header a + a { margin-left: 16px; }
   </style>
 </head>
 <body>
-  <div id="lapseiq-header">
-    LapseIQ API - v1 Documentation
+  <div id="servicecycle-header">
+    ServiceCycle API - v1 Documentation
     <a href="/api/v1/openapi.json">openapi.json</a>
     <a href="/api/v1/openapi.yaml">openapi.yaml</a>
     <a href="/">&larr; Back to app</a>

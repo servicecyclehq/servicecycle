@@ -14,8 +14,8 @@
  *
  * File format:
  *   backup.js writes: gzip( pg_dump --format=custom --compress=6 )
- *   Local filenames:  lapseiq-backup-TIMESTAMP.sql.gz[.enc]
- *   S3 keys:          backups/lapseiq-backup-TIMESTAMP.sql.gz[.enc]
+ *   Local filenames:  servicecycle-backup-TIMESTAMP.sql.gz[.enc]
+ *   S3 keys:          backups/servicecycle-backup-TIMESTAMP.sql.gz[.enc]
  *
  *   Before passing to pg_restore --list this module:
  *     1. Decrypts (if .enc) with backupCrypto.decryptBackup()
@@ -137,7 +137,7 @@ async function prepareBackupBuffer(buf, isEncrypted) {
  *   { ok, sections, expected, source, sectionsByTable, tmpDir? }
  */
 async function runRestoreTest({ keepTempFile = false } = {}) {
-  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'lapseiq-restoretest-'));
+  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'servicecycle-restoretest-'));
   let cleanupNeeded = true;
   try {
     const dest = (process.env.BACKUP_DEST || 'local').toLowerCase();

@@ -1,6 +1,6 @@
 # Contracts
 
-A Contract is the operating unit of LapseIQ. Everything else — vendors, alerts, briefs, savings, reports — orbits around contracts.
+A Contract is the operating unit of ServiceCycle. Everything else — vendors, alerts, briefs, savings, reports — orbits around contracts.
 
 ## What you'll see
 
@@ -24,7 +24,7 @@ Practitioner shorthand: review-by is when you start, cancel-by is when the door 
 
 ## Urgency colors
 
-LapseIQ colors each active contract by how close it is to its review-by (Evaluate-By) date, using one shared model so the contract header, the Key Dates chip, and the day chips on the contract list all agree:
+ServiceCycle colors each active contract by how close it is to its review-by (Evaluate-By) date, using one shared model so the contract header, the Key Dates chip, and the day chips on the contract list all agree:
 
 - **Green** — before the Evaluate-By date. On track; nothing to do yet.
 - **Amber** — at or past the Evaluate-By date but still more than 30 days out. The window is open — start working the renewal.

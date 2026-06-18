@@ -35,7 +35,7 @@ const IV_LEN   = 12;
 const TAG_LEN  = 16;
 const HEADER   = MAGIC.length + IV_LEN + TAG_LEN; // 36 bytes
 const ALGO     = 'aes-256-gcm';
-const KEY_INFO = Buffer.from('lapseiq-backup-v1', 'utf8');
+const KEY_INFO = Buffer.from('servicecycle-backup-v1', 'utf8');
 
 /**
  * Derive the AES-256 backup key from MASTER_KEY using HKDF-SHA256. Salt is
@@ -78,7 +78,7 @@ function encryptBackup(plaintext) {
 
 /**
  * Decrypt a backup buffer produced by encryptBackup. Throws on header
- * mismatch (not a LapseIQ backup), short payload, or auth-tag mismatch
+ * mismatch (not a ServiceCycle backup), short payload, or auth-tag mismatch
  * (corrupted file or wrong MASTER_KEY).
  */
 function decryptBackup(blob) {
@@ -86,11 +86,11 @@ function decryptBackup(blob) {
     throw new Error('decryptBackup: blob must be a Buffer');
   }
   // Check magic FIRST so a short or unrelated buffer gets the more
-  // actionable error ("not a LapseIQ backup") instead of a generic
+  // actionable error ("not a ServiceCycle backup") instead of a generic
   // "too short" — the operator running decrypt-backup.js usually
   // pointed it at the wrong file rather than a truncated one.
   if (blob.length < MAGIC.length || !blob.subarray(0, MAGIC.length).equals(MAGIC)) {
-    throw new Error('Backup blob is missing the LapseIQ encryption header — not encrypted by this tool, or corrupted.');
+    throw new Error('Backup blob is missing the ServiceCycle encryption header — not encrypted by this tool, or corrupted.');
   }
   if (blob.length < HEADER) {
     throw new Error('Backup blob is too short to be valid (header truncated).');
@@ -113,7 +113,7 @@ function decryptBackup(blob) {
   }
 }
 
-/** True if a buffer starts with the LapseIQ backup magic header. */
+/** True if a buffer starts with the ServiceCycle backup magic header. */
 function isEncryptedBackup(blob) {
   return Buffer.isBuffer(blob)
       && blob.length >= MAGIC.length

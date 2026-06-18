@@ -94,7 +94,7 @@ describe('post-DNS private IP rejection', () => {
 describe('positive case', () => {
   test('accepts a safe HTTPS URL with a public IP', async () => {
     mockDns(['93.184.216.34']); // example.com
-    const result = await validateWebhookUrl('https://example.com/lapseiq-webhook');
+    const result = await validateWebhookUrl('https://example.com/servicecycle-webhook');
     expect(result.valid).toBe(true);
   });
 });

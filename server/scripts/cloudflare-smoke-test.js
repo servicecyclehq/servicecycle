@@ -99,7 +99,7 @@ Quote valid through: June 30, 2026`;
     process.exit(3);
   }
 
-  header('5. Live: Ask LapseIQ chat (CF -> HF -> Groq cascade)');
+  header('5. Live: Ask ServiceCycle chat (CF -> HF -> Groq cascade)');
   try {
     const t0 = Date.now();
     const out = await aiProvider.complete({

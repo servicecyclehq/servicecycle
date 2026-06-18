@@ -2,7 +2,7 @@
 /**
  * server/scripts/rotate-master-key.js
  *
- * MASTER_KEY rotation for LapseIQ envelope-encrypted DB columns.
+ * MASTER_KEY rotation for ServiceCycle envelope-encrypted DB columns.
  *
  * v0.73.5 (CloudConnector credentials added; originally v0.67.11, audit High H26).
  *

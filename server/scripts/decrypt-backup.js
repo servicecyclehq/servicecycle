@@ -3,7 +3,7 @@
 /**
  * server/scripts/decrypt-backup.js
  *
- * Decrypt a LapseIQ encrypted backup file (.sql.gz.enc) using MASTER_KEY
+ * Decrypt a ServiceCycle encrypted backup file (.sql.gz.enc) using MASTER_KEY
  * from the environment. Usage:
  *
  *   node scripts/decrypt-backup.js <encrypted.sql.gz.enc> [output.sql.gz]
@@ -66,7 +66,7 @@ function main() {
     console.error('Common causes:');
     console.error('  - MASTER_KEY does not match the key used when this backup was taken.');
     console.error('  - The backup file is corrupted or truncated.');
-    console.error('  - The file is not a LapseIQ encrypted backup (missing LBKE0001 magic).');
+    console.error('  - The file is not a ServiceCycle encrypted backup (missing LBKE0001 magic).');
     process.exit(1);
   }
 

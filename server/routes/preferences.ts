@@ -30,7 +30,7 @@ const router = express.Router();
 
 // Bound the key length + alphabet so accidental URL-encoded garbage doesn't
 // pollute the table. Dotted + colon-namespaced segments are fine
-// ("contracts.columnVisibility", "lapseiq:contracts-list:saved-views") —
+// ("contracts.columnVisibility", "servicecycle:contracts-list:saved-views") —
 // matches the namespacing client code is already using for localStorage.
 const KEY_RE  = /^[a-z][a-z0-9._:-]{0,127}$/i;
 const MAX_VAL = 256 * 1024; // 256 KB JSON serialized

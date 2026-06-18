@@ -47,6 +47,6 @@ describe('backup crypto', () => {
 
   test('decryptBackup rejects a buffer without the magic header', () => {
     const fake = Buffer.from('not a real backup file');
-    expect(() => decryptBackup(fake)).toThrow(/missing the LapseIQ encryption header/);
+    expect(() => decryptBackup(fake)).toThrow(/missing the ServiceCycle encryption header/);
   });
 });

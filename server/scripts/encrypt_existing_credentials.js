@@ -77,7 +77,7 @@ async function migrateAiApiKeys() {
 }
 
 async function main() {
-  console.log('=== LapseIQ credential encryption migration ===');
+  console.log('=== ServiceCycle credential encryption migration ===');
   try {
     await migrateCloudConnectors();
     await migrateAiApiKeys();

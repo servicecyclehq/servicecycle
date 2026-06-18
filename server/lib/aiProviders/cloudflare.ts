@@ -1,8 +1,8 @@
 /**
  * aiProviders/cloudflare.js — Cloudflare Workers AI adapter (v0.35.0)
  *
- * Primary AI provider for the LapseIQ demo. Routes all four task types
- * (contract extraction, renewal brief, Ask LapseIQ chat, news
+ * Primary AI provider for the ServiceCycle demo. Routes all four task types
+ * (contract extraction, renewal brief, Ask ServiceCycle chat, news
  * classification) to Cloudflare Workers AI's OpenAI-compatible endpoint.
  *
  * Per-task model selection:
@@ -54,7 +54,7 @@ const CF_BASE = 'https://api.cloudflare.com/client/v4/accounts';
 // 10s was too aggressive for brief-sized prompts (mistral-small-3.1-24b
 // on the brief/extract path frequently needs 15-25s with the full
 // per-category template + Tavily context). Default bumped to 30s and
-// made env-configurable. Set CF_WORKERS_AI_TIMEOUT_MS in /root/lapseiq/.env
+// made env-configurable. Set CF_WORKERS_AI_TIMEOUT_MS in /root/servicecycle/.env
 // to retune per deployment; values < 1000 are coerced to the default.
 const CF_TIMEOUT_DEFAULT_MS = 30_000;
 const _cfTimeoutFromEnv = parseInt(process.env.CF_WORKERS_AI_TIMEOUT_MS, 10);

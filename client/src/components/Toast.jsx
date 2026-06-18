@@ -105,7 +105,7 @@ export default function Toast({ toast, onClose }) {
         fontSize: 'var(--font-size-ui)',
         lineHeight: 1.45,
         // Slide-up affordance — no Tailwind dependency, just inline.
-        animation: 'lapseiq-toast-in 180ms ease-out',
+        animation: 'servicecycle-toast-in 180ms ease-out',
       }}
     >
       <Icon
@@ -139,7 +139,7 @@ export default function Toast({ toast, onClose }) {
       </button>
       {/* Inline keyframes — avoids touching the global stylesheet for one animation. */}
       <style>{`
-        @keyframes lapseiq-toast-in {
+        @keyframes servicecycle-toast-in {
           from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
         }

@@ -1,7 +1,7 @@
 /**
  * aiProviders/groq.js — Groq Cloud fallback (v0.35.0)
  *
- * Fallback #2 for chat (Ask LapseIQ) and news classification when both
+ * Fallback #2 for chat (Ask ServiceCycle) and news classification when both
  * Cloudflare Workers AI and HuggingFace return 429 / 5xx / timeout.
  * NOT used for contract extraction or renewal briefs — those tasks are
  * Cloudflare-only per the v0.35.0 spec.

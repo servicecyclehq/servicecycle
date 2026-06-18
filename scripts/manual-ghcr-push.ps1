@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Manual GHCR build + push for the LapseIQ server + client images.
+    Manual GHCR build + push for the ServiceCycle server + client images.
     Bypasses GitHub Actions CI when you don't feel like waiting on the queue.
 
 .DESCRIPTION
@@ -25,7 +25,7 @@
            - $env:GITHUB_TOKEN
            - already logged in via `docker login ghcr.io`
          If none are set, the script will prompt.
-      4. Working directory = the LapseIQ repo root.
+      4. Working directory = the ServiceCycle repo root.
 
 .PARAMETER Tag
     The version tag, e.g. "v0.32.4". Required. Both server + client images
@@ -88,10 +88,10 @@ function Fail([string]$msg) { Write-Host "    FAIL: $msg" -ForegroundColor Red; 
 Step "Pre-flight checks"
 
 if (-not (Test-Path '.\server\Dockerfile')) {
-  Fail "Run this script from the LapseIQ repo root (no ./server/Dockerfile found here)."
+  Fail "Run this script from the ServiceCycle repo root (no ./server/Dockerfile found here)."
 }
 if (-not (Test-Path '.\client\Dockerfile.prod')) {
-  Fail "Run this script from the LapseIQ repo root (no ./client/Dockerfile.prod found here)."
+  Fail "Run this script from the ServiceCycle repo root (no ./client/Dockerfile.prod found here)."
 }
 
 try {
@@ -130,10 +130,10 @@ if ($token) {
 
 # ── 2. Build + push server ──────────────────────────────────────────────────
 if ($BuildServer) {
-  Step "Build + push lapseiq-server:${Tag}"
+  Step "Build + push servicecycle-server:${Tag}"
 
-  $tagArgs = @("--tag", "${REGISTRY}/${OWNER}/lapseiq-server:${Tag}")
-  if ($Latest) { $tagArgs += @("--tag", "${REGISTRY}/${OWNER}/lapseiq-server:latest") }
+  $tagArgs = @("--tag", "${REGISTRY}/${OWNER}/servicecycle-server:${Tag}")
+  if ($Latest) { $tagArgs += @("--tag", "${REGISTRY}/${OWNER}/servicecycle-server:latest") }
 
   docker buildx build `
     --platform linux/amd64 `
@@ -142,7 +142,7 @@ if ($BuildServer) {
     --push `
     .\server
   if ($LASTEXITCODE -ne 0) { Fail "Server build/push failed." }
-  Ok "lapseiq-server:${Tag} pushed."
+  Ok "servicecycle-server:${Tag} pushed."
 }
 
 # ── 3. Build + push client ──────────────────────────────────────────────────
@@ -215,10 +215,10 @@ if ($BuildClient) {
   Ok "Bundle guards passed: size + no localhost regression."
 
   # ── 3c. Build + push the image ─────────────────────────────────────────
-  Step "Build + push lapseiq-client:${Tag}"
+  Step "Build + push servicecycle-client:${Tag}"
 
-  $tagArgs = @("--tag", "${REGISTRY}/${OWNER}/lapseiq-client:${Tag}")
-  if ($Latest) { $tagArgs += @("--tag", "${REGISTRY}/${OWNER}/lapseiq-client:latest") }
+  $tagArgs = @("--tag", "${REGISTRY}/${OWNER}/servicecycle-client:${Tag}")
+  if ($Latest) { $tagArgs += @("--tag", "${REGISTRY}/${OWNER}/servicecycle-client:latest") }
 
   docker buildx build `
     --platform linux/amd64 `
@@ -227,18 +227,18 @@ if ($BuildClient) {
     --push `
     .\client
   if ($LASTEXITCODE -ne 0) { Fail "Client build/push failed." }
-  Ok "lapseiq-client:${Tag} pushed."
+  Ok "servicecycle-client:${Tag} pushed."
 }
 
 # ── 4. Done ─────────────────────────────────────────────────────────────────
 Step "Done"
 Write-Host ""
 Write-Host "Verify on the droplet with:" -ForegroundColor Cyan
-Write-Host "  docker manifest inspect ${REGISTRY}/${OWNER}/lapseiq-server:${Tag}" -ForegroundColor Gray
-Write-Host "  docker manifest inspect ${REGISTRY}/${OWNER}/lapseiq-client:${Tag}" -ForegroundColor Gray
+Write-Host "  docker manifest inspect ${REGISTRY}/${OWNER}/servicecycle-server:${Tag}" -ForegroundColor Gray
+Write-Host "  docker manifest inspect ${REGISTRY}/${OWNER}/servicecycle-client:${Tag}" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Then on the droplet:" -ForegroundColor Cyan
-Write-Host "  cd /root/lapseiq" -ForegroundColor Gray
-Write-Host "  sed -i 's/^LAPSEIQ_VERSION=.*/LAPSEIQ_VERSION=${Tag}/' .env" -ForegroundColor Gray
+Write-Host "  cd /root/servicecycle" -ForegroundColor Gray
+Write-Host "  sed -i 's/^SERVICECYCLE_VERSION=.*/SERVICECYCLE_VERSION=${Tag}/' .env" -ForegroundColor Gray
 Write-Host "  docker compose -f docker-compose.ghcr.yml pull" -ForegroundColor Gray
 Write-Host "  docker compose -f docker-compose.ghcr.yml up -d" -ForegroundColor Gray

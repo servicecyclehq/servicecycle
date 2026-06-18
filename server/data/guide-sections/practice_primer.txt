@@ -1,16 +1,16 @@
 # Renewal-management practice primer
 
-Use this when a question has a "why" or "what's the right approach" shape rather than a "where is X" shape. These are stable practitioner conventions — not LapseIQ-specific terminology, though LapseIQ's data model reflects them.
+Use this when a question has a "why" or "what's the right approach" shape rather than a "where is X" shape. These are stable practitioner conventions — not ServiceCycle-specific terminology, though ServiceCycle's data model reflects them.
 
 ## The notice cadence — three dates that matter
 
 - **Renewal date** (`endDate`) — when the contract expires and the new term begins (or terminates if not renewed).
-- **Notice / cancel-by date** — the last day to give written notice if you want to cancel an auto-renewing contract. This is `endDate` minus the contract's notice period (commonly 30, 60, 90, or 180 days). LapseIQ stores this as `cancelByDate`.
-- **Review-by date** — when you should *start* working the renewal. Higher-value contracts deserve a longer runway. LapseIQ tiers this automatically: by default 180 days for $100K+, 90 days for $25K–$100K, 30 days for under $25K (60 days when there's no cost data). An admin can retune those breakpoints and lead times in Settings → General → Evaluation Lead Times.
+- **Notice / cancel-by date** — the last day to give written notice if you want to cancel an auto-renewing contract. This is `endDate` minus the contract's notice period (commonly 30, 60, 90, or 180 days). ServiceCycle stores this as `cancelByDate`.
+- **Review-by date** — when you should *start* working the renewal. Higher-value contracts deserve a longer runway. ServiceCycle tiers this automatically: by default 180 days for $100K+, 90 days for $25K–$100K, 30 days for under $25K (60 days when there's no cost data). An admin can retune those breakpoints and lead times in Settings → General → Evaluation Lead Times.
 
 The most common renewal mistake is treating these three as one date or sequencing them wrong. Cancel-by is the door closing — miss it and the contract auto-renews. Review-by is when you start — miss it and you arrive at cancel-by with no leverage. Renewal date is when the new term begins, but by then negotiation is already done.
 
-Practitioner-conventional alert pattern: fire reminders at 90 / 60 / 30 days before each significant date. LapseIQ's defaults reflect this.
+Practitioner-conventional alert pattern: fire reminders at 90 / 60 / 30 days before each significant date. ServiceCycle's defaults reflect this.
 
 ## Auto-renewal and the trap
 
@@ -19,7 +19,7 @@ Auto-renewal (also called "evergreen") clauses bind the customer to a new term u
 Three things to check on every contract with `autoRenewal=true`:
 
 1. **Notice period.** Is `autoRenewalNoticeDays` set correctly from the contract's actual language? Many managers default to 60 or 90 days but the contract may specify something else.
-2. **Method of notice.** Some contracts require written notice via specific channels (registered mail, vendor portal, email to a specific address). LapseIQ doesn't enforce this — but the negotiation log is the right place to record method and date.
+2. **Method of notice.** Some contracts require written notice via specific channels (registered mail, vendor portal, email to a specific address). ServiceCycle doesn't enforce this — but the negotiation log is the right place to record method and date.
 3. **Price escalation on auto-renewal.** Read the renewal pricing clause. Some auto-renew at the same price; others auto-renew at "current list price" (vendor-controlled); others have an explicit annual uplift cap. `annualUpliftPercent` captures whatever the contract specifies — use it.
 
 The auto-renewal trap panel on the Dashboard surfaces every contract with an active auto-renewal clause and its cancel-by countdown. Morning-coffee panel.
@@ -30,7 +30,7 @@ A **true-up** is the periodic reconciliation between what the customer is licens
 
 True-ups go either direction. **Over-licensed:** paid for more seats than used ("shelfware"). **Under-licensed:** using more than paid for, vendor will bill (sometimes retroactively).
 
-LapseIQ's license utilization fields (`seatsLicensed`, `seatsActivelyInUse`, computed estimated savings) are where this is recorded. The Contract Detail page shows the utilization % bar. When `seatsActivelyInUse` is materially below `seatsLicensed`, the renewal is the right moment to right-size.
+ServiceCycle's license utilization fields (`seatsLicensed`, `seatsActivelyInUse`, computed estimated savings) are where this is recorded. The Contract Detail page shows the utilization % bar. When `seatsActivelyInUse` is materially below `seatsLicensed`, the renewal is the right moment to right-size.
 
 Ask "how many seats are actually being used" *before* the renewal alert fires.
 
@@ -38,7 +38,7 @@ Ask "how many seats are actually being used" *before* the renewal alert fires.
 
 **Co-terming** is aligning multiple contracts with the same vendor — or across related vendors — to a single renewal date. Combined volume is leverage. Negotiating five Microsoft contracts as one event with $500K total budget gets a better outcome than negotiating five $100K contracts independently.
 
-Two surfaces in LapseIQ: vendor-level complexity (`Vendor.cotermComplexity` + `cotermNotes`) describes how this vendor handles co-terms in general; contract-level grouping (`Contract.coTermGroup`) is a free-text identifier shared across contracts that should be negotiated together. The `/coterm-summary` endpoint shows combined renewal value for each group.
+Two surfaces in ServiceCycle: vendor-level complexity (`Vendor.cotermComplexity` + `cotermNotes`) describes how this vendor handles co-terms in general; contract-level grouping (`Contract.coTermGroup`) is a free-text identifier shared across contracts that should be negotiated together. The `/coterm-summary` endpoint shows combined renewal value for each group.
 
 When a renewal alert fires for one contract in a group, look at the rest of the group too.
 
@@ -60,7 +60,7 @@ A **minimum commit** is a contractually-required minimum spend or volume over th
 
 At renewal: what's the actual usage trend? Is there flexibility on the commit pattern (annual minimums with quarterly true-up beat a single end-of-term cliff)? What does the vendor's discount curve look like (a bigger commit unlocks deeper discounts only if you'll use the volume)?
 
-LapseIQ doesn't have a dedicated minimum-commit field today. Practitioners typically capture commit details in `notes` or a custom field; negotiation log records renewal-time reasoning.
+ServiceCycle doesn't have a dedicated minimum-commit field today. Practitioners typically capture commit details in `notes` or a custom field; negotiation log records renewal-time reasoning.
 
 ## The value of one consolidated record per vendor
 

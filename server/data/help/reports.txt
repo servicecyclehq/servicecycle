@@ -26,11 +26,11 @@ Every contract with both `seatsLicensed` and `seatsActivelyInUse` set. Computes 
 Two modes: **actuals** (sum of Purchase Order amounts in the date range — what was actually invoiced) and **commitments** (sum of contract values starting in the period — what was committed-to). Roll-ups by vendor, category, and department. YoY comparison built in.
 
 **Executive Spend** (`/reports/executive-spend`)
-Backward-looking actuals roll-up, fiscal-year anchored, board-formatted PDF. Top-10 vendors and departments by spend, YoY delta, contract count by FY. The PDF visual identity matches the daily digest email so the format feels consistent across LapseIQ touchpoints.
+Backward-looking actuals roll-up, fiscal-year anchored, board-formatted PDF. Top-10 vendors and departments by spend, YoY delta, contract count by FY. The PDF visual identity matches the daily digest email so the format feels consistent across ServiceCycle touchpoints.
 
 ## Export formats
 
-All reports export **CSV**. The renewal-horizon, risk-radar, savings-ledger reports also export **PDF** (board-ready with the LapseIQ visual identity).
+All reports export **CSV**. The renewal-horizon, risk-radar, savings-ledger reports also export **PDF** (board-ready with the ServiceCycle visual identity).
 
 Every cell goes through formula-injection sanitization (the `=`, `+`, `-`, `@`, `\t`, `\r` prefixes that Excel treats as formulas). So an attacker-uploaded vendor name like `=cmd|'/c calc'!A0` lands as plain text, not as an executed formula.
 
@@ -54,4 +54,4 @@ Every cell goes through formula-injection sanitization (the `=`, `+`, `-`, `@`, 
 
 **The Executive Spend PDF takes a long time on first generation.** It walks every contract in the fiscal year window plus the prior year for YoY. Large accounts (1000+ contracts) can take 5-15 seconds. Subsequent generations of the same FY hit the cache and return in under a second.
 
-**Spend Ledger actuals don't match my AP system.** LapseIQ's actuals sum `PurchaseOrder.amount` for POs in the date range. Make sure you've imported all POs and that the `orderDate` field matches your AP cut-off date. AP-system reconciliation is the right audit step here.
+**Spend Ledger actuals don't match my AP system.** ServiceCycle's actuals sum `PurchaseOrder.amount` for POs in the date range. Make sure you've imported all POs and that the `orderDate` field matches your AP cut-off date. AP-system reconciliation is the right audit step here.

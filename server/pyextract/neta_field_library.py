@@ -1,6 +1,6 @@
 """
 neta_field_library.py -- field/measurement vocabulary for NETA / PowerDB /
-Megger electrical test reports. The ServiceCycle analog of LapseIQ's
+Megger electrical test reports. The ServiceCycle analog of ServiceCycle's
 invoice_field_library: you don't template per vendor, you describe each FIELD
 (label synonyms + datatype) and each measurement TYPE once, and it generalizes.
 

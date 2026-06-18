@@ -1,6 +1,6 @@
-# LapseIQ E2E + Smoke Tests
+# ServiceCycle E2E + Smoke Tests
 
-Playwright-driven tests targeting the live demo (or any LapseIQ instance via `E2E_BASE_URL`).
+Playwright-driven tests targeting the live demo (or any ServiceCycle instance via `E2E_BASE_URL`).
 
 ## Test files
 
@@ -14,7 +14,7 @@ Playwright-driven tests targeting the live demo (or any LapseIQ instance via `E2
 ## Quick reference
 
 ```bash
-# Run everything against the default target (demo.lapseiq.com)
+# Run everything against the default target (servicecycle.app)
 npm run test:e2e
 
 # Just the deploy smoke (the v0.90.2 gate — runs in ~25s)
@@ -40,4 +40,4 @@ To add a new route or endpoint check: edit the `PROTECTED_ROUTES` or `API_ENDPOI
 
 ## Wired into deploy
 
-Post-v0.90.3, the MCP deploy pipeline invokes this suite automatically after `compose up -d`. On non-zero exit, the wrapper script flips `LAPSEIQ_VERSION` back to `LAPSEIQ_VERSION_PREV` and re-composes. See `deploy/run-smoke-with-rollback.sh`.
+Post-v0.90.3, the MCP deploy pipeline invokes this suite automatically after `compose up -d`. On non-zero exit, the wrapper script flips `SERVICECYCLE_VERSION` back to `SERVICECYCLE_VERSION_PREV` and re-composes. See `deploy/run-smoke-with-rollback.sh`.

@@ -54,7 +54,7 @@
 **Effort:** S · **Lever:** compliance
 
 ### 10. Give the PDF preview the nameplate treatment (per-field red/yellow/green)
-**What:** The parser already emits per-measurement confidence; render the same LapseIQ-style triage the nameplate flow uses — flagged rows up top, all-green collapsible, "review 6 of 38."
+**What:** The parser already emits per-measurement confidence; render the same ServiceCycle-style triage the nameplate flow uses — flagged rows up top, all-green collapsible, "review 6 of 38."
 **Why now:** One review pattern across nameplate AND documents trains the user once; reviewing 6 rows instead of re-reading 38 is the difference between HITL and homework. Mostly client work.
 **Effort:** S–M · **Lever:** data-in / action-list
 

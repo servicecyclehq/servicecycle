@@ -30,7 +30,7 @@ const LEAK_SIGNATURES = [
   'verbatim refusals',
   // Inherited signatures kept for any legacy prompt fragments that survive
   // in cached templates or future ports of the Ask assistant.
-  'You are the LapseIQ',
+  'You are the ServiceCycle',
   'You are the ServiceCycle',
   'in-product assistant. You help with two things only',
 ];

@@ -1,5 +1,5 @@
 /**
- * LapseIQ Demo Enrichment Seed
+ * ServiceCycle Demo Enrichment Seed
  * Enriches existing contracts with savings/utilization/signature data and
  * adds scenario contracts: expired, archived, auto-renewal traps, multi-year EA.
  *
@@ -74,7 +74,7 @@ async function addContact(vendorId, data) {
 }
 
 async function main() {
-  console.log('🌱  LapseIQ demo enrichment seed\n');
+  console.log('🌱  ServiceCycle demo enrichment seed\n');
 
   // ── 1. ENRICH EXISTING CONTRACTS ────────────────────────────────────────────
   console.log('📝  Enriching existing contracts…');

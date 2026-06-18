@@ -1,14 +1,14 @@
 openapi: 3.1.0
 
 info:
-  title: LapseIQ Public API
+  title: ServiceCycle Public API
   version: 1.0.0
   description: |
-    Read-only REST API for LapseIQ — self-hosted contract renewal management.
+    Read-only REST API for ServiceCycle — self-hosted contract renewal management.
 
-    **Base URL**: `https://<your-lapseiq-host>/api/v1`
+    **Base URL**: `https://<your-servicecycle-host>/api/v1`
 
-    All endpoints require an API key issued by a LapseIQ admin (Settings → API Keys).
+    All endpoints require an API key issued by a ServiceCycle admin (Settings → API Keys).
     Pass the key in the `Authorization` header as a Bearer token:
 
     ```
@@ -23,22 +23,22 @@ info:
     Error responses use `{ "success": false, "error": "..." }`.
 
 contact:
-  name: LapseIQ / ForgeRift LLC
-  url: https://lapseiq.com
+  name: ServiceCycle / ForgeRift LLC
+  url: https://servicecycle.app
 
 license:
   name: Proprietary
-  url: https://lapseiq.com/legal/terms
+  url: https://servicecycle.app/legal/terms
 
 servers:
-  - url: https://demo.lapseiq.com/api/v1
+  - url: https://servicecycle.app/api/v1
     description: Public demo instance (read-only seed data)
   - url: https://{host}/api/v1
     description: Your self-hosted instance
     variables:
       host:
         default: localhost:3001
-        description: Hostname (and optional port) of your LapseIQ server
+        description: Hostname (and optional port) of your ServiceCycle server
 
 # ─── Security ─────────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ components:
     ApiKeyBearer:
       type: http
       scheme: bearer
-      bearerFormat: LapseIQ API Key
+      bearerFormat: ServiceCycle API Key
       description: |
         API key generated in Settings → API Keys.
         Keys start with the prefix `liq_` followed by 64 hex characters.
@@ -1188,14 +1188,14 @@ paths:
   # session Bearer token as the web UI and return XLSX binary files.
   # Authenticated users only; /activity additionally requires manager or admin role.
   #
-  # NOTE: These endpoints use session auth (lapseiq_token cookie / Authorization
+  # NOTE: These endpoints use session auth (servicecycle_token cookie / Authorization
   # header set by the web app), NOT a v1 API key. The base URL is /api/export,
   # not /api/v1. Swagger UI's "Try it out" will not work unless you are already
-  # logged into the LapseIQ instance in the same browser session.
+  # logged into the ServiceCycle instance in the same browser session.
 
   /export/contracts:
     servers:
-      - url: https://demo.lapseiq.com/api
+      - url: https://servicecycle.app/api
         description: Public demo instance
       - url: https://{host}/api
         description: Your self-hosted instance
@@ -1211,7 +1211,7 @@ paths:
         are capped at 1,000 rows; `X-Truncated: 1` is set when the cap is hit.
         Pass `?archived=1` to export archived contracts instead of active ones.
 
-        **Auth**: session Bearer token (from `lapseiq_token`), not a v1 API key.
+        **Auth**: session Bearer token (from `servicecycle_token`), not a v1 API key.
         **Rate limit**: 10 requests per minute per user (separate from the v1 limit).
       tags: [Exports]
       parameters:
@@ -1278,7 +1278,7 @@ paths:
 
   /export/vendors:
     servers:
-      - url: https://demo.lapseiq.com/api
+      - url: https://servicecycle.app/api
         description: Public demo instance
       - url: https://{host}/api
         description: Your self-hosted instance
@@ -1349,7 +1349,7 @@ paths:
 
   /export/activity:
     servers:
-      - url: https://demo.lapseiq.com/api
+      - url: https://servicecycle.app/api
         description: Public demo instance
       - url: https://{host}/api
         description: Your self-hosted instance

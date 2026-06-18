@@ -19,8 +19,8 @@ test.describe('admin endpoints (v0.89.1)', () => {
     //    registering user, so subsequent /api/admin/* calls are allowed.
     await registerFreshAccount(page);
 
-    // 2. Pull the JWT the SPA persisted (lapseiq_token key in localStorage).
-    const token = await page.evaluate(() => window.localStorage.getItem('lapseiq_token'));
+    // 2. Pull the JWT the SPA persisted (servicecycle_token key in localStorage).
+    const token = await page.evaluate(() => window.localStorage.getItem('servicecycle_token'));
     expect(token, 'JWT should be in localStorage after register').toBeTruthy();
 
     // 3. Open a clean HTTP context with the Bearer header.

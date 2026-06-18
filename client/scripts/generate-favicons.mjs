@@ -1,6 +1,6 @@
 // generate-favicons.mjs -- regenerate the root favicon binaries from the
 // canonical ServiceCycle mark in public/favicon.svg (petrol tile + cyan->lime
-// maintenance pulse). Replaces the stale LapseIQ-template binaries.
+// maintenance pulse). Replaces the stale ServiceCycle-template binaries.
 //
 //   npm i --no-save png-to-ico   (sharp is already a devDependency)
 //   node scripts/generate-favicons.mjs

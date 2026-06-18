@@ -1,4 +1,4 @@
-# LapseIQ Server SBOM
+# ServiceCycle Server SBOM
 
 Source: `docs/security/scans/2026-05-03/sbom-server.{cdx,spdx}.json`
 Synced via `npm run sbom:sync` on 2026-05-03T13:50:18.323Z.

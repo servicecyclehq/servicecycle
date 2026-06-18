@@ -54,7 +54,7 @@ function routeModulePreloadPlugin() {
   // embeds per-build hashed chunk filenames cannot get a stable sha256, so we
   // emit the preload logic as a same-origin /route-preload.js asset instead.
   // 'self' covers it, and there is zero hash to keep in sync. See
-  // reference_lapseiq_csp_topology in memory + the v0.5.4 "no CSS @import in
+  // reference_servicecycle_csp_topology in memory + the v0.5.4 "no CSS @import in
   // the JS entry" lesson (this is a static asset, not a module import).
   return {
     name: 'route-module-preload',
@@ -94,7 +94,7 @@ function routeModulePreloadPlugin() {
 }
 
 // v0.90.4: stamp the client's build version into a <meta> tag so the running
-// app can detect version skew (server LAPSEIQ_VERSION moves ahead of what
+// app can detect version skew (server SERVICECYCLE_VERSION moves ahead of what
 // this bundle reports -> show a "New version available -- reload" toast).
 function buildIdMetaPlugin() {
   const pkg = require('./package.json');

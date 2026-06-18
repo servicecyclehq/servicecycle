@@ -1,7 +1,7 @@
 /**
  * aiProviders/huggingface.js — HuggingFace Inference fallback (v0.35.0)
  *
- * Fallback #1 for chat (Ask LapseIQ) and news classification when
+ * Fallback #1 for chat (Ask ServiceCycle) and news classification when
  * Cloudflare Workers AI returns 429 / 5xx / timeout. NOT used for
  * contract extraction or renewal briefs — those tasks are
  * Cloudflare-only because Mistral Small 24B is the quality bar and

@@ -1,5 +1,5 @@
 # ============================================================================
-# LapseIQ - One-line installer for Windows (Docker Desktop)
+# ServiceCycle - One-line installer for Windows (Docker Desktop)
 # ============================================================================
 #
 # Pulls pre-built Docker images from GHCR, generates the required secrets,
@@ -11,13 +11,13 @@
 #
 # Recommended usage (inspect-then-run):
 #
-#   iwr -useb https://lapseiq.com/install.ps1 -o install.ps1
+#   iwr -useb https://servicecycle.app/install.ps1 -o install.ps1
 #   notepad install.ps1                                # read what it does
 #   pwsh -ExecutionPolicy Bypass -File .\install.ps1
 #
 # Or, if you trust this project, the one-liner is:
 #
-#   iex (iwr -useb https://lapseiq.com/install.ps1).Content
+#   iex (iwr -useb https://servicecycle.app/install.ps1).Content
 #
 # Idempotent: re-running on an existing install reuses the existing .env and
 # does NOT regenerate secrets (would invalidate every encrypted backup and
@@ -28,17 +28,17 @@
 param(
     [switch]$Yes,
     [switch]$AcceptEula,
-    [string]$InstallDir = (Join-Path $PWD 'lapseiq'),
-    [string]$ComposeUrlBase = 'https://lapseiq.com',
+    [string]$InstallDir = (Join-Path $PWD 'servicecycle'),
+    [string]$ComposeUrlBase = 'https://servicecycle.app',
     [string]$GhcrOwner = 'forgerift',
-    [string]$EulaUrl = 'https://lapseiq.com/eula'
+    [string]$EulaUrl = 'https://servicecycle.app/eula'
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$ServerImage = "ghcr.io/$GhcrOwner/lapseiq-server:latest"
-$ClientImage = "ghcr.io/$GhcrOwner/lapseiq-client:latest"
+$ServerImage = "ghcr.io/$GhcrOwner/servicecycle-server:latest"
+$ClientImage = "ghcr.io/$GhcrOwner/servicecycle-client:latest"
 
 # --- Tiny logging helpers ---------------------------------------------------
 function Write-Info($m)  { Write-Host "==> $m" -ForegroundColor Blue }
@@ -48,26 +48,26 @@ function Write-Err($m)   { Write-Host "[x] $m"  -ForegroundColor Red; throw $m }
 
 # --- 0. Banner --------------------------------------------------------------
 Write-Host ""
-Write-Host "LapseIQ" -ForegroundColor White -NoNewline
+Write-Host "ServiceCycle" -ForegroundColor White -NoNewline
 Write-Host " - self-hosted contract renewal management"
 Write-Host "Installer (PowerShell) - this is a script, not a service. Everything runs on your box." -ForegroundColor DarkGray
 Write-Host "EULA: $EulaUrl  -  License will be confirmed before any work begins." -ForegroundColor DarkGray
 Write-Host ""
 
 # --- 0.5. EULA acceptance ---------------------------------------------------
-$eulaMarker = Join-Path $InstallDir '.lapseiq-eula-accepted'
-$accept = $Yes -or $AcceptEula -or ($env:LAPSEIQ_ACCEPT_EULA -eq '1')
+$eulaMarker = Join-Path $InstallDir '.servicecycle-eula-accepted'
+$accept = $Yes -or $AcceptEula -or ($env:SERVICECYCLE_ACCEPT_EULA -eq '1')
 
 if (Test-Path $eulaMarker) {
     Write-Ok "EULA already accepted (see $eulaMarker)."
 } elseif ($accept) {
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-    "Accepted via -Yes / LAPSEIQ_ACCEPT_EULA=1 on $(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')" | Set-Content $eulaMarker
+    "Accepted via -Yes / SERVICECYCLE_ACCEPT_EULA=1 on $(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')" | Set-Content $eulaMarker
     Write-Ok "EULA accepted non-interactively."
 } else {
-    Write-Host "LapseIQ End-User License Agreement" -ForegroundColor White
+    Write-Host "ServiceCycle End-User License Agreement" -ForegroundColor White
     Write-Host ""
-    Write-Host "Before installing, please review the LapseIQ EULA:"
+    Write-Host "Before installing, please review the ServiceCycle EULA:"
     Write-Host "  $EulaUrl" -ForegroundColor White
     Write-Host ""
     Write-Host "Highlights (full text at the URL above governs):"
@@ -85,7 +85,7 @@ if (Test-Path $eulaMarker) {
         Write-Host "Non-interactive install detected and the EULA has not been accepted." -ForegroundColor Red
         Write-Host "Re-run with one of:"
         Write-Host "  -Yes                        pwsh -File install.ps1 -Yes"
-        Write-Host "  LAPSEIQ_ACCEPT_EULA=1       `$env:LAPSEIQ_ACCEPT_EULA=1; pwsh -File install.ps1"
+        Write-Host "  SERVICECYCLE_ACCEPT_EULA=1       `$env:SERVICECYCLE_ACCEPT_EULA=1; pwsh -File install.ps1"
         Write-Host "Both signal acceptance of the EULA at $EulaUrl." -ForegroundColor DarkGray
         exit 1
     }
@@ -148,7 +148,7 @@ if (Test-Path $envPath) {
 } else {
     Write-Info "Building a fresh .env. You'll be prompted for a few values."
 
-    $domain = Read-Host "Public domain (e.g. lapseiq.example.com) [http://localhost:5173]"
+    $domain = Read-Host "Public domain (e.g. servicecycle.example.com) [http://localhost:5173]"
     if ([string]::IsNullOrWhiteSpace($domain)) { $domain = 'http://localhost:5173' }
     if ($domain -notmatch '^https?://') { $domain = "https://$domain" }
 
@@ -178,7 +178,7 @@ if (Test-Path $envPath) {
     } else {
         $emailMockVal = 'false'
         $domainHost = $domain -replace '^https?://',''
-        $emailFromVal = "LapseIQ <noreply@$domainHost>"
+        $emailFromVal = "ServiceCycle <noreply@$domainHost>"
     }
 
     @"
@@ -190,10 +190,10 @@ NODE_ENV=production
 CLIENT_URL=$domain
 TRUST_PROXY=true
 
-POSTGRES_USER=lapseiq
-POSTGRES_DB=lapseiq
+POSTGRES_USER=servicecycle
+POSTGRES_DB=servicecycle
 POSTGRES_PASSWORD=$postgresPassword
-DATABASE_URL=postgresql://lapseiq:$postgresPassword@db:5432/lapseiq
+DATABASE_URL=postgresql://servicecycle:$postgresPassword@db:5432/servicecycle
 
 JWT_SECRET=$jwtSecret
 MASTER_KEY=$masterKey
@@ -236,7 +236,7 @@ foreach ($p in 3001, 5173) {
 }
 if ($portConflicts.Count -gt 0) {
     Write-Warn2 "Port(s) already in use on this host: $($portConflicts -join ', ')"
-    Write-Warn2 "  3001 is the LapseIQ API; 5173 is the web client. Both must be free."
+    Write-Warn2 "  3001 is the ServiceCycle API; 5173 is the web client. Both must be free."
     Write-Warn2 "  Find what's using them with:"
     Write-Warn2 "    Get-NetTCPConnection -LocalPort 3001 | Select-Object OwningProcess"
     Write-Warn2 "  Then stop that process, OR override the published ports in"
@@ -245,7 +245,7 @@ if ($portConflicts.Count -gt 0) {
 }
 
 # --- 6. Pull images --------------------------------------------------------
-Write-Info "Pulling LapseIQ images from GHCR..."
+Write-Info "Pulling ServiceCycle images from GHCR..."
 docker pull $ServerImage
 docker pull $ClientImage
 
@@ -272,7 +272,7 @@ if (-not $ready) {
 # Pass-5 F-SH-02 fix: the printed "next step" URL must not be the public
 # HTTPS domain unless TLS is actually configured. If the operator entered
 # a public domain at the prompt above, $domain now looks like
-# 'https://lapseiq.example.com' - but Caddy / Let's Encrypt is Step 4 of
+# 'https://servicecycle.example.com' - but Caddy / Let's Encrypt is Step 4 of
 # the install.html walkthrough, which install.ps1 deliberately does not
 # handle. Printing the https URL here used to send operators to a
 # connection-refused error and look like a failed install.
@@ -285,7 +285,7 @@ $publicSetupUrl = ($domain.TrimEnd('/')) + '/setup'
 $isLocalhost = $domain -match '^http://localhost' -or $domain -match '^http://127\.0\.0\.1'
 
 Write-Host ""
-Write-Host "LapseIQ is installed." -ForegroundColor Green
+Write-Host "ServiceCycle is installed." -ForegroundColor Green
 Write-Host ""
 
 if ($isLocalhost) {
@@ -303,7 +303,7 @@ if ($isLocalhost) {
     Write-Host "        Start-Process $localSetupUrl   # opens in default browser"
     Write-Host ""
     Write-Host "  2. Configure TLS / reverse-proxy with Caddy (Step 4 of the walkthrough):" -ForegroundColor White
-    Write-Host "        https://lapseiq.com/install#step-4"
+    Write-Host "        https://servicecycle.app/install#step-4"
     Write-Host "        - DNS for $domainHost must already resolve to this host."
     Write-Host "        - Caddy will obtain a Let's Encrypt certificate on first reload"
     Write-Host "          (typically 30-60 seconds after dropping in the Caddyfile)."
@@ -324,4 +324,4 @@ Write-Host "  - Update images:  docker compose pull; docker compose up -d"
 Write-Host "  - Backups:        nightly pg_dump.gz lands in .\backups (retention 30 days)"
 Write-Host "  - .env location:  $envPath (back this up off-box)"
 Write-Host ""
-Write-Host "Source + docs: https://lapseiq.com  -  Security disclosure: support@lapseiq.com" -ForegroundColor DarkGray
+Write-Host "Source + docs: https://servicecycle.app  -  Security disclosure: support@servicecycle.app" -ForegroundColor DarkGray

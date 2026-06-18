@@ -1,6 +1,6 @@
-# LapseIQ at a glance + the renewal cycle
+# ServiceCycle at a glance + the renewal cycle
 
-LapseIQ is self-hosted software for managing software contract renewals, license utilization, and negotiated savings. Built by ForgeRift LLC. Runs as Docker containers on the customer's own infrastructure. The customer brings their own PostgreSQL database, their own document storage, and their own (optional) AI provider key. There is no LapseIQ cloud.
+ServiceCycle is self-hosted software for managing software contract renewals, license utilization, and negotiated savings. Built by ForgeRift LLC. Runs as Docker containers on the customer's own infrastructure. The customer brings their own PostgreSQL database, their own document storage, and their own (optional) AI provider key. There is no ServiceCycle cloud.
 
 Three product principles:
 

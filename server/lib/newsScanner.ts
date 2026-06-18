@@ -10,7 +10,7 @@
  * no accountId and the unique `url` column makes inserts idempotent across
  * runs (createMany + skipDuplicates).
  *
- * Architecture inherited from the deleted LapseIQ vendor-news scanner:
+ * Architecture inherited from the deleted ServiceCycle vendor-news scanner:
  * rss-parser with a 10s per-feed timeout, Promise.allSettled + per-feed
  * try/catch so one dead feed never kills the run, http(s)-only URL gate
  * (defense against a hostile feed emitting javascript: links that would

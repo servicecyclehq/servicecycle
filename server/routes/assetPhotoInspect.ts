@@ -343,7 +343,7 @@ router.post('/photo-inspect', aiPreGate, aiIpLimiter, photoInspectLimiter, photo
 // Each field returns BOTH a value and the model's self-assessed confidence so
 // the client can flag the low/medium fields for a human to verify while still
 // in front of the nameplate (red/yellow/green review-before-save). This mirrors
-// the LapseIQ contract-ingestion review pattern.
+// the ServiceCycle contract-ingestion review pattern.
 const OCR_SYSTEM = `You are an expert electrical equipment nameplate reader.
 Extract structured data from a photo of an equipment nameplate.
 Respond ONLY with a JSON object — no markdown fences, no prose.

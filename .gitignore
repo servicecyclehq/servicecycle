@@ -9,7 +9,7 @@ node_modules/
 .env.*.local
 
 # Private keys, certs, key stores — NEVER commit these.
-# A Cloudflare Origin Certificate keypair (lapseiq.key + lapseiq.crt) was
+# A Cloudflare Origin Certificate keypair (servicecycle.key + servicecycle.crt) was
 # accidentally committed in 965b7cf and rotated 2026-05-02; this section
 # prevents the recurrence. If you need a key on disk for a deploy, keep
 # it OUTSIDE the repo (e.g., next to docker-compose, in /etc/ssl/, or in

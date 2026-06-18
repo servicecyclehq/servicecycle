@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 #
-# LapseIQ server image â€” Sprint 5 (B1) production-grade rebuild.
+# ServiceCycle server image â€” Sprint 5 (B1) production-grade rebuild.
 #
 # Two-stage build:
 #   1. deps  â€” installs dependencies and generates the Prisma client. Runs
@@ -94,7 +94,7 @@ COPY --chown=node:node . .
 # copies it into server/sbom/ before the docker build (the build context
 # is ./server, so the SBOM has to be inside this directory at build time).
 # Operators can pull the SBOM out via:
-#     docker cp $(docker create lapseiq-server):/app/sbom ./sbom
+#     docker cp $(docker create servicecycle-server):/app/sbom ./sbom
 COPY --chown=node:node sbom/ /app/sbom/
 
 # Pre-create the bind-mount targets so they exist (and are writable by the

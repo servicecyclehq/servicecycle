@@ -1,4 +1,4 @@
-# LapseIQ server .dockerignore — Sprint 5 (B2)
+# ServiceCycle server .dockerignore — Sprint 5 (B2)
 #
 # Applies when building the server image (build context = ./server,
 # wired in docker-compose.yml). Paths are relative to ./server; nothing

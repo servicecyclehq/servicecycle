@@ -2,7 +2,7 @@
 extractor.py -- deterministic, format-agnostic field + measurement extraction
 from machine-readable test-report PDFs using pdfplumber word geometry.
 
-Ported from the LapseIQ deterministic invoice extractor (same engine: word
+Ported from the ServiceCycle deterministic invoice extractor (same engine: word
 boxes -> column-cells split on horizontal gaps -> label-at-start matching ->
 value to the right / below; ruled-table extraction via pdfplumber). The invoice
 field library is replaced by neta_field_library (NETA/PowerDB measurement
@@ -137,7 +137,7 @@ def parse_value(dtype: str, text: str):
     return span
 
 
-# --- label-proximity + neighbour-cell matching (from the LapseIQ engine) ---
+# --- label-proximity + neighbour-cell matching (from the ServiceCycle engine) ---
 def _matches_at_start(line, ltoks):
     toks = line["tokens"]
     if len(toks) < len(ltoks):

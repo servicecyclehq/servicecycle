@@ -77,9 +77,9 @@ without further questions. Review order below is the recommended order.
 - **Help docs** for the new module slugs don't exist (helpRegistry warns,
   doesn't crash). OpenAPI baseline (`docs/openapi.json`) is stale until
   `build-openapi.js` is rerun and drift baseline reset.
-- **workers/lapseiq-feedback** (Cloudflare worker) untouched — separate
+- **workers/servicecycle-feedback** (Cloudflare worker) untouched — separate
   deployment artifact, rename when convenient.
-- **docker-compose files** still reference LAPSEIQ_VERSION-era env names in
+- **docker-compose files** still reference SERVICECYCLE_VERSION-era env names in
   places; server now reads SERVICECYCLE_VERSION. Reconcile before first
   containerized deploy.
 

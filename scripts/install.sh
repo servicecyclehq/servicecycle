@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# LapseIQ — One-line installer
+# ServiceCycle — One-line installer
 # ============================================================================
 #
 # Pulls pre-built Docker images from GHCR, generates the required secrets,
@@ -8,13 +8,13 @@
 #
 # Recommended usage (inspect-then-run, avoids the curl|bash anti-pattern):
 #
-#   curl -fsSLO https://lapseiq.com/install.sh
+#   curl -fsSLO https://servicecycle.app/install.sh
 #   less install.sh                          # read what it's about to do
 #   bash install.sh
 #
 # Or, if you trust this project:
 #
-#   curl -fsSL https://lapseiq.com/install.sh | bash
+#   curl -fsSL https://servicecycle.app/install.sh | bash
 #
 # Supports: Ubuntu 22.04+ / Debian 12 / macOS (with Docker Desktop).
 # Idempotent: re-running on an existing install reuses the existing .env
@@ -28,30 +28,30 @@ set -euo pipefail
 GHCR_OWNER="${GHCR_OWNER:-forgerift}"
 GHCR_REGISTRY="ghcr.io/${GHCR_OWNER}"
 
-# S6-FN-01 (v0.74.1): resolve LAPSEIQ_VERSION from the latest GitHub release tag
+# S6-FN-01 (v0.74.1): resolve SERVICECYCLE_VERSION from the latest GitHub release tag
 # rather than a static placeholder. Operators can pin a specific version with:
-#   LAPSEIQ_VERSION=v0.74.0 bash install.sh
-if [ -z "${LAPSEIQ_VERSION:-}" ]; then
+#   SERVICECYCLE_VERSION=v0.74.0 bash install.sh
+if [ -z "${SERVICECYCLE_VERSION:-}" ]; then
   # Probe the GitHub releases API (unauthenticated; works on public repos).
   _gh_json=$(curl -fsSL --connect-timeout 5 \
-    "https://api.github.com/repos/${GHCR_OWNER}/lapseiq/releases/latest" 2>/dev/null) || _gh_json=""
+    "https://api.github.com/repos/${GHCR_OWNER}/servicecycle/releases/latest" 2>/dev/null) || _gh_json=""
   if command -v jq >/dev/null 2>&1; then
     _gh_latest=$(printf '%s' "$_gh_json" | jq -r '.tag_name // empty' 2>/dev/null) || _gh_latest=""
   else
     _gh_latest=$(printf '%s' "$_gh_json" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": "\([^"]*\)".*/\1/') || _gh_latest=""
   fi
   if [ -n "${_gh_latest:-}" ] && [ "$_gh_latest" != "null" ]; then
-    LAPSEIQ_VERSION="$_gh_latest"
+    SERVICECYCLE_VERSION="$_gh_latest"
   else
-    LAPSEIQ_VERSION="latest"
+    SERVICECYCLE_VERSION="latest"
     echo "[install] WARN: Could not fetch latest release tag from GitHub -- falling back to :latest image tag."
   fi
 fi
-SERVER_IMAGE="${GHCR_REGISTRY}/lapseiq-server:${LAPSEIQ_VERSION}"
-CLIENT_IMAGE="${GHCR_REGISTRY}/lapseiq-client:${LAPSEIQ_VERSION}"
-COMPOSE_URL_BASE="https://lapseiq.com"   # served via Caddy on the demo droplet
-INSTALL_DIR="${INSTALL_DIR:-$PWD/lapseiq}"
-EULA_URL="${EULA_URL:-https://lapseiq.com/eula}"
+SERVER_IMAGE="${GHCR_REGISTRY}/servicecycle-server:${SERVICECYCLE_VERSION}"
+CLIENT_IMAGE="${GHCR_REGISTRY}/servicecycle-client:${SERVICECYCLE_VERSION}"
+COMPOSE_URL_BASE="https://servicecycle.app"   # served via Caddy on the demo droplet
+INSTALL_DIR="${INSTALL_DIR:-$PWD/servicecycle}"
+EULA_URL="${EULA_URL:-https://servicecycle.app/eula}"
 
 # ── Tiny terminal helpers ────────────────────────────────────────────────────
 if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
@@ -68,7 +68,7 @@ die()  { printf "${C_RED}✗${C_RESET} %s\n" "$*" >&2; exit 1; }
 
 # ── 0. Banner ────────────────────────────────────────────────────────────────
 cat <<EOF
-${C_BOLD}LapseIQ${C_RESET} — self-hosted contract renewal management
+${C_BOLD}ServiceCycle${C_RESET} — self-hosted contract renewal management
 ${C_DIM}Installer · this is a script, not a service. Everything runs on your box.${C_RESET}
 ${C_DIM}EULA: ${EULA_URL}  ·  License will be confirmed before any work begins.${C_RESET}
 
@@ -78,8 +78,8 @@ EOF
 # License-agreement gate. Required for an interactive install. CI / IaC /
 # anyone scripting around install.sh can bypass with one of:
 #   --yes   (positional flag)
-#   LAPSEIQ_ACCEPT_EULA=1   (environment variable)
-# Either acceptance path is logged to .lapseiq-eula-accepted in INSTALL_DIR
+#   SERVICECYCLE_ACCEPT_EULA=1   (environment variable)
+# Either acceptance path is logged to .servicecycle-eula-accepted in INSTALL_DIR
 # so re-runs don't re-prompt.
 ACCEPT_EULA_FLAG=0
 for arg in "$@"; do
@@ -87,22 +87,22 @@ for arg in "$@"; do
     --yes|-y|--accept-eula) ACCEPT_EULA_FLAG=1;;
   esac
 done
-if [ "${LAPSEIQ_ACCEPT_EULA:-0}" = "1" ]; then
+if [ "${SERVICECYCLE_ACCEPT_EULA:-0}" = "1" ]; then
   ACCEPT_EULA_FLAG=1
 fi
 
-if [ -f "${INSTALL_DIR}/.lapseiq-eula-accepted" ]; then
-  ok "EULA already accepted (see ${INSTALL_DIR}/.lapseiq-eula-accepted)."
+if [ -f "${INSTALL_DIR}/.servicecycle-eula-accepted" ]; then
+  ok "EULA already accepted (see ${INSTALL_DIR}/.servicecycle-eula-accepted)."
 elif [ "$ACCEPT_EULA_FLAG" = 1 ]; then
   mkdir -p "$INSTALL_DIR"
-  echo "Accepted via --yes / LAPSEIQ_ACCEPT_EULA=1 on $(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    > "${INSTALL_DIR}/.lapseiq-eula-accepted"
+  echo "Accepted via --yes / SERVICECYCLE_ACCEPT_EULA=1 on $(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    > "${INSTALL_DIR}/.servicecycle-eula-accepted"
   ok "EULA accepted non-interactively."
 else
   cat <<EOF
-${C_BOLD}LapseIQ End-User License Agreement${C_RESET}
+${C_BOLD}ServiceCycle End-User License Agreement${C_RESET}
 
-Before installing, please review the LapseIQ EULA:
+Before installing, please review the ServiceCycle EULA:
 
   ${C_BOLD}${EULA_URL}${C_RESET}
 
@@ -125,7 +125,7 @@ ${C_RED}Non-interactive install detected (stdin is not a TTY) and the EULA has
 not been accepted. Re-run with one of:${C_RESET}
 
   --yes                                bash install.sh --yes
-  LAPSEIQ_ACCEPT_EULA=1                LAPSEIQ_ACCEPT_EULA=1 bash install.sh
+  SERVICECYCLE_ACCEPT_EULA=1                SERVICECYCLE_ACCEPT_EULA=1 bash install.sh
 
 ${C_DIM}Both signal acceptance of the EULA at ${EULA_URL}.${C_RESET}
 EOF
@@ -140,8 +140,8 @@ EOF
   esac
   mkdir -p "$INSTALL_DIR"
   echo "Accepted interactively on $(date -u +"%Y-%m-%dT%H:%M:%SZ") by '$(whoami)'" \
-    > "${INSTALL_DIR}/.lapseiq-eula-accepted"
-  ok "EULA accepted (logged to ${INSTALL_DIR}/.lapseiq-eula-accepted)."
+    > "${INSTALL_DIR}/.servicecycle-eula-accepted"
+  ok "EULA accepted (logged to ${INSTALL_DIR}/.servicecycle-eula-accepted)."
 fi
 
 # ── 1. OS / arch detection ───────────────────────────────────────────────────
@@ -195,17 +195,17 @@ FRESH_MASTER_KEY=0
 if [ -f .env ]; then
   warn ".env already present — reusing existing values (safer than rotating MASTER_KEY)."
   warn "If you want a clean slate, move .env aside, rm uploads/ and 'docker compose down -v', then re-run."
-  # S6-FN-01 (v0.75.1): keep LAPSEIQ_VERSION in sync so rollback runbook sed is not a no-op.
-  if grep -q '^LAPSEIQ_VERSION=' .env 2>/dev/null; then
-    sed -i.bak "s|^LAPSEIQ_VERSION=.*|LAPSEIQ_VERSION=${LAPSEIQ_VERSION}|" .env && rm -f .env.bak
+  # S6-FN-01 (v0.75.1): keep SERVICECYCLE_VERSION in sync so rollback runbook sed is not a no-op.
+  if grep -q '^SERVICECYCLE_VERSION=' .env 2>/dev/null; then
+    sed -i.bak "s|^SERVICECYCLE_VERSION=.*|SERVICECYCLE_VERSION=${SERVICECYCLE_VERSION}|" .env && rm -f .env.bak
   else
-    echo "LAPSEIQ_VERSION=${LAPSEIQ_VERSION}" >> .env
+    echo "SERVICECYCLE_VERSION=${SERVICECYCLE_VERSION}" >> .env
   fi
 else
   info "Building a fresh .env. You'll be prompted for a few values."
 
   # Prompt: domain
-  read -r -p "Public domain (e.g. lapseiq.example.com) [http://localhost:5173]: " DOMAIN
+  read -r -p "Public domain (e.g. servicecycle.example.com) [http://localhost:5173]: " DOMAIN
   DOMAIN="${DOMAIN:-http://localhost:5173}"
   # Normalise — accept bare hostname, prepend https://
   case "$DOMAIN" in
@@ -234,7 +234,7 @@ else
   # Decide email mode
   if [ -n "$BREVO_API_KEY" ]; then
     EMAIL_MOCK_VAL="false"
-    EMAIL_FROM_VAL="LapseIQ <noreply@${DOMAIN#https://}>"
+    EMAIL_FROM_VAL="ServiceCycle <noreply@${DOMAIN#https://}>"
   else
     EMAIL_MOCK_VAL="true"
     EMAIL_FROM_VAL=""
@@ -246,14 +246,14 @@ else
 # rotating it makes every encrypted document and backup unreadable.
 
 NODE_ENV=production
-LAPSEIQ_VERSION=
+SERVICECYCLE_VERSION=
 CLIENT_URL=${DOMAIN}
 TRUST_PROXY=true
 
-POSTGRES_USER=lapseiq
-POSTGRES_DB=lapseiq
+POSTGRES_USER=servicecycle
+POSTGRES_DB=servicecycle
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-DATABASE_URL=postgresql://lapseiq:${POSTGRES_PASSWORD}@db:5432/lapseiq
+DATABASE_URL=postgresql://servicecycle:${POSTGRES_PASSWORD}@db:5432/servicecycle
 
 JWT_SECRET=${JWT_SECRET}
 MASTER_KEY=${MASTER_KEY}
@@ -342,13 +342,13 @@ fi
 #
 # We print the value once, prominently, and require an explicit "saved"
 # acknowledgement on a TTY. Non-interactive installs can bypass with
-# LAPSEIQ_ACCEPT_MASTER_KEY_RISK=1 (paired with LAPSEIQ_ACCEPT_EULA=1).
+# SERVICECYCLE_ACCEPT_MASTER_KEY_RISK=1 (paired with SERVICECYCLE_ACCEPT_EULA=1).
 #
-# Idempotent: an .lapseiq-master-key-saved sentinel file in INSTALL_DIR
+# Idempotent: an .servicecycle-master-key-saved sentinel file in INSTALL_DIR
 # means the operator has already gone through this gate; subsequent runs
 # skip it. We also skip on re-runs that didn't generate a fresh key.
 
-if [ "$FRESH_MASTER_KEY" = "1" ] && [ ! -f "${INSTALL_DIR}/.lapseiq-master-key-saved" ]; then
+if [ "$FRESH_MASTER_KEY" = "1" ] && [ ! -f "${INSTALL_DIR}/.servicecycle-master-key-saved" ]; then
   printf "\n"
   printf "${C_BOLD}${C_YELLOW}━━━ IMPORTANT — Save your MASTER_KEY now ━━━${C_RESET}\n"
   printf "\n"
@@ -365,28 +365,28 @@ if [ "$FRESH_MASTER_KEY" = "1" ] && [ ! -f "${INSTALL_DIR}/.lapseiq-master-key-s
   printf "    are also encrypted with it.\n"
   printf "\n"
   printf "If you lose this key, that data is unrecoverable. ForgeRift cannot\n"
-  printf "recover it for you — LapseIQ is self-hosted and there is no central\n"
+  printf "recover it for you — ServiceCycle is self-hosted and there is no central\n"
   printf "key escrow.\n"
   printf "\n"
   printf "The key is also in ${INSTALL_DIR}/.env (mode 600), but that file lives\n"
   printf "on this host. If this host dies, you'll need the key from your password\n"
   printf "manager to restore from off-host backups. Don't store the password\n"
-  printf "manager backup on the same host as LapseIQ.\n"
+  printf "manager backup on the same host as ServiceCycle.\n"
   printf "\n"
 
-  if [ "${LAPSEIQ_ACCEPT_MASTER_KEY_RISK:-0}" = "1" ]; then
-    echo "Acknowledged via LAPSEIQ_ACCEPT_MASTER_KEY_RISK=1 on $(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-      > "${INSTALL_DIR}/.lapseiq-master-key-saved"
-    chmod 600 "${INSTALL_DIR}/.lapseiq-master-key-saved"
+  if [ "${SERVICECYCLE_ACCEPT_MASTER_KEY_RISK:-0}" = "1" ]; then
+    echo "Acknowledged via SERVICECYCLE_ACCEPT_MASTER_KEY_RISK=1 on $(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      > "${INSTALL_DIR}/.servicecycle-master-key-saved"
+    chmod 600 "${INSTALL_DIR}/.servicecycle-master-key-saved"
     ok "MASTER_KEY save acknowledged non-interactively."
   elif [ ! -t 0 ]; then
     cat <<EOF
 ${C_RED}Non-interactive install detected — cannot prompt for MASTER_KEY
 acknowledgement. Re-run with the env var set:${C_RESET}
 
-  LAPSEIQ_ACCEPT_EULA=1 LAPSEIQ_ACCEPT_MASTER_KEY_RISK=1 bash install.sh
+  SERVICECYCLE_ACCEPT_EULA=1 SERVICECYCLE_ACCEPT_MASTER_KEY_RISK=1 bash install.sh
 
-${C_DIM}LAPSEIQ_ACCEPT_MASTER_KEY_RISK=1 means: "I'm scripting this install
+${C_DIM}SERVICECYCLE_ACCEPT_MASTER_KEY_RISK=1 means: "I'm scripting this install
 and I take responsibility for capturing MASTER_KEY out-of-band before
 this host runs unattended." Don't set it unless that's true.${C_RESET}
 EOF
@@ -397,8 +397,8 @@ EOF
     case "${MK_REPLY:-}" in
       saved|SAVED|Saved)
         echo "Acknowledged interactively on $(date -u +"%Y-%m-%dT%H:%M:%SZ") by '$(whoami)'" \
-          > "${INSTALL_DIR}/.lapseiq-master-key-saved"
-        chmod 600 "${INSTALL_DIR}/.lapseiq-master-key-saved"
+          > "${INSTALL_DIR}/.servicecycle-master-key-saved"
+        chmod 600 "${INSTALL_DIR}/.servicecycle-master-key-saved"
         ok "MASTER_KEY save acknowledged."
         ;;
       *)
@@ -426,9 +426,9 @@ fi
 # tool, but we do want the operator to see the gap so they can plug it.
 #
 # To enable strict verification (fail-closed instead of warn-and-continue):
-#   LAPSEIQ_REQUIRE_COSIGN=1 bash install.sh
+#   SERVICECYCLE_REQUIRE_COSIGN=1 bash install.sh
 #
-# Set up: download cosign.pub from the LapseIQ release page (or your own
+# Set up: download cosign.pub from the ServiceCycle release page (or your own
 # trusted out-of-band channel) and place it alongside install.sh, OR set
 # COSIGN_PUB_URL to a URL the script can fetch. install.sh prefers a local
 # cosign.pub over the URL because the local one is what the operator
@@ -437,8 +437,8 @@ fi
 verify_image_signature() {
   local image="$1"
   if ! command -v cosign >/dev/null 2>&1; then
-    if [ "${LAPSEIQ_REQUIRE_COSIGN:-0}" = "1" ]; then
-      die "LAPSEIQ_REQUIRE_COSIGN=1 but cosign is not installed. See https://docs.sigstore.dev/cosign/installation/"
+    if [ "${SERVICECYCLE_REQUIRE_COSIGN:-0}" = "1" ]; then
+      die "SERVICECYCLE_REQUIRE_COSIGN=1 but cosign is not installed. See https://docs.sigstore.dev/cosign/installation/"
     fi
     warn "cosign not found on PATH — skipping signature verification for $image."
     warn "  Recommend installing cosign before production use:"
@@ -460,11 +460,11 @@ verify_image_signature() {
   fi
 
   if [ -z "$pubkey" ]; then
-    if [ "${LAPSEIQ_REQUIRE_COSIGN:-0}" = "1" ]; then
-      die "LAPSEIQ_REQUIRE_COSIGN=1 but no cosign.pub found. Place one alongside install.sh or set COSIGN_PUB_URL."
+    if [ "${SERVICECYCLE_REQUIRE_COSIGN:-0}" = "1" ]; then
+      die "SERVICECYCLE_REQUIRE_COSIGN=1 but no cosign.pub found. Place one alongside install.sh or set COSIGN_PUB_URL."
     fi
     warn "No cosign.pub found alongside install.sh — skipping signature verification for $image."
-    warn "  To enable: download the LapseIQ public key and place it at ${INSTALL_DIR}/cosign.pub"
+    warn "  To enable: download the ServiceCycle public key and place it at ${INSTALL_DIR}/cosign.pub"
     return 0
   fi
 
@@ -472,10 +472,10 @@ verify_image_signature() {
   if cosign verify --key "$pubkey" "$image" >/dev/null 2>&1; then
     ok "Signature verified for $image"
   else
-    if [ "${LAPSEIQ_REQUIRE_COSIGN:-0}" = "1" ]; then
+    if [ "${SERVICECYCLE_REQUIRE_COSIGN:-0}" = "1" ]; then
       die "Signature verification FAILED for $image. Refusing to pull. Possible tampering or stale public key."
     fi
-    warn "Signature verification failed for $image. Continuing anyway (LAPSEIQ_REQUIRE_COSIGN=0)."
+    warn "Signature verification failed for $image. Continuing anyway (SERVICECYCLE_REQUIRE_COSIGN=0)."
     warn "  This may indicate tampering or that signing is not yet configured on the publisher side."
   fi
 }
@@ -513,7 +513,7 @@ for p in 3001 5173; do
 done
 if [ -n "$PORT_CONFLICTS" ]; then
   warn "Port(s) already in use on this host:${PORT_CONFLICTS}"
-  warn "  3001 is the LapseIQ API; 5173 is the web client. Both must be free."
+  warn "  3001 is the ServiceCycle API; 5173 is the web client. Both must be free."
   warn "  Find what's using them with:  sudo lsof -iTCP:3001 -sTCP:LISTEN"
   warn "  Then stop that process, OR override the published ports in"
   warn "  docker-compose.yml under the 'ports:' sections, then re-run."
@@ -521,7 +521,7 @@ if [ -n "$PORT_CONFLICTS" ]; then
 fi
 
 # ── 6. Pull images ───────────────────────────────────────────────────────────
-info "Pulling LapseIQ images from GHCR…"
+info "Pulling ServiceCycle images from GHCR…"
 docker pull "$SERVER_IMAGE"
 docker pull "$CLIENT_IMAGE"
 
@@ -548,7 +548,7 @@ done
 # Pass-5 F-SH-02 fix: the printed "next step" URL must not be the public
 # HTTPS domain unless TLS is actually configured. If the operator entered
 # a public domain at the prompt above, $DOMAIN now looks like
-# `https://lapseiq.example.com` — but Caddy / Let's Encrypt is Step 4 of
+# `https://servicecycle.example.com` — but Caddy / Let's Encrypt is Step 4 of
 # the install.html walkthrough, which install.sh deliberately does not
 # handle. Printing the https:// URL here used to send operators to a
 # connection-refused error and look like a failed install.
@@ -559,7 +559,7 @@ done
 LOCAL_SETUP_URL="http://localhost:${CLIENT_PORT:-5173}/setup"
 PUBLIC_SETUP_URL="${DOMAIN%/}/setup"
 
-printf "\n${C_GREEN}${C_BOLD}LapseIQ is installed.${C_RESET}\n\n"
+printf "\n${C_GREEN}${C_BOLD}ServiceCycle is installed.${C_RESET}\n\n"
 
 case "$DOMAIN" in
   http://localhost*|http://127.0.0.1*)
@@ -581,7 +581,7 @@ ${C_YELLOW}!${C_RESET} ${C_BOLD}Two more steps before the public URL is reachabl
         (or open via SSH tunnel:  ssh -L 5173:localhost:5173 user@host)
 
   ${C_BOLD}2. Configure TLS / reverse-proxy with Caddy (Step 4 of the walkthrough):${C_RESET}
-        https://lapseiq.com/install#step-4
+        https://servicecycle.app/install#step-4
         — DNS for ${DOMAIN#https://} must already resolve to this host.
         — Caddy will obtain a Let's Encrypt certificate on first reload
           (typically 30-60 seconds after dropping in the Caddyfile).
@@ -607,5 +607,5 @@ Operational hints:
   - .env location:  $INSTALL_DIR/.env  (mode 600 — back this up off-box)
   - MASTER_KEY:     also in your password manager (acknowledged at install)
 
-${C_DIM}Source + docs: https://lapseiq.com  ·  Security disclosure: support@lapseiq.com${C_RESET}
+${C_DIM}Source + docs: https://servicecycle.app  ·  Security disclosure: support@servicecycle.app${C_RESET}
 EOF

@@ -119,8 +119,8 @@ async function seedStorage(chromePort, baseURL, authToken, mode) {
     const page = await browser.newPage();
     await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.evaluate(([t, m]) => {
-      try { window.localStorage.setItem('lapseiq_token', t); } catch (_) {}
-      try { window.localStorage.setItem('lapseiq_theme', m); } catch (_) {}
+      try { window.localStorage.setItem('servicecycle_token', t); } catch (_) {}
+      try { window.localStorage.setItem('servicecycle_theme', m); } catch (_) {}
       if (m === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
       else              document.documentElement.removeAttribute('data-theme');
     }, [authToken, mode]);

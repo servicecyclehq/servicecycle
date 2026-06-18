@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 #
-# LapseIQ server PRODUCTION image - TypeScript via tsx runtime (v0.91.53).
+# ServiceCycle server PRODUCTION image - TypeScript via tsx runtime (v0.91.53).
 # Build context = ./server (same as the legacy server/Dockerfile).
 #
 # WHY tsx instead of a bundle:

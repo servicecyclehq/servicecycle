@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 #
-# LapseIQ â€” migrate-only image (S4-FN-01 v0.75.x)
+# ServiceCycle â€” migrate-only image (S4-FN-01 v0.75.x)
 #
 # This image is used as a Compose init service. It runs
 # `npx prisma migrate deploy` once and exits 0 on success.
@@ -12,7 +12,7 @@
 # node_modules + prisma client layer cache.
 #
 # Build:
-#   docker build -t ghcr.io/forgerift/lapseiq-migrate:v0.75.x \
+#   docker build -t ghcr.io/forgerift/servicecycle-migrate:v0.75.x \
 #     -f server/Dockerfile.migrate server/
 #
 

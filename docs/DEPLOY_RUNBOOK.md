@@ -135,7 +135,7 @@ VITE_API_URL=https://servicecycle.app
 # Set SERVICECYCLE_HOST_BIND=0.0.0.0 ONLY if you must hit :3001 directly from another box.
 ```
 
-Note: `POSTGRES_USER` / `POSTGRES_DB` default to `servicecycle` in compose - leave them unset unless you have a reason. (`.env.example` still shows legacy `lapseiq` defaults in a few comments; harmless, cosmetic.)
+Note: `POSTGRES_USER` / `POSTGRES_DB` default to `servicecycle` in compose - leave them unset unless you have a reason. (`.env.example` still shows legacy `servicecycle` defaults in a few comments; harmless, cosmetic.)
 
 **`DEMO_MODE` - leave it `false` (the default) for a curated demo.** Setting `DEMO_MODE=true` forces email-mock + AI-off, but also **opens self-signup**, prunes inactive accounts, and **wipes + re-seeds the database nightly at 03:30 server time**. That's good for an always-fresh public sandbox, but for a controlled walkthrough it would erase anything you set up mid-demo. The explicit `EMAIL_MOCK=true` / `AI_ENABLED=false` / `REGISTRATION_OPEN=false` above give you the safe defaults without the nightly reset.
 

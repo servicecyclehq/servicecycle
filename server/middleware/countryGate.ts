@@ -99,7 +99,7 @@ function countryGate(req, res, next) {
   if (embargo.has(country)) {
     return res.status(403).json({
       success: false,
-      error: 'Registration is not available in your country at this time. If you believe this is in error, contact support@lapseiq.com.',
+      error: 'Registration is not available in your country at this time.',
       code: 'COUNTRY_GATE_EMBARGO',
     });
   }
@@ -111,7 +111,7 @@ function countryGate(req, res, next) {
   if (!allow.has(country)) {
     return res.status(403).json({
       success: false,
-      error: "LapseIQ's demo sandbox is currently available to United States-based businesses only. If you need access from outside the U.S., please contact sales@lapseiq.com.",
+      error: "ServiceCycle's demo sandbox is currently available to United States-based businesses only.",
       code: 'COUNTRY_GATE_US_ONLY',
     });
   }

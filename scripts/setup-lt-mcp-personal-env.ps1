@@ -36,7 +36,7 @@ $content = @'
 # Lifecycle:
 #   - Survives Claude Desktop restarts
 #   - Wiped if the plugin is uninstalled and reinstalled (recreate with
-#     scripts/setup-lt-mcp-personal-env.ps1 in the LapseIQ repo)
+#     scripts/setup-lt-mcp-personal-env.ps1 in the ServiceCycle repo)
 #   - May be overwritten by future plugin updates that change the install dir
 #
 # BYPASS_BINARIES -- comma-separated binary:category pairs.

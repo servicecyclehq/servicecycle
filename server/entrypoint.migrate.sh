@@ -7,7 +7,7 @@
 # S6-FN-03: identity probe before migrate deploy catches copy-paste staging URLs.
 set -e
 
-echo "[migrate] ===== LapseIQ database migration entrypoint ====="
+echo "[migrate] ===== ServiceCycle database migration entrypoint ====="
 
 # S6-FN-03: psql probe -- show which DB we are about to migrate.
 # postgresql-client is installed in the server image (used by lib/backup.js).

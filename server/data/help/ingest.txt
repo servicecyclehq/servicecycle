@@ -1,6 +1,6 @@
 # AI Document Ingest
 
-Document ingest at `/ingest` is the fastest way to get a paper contract into LapseIQ: drop a PDF, the AI extracts every field, you review and approve.
+Document ingest at `/ingest` is the fastest way to get a paper contract into ServiceCycle: drop a PDF, the AI extracts every field, you review and approve.
 
 ## What you'll see
 

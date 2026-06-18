@@ -2,11 +2,11 @@
 
 ## Demo sandbox vs. self-host
 
-Most LapseIQ users are running a self-hosted install. Some — especially during evaluation — are using the public demo at `demo.lapseiq.com`. Behavior differs in these specific ways; reach for this section anytime a user asks "why is the system doing X."
+Most ServiceCycle users are running a self-hosted install. Some — especially during evaluation — are using the public demo at `servicecycle.app`. Behavior differs in these specific ways; reach for this section anytime a user asks "why is the system doing X."
 
 | Behavior | Demo (`DEMO_MODE=true`) | Self-host (default) |
 | --- | --- | --- |
-| Email | Mocked to console (except `[LapseIQ Feedback]`-tagged messages, which bypass the mock so the demo operator gets real feedback) | Sent through Resend if `RESEND_API_KEY` and `EMAIL_FROM` are set |
+| Email | Mocked to console (except `[ServiceCycle Feedback]`-tagged messages, which bypass the mock so the demo operator gets real feedback) | Sent through Resend if `RESEND_API_KEY` and `EMAIL_FROM` are set |
 | AI provider key | Operator-supplied — typically a shared demo key the operator provisions for the public demo box | Operator's own — stored in `.env` or encrypted in `account_settings` |
 | AI daily cap | Forced to 2 calls per user per UTC day per action | Unlimited by default; operator-configurable |
 | AI model | Pinned via demo startup config | Operator-configurable via `AI_PROVIDER` and `AI_MODEL` |
@@ -17,7 +17,7 @@ Most LapseIQ users are running a self-hosted install. Some — especially during
 
 Other things worth knowing about the demo:
 
-- The `[LapseIQ Feedback]` subject prefix bypasses `EMAIL_MOCK` so demo visitors can submit feedback that actually reaches the operator.
+- The `[ServiceCycle Feedback]` subject prefix bypasses `EMAIL_MOCK` so demo visitors can submit feedback that actually reaches the operator.
 - The legacy seeded admin / manager / viewer / consultant accounts re-bcrypt their passwords on every nightly reset, so visitors who change them mid-day don't permanently lock the next visitor out.
 - Visitors can register their own per-visitor sandbox at `/register`. They get a fresh seeded Account with 12 demo vendors and roughly 30 contracts spanning four time-window buckets (overdue, this week, this month, this quarter).
 

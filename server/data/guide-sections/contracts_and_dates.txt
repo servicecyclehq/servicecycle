@@ -1,4 +1,4 @@
-# Contracts — the operating unit of LapseIQ
+# Contracts — the operating unit of ServiceCycle
 
 **UI:** `/contracts` (list), `/contracts/new` (create), `/contracts/:id` (detail), `/contracts/archived` (archived).
 **API:** `server/routes/contracts.js`. **Schema:** `Contract` model in `server/prisma/schema.prisma`.
@@ -17,7 +17,7 @@ When `endDate`, `costPerLicense`, `quantity`, or `autoRenewalNoticeDays` change,
 
 ## Evaluate-By urgency colors
 
-LapseIQ colors each active contract by how close it is to its review-by (Evaluate-By) date, using one shared model so the contract header, the "Key Dates" chip, and the list-view day chips all color the same contract identically:
+ServiceCycle colors each active contract by how close it is to its review-by (Evaluate-By) date, using one shared model so the contract header, the "Key Dates" chip, and the list-view day chips all color the same contract identically:
 
 - **Green** — before the Evaluate-By date. On track; no action needed yet.
 - **Amber** — at or past the Evaluate-By date but more than 30 days from `endDate`. The evaluation window is open; time to start working the renewal.
@@ -27,7 +27,7 @@ Non-active contracts (`renewed`, `cancelled`, `expired`) render neutral. Because
 
 ## Status lifecycle
 
-A contract's `status` is one of `active`, `under_review`, `renewed`, `cancelled`, or `expired`. Contracts whose `endDate` falls in the past automatically flip to `expired` when the dashboard loads (`autoExpireContracts` in `server/routes/dashboard.js`). The `renewed` status is what you set when a successor contract has been signed; LapseIQ links the chain via `parentContractId`.
+A contract's `status` is one of `active`, `under_review`, `renewed`, `cancelled`, or `expired`. Contracts whose `endDate` falls in the past automatically flip to `expired` when the dashboard loads (`autoExpireContracts` in `server/routes/dashboard.js`). The `renewed` status is what you set when a successor contract has been signed; ServiceCycle links the chain via `parentContractId`.
 
 ## Practitioner note
 

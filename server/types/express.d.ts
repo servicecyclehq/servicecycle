@@ -1,4 +1,4 @@
-// Express Request augmentation for LapseIQ.
+// Express Request augmentation for ServiceCycle.
 // Properties attached by middleware (auth, apiKeyAuth, requestId, gpc).
 import 'express';
 

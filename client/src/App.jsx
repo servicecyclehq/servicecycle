@@ -327,7 +327,7 @@ function AppRoutes() {
             <Route path="news"               element={<NewsPage />} />
             <Route path="profile"            element={<ProfilePage />} />
 
-            {/* Legacy LapseIQ paths — old bookmarks and emails land on the
+            {/* Legacy ServiceCycle paths — old bookmarks and emails land on the
                 nearest ServiceCycle equivalent instead of the in-shell 404. */}
             <Route path="contracts/*"        element={<Navigate to="/assets" replace />} />
             <Route path="vendors/*"          element={<Navigate to="/contractors" replace />} />

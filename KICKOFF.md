@@ -1,4 +1,4 @@
-﻿## VERIFY YOU ARE IN THE RIGHT REPO â€” RUN THIS FIRST
+## VERIFY YOU ARE IN THE RIGHT REPO â€” RUN THIS FIRST
 
 Before touching any file, run this and confirm all three lines match:
 
@@ -6,11 +6,11 @@ Before touching any file, run this and confirm all three lines match:
 cd "C:\Users\ddeni\Desktop\ServiceCycle"
 git remote -v          # must show: servicecyclehq/servicecycle
 git config user.email  # must show: servicecyclehq@gmail.com
-git log --oneline -1   # must NOT show any LapseIQ commit messages
+git log --oneline -1   # must NOT show any ServiceCycle commit messages
 ```
 
-**NEVER touch:** `C:\Users\ddeni\Desktop\claudedussy\LapseIQ`
-That is a completely separate product (LapseIQ) on a different GitHub account (forgerift).
+**NEVER touch:** `C:\Users\ddeni\Desktop\claudedussy\ServiceCycle`
+That is a completely separate product (ServiceCycle) on a different GitHub account (forgerift).
 All PowerShell commands in this session must use `C:\Users\ddeni\Desktop\ServiceCycle` as the
 working directory. If you are unsure which repo you are in, run the check above before proceeding.
 
@@ -19,7 +19,7 @@ working directory. If you are unsure which repo you are in, run the check above 
 
 ## Who you are working with
 Dustin â€” founder of ForgeRift LLC, 14-year renewal management expert, building ServiceCycle as a
-separate product from LapseIQ. Dustin knows the business problem deeply but is not an electrical
+separate product from ServiceCycle. Dustin knows the business problem deeply but is not an electrical
 engineering expert â€” build as close to correct as the research allows, document assumptions clearly.
 
 ---
@@ -53,7 +53,7 @@ it is a customer retention engine (customers stay on service contracts), a servi
 flywheel (the software surfaces upcoming work to the sales org), and a new customer acquisition
 tool. That is the $50-150M valuation story.
 
-**Deployment:** On-prem / self-hosted Docker, same model as LapseIQ. No phone-home SaaS due to
+**Deployment:** On-prem / self-hosted Docker, same model as ServiceCycle. No phone-home SaaS due to
 customer data sensitivity (industrial facility layouts, equipment inventories).
 
 ---
@@ -67,9 +67,9 @@ customer data sensitivity (industrial facility layouts, equipment inventories).
 **Stack:** React 18 + Vite (client) Â· Express 5 + Prisma + TypeScript (server) Â· PostgreSQL 16
 Â· Docker Compose Â· Caddy reverse proxy
 
-**Origin:** Clean copy of LapseIQ v0.92 with no git history. All lapseiq/forgerift strings
+**Origin:** Clean copy of ServiceCycle v0.92 with no git history. All servicecycle/forgerift strings
 replaced in package.json, docker-compose files. The Prisma schema and most UI files still use
-LapseIQ terminology internally â€” that gets replaced as we build out ServiceCycle's own model.
+ServiceCycle terminology internally â€” that gets replaced as we build out ServiceCycle's own model.
 
 **Git identity for all commits:**
 ```
@@ -86,9 +86,9 @@ git config user.name "ServiceCycle"
 - Webhook SSRF protection â€” fully hardened, do not touch
 - Tenancy / IDOR scoping â€” every Prisma query must include accountId
 
-**LapseIQ concepts â†’ ServiceCycle equivalents:**
+**ServiceCycle concepts â†’ ServiceCycle equivalents:**
 
-| LapseIQ | ServiceCycle |
+| ServiceCycle | ServiceCycle |
 |---------|-------------|
 | Contract | Asset (piece of equipment) |
 | Renewal date | Next maintenance due date |

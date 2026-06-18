@@ -48,7 +48,7 @@ the live demo and verify each fix behind the gate.
 - **1.5 Branding sweep (whole codebase).**  [scope extended by review]
   - **Remove every `servicecycle.com` mention and email address** - we own `servicecycle.app`, not `.com`. Replace support/contact emails accordingly.
   - **Update the logo:** browser-tab favicon and the logo on the legal docs. Also replace the **placeholder PWA icons** (noted in `client/vite.config.js` / `public/icons`).
-  - Audit residual **"LapseIQ"** leftovers in ServiceCycle (e.g. `LAPSEIQ_VERSION` env var, backup magic-header comments, stray UI strings).
+  - Audit residual **"ServiceCycle"** leftovers in ServiceCycle (e.g. `SERVICECYCLE_VERSION` env var, backup magic-header comments, stray UI strings).
 
 ### 2. Data seeding (so every page/report shows content)  [mostly server]
 - **2.1 Seed a few audits** (audit visits + recommendations) so the Audits page and audit-related reports populate.
@@ -79,8 +79,8 @@ the live demo and verify each fix behind the gate.
 - **4.5 Outage Planner copy** - beef up the explanation/descriptions: what the planner does, what an outage window looks like, how to read the output. Good start, needs more substance to be genuinely useful.
 
 ### 5. Larger features (scope separately - do last)
-- **5.1 Assets - Excel-style per-column header filters.** Model on LapseIQ's contract-page column filtering. Dustin approved a **one-time** look at the LapseIQ code to review/adapt that filtering - adapt it to ServiceCycle's asset columns.
-- **5.2 Help - "Ask ServiceCycle AI" chatbot** (like LapseIQ's). Seed the help corpus well; have customers supply their own API key for usage. Lower priority / product decision - confirm with Dustin before building.
+- **5.1 Assets - Excel-style per-column header filters.** Model on ServiceCycle's contract-page column filtering. Dustin approved a **one-time** look at the ServiceCycle code to review/adapt that filtering - adapt it to ServiceCycle's asset columns.
+- **5.2 Help - "Ask ServiceCycle AI" chatbot** (like ServiceCycle's). Seed the help corpus well; have customers supply their own API key for usage. Lower priority / product decision - confirm with Dustin before building.
 
 ---
 

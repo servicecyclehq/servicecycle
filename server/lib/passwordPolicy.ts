@@ -1,5 +1,5 @@
 /**
- * LapseIQ Password Policy
+ * ServiceCycle Password Policy
  *
  * Shared validator used by register, reset-password, and accept-invite flows.
  *
@@ -120,7 +120,7 @@ async function checkBreached(password) {
   try {
     const resp = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
       method:  'GET',
-      headers: { 'User-Agent': 'LapseIQ/audit-7 (password-policy)' },
+      headers: { 'User-Agent': 'ServiceCycle/audit-7 (password-policy)' },
       signal:  AbortSignal.timeout(HIBP_TIMEOUT_MS),
     });
     if (!resp.ok) return { breached: false, count: 0, failedOpen: true };

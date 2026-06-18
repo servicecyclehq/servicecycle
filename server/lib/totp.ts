@@ -1,5 +1,5 @@
 /**
- * LapseIQ TOTP helpers
+ * ServiceCycle TOTP helpers
  *
  * Wraps otplib for TOTP generation/verification and handles:
  *   - Secret generation and encryption at rest (reuses lib/crypto.js)
@@ -17,7 +17,7 @@ const { encryptIfNeeded, decryptIfEncrypted } = require('./crypto');
 // small clock skew between server and user's phone).
 authenticator.options = { step: 30, window: 1 };
 
-const APP_NAME = process.env.APP_NAME || 'LapseIQ';
+const APP_NAME = process.env.APP_NAME || 'ServiceCycle';
 
 // ── Secret management ─────────────────────────────────────────────────────────
 

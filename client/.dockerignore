@@ -1,4 +1,4 @@
-# LapseIQ client .dockerignore — Sprint 5 (B2)
+# ServiceCycle client .dockerignore — Sprint 5 (B2)
 #
 # Applies when building the client image (build context = ./client).
 # The image runs `npm run preview` which serves the prebuilt dist/.

@@ -8,7 +8,7 @@
  *
  * Key generation:
  *   1. Generate 32 random bytes → hex string (64 chars) prefixed with "liq_"
- *      so users can recognize LapseIQ keys at a glance and secret-scanners
+ *      so users can recognize ServiceCycle keys at a glance and secret-scanners
  *      (e.g. GitHub push protection) can target this prefix.
  *   2. SHA-256 hash the key → store only the hash.
  *   3. Return plaintext to the client ONCE in the response.

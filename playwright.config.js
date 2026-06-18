@@ -2,9 +2,9 @@
 const { defineConfig, devices } = require('@playwright/test');
 
 /**
- * LapseIQ End-to-End tests.
+ * ServiceCycle End-to-End tests.
  *
- * Defaults to running against the live demo at https://demo.lapseiq.com.
+ * Defaults to running against the live demo at https://servicecycle.app.
  * Override with E2E_BASE_URL=http://localhost:5173 to point at a local
  * docker-compose stack. Demo prunes new accounts nightly, so tests that
  * register fresh visitors are self-cleaning.
@@ -26,7 +26,7 @@ module.exports = defineConfig({
   workers: 1,                                    // serialise so tests don''t race rate-limiter budget
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'https://demo.lapseiq.com',
+    baseURL: process.env.E2E_BASE_URL || 'https://servicecycle.app',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

@@ -1,6 +1,6 @@
 // @ts-check
 //
-// e2e/audit.spec.js â€” LapseIQ design + a11y audit collector
+// e2e/audit.spec.js â€” ServiceCycle design + a11y audit collector
 // ----------------------------------------------------------
 //
 // Walks every protected route in BOTH light and dark mode. For each
@@ -15,10 +15,10 @@
 // Mirrors the auth + route conventions of e2e/smoke.spec.js intentionally
 // so the two stay in lockstep. Credentials default to the demo seed admin
 // (admin@demo.local / Admin1234!) and the base URL defaults to
-// https://demo.lapseiq.com unless E2E_BASE_URL is set.
+// https://servicecycle.app unless E2E_BASE_URL is set.
 //
 // Theme toggle mechanism (see client/src/components/ThemeToggle.jsx):
-//   localStorage['lapseiq_theme'] = 'dark' | 'light'
+//   localStorage['servicecycle_theme'] = 'dark' | 'light'
 //   <html data-theme="dark">                  (omitted when light)
 // We seed BOTH before navigation so the page never flashes the wrong mode.
 
@@ -84,13 +84,13 @@ function tsForFolder() {
 async function seedAuthAndTheme(page, baseURL, mode) {
   // Land somewhere harmless on origin so localStorage is writable, then seed
   // both auth + theme keys at once. The pre-React bootstrap in index.html
-  // reads lapseiq_theme and applies the data-theme attribute synchronously
+  // reads servicecycle_theme and applies the data-theme attribute synchronously
   // before the SPA mounts, so we'll never see a flash of the wrong mode on
   // the subsequent navigation.
   await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded' });
   await page.evaluate(([t, m]) => {
-    try { window.localStorage.setItem('lapseiq_token', t); } catch (_) {}
-    try { window.localStorage.setItem('lapseiq_theme', m); } catch (_) {}
+    try { window.localStorage.setItem('servicecycle_token', t); } catch (_) {}
+    try { window.localStorage.setItem('servicecycle_theme', m); } catch (_) {}
     if (m === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     else              document.documentElement.removeAttribute('data-theme');
   }, [authToken, mode]);

@@ -40,7 +40,7 @@ Persona tags: **SM** = service manager, **FT** = field tech/consultant.
 - **C3. Equipment Templates** — nest under **Assets** in the sidebar (doesn't need its own top-level entry). (both)
 
 ## D. Tables / columns
-- **D1. Assets — Excel-style per-column header filters.** A dedicated **filter row directly beneath the column headers** (ref: LapseIQ contract page screenshot). Each column gets its own "Filter" control: **categorical → dropdown with checkboxes (single OR multi-select)**, **date columns → date-picker (range)**, **numeric (e.g. Value) → min/max**. Matches the provided screenshot exactly. (both) [Dustin approved a one-time look at LapseIQ's filter code to adapt; building fresh to match the screenshot.]
+- **D1. Assets — Excel-style per-column header filters.** A dedicated **filter row directly beneath the column headers** (ref: ServiceCycle contract page screenshot). Each column gets its own "Filter" control: **categorical → dropdown with checkboxes (single OR multi-select)**, **date columns → date-picker (range)**, **numeric (e.g. Value) → min/max**. Matches the provided screenshot exactly. (both) [Dustin approved a one-time look at ServiceCycle's filter code to adapt; building fresh to match the screenshot.]
 - **D2. Assets list column order** — first four = **Equipment · Condition · Next Due · Open Deficiencies**; hide Serial #, Address, Owner by default. (both)
 - **D3. Fleet Dashboard** — totals reorder to IMMEDIATE · Overdue · Service Opportunities · Accounts w/ issues · Open WOs · Total Assets; lift Modernization Forecast table to directly under the totals. (SM)
 - **D4. Testing & Trends pivot** — move "Latest Δ" + trend-flag columns to position 2–3 so the verdict doesn't scroll off. (both)
@@ -68,7 +68,7 @@ Persona tags: **SM** = service manager, **FT** = field tech/consultant.
 - **H2. Logo on the legal docs** (favicon already done). (n/a)
 
 ## I. Decisions needed (not blocking other work)
-- **I1. Help → "Ask ServiceCycle AI" chatbot** (like LapseIQ) — seed the help corpus; customers supply their own API key? Confirm before building.
+- **I1. Help → "Ask ServiceCycle AI" chatbot** (like ServiceCycle) — seed the help corpus; customers supply their own API key? Confirm before building.
 - **I2. Contractor grading/scoring** in the tool — value vs. risk (contractors could see it). Keep internal-only or skip?
 - **I3. Equipment Templates** — do we want more than 6?
 
@@ -104,4 +104,4 @@ Enhance the existing Outage Planner into a date-anchored, scope-aware, configura
 - Weather: add a sidebar indicator? (currently surfaces via DisasterBanner only).
 - Make the uploads-dir permission fix reproducible in the repo (compose/entrypoint) â€” was fixed live on the droplet (chmod 777 /root/ServiceCycle/uploads) so snapshots + document uploads work; a fresh deploy would re-hit it.
 - Standalone `Northwind Foods` account (powerdb@demo.local) still exists alongside the merged copy under admin â€” harmless, removable.
-- Full LapseIQ-leftovers audit â€” deferred (needs Dustin's OK to touch LapseIQ-named files/dirs).
+- Full ServiceCycle-leftovers audit â€” deferred (needs Dustin's OK to touch ServiceCycle-named files/dirs).

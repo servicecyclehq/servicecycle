@@ -69,7 +69,7 @@ function main() {
   fs.writeFileSync(
     path.join(SERVER_SBOM_DIR, 'README.md'),
     [
-      '# LapseIQ Server SBOM',
+      '# ServiceCycle Server SBOM',
       '',
       `Source: \`docs/security/scans/${date}/sbom-server.{cdx,spdx}.json\``,
       `Synced via \`npm run sbom:sync\` on ${new Date().toISOString()}.`,

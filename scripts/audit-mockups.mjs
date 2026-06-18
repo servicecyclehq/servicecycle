@@ -73,7 +73,7 @@ async function auditOne(file, mode, runDir) {
   });
   const page = await context.newPage();
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
-  // Force theme via data-theme attribute (matches LapseIQ's pattern)
+  // Force theme via data-theme attribute (matches ServiceCycle's pattern)
   await page.evaluate((m) => {
     if (m === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     else document.documentElement.removeAttribute('data-theme');

@@ -1,9 +1,9 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
-// ── LapseIQ deploy smoke suite (v0.90.2) ─────────────────────────────────────
+// ── ServiceCycle deploy smoke suite (v0.90.2) ─────────────────────────────────────
 //
-// Runs against the live demo URL (E2E_BASE_URL, default https://demo.lapseiq.com)
+// Runs against the live demo URL (E2E_BASE_URL, default https://servicecycle.app)
 // after every deploy. Designed to catch the entire class of "page X crashes on
 // load" bugs that have bitten today's session: render-time TypeErrors,
 // stale-chunk failures, API shape regressions.
@@ -15,7 +15,7 @@ const { test, expect } = require('@playwright/test');
 //   - the page failing to render its expected h1/landmark
 //
 // The deploy script wraps this — non-zero exit triggers automatic rollback
-// to LAPSEIQ_VERSION_PREV via the lapseiq-mcp update_env_var allowlist.
+// to SERVICECYCLE_VERSION_PREV via the servicecycle-mcp update_env_var allowlist.
 //
 // Demo creds: admin@demo.local / Admin1234! (per server/scripts/seed-demo.js).
 // Demo password override available via E2E_ADMIN_PASSWORD env var.
@@ -126,7 +126,7 @@ for (const route of PROTECTED_ROUTES) {
     // localStorage before the React shell mounts. Matches how the app
     // restores sessions in normal use.
     await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded' });
-    await page.evaluate((t) => { window.localStorage.setItem('lapseiq_token', t); }, authToken);
+    await page.evaluate((t) => { window.localStorage.setItem('servicecycle_token', t); }, authToken);
     await page.goto(`${baseURL}${route.path}`, { waitUntil: 'networkidle' });
 
     // The ErrorBoundary renders an h1 with exactly this text. Any match means
@@ -147,7 +147,7 @@ for (const route of PROTECTED_ROUTES) {
 // that crashed.
 async function seedToken(page, baseURL, token) {
   await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate((t) => { window.localStorage.setItem('lapseiq_token', t); }, token);
+  await page.evaluate((t) => { window.localStorage.setItem('servicecycle_token', t); }, token);
 }
 
 test('route: /contracts/:id detail (both tabs) renders without ErrorBoundary', async ({ page, baseURL }) => {
@@ -221,7 +221,7 @@ test('api: POST /api/errors/render (telemetry liveness)', async ({ request, base
 for (const slug of REPORT_SLUGS) {
   test(`report page: /reports/${slug} loads with no error banner`, async ({ page, baseURL }) => {
     await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded' });
-    await page.evaluate((t) => { window.localStorage.setItem('lapseiq_token', t); }, authToken);
+    await page.evaluate((t) => { window.localStorage.setItem('servicecycle_token', t); }, authToken);
     await page.goto(`${baseURL}/reports/${slug}`, { waitUntil: 'networkidle' });
 
     const boundary = page.getByRole('heading', { name: /Something went wrong/i });

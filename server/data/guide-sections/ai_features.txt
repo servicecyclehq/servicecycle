@@ -12,7 +12,7 @@
 
 Resolution order for the active model: `AI_MODEL_OVERRIDE` env (operator emergency lever) → per-call `settings.model` → `AI_MODEL` env → provider default. The operator can switch providers without code changes — edit `.env` and restart.
 
-The customer brings their own API key. There is no shared LapseIQ AI key on a self-hosted install. The key is stored either in `.env` (`AI_API_KEY`) or encrypted at rest in `account_settings` via the Settings UI.
+The customer brings their own API key. There is no shared ServiceCycle AI key on a self-hosted install. The key is stored either in `.env` (`AI_API_KEY`) or encrypted at rest in `account_settings` via the Settings UI.
 
 When asked about which provider to choose: Anthropic Claude does extraction well at low cost; OpenAI is widely supported; Azure OpenAI is the right choice for procurement that requires AI inference inside an Azure tenant the customer already controls; Gemini is supported as an option. **Do not** speak to any provider's pricing, posture, or policies — point the user at that provider's own documentation.
 
@@ -32,7 +32,7 @@ The image route runs MIME-allowlist plus magic-byte verification before sending 
 
 POST `/api/contracts/:id/brief` in `server/routes/contracts.js`. Generates an AI-written negotiation summary: key terms, renewal context, leverage points, risks, recommended approach. Result is cached on the contract (`renewalBrief`, `renewalBriefGeneratedAt`); refresh is opt-in via `?refresh=1`.
 
-Capped at 2 briefs per day per user on the demo (`DEMO_DEFAULT_CAPS.brief`). Self-hosted installs use the operator's own AI key with no LapseIQ-imposed cap by default.
+Capped at 2 briefs per day per user on the demo (`DEMO_DEFAULT_CAPS.brief`). Self-hosted installs use the operator's own AI key with no ServiceCycle-imposed cap by default.
 
 ## Per-user-per-day quota
 

@@ -68,9 +68,9 @@ const PROVIDER_FIELDS = {
 };
 
 const PROVIDER_SETUP = {
-  aws: `1. Open AWS Console → IAM → Users → Create user.\n2. Name the user (e.g. "lapseiq-reader") and select Programmatic access.\n3. Attach a custom policy with: aws-marketplace:ListEntities, aws-marketplace:DescribeEntity, ce:GetCostAndUsage.\n4. Copy the Access Key ID and Secret Access Key.\n5. Paste both below along with your 12-digit AWS Account ID.`,
-  azure: `1. Azure Portal → Azure Active Directory → App Registrations → New Registration.\n2. Name the app "LapseIQ Connector", choose accounts in this org, and register.\n3. Copy the Application (client) ID and Directory (tenant) ID from Overview.\n4. Go to Certificates & Secrets → New Client Secret — copy the generated Value.\n5. Open Subscriptions → your subscription → Access Control (IAM) → Add role assignment → Billing Reader → assign to your app.\n6. Enter all four IDs below.`,
-  gcp: `1. Google Cloud Console → IAM & Admin → Service Accounts → Create Service Account.\n2. Name it (e.g. "lapseiq-reader") and grant: Billing Viewer + Cloud Commerce Consumer Admin roles.\n3. Click Done, open the service account → Keys → Add Key → JSON. Download the file.\n4. Paste the JSON key file contents into the field below, along with your Project ID and Billing Account ID.`,
+  aws: `1. Open AWS Console → IAM → Users → Create user.\n2. Name the user (e.g. "servicecycle-reader") and select Programmatic access.\n3. Attach a custom policy with: aws-marketplace:ListEntities, aws-marketplace:DescribeEntity, ce:GetCostAndUsage.\n4. Copy the Access Key ID and Secret Access Key.\n5. Paste both below along with your 12-digit AWS Account ID.`,
+  azure: `1. Azure Portal → Azure Active Directory → App Registrations → New Registration.\n2. Name the app "ServiceCycle Connector", choose accounts in this org, and register.\n3. Copy the Application (client) ID and Directory (tenant) ID from Overview.\n4. Go to Certificates & Secrets → New Client Secret — copy the generated Value.\n5. Open Subscriptions → your subscription → Access Control (IAM) → Add role assignment → Billing Reader → assign to your app.\n6. Enter all four IDs below.`,
+  gcp: `1. Google Cloud Console → IAM & Admin → Service Accounts → Create Service Account.\n2. Name it (e.g. "servicecycle-reader") and grant: Billing Viewer + Cloud Commerce Consumer Admin roles.\n3. Click Done, open the service account → Keys → Add Key → JSON. Download the file.\n4. Paste the JSON key file contents into the field below, along with your Project ID and Billing Account ID.`,
 };
 
 
@@ -254,7 +254,7 @@ export default function CloudConnectorsSection() {
       <h2 className={sectionHeading}>Cloud Marketplace Connectors</h2>
       <p className={sectionDesc}>
         Connect your cloud marketplace accounts to automatically import software purchase data as contracts.
-        LapseIQ requests read-only access — it never creates, modifies, or cancels subscriptions on your behalf.
+        ServiceCycle requests read-only access — it never creates, modifies, or cancels subscriptions on your behalf.
         Once credentials are saved and tested, use Sync Now to pull agreements, subscriptions, and spend data directly into your contract list.
       </p>
 

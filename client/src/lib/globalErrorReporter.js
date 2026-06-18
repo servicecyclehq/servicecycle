@@ -11,7 +11,7 @@
 // table by where the crash originated.
 //
 // Why DIY instead of GlitchTip / Sentry: ServiceCycle's product philosophy is
-// strictly self-hosted (see project_lapseiq_philosophy memory). The hosted
+// strictly self-hosted (see project_servicecycle_philosophy memory). The hosted
 // SaaS offerings violate that, and self-hosting GlitchTip on the demo
 // droplet adds 5+ containers for a feature that's a 60-line client module +
 // a kind discriminator on render_errors. This gives ~80% of GlitchTip's

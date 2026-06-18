@@ -103,8 +103,8 @@ Infrastructure / market-signal items only:
   signal. Checklist in `docs/stripe-integration.md`.
 - **Audit medium-severity remediation items** above.
 - **Beta outreach** — `Request Early Access` CTA already routes to
-  `hello@lapseiq.com`.
+  `hello@servicecycle.app`.
 
 Memory files refreshed: `project_security_gtm.md` carries the canonical
-technical state; `project_lapseiq.md` and `project_backlog.md` brought
+technical state; `project_servicecycle.md` and `project_backlog.md` brought
 forward through Sprint 5/6.

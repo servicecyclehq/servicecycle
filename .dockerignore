@@ -1,4 +1,4 @@
-# LapseIQ root .dockerignore — Sprint 5 (B2)
+# ServiceCycle root .dockerignore — Sprint 5 (B2)
 #
 # Applies when a build is run from the REPO ROOT context (e.g.
 # `docker build .` or a future top-level Dockerfile). The per-stack

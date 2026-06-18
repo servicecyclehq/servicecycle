@@ -1,13 +1,13 @@
 # Onboarding
 
-Onboarding is the path from a fresh LapseIQ instance (or a fresh demo account) to a working renewal calendar. This module covers both: first-run operator setup at `/setup`, and the in-app wizard that walks new users through their first vendor and contract.
+Onboarding is the path from a fresh ServiceCycle instance (or a fresh demo account) to a working renewal calendar. This module covers both: first-run operator setup at `/setup`, and the in-app wizard that walks new users through their first vendor and contract.
 
 ## Quick start — first-run operator (fresh self-host)
 
-The very first time anyone visits a self-hosted LapseIQ install, the server detects `accounts: 0` and routes every page to `/setup`. The five steps in order:
+The very first time anyone visits a self-hosted ServiceCycle install, the server detects `accounts: 0` and routes every page to `/setup`. The five steps in order:
 
 1. **Create the first account** — company name, admin email, password. This becomes the root admin and the workspace name everywhere in the UI.
-2. **Pick an AI provider** (optional) — Cloudflare Workers AI, Anthropic, OpenAI, Azure OpenAI, or Gemini. Paste the API key. Click test. If you skip this step you can do it later under `Settings -> AI & Extraction`; the rest of LapseIQ works without AI.
+2. **Pick an AI provider** (optional) — Cloudflare Workers AI, Anthropic, OpenAI, Azure OpenAI, or Gemini. Paste the API key. Click test. If you skip this step you can do it later under `Settings -> AI & Extraction`; the rest of ServiceCycle works without AI.
 3. **Storage** — local filesystem (default) or S3 bucket. Local is fine for evaluation; S3 is the path for any deployment that survives a container rebuild without an external volume.
 4. **Encryption (optional)** — set `ENCRYPT_DOCS=true` and provide a `MASTER_KEY` in `.env` if you want at-rest encryption of every uploaded document. Once on, leaving it on is required — flipping it off mid-stream leaves existing documents unreadable.
 5. **Done** — the wizard logs you in as the admin and drops you on `/dashboard`. The in-app onboarding wizard takes over from there.
@@ -29,7 +29,7 @@ Dismissing the wizard does NOT mark onboarding complete — the "Continue setup"
 
 The first-run wizard writes directly to the database (Account + User + AccountSettings rows). It never sends data anywhere outside your install — Cloudflare is the one exception if you picked it as the AI provider, in which case the test-connection call hits Cloudflare's API to validate the key.
 
-The in-app wizard tracks progress via two `localStorage` keys: `lapseiq_onboarding_step` (the highest step the user has reached) and `lapseiq_setup_banner_dismissed` (per-session dismissal of the "Continue setup" pill). Logging out clears both via the `SESSION_KEYS` purge in `api/client.js`.
+The in-app wizard tracks progress via two `localStorage` keys: `servicecycle_onboarding_step` (the highest step the user has reached) and `servicecycle_setup_banner_dismissed` (per-session dismissal of the "Continue setup" pill). Logging out clears both via the `SESSION_KEYS` purge in `api/client.js`.
 
 ## Common workflows
 
@@ -37,7 +37,7 @@ The in-app wizard tracks progress via two `localStorage` keys: `lapseiq_onboardi
 
 **"My first admin's email is wrong — how do I fix it?"** Settings -> Users & Roles, invite the correct admin email, log in as the new admin, then archive or delete the original user. Or, if you're comfortable with SQL, update the `users.email` row directly and restart the server so the session caches invalidate.
 
-**"How do I re-trigger the onboarding wizard for a teammate who dismissed it too early?"** Help & Share menu -> "Show welcome tour" re-opens the quick-start panel. For the full wizard, clear `lapseiq_onboarding_step` from their browser's localStorage and reload. (There's no admin button for this yet — backlog item.)
+**"How do I re-trigger the onboarding wizard for a teammate who dismissed it too early?"** Help & Share menu -> "Show welcome tour" re-opens the quick-start panel. For the full wizard, clear `servicecycle_onboarding_step` from their browser's localStorage and reload. (There's no admin button for this yet — backlog item.)
 
 **"I want a clean demo for a prospect — every step fresh."** On the demo deployment, register a new email — each demo signup gets its own account with the standard seed data. On a self-host, the cleanest path is a separate `compose project` (different `COMPOSE_PROJECT_NAME`) pointed at a separate database.
 
@@ -47,7 +47,7 @@ The in-app wizard tracks progress via two `localStorage` keys: `lapseiq_onboardi
 
 **The /setup page keeps redirecting back to /setup after I fill it out.** The most common cause is the AI test-connection failing on step 2 and the form not advancing. Skip step 2 (you can configure AI later) and continue.
 
-**OnboardingWizard renders on every page load even after I completed it.** Check that `localStorage.getItem('lapseiq_onboarding_step')` returns `4` (the wizard's "done" sentinel). If it's missing, your browser is probably clearing localStorage on close — disable that in your browser settings or use a different profile.
+**OnboardingWizard renders on every page load even after I completed it.** Check that `localStorage.getItem('servicecycle_onboarding_step')` returns `4` (the wizard's "done" sentinel). If it's missing, your browser is probably clearing localStorage on close — disable that in your browser settings or use a different profile.
 
 **"Continue setup" pill still shows after I completed every step.** The pill reads `onboardingDone` from `useAuth()`, which the server sets when the User row's `onboardingDoneAt` is populated. The setter fires when the wizard's final step is committed; if you only ever dismissed the wizard (via the X button) without reaching step 4, the flag never sets. Re-open the wizard from the dashboard and reach the final step.
 

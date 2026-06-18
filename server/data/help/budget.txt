@@ -40,6 +40,6 @@ Multi-year contracts use the `PaymentSchedule` and `PaymentInstallment` models. 
 
 **A multi-year contract is over-counting.** If the contract was signed `paid_upfront`, the budget treats it as already paid for the term. Check the Payment Schedule on the contract detail. If `paid_upfront` is correctly set, the projection only counts the renewal at end-of-term, not the annual ratable.
 
-**Projected total doesn't match what the vendor quoted.** The Budget Forecast uses LapseIQ's projection logic, which is conservative (current price × default uplift). The vendor's actual quote may include volume discounts, multi-year commits, or bundle pricing the model doesn't know about. Override `finalNegotiatedPrice` on the contract once you have the quote — the projection will use that on next renewal.
+**Projected total doesn't match what the vendor quoted.** The Budget Forecast uses ServiceCycle's projection logic, which is conservative (current price × default uplift). The vendor's actual quote may include volume discounts, multi-year commits, or bundle pricing the model doesn't know about. Override `finalNegotiatedPrice` on the contract once you have the quote — the projection will use that on next renewal.
 
 **Department roll-up has an "Unassigned" bucket I want to clear.** Some contracts don't have a department set. Filter the contracts list to `department = null`, bulk-update to the right department, refresh budget.

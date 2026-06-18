@@ -3,7 +3,7 @@
 # generate-checksums.sh
 # ============================================================================
 #
-# Emits SHA256 checksums for the installer scripts served at lapseiq.com:
+# Emits SHA256 checksums for the installer scripts served at servicecycle.app:
 #
 #   scripts/install.sh    -> scripts/install.sh.sha256
 #   scripts/install.ps1   -> scripts/install.ps1.sha256
@@ -11,8 +11,8 @@
 # Operators can use these to verify the integrity of a downloaded installer
 # before running it:
 #
-#   curl -sLO https://lapseiq.com/install.sh
-#   curl -sLO https://lapseiq.com/install.sh.sha256
+#   curl -sLO https://servicecycle.app/install.sh
+#   curl -sLO https://servicecycle.app/install.sh.sha256
 #   sha256sum -c install.sh.sha256
 #   bash install.sh
 #

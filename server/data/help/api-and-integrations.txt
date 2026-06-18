@@ -1,12 +1,12 @@
 # API & Integrations
 
-The public REST API and cloud / webhook integrations are how LapseIQ talks to the rest of your stack: BI tools pulling contract data, Zapier flows firing on renewal alerts, AWS / Azure / GCP marketplace purchases syncing nightly. Settings -> API & Integrations is where you mint keys, register webhook endpoints, and wire up cloud connectors.
+The public REST API and cloud / webhook integrations are how ServiceCycle talks to the rest of your stack: BI tools pulling contract data, Zapier flows firing on renewal alerts, AWS / Azure / GCP marketplace purchases syncing nightly. Settings -> API & Integrations is where you mint keys, register webhook endpoints, and wire up cloud connectors.
 
 ## Quick start — create an API key
 
 1. **Settings -> API & Integrations -> API Keys -> "Create key"**. Pick a descriptive name (e.g. "Looker BI - read-only"); the name shows up in audit logs alongside every request the key makes.
 2. **Copy the key immediately** — it's shown once and never again. Store it in your secret manager.
-3. **Send it as a bearer token** — `Authorization: Bearer lapseiq_xxxxxxxxxx` on every request to `/api/v1/*`.
+3. **Send it as a bearer token** — `Authorization: Bearer servicecycle_xxxxxxxxxx` on every request to `/api/v1/*`.
 4. **Hit a probe endpoint** to confirm: `curl -H "Authorization: Bearer YOUR_KEY" https://your-instance/api/v1/contracts?limit=1`. A 200 with `{ success: true, data: { ... } }` means you're in.
 
 Keys are account-scoped — every endpoint sees only the data belonging to the account that minted the key. There are no per-key permissions yet; treat each key as full-read on its account's data.
@@ -33,7 +33,7 @@ Webhooks send a signed JSON POST to a URL you provide whenever an alert fires (r
 
 You get back an HMAC secret on creation. Store it the same way you'd store a webhook signing secret from Stripe or GitHub.
 
-**Verify the signature** on every incoming POST: compute `HMAC-SHA256(secret, request_body)` and compare to the `X-Lapseiq-Signature` header. The `X-Lapseiq-Timestamp` header carries the delivery time (seconds since epoch); reject requests where the timestamp is more than 5 minutes off your clock. `X-Lapseiq-Delivery-Id` is a UUID per delivery — use it for idempotency on your side.
+**Verify the signature** on every incoming POST: compute `HMAC-SHA256(secret, request_body)` and compare to the `X-ServiceCycle-Signature` header. The `X-ServiceCycle-Timestamp` header carries the delivery time (seconds since epoch); reject requests where the timestamp is more than 5 minutes off your clock. `X-ServiceCycle-Delivery-Id` is a UUID per delivery — use it for idempotency on your side.
 
 
 **Signature verification — code samples:**
@@ -42,10 +42,10 @@ You get back an HMAC secret on creation. Store it the same way you'd store a web
 // Node.js (Express / any framework)
 import crypto from 'crypto';
 
-app.post('/lapseiq-webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  const sig       = req.headers['x-lapseiq-signature'];
-  const timestamp = req.headers['x-lapseiq-timestamp'];
-  const secret    = process.env.LAPSEIQ_WEBHOOK_SECRET;
+app.post('/servicecycle-webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig       = req.headers['x-servicecycle-signature'];
+  const timestamp = req.headers['x-servicecycle-timestamp'];
+  const secret    = process.env.SERVICECYCLE_WEBHOOK_SECRET;
 
   // Reject stale deliveries (replay protection)
   if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {
@@ -72,11 +72,11 @@ app.post('/lapseiq-webhook', express.raw({ type: 'application/json' }), (req, re
 import hmac, hashlib, os, time
 from flask import request, abort
 
-@app.post('/lapseiq-webhook')
+@app.post('/servicecycle-webhook')
 def webhook():
-    sig       = request.headers.get('X-LapseIQ-Signature', '')
-    timestamp = request.headers.get('X-LapseIQ-Timestamp', '0')
-    secret    = os.environ['LAPSEIQ_WEBHOOK_SECRET'].encode()
+    sig       = request.headers.get('X-ServiceCycle-Signature', '')
+    timestamp = request.headers.get('X-ServiceCycle-Timestamp', '0')
+    secret    = os.environ['SERVICECYCLE_WEBHOOK_SECRET'].encode()
 
     # Reject stale deliveries (replay protection)
     if abs(time.time() - float(timestamp)) > 300:
@@ -123,7 +123,7 @@ The `lastSyncAt` and `lastError` columns in the Connectors UI tell you whether l
 
 **API key returns 401 on every request.** Double-check the `Authorization: Bearer ` prefix (with the space). The header name is case-insensitive; the prefix is not. Also confirm the key wasn't revoked (Settings -> API & Integrations shows a "Revoked" tag on retired keys).
 
-**Webhook deliveries are landing in the DLQ.** Click into the DLQ row to see the response code + body from your endpoint. Common causes: (1) endpoint is responding non-2xx, (2) endpoint is timing out >10s, (3) endpoint URL has changed and you forgot to update LapseIQ. Fix and click "Retry" on the DLQ row.
+**Webhook deliveries are landing in the DLQ.** Click into the DLQ row to see the response code + body from your endpoint. Common causes: (1) endpoint is responding non-2xx, (2) endpoint is timing out >10s, (3) endpoint URL has changed and you forgot to update ServiceCycle. Fix and click "Retry" on the DLQ row.
 
 **Cloud connector says "connected" but no contracts are syncing.** Open the connector detail view — the `lastSyncAt` should be within the last 24 hours. If `lastError` is set, the credential probably lacks one of the read permissions listed above. Re-grant and re-test.
 

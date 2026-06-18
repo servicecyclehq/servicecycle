@@ -68,7 +68,7 @@ function safeReadJson(p) {
 function buildGeminiPrompt(routePath, mode) {
   return [
     'You are a senior product designer doing a heuristic UX audit on a',
-    'B2B SaaS dashboard surface. Product: LapseIQ, self-hosted',
+    'B2B SaaS dashboard surface. Product: ServiceCycle, self-hosted',
     'contract-renewal SaaS, target buyer ops director at 200-2000 person',
     `company paying $50K/year. Current surface: ${routePath}, theme: ${mode}.`,
     '',
@@ -410,7 +410,7 @@ async function main() {
   // Render markdown
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const md = [];
-  md.push(`# LapseIQ Audit Report â€” ${manifest.version} â€” ${manifest.timestamp}`);
+  md.push(`# ServiceCycle Audit Report â€” ${manifest.version} â€” ${manifest.timestamp}`);
   md.push('');
   md.push(`Run ID: \`${runId}\`  `);
   md.push(`Target: \`${manifest.baseURL}\`  `);

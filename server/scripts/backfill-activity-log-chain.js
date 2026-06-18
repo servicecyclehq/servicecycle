@@ -102,7 +102,7 @@ async function computeChain() {
 }
 
 async function main() {
-  console.log('=== LapseIQ ActivityLog hash-chain backfill (W4 MT-127) ===');
+  console.log('=== ServiceCycle ActivityLog hash-chain backfill (W4 MT-127) ===');
   console.log('');
   try {
     await deriveAccountIds();

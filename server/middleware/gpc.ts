@@ -10,7 +10,7 @@
  *
  * Required as a legally binding opt-out mechanism by the consumer privacy
  * regimes in CA (CCPA/CPRA), CO (CPA), CT (CTDPA), DE (DPDPA), MD (MODPA),
- * MT (MCDPA), NH (NHDPA), NJ (NJDPA), OR (OCDPA), TX (TDPSA). LapseIQ does
+ * MT (MCDPA), NH (NHDPA), NJ (NJDPA), OR (OCDPA), TX (TDPSA). ServiceCycle does
  * not sell or share personal data with third parties for cross-context
  * behavioral advertising regardless of the signal, but honoring it explicitly
  * is required by the technical-control text of those statutes (the rule is

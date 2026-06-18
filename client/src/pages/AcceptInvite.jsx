@@ -76,7 +76,7 @@ export default function AcceptInvite() {
     <div className="login-page">
       <div className="login-box">
         <div className="login-logo">
-          <div className="login-logo-name">LapseIQ</div>
+          <div className="login-logo-name">ServiceCycle</div>
           <div className="login-logo-tagline">Software Renewal Management</div>
         </div>
 

@@ -104,10 +104,10 @@ export default function EvaluationLeadTimesSection() {
     <section style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--color-border)' }}>
       <h2 className={sectionHeading}>Evaluation Lead Times</h2>
       <p className={sectionDesc}>
-        LapseIQ automatically sets each contract&apos;s <strong>review-by date</strong> (when its
+        ServiceCycle automatically sets each contract&apos;s <strong>review-by date</strong> (when its
         renewal should surface for evaluation) a number of days before the end date, scaled by
         contract value &mdash; higher-value contracts get a longer runway. These tiers also drive the
-        green / amber / red urgency colors shown across LapseIQ. Adjust the value breakpoints and
+        green / amber / red urgency colors shown across ServiceCycle. Adjust the value breakpoints and
         lead times below.
       </p>
 
