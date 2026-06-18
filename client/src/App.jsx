@@ -97,6 +97,7 @@ const NewAsset                = lazyWithReload(() => import('./pages/NewAsset'))
 const ImportAssets            = lazyWithReload(() => import('./pages/ImportAssets'));
 const TestReportImport        = lazyWithReload(() => import('./pages/TestReportImport'));
 const AddData                 = lazyWithReload(() => import('./pages/AddData'));
+const BackfillImport          = lazyWithReload(() => import('./pages/BackfillImport')); // #34 bulk backfill (zip of reports)
 const ArchivedAssets          = lazyWithReload(() => import('./pages/ArchivedAssets'));
 const SitesList               = lazyWithReload(() => import('./pages/SitesList'));
 const SiteDetail              = lazyWithReload(() => import('./pages/SiteDetail'));
@@ -307,6 +308,12 @@ function AppRoutes() {
             <Route path="add-data" element={
               <RequireRole roles={['admin', 'manager']}>
                 <AddData />
+              </RequireRole>
+            } />
+            {/* #34 bulk historical backfill — zip of report PDFs/photos. */}
+            <Route path="backfill" element={
+              <RequireRole roles={['admin', 'manager', 'oem_admin']}>
+                <BackfillImport />
               </RequireRole>
             } />
             <Route path="assets/archived"    element={<ArchivedAssets />} />

@@ -7,12 +7,13 @@
 
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { UploadCloud, FileText, Table2, Database, Mail } from 'lucide-react';
+import { UploadCloud, FileText, Table2, Database, Mail, Archive } from 'lucide-react';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { setPendingImport } from '../lib/pendingImport';
 
 function sniff(file) {
   const name = (file.name || '').toLowerCase();
+  if (name.endsWith('.zip')) return { kind: 'backfill', route: '/backfill', label: 'zip of report PDFs/photos' };
   if (name.endsWith('.pdf')) return { kind: 'test-report', route: '/test-reports/import', label: 'test-report PDF' };
   if (/\.(csv|xlsx|xls)$/.test(name)) return { kind: 'assets', route: '/assets/import', label: 'asset / schedule spreadsheet' };
   return null;
@@ -47,9 +48,9 @@ export default function AddData() {
       <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}>
         <UploadCloud size={40} strokeWidth={1.25} style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }} />
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Drop a file or choose one</div>
-        <input type="file" accept=".pdf,.csv,.xlsx,.xls" onChange={onFile} />
+        <input type="file" accept=".pdf,.csv,.xlsx,.xls,.zip" onChange={onFile} />
         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 10 }}>
-          PDF test report · asset CSV/XLSX
+          PDF test report · asset CSV/XLSX · .zip of reports (bulk backfill)
         </div>
       </div></div>
 
@@ -61,6 +62,10 @@ export default function AddData() {
         <Link to="/assets/import" className="card" style={{ flex: '1 1 200px', padding: 16, textDecoration: 'none', color: 'inherit' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Table2 size={16} /> Assets (CSV/XLSX)</div>
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Bulk import equipment + schedules</div>
+        </Link>
+        <Link to="/backfill" className="card" style={{ flex: '1 1 200px', padding: 16, textDecoration: 'none', color: 'inherit' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Archive size={16} /> Bulk backfill (.zip)</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>A folder of past reports → asset cards</div>
         </Link>
         <Link to="/import" className="card" style={{ flex: '1 1 200px', padding: 16, textDecoration: 'none', color: 'inherit' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Database size={16} /> CMMS export</div>
