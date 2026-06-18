@@ -76,6 +76,11 @@ const MODULE_INDEX = Object.freeze([
     description:  'Canned compliance reports: due/overdue horizon, deficiency ledger, test history, and executive summaries.',
   },
   {
+    slug:         'compliance-scoring',
+    title:        'Scores, Ratings & Forecasts',
+    description:  'What the numbers mean: NFPA 70B condition ratings (C1/C2/C3), remaining-useful-life and modernization risk, budget-forecast horizons, arc-flash labels, and the QEMW credential wallet.',
+  },
+  {
     slug:         'settings',
     title:        'Settings',
     description:  'Admin control plane: AI provider, security, storage, encryption, custom fields, users and roles, and account data.',
