@@ -1,4 +1,4 @@
-﻿# ServiceCycle — docker-compose.demo.yml override
+# ServiceCycle — docker-compose.demo.yml override
 #
 # Use this on top of the base docker-compose.yml to run a public demo
 # instance behind a reverse proxy (Caddy or nginx — see deploy/).
@@ -41,9 +41,9 @@
 # Set DEMO_DOMAIN (or override CLIENT_URL directly) in the host's .env so
 # the SPA bundle and CORS know the canonical origin. Example:
 #
-#   DEMO_DOMAIN=demo.servicecycle.com
-#   CLIENT_URL=https://demo.servicecycle.com
-#   VITE_API_URL=https://demo.servicecycle.com
+#   DEMO_DOMAIN=demo.servicecycle.app
+#   CLIENT_URL=https://demo.servicecycle.app
+#   VITE_API_URL=https://demo.servicecycle.app
 
 services:
 
@@ -52,7 +52,7 @@ services:
       DEMO_MODE:    "true"
       NODE_ENV:     "production"
       TRUST_PROXY:  "true"
-      CLIENT_URL:   "${CLIENT_URL:?CLIENT_URL must be set in .env to the public demo URL, e.g. https://demo.servicecycle.com}"
+      CLIENT_URL:   "${CLIENT_URL:?CLIENT_URL must be set in .env to the public demo URL, e.g. https://demo.servicecycle.app}"
       # Demo instances NEVER send real email — EMAIL_MOCK is forced true at
       # startup, but we re-pin it here for clarity in `docker inspect`.
       EMAIL_MOCK:   "true"

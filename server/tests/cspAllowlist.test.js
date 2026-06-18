@@ -48,10 +48,13 @@ describe('L6: CSP allowlist *.servicecycle.app on connect-src / img-src / font-s
     // doesn't poison the assertion.
     const line = block.match(/scriptSrc[^\n]*/)[0];
     expect(line).toMatch(/'self'/);
-    expect(line).not.toMatch(/servicecycle\.app|servicecycle\.com/);
+    expect(line).not.toMatch(/https?:\/\//); // no external host in scriptSrc
   });
 
-  test('no stale lapseiq.com / wrong-TLD hosts survive in the CSP block', () => {
-    expect(block).not.toMatch(/lapseiq\.com|servicecycle\.com/);
+  test('CSP block contains only *.servicecycle.app hosts (no stale/wrong-TLD leaks)', () => {
+    // Positive allowlist: every external host in the block must be servicecycle.app.
+    // Guards against a regression reintroducing a wrong-TLD or sibling-product host.
+    const hosts = block.match(/https?:\/\/[^'"\s]+/g) || [];
+    for (const h of hosts) expect(h).toMatch(/servicecycle\.app/);
   });
 });

@@ -2,7 +2,7 @@
   "name": "servicecycle-e2e",
   "version": "1.0.0",
   "private": true,
-  "description": "End-to-end Playwright tests + design/a11y audit-bot for ServiceCycle. Targets demo.servicecycle.com by default; override via E2E_BASE_URL.",
+  "description": "End-to-end Playwright tests + design/a11y audit-bot for ServiceCycle. Targets demo.servicecycle.app by default; override via E2E_BASE_URL.",
   "scripts": {
     "test:e2e": "playwright test",
     "test:property": "node tests/property/prefCache.property.test.js && node tests/property/columnVisibility.property.test.js && node tests/property/alertThresholds.property.test.js",
