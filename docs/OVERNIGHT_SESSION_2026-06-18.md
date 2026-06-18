@@ -72,8 +72,13 @@ items, re-enabling the droplet AI board, major version upgrades, and ForgeRift's
 `vps-control-mcp` L3 parser bug (item 7 — needs your explicit OK). Roadmap #19
 offline-PWA stretch was skipped (not headlessly verifiable).
 
-## Deploy state at session end
-- **Server:** Help Center + security hardening live and verified; the dependency
-  lockfile rebuild was the last server deploy.
-- **Client:** backfill UI live; the a11y fix + patched client lockfile go out on
-  the final client container rebuild.
+## Deploy state at session end — all live and verified
+- **Server:** Help Center + security hardening + patched `form-data` lockfile all
+  deployed; `/api/health` ok, and a rewritten help module (`/api/help/modules/
+  dashboard`) confirmed serving ServiceCycle content (not LapseIQ).
+- **Client:** backfill UI + a11y fixes + patched client lockfile all deployed; the
+  rebuilt `servicecycle-client` preview is serving the new bundle (verified). One
+  transient container restart during the final rebuild (memory pressure from the
+  concurrent server build) self-recovered — container is stable.
+
+Final commit pushed: `4ab0ba7`. Integration suite 258/258; tsc + vite build green.
