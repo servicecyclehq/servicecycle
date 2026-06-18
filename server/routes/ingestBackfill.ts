@@ -22,9 +22,14 @@ const { uploadFile } = require('../lib/storage');
 const { requireManager } = require('../middleware/roles');
 const { resolveTargetAccount } = require('../lib/oemTargetAccount');
 
-const MAX_ZIP_BYTES  = 100 * 1024 * 1024; // 100 MB archive
+const MAX_ZIP_BYTES  = 100 * 1024 * 1024; // 100 MB archive (compressed)
 const MAX_FILES      = 200;               // jobs per batch
-const MAX_FILE_BYTES = 15 * 1024 * 1024;  // per report
+const MAX_FILE_BYTES = 15 * 1024 * 1024;  // per report (uncompressed)
+// Decompression-bomb guard: cap the TOTAL uncompressed bytes we will inflate
+// across the whole batch so a small archive of highly-compressible entries
+// cannot blow up memory. 200 * 15MB is the theoretical max of accepted files;
+// we stop well before that and never inflate a single oversized entry.
+const MAX_TOTAL_UNCOMPRESSED = 400 * 1024 * 1024;
 const REPORT_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
 const MIME: Record<string, string> = {
   pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
@@ -81,11 +86,27 @@ router.post('/backfill', requireManager, upload.single('file'), async (req: any,
     const truncated = reportEntries.length > MAX_FILES;
     const jobIds: string[] = [];
     const skipped: { name: string; reason: string }[] = [];
+    let totalUncompressed = 0;
 
     for (const entry of take) {
+      // Decompression-bomb guard #1: reject on the size the archive DECLARES,
+      // before we inflate a single byte. A zip bomb advertises a huge
+      // uncompressed size; skip those without materializing them in memory.
+      const declared = (entry as any)?._data?.uncompressedSize;
+      if (typeof declared === 'number' && declared > MAX_FILE_BYTES) {
+        skipped.push({ name: (entry as any).name, reason: 'too large (declared)' });
+        continue;
+      }
+      // Decompression-bomb guard #2: stop once the batch's total inflated bytes
+      // would exceed the budget, so a lying header can't run memory away either.
+      if (totalUncompressed >= MAX_TOTAL_UNCOMPRESSED) {
+        skipped.push({ name: (entry as any).name, reason: 'batch decompression budget exceeded' });
+        continue;
+      }
       const buf: Buffer = await (entry as any).async('nodebuffer');
       if (!buf.length) { skipped.push({ name: (entry as any).name, reason: 'empty' }); continue; }
       if (buf.length > MAX_FILE_BYTES) { skipped.push({ name: (entry as any).name, reason: 'too large' }); continue; }
+      totalUncompressed += buf.length;
       const base = (entry as any).name.split('/').pop() || 'report.pdf';
       const { storageKey } = await uploadFile(storeAccountId, null, base, buf, mimeFor(base));
       const job = await prisma.ingestJob.create({

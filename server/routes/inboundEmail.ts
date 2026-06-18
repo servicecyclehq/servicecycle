@@ -28,6 +28,13 @@ const { sendEmail, reportReceivedHtml } = require('../lib/email');
 const PDFISH_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
 const PDF_TYPES = /(application\/pdf|image\/(jpeg|png|heic|heif|webp))/i;
 
+// Belt-and-suspenders bounds on a (signature-authenticated) inbound message so
+// one email can't fan out into an unbounded number of auto-commit jobs or
+// inflate huge buffers in memory. A real forwarded test report carries a
+// handful of attachments, each well under these caps.
+const MAX_INBOUND_ATTACHMENTS = 25;
+const MAX_INBOUND_ATT_BYTES   = 15 * 1024 * 1024;
+
 // Senders we must never auto-reply to — replying would create a mail loop or
 // bounce against an unattended mailbox.
 const NO_REPLY_RE = /(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounce|notifications?@|^reports-)/i;
@@ -131,6 +138,10 @@ router.post('/email', async (req: any, res: any) => {
     } else if (data.email_id) {
       attachments = await fetchResendAttachments(data.email_id);
     }
+    // Bound count + per-attachment size before we store/enqueue anything.
+    attachments = attachments
+      .filter((a) => a.buffer && a.buffer.length > 0 && a.buffer.length <= MAX_INBOUND_ATT_BYTES)
+      .slice(0, MAX_INBOUND_ATTACHMENTS);
     if (!attachments.length) return res.status(202).json({ ok: true, note: 'no usable attachments' });
 
     const siteSetting = await prisma.accountSetting.findFirst({ where: { accountId: account.accountId, key: 'inbound_site_id' }, select: { value: true } });

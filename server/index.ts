@@ -606,7 +606,29 @@ app.use((err, req, res, next) => {
 // authenticates by webhook signature (Resend/Svix) or a shared secret, needs a
 // larger body + the raw bytes for the Svix HMAC, and must not be blocked by the
 // demo-write guard. Its own parser captures req.rawBody for signature checks.
+// Per-IP cap in FRONT of the 15mb json parse + signature check. The endpoint
+// is reachable unauthenticated (it authenticates by webhook signature inside
+// the handler), is mounted before the global apiLimiter, and the handler ends
+// the response — so without this an attacker could force unlimited 15mb body
+// parses + HMAC work that the global limiter never sees. 120/min/IP is well
+// above any real provider's per-IP webhook burst; over-limit returns a
+// Retry-After so a legitimate provider simply retries. (_clientIpKey is a
+// hoisted function declaration, safe to reference here.)
+// NOTE: keyGenerator uses _clientIpKey (a hoisted function declaration — safe
+// here). We deliberately do NOT reference rateLimitHandler: it is a `const`
+// declared further down (TDZ at this point). express-rate-limit's default
+// handler already returns 429 with a Retry-After header, which is enough for a
+// machine webhook caller.
+const inboundLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max:      120,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator:    _clientIpKey,
+  message: { success: false, error: 'Too many inbound webhook requests — slow down.' },
+});
 app.use('/api/inbound',
+  inboundLimiter,
   express.json({ limit: '15mb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString('utf8'); } }),
   require('./routes/inboundEmail'));
 
