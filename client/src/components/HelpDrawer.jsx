@@ -77,17 +77,23 @@ function headingId(children) {
 
 // H2-4/H4-4 (v0.76.7): route → module slug map for context-sensitive open
 const ROUTE_MODULE_MAP = {
-  '/dashboard':   'dashboard',
-  '/assets':      'assets',
-  '/sites':       'sites',
-  '/work-orders': 'work-orders',
-  '/calendar':    'calendar',
-  '/contractors': 'contractors',
-  '/alerts':      'alerts',
-  '/reports':     'reports',
-  '/settings':    'settings',
-  '/users':       'settings',
-  '/activity':    'settings',
+  '/dashboard':          'dashboard',
+  '/assets':             'assets',
+  '/sites':              'sites',
+  '/work-orders':        'work-orders',
+  // The compliance calendar is the schedules module's surface — there is no
+  // 'calendar' help doc, so mapping it here previously 404'd the drawer.
+  '/calendar':           'schedules',
+  '/contractors':        'contractors',
+  '/alerts':             'alerts',
+  '/reports':            'reports',
+  // All the data-in surfaces share the 'imports' module.
+  '/add-data':           'imports',
+  '/test-reports/import': 'imports',
+  '/backfill':           'imports',
+  '/settings':           'settings',
+  '/users':              'settings',
+  '/activity':           'settings',
 };
 function slugForPath(p) {
   if (!p) return null;

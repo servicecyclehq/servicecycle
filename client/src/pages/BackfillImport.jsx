@@ -182,7 +182,7 @@ export default function BackfillImport() {
                 ? <><CheckCircle2 size={18} style={{ color: 'var(--color-success, #15803d)' }} aria-hidden="true" /> Backfill complete</>
                 : <><Loader2 size={16} style={{ animation: 'spin 0.9s linear infinite' }} aria-hidden="true" /> Processing {totalJobs} report{totalJobs === 1 ? '' : 's'}…</>}
             </div>
-            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+            <div role="status" aria-live="polite" style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
               {finished} / {totalJobs} files · <strong style={{ color: 'var(--color-text)' }}>{status?.assetsCommitted || 0}</strong> asset card{(status?.assetsCommitted || 0) === 1 ? '' : 's'} created
             </div>
           </div>
