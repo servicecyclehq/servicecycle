@@ -1,0 +1,79 @@
+# Assets
+
+An asset is one piece of electrical equipment — a transformer, switchgear lineup,
+breaker, MCC, generator, battery string, and so on. It is the operating unit
+ServiceCycle is built around: every reading, work order, deficiency, schedule, and
+compliance number ultimately hangs off an asset.
+
+## What you'll see
+
+**The asset list** is your equipment register. Each row shows the asset's label,
+its site and position, its governing NFPA 70B condition, and how many open
+deficiencies it carries. Use the search box in the sidebar to jump straight to an
+asset by name or serial, or filter the list by site, type, or condition.
+
+**The asset detail page** is the single source of truth for one device: nameplate
+data, condition ratings, the open-deficiency list, test history and trends, any
+incident log entries, and the schedules that govern when it is next due.
+
+## Nameplate data
+
+Every equipment type carries its own nameplate fields — kVA and voltage for a
+transformer, kW and RPM for a generator, interrupting rating for a breaker. You
+can type these in, or use **Snap nameplate** in Field Mode to photograph the
+nameplate and let the app read it for you. Scanned values come back flagged by
+confidence so you can confirm the ones it was unsure about before saving. The
+photo is kept with the asset as the source of record.
+
+## NFPA 70B condition ratings (C1 / C2 / C3)
+
+An asset is assessed on several axes — physical, electrical/criticality, and
+environment. Each axis carries a C1 (good), C2 (fair), or C3 (poor) rating, and
+the **worst axis governs**: a single C3 finding makes the whole asset C3, because
+the riskiest factor is what should set the maintenance interval. The governing
+condition is what drives how often the asset must be serviced.
+
+**Automatic C3.** If an asset misses two or more maintenance cycles, ServiceCycle
+flags it C3 on its own (NFPA 70B 9.3.1) and tightens its schedule, so a lapsed
+asset can never silently keep a relaxed interval. Clearing the backlog and
+recording a completed cycle restores the rating. See *Scores, Ratings &
+Forecasts* for how condition feeds intervals, remaining-useful-life, and risk.
+
+## How data lands on an asset
+
+- **Manually** — create the asset (Sidebar → Assets → +) and fill in the fields.
+- **From a test report** — import a PowerDB/NETA PDF and its readings attach to
+  the matching asset as a work order with measurements (see *Imports*).
+- **From the field** — add equipment on a phone in Field Mode, nameplate-first.
+- **In bulk** — a CSV or a zip of reports via the backfill flow.
+
+When a report comes in, ServiceCycle tries to match it to an existing asset by
+serial number first, then by site/position/type, and tells you how confident the
+match is so you can confirm rather than create a duplicate.
+
+## Common workflows
+
+**"What needs fixing on this unit?"** Open the asset; the open-deficiency list
+sits at the top of the detail page, worst severity first.
+
+**"Is this device getting worse over time?"** Use the Testing & Trends tab. It
+charts each test value against prior visits and flags year-over-year deviations —
+except against an acceptance/commissioning test, which is treated as the baseline.
+
+**"I think this is a duplicate."** When you add an asset whose serial or
+site/position matches an existing one, the app warns you and offers to open the
+existing device instead.
+
+## When something looks wrong
+
+**An asset is C3 and I didn't set it that way.** It most likely auto-promoted from
+two or more missed cycles (NFPA 70B 9.3.1). Catch up the maintenance and record a
+completed cycle to clear it.
+
+**Nameplate scan came back mostly blank or low-confidence.** The photo may be
+glare-washed or angled. Re-shoot square-on with even light, or type the fields in
+manually — the scan is a convenience, never a requirement.
+
+**A report didn't attach to the asset I expected.** The serial on the report
+probably didn't match. Confirm the asset on the import preview screen, or correct
+the serial on the asset so the next report matches cleanly.

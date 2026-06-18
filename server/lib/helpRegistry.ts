@@ -13,7 +13,14 @@
  *
  * Slugs are the URL/topic key. Titles and descriptions are user-facing.
  * The order in MODULE_INDEX is the order the Help drawer's module picker
- * uses — keep it grouped roughly the way the sidebar is.
+ * uses. It is the SINGLE SOURCE OF TRUTH and mirrors the left sidebar
+ * (components/Sidebar.jsx) top-to-bottom: the feature modules run in the
+ * exact sidebar order (Dashboard -> Assets -> Sites -> Work Orders ->
+ * Compliance Calendar[schedules] -> Contractors -> Alerts -> Add data/
+ * Import[imports] -> Reports -> Settings). Onboarding leads as the
+ * zero-state "start here" doc (it has no sidebar entry), and the two
+ * conceptual/reference docs (compliance-scoring, api-and-integrations)
+ * are grouped at the end after the feature modules.
  */
 
 'use strict';
@@ -22,14 +29,14 @@ const fs   = require('fs');
 const path = require('path');
 
 const MODULE_INDEX = Object.freeze([
-  // v0.37.1 W5 MT-024: surface the onboarding module first — it is the
-  // first thing a new admin reads after landing on the dashboard, before
-  // they have any sites or assets yet.
+  // Onboarding leads: it has no sidebar entry, but it is the first thing a
+  // new admin reads after landing, before they have any sites or assets.
   {
     slug:         'onboarding',
     title:        'Onboarding',
     description:  'Fresh-install /setup wizard, in-app new-user wizard, and the path from zero to a working compliance calendar.',
   },
+  // ── Feature modules — in exact left-sidebar order ──────────────────────
   {
     slug:         'dashboard',
     title:        'Dashboard',
@@ -43,27 +50,22 @@ const MODULE_INDEX = Object.freeze([
   {
     slug:         'sites',
     title:        'Sites & Locations',
-    description:  'The site → building → area → position hierarchy, on-site contacts, blackout windows, and arc-flash studies.',
-  },
-  {
-    slug:         'contractors',
-    title:        'Contractors',
-    description:  'NETA-certified testing contractors, field technicians and their certification levels, and assignment rules.',
-  },
-  {
-    slug:         'schedules',
-    title:        'Maintenance Schedules',
-    description:  'Task definitions, condition-based intervals (C1/C2/C3), next-due computation, and per-schedule overrides.',
+    description:  'The site → building → area → position hierarchy, on-site contacts, outage/blackout windows, and arc-flash studies.',
   },
   {
     slug:         'work-orders',
     title:        'Work Orders',
-    description:  'Scheduling, as-found / as-left condition capture, test measurements, deficiencies, and NETA decals.',
+    description:  'Scheduling, as-found / as-left condition capture, test measurements, deficiencies, and NETA condition decals.',
   },
   {
-    slug:         'imports',
-    title:        'Imports',
-    description:  'CSV uploads, saved column-mapping profiles, the import paths (CSV / API), and the dedup model.',
+    slug:         'schedules',
+    title:        'Maintenance Schedules',
+    description:  'Task definitions, condition-based intervals (C1/C2/C3), next-due computation, per-schedule overrides, and the compliance calendar.',
+  },
+  {
+    slug:         'contractors',
+    title:        'Contractors',
+    description:  'NETA-certified testing contractors, field technicians and their certification levels, and the QEMW credential wallet.',
   },
   {
     slug:         'alerts',
@@ -71,27 +73,32 @@ const MODULE_INDEX = Object.freeze([
     description:  'Daily digest, maintenance-due lead-time tiers, overdue escalation, per-user preferences, optional Slack and Teams channels.',
   },
   {
+    slug:         'imports',
+    title:        'Imports',
+    description:  'Test-report PDF ingest, email-in, bulk backfill, and spreadsheet / CMMS import — the frictionless data-in paths.',
+  },
+  {
     slug:         'reports',
     title:        'Reports',
-    description:  'Canned compliance reports: due/overdue horizon, deficiency ledger, test history, and executive summaries.',
+    description:  'Compliance posture, path-to-100, per-standard evidence packs, the written EMP, snapshots, CFO summaries, and share links.',
   },
+  {
+    slug:         'settings',
+    title:        'Settings',
+    description:  'Admin control plane: AI provider, security, encryption, custom fields, users and roles, and rate cards.',
+  },
+  // ── Conceptual / reference docs — grouped after the feature modules ────
   {
     slug:         'compliance-scoring',
     title:        'Scores, Ratings & Forecasts',
     description:  'What the numbers mean: NFPA 70B condition ratings (C1/C2/C3), remaining-useful-life and modernization risk, budget-forecast horizons, arc-flash labels, and the QEMW credential wallet.',
   },
-  {
-    slug:         'settings',
-    title:        'Settings',
-    description:  'Admin control plane: AI provider, security, storage, encryption, custom fields, users and roles, and account data.',
-  },
-  // v0.37.1 W5 MT-024: last item because the audience is integrators and
-  // ops admins, not the day-to-day maintenance operator. Surfacing it after
-  // Settings matches the "Settings -> API & Integrations" UI grouping.
+  // Last item: the audience is integrators and ops admins, not the day-to-day
+  // operator. Matches the "Settings -> API & Integrations" UI grouping.
   {
     slug:         'api-and-integrations',
     title:        'API & Integrations',
-    description:  'Public REST API, webhook endpoints, and the OpenAPI spec.',
+    description:  'Public REST API, webhook endpoints with HMAC signing, the OpenAPI spec, and the email-in address.',
   },
 ]);
 
