@@ -519,6 +519,21 @@ export default function Sidebar() {
   const [labelsBusy, setLabelsBusy] = useState(false);
   const [labelsToast, setLabelsToast] = useState(null);
 
+  // Confidence-gated ingest review queue — pending count for the nav badge.
+  // Only managers+ can review, so only they poll the (requireManager) endpoint.
+  const canReview = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'oem_admin';
+  const [reviewCount, setReviewCount] = useState(0);
+  useEffect(() => {
+    if (!canReview) return;
+    let active = true;
+    const fetchCount = () => api.get('/api/ingest/review/count')
+      .then(r => { if (active) setReviewCount(r.data?.data?.count || 0); })
+      .catch(() => {});
+    fetchCount();
+    const id = setInterval(fetchCount, 60 * 1000);
+    return () => { active = false; clearInterval(id); };
+  }, [canReview]);
+
   const handlePrintLabels = async () => {
     if (labelsBusy) return;
     setLabelsBusy(true);
@@ -745,6 +760,27 @@ export default function Sidebar() {
           >
             {Icons.reports}
             Import Test Report
+          </NavLink>
+        )}
+
+        {/* Review queue — email-in/backfill reports the confidence gate parked
+            for a human OK. Badge shows the pending count. manager+ only. */}
+        {canReview && (
+          <NavLink
+            to="/review"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            <ClipboardCheck {...ICON_PROPS} />
+            Review queue
+            {reviewCount > 0 && (
+              <span
+                className="nav-badge"
+                style={{ background: 'var(--color-warning-bg, #fef3c7)', color: 'var(--color-warning, #b45309)', fontWeight: 700 }}
+                aria-label={`${reviewCount} report${reviewCount === 1 ? '' : 's'} awaiting review`}
+              >
+                {reviewCount > 99 ? '99+' : reviewCount}
+              </span>
+            )}
           </NavLink>
         )}
 

@@ -98,6 +98,7 @@ const ImportAssets            = lazyWithReload(() => import('./pages/ImportAsset
 const TestReportImport        = lazyWithReload(() => import('./pages/TestReportImport'));
 const AddData                 = lazyWithReload(() => import('./pages/AddData'));
 const BackfillImport          = lazyWithReload(() => import('./pages/BackfillImport')); // #34 bulk backfill (zip of reports)
+const ReviewQueue             = lazyWithReload(() => import('./pages/ReviewQueue')); // confidence-gated ingest review
 const ArchivedAssets          = lazyWithReload(() => import('./pages/ArchivedAssets'));
 const SitesList               = lazyWithReload(() => import('./pages/SitesList'));
 const SiteDetail              = lazyWithReload(() => import('./pages/SiteDetail'));
@@ -314,6 +315,12 @@ function AppRoutes() {
             <Route path="backfill" element={
               <RequireRole roles={['admin', 'manager', 'oem_admin']}>
                 <BackfillImport />
+              </RequireRole>
+            } />
+            {/* Confidence-gated ingest review — approve/discard parked reports. */}
+            <Route path="review" element={
+              <RequireRole roles={['admin', 'manager', 'oem_admin']}>
+                <ReviewQueue />
               </RequireRole>
             } />
             <Route path="assets/archived"    element={<ArchivedAssets />} />
