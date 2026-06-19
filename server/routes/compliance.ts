@@ -48,6 +48,7 @@ const { downloadFile } = require('../lib/storage');
 const { buildStandardsSummary, buildStandardReport, buildOverdueReport, buildComplianceGap } = require('../lib/complianceReport');
 const { buildMaturityScore } = require('../lib/maturityScore');
 const { buildMaintenanceDebtData, debtLedgerToCsv } = require('../lib/maintenanceDebt');
+const { buildChangeBrief } = require('../lib/changeBrief');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -197,6 +198,24 @@ router.get('/maintenance-debt.csv', async (req, res) => {
   } catch (err) {
     console.error('[compliance/maintenance-debt.csv]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to export maintenance debt ledger.' });
+  }
+});
+
+// ── GET /change-brief?siteId= ─────────────────────────────────────────────────
+// "What changed since last cycle" — a per-site structured diff + short narrative
+// of everything that moved since the previous compliance snapshot (assets
+// added/removed, maintenance completed, newly overdue, deficiencies
+// opened/resolved, condition + policy changes). Pairs with snapshots + the
+// customer digest. Any authenticated role.
+router.get('/change-brief', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const brief = await buildChangeBrief(prisma, req.user.accountId, { siteId });
+    return res.json({ success: true, data: brief });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/change-brief]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build change brief.' });
   }
 });
 
