@@ -99,10 +99,16 @@ async function fetchResendAttachments(emailId: string): Promise<Att[]> {
   const j: any = await r.json();
   const out: Att[] = [];
   for (const att of (j?.data || [])) {
+    if (out.length >= MAX_INBOUND_ATTACHMENTS) break; // don't fetch more than we'd keep
     if (!isReportAttachment(att.filename, att.content_type)) continue;
     if (!att.download_url) continue;
     const dl = await fetch(att.download_url);
     if (!dl.ok) { console.error('[inbound] download failed', att.filename, dl.status); continue; }
+    // Size guard BEFORE buffering: skip a download that declares more than the
+    // per-attachment cap so a huge file can't be materialized into memory. A
+    // lying Content-Length is still caught by the post-fetch size filter.
+    const declaredLen = Number(dl.headers.get('content-length') || 0);
+    if (declaredLen > MAX_INBOUND_ATT_BYTES) { console.warn('[inbound] attachment exceeds size cap, skipping', att.filename, declaredLen); continue; }
     out.push({ filename: att.filename || 'report.pdf', contentType: att.content_type || 'application/pdf', buffer: Buffer.from(await dl.arrayBuffer()) });
   }
   return out;

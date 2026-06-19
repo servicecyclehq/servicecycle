@@ -109,6 +109,12 @@ router.post('/backfill', requireManager, upload.single('file'), async (req: any,
       totalUncompressed += buf.length;
       const base = (entry as any).name.split('/').pop() || 'report.pdf';
       const { storageKey } = await uploadFile(storeAccountId, null, base, buf, mimeFor(base));
+      // Job ownership split (intentional, mirrors #14 + the email-in worker):
+      // accountId is the OPERATOR's account (req.user) so the uploader sees the
+      // job in their own queue/status; the file + targetAccountId point at the
+      // fleet CUSTOMER's account where the worker actually commits the assets.
+      // The /backfill/status route scopes by accountId = the operator, so this
+      // is consistent — do not "fix" it to storeAccountId.
       const job = await prisma.ingestJob.create({
         data: {
           accountId: req.user.accountId, createdById: req.user.id,
