@@ -85,20 +85,23 @@ describe('#6 email-in auth', () => {
 });
 
 describe('#6 email-in routing + ack', () => {
-  test('auto-acknowledges a human sender', async () => {
+  test('tags the job with the sender for a post-parse ack (no synchronous send)', async () => {
     const res = await post()
       .set('x-inbound-secret', SECRET)
       .send({
         type: 'email.received',
-        data: { to: [`reports-${SLUG}@servicecycle.app`], from: 'jane@acme.com', attachments: [pdfAttachment()] },
+        data: { to: [`reports-${SLUG}@servicecycle.app`], from: 'Jane Tech <jane@acme.com>', attachments: [pdfAttachment()] },
       });
     expect(res.status).toBe(202);
-    expect(res.body.ackSent).toBe(true);
-    expect(emailMock.sendEmail).toHaveBeenCalledTimes(1);
-    expect(emailMock.sendEmail.mock.calls[0][0].to).toBe('jane@acme.com');
+    expect(res.body.willAck).toBe(true);
+    // The ack now fires from the worker after parsing+gating, never at receipt.
+    expect(emailMock.sendEmail).not.toHaveBeenCalled();
+    const job = await prisma.ingestJob.findUnique({ where: { id: res.body.jobs[0] } });
+    expect(job.notifyEmail).toBe('jane@acme.com');
+    expect(job.batchId).toBeTruthy();
   });
 
-  test('does NOT acknowledge a no-reply / loop-prone sender, but still ingests', async () => {
+  test('no-reply / loop-prone sender is not tagged for ack, but still ingests', async () => {
     const res = await post()
       .set('x-inbound-secret', SECRET)
       .send({
@@ -107,8 +110,10 @@ describe('#6 email-in routing + ack', () => {
       });
     expect(res.status).toBe(202);
     expect(res.body.jobs).toHaveLength(1);
-    expect(res.body.ackSent).toBe(false);
+    expect(res.body.willAck).toBe(false);
     expect(emailMock.sendEmail).not.toHaveBeenCalled();
+    const job = await prisma.ingestJob.findUnique({ where: { id: res.body.jobs[0] } });
+    expect(job.notifyEmail).toBeNull();
   });
 
   test('un-routable to-address is accepted-and-dropped (202, no job)', async () => {

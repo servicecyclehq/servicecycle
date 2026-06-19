@@ -54,6 +54,28 @@ async function _firstSiteId(accountId: string): Promise<string | null> {
   return s ? s.id : null;
 }
 
+// Per-account auto-commit confidence floor (the tunable knob). Undefined falls
+// back to the gate's conservative default.
+async function _autoCommitThreshold(accountId: string): Promise<any> {
+  try {
+    const s = await prisma.accountSetting.findFirst({
+      where: { accountId, key: 'ingest_autocommit_threshold' }, select: { value: true },
+    });
+    return s?.value ?? undefined;
+  } catch { return undefined; }
+}
+
+// Post-gate hook: for an email-in job, once the whole inbound message is gated,
+// send the sender the outcome ack. Best-effort and never blocks the job; the
+// ack module aggregates per batch and fires exactly once.
+async function _afterGated(job: any): Promise<void> {
+  if (job.kind !== 'email_in') return;
+  try {
+    const { maybeSendInboundAck } = require('./ingestAck');
+    await maybeSendInboundAck(job);
+  } catch { /* ack never blocks the job */ }
+}
+
 /**
  * Run one claimed job to a terminal state. `builder` is injectable for tests;
  * defaults to the shared test-report preview builder.
@@ -71,9 +93,42 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
       originalName: job.fileName || undefined,
     });
 
-    // #6 email-in: auto-commit the parsed report straight to asset cards (no
-    // human review). Best-effort — a commit failure annotates the result but the
-    // job still completes, so the parsed preview is never lost.
+    // Confidence gate (email-in / backfill, i.e. hands-off autoCommit jobs).
+    // High-confidence parses auto-commit; anything below the bar is parked as
+    // needs_review so a human approves before any asset card is written.
+    let gate: any = null;
+    if (job.autoCommit) {
+      try {
+        const { evaluateIngestGate } = require('./ingestConfidenceGate');
+        const threshold = await _autoCommitThreshold(job.accountId);
+        gate = evaluateIngestGate(result, { threshold, originalName: job.fileName || undefined });
+        (result as any).gate = gate;
+      } catch (ge: any) {
+        // If the gate itself errors, fail safe: park for review rather than
+        // auto-committing something we couldn't score.
+        gate = { autoCommit: false, band: 'yellow', reasons: ['Could not score confidence — review before committing.'], units: [] };
+        console.error(`[ingestWorker] gate error for job ${job.id}:`, ge && ge.message ? ge.message : ge);
+      }
+    }
+
+    // Parked: store the preview + gate, write NO assets, and stop here.
+    if (job.autoCommit && gate && !gate.autoCommit) {
+      await prisma.ingestJob.update({
+        where: { id: job.id },
+        data: { status: 'needs_review', gate, progress: 100, phase: 'awaiting review', result, error: null, finishedAt: new Date() },
+      });
+      await prisma.activityLog.create({
+        data: {
+          accountId: job.accountId, userId: null, action: 'ingest_job_needs_review',
+          details: { jobId: job.id, kind: job.kind, fileName: job.fileName, band: gate.band, reasons: (gate.reasons || []).slice(0, 5) },
+        },
+      }).catch(() => {});
+      await _afterGated(job);
+      return 'done';
+    }
+
+    // Auto-commit (gate green) — straight to asset cards. Best-effort: a commit
+    // failure annotates the result but the job still completes.
     if (job.autoCommit) {
       try {
         await prisma.ingestJob.update({ where: { id: job.id }, data: { progress: 70, phase: 'creating asset cards' } });
@@ -101,7 +156,7 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
 
     await prisma.ingestJob.update({
       where: { id: job.id },
-      data:  { status: 'done', progress: 100, phase: 'ready', result, error: null, finishedAt: new Date() },
+      data:  { status: 'done', progress: 100, phase: 'ready', result, gate: gate || undefined, error: null, finishedAt: new Date() },
     });
 
     // Best-effort completion breadcrumb (the "we'll notify you" hook). Never
@@ -113,6 +168,7 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
         details: { jobId: job.id, kind: job.kind, fileName: job.fileName, sections: (result as any)?.assetSections ?? 1 },
       },
     }).catch(() => {});
+    await _afterGated(job);
     return 'done';
   } catch (e: any) {
     const msg = e && e.message ? String(e.message).slice(0, 500) : 'ingest failed';

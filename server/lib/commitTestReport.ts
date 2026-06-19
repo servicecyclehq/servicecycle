@@ -179,10 +179,17 @@ const TYPE_RULES: Array<[RegExp, string]> = [
   [/\b(emergency light|egress|exit sign)\b/i, 'EMERGENCY_LIGHTING'],
 ];
 
-function inferEquipmentType(...parts: any[]): string {
+// Returns the inferred type AND whether it came from a keyword match vs the
+// SWITCHGEAR fallback. The confidence gate uses `matched` as an identity signal:
+// a defaulted type means we guessed, so the card should be reviewed before commit.
+function inferEquipmentTypeResult(...parts: any[]): { type: string; matched: boolean } {
   const blob = parts.filter(Boolean).map((p) => String(p)).join(' ');
-  for (const [re, type] of TYPE_RULES) if (re.test(blob)) return type;
-  return 'SWITCHGEAR';
+  for (const [re, type] of TYPE_RULES) if (re.test(blob)) return { type, matched: true };
+  return { type: 'SWITCHGEAR', matched: false };
+}
+
+function inferEquipmentType(...parts: any[]): string {
+  return inferEquipmentTypeResult(...parts).type;
 }
 
 // Turn a raw preview (from buildTestReportPreview) into committed assets+readings
@@ -281,6 +288,6 @@ async function commitPreviewSections(p: {
   return { ...totals, sections: results, skipped: units.length - committable.length };
 }
 
-module.exports = { commitAssetReadings, commitPreviewSections, inferEquipmentType, hasUsableReading, HttpableError, BAD_DIRECTION, TREND_PCT };
+module.exports = { commitAssetReadings, commitPreviewSections, inferEquipmentType, inferEquipmentTypeResult, hasUsableReading, HttpableError, BAD_DIRECTION, TREND_PCT };
 
 export {};

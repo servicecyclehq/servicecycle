@@ -333,6 +333,8 @@ enum IngestJobStatus {
   processing
   done
   failed
+  needs_review // parsed, but the confidence gate parked it for human approval
+  rejected     // a reviewer discarded it; no assets were written
 }
 
 model IngestJob {
@@ -355,6 +357,19 @@ model IngestJob {
   result          Json? // the preview payload (same shape as POST /preview data)
   error           String?
   attempts        Int             @default(0)
+  // Confidence-gate review (auto-commit safety). The worker scores the parsed
+  // preview: high-confidence identity + readings auto-commit; anything below the
+  // bar parks as needs_review for human approval. `gate` stores the decision
+  // (band + reasons) so the review queue renders without recomputing.
+  gate            Json?
+  reviewedById    String? // who approved/rejected (null = auto-committed, no human)
+  reviewedAt      DateTime?
+  // #6 email-in post-parse acknowledgement: the sender to notify once the whole
+  // inbound message is gated, and the batch id correlating the jobs from one
+  // email so the ack aggregates (and fires exactly once via ackSentAt claim).
+  notifyEmail     String?
+  batchId         String?
+  ackSentAt       DateTime?
   startedAt       DateTime? // claim timestamp (drives stale-claim recovery)
   finishedAt      DateTime?
   createdAt       DateTime        @default(now())
@@ -364,6 +379,8 @@ model IngestJob {
 
   @@index([status, createdAt])
   @@index([accountId, createdAt])
+  @@index([accountId, status]) // review-queue lookups (needs_review per account)
+  @@index([batchId])
   @@map("ingest_jobs")
 }
 

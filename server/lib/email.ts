@@ -439,6 +439,59 @@ function reportReceivedHtml({ companyName, siteName, reportCount, appUrl }) {
 </div>`;
 }
 
+// Post-parse ack #1 — everything parsed cleanly and was uploaded. The cards are
+// live for the sender to look over; no action required from them.
+function reportProcessedHtml({ companyName, appUrl, assetCount }) {
+  const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeCompany = esc(companyName) || 'your team';
+  const safeUrl = appUrl || 'https://servicecycle.app';
+  const n = Number(assetCount) > 0 ? Number(assetCount) : null;
+  const countLine = n ? `${n} asset card${n === 1 ? '' : 's'} ` : 'Your equipment ';
+  return `
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
+  <div style="margin-bottom:24px;"><span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span></div>
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Got it - thanks for sending that over.</h2>
+  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
+    ${countLine}from your report ${n ? 'have' : 'has'} been read and uploaded to the ${safeCompany} workspace for your review on ServiceCycle.
+  </p>
+  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
+    Have a look when you get a chance, and reach out to your account rep with any questions.
+  </p>
+  <a href="${safeUrl}/assets" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+    Review my equipment
+  </a>
+  <p style="margin:24px 0 0;font-size:11px;color:#334155;">You received this because a test report was emailed in to ServiceCycle. If that wasn't you, you can ignore this message.</p>
+</div>`;
+}
+
+// Post-parse ack #2 — most parsed fine, but some items need a human check before
+// they're committed. Calls the sender to action (review + approve).
+function reportNeedsReviewHtml({ companyName, appUrl, committedCount, reviewCount }) {
+  const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeCompany = esc(companyName) || 'your team';
+  const safeUrl = appUrl || 'https://servicecycle.app';
+  const committed = Number(committedCount) > 0 ? Number(committedCount) : 0;
+  const review = Number(reviewCount) > 0 ? Number(reviewCount) : 1;
+  const committedLine = committed > 0
+    ? `<strong style="color:#e2e8f0;">${committed}</strong> uploaded just fine, and `
+    : '';
+  return `
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
+  <div style="margin-bottom:24px;"><span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span></div>
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Thanks - we've read your report.</h2>
+  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
+    ${committedLine}<strong style="color:#f87171;">${review} item${review === 1 ? '' : 's'} need${review === 1 ? 's' : ''} a quick review before ${review === 1 ? 'it is' : 'they are'} committed</strong> to the ${safeCompany} workspace - we want a person to confirm them rather than guess.
+  </p>
+  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
+    Please open the review queue, check the flagged ${review === 1 ? 'item' : 'items'}, and approve to add ${review === 1 ? 'it' : 'them'}. Reach out to your account rep with any questions.
+  </p>
+  <a href="${safeUrl}/review" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+    Review &amp; approve
+  </a>
+  <p style="margin:24px 0 0;font-size:11px;color:#334155;">You received this because a test report was emailed in to ServiceCycle. If that wasn't you, you can ignore this message.</p>
+</div>`;
+}
+
 module.exports = { setRuntimeBrevoKey,
   sendEmail,
   assetDisplayName,
@@ -450,6 +503,8 @@ module.exports = { setRuntimeBrevoKey,
   earlyAccessReplyHtml,
   earlyAccessNotificationHtml,
   reportReceivedHtml,
+  reportProcessedHtml,
+  reportNeedsReviewHtml,
 };
 
 export {};

@@ -23,7 +23,8 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const prisma = require('../lib/prisma').default;
 const { uploadFile } = require('../lib/storage');
-const { sendEmail, reportReceivedHtml } = require('../lib/email');
+// The acknowledgement to the sender is sent AFTER parsing+gating (lib/ingestAck),
+// not here — so it can reflect whether anything was parked for review.
 
 const PDFISH_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
 const PDF_TYPES = /(application\/pdf|image\/(jpeg|png|heic|heif|webp))/i;
@@ -147,44 +148,27 @@ router.post('/email', async (req: any, res: any) => {
     const siteSetting = await prisma.accountSetting.findFirst({ where: { accountId: account.accountId, key: 'inbound_site_id' }, select: { value: true } });
     const siteId = siteSetting?.value || null;
 
+    // The sender to acknowledge once the whole message is gated (null for
+    // no-reply / loop-prone senders), and a batch id correlating these jobs so
+    // the post-parse ack aggregates into one outcome email.
+    const senderAddr = senderEmail(data.from);
+    const notifyEmail = (senderAddr && !NO_REPLY_RE.test(senderAddr)) ? senderAddr : null;
+    const batchId = crypto.randomUUID();
+
     const jobs: string[] = [];
     for (const att of attachments) {
       const { storageKey } = await uploadFile(account.accountId, null, att.filename, att.buffer, att.contentType);
       const job = await prisma.ingestJob.create({ data: {
         accountId: account.accountId, createdById: null, kind: 'email_in', status: 'queued',
         fileKey: storageKey, fileName: att.filename, autoCommit: true, siteId,
+        notifyEmail, batchId,
       } });
       jobs.push(job.id);
     }
-    console.log(`[inbound/email] queued ${jobs.length} auto-commit job(s) for ${account.slug}`);
+    console.log(`[inbound/email] queued ${jobs.length} auto-commit job(s) for ${account.slug} (batch ${batchId})`);
 
-    // Auto-acknowledge the sender (fail-open: an email error must never affect
-    // ingest). Skipped for unattended/automated senders to avoid mail loops.
-    let ackSent = false;
-    try {
-      const to = senderEmail(data.from);
-      if (to && !NO_REPLY_RE.test(to)) {
-        const [acct, site] = await Promise.all([
-          prisma.account.findUnique({ where: { id: account.accountId }, select: { companyName: true } }),
-          siteId ? prisma.site.findUnique({ where: { id: siteId }, select: { name: true } }) : Promise.resolve(null),
-        ]);
-        await sendEmail({
-          to,
-          subject: 'We received your test report — ServiceCycle',
-          html: reportReceivedHtml({
-            companyName: acct?.companyName,
-            siteName: site?.name,
-            reportCount: jobs.length,
-            appUrl: process.env.CLIENT_URL || 'https://servicecycle.app',
-          }),
-        });
-        ackSent = true;
-      }
-    } catch (e: any) {
-      console.warn('[inbound/email] ack send failed:', e && e.message ? e.message : e);
-    }
-
-    return res.status(202).json({ ok: true, account: account.slug, jobs, ackSent });
+    // No ack here — lib/ingestAck sends the outcome email after parsing+gating.
+    return res.status(202).json({ ok: true, account: account.slug, jobs, batchId, willAck: !!notifyEmail });
   } catch (err: any) {
     console.error('[inbound/email]', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, error: 'inbound processing failed' });
