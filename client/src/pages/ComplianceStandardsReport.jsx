@@ -23,6 +23,7 @@ import PathTo100 from '../components/PathTo100';
 import MaturityScoreCard from '../components/MaturityScoreCard';
 import MaintenanceDebtCard from '../components/MaintenanceDebtCard';
 import ChangeBriefCard from '../components/ChangeBriefCard';
+import AccessBlockerCard from '../components/AccessBlockerCard';
 import { fmtDate } from '../lib/equipment';
 
 // Same thresholds as Dashboard's SiteComplianceRow.
@@ -115,6 +116,9 @@ export default function ComplianceStandardsReport() {
 
         {/* What changed since last cycle — diff vs the prior snapshot. */}
         <ChangeBriefCard siteId={siteId || null} />
+
+        {/* Missing-access / open-items blocker log (customer-owned). */}
+        <AccessBlockerCard />
 
         {/* Path to 100% — the ranked fix-it list that closes the gap (N2). */}
         <PathTo100 siteId={siteId || null} />

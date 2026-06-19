@@ -1437,6 +1437,31 @@ model ComplianceSnapshot {
   @@map("compliance_snapshots")
 }
 
+// Missing-access / open-items blocker log. Assets that couldn't be fully
+// inspected (locked door, outage needed, missing label, access limit) recorded
+// as customer-owned blockers tied to a compliance impact. Scalar-only by design
+// (no Prisma relations) so it adds zero churn to Account/Site/Asset/User;
+// referential integrity + tenant-cascade is enforced by the SQL foreign keys in
+// migration 20260619000000_access_blockers.
+model AccessBlocker {
+  id           String    @id @default(uuid())
+  accountId    String
+  siteId       String?
+  assetId      String?
+  kind         String    // LOCKED_DOOR | OUTAGE_NEEDED | MISSING_LABEL | ACCESS_LIMIT | OTHER
+  description  String?
+  status       String    @default("open") // open | resolved
+  createdById  String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([accountId, status])
+  @@index([assetId])
+  @@map("access_blockers")
+}
+
 // â”€â”€â”€ Regulatory / Industry News â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Items pulled from public RSS feeds (OSHA news releases, electrical trade
 // press) and matched against compliance-relevant terms (NFPA 70B/70E/110,

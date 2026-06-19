@@ -1368,6 +1368,9 @@ app.use('/api/public', publicParseLimiter, publicParseRoutes);
 // ── Quote Request — per-asset service quote lifecycle ────────────────────────
 app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 
+// ── Access Blockers — missing-access / open-items blocker log ─────────────────
+app.use('/api/access-blockers', authenticateToken, require('./routes/accessBlockers'));
+
 // ── Outage Consolidation Planner — clustered task scheduling ─────────────────
 app.use('/api/assets/:assetId/outage-plan', authenticateToken, outagePlanRoutes);
 
