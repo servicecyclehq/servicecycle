@@ -24,8 +24,42 @@ const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
 const { requireManager, requireAdmin } = require('../middleware/roles');
 const { clampThreshold, DEFAULT_THRESHOLD } = require('../lib/ingestConfidenceGate');
+const { inferEquipmentType } = require('../lib/commitTestReport');
 
 const SINCE_DAYS = 30;
+
+// Validate a reviewer-supplied equipment type against the Prisma enum so an
+// edit can't write a bogus type (Prisma would reject it anyway, but this gives
+// a clean 400 instead of a 500).
+let _equipmentTypes: Set<string> | null = null;
+function validEquipmentType(t: string): boolean {
+  try {
+    if (!_equipmentTypes) { const { EquipmentType } = require('@prisma/client'); _equipmentTypes = new Set(Object.values(EquipmentType)); }
+    return _equipmentTypes!.has(t);
+  } catch { return true; }
+}
+
+// Apply a reviewer's field edits to the stored preview before committing. Only
+// single-asset reports are editable here; multi-section reports keep their
+// parsed structure (use the full importer to edit those).
+function applyEdits(preview: any, edits: any) {
+  const isSingle = !(Array.isArray(preview?.sections) && preview.sections.length > 1);
+  if (!isSingle) return preview;
+  const p = { ...(preview || {}), meta: { ...((preview && preview.meta) || {}) } };
+  if (typeof edits.serialNumber === 'string') p.meta.serialNumber = edits.serialNumber.trim() || null;
+  if (typeof edits.manufacturer === 'string') p.meta.manufacturer = edits.manufacturer.trim() || null;
+  if (typeof edits.model === 'string') p.meta.model = edits.model.trim() || null;
+  if (typeof edits.equipmentType === 'string' && edits.equipmentType.trim()) {
+    const t = edits.equipmentType.trim();
+    if (!validEquipmentType(t)) throw Object.assign(new Error(`Unknown equipment type: ${t}`), { httpStatus: 400 });
+    p.meta.equipmentType = t;
+  }
+  // Merge-or-create: assetId set -> attach to that existing asset; empty -> force create.
+  if (Object.prototype.hasOwnProperty.call(edits, 'assetId')) {
+    p.assetMatch = edits.assetId ? { id: String(edits.assetId) } : null;
+  }
+  return p;
+}
 
 // Compact per-job shape for the queue UI: the gate decision + a thin preview
 // summary (asset units, what each would do, reading/deficiency counts).
@@ -34,6 +68,17 @@ function shapeJob(job: any) {
   const gate = job.gate || {};
   const units = Array.isArray(gate.units) ? gate.units : [];
   const meta = result.meta || {};
+  // Single-asset reports are editable inline; multi-section ones keep their
+  // parsed structure (edit via the full importer).
+  const isSingleAsset = !(Array.isArray(result.sections) && result.sections.length > 1);
+  const editable = isSingleAsset ? {
+    equipmentType: meta.equipmentType || inferEquipmentType(meta.model, meta.manufacturer, job.fileName),
+    serialNumber: meta.serialNumber || '',
+    manufacturer: meta.manufacturer || '',
+    model: meta.model || '',
+    matchedAssetId: result.assetMatch?.id || null,
+    candidates: (Array.isArray(result.assetCandidates) ? result.assetCandidates : []).map((c: any) => ({ id: c.id, label: c.label, siteName: c.siteName, confidence: c.confidence })),
+  } : null;
   return {
     id: job.id,
     kind: job.kind,
@@ -46,6 +91,8 @@ function shapeJob(job: any) {
     measurementCount: Array.isArray(result.measurements) ? result.measurements.length : 0,
     deficienciesToCreate: result.summary?.deficienciesToCreate ?? null,
     assetSections: result.assetSections ?? 1,
+    isSingleAsset,
+    editable,
   };
 }
 
@@ -56,18 +103,22 @@ async function _firstSiteId(accountId: string): Promise<string | null> {
 
 // Shared approve worker — commit one parked job. Returns the committed summary.
 // Throws on a not-found / not-pending job or a commit failure.
-async function approveOne(job: any, userId: string, opts: { siteId?: string | null; preview?: any } = {}) {
+async function approveOne(job: any, userId: string, opts: { siteId?: string | null; edits?: any } = {}) {
   const { commitPreviewSections } = require('../lib/commitTestReport');
   const commitAccountId = job.targetAccountId || job.accountId;
   const siteId = opts.siteId || job.siteId || await _firstSiteId(commitAccountId);
   if (!siteId) throw Object.assign(new Error('No site available to place these assets — create a site first.'), { httpStatus: 400 });
 
-  const preview = (opts.preview && typeof opts.preview === 'object') ? opts.preview : job.result;
-  const edited = !!(opts.preview && typeof opts.preview === 'object');
+  let preview = job.result;
+  let edited = false;
+  if (opts.edits && typeof opts.edits === 'object' && Object.keys(opts.edits).length > 0) {
+    preview = applyEdits(job.result, opts.edits);
+    edited = true;
+  }
 
   const committed = await commitPreviewSections({ accountId: commitAccountId, siteId, preview, originalName: job.fileName || undefined });
 
-  const newResult = { ...(job.result || {}), ...(edited ? preview : {}), autoCommitted: committed };
+  const newResult = { ...(preview || {}), autoCommitted: committed };
   await prisma.ingestJob.update({
     where: { id: job.id },
     data: { status: 'done', reviewedById: userId, reviewedAt: new Date(), result: newResult, phase: 'approved', error: null },
@@ -113,7 +164,7 @@ router.post('/review/:jobId/approve', requireManager, async (req: any, res: any)
   try {
     const job = await prisma.ingestJob.findFirst({ where: { id: req.params.jobId, accountId: req.user.accountId, status: 'needs_review' } });
     if (!job) return res.status(404).json({ success: false, error: 'No pending review item with that id' });
-    const committed = await approveOne(job, req.user.id, { siteId: req.body?.siteId ? String(req.body.siteId) : null, preview: req.body?.preview });
+    const committed = await approveOne(job, req.user.id, { siteId: req.body?.siteId ? String(req.body.siteId) : null, edits: req.body?.edits });
     return res.json({ success: true, data: { committed } });
   } catch (err: any) {
     const status = err && err.httpStatus ? err.httpStatus : 500;

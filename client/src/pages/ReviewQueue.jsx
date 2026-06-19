@@ -10,11 +10,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ClipboardCheck, CheckCircle2, AlertTriangle, Mail, Archive, Loader2, X } from 'lucide-react';
+import { ClipboardCheck, CheckCircle2, AlertTriangle, Mail, Archive, Loader2, X, Pencil } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { EQUIPMENT_TYPE_LABELS } from '../lib/equipment';
 import Toast from '../components/Toast';
+
+const EQUIPMENT_TYPE_OPTIONS = Object.entries(EQUIPMENT_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 // Friendly presets for the auto-add confidence floor. Higher = stricter (more
 // goes to review); lower = more auto-commits.
@@ -47,8 +50,26 @@ export default function ReviewQueue() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmReject, setConfirmReject] = useState(null);
   const [siteFor, setSiteFor] = useState({}); // jobId -> siteId override
+  const [editState, setEditState] = useState({}); // jobId -> edits patch (when editor opened)
+  const [openEdit, setOpenEdit] = useState(null); // jobId whose editor is expanded
   const [toast, setToast] = useState(null);
   const [err, setErr] = useState('');
+
+  function startEdit(job) {
+    if (!job.editable) return;
+    setEditState(s => s[job.id] ? s : ({
+      ...s,
+      [job.id]: {
+        equipmentType: job.editable.equipmentType || '',
+        serialNumber: job.editable.serialNumber || '',
+        manufacturer: job.editable.manufacturer || '',
+        model: job.editable.model || '',
+        assetId: job.editable.matchedAssetId || '', // '' = create new
+      },
+    }));
+    setOpenEdit(openEdit === job.id ? null : job.id);
+  }
+  const patchEdit = (jobId, key, value) => setEditState(s => ({ ...s, [jobId]: { ...s[jobId], [key]: value } }));
 
   const load = useCallback(async () => {
     try {
@@ -84,7 +105,9 @@ export default function ReviewQueue() {
     if (busyId) return;
     setBusyId(job.id); setErr('');
     try {
-      const body = siteFor[job.id] ? { siteId: siteFor[job.id] } : {};
+      const body = {};
+      if (siteFor[job.id]) body.siteId = siteFor[job.id];
+      if (editState[job.id]) body.edits = editState[job.id];
       const r = await api.post(`/api/ingest/review/${job.id}/approve`, body);
       const n = r.data?.data?.committed?.assetsCommitted ?? 0;
       setItems(prev => (prev || []).filter(x => x.id !== job.id));
@@ -239,6 +262,61 @@ export default function ReviewQueue() {
                       </ul>
                     )}
 
+                    {/* Inline editor — fix the flagged fields, then approve. */}
+                    {openEdit === job.id && job.editable && editState[job.id] && (
+                      <div style={{ marginTop: 14, padding: 14, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface-alt, var(--color-bg))', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {/* This device: merge to an existing asset, or create new */}
+                        {job.editable.candidates && job.editable.candidates.length > 0 && (
+                          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600 }}>
+                            This device
+                            <select
+                              value={editState[job.id].assetId}
+                              onChange={e => patchEdit(job.id, 'assetId', e.target.value)}
+                              disabled={itemBusy}
+                              style={{ display: 'block', marginTop: 4, width: '100%', maxWidth: 460, padding: '6px 9px', borderRadius: 6, border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)', fontWeight: 400 }}
+                            >
+                              <option value="">Create a new asset</option>
+                              {job.editable.candidates.map(c => <option key={c.id} value={c.id}>Attach to {c.label}{c.siteName ? ` · ${c.siteName}` : ''}</option>)}
+                            </select>
+                          </label>
+                        )}
+                        {/* New-asset fields — only relevant when creating new */}
+                        {!editState[job.id].assetId && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                            <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, flex: '1 1 180px' }}>
+                              Equipment type
+                              <select
+                                value={editState[job.id].equipmentType}
+                                onChange={e => patchEdit(job.id, 'equipmentType', e.target.value)}
+                                disabled={itemBusy}
+                                style={{ display: 'block', marginTop: 4, width: '100%', padding: '6px 9px', borderRadius: 6, border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)', fontWeight: 400 }}
+                              >
+                                {EQUIPMENT_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </select>
+                            </label>
+                            <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, flex: '1 1 140px' }}>
+                              Serial number
+                              <input value={editState[job.id].serialNumber} onChange={e => patchEdit(job.id, 'serialNumber', e.target.value)} disabled={itemBusy}
+                                style={{ display: 'block', marginTop: 4, width: '100%', padding: '6px 9px', borderRadius: 6, border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)', fontWeight: 400, boxSizing: 'border-box' }} />
+                            </label>
+                            <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, flex: '1 1 140px' }}>
+                              Manufacturer
+                              <input value={editState[job.id].manufacturer} onChange={e => patchEdit(job.id, 'manufacturer', e.target.value)} disabled={itemBusy}
+                                style={{ display: 'block', marginTop: 4, width: '100%', padding: '6px 9px', borderRadius: 6, border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)', fontWeight: 400, boxSizing: 'border-box' }} />
+                            </label>
+                            <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, flex: '1 1 140px' }}>
+                              Model
+                              <input value={editState[job.id].model} onChange={e => patchEdit(job.id, 'model', e.target.value)} disabled={itemBusy}
+                                style={{ display: 'block', marginTop: 4, width: '100%', padding: '6px 9px', borderRadius: 6, border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)', fontWeight: 400, boxSizing: 'border-box' }} />
+                            </label>
+                          </div>
+                        )}
+                        <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--color-text-secondary)' }}>
+                          Fix anything the parser got wrong, then Approve to save it correctly.
+                        </div>
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
                       <label style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         Site
@@ -263,6 +341,11 @@ export default function ReviewQueue() {
                         </>
                       ) : (
                         <>
+                          {job.isSingleAsset && job.editable && (
+                            <button className="btn" onClick={() => startEdit(job)} disabled={itemBusy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <Pencil size={13} aria-hidden="true" /> {openEdit === job.id ? 'Done editing' : 'Edit'}
+                            </button>
+                          )}
                           <button className="btn" onClick={() => setConfirmReject(job.id)} disabled={itemBusy}>Discard</button>
                           <button className="btn btn-primary" onClick={() => approve(job)} disabled={itemBusy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             {itemBusy ? <Loader2 size={14} style={{ animation: 'spin 0.9s linear infinite' }} aria-hidden="true" /> : <CheckCircle2 size={14} aria-hidden="true" />}

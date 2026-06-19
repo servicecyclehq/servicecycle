@@ -221,7 +221,8 @@ async function commitPreviewSections(p: {
         units.push({
           measurements: ms, label,
           createAsset: {
-            equipmentType: inferEquipmentType(sec.label, sec.position, sec.substation, idx === 0 ? meta.model : null, idx === 0 ? meta.manufacturer : null),
+            // Honor an explicit type from a reviewer's edit; otherwise infer.
+            equipmentType: sec.equipmentType || inferEquipmentType(sec.label, sec.position, sec.substation, idx === 0 ? meta.model : null, idx === 0 ? meta.manufacturer : null),
             manufacturer: idx === 0 ? (meta.manufacturer || null) : null,
             model:        idx === 0 ? (meta.model || null) : null,
             serialNumber: idx === 0 ? (meta.serialNumber || null) : null,
@@ -238,7 +239,8 @@ async function commitPreviewSections(p: {
       units.push({
         measurements: allMeasurements, label,
         createAsset: {
-          equipmentType: inferEquipmentType(meta.model, meta.manufacturer, originalName),
+          // Honor an explicit type from a reviewer's edit; otherwise infer.
+          equipmentType: meta.equipmentType || inferEquipmentType(meta.model, meta.manufacturer, originalName),
           manufacturer: meta.manufacturer || null, model: meta.model || null, serialNumber: meta.serialNumber || null,
           namePosition: null,
         },

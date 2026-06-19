@@ -198,6 +198,38 @@ describe('review queue', () => {
     expect(assets).toBe(0);
   });
 
+  test('approve with edits applies the corrected type + serial', async () => {
+    const job = await mkParked();
+    const res = await request(app).post(`/api/ingest/review/${job.id}/approve`).set('Authorization', auth(manager))
+      .send({ edits: { equipmentType: 'TRANSFORMER_LIQUID', serialNumber: 'EDITED-99' } });
+    expect(res.status).toBe(200);
+    const asset = await prisma.asset.findFirst({ where: { accountId: manager.accountId }, orderBy: { createdAt: 'desc' } });
+    expect(asset.equipmentType).toBe('TRANSFORMER_LIQUID');
+    expect(asset.serialNumber).toBe('EDITED-99');
+    const log = await prisma.activityLog.findFirst({ where: { accountId: manager.accountId, action: 'ingest_review_approved' }, orderBy: { createdAt: 'desc' } });
+    expect((log.details as any).edited).toBe(true);
+  });
+
+  test('approve with an unknown equipment type is rejected', async () => {
+    const job = await mkParked();
+    const res = await request(app).post(`/api/ingest/review/${job.id}/approve`).set('Authorization', auth(manager))
+      .send({ edits: { equipmentType: 'NOT_A_REAL_TYPE' } });
+    expect(res.status).toBe(400);
+  });
+
+  test('approve with edits.assetId merges into an existing asset (no new asset)', async () => {
+    const existing = await prisma.asset.create({ data: { accountId: manager.accountId, siteId, equipmentType: 'SWITCHGEAR' } });
+    const before = await prisma.asset.count({ where: { accountId: manager.accountId } });
+    const job = await mkParked();
+    const res = await request(app).post(`/api/ingest/review/${job.id}/approve`).set('Authorization', auth(manager))
+      .send({ edits: { assetId: existing.id } });
+    expect(res.status).toBe(200);
+    const after = await prisma.asset.count({ where: { accountId: manager.accountId } });
+    expect(after).toBe(before); // merged into the existing asset, no new one
+    const wo = await prisma.workOrder.findFirst({ where: { assetId: existing.id } });
+    expect(wo).toBeTruthy();
+  });
+
   test('bulk-approve commits several and reports the total', async () => {
     await mkParked(); await mkParked();
     const ids = (await prisma.ingestJob.findMany({ where: { accountId: manager.accountId, status: 'needs_review' }, select: { id: true } })).map((j: any) => j.id);

@@ -1215,11 +1215,14 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
 app.use('/api/assets/labels',   authenticateToken, assetLabelRoutes);
 app.use('/api/assets/import',   authenticateToken, ingestLimiter, assetsImportRoutes);
 app.use('/api/test-reports/import', authenticateToken, ingestLimiter, testReportImportRoutes);
+// Review queue: list/approve/reject parked items. Mounted BEFORE the jobs/
+// backfill mounts so it does NOT inherit their ingestLimiter (20/min) — those
+// mounts run their middleware before falling through to a non-matching path, so
+// a later review mount would still be throttled. These are light DB commits,
+// not parser uploads, and bulk-approve must not trip an upload limiter.
+app.use('/api/ingest', authenticateToken, ingestReviewRoutes); // confidence-gated review
 app.use('/api/ingest', authenticateToken, ingestLimiter, ingestJobsRoutes); // #2 async ingest jobs
 app.use('/api/ingest', authenticateToken, ingestLimiter, ingestBackfillRoutes); // #34 bulk backfill
-// Review queue: list/approve/reject parked items. No ingestLimiter — these are
-// light DB commits, not parser uploads, and bulk-approve shouldn't trip it.
-app.use('/api/ingest', authenticateToken, ingestReviewRoutes); // confidence-gated review
 app.use('/api/assets',          authenticateToken, assetRoutes);
 // AI maintenance brief — second router on the same mount; paths don't
 // collide (POST /:id/brief only), Express falls through. aiIpLimiter is
