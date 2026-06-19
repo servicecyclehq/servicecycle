@@ -312,11 +312,18 @@ router.post('/', async (req, res) => {
       },
     });
 
-    // Partner Flywheel: emit QUOTE_REQUEST_CREATED (fire-and-forget)
+    // Partner Flywheel: emit QUOTE_REQUEST_CREATED (fire-and-forget).
+    // We enrich the rep-facing event with B2 contractor talking points (where
+    // this customer ranks in the contractor's book + auto discussion points).
+    // The PartnerEventLog/inbox/webhook is contractor-only, so this competitive
+    // context never reaches the customer (who can read their own quote request /
+    // dossier). Computed in a detached async task so it never slows the response.
     {
       const { emitPartnerEvent } = require('../lib/partnerEvents');
+      const { buildAccountTalkingPoints } = require('../lib/portfolioRank');
       const ss = (dossierSnapshot as any) ?? {};
-      emitPartnerEvent(req.user.accountId, 'QUOTE_REQUEST_CREATED', {
+      const acctId = req.user.accountId;
+      const basePayload = {
         quoteRequestId: qr.id,
         assetId,
         assetName: qr.asset
@@ -325,7 +332,26 @@ router.post('/', async (req, res) => {
         triggerType:  qr.triggerType ?? null,
         estimatedMin: ss.estimatedCapExMin ?? null,
         estimatedMax: ss.estimatedCapExMax ?? null,
-      }).catch(console.error);
+      };
+      (async () => {
+        let contractorContext: any = null;
+        try {
+          const tp = await buildAccountTalkingPoints(prisma, acctId);
+          if (tp) {
+            contractorContext = {
+              rank: tp.rank ?? null,
+              rankOf: tp.rankOf ?? null,
+              portfolioPercentile: tp.portfolioPercentile ?? null,
+              maturityLevel: tp.detail?.maturityLevel ?? null,
+              maturityLevelLabel: tp.detail?.maturityLevelLabel ?? null,
+              discussionPoints: (tp.discussionPoints || []).map((p: any) => ({ severity: p.severity, text: p.text })),
+            };
+          }
+        } catch (e: any) {
+          console.error('[quoteRequests talking-points]', e?.message || e);
+        }
+        emitPartnerEvent(acctId, 'QUOTE_REQUEST_CREATED', { ...basePayload, contractorContext }).catch(console.error);
+      })();
     }
 
     return res.status(201).json({ success: true, data: qr });

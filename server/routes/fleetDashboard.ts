@@ -14,6 +14,7 @@ const router = require('express').Router();
 import prisma from '../lib/prisma';
 const { requireOemAdmin } = require('../middleware/roles');
 const { buildComplianceGap } = require('../lib/complianceReport');
+const { buildPortfolioRank } = require('../lib/portfolioRank');
 
 const DAY_MS = 86_400_000;
 
@@ -305,6 +306,48 @@ router.get('/path-to-100', async (req, res) => {
   } catch (err) {
     console.error('[fleet/path-to-100]', err);
     return res.status(500).json({ error: 'Fleet path-to-100 query failed' });
+  }
+});
+
+// ── GET /api/fleet/portfolio-rank — B2 contractor-only portfolio ranking ─────
+// Ranks every customer account across the contractor's book on five owned
+// signals (completion rate, overdue %, avg condition, deficiency-clearance
+// velocity, NFPA 70B maturity), as portfolio percentiles + a composite rank, and
+// auto-generates each account's rep discussion points.
+//
+// HARD WALL: oem_admin ONLY (the top-of-file middleware enforces this). The
+// ranking is contractor competitive intel and must never reach a customer
+// surface — the customer only ever sees their own B1 maturity score.
+router.get('/portfolio-rank', async (req, res) => {
+  try {
+    const { accountId } = req.user;
+    const callerAccount = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { partnerOrgId: true, partnerOrg: { select: { id: true, name: true } } },
+    });
+    const accountWhere: any = { status: 'active' };
+    if (callerAccount?.partnerOrgId) accountWhere.partnerOrgId = callerAccount.partnerOrgId;
+
+    const accounts = await prisma.account.findMany({
+      where: accountWhere,
+      select: { id: true, companyName: true, serviceRepName: true, assignedRepId: true },
+      orderBy: { companyName: 'asc' },
+    });
+    if (accounts.length === 0) {
+      return res.json({ partnerOrg: callerAccount?.partnerOrg ?? null, accounts: [] });
+    }
+
+    const meta = new Map(accounts.map((a: any) => [a.id, a]));
+    const ranked = await buildPortfolioRank(prisma, accounts.map((a: any) => a.id), { meta });
+
+    return res.json({
+      partnerOrg: callerAccount?.partnerOrg ?? null,
+      accounts: ranked,
+      summary: { customerCount: ranked.length },
+    });
+  } catch (err) {
+    console.error('[fleet/portfolio-rank]', err);
+    return res.status(500).json({ error: 'Portfolio rank query failed' });
   }
 });
 

@@ -712,6 +712,8 @@ export default function FleetDashboard() {
   const [unseenCount, setUnseenCount] = useState(0);
   const [path100, setPath100] = useState(null); // #23 fleet path-to-100
   const [path100Loading, setPath100Loading] = useState(false);
+  const [portfolio, setPortfolio] = useState(null); // B2 portfolio rank (contractor-only)
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'oem_admin') {
@@ -745,6 +747,13 @@ export default function FleetDashboard() {
       .then((r) => setPath100(r.data))
       .catch(() => {})
       .finally(() => setPath100Loading(false));
+
+    // B2 portfolio rank — contractor-only ranking of the book + talking points.
+    setPortfolioLoading(true);
+    api.get('/api/fleet/portfolio-rank')
+      .then((r) => setPortfolio(r.data))
+      .catch(() => {})
+      .finally(() => setPortfolioLoading(false));
   }, []);
 
   const toggle = useCallback((id) => {
@@ -777,6 +786,7 @@ export default function FleetDashboard() {
   const topTabs = [
     { key: 'overview', label: 'Overview' },
     { key: 'path100', label: 'Path to 100%' },
+    { key: 'portfolioRank', label: 'Portfolio Rank' },
     { key: 'inbox', label: unseenCount > 0 ? `Inbox (${unseenCount})` : 'Inbox' },
     { key: 'accounts', label: 'Accounts & Invites' },
   ];
@@ -1004,6 +1014,73 @@ export default function FleetDashboard() {
                       Ingest report
                     </button>
                     <div style={{ fontSize: 12, color: 'var(--color-primary, #2563eb)' }}>Open →</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PORTFOLIO RANK TAB (B2 — contractor-only) ── */}
+      {activeTab === 'portfolioRank' && (
+        <div style={{ marginTop: 8 }}>
+          <p style={styles.subtitle}>
+            Every customer ranked across your book on five owned signals — work-order completion, overdue %,
+            asset condition, deficiency clearance, and NFPA 70B maturity. Each row carries auto-generated
+            talking points for the rep. <strong>Contractor-only — never shown to customers.</strong>
+          </p>
+          {portfolioLoading && !portfolio ? (
+            <div style={styles.loading}>Loading portfolio rank…</div>
+          ) : !portfolio || portfolio.accounts.length === 0 ? (
+            <div style={{ color: 'var(--text-secondary)' }}>No customer accounts to rank yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {portfolio.accounts.map((c) => {
+                const pp = c.portfolioPercentile;
+                const ppColor = pp == null ? '#64748b' : pp >= 75 ? '#15803d' : pp >= 40 ? '#92400e' : '#b91c1c';
+                const sevColor = { lead: '#b91c1c', opportunity: '#92400e', positive: '#15803d' };
+                const fmtPct = (v) => (v == null ? '—' : `${v}`);
+                return (
+                  <div key={c.accountId} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                      <div style={{ textAlign: 'center', minWidth: 54 }}>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: ppColor }}>#{c.rank}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>of {c.rankOf}</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontWeight: 700 }}>{c.companyName}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          Portfolio percentile {fmtPct(pp)}
+                          {c.detail?.maturityLevel != null ? ` · Maturity L${c.detail.maturityLevel} (${c.detail.maturityLevelLabel})` : ''}
+                          {c.serviceRepName ? ` · rep: ${c.serviceRepName}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => { setActiveTab('overview'); setExpandedId(c.accountId); }}
+                        style={{ fontSize: 12, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                        Open →
+                      </button>
+                    </div>
+                    {/* Metric percentiles */}
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
+                      <span title="Work-order completion">Completion: {fmtPct(c.percentiles?.completionRate)}</span>
+                      <span title="Overdue maintenance (inverted: higher=better)">Overdue: {fmtPct(c.percentiles?.overduePct)}</span>
+                      <span title="Asset condition (inverted: higher=better)">Condition: {fmtPct(c.percentiles?.avgCondition)}</span>
+                      <span title="Deficiency clearance">Clearance: {fmtPct(c.percentiles?.clearanceRate)}</span>
+                      <span title="NFPA 70B program maturity">Maturity: {fmtPct(c.percentiles?.maturityScore)}</span>
+                    </div>
+                    {/* Discussion points */}
+                    {c.discussionPoints && c.discussionPoints.length > 0 && (
+                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {c.discussionPoints.map((p, i) => (
+                          <div key={i} style={{ fontSize: 12, color: 'var(--text-primary)', display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: sevColor[p.severity] || '#64748b', whiteSpace: 'nowrap' }}>{p.severity}</span>
+                            <span>{p.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
