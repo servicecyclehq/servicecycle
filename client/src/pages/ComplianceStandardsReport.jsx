@@ -20,6 +20,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
 import PathTo100 from '../components/PathTo100';
+import MaturityScoreCard from '../components/MaturityScoreCard';
 import { fmtDate } from '../lib/equipment';
 
 // Same thresholds as Dashboard's SiteComplianceRow.
@@ -103,6 +104,9 @@ export default function ComplianceStandardsReport() {
             {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
+
+        {/* B1 — NFPA 70B program-maturity score vs the standard. */}
+        <MaturityScoreCard siteId={siteId || null} />
 
         {/* Path to 100% — the ranked fix-it list that closes the gap (N2). */}
         <PathTo100 siteId={siteId || null} />

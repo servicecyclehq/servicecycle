@@ -17,6 +17,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import WelcomeTourPanel from '../components/WelcomeTourPanel';
 import PathTo100 from '../components/PathTo100';
+import MaturityScoreCard from '../components/MaturityScoreCard';
 import AuditReadyBanner from '../components/AuditReadyBanner';
 import ComplianceDocsCard from '../components/ComplianceDocsCard';
 import { kbdActivate } from '../lib/a11y';
@@ -805,6 +806,7 @@ export default function Dashboard() {
             {/* V5 "Inspector's here" readiness + one-click EMP, and V6 fix-it
                 list — verbs before counts, both above the KPI tiles. */}
             <AuditReadyBanner />
+            <MaturityScoreCard compact />
             <PathTo100 compact />
             <ComplianceDocsCard />
 

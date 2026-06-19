@@ -14,6 +14,7 @@
  */
 
 const { buildComplianceGap } = require('./complianceReport');
+const { summarizeMaturity } = require('./maturityScore');
 const { sendEmail } = require('./email');
 
 const MS_PER_DAY = 86_400_000;
@@ -51,7 +52,8 @@ async function buildCustomerDigest(prisma: any, accountId: string) {
   const assetScope = { archivedAt: null, inService: true };
 
   const [gap, lastRateRow, wentOverdue, defsResolved, defsOpened, wosCompleted, outageWindow] = await Promise.all([
-    buildComplianceGap(prisma, accountId, {}),
+    // Unbounded limit so the maturity decomposition (below) sees every action.
+    buildComplianceGap(prisma, accountId, { limit: Number.MAX_SAFE_INTEGER }),
     prisma.accountSetting.findFirst({ where: { accountId, key: LAST_RATE_KEY }, select: { value: true } }),
     // Schedules whose due date crossed into the last 7 days (newly overdue).
     prisma.maintenanceSchedule.count({
@@ -68,6 +70,7 @@ async function buildCustomerDigest(prisma: any, accountId: string) {
     }),
   ]);
 
+  const maturity = summarizeMaturity(gap, {});
   const currentRate = gap.overallRate;
   const prevRate = lastRateRow && lastRateRow.value != null ? Number(lastRateRow.value) : null;
   const rateDelta = prevRate != null && Number.isFinite(prevRate)
@@ -115,6 +118,13 @@ async function buildCustomerDigest(prisma: any, accountId: string) {
       coverageRate: gap.coverage?.rate ?? null,
       openActions: gap.summary?.totalActions ?? 0,
     },
+    maturity: {
+      score: maturity.score,
+      level: maturity.level,
+      levelLabel: maturity.levelLabel,
+      nextLevel: maturity.nextLevel,
+      biggestLever: maturity.biggestLever,
+    },
     thisWeek: {
       wentOverdue,
       fixed: defsResolved,
@@ -148,6 +158,7 @@ function buildDigestHtml(companyName: string, d: any): string {
       <p style="margin:4px 0 0;color:#cfe3ee;font-size:13px;">${escHtml(companyName)}</p>
     </div>
     <div style="padding:20px 24px;">
+      <p style="font-size:15px;margin:0 0 6px;"><strong>NFPA 70B program maturity:</strong> ${escHtml(String(d.maturity.score))}/100 &mdash; Level ${escHtml(String(d.maturity.level))} of 5 (${escHtml(d.maturity.levelLabel)})${d.maturity.nextLevel ? ` &middot; <span style="color:#6b7280;">${escHtml(String(d.maturity.nextLevel.pointsToNext))} pts to ${escHtml(d.maturity.nextLevel.label)}</span>` : ''}</p>
       <p style="font-size:15px;margin:0 0 12px;"><strong>Compliance:</strong> ${trend}</p>
       <ul style="margin:0 0 16px 16px;font-size:14px;color:#374151;">
         <li>${d.thisWeek.wentOverdue} item${d.thisWeek.wentOverdue === 1 ? '' : 's'} went overdue this week</li>

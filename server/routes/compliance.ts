@@ -46,6 +46,7 @@ const { requireManager, requireAdmin } = require('../middleware/roles');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { downloadFile } = require('../lib/storage');
 const { buildStandardsSummary, buildStandardReport, buildOverdueReport, buildComplianceGap } = require('../lib/complianceReport');
+const { buildMaturityScore } = require('../lib/maturityScore');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -144,6 +145,24 @@ router.get('/path-to-100', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/path-to-100]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build path-to-100.' });
+  }
+});
+
+// ── GET /maturity?siteId= ─────────────────────────────────────────────────────
+// B1 — NFPA 70B program-maturity score (customer-facing). Reframes the same
+// obligation model behind /path-to-100 into a single 0-100 score vs what 70B
+// REQUIRES (not vs other facilities), a 1-5 maturity level, and a per-dimension
+// breakdown (coverage / on-time / baselining / written EMP §4.2). Any
+// authenticated role — same read tier as /path-to-100.
+router.get('/maturity', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const maturity = await buildMaturityScore(prisma, req.user.accountId, { siteId });
+    return res.json({ success: true, data: maturity });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/maturity]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build maturity score.' });
   }
 });
 
