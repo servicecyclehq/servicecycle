@@ -22,7 +22,10 @@
 
 const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireAdmin } = require('../middleware/roles');
+const { clampThreshold, DEFAULT_THRESHOLD } = require('../lib/ingestConfidenceGate');
+
+const SINCE_DAYS = 30;
 
 // Compact per-job shape for the queue UI: the gate decision + a thin preview
 // summary (asset units, what each would do, reading/deficiency counts).
@@ -160,6 +163,54 @@ router.post('/review/bulk-approve', requireManager, async (req: any, res: any) =
   } catch (err: any) {
     console.error('[ingest/review:bulk-approve]', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, error: 'Failed to bulk-approve' });
+  }
+});
+
+// -- GET /review/settings (threshold knob + correction-rate readout) ----------
+// The auto-add confidence floor + a 30-day outcome readout so the line can be
+// set with data rather than guessed. Manager+ may read; only admins may change.
+router.get('/review/settings', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const setting = await prisma.accountSetting.findFirst({ where: { accountId, key: 'ingest_autocommit_threshold' }, select: { value: true } });
+    const threshold = clampThreshold(setting?.value);
+    const since = new Date(Date.now() - SINCE_DAYS * 24 * 60 * 60 * 1000);
+
+    const autoAdded = await prisma.ingestJob.count({ where: { accountId, kind: { in: ['email_in', 'backfill'] }, status: 'done', reviewedById: null, createdAt: { gte: since } } });
+    const awaiting = await prisma.ingestJob.count({ where: { accountId, status: 'needs_review' } });
+    const approved = await prisma.ingestJob.count({ where: { accountId, status: 'done', reviewedById: { not: null }, reviewedAt: { gte: since } } });
+    const rejected = await prisma.ingestJob.count({ where: { accountId, status: 'rejected', reviewedAt: { gte: since } } });
+    // Correction proxy: approvals where the reviewer edited the parsed data.
+    const edited = await prisma.activityLog.count({ where: { accountId, action: 'ingest_review_approved', createdAt: { gte: since }, details: { path: ['edited'], equals: true } } }).catch(() => 0);
+
+    return res.json({
+      success: true,
+      data: {
+        threshold, default: DEFAULT_THRESHOLD, canEdit: req.user.role === 'admin',
+        stats: { sinceDays: SINCE_DAYS, autoAdded, awaiting, approved, rejected, editedOnApprove: edited, correctionRate: approved > 0 ? edited / approved : null },
+      },
+    });
+  } catch (err: any) {
+    console.error('[ingest/review:settings:get]', err && err.message ? err.message : err);
+    return res.status(500).json({ success: false, error: 'Failed to load review settings' });
+  }
+});
+
+// -- PUT /review/settings (admin sets the threshold) --------------------------
+router.put('/review/settings', requireAdmin, async (req: any, res: any) => {
+  try {
+    const raw = req.body?.threshold;
+    if (raw == null || isNaN(Number(raw))) return res.status(400).json({ success: false, error: 'threshold must be a number 0..1' });
+    const threshold = clampThreshold(raw);
+    const accountId = req.user.accountId;
+    const existing = await prisma.accountSetting.findFirst({ where: { accountId, key: 'ingest_autocommit_threshold' }, select: { id: true } });
+    if (existing) await prisma.accountSetting.update({ where: { id: existing.id }, data: { value: String(threshold) } });
+    else await prisma.accountSetting.create({ data: { accountId, key: 'ingest_autocommit_threshold', value: String(threshold) } });
+    await prisma.activityLog.create({ data: { accountId, userId: req.user.id, action: 'ingest_autocommit_threshold_changed', details: { threshold } } }).catch(() => {});
+    return res.json({ success: true, data: { threshold } });
+  } catch (err: any) {
+    console.error('[ingest/review:settings:put]', err && err.message ? err.message : err);
+    return res.status(500).json({ success: false, error: 'Failed to save the threshold' });
   }
 });
 

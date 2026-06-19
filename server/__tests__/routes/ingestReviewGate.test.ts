@@ -17,6 +17,7 @@ let emailMock: any;
 let manager: TestUser;
 let viewer: TestUser;
 let other: TestUser;
+let admin: TestUser;
 let siteId: string;
 let fileKey: string;
 
@@ -36,6 +37,7 @@ beforeAll(async () => {
   manager = await createTestUser('manager');
   viewer = await createTestUser('viewer');
   other = await createTestUser('manager');
+  admin = await createTestUser('admin');
   const site = await prisma.site.create({ data: { accountId: manager.accountId, name: 'Gate Site' } });
   siteId = site.id;
   const { uploadFile } = require('../../lib/storage');
@@ -44,8 +46,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const u of [manager, viewer, other]) {
+  for (const u of [manager, viewer, other, admin]) {
     const acc = u.accountId;
+    try { await prisma.accountSetting.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.activityLog.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.testMeasurement.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.workOrder.deleteMany({ where: { accountId: acc } }); } catch {}
@@ -202,6 +205,31 @@ describe('review queue', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.approved).toBe(2);
     expect(res.body.data.assetsCommitted).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ── Threshold knob + readout ─────────────────────────────────────────────────
+describe('review settings', () => {
+  test('manager can read the threshold + 30-day readout', async () => {
+    const res = await request(app).get('/api/ingest/review/settings').set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    expect(typeof res.body.data.threshold).toBe('number');
+    expect(res.body.data.stats).toHaveProperty('autoAdded');
+    expect(res.body.data.canEdit).toBe(false); // manager is not admin
+  });
+
+  test('admin can set the threshold and it round-trips', async () => {
+    const put = await request(app).put('/api/ingest/review/settings').set('Authorization', auth(admin)).send({ threshold: 0.7 });
+    expect(put.status).toBe(200);
+    expect(put.body.data.threshold).toBeCloseTo(0.7, 5);
+    const get = await request(app).get('/api/ingest/review/settings').set('Authorization', auth(admin));
+    expect(get.body.data.threshold).toBeCloseTo(0.7, 5);
+    expect(get.body.data.canEdit).toBe(true);
+  });
+
+  test('a non-admin cannot change the threshold', async () => {
+    const res = await request(app).put('/api/ingest/review/settings').set('Authorization', auth(manager)).send({ threshold: 0.5 });
+    expect(res.status).toBe(403);
   });
 });
 

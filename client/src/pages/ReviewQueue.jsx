@@ -12,8 +12,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ClipboardCheck, CheckCircle2, AlertTriangle, Mail, Archive, Loader2, X } from 'lucide-react';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import Toast from '../components/Toast';
+
+// Friendly presets for the auto-add confidence floor. Higher = stricter (more
+// goes to review); lower = more auto-commits.
+const THRESHOLD_PRESETS = [
+  { value: 0.92, label: 'Strict' },
+  { value: 0.85, label: 'Balanced' },
+  { value: 0.70, label: 'Lenient' },
+];
+const nearestPreset = (t) => THRESHOLD_PRESETS.reduce((a, b) => (Math.abs(b.value - t) < Math.abs(a.value - t) ? b : a), THRESHOLD_PRESETS[1]).value;
 
 const BAND = {
   red:    { color: 'var(--color-danger, #b91c1c)',  bg: 'rgba(185,28,28,0.10)',  label: 'Needs a close look' },
@@ -28,7 +38,10 @@ function fmtDate(d) {
 
 export default function ReviewQueue() {
   useDocumentTitle('Review queue');
+  const { user } = useAuth();
   const [items, setItems] = useState(null);
+  const [settings, setSettings] = useState(null);
+  const [savingThreshold, setSavingThreshold] = useState(false);
   const [sites, setSites] = useState([]);
   const [busyId, setBusyId] = useState(null);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -47,8 +60,25 @@ export default function ReviewQueue() {
     }
   }, []);
 
+  const loadSettings = useCallback(() => {
+    api.get('/api/ingest/review/settings').then(r => setSettings(r.data?.data || null)).catch(() => {});
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadSettings(); }, [loadSettings]);
   useEffect(() => { api.get('/api/sites').then(r => setSites(r.data?.data?.sites || [])).catch(() => {}); }, []);
+
+  async function saveThreshold(value) {
+    if (savingThreshold) return;
+    setSavingThreshold(true);
+    try {
+      await api.put('/api/ingest/review/settings', { threshold: value });
+      setToast({ message: 'Auto-add sensitivity updated.', variant: 'success', duration: 3500 });
+      loadSettings();
+    } catch (e) {
+      setErr(e?.response?.data?.error || 'Could not save that setting.');
+    } finally { setSavingThreshold(false); }
+  }
 
   async function approve(job) {
     if (busyId) return;
@@ -107,6 +137,47 @@ export default function ReviewQueue() {
         <div role="alert" style={{ padding: '12px 16px', background: '#fff1f1', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', marginBottom: 16, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" /> <span>{err}</span>
         </div>
+      )}
+
+      {/* Auto-add sensitivity + 30-day readout. Collapsed by default. */}
+      {settings && (
+        <details style={{ marginBottom: 18, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface)' }}>
+          <summary style={{ cursor: 'pointer', padding: '10px 14px', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>
+            Auto-add sensitivity &amp; recent activity
+          </summary>
+          <div style={{ padding: '0 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 24 }}>
+            <div style={{ flex: '1 1 240px' }}>
+              <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 6 }}>How much auto-adds without review</div>
+              {settings.canEdit ? (
+                <select
+                  value={nearestPreset(settings.threshold)}
+                  onChange={e => saveThreshold(Number(e.target.value))}
+                  disabled={savingThreshold}
+                  style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--color-border-strong)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)' }}
+                >
+                  {THRESHOLD_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label} — {p.value >= 0.9 ? 'most goes to review' : p.value <= 0.7 ? 'most auto-adds' : 'recommended'}</option>)}
+                </select>
+              ) : (
+                <div style={{ fontSize: 'var(--font-size-sm)' }}>{nearestPreset(settings.threshold) >= 0.9 ? 'Strict' : nearestPreset(settings.threshold) <= 0.7 ? 'Lenient' : 'Balanced'} <span style={{ color: 'var(--color-text-secondary)' }}>(admins can change this)</span></div>
+              )}
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.5 }}>
+                Identity checks (matching the right asset, avoiding duplicates) always require review — this only affects how strict we are about reading confidence.
+              </div>
+            </div>
+            <div style={{ flex: '1 1 240px' }}>
+              <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Last {settings.stats.sinceDays} days</div>
+              <div style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.7 }}>
+                <div><strong>{settings.stats.autoAdded}</strong> added automatically</div>
+                <div><strong>{settings.stats.approved}</strong> approved after review · <strong>{settings.stats.rejected}</strong> discarded</div>
+                <div style={{ color: 'var(--color-text-secondary)' }}>
+                  {settings.stats.correctionRate == null
+                    ? 'Not enough reviews yet to estimate accuracy.'
+                    : `${Math.round(settings.stats.correctionRate * 100)}% of approvals needed an edit — ${settings.stats.correctionRate <= 0.1 ? 'you could loosen the sensitivity.' : settings.stats.correctionRate >= 0.4 ? 'consider keeping it strict.' : 'about right.'}`}
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
       )}
 
       {items === null && (
