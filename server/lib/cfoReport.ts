@@ -17,6 +17,7 @@
 
 const PDFDocument = require('pdfkit');
 const { buildComplianceGap } = require('./complianceReport');
+const { buildMaintenanceDebtData } = require('./maintenanceDebt');
 
 const MS_PER_DAY = 86_400_000;
 
@@ -43,7 +44,7 @@ async function buildCfoReportData(prisma: any, accountId: string) {
   const quarterAgo = new Date(now.getTime() - 90 * MS_PER_DAY);
   const assetScope = { archivedAt: null, inService: true };
 
-  const [account, gap, defsBySeverity, wosThisQuarter, defsOpened, defsClosed, snapshots, openDefs] = await Promise.all([
+  const [account, gap, defsBySeverity, wosThisQuarter, defsOpened, defsClosed, snapshots, openDefs, debt] = await Promise.all([
     prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
     buildComplianceGap(prisma, accountId, {}),
     prisma.deficiency.groupBy({ by: ['severity'], where: { accountId, resolvedAt: null }, _count: true }),
@@ -56,6 +57,7 @@ async function buildCfoReportData(prisma: any, accountId: string) {
       select: { createdAt: true, stats: true },
     }),
     prisma.deficiency.findMany({ where: { accountId, resolvedAt: null }, select: { assetId: true } }),
+    buildMaintenanceDebtData(prisma, accountId),
   ]);
 
   const severity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
@@ -102,6 +104,13 @@ async function buildCfoReportData(prisma: any, accountId: string) {
       estimatedRemediation: estimatedSpend,
       assetsWithOpenDeficiencies: assetIds.length,
       assetsWithCostEstimate: assetsWithEstimate,
+    },
+    debtPlan: {
+      year1: debt.plan.year1,
+      year3: debt.plan.year3,
+      year5: debt.plan.year5,
+      totals: debt.totals,
+      siteCount: debt.bySite.length,
     },
     trajectory,
   };
@@ -194,7 +203,23 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
          .text(`Based on ${sp.assetsWithCostEstimate} of ${sp.assetsWithOpenDeficiencies} asset(s) with open deficiencies that carry a repair-cost estimate. Assets without an estimate are not included.`, PAGE.margin, y, { width: PAGE.contentW, lineGap: 1 });
       y = doc.y + 16;
 
+      // Maintenance Debt Ledger — cumulative capital plan
+      if (data.debtPlan) {
+        if (y > BOTTOM - 90) { doc.addPage(); y = PAGE.margin; }
+        const dp = data.debtPlan;
+        const range = (r: any) => `${fmtMoney(r.min)} – ${fmtMoney(r.max)}`;
+        doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Maintenance debt — capital plan', PAGE.margin, y); y = doc.y + 8;
+        doc.font(FONT_REG).fontSize(11).fillColor(COLORS.textMuted);
+        doc.text(`Fund by year 1: ${range(dp.year1)}`, PAGE.margin, y); y = doc.y + 2;
+        doc.text(`Cumulative by year 3: ${range(dp.year3)}`, PAGE.margin, y); y = doc.y + 2;
+        doc.text(`Cumulative by year 5: ${range(dp.year5)}`, PAGE.margin, y); y = doc.y + 6;
+        doc.font(FONT_OBL).fontSize(9).fillColor(COLORS.textMuted)
+           .text(`Deferred maintenance ${range(dp.totals.deferredMaintenance)} · repair backlog ${fmtMoney(dp.totals.repairBacklog.amount)} · modernization ${range(dp.totals.modernization)} across ${dp.siteCount} site(s).`, PAGE.margin, y, { width: PAGE.contentW, lineGap: 1 });
+        y = doc.y + 16;
+      }
+
       // Compliance trajectory
+      if (y > BOTTOM - 40) { doc.addPage(); y = PAGE.margin; }
       doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Compliance trajectory', PAGE.margin, y); y = doc.y + 8;
       if (!data.trajectory || data.trajectory.length === 0) {
         doc.font(FONT_OBL).fontSize(10).fillColor(COLORS.textMuted).text('No compliance snapshots recorded yet. Generate snapshots to build a trend line.', PAGE.margin, y, { width: PAGE.contentW });

@@ -47,6 +47,7 @@ const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { downloadFile } = require('../lib/storage');
 const { buildStandardsSummary, buildStandardReport, buildOverdueReport, buildComplianceGap } = require('../lib/complianceReport');
 const { buildMaturityScore } = require('../lib/maturityScore');
+const { buildMaintenanceDebtData, debtLedgerToCsv } = require('../lib/maintenanceDebt');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -163,6 +164,39 @@ router.get('/maturity', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/maturity]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build maturity score.' });
+  }
+});
+
+// ── GET /maintenance-debt ─────────────────────────────────────────────────────
+// Maintenance Debt Ledger + capital plan: overdue/deferred maintenance, known
+// repair backlog, and RUL-driven modernization quantified as accruing "$ debt"
+// and rolled into a cumulative 1/3/5-year funding plan grouped by site. CFO-grade
+// budget artifact (same family as /cfo-report.pdf). Any authenticated role.
+router.get('/maintenance-debt', async (req, res) => {
+  try {
+    const data = await buildMaintenanceDebtData(prisma, req.user.accountId);
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[compliance/maintenance-debt]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build maintenance debt ledger.' });
+  }
+});
+
+// ── GET /maintenance-debt.csv ─────────────────────────────────────────────────
+// Exportable per-site funding plan. Any authenticated role.
+router.get('/maintenance-debt.csv', async (req, res) => {
+  try {
+    const data = await buildMaintenanceDebtData(prisma, req.user.accountId);
+    const csv = debtLedgerToCsv(data);
+    const filename = `servicecycle-maintenance-debt-${data.generatedAt.toISOString().slice(0, 10)}.csv`;
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="${filename}"`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Cache-Control', 'private, no-store');
+    return res.send(csv);
+  } catch (err) {
+    console.error('[compliance/maintenance-debt.csv]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to export maintenance debt ledger.' });
   }
 });
 
