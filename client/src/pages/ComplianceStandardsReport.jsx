@@ -24,6 +24,7 @@ import MaturityScoreCard from '../components/MaturityScoreCard';
 import MaintenanceDebtCard from '../components/MaintenanceDebtCard';
 import ChangeBriefCard from '../components/ChangeBriefCard';
 import AccessBlockerCard from '../components/AccessBlockerCard';
+import EvidenceGapCard from '../components/EvidenceGapCard';
 import { fmtDate } from '../lib/equipment';
 
 // Same thresholds as Dashboard's SiteComplianceRow.
@@ -113,6 +114,9 @@ export default function ComplianceStandardsReport() {
 
         {/* Maintenance Debt Ledger — $ debt + 1/3/5-yr capital plan (account-wide). */}
         <MaintenanceDebtCard />
+
+        {/* #2 Evidence coverage — requirement→evidence gaps (account/site). */}
+        <EvidenceGapCard siteId={siteId || null} />
 
         {/* What changed since last cycle — diff vs the prior snapshot. */}
         <ChangeBriefCard siteId={siteId || null} />

@@ -33,6 +33,7 @@ import Toast from '../components/Toast';
 import InfoTip from '../components/InfoTip';
 import CustomFieldInputs from '../components/CustomFieldInputs';
 import MaintenanceBriefCard from '../components/MaintenanceBriefCard';
+import AssetEvidenceTraceCard from '../components/AssetEvidenceTraceCard';
 import PhotoInspectCard from '../components/PhotoInspectCard';
 import PowerPathCard from '../components/PowerPathCard';
 import OutageConsolidationCard from '../components/OutageConsolidationCard';
@@ -1184,6 +1185,9 @@ export default function AssetDetail() {
         {/* Self-gating: renders null unless AI is enabled+configured and the
             user's role carries the maintenance_brief feature. */}
         <MaintenanceBriefCard asset={asset} />
+
+        {/* #2 — per-asset requirement → evidence trace (renders null if no tasks). */}
+        <AssetEvidenceTraceCard assetId={id} />
 
         {/* ── Power Path ────────────────────────────────────────────────────── */}
         {/* Upstream/downstream feed chain; refetches itself whenever the asset

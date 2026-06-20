@@ -49,6 +49,7 @@ const { buildStandardsSummary, buildStandardReport, buildOverdueReport, buildCom
 const { buildMaturityScore } = require('../lib/maturityScore');
 const { buildMaintenanceDebtData, debtLedgerToCsv } = require('../lib/maintenanceDebt');
 const { buildChangeBrief } = require('../lib/changeBrief');
+const { buildAssetEvidenceTrace, buildEvidenceGapSummary } = require('../lib/evidenceTrace');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -216,6 +217,38 @@ router.get('/change-brief', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/change-brief]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build change brief.' });
+  }
+});
+
+// ── GET /evidence-gaps?siteId= ────────────────────────────────────────────────
+// #2 — account/site evidence-gap roll-up: how much of the 70B program is backed
+// by documented test evidence, which test types are most under-evidenced, and
+// which assets have the biggest gaps (the contractor's upsell list). Any auth role.
+router.get('/evidence-gaps', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const data = await buildEvidenceGapSummary(prisma, req.user.accountId, { siteId });
+    return res.json({ success: true, data });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/evidence-gaps]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build evidence gaps.' });
+  }
+});
+
+// ── GET /asset-evidence/:assetId ──────────────────────────────────────────────
+// #2 — per-asset requirement → evidence trace map (which evidence satisfies
+// which 70B requirement, and what's missing). Any authenticated role.
+router.get('/asset-evidence/:assetId', async (req, res) => {
+  try {
+    const data = await buildAssetEvidenceTrace(prisma, req.user.accountId, String(req.params.assetId));
+    return res.json({ success: true, data });
+  } catch (err) {
+    if (err && err.code === 'ASSET_NOT_FOUND') {
+      return res.status(404).json({ success: false, error: 'Asset not found.' });
+    }
+    console.error('[compliance/asset-evidence]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build evidence trace.' });
   }
 });
 
