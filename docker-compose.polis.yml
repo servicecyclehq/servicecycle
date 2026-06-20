@@ -1,0 +1,110 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ServiceCycle — Ory Polis (SSO broker) compose OVERLAY  (feature/sso-polis)
+#
+# REVIEWABLE ADDITION ONLY. This does NOT modify the production docker-compose.yml.
+# Dustin applies it via the MCP deploy loop after review:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.polis.yml up -d
+#
+# It adds the public, Apache-2.0 Ory Polis (formerly BoxyHQ "SAML Jackson")
+# broker as a SEPARATE container, backed by our EXISTING Postgres (`db` service)
+# in its OWN database (default `polis`) so Polis tables never co-mingle with the
+# app schema. ServiceCycle is the OAuth relying party; Polis brokers the
+# customer SAML/OIDC IdPs + SCIM. See docs/security/SSO_DESIGN.md.
+#
+# IMAGE: boxyhq/jackson:26.2.0 — the published OSS Apache-2.0 distribution at
+# v26.2.0 (verified: repo LICENSE = Apache-2.0; the upstream repo's own
+# docker-compose pins this exact image). This is the OSS image ONLY — we do NOT
+# pull any Ory Enterprise License (OEL) component.
+#
+# New .env keys this overlay reads (add to the repo-root .env; see
+# server/.env.example for the SERVER side of the same values):
+#   POLIS_DB              database name for Polis on the existing PG (default: polis)
+#   POLIS_API_KEY         admin API key — MUST equal the server's POLIS_API_KEY
+#   POLIS_EXTERNAL_URL    public URL of Polis (browser-facing), e.g. https://sso.servicecycle.app
+#   POLIS_NEXTAUTH_SECRET random >=32-char secret for the Polis admin portal session
+#   SCIM_WEBHOOK_SECRET   (already used by the server) — shared with Polis dirs at create time
+#   OPENID_RSA_PRIVATE_KEY / OPENID_RSA_PUBLIC_KEY  base64 PEM keypair so Polis
+#     issues id_tokens for the OIDC flow (RECOMMENDED — enables full id_token
+#     validation in our callback. Generate:
+#       openssl genrsa 2048 | base64 -w0            # -> OPENID_RSA_PRIVATE_KEY
+#       openssl rsa -in key.pem -pubout | base64 -w0 # -> OPENID_RSA_PUBLIC_KEY
+#     If omitted, login still works via the back-channel userinfo path; our
+#     callback logs a warning and skips id_token validation.)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # One-shot: create the dedicated `polis` database on the existing Postgres if
+  # it doesn't exist yet (keeps Polis tables isolated from the app schema).
+  # Exits 0 whether it created the DB or it already existed.
+  polis-db-init:
+    image: postgres:16-alpine
+    container_name: servicecycle-polis-db-init
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint:
+      - sh
+      - -c
+      - >
+        psql -h db -U ${POSTGRES_USER:-servicecycle} -d ${POSTGRES_DB:-servicecycle}
+        -tc "SELECT 1 FROM pg_database WHERE datname = '${POLIS_DB:-polis}'" | grep -q 1
+        || psql -h db -U ${POSTGRES_USER:-servicecycle} -d ${POSTGRES_DB:-servicecycle}
+        -c "CREATE DATABASE ${POLIS_DB:-polis}"
+
+  polis:
+    image: boxyhq/jackson:26.2.0   # OSS Apache-2.0 (NOT the Ory Enterprise License)
+    container_name: servicecycle-polis
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
+    pids_limit: 256
+    mem_limit: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      polis-db-init:
+        condition: service_completed_successfully
+    environment:
+      # Persist to the existing Postgres, separate database.
+      DB_ENGINE: "sql"
+      DB_TYPE:   "postgres"
+      DB_URL:    "postgres://${POSTGRES_USER:-servicecycle}:${POSTGRES_PASSWORD}@db:5432/${POLIS_DB:-polis}"
+      DB_SSL:    "false"
+      DB_ENCRYPTION_KEY: ${POLIS_DB_ENCRYPTION_KEY:?set POLIS_DB_ENCRYPTION_KEY in .env (32-byte/64-hex; encrypts IdP secrets at rest in Polis)}
+
+      # Admin API key — MUST equal the server's POLIS_API_KEY so our admin
+      # routes can provision connections/directories.
+      JACKSON_API_KEYS: ${POLIS_API_KEY:?set POLIS_API_KEY in .env}
+
+      # Public-facing base URL (browser is redirected here for /oauth/authorize)
+      # and the admin portal session config.
+      EXTERNAL_URL:    ${POLIS_EXTERNAL_URL:-http://localhost:5225}
+      NEXTAUTH_URL:    ${POLIS_EXTERNAL_URL:-http://localhost:5225}
+      NEXTAUTH_SECRET: ${POLIS_NEXTAUTH_SECRET:?set POLIS_NEXTAUTH_SECRET in .env (>=32 chars)}
+      NEXTAUTH_ADMIN_CREDENTIALS: ${POLIS_ADMIN_CREDENTIALS:-}
+
+      # SAML SP audience/entityID.
+      SAML_AUDIENCE: ${POLIS_SAML_AUDIENCE:-https://saml.servicecycle.app}
+
+      # OpenID signing keys so the OIDC flow returns an id_token we can validate
+      # (alg-confusion guard + nonce binding). RECOMMENDED — see header.
+      OPENID_RSA_PRIVATE_KEY: ${OPENID_RSA_PRIVATE_KEY:-}
+      OPENID_RSA_PUBLIC_KEY:  ${OPENID_RSA_PUBLIC_KEY:-}
+
+      # Keep Polis's own admin portal IdP-initiated mock OFF in production.
+      IDP_ENABLED: "false"
+    # Bind to localhost by default (same posture as the app services). Front it
+    # with the reverse proxy that already terminates TLS for the app; expose
+    # only /api/oauth/* and /api/scim/* publicly (admin API stays internal).
+    ports:
+      - "${SERVICECYCLE_HOST_BIND:-127.0.0.1}:${POLIS_PORT:-5225}:5225"

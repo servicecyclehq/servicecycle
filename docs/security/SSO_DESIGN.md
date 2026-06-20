@@ -180,11 +180,19 @@ Gates kept green after each step: `tsc --noEmit`, jest, `vite build`.
 
 ## 10. License & attribution + dependency scan
 
-- Polis is used as a **separate service**, not bundled into our `node_modules`; its transitive deps are not shipped in the ServiceCycle artifact. New app-side deps added for SSO are scanned.
-- Polis `LICENSE` (Apache-2.0) + `NOTICE` attribution recorded under `docs/security/` / `third_party/`.
-- `license-checker` run results and any AGPL/SSPL/copyleft findings recorded here.
+- **Ory Polis is used as a separate service** (`boxyhq/jackson:26.2.0`, Apache-2.0 OSS — NOT the Ory Enterprise License). It is not bundled into our `node_modules`, so its transitive deps are not shipped in the ServiceCycle artifact and are out of scope for our app-side scan. Attribution recorded in [`POLIS_ATTRIBUTION.md`](./POLIS_ATTRIBUTION.md).
+- **New app-side dependency introduced by this work:** `jose@5.10.0` — **MIT** (panva; same maintainer as the `openid-client` Polis pins). No copyleft.
+- **`license-checker --production` scan (server), run 2026-06-20** — 382 production packages: MIT 275, Apache-2.0 56, ISC 24, BSD-3 6, BSD-2 6, plus a long permissive tail. Flagged for review:
 
-_(Results table filled in Task #11.)_
+  | Package | License | Verdict |
+  |---|---|---|
+  | `@img/sharp-win32-x64@0.34.5` | Apache-2.0 AND **LGPL-3.0-or-later** | **Pre-existing** core dep (libvips via `sharp`, used app-wide). Weak copyleft, dynamically-linked native library — no obligation to disclose our source. Not introduced by SSO. Acceptable. |
+  | `jszip@3.10.1` | (MIT OR GPL-3.0-or-later) | Dual-licensed → we elect **MIT**. Transitive (via `exceljs`). Not copyleft for us. |
+  | `argparse@2.0.1` | Python-2.0 | Permissive (BSD-like). Transitive. OK. |
+  | `buffers@0.1.1` | Custom (substack) | Deep transitive; substack packages are MIT/public-domain by convention. OK; pre-existing. |
+  | `servicecycle-server@0.1.0` | UNKNOWN | **Our own** private package (no `license` field) — not third-party. |
+
+  **No AGPL, no SSPL, no strong-copyleft obligation** is present or introduced. The only copyleft anywhere in the tree is LGPL-3.0 via `sharp`'s native libvips, which predates this work and carries no source-disclosure obligation for a dynamically-linked library. Nothing is bundled that requires flagging beyond this note.
 
 ## 11. Polis API-shape verification
 
