@@ -73,7 +73,7 @@ async function authenticateApiKey(req, res, next) {
   try {
     apiKey = await prisma.apiKey.findUnique({
       where:  { keyHash },
-      select: { id: true, accountId: true, name: true, revokedAt: true, expiresAt: true, lastUsedAt: true },
+      select: { id: true, accountId: true, name: true, scopes: true, revokedAt: true, expiresAt: true, lastUsedAt: true },
     });
   } catch (err) {
     console.error('[apiKeyAuth] DB error:', err.message);
@@ -94,7 +94,8 @@ async function authenticateApiKey(req, res, next) {
 
   // Attach context for downstream route handlers.
   req.apiKeyAccountId = apiKey.accountId;
-  req.apiKey          = { id: apiKey.id, name: apiKey.name };
+  req.apiKeyScopes    = Array.isArray(apiKey.scopes) && apiKey.scopes.length ? apiKey.scopes : ['read'];
+  req.apiKey          = { id: apiKey.id, name: apiKey.name, scopes: req.apiKeyScopes };
 
   // Fire-and-forget lastUsedAt update. Debounce to at most once per minute
   // per key — the rate limiter already ensures max 60 req/min so one DB write
@@ -131,6 +132,24 @@ function _touchLastUsed(keyId, currentLastUsedAt) {
   });
 }
 
-module.exports = { authenticateApiKey, apiKeyLimiter, hashApiKey };
+/**
+ * Scope guard for the public API. Use AFTER authenticateApiKey. A key must
+ * carry the named scope or the request is rejected 403. Read endpoints don't
+ * need this (any valid key may read); write endpoints require requireScope('write').
+ */
+function requireScope(scope) {
+  return function (req, res, next) {
+    const scopes = req.apiKeyScopes || [];
+    if (!scopes.includes(scope)) {
+      return res.status(403).json({
+        success: false,
+        error: `This API key lacks the '${scope}' scope. Mint a key with write access to use this endpoint.`,
+      });
+    }
+    next();
+  };
+}
+
+module.exports = { authenticateApiKey, apiKeyLimiter, hashApiKey, requireScope };
 
 export {};

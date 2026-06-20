@@ -299,6 +299,7 @@ model Account {
   backupLogs             BackupLog[]
   customFieldDefinitions CustomFieldDefinition[]
   apiKeys                ApiKey[]
+  apiIdempotencyKeys     ApiIdempotencyKey[]
   webhookEndpoints       WebhookEndpoint[]
   outboundWebhookDlq     OutboundWebhookDLQ[]
   webhookDeliveries      WebhookDelivery[]
@@ -1932,6 +1933,9 @@ model ApiKey {
   accountId  String
   name       String
   keyHash    String    @unique
+  // Phase 3 #7: per-key scopes. Existing keys default to read-only; a key must
+  // be granted 'write' to use the bi-directional write endpoints.
+  scopes     String[]  @default(["read"])
   lastUsedAt DateTime?
   expiresAt  DateTime?
   revokedAt  DateTime?
@@ -1942,6 +1946,26 @@ model ApiKey {
   @@index([accountId])
   @@index([accountId, revokedAt])
   @@map("api_keys")
+}
+
+// Idempotency store for public-API writes (Phase 3 #7). A CMMS passes an
+// Idempotency-Key header on POST; the stored response is replayed on retry so a
+// re-sent request never creates a duplicate work order.
+model ApiIdempotencyKey {
+  id             String   @id @default(uuid())
+  accountId      String
+  idempotencyKey String
+  method         String
+  path           String
+  statusCode     Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, idempotencyKey])
+  @@index([createdAt])
+  @@map("api_idempotency_keys")
 }
 
 // â”€â”€â”€ Generic Webhook Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

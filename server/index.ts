@@ -220,6 +220,8 @@ const aiUsageRoutes             = require('./routes/aiUsage');      // v0.32.4: 
 // v0.20.0: Public REST API — versioned read-only routes (API key auth)
 const v1AssetRoutes      = require('./routes/v1/assets');
 const v1ContractorRoutes = require('./routes/v1/contractors');
+const v1WorkOrderRoutes  = require('./routes/v1/workOrders');   // Phase 3 #7 bi-directional
+const v1DeficiencyRoutes = require('./routes/v1/deficiencies'); // Phase 3 #7
 const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
 const quoteRequestRoutes    = require('./routes/quoteRequests');
@@ -929,6 +931,8 @@ const leaveBehindLimiter = rateLimit({
   [outagePlanRoutes,       '/api/assets/:assetId/outage-plan'],
   [v1AssetRoutes,          '/api/v1/assets'],
   [v1ContractorRoutes,     '/api/v1/contractors'],
+  [v1WorkOrderRoutes,      '/api/v1/work-orders'],
+  [v1DeficiencyRoutes,     '/api/v1/deficiencies'],
 ].forEach(([r, base]) => { try { installValidation(r, base); } catch (e) { console.error('[validation] install failed for', base, e && e.message); } });
 
 app.use('/api/', apiLimiter);
@@ -1358,6 +1362,8 @@ openapiRoute.register(app);
 const v1VersionTag = (req, res, next) => { res.set('API-Version', '1'); next(); };
 app.use('/api/v1/assets',      v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1AssetRoutes);
 app.use('/api/v1/contractors', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1ContractorRoutes);
+app.use('/api/v1/work-orders', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1WorkOrderRoutes);
+app.use('/api/v1/deficiencies', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1DeficiencyRoutes);
 
 // ── v0.20.0: API key management — admin only, uses JWT auth ──────────────────
 // Mounted under /api/settings so it inherits the settings-page UX convention.

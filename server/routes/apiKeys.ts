@@ -36,7 +36,20 @@ const CreateSchema = z.object({
     .or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional())
     .nullable()
     .optional(),
+  // Phase 3 #7: requested scopes. 'read' is always implied; 'write' must be
+  // explicitly granted to mint a key that can use the bi-directional endpoints.
+  scopes: z.array(z.enum(['read', 'write'])).optional(),
 });
+
+// Normalize requested scopes: always include 'read', dedupe, drop anything
+// unrecognized. A key with no scopes requested is read-only.
+function normalizeScopes(requested) {
+  const set = new Set(['read']);
+  for (const s of (requested || [])) {
+    if (s === 'read' || s === 'write') set.add(s);
+  }
+  return [...set];
+}
 
 // ── POST / — generate key ────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
@@ -50,6 +63,7 @@ router.post('/', async (req, res) => {
   }
 
   const { name, expiresAt } = parsed.data;
+  const scopes = normalizeScopes(parsed.data.scopes);
   const accountId = req.user.accountId;
 
   // Generate a 32-byte (256-bit) random key with a recognisable prefix.
@@ -63,9 +77,10 @@ router.post('/', async (req, res) => {
         accountId,
         name,
         keyHash,
+        scopes,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
       },
-      select: { id: true, name: true, expiresAt: true, createdAt: true },
+      select: { id: true, name: true, scopes: true, expiresAt: true, createdAt: true },
     });
 
     // H8 (audit High, 2026-05-22): write to ActivityLog so admins can see
@@ -104,6 +119,7 @@ router.get('/', async (req, res) => {
       select: {
         id:         true,
         name:       true,
+        scopes:     true,
         lastUsedAt: true,
         expiresAt:  true,
         createdAt:  true,
