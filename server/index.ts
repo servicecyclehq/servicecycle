@@ -1029,6 +1029,13 @@ app.use('/api', demoWriteGuard);
 // auth.js (M1) so /refresh and /logout are exempt from the tight budget.
 app.use('/api/auth', authRoutes);
 app.use('/api/auth/2fa', twoFactorRoutes);
+// Per-account SSO admin config — gated requireAdmin + `sso` feature flag inside
+// the router. Mounted BEFORE the public /api/sso so /api/sso/admin/* doesn't
+// fall through to the public router.
+{
+  const { requireAdmin } = require('./middleware/roles');
+  app.use('/api/sso/admin', authenticateToken, requireAdmin, require('./routes/ssoAdmin'));
+}
 // Enterprise SSO (public entry: authorize/callback/exchange). No JWT — this IS
 // the login. Gated per-account by the `sso` feature flag + fail-closed config.
 app.use('/api/sso', require('./routes/sso'));

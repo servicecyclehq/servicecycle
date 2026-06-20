@@ -568,6 +568,30 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
     // carry over stale counts from before the user authenticated. (M1)
     _clearLoginFails(normEmail);
 
+    // ── SSO-required break-glass policy (feature/sso-polis) ───────────────────
+    // When the account has sso.required=true, password login is blocked EXCEPT
+    // for a local (non-SSO-managed) admin — the break-glass account that can
+    // still get in if the IdP/connection breaks. SSO-managed users already
+    // can't password-login (unusable hash); this also blocks legacy
+    // password-capable non-admins and records every break-glass use.
+    try {
+      const ssoReq = await prisma.accountSetting.findUnique({
+        where: { accountId_key: { accountId: user.accountId, key: 'sso.required' } },
+      });
+      if (ssoReq?.value === 'true') {
+        if (user.role === 'admin' && !user.ssoManaged) {
+          writeActivityLog({ userId: user.id, accountId: user.accountId, action: 'sso_break_glass_login', details: { ip: req.ip } });
+        } else {
+          writeActivityLog({ userId: user.id, accountId: user.accountId, action: 'login_blocked_sso_required', details: { ip: req.ip } });
+          return res.status(403).json({ success: false, error: 'Your organization requires single sign-on. Please use “Sign in with SSO”.', code: 'SSO_REQUIRED' });
+        }
+      }
+    } catch (ssoErr) {
+      // Fail OPEN on a settings read hiccup — do not lock everyone out of login
+      // because the AccountSetting lookup blipped. (Break-glass posture.)
+      console.error('[auth] sso.required check failed (allowing login):', ssoErr.message);
+    }
+
     // Refresh industry news on successful auth (throttled, fire-and-forget).
     _maybeRefreshNews();
 
