@@ -35,7 +35,53 @@ const prisma = require('../lib/prisma').default;
 
 const VALID_DRIVERS   = ['down_now','suspected_failing','failed_inspection','planned_replacement','budgetary'];
 const VALID_TIMELINES = ['immediately','within_1_week','within_30_days','next_budget_cycle'];
+// Rep lifecycle transition targets (PATCH /:id/status). 'draft' is NOT here — a
+// draft is created via POST {draft:true} and promoted via POST /:id/send only.
 const VALID_STATUSES  = ['requested','quoted','accepted','declined'];
+// Statuses a caller may FILTER the list by (GET ?status=) — includes 'draft'.
+const VALID_FILTER_STATUSES = [...VALID_STATUSES, 'draft'];
+
+/**
+ * Fire the contractor-facing QUOTE_REQUEST_CREATED partner event (inbox/webhook,
+ * enriched with B2 talking points) for a quote that has actually been SENT.
+ * Detached/fire-and-forget so it never slows the response, and account-scoped.
+ * Shared by the non-draft create path and the draft /send path. `qr` must carry
+ * its `asset` relation; pass the stored dossierSnapshot for the CapEx estimate.
+ */
+function emitQuoteCreatedEvent(accountId: string, qr: any, dossierSnapshot: any) {
+  const { emitPartnerEvent } = require('../lib/partnerEvents');
+  const { buildAccountTalkingPoints } = require('../lib/portfolioRank');
+  const ss = dossierSnapshot ?? {};
+  const basePayload = {
+    quoteRequestId: qr.id,
+    assetId: qr.assetId,
+    assetName: qr.asset
+      ? `${qr.asset.manufacturer ?? ''} ${qr.asset.model ?? ''}`.trim() || `Asset ${String(qr.assetId).slice(0, 8)}`
+      : 'Asset',
+    triggerType:  qr.triggerType ?? null,
+    estimatedMin: ss.estimatedCapExMin ?? null,
+    estimatedMax: ss.estimatedCapExMax ?? null,
+  };
+  (async () => {
+    let contractorContext: any = null;
+    try {
+      const tp = await buildAccountTalkingPoints(prisma, accountId);
+      if (tp) {
+        contractorContext = {
+          rank: tp.rank ?? null,
+          rankOf: tp.rankOf ?? null,
+          portfolioPercentile: tp.portfolioPercentile ?? null,
+          maturityLevel: tp.detail?.maturityLevel ?? null,
+          maturityLevelLabel: tp.detail?.maturityLevelLabel ?? null,
+          discussionPoints: (tp.discussionPoints || []).map((p: any) => ({ severity: p.severity, text: p.text })),
+        };
+      }
+    } catch (e: any) {
+      console.error('[quoteRequests talking-points]', e?.message || e);
+    }
+    emitPartnerEvent(accountId, 'QUOTE_REQUEST_CREATED', { ...basePayload, contractorContext }).catch(console.error);
+  })();
+}
 
 /** Build a display label for an asset — mirrors client/src/lib/equipment.js assetLabel(). */
 function assetLabel(a: { manufacturer?: string|null, model?: string|null, serialNumber?: string|null, equipmentType?: string|null }): string {
@@ -169,7 +215,7 @@ router.get('/', async (req, res) => {
     const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
 
     const where: any = { accountId: req.user.accountId };
-    if (status)    { if (!VALID_STATUSES.includes(String(status))) return res.status(400).json({ success: false, error: 'invalid status' }); where.status = status; }
+    if (status)    { if (!VALID_FILTER_STATUSES.includes(String(status))) return res.status(400).json({ success: false, error: 'invalid status' }); where.status = status; }
     if (assetId)   where.assetId = String(assetId);
     if (emergency === 'true') where.emergencyMode = true;
 
@@ -257,7 +303,11 @@ router.post('/', async (req, res) => {
       budgetNotes,
       attachmentNotes,
       notes,
+      draft,
     } = req.body;
+    // Draft = saved by the customer but NOT sent: persisted with status 'draft',
+    // no rep notification / partner event until POST /:id/send.
+    const isDraft = draft === true || draft === 'true';
 
     if (!assetId)  return res.status(400).json({ success: false, error: 'assetId required' });
     if (!driver)   return res.status(400).json({ success: false, error: 'driver required' });
@@ -303,6 +353,7 @@ router.post('/', async (req, res) => {
         notes:           notes           ? String(notes)           : null,
         emergencyMode,
         priority:        priority ?? undefined,
+        status:          isDraft ? 'draft' : undefined,
         dossierSnapshot,
       },
       include: {
@@ -312,47 +363,9 @@ router.post('/', async (req, res) => {
       },
     });
 
-    // Partner Flywheel: emit QUOTE_REQUEST_CREATED (fire-and-forget).
-    // We enrich the rep-facing event with B2 contractor talking points (where
-    // this customer ranks in the contractor's book + auto discussion points).
-    // The PartnerEventLog/inbox/webhook is contractor-only, so this competitive
-    // context never reaches the customer (who can read their own quote request /
-    // dossier). Computed in a detached async task so it never slows the response.
-    {
-      const { emitPartnerEvent } = require('../lib/partnerEvents');
-      const { buildAccountTalkingPoints } = require('../lib/portfolioRank');
-      const ss = (dossierSnapshot as any) ?? {};
-      const acctId = req.user.accountId;
-      const basePayload = {
-        quoteRequestId: qr.id,
-        assetId,
-        assetName: qr.asset
-          ? `${qr.asset.manufacturer ?? ''} ${qr.asset.model ?? ''}`.trim() || `Asset ${assetId.slice(0, 8)}`
-          : 'Asset',
-        triggerType:  qr.triggerType ?? null,
-        estimatedMin: ss.estimatedCapExMin ?? null,
-        estimatedMax: ss.estimatedCapExMax ?? null,
-      };
-      (async () => {
-        let contractorContext: any = null;
-        try {
-          const tp = await buildAccountTalkingPoints(prisma, acctId);
-          if (tp) {
-            contractorContext = {
-              rank: tp.rank ?? null,
-              rankOf: tp.rankOf ?? null,
-              portfolioPercentile: tp.portfolioPercentile ?? null,
-              maturityLevel: tp.detail?.maturityLevel ?? null,
-              maturityLevelLabel: tp.detail?.maturityLevelLabel ?? null,
-              discussionPoints: (tp.discussionPoints || []).map((p: any) => ({ severity: p.severity, text: p.text })),
-            };
-          }
-        } catch (e: any) {
-          console.error('[quoteRequests talking-points]', e?.message || e);
-        }
-        emitPartnerEvent(acctId, 'QUOTE_REQUEST_CREATED', { ...basePayload, contractorContext }).catch(console.error);
-      })();
-    }
+    // Fire the contractor-facing event ONLY for a sent (non-draft) request.
+    // Drafts stay silent until POST /:id/send.
+    if (!isDraft) emitQuoteCreatedEvent(req.user.accountId, qr, dossierSnapshot);
 
     return res.status(201).json({ success: true, data: qr });
   } catch (err) {
@@ -452,6 +465,41 @@ router.patch('/:id/status', requireManager, async (req, res) => {
     return res.json({ success: true, data: updated, workOrder: createdWorkOrder });
   } catch (err) {
     console.error('[quoteRequests PATCH /:id/status]', err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/quote-requests/:id/send ────────────────────────────────────────
+// Promote a saved DRAFT to a real (sent) request: status draft → requested,
+// then fire the contractor-facing partner event. Open to any account user
+// (same as create — read-only-vs-write is a product call left open here).
+router.post('/:id/send', async (req, res) => {
+  try {
+    const existing = await prisma.quoteRequest.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true, status: true },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
+    if (existing.status !== 'draft') {
+      return res.status(400).json({ success: false, error: 'Only a draft can be sent' });
+    }
+
+    const qr = await prisma.quoteRequest.update({
+      where:   { id: existing.id },
+      data:    { status: 'requested' },
+      include: {
+        asset:       { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } },
+        requestedBy: { select: { id: true, name: true } },
+        account:     { select: { serviceRepName: true, serviceRepEmail: true, serviceRepPhone: true } },
+      },
+    });
+
+    // Now that it's actually sent, notify the contractor pipeline.
+    emitQuoteCreatedEvent(req.user.accountId, qr, (qr as any).dossierSnapshot);
+
+    return res.json({ success: true, data: qr });
+  } catch (err) {
+    console.error('[quoteRequests POST /:id/send]', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });

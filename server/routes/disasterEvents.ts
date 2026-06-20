@@ -244,8 +244,11 @@ router.get('/queue-position', async (req: any, res) => {
 });
 
 // ── POST /api/disaster-events/declare ────────────────────────────────────────
-// Customer declares an emergency for their account.
-router.post('/declare', async (req: any, res) => {
+// Customer declares an emergency for their account. [manager+] — declaring an
+// emergency creates an event + emails the rep (an outbound action), so it sits
+// behind the writer-tier gate like /resolve and /scan; read-only roles can view
+// but not declare. (F3)
+router.post('/declare', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
     const { eventType = 'manual', title, affectedSiteIds = [] } = req.body;

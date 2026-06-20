@@ -35,6 +35,7 @@ enum QuoteRequestStatus {
   quoted     // Rep sent a quote (quotedAt + quoteNotes populated)
   accepted   // Customer accepted the quote
   declined   // Customer declined â€” reason captured (audit/liability trail)
+  draft      // Saved by the customer but NOT yet sent (no rep email / partner event)
 }
 
 enum AccountStatus {

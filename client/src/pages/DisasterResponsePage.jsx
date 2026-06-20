@@ -206,6 +206,8 @@ function DeclareModal({ sites, onClose, onDeclared }) {
 export default function DisasterResponsePage() {
   useDocumentTitle('Disaster Response');
   const { user } = useAuth();
+  // F3: declaring an emergency is a manager+ action (server enforces requireManager).
+  const canDeclare = ['admin', 'manager'].includes(user?.role);
 
   const [events, setEvents]               = useState([]);
   const [queueInfo, setQueueInfo]         = useState(null);
@@ -291,7 +293,7 @@ export default function DisasterResponsePage() {
                 : 'No active weather alerts affecting your facilities'}
           </div>
         </div>
-        {!hasMyDeclaration && (
+        {!hasMyDeclaration && canDeclare && (
           <button
             type="button"
             onClick={() => setShowDeclare(true)}
@@ -417,22 +419,24 @@ export default function DisasterResponsePage() {
                 ServiceCycle monitors NWS active alerts for Extreme and Severe weather events every 15 minutes.
                 If an event affects your facility region, it will appear here automatically.
               </div>
-              <div style={{ marginTop: 24 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowDeclare(true)}
-                  style={{
-                    padding: '9px 20px', borderRadius: 8, cursor: 'pointer',
-                    background: '#dc2626', color: '#fff', border: 'none',
-                    fontWeight: 700, fontSize: 'var(--font-size-sm)',
-                  }}
-                >
-                  Manually Declare Emergency
-                </button>
-                <div style={{ marginTop: 10, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)' }}>
-                  Use this if a local emergency isn't yet in the national alert system.
+              {canDeclare && (
+                <div style={{ marginTop: 24 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeclare(true)}
+                    style={{
+                      padding: '9px 20px', borderRadius: 8, cursor: 'pointer',
+                      background: '#dc2626', color: '#fff', border: 'none',
+                      fontWeight: 700, fontSize: 'var(--font-size-sm)',
+                    }}
+                  >
+                    Manually Declare Emergency
+                  </button>
+                  <div style={{ marginTop: 10, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)' }}>
+                    Use this if a local emergency isn't yet in the national alert system.
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         ) : (
@@ -494,7 +498,7 @@ export default function DisasterResponsePage() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-                      {!hasMyDeclaration && !isOwn && (
+                      {!hasMyDeclaration && !isOwn && canDeclare && (
                         <button
                           type="button"
                           onClick={() => setShowDeclare(true)}

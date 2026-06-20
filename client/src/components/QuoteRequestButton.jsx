@@ -68,6 +68,7 @@ const TIMELINE_VALUE_LABELS = {
 };
 
 const STATUS_META = {
+  draft:     { label: 'Draft',      color: '#92400e', bg: '#fffbeb' },
   requested: { label: 'Requested',  color: '#3b82f6', bg: '#eff6ff' },
   quoted:    { label: 'Quote sent', color: '#7c3aed', bg: '#f5f3ff' },
   accepted:  { label: 'Accepted',   color: '#059669', bg: '#f0fdf4' },
@@ -138,8 +139,8 @@ export default function QuoteRequestButton({ asset }) {
     setAttachmentNotes(''); setNotes('');
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(e, asDraft = false) {
+    if (e?.preventDefault) e.preventDefault();
     if (!driver || !timeline) return;
     // Map the form option onto the server's fixed QuoteTimeline enum; when the
     // label is finer-grained than the enum, carry the exact wording in notes.
@@ -161,8 +162,14 @@ export default function QuoteRequestButton({ asset }) {
         budgetNotes:     budgetNotes     || undefined,
         attachmentNotes: attachmentNotes || undefined,
         notes:           mergedNotes     || undefined,
+        draft:           asDraft || undefined,
       });
-      setToast({ message: isEmergency ? 'Emergency request submitted — call your rep now!' : 'Quote request submitted successfully', type: 'success' });
+      setToast({
+        message: asDraft
+          ? 'Saved as draft — not sent yet. Send it from Previous Requests when ready.'
+          : (isEmergency ? 'Emergency request submitted — call your rep now!' : 'Quote request submitted successfully'),
+        type: 'success',
+      });
       resetForm();
       setOpen(false);
       fetchHistory();
@@ -170,6 +177,16 @@ export default function QuoteRequestButton({ asset }) {
       setToast({ message: err?.response?.data?.error || 'Failed to submit request', type: 'error' });
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function sendDraft(id) {
+    try {
+      await api.post(`/api/quote-requests/${id}/send`);
+      setToast({ message: 'Draft sent to your service rep', type: 'success' });
+      fetchHistory();
+    } catch (err) {
+      setToast({ message: err?.response?.data?.error || 'Failed to send draft', type: 'error' });
     }
   }
 
@@ -382,6 +399,17 @@ export default function QuoteRequestButton({ asset }) {
                     ? '🚨 Submit Emergency Request'
                     : 'Submit Quote Request'}
               </button>
+              {!isEmergency && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={(e) => handleSubmit(e, true)}
+                  disabled={!driver || !timeline || submitting}
+                  title="Save without sending — you can send it later from Previous Requests"
+                >
+                  Save as draft
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -421,9 +449,19 @@ export default function QuoteRequestButton({ asset }) {
                   <span style={{ color: 'var(--color-text-secondary)' }}>·</span>
                   <span style={{ color: 'var(--color-text-secondary)' }}>{timelineLabel}</span>
                   {qr.requestedBy?.name && (
-                    <span style={{ marginLeft: 'auto', color: 'var(--color-text-secondary)', fontSize: 11 }}>
+                    <span style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
                       by {qr.requestedBy.name}
                     </span>
+                  )}
+                  {qr.status === 'draft' && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={{ marginLeft: 'auto' }}
+                      onClick={() => sendDraft(qr.id)}
+                    >
+                      Send now
+                    </button>
                   )}
                 </div>
               );
