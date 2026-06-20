@@ -23,6 +23,9 @@ const CONSENT_KEYS: Record<string, string> = {
   IMMEDIATE_DEFICIENCY:   'partner_share_deficiencies',
   INSPECTION_COMPLETED:   'partner_share_inspections',
   QUOTE_REQUEST_CREATED:  'partner_share_quote_requests',
+  // A customer asking to discuss their proposal (quote/call/meeting) is the same
+  // demand-capture category as a quote request, so it reuses that consent gate.
+  PROPOSAL_DISCUSSION_REQUESTED: 'partner_share_quote_requests',
   TASK_OVERDUE:           'partner_share_overdue_tasks',
 };
 

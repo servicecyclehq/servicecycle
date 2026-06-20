@@ -58,6 +58,7 @@ const EVENT_META = {
   TASK_OVERDUE:          { bg: '#fef3c7', color: '#b45309', label: 'OVERDUE' },
   INSPECTION_COMPLETED:  { bg: '#dbeafe', color: '#1d4ed8', label: 'COMPLETED' },
   QUOTE_REQUEST_CREATED: { bg: '#ede9fe', color: '#7c3aed', label: 'QUOTE REQ' },
+  PROPOSAL_DISCUSSION_REQUESTED: { bg: '#dcfce7', color: '#15803d', label: 'PROPOSAL' },
 };
 
 function EventBadge({ type }) {
@@ -386,6 +387,7 @@ function InboxTab({ reps, onUnseenCountChange }) {
           <option value="TASK_OVERDUE">Task Overdue</option>
           <option value="INSPECTION_COMPLETED">Inspection Completed</option>
           <option value="QUOTE_REQUEST_CREATED">Quote Request</option>
+          <option value="PROPOSAL_DISCUSSION_REQUESTED">Proposal Request</option>
         </select>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
@@ -472,6 +474,12 @@ function InboxTab({ reps, onUnseenCountChange }) {
                     <span>
                       Est. ${Math.round(p.estimatedMin / 100).toLocaleString()} –{' '}
                       ${Math.round(p.estimatedMax / 100).toLocaleString()}
+                    </span>
+                  )}
+                  {item.eventType === 'PROPOSAL_DISCUSSION_REQUESTED' && (
+                    <span>
+                      Requested {p.mode === 'call' ? 'a call' : p.mode === 'meeting' ? 'a meeting' : 'a quote'} about their maintenance program
+                      {p.note ? ` — ${String(p.note).slice(0, 120)}` : ''}
                     </span>
                   )}
                 </div>

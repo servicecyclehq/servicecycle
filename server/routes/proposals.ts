@@ -27,6 +27,7 @@ const { buildProposal, redactProposalCosts } = require('../lib/proposalBuilder')
 const { renderProposalPdf } = require('../lib/proposalPdf');
 const { getAccountBranding } = require('../lib/partnerBranding');
 const { sendEmail } = require('../lib/email');
+const { emitPartnerEvent } = require('../lib/partnerEvents');
 
 // Resolve the target account: own account by default; a customer account in the
 // caller's partner org when an oem_admin passes ?accountId=. Throws coded errors.
@@ -103,24 +104,36 @@ router.post('/request-contact', async (req: any, res: any) => {
       where: { id: req.user.accountId },
       select: { companyName: true, serviceRepEmail: true, assignedRepId: true },
     });
+    // Land it as a first-class item in the contractor's Fleet inbox (partner
+    // pipeline) — same place quote requests + deficiencies show up. This happens
+    // regardless of whether a direct rep email is on file. Consent-gated + dedup'd
+    // by emitPartnerEvent; no-op for accounts without a partner org. Awaited but
+    // fail-safe so the customer's request still succeeds on error.
+    try {
+      await emitPartnerEvent(req.user.accountId, 'PROPOSAL_DISCUSSION_REQUESTED', {
+        mode, note, requestedByName: req.user.name || null,
+      });
+    } catch (e: any) { console.error('[proposals request-contact event]', e.message); }
+
+    // Direct immediate email to the rep, when one is on file (the inbox row above
+    // is the durable pipeline record either way).
     const emails = new Set<string>();
     if (account?.serviceRepEmail) emails.add(account.serviceRepEmail);
     if (account?.assignedRepId) {
       const rep = await prisma.user.findUnique({ where: { id: account.assignedRepId }, select: { email: true } });
       if (rep?.email) emails.add(rep.email);
     }
-    if (emails.size === 0) {
-      return res.json({ success: true, data: { notified: 0, message: 'No service rep is on file for your account yet â€” please contact your provider directly.' } });
+    let notified = 0;
+    if (emails.size > 0) {
+      const label = mode === 'call' ? 'a call' : mode === 'meeting' ? 'a meeting' : 'a quote';
+      const subject = `[${account?.companyName || 'Customer'}] Requested ${label} about their maintenance program`;
+      const html = `<p><strong>${(req.user.name || 'A user')}</strong> at <strong>${account?.companyName || 'a customer account'}</strong> requested ${label} to discuss their multi-year maintenance proposal.</p>${note ? `<p><strong>Note:</strong> ${note.replace(/</g, '&lt;')}</p>` : ''}<p>Open ServiceCycle to review their program and follow up.</p>`;
+      for (const to of emails) {
+        try { await sendEmail({ to, subject, html }); notified++; } catch (e: any) { console.error('[proposals request-contact email]', e.message); }
+      }
     }
 
-    const label = mode === 'call' ? 'a call' : mode === 'meeting' ? 'a meeting' : 'a quote';
-    const subject = `[${account?.companyName || 'Customer'}] Requested ${label} about their maintenance program`;
-    const html = `<p><strong>${(req.user.name || 'A user')}</strong> at <strong>${account?.companyName || 'a customer account'}</strong> requested ${label} to discuss their multi-year maintenance proposal.</p>${note ? `<p><strong>Note:</strong> ${note.replace(/</g, '&lt;')}</p>` : ''}<p>Open ServiceCycle to review their program and follow up.</p>`;
-    let notified = 0;
-    for (const to of emails) {
-      try { await sendEmail({ to, subject, html }); notified++; } catch (e: any) { console.error('[proposals request-contact email]', e.message); }
-    }
-    return res.json({ success: true, data: { notified } });
+    return res.json({ success: true, data: { notified, logged: true } });
   } catch (err: any) {
     console.error('[proposals request-contact]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to send request.' });

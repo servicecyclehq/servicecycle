@@ -33,6 +33,8 @@ beforeAll(async () => {
   partnerOrgId = org.id;
   await prisma.account.update({ where: { id: manager.accountId }, data: { partnerOrgId } });
   await prisma.account.update({ where: { id: oem.accountId }, data: { partnerOrgId } });
+  // Enable partner sharing so a proposal contact-request lands in the Fleet inbox.
+  await prisma.accountSetting.create({ data: { accountId: manager.accountId, key: 'partner_share_quote_requests', value: 'true' } });
 
   await prisma.serviceRateCard.create({ data: { serviceType: 'INSPECTION', minCents: 150000, maxCents: 1200000 } });
   await prisma.serviceRateCard.create({ data: { serviceType: 'SWITCHGEAR_MODERNIZATION', minCents: 7500000, maxCents: 40000000 } });
@@ -59,6 +61,8 @@ afterAll(async () => {
   for (const u of [manager, viewer, oem]) {
     const acc = u.accountId;
     try { await prisma.account.update({ where: { id: acc }, data: { partnerOrgId: null } }); } catch {}
+    try { await prisma.partnerEventLog.deleteMany({ where: { accountId: acc } }); } catch {}
+    try { await prisma.accountSetting.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.deficiency.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.maintenanceSchedule.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.maintenanceTaskDefinition.deleteMany({ where: { accountId: acc } }); } catch {}
@@ -110,10 +114,15 @@ describe('#5 proposal builder', () => {
     expect(pdf.status).toBe(403);
   });
 
-  test('customer can request a quote/call — routes to the rep', async () => {
+  test('customer can request a quote/call — routes to the rep AND lands in the Fleet inbox', async () => {
     const res = await request(app).post('/api/proposals/request-contact').set('Authorization', `Bearer ${manager.token}`).send({ mode: 'quote' });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    // First-class partner-pipeline item created (consent is enabled for this account).
+    const ev = await prisma.partnerEventLog.findFirst({ where: { accountId: manager.accountId, eventType: 'PROPOSAL_DISCUSSION_REQUESTED' } });
+    expect(ev).toBeTruthy();
+    expect((ev.payload as any).mode).toBe('quote');
+
     const bad = await request(app).post('/api/proposals/request-contact').set('Authorization', `Bearer ${manager.token}`).send({ mode: 'nope' });
     expect(bad.status).toBe(400);
   });
