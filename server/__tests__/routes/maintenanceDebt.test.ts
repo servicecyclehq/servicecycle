@@ -69,6 +69,10 @@ describe('Maintenance Debt Ledger', () => {
 
     // Repair backlog = repairCostEstimate sum.
     expect(d.totals.repairBacklog.amount).toBe(25000);
+    expect(d.totals.repairBacklog.assets).toBe(1);
+    // Per-site repair-asset count is reported (regression: was hardcoded 0).
+    const repairSite = d.bySite.find((s: any) => s.repairBacklog.amount === 25000);
+    expect(repairSite.repairBacklog.assets).toBe(1);
 
     // Modernization: the 0.9 SWITCHGEAR asset lands in year 1.
     expect(d.plan.year1.max).toBeGreaterThan(d.totals.deferredMaintenance.max + d.totals.repairBacklog.amount);

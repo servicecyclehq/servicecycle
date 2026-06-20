@@ -76,6 +76,7 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
     siteId: string | null; siteName: string;
     deferredAssetIds: Set<string>;
     repair: number;
+    repairAssets: number;
     mod: { 1: { min: number; max: number; count: number }; 3: { min: number; max: number; count: number }; 5: { min: number; max: number; count: number } };
   };
   const sites = new Map<string, SiteBucket>();
@@ -85,7 +86,7 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
     let s = sites.get(k);
     if (!s) {
       s = { siteId: id, siteName: name || 'Unassigned', deferredAssetIds: new Set(),
-            repair: 0, mod: { 1: { min: 0, max: 0, count: 0 }, 3: { min: 0, max: 0, count: 0 }, 5: { min: 0, max: 0, count: 0 } } };
+            repair: 0, repairAssets: 0, mod: { 1: { min: 0, max: 0, count: 0 }, 3: { min: 0, max: 0, count: 0 }, 5: { min: 0, max: 0, count: 0 } } };
       sites.set(k, s);
     }
     return s;
@@ -100,6 +101,7 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
   for (const a of repairAssets) {
     const site = ensureSite(a.siteId, a.site?.name ?? null);
     site.repair += Number(a.repairCostEstimate) || 0;
+    site.repairAssets += 1;
   }
   // 3. Modernization.
   for (const a of modAssets) {
@@ -129,7 +131,7 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
     return {
       siteId: s.siteId, siteName: s.siteName,
       deferredMaintenance: deferred,
-      repairBacklog: { amount: repair, assets: 0 },
+      repairBacklog: { amount: repair, assets: s.repairAssets },
       modernization: {
         year1: mod1, year3: mod3, year5: mod5,
         assetCount: mod1.count + mod3.count + mod5.count,
