@@ -1,0 +1,11 @@
+{
+  "status": 201,
+  "body": {
+    "schemas": [
+      "urn:ietf:params:scim:schemas:core:2.0:Group"
+    ],
+    "id": "1c5f5774-3a3c-438b-81f4-5fc1e4cf0ff8",
+    "displayName": "Engineering",
+    "members": []
+  }
+}

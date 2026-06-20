@@ -49,7 +49,7 @@ const DEFAULT_MODELS = {
 
 export default function SettingsPage() {
   useDocumentTitle('Settings');
-  const { user, demoMode, updateUser } = useAuth();
+  const { user, demoMode, updateUser, accountFeatures } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   const [loading, setLoading]   = useState(true);
@@ -839,6 +839,16 @@ export default function SettingsPage() {
 
         {/* ── Security tab ─────────────────────────────────────── */}
         <div style={{ display: activeTab === 'security' ? 'block' : 'none' }}>
+        {accountFeatures?.sso && isAdmin && (
+          <section style={{ marginBottom: '2rem' }}>
+            <h2 style={sectionHeading}>Single sign-on (SSO)</h2>
+            <p style={sectionDesc}>
+              Connect your identity provider (Okta, Entra ID, Google Workspace, Ping, JumpCloud) and
+              automatic user provisioning (SCIM).
+            </p>
+            <a href="/settings/sso" className="btn btn-secondary">Configure SSO &amp; SCIM →</a>
+          </section>
+        )}
         <section style={{ marginBottom: '2rem' }}>
           <h2 style={sectionHeading}>Password Policy</h2>
           <p style={sectionDesc}>

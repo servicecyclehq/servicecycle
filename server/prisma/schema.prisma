@@ -321,6 +321,13 @@ model Account {
   incidentLogs           IncidentLog[]
   shareLinks             ShareLink[]
   ingestJobs             IngestJob[]
+  // Enterprise SSO / SCIM (feature/sso-polis)
+  ssoConnections         SsoConnection[]
+  ssoDomains             SsoDomain[]
+  scimDirectories        ScimDirectory[]
+  ssoRoleMappings        SsoRoleMapping[]
+  ssoLoginStates         SsoLoginState[]
+  ssoHandoffs            SsoHandoff[]
 
   @@map("accounts")
 }
@@ -457,6 +464,19 @@ model User {
   // AI_PROVIDER changes.
   aiConsentVersion              String?
   aiConsentProviderAtAcceptance String? // "anthropic" | "openai" | "azure_openai" | "gemini"
+  // ── Enterprise SSO / SCIM (feature/sso-polis) ───────────────────────────────
+  // SCIM identity for directory-provisioned users. scimExternalId is Polis's
+  // stable per-directory resource id (data.id in webhook events — identical
+  // across create/update/deactivate); the IdP's own externalId is kept in the
+  // event raw payload. Both NULL for ordinary password users (Postgres treats
+  // NULLs as distinct, so the unique index below never collides on them).
+  scimExternalId                String?
+  scimDirectoryId               String?
+  // True once a user is created/managed via SSO JIT or SCIM. Drives the
+  // sso.required password-login block (break-glass is restricted to
+  // non-ssoManaged admins).
+  ssoManaged                    Boolean   @default(false)
+  lastSsoLoginAt                DateTime?
   createdAt                     DateTime  @default(now())
   updatedAt                     DateTime  @updatedAt
 
@@ -488,11 +508,15 @@ model User {
   assignedRepAccounts      Account[]               @relation("AssignedRep")
   fallbackRepAccounts      Account[]               @relation("FallbackRep")
   assignedEventLogs        PartnerEventLog[]       @relation("EventLogRep")
+  ssoHandoffs              SsoHandoff[]
 
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
   // every reset attempt is a full table scan.
   @@index([passwordResetToken])
+  // SCIM upsert key: (directory, externalId) is unique per directory. Both
+  // NULL for password users — Postgres NULLs are distinct so no collision.
+  @@unique([scimDirectoryId, scimExternalId])
   @@map("users")
 }
 
@@ -2460,4 +2484,158 @@ model PartnerEventLog {
   @@index([assignedRepId, digestSentAt])
   @@index([archived, createdAt])
   @@map("partner_event_logs")
+}
+
+// ─── Enterprise SSO + SCIM (feature/sso-polis) ────────────────────────────────
+// ServiceCycle is the OAuth relying party; Ory Polis (Apache-2.0) is the broker.
+// These tables map our Accounts onto Polis tenants/connections/directories and
+// hold the transient CSRF/PKCE state + one-time token handoff. accountId/userId/
+// connectionId are scalars here (no Prisma relations) to keep this migration
+// purely additive against the large Account/User models; the hand-written
+// migration adds the real FK constraints (ON DELETE CASCADE) — same pattern as
+// ExtractionEvent. See docs/security/SSO_DESIGN.md.
+
+enum SsoProtocol {
+  oidc
+  saml
+}
+
+// An account's SSO connection ↔ a Polis tenant/product. An account may have
+// more than one (e.g. an OIDC and a SAML connection).
+model SsoConnection {
+  id            String      @id @default(uuid())
+  accountId     String
+  protocol      SsoProtocol
+  // Server-derived Polis tenant id (e.g. "acct_<accountId>"). NEVER taken from
+  // client input — the admin route forces it from the caller's account.
+  polisTenant   String
+  polisProduct  String      @default("servicecycle")
+  // The connection's clientID as returned by the Polis admin API (opaque).
+  polisClientId String?
+  label         String?
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  domains     SsoDomain[]
+  loginStates SsoLoginState[]
+
+  @@index([accountId])
+  @@index([polisTenant])
+  @@map("sso_connections")
+}
+
+// Email-domain → account discovery. The isolation anchor: an inbound email's
+// domain resolves to exactly one account, so a user from IdP-A can only ever be
+// routed into IdP-A's account. Domain is globally unique.
+model SsoDomain {
+  id           String   @id @default(uuid())
+  domain       String   @unique // lowercased
+  accountId    String
+  connectionId String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  account    Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  connection SsoConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([connectionId])
+  @@map("sso_domains")
+}
+
+// An account's SCIM directory ↔ a Polis directory id.
+model ScimDirectory {
+  id               String   @id @default(uuid())
+  accountId        String
+  polisDirectoryId String   @unique
+  polisTenant      String
+  polisProduct     String   @default("servicecycle")
+  type             String?  // e.g. "okta-scim-v2", "azure-scim-v2"
+  label            String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("scim_directories")
+}
+
+// IdP group/claim → ServiceCycle role. Capped at viewer|consultant|manager at
+// the app layer; admin/oem_admin/super_admin are NEVER claim-granted.
+model SsoRoleMapping {
+  id        String   @id @default(uuid())
+  accountId String
+  idpGroup  String   // the group/claim value as it arrives from the IdP
+  role      UserRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, idpGroup])
+  @@index([accountId])
+  @@map("sso_role_mappings")
+}
+
+// Transient per-login CSRF/PKCE state. Single-use (consumedAt) + short TTL.
+// codeVerifier and nonce never leave the server.
+model SsoLoginState {
+  id           String    @id @default(uuid())
+  state        String    @unique
+  nonce        String
+  codeVerifier String
+  accountId    String
+  connectionId String
+  redirectTo   String    @default("/dashboard")
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  account    Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  connection SsoConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("sso_login_states")
+}
+
+// One-time token handoff so real JWTs never appear in a redirect URL. The SPA
+// exchanges codeHash once at POST /api/sso/exchange; the JWT is minted there.
+model SsoHandoff {
+  id         String    @id @default(uuid())
+  codeHash   String    @unique // sha256 of the one-time code
+  userId     String
+  accountId  String
+  redirectTo String    @default("/dashboard")
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sso_handoffs")
+}
+
+// SCIM webhook idempotency/replay ledger. eventKey is sha256 of the raw event
+// body; a duplicate delivery is detected and skipped. Upsert-on-externalId
+// makes the underlying data write idempotent regardless.
+model ScimEvent {
+  id               String   @id @default(uuid())
+  eventKey         String   @unique
+  polisDirectoryId String?
+  directoryId      String?  // our ScimDirectory id when resolved
+  eventType        String
+  status           String   @default("processed") // processed | ignored | error
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([directoryId])
+  @@map("scim_events")
 }

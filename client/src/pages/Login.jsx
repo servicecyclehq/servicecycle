@@ -17,6 +17,8 @@ export default function Login() {
   const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
     ? nextParam
     : '/dashboard';
+  // Enterprise SSO: generic failure surfaced via ?sso_error (no enumeration).
+  const ssoError = searchParams.get('sso_error');
 
   // L7+legal: surface the "Create an account" link only when the server
   // accepts public registrations (REGISTRATION_OPEN=true on self-hosted, or
@@ -112,6 +114,17 @@ export default function Login() {
     setError('');
   };
 
+  // ── Enterprise SSO ───────────────────────────────────────────────────────────
+  // Hand off to the server, which resolves the email domain to the org's IdP and
+  // 302s to Polis. Full-page navigation (not fetch) so the browser follows the
+  // OAuth redirect chain. Reuses safeNext for the post-login return.
+  const handleSsoSignIn = () => {
+    setError('');
+    if (!email) { setError('Enter your work email, then choose “Sign in with SSO”.'); return; }
+    const url = `/api/sso/authorize?email=${encodeURIComponent(email)}&next=${encodeURIComponent(safeNext)}`;
+    window.location.assign(url);
+  };
+
   return (
     <div className="login-page">
       <div className="login-box">
@@ -155,6 +168,11 @@ export default function Login() {
               </div>
             )}
 
+            {ssoError && (
+              <div role="alert" className="alert alert-error">
+                We couldn’t sign you in with single sign-on. Check the email you used, or sign in with your password.
+              </div>
+            )}
             {error && <div role="alert" className="alert alert-error">{error}</div>}
             {loginAttempts >= 2 && (
               <p style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', marginTop: 6, marginBottom: 0 }}>
@@ -210,6 +228,21 @@ export default function Login() {
                 {submitting ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
+
+            {/* Enterprise SSO — full-page redirect to the org's IdP via Polis. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0' }}>
+              <span style={{ flex: 1, height: 1, background: 'var(--color-border, #e5e7eb)' }} />
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>or</span>
+              <span style={{ flex: 1, height: 1, background: 'var(--color-border, #e5e7eb)' }} />
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
+              onClick={handleSsoSignIn}
+            >
+              Sign in with SSO
+            </button>
 
             {registrationOpen ? (
               <p style={{ marginTop: 20, fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', textAlign: 'center' }}>

@@ -140,6 +140,17 @@ const { verifyToken } = require('./lib/jwtSecrets');
                  'alternatively set AI_ENABLED=false and save the key via Settings UI');
   }
 
+  // Enterprise SSO (feature/sso-polis): fail closed + loud. When SSO_ENABLED=true
+  // every Polis/SCIM secret must be present — we never run SSO with half a config.
+  // No-op when SSO_ENABLED is unset/false. See lib/ssoConfig.ts + SSO_DESIGN.md §6.
+  try {
+    const { missingSsoEnv } = require('./lib/ssoConfig');
+    missingSsoEnv().forEach((v) => missing.push(`${v} (required when SSO_ENABLED=true)`));
+  } catch (e) {
+    console.error('[startup] SSO config check failed to load — refusing to start:', e && e.message);
+    process.exit(1);
+  }
+
   if (missing.length > 0) {
     console.error('[startup] Missing required environment variables:');
     missing.forEach(v => console.error(`  - ${v}`));
@@ -635,6 +646,15 @@ app.use('/api/inbound',
   express.json({ limit: '15mb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString('utf8'); } }),
   require('./routes/inboundEmail'));
 
+// SCIM webhook (Ory Polis directory-sync). MUST be mounted BEFORE the global
+// express.json so the HMAC signature can be verified over the EXACT raw bytes
+// (req.rawBody). Public (HMAC-authenticated, fails closed) — no JWT. See
+// routes/ssoScim.ts + docs/security/SSO_DESIGN.md.
+app.use('/api/sso/scim',
+  inboundLimiter,
+  express.json({ limit: '1mb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString('utf8'); } }),
+  require('./routes/ssoScim'));
+
 app.use(express.json({ limit: '200kb' }));  // SEC-011 (Round-5)
 
 // Item 2: patch res.json to validate outgoing payload shapes (logs + render_errors in prod).
@@ -1013,6 +1033,16 @@ app.use('/api', demoWriteGuard);
 // auth.js (M1) so /refresh and /logout are exempt from the tight budget.
 app.use('/api/auth', authRoutes);
 app.use('/api/auth/2fa', twoFactorRoutes);
+// Per-account SSO admin config — gated requireAdmin + `sso` feature flag inside
+// the router. Mounted BEFORE the public /api/sso so /api/sso/admin/* doesn't
+// fall through to the public router.
+{
+  const { requireAdmin } = require('./middleware/roles');
+  app.use('/api/sso/admin', authenticateToken, requireAdmin, require('./routes/ssoAdmin'));
+}
+// Enterprise SSO (public entry: authorize/callback/exchange). No JWT — this IS
+// the login. Gated per-account by the `sso` feature flag + fail-closed config.
+app.use('/api/sso', require('./routes/sso'));
 
 // ── Health Check (M8: no service banner; B3: version + uptime) ──────────────
 // Returns the minimum useful payload: status + version (cached at boot to

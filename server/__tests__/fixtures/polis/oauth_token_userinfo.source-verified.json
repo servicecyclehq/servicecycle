@@ -1,0 +1,32 @@
+{
+  "_provenance": "SOURCE-VERIFIED from ory/polis@v26.2.0 (npm/src/controller/oauth.ts + swagger annotations). Live JSON capture of these two responses was attempted via the Mock SAML round-trip but blocked by mocksaml.com's hosted IdP returning HTTP 500 on headless form submission (a Node ERR_INVALID_ARG_TYPE in mocksaml's own server, not a Polis issue). The OAuth /authorize contract itself IS live-verified — see oauth_authorize_redirect.json (real 302 to the IdP with a signed RSA-SHA256 SAMLRequest). The SCIM surface (the primary parser target) is fully live-captured + HMAC-verified — see webhook_deliveries.json.",
+  "POST /api/oauth/token": {
+    "shape": {
+      "access_token": "<hexKey>.<opaqueToken>",
+      "token_type": "bearer",
+      "expires_in": 300,
+      "id_token": "<JWT, present only when scope=openid AND OpenID JWT signing keys are configured on Polis>"
+    },
+    "notes": [
+      "access_token is opaque (hexKey + '.' + token), NOT a JWT — do not attempt to decode it; call /userinfo with it.",
+      "id_token is a JWT; validate alg (pin, reject 'none'), iss, aud, exp, and nonce when present.",
+      "expires_in mirrors Polis db.ttl."
+    ]
+  },
+  "GET /api/oauth/userinfo": {
+    "shape": {
+      "id": "<idp subject id>",
+      "email": "user@example.com",
+      "firstName": "SAML",
+      "lastName": "Jackson",
+      "roles": ["optional string[] — present when IdP supplies role attributes"],
+      "groups": ["optional string[] — present when IdP supplies group attributes"],
+      "raw": { "_comment": "full IdP attribute map; group/role claims live here for many IdPs" },
+      "requested": { "tenant": "<tenant initiated the flow>", "product": "<product>" }
+    },
+    "notes": [
+      "Userinfo uses camelCase (firstName/lastName) — DIFFERENT from SCIM events which use snake_case (first_name/last_name).",
+      "requested.tenant MUST be asserted == the connection's polisTenant the callback initiated, as a second cross-tenant guard."
+    ]
+  }
+}

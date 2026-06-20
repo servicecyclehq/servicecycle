@@ -41,7 +41,7 @@ const ALL_FEATURE_KEYS = [
 // it — the same fail-closed posture the server uses.
 const ACCOUNT_FEATURE_KEYS = [
   'dga_import', 'thermography_import', 'qemw_wallet',
-  'arc_flash_studies', 'enterprise_trust', 'neta_full_battery',
+  'arc_flash_studies', 'enterprise_trust', 'sso', 'neta_full_battery',
 ];
 const ACCOUNT_FEATURE_DEFAULTS = Object.fromEntries(ACCOUNT_FEATURE_KEYS.map(k => [k, false]));
 
