@@ -306,6 +306,12 @@ functional gap for product to confirm.
 
 ## 6. Residual risk / recommended next steps
 
+> ✅ **UPDATE (post-audit, same day):** F1, F5 and F6 were SUBSEQUENTLY FIXED + deployed.
+> F1 → `/api/admin/metrics/overview` and the `AdminMetrics` client page gated to `super_admin`.
+> F5/F6 → fleet endpoints fail closed (403/404) when the caller has no `partnerOrgId`, except
+> demo (`DEMO_MODE`) or `super_admin` — `fleetFallbackBlocked` helper applied at all 5 sites.
+> Regression tests: `securityAuditF1F5F6.test.ts`. Items F2/F3/F4/F7–F11 remain open for your call.
+
 1. **Close F1 (platform-BI leak) and F5/F6 (fleet fail-open) next** — these are the highest
    residual exposures. F1 leaks the company's own growth metrics to every tenant admin (and to
    demo visitors); F5/F6 are a production cross-partner dump under a reachable null-partnerOrgId

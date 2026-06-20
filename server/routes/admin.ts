@@ -366,7 +366,13 @@ router.get('/notification-log', requireAdmin, async (req, res) => {
 // All queries are bounded by date filters to keep them index-friendly.
 // Per-day buckets use date_trunc 'day' so the values are stable across
 // timezones (server runs UTC).
-router.get('/metrics/overview', requireAdmin, async (req, res) => {
+//
+// SECURITY (F1): every query here is PLATFORM-WIDE (no accountId) — total
+// users/accounts/assets, signups, DAU, retention, top actions across ALL
+// tenants. That is operator BI, not tenant data, so it is gated to super_admin
+// (was requireAdmin, which exposed it to every customer admin — and, since the
+// demo auto-grants admin, to anonymous demo visitors).
+router.get('/metrics/overview', requireSuperAdmin, async (req, res) => {
   try {
     const [totalUsers, totalAccounts, totalActive, totalArchived] = await Promise.all([
       prisma.user.count(),

@@ -421,7 +421,7 @@ function AppRoutes() {
             <Route path="settings"    element={<RequireRole roles={['admin']}><SettingsPage /></RequireRole>} />
             <Route path="activity"    element={<RequireRole roles={['admin', 'manager']}><ActivityLogPage /></RequireRole>} />
             <Route path="admin/early-access" element={<RequireRole roles={['admin']} denyOnDemo><EarlyAccessLeadsPage /></RequireRole>} />
-            <Route path="admin/metrics"      element={<RequireRole roles={['admin']}><AdminMetrics /></RequireRole>} />
+            <Route path="admin/metrics"      element={<RequireRole roles={['super_admin']}><AdminMetrics /></RequireRole>} />
             {/* 2026-05-10 review M3: in-shell 404 so unknown paths under an
                 authenticated session don't silently redirect to /dashboard
                 (which masked broken links from emails, old bookmarks, and

@@ -28,6 +28,16 @@ router.use((req, res, next) => {
   return requireOemAdmin(req, res, next);
 });
 
+// F5/F6: when an oem_admin's account has no partnerOrgId, the partner filter is
+// dropped and the fleet queries would return EVERY account on the platform
+// (names, metrics, compliance lists, portfolio rankings, per-asset drill-down).
+// partnerOrgId can legitimately become null in prod (super_admin deletes a
+// partner org → onDelete:SetNull). Fail closed in production; preserve the
+// all-accounts behavior only for the demo sandbox or a super_admin.
+function fleetFallbackBlocked(req: any, partnerOrgId: string | null | undefined): boolean {
+  return !partnerOrgId && req.user.role !== 'super_admin' && process.env.DEMO_MODE !== 'true';
+}
+
 // ── GET /api/fleet/dashboard ──────────────────────────────────────────────────
 router.get('/dashboard', async (req, res) => {
   try {
@@ -41,11 +51,14 @@ router.get('/dashboard', async (req, res) => {
       select: { partnerOrgId: true, partnerOrg: { select: { id: true, name: true, logoUrl: true, primaryColor: true } } },
     });
 
+    if (fleetFallbackBlocked(req, callerAccount?.partnerOrgId)) {
+      return res.status(403).json({ error: 'No partner organization linked to your account.' });
+    }
     const accountWhere: any = { status: 'active' };
     if (callerAccount?.partnerOrgId) {
       accountWhere.partnerOrgId = callerAccount.partnerOrgId;
     }
-    // else: no partnerOrgId → all accounts (demo mode)
+    // else: no partnerOrgId → all accounts (demo / super_admin only)
 
     const accounts = await prisma.account.findMany({
       where: accountWhere,
@@ -252,6 +265,9 @@ router.get('/path-to-100', async (req, res) => {
       where: { id: accountId },
       select: { partnerOrgId: true, partnerOrg: { select: { id: true, name: true } } },
     });
+    if (fleetFallbackBlocked(req, callerAccount?.partnerOrgId)) {
+      return res.status(403).json({ error: 'No partner organization linked to your account.' });
+    }
     const accountWhere: any = { status: 'active' };
     if (callerAccount?.partnerOrgId) accountWhere.partnerOrgId = callerAccount.partnerOrgId;
 
@@ -325,6 +341,9 @@ router.get('/portfolio-rank', async (req, res) => {
       where: { id: accountId },
       select: { partnerOrgId: true, partnerOrg: { select: { id: true, name: true } } },
     });
+    if (fleetFallbackBlocked(req, callerAccount?.partnerOrgId)) {
+      return res.status(403).json({ error: 'No partner organization linked to your account.' });
+    }
     const accountWhere: any = { status: 'active' };
     if (callerAccount?.partnerOrgId) accountWhere.partnerOrgId = callerAccount.partnerOrgId;
 
@@ -373,6 +392,12 @@ router.get('/accounts/:id', async (req, res) => {
 
     if (!targetAccount) return res.status(404).json({ error: 'Account not found' });
 
+    // F6: a null-partnerOrgId caller would otherwise skip the scope check below
+    // and read ANY tenant's per-asset drill-down. Fail closed in production
+    // (demo / super_admin keep the cross-account view).
+    if (fleetFallbackBlocked(req, callerAccount?.partnerOrgId)) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
     // Enforce same partnerOrg scope (skip if caller has no partnerOrgId — demo mode)
     if (callerAccount?.partnerOrgId && targetAccount.partnerOrgId !== callerAccount.partnerOrgId) {
       return res.status(403).json({ error: 'Access denied' });
@@ -465,6 +490,9 @@ router.get('/forecast', async (req, res) => {
       select: { partnerOrgId: true },
     });
 
+    if (fleetFallbackBlocked(req, callerAccount?.partnerOrgId)) {
+      return res.status(403).json({ error: 'No partner organization linked to your account.' });
+    }
     const accountWhere: any = { status: 'active' };
     if (callerAccount?.partnerOrgId) {
       accountWhere.partnerOrgId = callerAccount.partnerOrgId;

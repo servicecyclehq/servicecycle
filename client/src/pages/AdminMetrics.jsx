@@ -10,8 +10,9 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
  * small table; the page is intentionally low-design so adding a chart
  * layer later is a styling change, not a refactor.
  *
- * Admin-only route gated at App.jsx via RequireRole. The data endpoint
- * (/api/admin/metrics/overview) also requires admin role server-side.
+ * super_admin-only route gated at App.jsx via RequireRole. The data endpoint
+ * (/api/admin/metrics/overview) is platform-wide BI, so it requires super_admin
+ * server-side too (F1 security fix — was admin, which leaked to every tenant).
  */
 export default function AdminMetrics() {
   useDocumentTitle('Metrics — ServiceCycle');
