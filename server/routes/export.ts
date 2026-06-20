@@ -18,7 +18,9 @@
 const express = require('express');
 // sendXlsx lives in server/lib/xlsxExport.js so report routes can reuse the
 // same workbook builder without duplicating ExcelJS plumbing.
-const { sendXlsx } = require('../lib/xlsxExport');
+const { sendXlsx, sendAccountXlsx } = require('../lib/xlsxExport');
+const { buildAccountExport, EXPORT_SHEETS } = require('../lib/accountExport');
+const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
 
 // Pure helper functions — extracted to lib/exportHelpers.js so they can be
@@ -232,6 +234,39 @@ async function exportWorkOrders(req, res) {
     truncated,
   });
 }
+
+// ── GET /api/export/account?format=json|xlsx ─────────────────────────────────
+// Phase 3 #5 -- "export everything / no lock-in": a complete, portable snapshot
+// of the account (sites, assets, schedules, work orders, deficiencies, quote
+// requests in full; documents + immutable snapshots as metadata + retrieval
+// paths) in open formats. JSON is the lossless default; xlsx is a multi-sheet
+// workbook. requireManager -- this is the whole account.
+router.get('/account', requireManager, async (req, res) => {
+  try {
+    req.setTimeout(120_000);
+    const data = await buildAccountExport(prisma, req.user.accountId);
+    const stamp = dateStamp();
+    const format = String(req.query.format || 'json').toLowerCase();
+
+    if (format === 'xlsx') {
+      return await sendAccountXlsx(res, {
+        exportData: data,
+        sheetPlan: EXPORT_SHEETS,
+        filename: `ServiceCycle-Account-Export-${stamp}.xlsx`,
+      });
+    }
+
+    // JSON (default) -- the canonical, lossless no-lock-in artifact.
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ServiceCycle-Account-Export-${stamp}.json"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.send(JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error('Account export error:', err);
+    if (!res.headersSent) return res.status(500).json({ success: false, error: 'Account export failed' });
+  }
+});
 
 // ── GET /api/export/xlsx?view=assets|workorders ──────────────────────────────
 

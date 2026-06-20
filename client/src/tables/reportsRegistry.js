@@ -19,10 +19,18 @@
 
 import {
   BarChart3, AlertTriangle, FileCheck2, Download, BookOpen,
-  ClipboardList, TrendingUp, ShieldCheck, LineChart,
+  ClipboardList, TrendingUp, ShieldCheck, LineChart, Archive,
 } from 'lucide-react';
 
 export const REPORTS = [
+  {
+    id: 'export-everything',
+    name: 'Export Everything (Account Backup)',
+    description: 'Download a complete, portable copy of your account in open formats — every site, asset, schedule, work order, deficiency, and quote request, plus document and compliance-snapshot metadata with integrity hashes and retrieval paths. No lock-in: lossless JSON, theirs to keep or re-import anywhere.',
+    icon: Archive,
+    planned: false,
+    accountExport: true,
+  },
   {
     id: 'revenue-attribution',
     name: 'Revenue Attribution',

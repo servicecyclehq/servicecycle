@@ -110,6 +110,11 @@ function ReportCard({ report, onActivate, busy }) {
                 <Download size={14} />
                 {busy ? 'Generating EMP…' : 'Download PDF'}
               </>
+            ) : report.accountExport ? (
+              <>
+                <Download size={14} />
+                {busy ? 'Preparing export…' : 'Download backup (JSON)'}
+              </>
             ) : (
               <>
                 <Download size={14} />
@@ -152,6 +157,23 @@ export default function ReportsHub() {
         setToast({ title: 'EMP generation failed', message: e.message || 'Please try again.', variant: 'error', duration: 8000 });
       } finally {
         setEmpGenerating(false);
+      }
+      return;
+    }
+
+    // #5 Export-everything — full-account portable backup (lossless JSON).
+    if (report.accountExport) {
+      if (exporting) return;
+      setExporting(true);
+      setToast({ title: 'Preparing account export…', message: 'Bundling every record into a portable file — this may take a moment.', variant: 'info', duration: 6000 });
+      try {
+        const url = `${import.meta.env.VITE_API_URL ?? ''}/api/export/account?format=json`;
+        await downloadAuthedFile(url, `ServiceCycle-Account-Export-${new Date().toISOString().split('T')[0]}.json`);
+        setToast({ title: 'Export ready', message: 'Your complete account backup is downloading.', variant: 'success', duration: 4000 });
+      } catch (e) {
+        setToast({ title: 'Export failed', message: e.message || 'Please try again.', variant: 'error', duration: 8000 });
+      } finally {
+        setExporting(false);
       }
       return;
     }
@@ -211,7 +233,7 @@ export default function ReportsHub() {
               key={r.id}
               report={r}
               onActivate={handleActivate}
-              busy={(exporting && !!r.exportView) || (empGenerating && !!r.empDownload)}
+              busy={(exporting && (!!r.exportView || !!r.accountExport)) || (empGenerating && !!r.empDownload)}
             />
           ))}
         </div>

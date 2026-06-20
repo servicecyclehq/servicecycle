@@ -86,6 +86,62 @@ async function sendXlsx(res, { sheetName, columnDefs, rows, filename }) {
   return res.send(Buffer.from(buffer));
 }
 
-module.exports = { sendXlsx };
+// ── Multi-sheet full-account export (#5 export-everything) ───────────────────
+// Builds one workbook from a buildAccountExport() payload: a "Read Me" cover
+// sheet (meta + counts + offboarding) followed by one sheet per entity, driven
+// by the sheetPlan (accountExport.EXPORT_SHEETS). Reuses the same type/number
+// formatting conventions as sendXlsx.
+async function sendAccountXlsx(res, { exportData, sheetPlan, filename }) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ServiceCycle';
+  wb.created = new Date();
+
+  // Cover sheet.
+  const cover = wb.addWorksheet('Read Me');
+  cover.columns = [{ header: 'Field', key: 'k', width: 28 }, { header: 'Value', key: 'v', width: 90 }];
+  cover.getRow(1).font = { bold: true };
+  const m = exportData.meta || {};
+  cover.addRow({ k: 'Product', v: `${m.product || 'ServiceCycle'} account export v${m.exportVersion || '1'}` });
+  cover.addRow({ k: 'Standard', v: m.standard || 'NFPA 70B' });
+  cover.addRow({ k: 'Generated', v: m.generatedAt ? new Date(m.generatedAt).toISOString() : '' });
+  cover.addRow({ k: 'Company', v: exportData.account?.companyName || '' });
+  cover.addRow({ k: '', v: '' });
+  for (const [k, v] of Object.entries(exportData.counts || {})) cover.addRow({ k: `Count: ${k}`, v: String(v) });
+  cover.addRow({ k: '', v: '' });
+  for (const line of (exportData.offboarding || [])) cover.addRow({ k: 'Offboarding', v: line });
+
+  for (const plan of sheetPlan) {
+    const rows = exportData[plan.key] || [];
+    const ws = wb.addWorksheet(plan.sheet);
+    ws.columns = plan.columns.map((c) => ({ header: c.header, key: c.id, width: c.width || 22 }));
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    for (const r of rows) {
+      const rowObj = {};
+      for (const c of plan.columns) {
+        const raw = c.get ? c.get(r) : r[c.id];
+        if (c.type === 'date') rowObj[c.id] = raw instanceof Date ? raw : dateOrNull(raw);
+        else if (c.type === 'number' || c.type === 'currency') rowObj[c.id] = (raw == null || raw === '') ? null : Number(raw);
+        else if (typeof raw === 'boolean') rowObj[c.id] = raw ? 'Yes' : 'No';
+        else rowObj[c.id] = raw == null ? '' : String(raw);
+      }
+      const row = ws.addRow(rowObj);
+      plan.columns.forEach((c, idx) => {
+        if (c.type === 'currency') row.getCell(idx + 1).numFmt = '"$"#,##0';
+        else if (c.type === 'date') row.getCell(idx + 1).numFmt = 'yyyy-mm-dd';
+        else if (c.type === 'number') row.getCell(idx + 1).numFmt = '#,##0';
+      });
+    }
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  return res.send(Buffer.from(buffer));
+}
+
+module.exports = { sendXlsx, sendAccountXlsx };
 
 export {};
