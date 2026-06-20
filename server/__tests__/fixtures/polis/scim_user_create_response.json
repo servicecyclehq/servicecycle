@@ -1,0 +1,24 @@
+{
+  "status": 201,
+  "body": {
+    "schemas": [
+      "urn:ietf:params:scim:schemas:core:2.0:User"
+    ],
+    "userName": "jackson@example.com",
+    "name": {
+      "givenName": "SAML",
+      "familyName": "Jackson"
+    },
+    "emails": [
+      {
+        "primary": true,
+        "value": "jackson@example.com",
+        "type": "work"
+      }
+    ],
+    "externalId": "00u1abcdEXTERNALID",
+    "active": true,
+    "title": "Engineer",
+    "id": "64882550-70aa-4340-be05-5726820be926"
+  }
+}

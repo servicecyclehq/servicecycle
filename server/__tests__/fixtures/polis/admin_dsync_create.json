@@ -1,0 +1,21 @@
+{
+  "status": 201,
+  "data": {
+    "id": "583447bd-a6f9-4831-8f4b-b8a95d88e47c",
+    "name": "Fixture Directory",
+    "tenant": "boxyhq.com",
+    "product": "saml-demo.boxyhq.com",
+    "type": "okta-scim-v2",
+    "log_webhook_events": false,
+    "webhook": {
+      "endpoint": "http://localhost:3399/scim-hook",
+      "secret": "<redacted>"
+    },
+    "scim": {
+      "path": "/api/scim/v2.0/583447bd-a6f9-4831-8f4b-b8a95d88e47c",
+      "secret": "<redacted>",
+      "endpoint": "http://localhost:5225/api/scim/v2.0/583447bd-a6f9-4831-8f4b-b8a95d88e47c"
+    },
+    "deactivated": false
+  }
+}

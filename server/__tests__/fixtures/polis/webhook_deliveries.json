@@ -1,0 +1,32 @@
+[
+  {
+    "signatureHeader": "t=1781980051266,s=897ef978cd164bb024d774c8cea36c56ce25c612870572158367893d67107e21",
+    "oryHeader": "t=1781980051266,s=897ef978cd164bb024d774c8cea36c56ce25c612870572158367893d67107e21",
+    "contentType": "application/json",
+    "rawBody": "{\"event\":\"user.created\",\"tenant\":\"boxyhq.com\",\"product\":\"saml-demo.boxyhq.com\",\"directory_id\":\"583447bd-a6f9-4831-8f4b-b8a95d88e47c\",\"data\":{\"id\":\"64882550-70aa-4340-be05-5726820be926\",\"first_name\":\"SAML\",\"last_name\":\"Jackson\",\"email\":\"jackson@example.com\",\"active\":true,\"raw\":{\"schemas\":[\"urn:ietf:params:scim:schemas:core:2.0:User\"],\"userName\":\"jackson@example.com\",\"name\":{\"givenName\":\"SAML\",\"familyName\":\"Jackson\"},\"emails\":[{\"primary\":true,\"value\":\"jackson@example.com\",\"type\":\"work\"}],\"externalId\":\"00u1abcdEXTERNALID\",\"active\":true,\"title\":\"Engineer\",\"id\":\"64882550-70aa-4340-be05-5726820be926\"}}}"
+  },
+  {
+    "signatureHeader": "t=1781980051292,s=0e39715696e9df4e436cf9f25a454ec6dbfa656351d3ec39f966aa11bce12355",
+    "oryHeader": "t=1781980051292,s=0e39715696e9df4e436cf9f25a454ec6dbfa656351d3ec39f966aa11bce12355",
+    "contentType": "application/json",
+    "rawBody": "{\"event\":\"user.updated\",\"tenant\":\"boxyhq.com\",\"product\":\"saml-demo.boxyhq.com\",\"directory_id\":\"583447bd-a6f9-4831-8f4b-b8a95d88e47c\",\"data\":{\"id\":\"64882550-70aa-4340-be05-5726820be926\",\"first_name\":\"Samuel\",\"last_name\":\"Jackson\",\"email\":\"jackson@example.com\",\"active\":true,\"raw\":{\"schemas\":[\"urn:ietf:params:scim:schemas:core:2.0:User\"],\"userName\":\"jackson@example.com\",\"name\":{\"givenName\":\"Samuel\",\"familyName\":\"Jackson\"},\"emails\":[{\"primary\":true,\"value\":\"jackson@example.com\",\"type\":\"work\"}],\"externalId\":\"00u1abcdEXTERNALID\",\"active\":true,\"title\":\"Engineer\",\"id\":\"64882550-70aa-4340-be05-5726820be926\"}}}"
+  },
+  {
+    "signatureHeader": "t=1781980051306,s=f111ffd8ec79588f76ac586d254c6fd165f915986d7e33bf49c688ea1b710731",
+    "oryHeader": "t=1781980051306,s=f111ffd8ec79588f76ac586d254c6fd165f915986d7e33bf49c688ea1b710731",
+    "contentType": "application/json",
+    "rawBody": "{\"event\":\"user.updated\",\"tenant\":\"boxyhq.com\",\"product\":\"saml-demo.boxyhq.com\",\"directory_id\":\"583447bd-a6f9-4831-8f4b-b8a95d88e47c\",\"data\":{\"id\":\"64882550-70aa-4340-be05-5726820be926\",\"first_name\":\"Samuel\",\"last_name\":\"Jackson\",\"email\":\"jackson@example.com\",\"active\":false,\"raw\":{\"schemas\":[\"urn:ietf:params:scim:schemas:core:2.0:User\"],\"userName\":\"jackson@example.com\",\"name\":{\"givenName\":\"Samuel\",\"familyName\":\"Jackson\"},\"emails\":[{\"primary\":true,\"value\":\"jackson@example.com\",\"type\":\"work\"}],\"externalId\":\"00u1abcdEXTERNALID\",\"active\":false,\"title\":\"Engineer\",\"id\":\"64882550-70aa-4340-be05-5726820be926\"}}}"
+  },
+  {
+    "signatureHeader": "t=1781980051320,s=f0fdc61e8d55d6ff66376910badc497396fb0227a8981d2e908ea6f6ccf682e2",
+    "oryHeader": "t=1781980051320,s=f0fdc61e8d55d6ff66376910badc497396fb0227a8981d2e908ea6f6ccf682e2",
+    "contentType": "application/json",
+    "rawBody": "{\"event\":\"group.created\",\"tenant\":\"boxyhq.com\",\"product\":\"saml-demo.boxyhq.com\",\"directory_id\":\"583447bd-a6f9-4831-8f4b-b8a95d88e47c\",\"data\":{\"id\":\"1c5f5774-3a3c-438b-81f4-5fc1e4cf0ff8\",\"name\":\"Engineering\",\"raw\":{\"schemas\":[\"urn:ietf:params:scim:schemas:core:2.0:Group\"],\"displayName\":\"Engineering\",\"members\":[],\"id\":\"1c5f5774-3a3c-438b-81f4-5fc1e4cf0ff8\"}}}"
+  },
+  {
+    "signatureHeader": "t=1781980051334,s=ed5aca4611f57580b561f5bbec822a76d55272e148b1d20d8cb88c15f1e3116c",
+    "oryHeader": "t=1781980051334,s=ed5aca4611f57580b561f5bbec822a76d55272e148b1d20d8cb88c15f1e3116c",
+    "contentType": "application/json",
+    "rawBody": "{\"event\":\"group.user_added\",\"tenant\":\"boxyhq.com\",\"product\":\"saml-demo.boxyhq.com\",\"directory_id\":\"583447bd-a6f9-4831-8f4b-b8a95d88e47c\",\"data\":{\"id\":\"64882550-70aa-4340-be05-5726820be926\",\"first_name\":\"Samuel\",\"last_name\":\"Jackson\",\"email\":\"jackson@example.com\",\"active\":false,\"raw\":{\"schemas\":[\"urn:ietf:params:scim:schemas:core:2.0:User\"],\"userName\":\"jackson@example.com\",\"name\":{\"givenName\":\"Samuel\",\"familyName\":\"Jackson\"},\"emails\":[{\"primary\":true,\"value\":\"jackson@example.com\",\"type\":\"work\"}],\"externalId\":\"00u1abcdEXTERNALID\",\"active\":false,\"title\":\"Engineer\",\"id\":\"64882550-70aa-4340-be05-5726820be926\"},\"group\":{\"id\":\"1c5f5774-3a3c-438b-81f4-5fc1e4cf0ff8\",\"name\":\"Engineering\",\"raw\":{\"schemas\":[\"urn:ietf:params:scim:schemas:core:2.0:Group\"],\"displayName\":\"Engineering\",\"members\":[],\"id\":\"1c5f5774-3a3c-438b-81f4-5fc1e4cf0ff8\"}}}}"
+  }
+]
