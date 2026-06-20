@@ -820,8 +820,14 @@ router.post('/accounts/:accountId/link', async (req: any, res: any) => {
     if (!partnerOrgId) return res.status(400).json({ error: 'No partner org' });
 
     const { accountId } = req.params;
-    const target = await prisma.account.findUnique({ where: { id: accountId } });
+    const target = await prisma.account.findUnique({ where: { id: accountId }, select: { id: true, partnerOrgId: true } });
     if (!target) return res.status(404).json({ error: 'Account not found' });
+    // SECURITY: never let one partner org claim an account already linked to a
+    // DIFFERENT partner org (that would pull another contractor's customer — and
+    // all their asset/deficiency data — into this fleet).
+    if (target.partnerOrgId && target.partnerOrgId !== partnerOrgId) {
+      return res.status(409).json({ error: 'Account is already linked to another partner organization.' });
+    }
 
     await prisma.account.update({
       where: { id: accountId },
@@ -866,6 +872,12 @@ router.patch('/accounts/:accountId/assign-rep', async (req: any, res: any) => {
 
     const { accountId } = req.params;
     const { repId, fallbackRepId } = req.body;
+
+    // SECURITY: the target account must belong to the caller's partner org —
+    // otherwise an oem_admin could reassign reps (and notification routing) on
+    // another partner's / any account.
+    const targetAccount = await prisma.account.findFirst({ where: { id: accountId, partnerOrgId }, select: { id: true } });
+    if (!targetAccount) return res.status(404).json({ error: 'Account not found in your partner organization.' });
 
     // Validate users are oem_admin in the same partner org
     async function validateRep(id: string | null) {

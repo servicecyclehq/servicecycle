@@ -176,15 +176,15 @@ describe('POST /api/invite/accept', () => {
     });
     toDelete.push({ model: 'partnerInvite', id: invite.id });
 
-    // Create an account/user to act as the accepting user
-    const acceptingUser = await createTestUser('admin');
+    // Accepting user must be the invited email (security: links own account only).
+    const acceptingUser = await createTestUser('admin', { email: 'accept-user@test.invalid' });
     toDelete.push({ model: 'user', id: acceptingUser.id });
     toDelete.push({ model: 'account', id: acceptingUser.accountId });
 
     const res = await request(app)
       .post('/api/invite/accept')
       .set('Authorization', `Bearer ${acceptingUser.token}`)
-      .send({ token: tok, userId: acceptingUser.id });
+      .send({ token: tok }); // no userId — server uses the authenticated identity
 
     expect(res.status).toBe(200);
 
@@ -216,7 +216,8 @@ describe('POST /api/invite/accept', () => {
       .set('Authorization', `Bearer ${acceptingUser.token}`)
       .send({ token: tok });
 
-    expect(res.status).toBe(400);
+    // Already-accepted invite is rejected (single-use). 409 = already accepted.
+    expect(res.status).toBe(409);
   });
 });
 

@@ -8,6 +8,7 @@
 import crypto from 'crypto';
 const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
+const { authenticateToken } = require('../middleware/auth');
 
 // GET /api/invite/accept?token=...
 // Returns metadata so the frontend can render the accept page before auth.
@@ -57,12 +58,15 @@ router.get('/accept', async (req: any, res: any) => {
 });
 
 // POST /api/invite/accept
-// Called after user authenticates. Links their account to the partner org.
-router.post('/accept', async (req: any, res: any) => {
+// Requires authentication: the logged-in user links THEIR OWN account to the
+// partner org. SECURITY: never trust a client-supplied userId — that allowed an
+// attacker holding a leaked invite token to attach an arbitrary victim's account
+// to their partner org. The accepting user must also be the invited email.
+router.post('/accept', authenticateToken, async (req: any, res: any) => {
   try {
-    const { token, userId } = req.body;
-    if (!token || !userId) {
-      return res.status(400).json({ error: 'token and userId are required' });
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'token is required' });
     }
 
     const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -76,12 +80,18 @@ router.post('/accept', async (req: any, res: any) => {
     if (invite.revokedAt)  return res.status(410).json({ error: 'Invite has been revoked' });
     if (invite.expiresAt < new Date()) return res.status(410).json({ error: 'Invite has expired' });
 
-    // Get the user and their account
+    // The authenticated caller's own account — derived from the verified token,
+    // NEVER from the request body.
     const user = await prisma.user.findUnique({
-      where: { id: String(userId) },
+      where: { id: req.user.id },
       select: { id: true, accountId: true, email: true },
     });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+    // The invite is addressed to a specific email; only that person may accept.
+    if (String(user.email || '').toLowerCase() !== String(invite.inviteeEmail || '').toLowerCase()) {
+      return res.status(403).json({ error: 'This invite was sent to a different email address. Sign in as the invited user to accept it.' });
+    }
 
     // Atomically: link account, mark invite accepted
     await prisma.$transaction([

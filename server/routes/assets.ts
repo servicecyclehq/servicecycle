@@ -1426,9 +1426,12 @@ router.get('/:id/activity', async (req, res) => {
     const take = Math.min(parseInt(limit) || 50, 100);
     const skip = ((parseInt(page) || 1) - 1) * take;
 
+    // Defense-in-depth: scope log queries by accountId too (not only the
+    // ownership check above), so these never return another tenant's entries.
+    const logWhere = { assetId: asset.id, accountId: req.user.accountId };
     const [logs, total] = await Promise.all([
       prisma.activityLog.findMany({
-        where:   { assetId: req.params.id },
+        where:   logWhere,
         orderBy: { createdAt: 'desc' },
         skip,
         take,
@@ -1436,7 +1439,7 @@ router.get('/:id/activity', async (req, res) => {
           user: { select: { id: true, name: true, email: true } },
         },
       }),
-      prisma.activityLog.count({ where: { assetId: req.params.id } }),
+      prisma.activityLog.count({ where: logWhere }),
     ]);
 
     res.json({
