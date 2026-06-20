@@ -112,3 +112,22 @@ These are process tools, not build-items. Panel = DIVERGE; bring output back to 
 - BEFORE BIG BETS: SSO go-to-market, CMMS/CRM, telemetry ingestion, acquisition positioning.
 
 **Standing method (all ideation passes):** same brief, different adversarial PERSONA per seat (OEM M&A lead @ Eaton/Schneider/ABB/Siemens; PE operating partner; maintenance mgr w/ 4000 assets; OSHA inspector; NFPA consultant; procurement/CISO) → converge in Cowork vs the north star. See memory `servicecycle-ai-panel`.
+
+---
+
+## Phase 4/5 candidates — from the wow-factor multi-AI triage (added 2026-06-20)
+Source: `docs/research/wow-factor-triage-2026-06-20.md`. ~70% of the AIs' ideas were ALREADY SHIPPED (validation, not backlog). New candidates below.
+
+**ADD as candidates:**
+- **OEM Installed-Base Atlas** (replacement-opportunity + competitive-encroachment intelligence) — Phase 4 acquisition centerpiece; the #1 OEM idea across all 6 AIs. RESEARCH-GATED: requires a cross-tenant consent + anonymization framework (in tension with the F1–F11 isolation we just hardened). Pairs with #9 multi-OpCo.
+- **Fleet-wide anonymized benchmarking / failure-mode atlas** — Phase 4 PE network-effect moat. Shares the SAME anonymization layer as the Atlas — build once, power both. RESEARCH-GATED.
+- **PE service-revenue predictability + data-asset diligence room** — Phase 4/5; builds on the shipped revenue-attribution dashboard (verify what's incremental).
+- **Frictionless capture trio** — NFC/QR tap-to-asset + voice field entry (Phase 5 cheap wins; contractor/field UX) and parts/BOM/obsolescence intelligence (Phase 4/5; feeds the OEM Atlas).
+- **EMP generator** — VERIFY the existing `POST /api/compliance/emp-document` is already one-click/regulator-ready (§4.2). Likely polish, not a rebuild — neutralizes Gimba's one differentiator.
+
+**DEFERRED / reframed (NOT active):**
+- **Direct test-INSTRUMENT hardware integration** (Megger/Doble/AVO) — DEFERRED; confirms the earlier decision. SC's wedge is ingesting the test-REPORT (PDF/CSV) the instrument already produces: brand-agnostic, same data, no hardware/partner dependency. Instruments are owned by CONTRACTORS, not customers → at most a contractor-tier convenience, on PowerDB's home turf, large build for incremental gain. The REAL data-in lever is hardening the test-report parser on real PowerDB PDFs (`2026-06-11-parser-corpus-findings.md`) — verify current state before investing.
+
+**PARK (moonshots):** acoustic/phone-mic diagnostics · drone nameplate capture · AR x-ray HUD · subcontractor auto-bid marketplace · gamified compliance. **DO NOT BUILD:** self-healing microgrid API control (safety/liability) · OSHA/insurer "whistleblower automator" (destroys trust).
+
+**Tier-3 watch (situational):** single-line topology + blast-radius outage visualizer · "ask my switchgear" natural-language asset Q&A · insurance premium optimizer (needs insurer partnership) · electrical-asset "Zillow" valuation view.
