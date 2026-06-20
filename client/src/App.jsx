@@ -120,6 +120,7 @@ const ProfilePage             = lazyWithReload(() => import('./pages/ProfilePage
 const SettingsPage            = lazyWithReload(() => import('./pages/SettingsPage'));
 const ActivityLogPage         = lazyWithReload(() => import('./pages/ActivityLogPage'));
 const ReportsHub              = lazyWithReload(() => import('./pages/ReportsHub'));
+const RevenueAttributionDashboard = lazyWithReload(() => import('./pages/RevenueAttributionDashboard')); // Phase 2 revenue attribution
 // Per-standard compliance suite (launched from the Reports hub)
 const ComplianceStandardsReport      = lazyWithReload(() => import('./pages/ComplianceStandardsReport'));
 const ComplianceStandardDetailReport = lazyWithReload(() => import('./pages/ComplianceStandardDetailReport'));
@@ -378,6 +379,11 @@ function AppRoutes() {
             <Route path="reports/standards-library" element={
               <RequireRole roles={['admin', 'manager']}>
                 <StandardsLibrary />
+              </RequireRole>
+            } />
+            <Route path="reports/revenue" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <RevenueAttributionDashboard />
               </RequireRole>
             } />
 

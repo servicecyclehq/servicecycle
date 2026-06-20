@@ -19,10 +19,18 @@
 
 import {
   BarChart3, AlertTriangle, FileCheck2, Download, BookOpen,
-  ClipboardList, TrendingUp, ShieldCheck,
+  ClipboardList, TrendingUp, ShieldCheck, LineChart,
 } from 'lucide-react';
 
 export const REPORTS = [
+  {
+    id: 'revenue-attribution',
+    name: 'Revenue Attribution',
+    description: 'The closed loop from platform signal to paid work: how Path-to-100 / modernization / arc-flash / QEMW alerts become quote requests, accepted quotes, and completed work orders — with estimated dollar value and conversion at each stage.',
+    icon: LineChart,
+    planned: false,
+    to: '/reports/revenue',
+  },
   {
     id: 'emp-document',
     name: 'Export EMP Document',

@@ -1382,6 +1382,10 @@ app.use('/api/share-links', authenticateToken, shareLinkRoutes);
 const shareLinkPublicRoutes = require('./routes/shareLinkPublic');
 app.use('/api/public/share', shareLinkPublicRoutes); // no auth — token is the credential
 
+// Phase 2 — revenue-attribution dashboard (closed-loop engagement → pipeline → $)
+const revenueAttributionRoutes = require('./routes/revenueAttribution');
+app.use('/api/revenue', authenticateToken, revenueAttributionRoutes);
+
 // #17 public parser-as-funnel — no auth, strict per-IP rate limit.
 const publicParseRoutes = require('./routes/publicParse');
 app.use('/api/public', publicParseLimiter, publicParseRoutes);
