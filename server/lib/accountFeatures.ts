@@ -29,6 +29,7 @@ const ACCOUNT_FEATURE_KEYS = [
   "qemw_wallet",          // #37 contractor QEMW credential wallet page + nav
   "arc_flash_studies",    // #25 arc-flash / system-study management UI
   "enterprise_trust",     // #35 enterprise trust pack (SIEM export / SSO) UI
+  "sso",                  // enterprise SSO (OIDC/SAML) + SCIM admin surface (feature/sso-polis)
   "neta_full_battery",    // bulk-apply the full NETA test battery
                           // (OFF = lean manufacturer / 70B program only)
 ];

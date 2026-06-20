@@ -140,6 +140,17 @@ const { verifyToken } = require('./lib/jwtSecrets');
                  'alternatively set AI_ENABLED=false and save the key via Settings UI');
   }
 
+  // Enterprise SSO (feature/sso-polis): fail closed + loud. When SSO_ENABLED=true
+  // every Polis/SCIM secret must be present — we never run SSO with half a config.
+  // No-op when SSO_ENABLED is unset/false. See lib/ssoConfig.ts + SSO_DESIGN.md §6.
+  try {
+    const { missingSsoEnv } = require('./lib/ssoConfig');
+    missingSsoEnv().forEach((v) => missing.push(`${v} (required when SSO_ENABLED=true)`));
+  } catch (e) {
+    console.error('[startup] SSO config check failed to load — refusing to start:', e && e.message);
+    process.exit(1);
+  }
+
   if (missing.length > 0) {
     console.error('[startup] Missing required environment variables:');
     missing.forEach(v => console.error(`  - ${v}`));
