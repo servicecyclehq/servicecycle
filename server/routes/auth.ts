@@ -1130,5 +1130,9 @@ router.post('/invite/:token/accept', credentialLimiter, async (req, res) => { //
 // brute-force budget (10 / 15 min) instead of spinning up a fourth limiter.
 module.exports = router;
 module.exports.credentialLimiter = credentialLimiter;
+// Reused by the SSO callback/exchange (routes/sso.ts) so an SSO login mints the
+// EXACT same access+refresh token pair (incl. the tokenEpoch `ep` claim) a
+// password login does — downstream authz is identical.
+module.exports.issueTokenPair = issueTokenPair;
 
 export {};

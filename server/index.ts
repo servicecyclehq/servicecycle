@@ -644,6 +644,15 @@ app.use('/api/inbound',
   express.json({ limit: '15mb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString('utf8'); } }),
   require('./routes/inboundEmail'));
 
+// SCIM webhook (Ory Polis directory-sync). MUST be mounted BEFORE the global
+// express.json so the HMAC signature can be verified over the EXACT raw bytes
+// (req.rawBody). Public (HMAC-authenticated, fails closed) — no JWT. See
+// routes/ssoScim.ts + docs/security/SSO_DESIGN.md.
+app.use('/api/sso/scim',
+  inboundLimiter,
+  express.json({ limit: '1mb', verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf.toString('utf8'); } }),
+  require('./routes/ssoScim'));
+
 app.use(express.json({ limit: '200kb' }));  // SEC-011 (Round-5)
 
 // Item 2: patch res.json to validate outgoing payload shapes (logs + render_errors in prod).
@@ -1020,6 +1029,9 @@ app.use('/api', demoWriteGuard);
 // auth.js (M1) so /refresh and /logout are exempt from the tight budget.
 app.use('/api/auth', authRoutes);
 app.use('/api/auth/2fa', twoFactorRoutes);
+// Enterprise SSO (public entry: authorize/callback/exchange). No JWT — this IS
+// the login. Gated per-account by the `sso` feature flag + fail-closed config.
+app.use('/api/sso', require('./routes/sso'));
 
 // ── Health Check (M8: no service banner; B3: version + uptime) ──────────────
 // Returns the minimum useful payload: status + version (cached at boot to
