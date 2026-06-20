@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
+import { downloadAuthedFile } from '../api/download';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { fmtDate } from '../lib/equipment';
@@ -93,7 +94,15 @@ function AccountDetailPanel({ accountId, onClose }) {
     <div style={styles.detailPanel}>
       <div style={styles.panelHeader}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>Account Detail — {data.account.companyName}</span>
-        <button onClick={onClose} style={styles.closeBtn}>✕</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            style={styles.inboxBtn}
+            onClick={() => downloadAuthedFile(`/api/proposals/proposal.pdf?accountId=${accountId}`, 'proposal.pdf').catch(() => {})}
+          >
+            Proposal PDF
+          </button>
+          <button onClick={onClose} style={styles.closeBtn}>✕</button>
+        </div>
       </div>
 
       <div style={styles.panelGrid}>

@@ -1371,6 +1371,9 @@ app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 // ── Access Blockers — missing-access / open-items blocker log ─────────────────
 app.use('/api/access-blockers', authenticateToken, require('./routes/accessBlockers'));
 
+// ── Proposals — multi-year scope / proposal builder (repair/replace/defer) ────
+app.use('/api/proposals', authenticateToken, require('./routes/proposals'));
+
 // ── Outage Consolidation Planner — clustered task scheduling ─────────────────
 app.use('/api/assets/:assetId/outage-plan', authenticateToken, outagePlanRoutes);
 

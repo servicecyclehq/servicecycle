@@ -25,6 +25,8 @@ import MaintenanceDebtCard from '../components/MaintenanceDebtCard';
 import ChangeBriefCard from '../components/ChangeBriefCard';
 import AccessBlockerCard from '../components/AccessBlockerCard';
 import EvidenceGapCard from '../components/EvidenceGapCard';
+import ProposalCard from '../components/ProposalCard';
+import { useAuth } from '../context/AuthContext';
 import { fmtDate } from '../lib/equipment';
 
 // Same thresholds as Dashboard's SiteComplianceRow.
@@ -52,6 +54,8 @@ function ComplianceRateBar({ rate }) {
 export default function ComplianceStandardsReport() {
   useDocumentTitle('Compliance by Standard');
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const canSeeProposal = ['admin', 'manager', 'oem_admin'].includes(role);
   // C1: drill-downs record this report as the origin for their BackLink.
   const fromState = useFromState();
 
@@ -114,6 +118,9 @@ export default function ComplianceStandardsReport() {
 
         {/* Maintenance Debt Ledger — $ debt + 1/3/5-yr capital plan (account-wide). */}
         <MaintenanceDebtCard />
+
+        {/* #5 Multi-year proposal (manager+; the route is requireManager). */}
+        {canSeeProposal && <ProposalCard />}
 
         {/* #2 Evidence coverage — requirement→evidence gaps (account/site). */}
         <EvidenceGapCard siteId={siteId || null} />
