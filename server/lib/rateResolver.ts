@@ -4,8 +4,9 @@
  *
  * Resolution hierarchy (most specific wins):
  *   account override (accountId = X)         set by the contractor for this customer
+ *   group standard   (enterpriseGroupId = G) HoldCo-wide rate inherited by OpCos (#9)
  *   partner default  (partnerOrgId = P)      the contractor's house pricing
- *   platform default (both null)             seeded read-only benchmark
+ *   platform default (all null)              seeded read-only benchmark
  *
  * One DB read per resolver (loads the three scopes in a single findMany), then
  * a pure lookup by serviceType. Build one resolver per account in a loop 
@@ -63,7 +64,7 @@ export function formatRange(r: RateRange | null | undefined): string | null {
 
 export interface ResolvedRate extends RateRange {
   serviceType: string;
-  source: 'account' | 'partner' | 'platform';
+  source: 'account' | 'group' | 'partner' | 'platform';
 }
 
 /**
@@ -73,36 +74,41 @@ export interface ResolvedRate extends RateRange {
  */
 export async function buildRateResolver(
   prismaClient: any,
-  { accountId, partnerOrgId }: { accountId: string; partnerOrgId?: string | null },
+  { accountId, partnerOrgId, enterpriseGroupId }: { accountId: string; partnerOrgId?: string | null; enterpriseGroupId?: string | null },
 ): Promise<{
   get: (serviceType: string) => RateRange | null;
   forEquip: (equipmentType: string | null | undefined) => RateRange | null;
   resolvedAll: () => ResolvedRate[];
 }> {
-  const orFilters: any[] = [{ partnerOrgId: null, accountId: null }]; // platform
-  if (partnerOrgId) orFilters.push({ partnerOrgId, accountId: null }); // partner default
+  const orFilters: any[] = [{ partnerOrgId: null, accountId: null, enterpriseGroupId: null }]; // platform
+  if (enterpriseGroupId) orFilters.push({ enterpriseGroupId, accountId: null }); // group standard (#9)
+  if (partnerOrgId) orFilters.push({ partnerOrgId, accountId: null, enterpriseGroupId: null }); // partner default
   orFilters.push({ accountId }); // account override (any partnerOrgId)
 
   const rows = await prismaClient.serviceRateCard.findMany({ where: { OR: orFilters } });
 
-  // Bucket by scope, then collapse per serviceType: account > partner > platform.
+  // Bucket by scope, then collapse per serviceType: account > group > partner > platform.
   const platform = new Map<string, RateRange>();
   const partner = new Map<string, RateRange>();
+  const group = new Map<string, RateRange>();
   const account = new Map<string, RateRange>();
   for (const r of rows) {
     const range: RateRange = { minCents: r.minCents, maxCents: r.maxCents };
     if (r.accountId === accountId) account.set(r.serviceType, range);
-    else if (partnerOrgId && r.partnerOrgId === partnerOrgId && !r.accountId) partner.set(r.serviceType, range);
-    else if (!r.partnerOrgId && !r.accountId) platform.set(r.serviceType, range);
+    else if (enterpriseGroupId && r.enterpriseGroupId === enterpriseGroupId && !r.accountId) group.set(r.serviceType, range);
+    else if (partnerOrgId && r.partnerOrgId === partnerOrgId && !r.accountId && !r.enterpriseGroupId) partner.set(r.serviceType, range);
+    else if (!r.partnerOrgId && !r.accountId && !r.enterpriseGroupId) platform.set(r.serviceType, range);
   }
 
   const get = (serviceType: string): RateRange | null =>
-    account.get(serviceType) ?? partner.get(serviceType) ?? platform.get(serviceType) ?? null;
+    account.get(serviceType) ?? group.get(serviceType) ?? partner.get(serviceType) ?? platform.get(serviceType) ?? null;
 
   const resolvedAll = (): ResolvedRate[] =>
     SERVICE_TYPES.map((st) => {
       const a = account.get(st);
       if (a) return { serviceType: st, ...a, source: 'account' as const };
+      const g = group.get(st);
+      if (g) return { serviceType: st, ...g, source: 'group' as const };
       const p = partner.get(st);
       if (p) return { serviceType: st, ...p, source: 'partner' as const };
       const pl = platform.get(st);

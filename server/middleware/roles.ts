@@ -117,6 +117,19 @@ function requireOemAdmin(req, res, next) {
 }
 
 /**
+ * Requires group_admin role (Phase 4 #9).
+ * Use for: enterprise-group cross-OpCo roll-up + group master-data routes.
+ * Logs permission_denied to the activity log on failure (matches requireAdmin pattern).
+ */
+function requireGroupAdmin(req, res, next) {
+  if (req.user.role !== 'group_admin') {
+    _logDenied(req, 'group_admin');
+    return res.status(403).json({ success: false, error: 'Enterprise group admin access required' });
+  }
+  next();
+}
+
+/**
  * Requires super_admin role.
  * Use for: platform-level PartnerOrganization management, bootstrapping OEM users.
  * Logs permission_denied to the activity log on failure (matches requireAdmin pattern).
@@ -129,6 +142,6 @@ function requireSuperAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAdmin, requireManager, requireViewer, requireOemAdmin, requireSuperAdmin };
+module.exports = { requireAdmin, requireManager, requireViewer, requireOemAdmin, requireGroupAdmin, requireSuperAdmin };
 
 export {};

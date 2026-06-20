@@ -63,6 +63,7 @@ enum UserRole {
   viewer
   consultant // Maintenance Vendor account manager â€” receives alerts in tandem
   oem_admin // OEM service org fleet manager â€” cross-account read-only view
+  group_admin // Enterprise group (HoldCo) admin â€” cross-OpCo read-only roll-up over accounts sharing an enterpriseGroupId
   super_admin // Platform super-admin â€” can manage PartnerOrganizations and bootstrap OEM users
 }
 
@@ -267,6 +268,12 @@ model Account {
   // OEM partner linkage -- links this customer account to a PartnerOrganization
   // for fleet-level visibility by oem_admin users.
   partnerOrgId             String?
+  // Phase 4 #9 enterprise group (HoldCo) linkage -- a customer-side parent over
+  // its operating companies (OpCos). DISTINCT from partnerOrgId (the OEM channel):
+  // an OpCo can be in an OEM fleet AND a HoldCo at once. group_admin users on a
+  // member account get a cross-OpCo read-only roll-up across accounts sharing
+  // this id. Nullable -- standalone accounts have none.
+  enterpriseGroupId        String?
   // Partner flywheel: assigned service rep + fallback rep routing
   assignedRepId            String? // FK â†’ User (primary rep)
   fallbackRepId            String? // FK â†’ User (fallback rep, nullable)
@@ -327,6 +334,7 @@ model Account {
   telemetryNotifications TelemetryNotification[]
 
   partnerOrg       PartnerOrganization? @relation(fields: [partnerOrgId], references: [id], onDelete: SetNull)
+  enterpriseGroup  EnterpriseGroup?     @relation(fields: [enterpriseGroupId], references: [id], onDelete: SetNull)
   assignedRep      User?                @relation("AssignedRep", fields: [assignedRepId], references: [id], onDelete: SetNull)
   fallbackRep      User?                @relation("FallbackRep", fields: [fallbackRepId], references: [id], onDelete: SetNull)
   partnerInvites   PartnerInvite[]
@@ -342,6 +350,7 @@ model Account {
   ssoLoginStates   SsoLoginState[]
   ssoHandoffs      SsoHandoff[]
 
+  @@index([enterpriseGroupId])
   @@map("accounts")
 }
 
@@ -2434,20 +2443,49 @@ model AssetTemplateTask {
 //
 // Read-only aggregation only â€” no pipeline/win-loss tracking (CRM territory).
 model ServiceRateCard {
-  id           String   @id @default(uuid())
-  partnerOrgId String? // null = platform default
-  accountId    String? // null = OEM default; account-level overrides supported
-  serviceType  String // see values above
-  minCents     Int // minimum estimate (USD cents)
-  maxCents     Int // maximum estimate (USD cents)
-  notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String   @id @default(uuid())
+  partnerOrgId      String? // null = platform default
+  accountId         String? // null = OEM default; account-level overrides supported
+  // Phase 4 #9: enterprise-group (HoldCo) tier. A group-level card is the
+  // standardized rate inherited by every OpCo in the group, sitting between the
+  // account override and the partner/platform defaults in the resolver
+  // (account > group > partner > platform). null on all three scopes = platform.
+  enterpriseGroupId String?
+  serviceType       String // see values above
+  minCents          Int // minimum estimate (USD cents)
+  maxCents          Int // maximum estimate (USD cents)
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  enterpriseGroup EnterpriseGroup? @relation(fields: [enterpriseGroupId], references: [id], onDelete: Cascade)
 
   @@index([partnerOrgId])
   @@index([accountId])
+  @@index([enterpriseGroupId])
   @@index([serviceType])
   @@map("service_rate_cards")
+}
+
+// --- Phase 4 #9: Enterprise group (HoldCo over OpCos) -------------------------
+// A customer-side parent organization grouping multiple operating-company
+// Accounts (OpCos). DISTINCT from PartnerOrganization (the OEM service channel):
+// an OpCo can belong to an OEM fleet AND a HoldCo simultaneously. group_admin
+// users on a member account get a cross-OpCo READ-ONLY roll-up (siblings stay
+// isolated; no cross-OpCo writes). The group also owns centralized master data
+// (standardized service rate cards) inherited by its OpCos via the resolver.
+model EnterpriseGroup {
+  id           String   @id @default(uuid())
+  name         String
+  logoUrl      String?
+  primaryColor String? // hex, e.g. "#0a3d62"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts  Account[]
+  rateCards ServiceRateCard[]
+
+  @@map("enterprise_groups")
 }
 
 // â”€â”€â”€ Partner Invites â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

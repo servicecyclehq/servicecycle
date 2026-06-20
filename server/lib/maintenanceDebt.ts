@@ -45,10 +45,10 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
 
   const account = await prisma.account.findUnique({
     where: { id: accountId },
-    select: { companyName: true, partnerOrgId: true },
+    select: { companyName: true, partnerOrgId: true, enterpriseGroupId: true },
   });
 
-  const resolver = await buildRateResolver(prisma, { accountId, partnerOrgId: account?.partnerOrgId ?? null });
+  const resolver = await buildRateResolver(prisma, { accountId, partnerOrgId: account?.partnerOrgId ?? null, enterpriseGroupId: account?.enterpriseGroupId ?? null });
   const inspectionCents = resolver.get('INSPECTION'); // { minCents, maxCents } | null
   const inspMin = inspectionCents ? inspectionCents.minCents / 100 : 0;
   const inspMax = inspectionCents ? inspectionCents.maxCents / 100 : 0;

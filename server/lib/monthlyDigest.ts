@@ -92,6 +92,7 @@ async function gatherAccountDigest(account: any, now: Date) {
   const resolver = await buildRateResolver(prisma, {
     accountId: account.id,
     partnerOrgId: account.partnerOrgId ?? null,
+    enterpriseGroupId: account.enterpriseGroupId ?? null,
   });
 
   const schedules = await prisma.maintenanceSchedule.findMany({

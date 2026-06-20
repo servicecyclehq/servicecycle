@@ -11,7 +11,7 @@ function getPrisma() {
   return _prisma;
 }
 
-export type TestRole = 'admin' | 'manager' | 'viewer' | 'consultant' | 'oem_admin' | 'super_admin';
+export type TestRole = 'admin' | 'manager' | 'viewer' | 'consultant' | 'oem_admin' | 'group_admin' | 'super_admin';
 
 export interface TestUser {
   id: string;
@@ -34,7 +34,7 @@ export function generateTestToken(userId: string, accountId: string, role: TestR
  */
 export async function createTestUser(
   role: TestRole,
-  overrides: { email?: string; accountId?: string; partnerOrgId?: string } = {}
+  overrides: { email?: string; accountId?: string; partnerOrgId?: string; enterpriseGroupId?: string } = {}
 ): Promise<TestUser> {
   const prisma = getPrisma();
   const email = overrides.email ?? `test-${role}-${Date.now()}-${Math.random().toString(36).slice(2)}@test.invalid`;
@@ -46,6 +46,7 @@ export async function createTestUser(
         companyName: `Test Account ${Date.now()}`,
         planType: 'saas',
         ...(overrides.partnerOrgId ? { partnerOrgId: overrides.partnerOrgId } : {}),
+        ...(overrides.enterpriseGroupId ? { enterpriseGroupId: overrides.enterpriseGroupId } : {}),
       },
     });
     accountId = account.id;

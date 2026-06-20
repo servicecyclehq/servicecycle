@@ -43,8 +43,8 @@ async function buildProposal(prisma: any, accountId: string, { siteId = null }: 
   }
   const assetScope: any = { archivedAt: null, inService: true, ...(siteId ? { siteId } : {}) };
 
-  const account = await prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true, partnerOrgId: true } });
-  const resolver = await buildRateResolver(prisma, { accountId, partnerOrgId: account?.partnerOrgId ?? null });
+  const account = await prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true, partnerOrgId: true, enterpriseGroupId: true } });
+  const resolver = await buildRateResolver(prisma, { accountId, partnerOrgId: account?.partnerOrgId ?? null, enterpriseGroupId: account?.enterpriseGroupId ?? null });
   const inspection = resolver.get('INSPECTION');
   const inspMin = inspection ? inspection.minCents / 100 : 0;
   const inspMax = inspection ? inspection.maxCents / 100 : 0;
