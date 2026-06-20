@@ -9,10 +9,12 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 export default function InviteAcceptPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const token = params.get('token') ?? '';
 
   const [preview, setPreview] = useState(null);   // loaded from GET
@@ -35,6 +37,12 @@ export default function InviteAcceptPage() {
 
   async function handleAccept() {
     if (accepting) return;
+    // Accepting links your account — it requires being signed in as the invited
+    // user. If logged out, send them to login and return here to finish.
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent(`/invite/accept?token=${token}`)}`);
+      return;
+    }
     setAccepting(true);
     setError('');
     try {
@@ -122,7 +130,7 @@ export default function InviteAcceptPage() {
                   onClick={handleAccept}
                   disabled={accepting}
                 >
-                  {accepting ? 'Connecting…' : 'Accept & connect'}
+                  {accepting ? 'Connecting…' : (user ? 'Accept & connect' : 'Sign in to accept')}
                 </button>
 
                 <button

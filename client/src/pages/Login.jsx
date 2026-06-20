@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Navigate, Link } from 'react-router-dom';
+import { useNavigate, Navigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -10,6 +10,13 @@ export default function Login() {
   useDocumentTitle('Sign in');
   const { user, loading, login, verify2fa, demoMode } = useAuth();
   const navigate = useNavigate();
+  // Post-login redirect target (e.g. partner-invite accept). Only same-origin
+  // relative paths are honored — guards against open-redirect via ?next=.
+  const [searchParams] = useSearchParams();
+  const nextParam = searchParams.get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+    ? nextParam
+    : '/dashboard';
 
   // L7+legal: surface the "Create an account" link only when the server
   // accepts public registrations (REGISTRATION_OPEN=true on self-hosted, or
@@ -49,7 +56,7 @@ export default function Login() {
 
   // Already logged in — redirect
   if (!loading && user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={safeNext} replace />;
   }
 
   // ── Step 1: Email + password ───────────────────────────────────────────────
@@ -69,7 +76,7 @@ export default function Login() {
         return;
       }
 
-      navigate('/dashboard');
+      navigate(safeNext);
     } catch (err) {
       const msg = err.response?.data?.error || 'Login failed. Please try again.';
       setError(msg);
@@ -88,7 +95,7 @@ export default function Login() {
 
     try {
       await verify2fa(twoFactorToken, totpCode);
-      navigate('/dashboard');
+      navigate(safeNext);
     } catch (err) {
       const msg = err.response?.data?.error || 'Invalid code. Please try again.';
       setError(msg);

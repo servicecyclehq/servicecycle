@@ -841,7 +841,10 @@ router.post('/invites/:id/resend', async (req: any, res: any) => {
   }
 });
 
-// POST /api/fleet/accounts/:accountId/link  (direct link without invite email)
+// POST /api/fleet/accounts/:accountId/link
+// Re-affirm a link for an account that has CONSENTED via an accepted invite.
+// Consent-first: there is no longer a no-invite "absorb any unlinked account"
+// path — a contractor can only connect a customer who accepted an invitation.
 router.post('/accounts/:accountId/link', async (req: any, res: any) => {
   try {
     const partnerOrgId = await getCallerPartnerOrgId(req.user.accountId);
@@ -855,6 +858,17 @@ router.post('/accounts/:accountId/link', async (req: any, res: any) => {
     // all their asset/deficiency data — into this fleet).
     if (target.partnerOrgId && target.partnerOrgId !== partnerOrgId) {
       return res.status(409).json({ error: 'Account is already linked to another partner organization.' });
+    }
+
+    // CONSENT GATE: require an accepted (non-revoked) invitation from this org
+    // for this account. Removes the silent no-consent absorption of an unlinked
+    // account — connecting a customer requires their explicit acceptance.
+    const acceptedInvite = await prisma.partnerInvite.findFirst({
+      where: { partnerOrgId, accountId: target.id, acceptedAt: { not: null }, revokedAt: null },
+      select: { id: true },
+    });
+    if (!acceptedInvite) {
+      return res.status(403).json({ error: 'This account has not accepted an invitation from your organization. Send an invite for them to accept.' });
     }
 
     await prisma.account.update({

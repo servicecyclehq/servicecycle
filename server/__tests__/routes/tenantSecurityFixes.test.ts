@@ -53,7 +53,27 @@ describe('fleet account link/assign-rep cross-partner guards', () => {
     expect(a.partnerOrgId).toBe(orgB.id);
   });
 
-  test('can still link a genuinely unlinked account (200)', async () => {
+  test('cannot link an unlinked account WITHOUT an accepted invite (403 consent gate)', async () => {
+    const res = await request(app)
+      .post(`/api/fleet/accounts/${unlinkedAccount.id}/link`)
+      .set('Authorization', `Bearer ${oemA.token}`);
+    expect(res.status).toBe(403);
+    const a = await prisma.account.findUnique({ where: { id: unlinkedAccount.id }, select: { partnerOrgId: true } });
+    expect(a.partnerOrgId).toBeNull(); // not absorbed without consent
+  });
+
+  test('CAN link once the account has an accepted invite (consent given) (200)', async () => {
+    await prisma.partnerInvite.create({
+      data: {
+        partnerOrgId: orgA.id,
+        inviteeEmail: `consent-${Date.now()}@test.invalid`,
+        invitedById: oemA.id,
+        tokenHash: crypto.createHash('sha256').update(crypto.randomBytes(16).toString('hex')).digest('hex'),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        acceptedAt: new Date(),
+        accountId: unlinkedAccount.id,
+      },
+    });
     const res = await request(app)
       .post(`/api/fleet/accounts/${unlinkedAccount.id}/link`)
       .set('Authorization', `Bearer ${oemA.token}`);
@@ -114,6 +134,19 @@ describe('public invite accept hardening', () => {
     expect(mine.partnerOrgId).toBe(orgA.id);
     const theirs = await prisma.account.findUnique({ where: { id: outsider.accountId }, select: { partnerOrgId: true } });
     expect(theirs.partnerOrgId).toBeNull(); // the supplied userId was ignored
+  });
+
+  test('F8: a read-only (viewer) invitee cannot accept even with matching email (403)', async () => {
+    const v = await createTestUser('viewer', { email: `viewer-inv-${Date.now()}@test.invalid` });
+    const { raw } = await makeInvite(v.email);
+    const res = await request(app).post('/api/invite/accept')
+      .set('Authorization', `Bearer ${v.token}`)
+      .send({ token: raw });
+    expect(res.status).toBe(403);
+    const a = await prisma.account.findUnique({ where: { id: v.accountId }, select: { partnerOrgId: true } });
+    expect(a.partnerOrgId).toBeNull();
+    try { await prisma.user.delete({ where: { id: v.id } }); } catch {}
+    try { await prisma.account.delete({ where: { id: v.accountId } }); } catch {}
   });
 });
 

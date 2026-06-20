@@ -93,6 +93,13 @@ router.post('/accept', authenticateToken, async (req: any, res: any) => {
       return res.status(403).json({ error: 'This invite was sent to a different email address. Sign in as the invited user to accept it.' });
     }
 
+    // F8: connecting the account to a contractor (granting fleet visibility) is
+    // an account-ownership decision — only an admin/manager may accept, even
+    // from the invited mailbox. Read-only viewer/consultant cannot link.
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only an account admin or manager can accept a partner connection.' });
+    }
+
     // SECURITY: don't silently transfer an account already managed by a
     // DIFFERENT partner org. Mirrors the fleet POST /accounts/:id/link 409
     // guard. Without this, an account managed by contractor A could be moved to
