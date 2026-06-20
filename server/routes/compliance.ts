@@ -51,6 +51,7 @@ const { buildMaintenanceDebtData, debtLedgerToCsv } = require('../lib/maintenanc
 const { buildChangeBrief } = require('../lib/changeBrief');
 const { buildAssetEvidenceTrace, buildEvidenceGapSummary } = require('../lib/evidenceTrace');
 const { buildDriftDetector } = require('../lib/driftDetector');
+const { buildAuditFindings } = require('../lib/auditFindings');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -267,6 +268,23 @@ router.get('/drift', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/drift]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build drift report.' });
+  }
+});
+
+// ── GET /audit-findings?siteId= ───────────────────────────────────────────────
+// Phase 1 #1 -- the "what will fail an audit" view. Aggregates Path-to-100 gaps,
+// undocumented-work evidence gaps, and drift/uncorrected findings into ONE ranked
+// list of likely NFPA 70B audit findings, with a headline readiness score. Pure
+// re-presentation of signals already computed elsewhere. Any authenticated role.
+router.get('/audit-findings', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const data = await buildAuditFindings(prisma, req.user.accountId, { siteId });
+    return res.json({ success: true, data });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/audit-findings]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build audit findings.' });
   }
 });
 

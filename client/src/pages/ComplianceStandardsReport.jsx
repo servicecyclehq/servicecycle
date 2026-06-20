@@ -25,6 +25,7 @@ import MaintenanceDebtCard from '../components/MaintenanceDebtCard';
 import ChangeBriefCard from '../components/ChangeBriefCard';
 import AccessBlockerCard from '../components/AccessBlockerCard';
 import EvidenceGapCard from '../components/EvidenceGapCard';
+import AuditFailureCard from '../components/AuditFailureCard';
 import ProposalCard from '../components/ProposalCard';
 import DriftDetectorCard from '../components/DriftDetectorCard';
 import { useAuth } from '../context/AuthContext';
@@ -113,6 +114,9 @@ export default function ComplianceStandardsReport() {
             {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
+
+        {/* #1 — "What will fail an audit": one ranked list of likely findings. */}
+        <AuditFailureCard siteId={siteId || null} />
 
         {/* B1 — NFPA 70B program-maturity score vs the standard. */}
         <MaturityScoreCard siteId={siteId || null} />
