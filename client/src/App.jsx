@@ -82,6 +82,8 @@ const HelpDrawer = lazyWithReload(() => import('./components/HelpDrawer'));
 
 const LandingPage             = lazyWithReload(() => import('./pages/LandingPage'));
 const Login                   = lazyWithReload(() => import('./pages/Login'));
+const SsoCallback             = lazyWithReload(() => import('./pages/SsoCallback'));      // enterprise SSO handoff
+const SsoSettings             = lazyWithReload(() => import('./pages/SsoSettings'));      // admin SSO config
 const Register                = lazyWithReload(() => import('./pages/Register'));        // L3 + legal click-through
 const ForgotPassword          = lazyWithReload(() => import('./pages/ForgotPassword'));
 const ResetPassword           = lazyWithReload(() => import('./pages/ResetPassword'));
@@ -242,6 +244,7 @@ function AppRoutes() {
           <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/accept-invite/:token" element={<AcceptInvite />} />
           <Route path="/invite/accept" element={<InviteAcceptPage />} />
+          <Route path="/sso/callback" element={<SsoCallback />} />{/* enterprise SSO token handoff */}
           <Route path="/share/:token" element={<SharedCompliancePage />} />{/* #21 public auditor/insurer view */}
           <Route path="/try" element={<TryParserPage />} />{/* #17 public parser-as-funnel */}
 
@@ -340,6 +343,7 @@ function AppRoutes() {
             {/* Industry news feed — all roles, like the other read surfaces. */}
             <Route path="news"               element={<NewsPage />} />
             <Route path="profile"            element={<ProfilePage />} />
+            <Route path="settings/sso"       element={<SsoSettings />} />{/* admin SSO config (gated in-page) */}
 
             {/* Legacy ServiceCycle paths — old bookmarks and emails land on the
                 nearest ServiceCycle equivalent instead of the in-shell 404. */}
