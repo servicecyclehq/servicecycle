@@ -527,29 +527,18 @@ router.put('/:id', requireManager, async (req, res) => {
         ? { ...existing.asset, conditionPhysical: finalAsLeft, governingCondition: newGoverning }
         : existing.asset;
 
-      const ops = [];
-
-      // 1. Asset condition write (when an as-left condition was recorded).
-      if (finalAsLeft) {
-        ops.push(prisma.asset.update({
-          where: { id: existing.assetId },
-          data: { conditionPhysical: finalAsLeft, governingCondition: newGoverning },
-        }));
-      }
-
-      // 2. Schedule roll-forward (when the job was born from a schedule).
+      // ── Pre-compute side-effects (pure reads/calc) BEFORE the transaction ──
+      // 2. Primary schedule roll-forward + provenance.
+      let rolledPrimary: { lastCompletedDate: any; nextDueDate: any } | null = null;
+      let performedByName: string | null = null;
       if (existing.scheduleId && existing.schedule) {
-        const { lastCompletedDate, nextDueDate } = recomputeScheduleDates(
+        rolledPrimary = recomputeScheduleDates(
           existing.schedule.taskDefinition, assetAfter, existing.schedule, completedAt
         );
-
         // Provenance: who actually performed the work. Effective assignment
         // (body value wins over stored) → "Tech Name — Contractor Name" when
-        // both are known, contractor name alone otherwise. Only written when
-        // a name resolves, so an unassigned completion doesn't clobber an
-        // earlier manual provenance entry.
+        // both are known, contractor name alone otherwise.
         const effTechId = assignedTechId !== undefined ? (assignedTechId || null) : existing.assignedTechId;
-        let performedByName = null;
         if (effTechId) {
           const tech = await prisma.contractorTech.findFirst({
             where:  { id: effTechId, contractor: { accountId: req.user.accountId } },
@@ -566,22 +555,12 @@ router.put('/:id', requireManager, async (req, res) => {
           });
           if (c) performedByName = c.name;
         }
-
-        ops.push(prisma.maintenanceSchedule.update({
-          where: { id: existing.scheduleId },
-          data: {
-            lastCompletedDate,
-            nextDueDate,
-            ...(performedByName ? { lastPerformedByName: performedByName.slice(0, 200) } : {}),
-          },
-        }));
       }
 
       // 2b. Outage loop (gem V1): an outage-plan WO covers a device's WHOLE
       // task list, recorded in an [outage-sched:id,...] marker in its notes.
-      // Roll EVERY one forward on completion — not just the primary scheduleId
-      // — so the device leaves the outage fully current instead of with one
-      // task done and the rest still overdue.
+      // Roll EVERY one forward — read + compute now, write inside the tx.
+      const outageRolls: Array<{ id: string; lastCompletedDate: any; nextDueDate: any }> = [];
       const outageMarker = /\[outage-sched:([^\]]+)\]/.exec(existing.notes || '');
       if (outageMarker) {
         const extraIds = outageMarker[1].split(',').map((s: string) => s.trim())
@@ -593,23 +572,57 @@ router.put('/:id', requireManager, async (req, res) => {
           });
           for (const s of extras) {
             const rolled = recomputeScheduleDates(s.taskDefinition, assetAfter, s, completedAt);
-            ops.push(prisma.maintenanceSchedule.update({
-              where: { id: s.id },
-              data: { lastCompletedDate: rolled.lastCompletedDate, nextDueDate: rolled.nextDueDate },
-            }));
+            outageRolls.push({ id: s.id, lastCompletedDate: rolled.lastCompletedDate, nextDueDate: rolled.nextDueDate });
           }
         }
       }
 
-      // 3. The work order itself.
-      ops.push(prisma.workOrder.update({
-        where: { id: existing.id },
-        data: updateData,
-        include: listInclude,
-      }));
-
-      const results = await prisma.$transaction(ops);
-      const workOrder = results[results.length - 1];
+      // ── Atomic completion (F9: idempotent under concurrent double-submit) ──
+      // The guarded updateMany claims the WO only if it's still in the status we
+      // read; a losing concurrent request gets count 0 → aborts → 409. The whole
+      // thing is ONE transaction, so a failed side-effect rolls back the claim
+      // too (retry-safe), and the INSPECTION_COMPLETED event + leave-behind email
+      // below fire exactly once.
+      let workOrder: any;
+      try {
+        workOrder = await prisma.$transaction(async (tx: any) => {
+          const claim = await tx.workOrder.updateMany({
+            where: { id: existing.id, status: existing.status },
+            data: updateData,
+          });
+          if (claim.count === 0) {
+            const e: any = new Error('WO_ALREADY_FINALIZED'); e.code = 'WO_ALREADY_FINALIZED'; throw e;
+          }
+          if (finalAsLeft) {
+            await tx.asset.update({
+              where: { id: existing.assetId },
+              data: { conditionPhysical: finalAsLeft, governingCondition: newGoverning },
+            });
+          }
+          if (rolledPrimary && existing.scheduleId) {
+            await tx.maintenanceSchedule.update({
+              where: { id: existing.scheduleId },
+              data: {
+                lastCompletedDate: rolledPrimary.lastCompletedDate,
+                nextDueDate: rolledPrimary.nextDueDate,
+                ...(performedByName ? { lastPerformedByName: performedByName.slice(0, 200) } : {}),
+              },
+            });
+          }
+          for (const r of outageRolls) {
+            await tx.maintenanceSchedule.update({
+              where: { id: r.id },
+              data: { lastCompletedDate: r.lastCompletedDate, nextDueDate: r.nextDueDate },
+            });
+          }
+          return tx.workOrder.findUnique({ where: { id: existing.id }, include: listInclude });
+        });
+      } catch (e: any) {
+        if (e?.code === 'WO_ALREADY_FINALIZED') {
+          return res.status(409).json({ success: false, error: 'This work order was already completed by another request.' });
+        }
+        throw e;
+      }
 
       // Audit trail — fire-and-forget, never blocks the response.
       writeActivityLog({

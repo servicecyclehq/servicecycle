@@ -312,6 +312,13 @@ const HEADER_TO_FIELD: any = {
   'crit score':            'criticalityScore',
   'risk score':            'criticalityScore',
   'infrastructure criticality': 'criticalityScore',
+  // Condition (degradation) score 1-5 — pairs with criticalityScore to form the
+  // stored DPS (priorityScore = conditionScore × criticalityScore) on import.
+  'condition score':       'conditionScore',
+  'condition (1-5)':       'conditionScore',
+  'cond score':            'conditionScore',
+  'degradation score':     'conditionScore',
+  'physical condition score': 'conditionScore',
   'repair cost':           'repairCostEstimate',
   'repair cost estimate':  'repairCostEstimate',
   'estimated repair cost': 'repairCostEstimate',
@@ -354,6 +361,7 @@ const SCHEMA_FIELDS = [
   { key: 'conditionEnvironment', label: 'Condition — Environment', type: 'enum', options: ['C1', 'C2', 'C3'] },
   { key: 'inService',            label: 'In Service',             type: 'boolean' },
   { key: 'criticalityScore',     label: 'Criticality Score (1-5)', type: 'number' },
+  { key: 'conditionScore',       label: 'Condition Score (1-5)',  type: 'number' },
   { key: 'repairCostEstimate',   label: 'Repair Cost Estimate',   type: 'number' },
   { key: 'spareLeadTimeWeeks',   label: 'Spare Lead Time (weeks)', type: 'number' },
   { key: 'redundancyStatus',     label: 'Redundancy Status',      type: 'enum', options: ['N', 'N_PLUS_1', 'TWO_N'] },
@@ -444,6 +452,13 @@ function coerce(field, raw) {
       const n = Number(s);
       if (!Number.isInteger(n) || n < 1 || n > 5) {
         return new Error(`Invalid criticality score: "${s}" (expected an integer 1-5)`);
+      }
+      return n;
+    }
+    case 'conditionScore': {
+      const n = Number(s);
+      if (!Number.isInteger(n) || n < 1 || n > 5) {
+        return new Error(`Invalid condition score: "${s}" (expected an integer 1-5)`);
       }
       return n;
     }

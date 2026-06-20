@@ -26,7 +26,10 @@ router.get('/', async (req: any, res: any) => {
     // SECURITY: never serialize webhookSecret (the 32-byte HMAC-SHA256 signing
     // key) into an API response — it can land in browser history / proxy logs
     // and lets a holder forge signed webhook payloads. Explicit select omits it.
+    // F10: soft-deleted orgs are marked with a "[DELETED] " name prefix (no
+    // deletedAt column). Hide them from the management list so they read as gone.
     const orgs = await prisma.partnerOrganization.findMany({
+      where: { NOT: { name: { startsWith: '[DELETED]' } } },
       select: {
         id: true, name: true, logoUrl: true, primaryColor: true, website: true,
         webhookUrl: true, digestIntervalDays: true, createdAt: true, updatedAt: true,
@@ -194,6 +197,7 @@ router.post('/:id/link-account', async (req: any, res: any) => {
 
     const org = await prisma.partnerOrganization.findUnique({ where: { id } });
     if (!org) return res.status(404).json({ error: 'Partner org not found' });
+    if (org.name?.startsWith('[DELETED]')) return res.status(409).json({ error: 'This partner org has been deleted.' });
 
     const account = await prisma.account.findUnique({ where: { id: accountId } });
     if (!account) return res.status(404).json({ error: 'Account not found' });
@@ -225,6 +229,7 @@ router.post('/:id/create-oem-user', async (req: any, res: any) => {
 
     const org = await prisma.partnerOrganization.findUnique({ where: { id } });
     if (!org) return res.status(404).json({ error: 'Partner org not found' });
+    if (org.name?.startsWith('[DELETED]')) return res.status(409).json({ error: 'This partner org has been deleted.' });
 
     // Check for duplicate email
     const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
