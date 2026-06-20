@@ -178,6 +178,28 @@ async function buildProposal(prisma: any, accountId: string, { siteId = null }: 
   };
 }
 
-module.exports = { buildProposal };
+/**
+ * Strip every dollar figure from a proposal for customer-facing surfaces. The
+ * customer sees WHAT / WHEN / WHY (recommendation, year, drivers, counts) but no
+ * pricing — pricing is the contractor's to present, via the rep. Mutates a clone.
+ */
+function redactProposalCosts(data: any) {
+  const clone = JSON.parse(JSON.stringify(data));
+  for (const li of clone.lineItems || []) { delete li.costMin; delete li.costMax; }
+  for (const o of clone.options || []) { delete o.total; }
+  if (clone.summary) {
+    delete clone.summary.total;
+    if (clone.summary.byYear) {
+      for (const k of Object.keys(clone.summary.byYear)) {
+        const y = clone.summary.byYear[k];
+        if (y) { delete y.min; delete y.max; } // keep the count
+      }
+    }
+  }
+  clone.costsRedacted = true;
+  return clone;
+}
+
+module.exports = { buildProposal, redactProposalCosts };
 
 export {};

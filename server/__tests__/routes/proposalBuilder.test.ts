@@ -13,6 +13,8 @@ let app: any;
 let prisma: any;
 let manager: TestUser;
 let viewer: TestUser;
+let oem: TestUser;
+let partnerOrgId: string;
 let assetReplace: string;
 let assetRepair: string;
 let assetDefer: string;
@@ -24,6 +26,13 @@ beforeAll(async () => {
   prisma = require('../../lib/prisma').default;
   manager = await createTestUser('manager');
   viewer = await createTestUser('viewer');
+  oem = await createTestUser('oem_admin');
+  // Link the customer (manager) account + the contractor (oem) account under one
+  // partner org so the oem_admin can build the priced proposal for the customer.
+  const org = await prisma.partnerOrganization.create({ data: { name: `Prop ${Date.now()}` } });
+  partnerOrgId = org.id;
+  await prisma.account.update({ where: { id: manager.accountId }, data: { partnerOrgId } });
+  await prisma.account.update({ where: { id: oem.accountId }, data: { partnerOrgId } });
 
   await prisma.serviceRateCard.create({ data: { serviceType: 'INSPECTION', minCents: 150000, maxCents: 1200000 } });
   await prisma.serviceRateCard.create({ data: { serviceType: 'SWITCHGEAR_MODERNIZATION', minCents: 7500000, maxCents: 40000000 } });
@@ -47,8 +56,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const u of [manager, viewer]) {
+  for (const u of [manager, viewer, oem]) {
     const acc = u.accountId;
+    try { await prisma.account.update({ where: { id: acc }, data: { partnerOrgId: null } }); } catch {}
     try { await prisma.deficiency.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.maintenanceSchedule.deleteMany({ where: { accountId: acc } }); } catch {}
     try { await prisma.maintenanceTaskDefinition.deleteMany({ where: { accountId: acc } }); } catch {}
@@ -57,6 +67,7 @@ afterAll(async () => {
     try { await prisma.user.delete({ where: { id: u.id } }); } catch {}
     try { await prisma.account.delete({ where: { id: acc } }); } catch {}
   }
+  try { await prisma.partnerOrganization.delete({ where: { id: partnerOrgId } }); } catch {}
   try { await prisma.serviceRateCard.deleteMany({ where: { serviceType: { in: ['INSPECTION', 'SWITCHGEAR_MODERNIZATION'] }, partnerOrgId: null, accountId: null } }); } catch {}
   await prisma.$disconnect();
 });
@@ -85,12 +96,36 @@ describe('#5 proposal builder', () => {
     expect(comprehensive.total.max).toBeGreaterThan(essential.total.max);
   });
 
-  test('JSON + PDF routes work for a manager', async () => {
+  test('customer (manager) gets a COST-REDACTED program + no priced PDF', async () => {
     const json = await request(app).get('/api/proposals').set('Authorization', `Bearer ${manager.token}`);
     expect(json.status).toBe(200);
+    expect(json.body.data.costsRedacted).toBe(true);
     expect(json.body.data.lineItems.length).toBe(3);
+    // No dollar figures anywhere in the customer view.
+    expect(json.body.data.lineItems[0].costMin).toBeUndefined();
+    expect(json.body.data.options[0].total).toBeUndefined();
+    expect(json.body.data.summary.total).toBeUndefined();
+    // The priced PDF is contractor-only.
+    const pdf = await request(app).get('/api/proposals/proposal.pdf').set('Authorization', `Bearer ${manager.token}`);
+    expect(pdf.status).toBe(403);
+  });
 
-    const pdf: any = await request(app).get('/api/proposals/proposal.pdf').set('Authorization', `Bearer ${manager.token}`).buffer(true)
+  test('customer can request a quote/call — routes to the rep', async () => {
+    const res = await request(app).post('/api/proposals/request-contact').set('Authorization', `Bearer ${manager.token}`).send({ mode: 'quote' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const bad = await request(app).post('/api/proposals/request-contact').set('Authorization', `Bearer ${manager.token}`).send({ mode: 'nope' });
+    expect(bad.status).toBe(400);
+  });
+
+  test('contractor (oem_admin) sees costs + priced PDF for a customer in their org', async () => {
+    const json = await request(app).get(`/api/proposals?accountId=${manager.accountId}`).set('Authorization', `Bearer ${oem.token}`);
+    expect(json.status).toBe(200);
+    expect(json.body.data.costsRedacted).toBe(false);
+    expect(json.body.data.summary.total.max).toBeGreaterThan(0);
+    expect(json.body.data.lineItems[0].costMax).toBeGreaterThan(0);
+
+    const pdf: any = await request(app).get(`/api/proposals/proposal.pdf?accountId=${manager.accountId}`).set('Authorization', `Bearer ${oem.token}`).buffer(true)
       .parse((res: any, cb: any) => { const c: Buffer[] = []; res.on('data', (x: Buffer) => c.push(x)); res.on('end', () => cb(null, Buffer.concat(c))); });
     expect(pdf.status).toBe(200);
     expect(pdf.body.slice(0, 4).toString('latin1')).toBe('%PDF');
