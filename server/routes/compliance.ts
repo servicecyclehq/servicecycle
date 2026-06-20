@@ -50,6 +50,7 @@ const { buildMaturityScore } = require('../lib/maturityScore');
 const { buildMaintenanceDebtData, debtLedgerToCsv } = require('../lib/maintenanceDebt');
 const { buildChangeBrief } = require('../lib/changeBrief');
 const { buildAssetEvidenceTrace, buildEvidenceGapSummary } = require('../lib/evidenceTrace');
+const { buildDriftDetector } = require('../lib/driftDetector');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -249,6 +250,23 @@ router.get('/asset-evidence/:assetId', async (req, res) => {
     }
     console.error('[compliance/asset-evidence]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build evidence trace.' });
+  }
+});
+
+// ── GET /drift?siteId= ────────────────────────────────────────────────────────
+// #4 — repeat-failure / compliance-drift detector. Flags assets drifting out of
+// tolerance across cycles, inspected-but-not-corrected, or repeatedly failing,
+// and recommends a program change (shorten interval / close corrective / review
+// procedure) instead of just another ticket. Any authenticated role.
+router.get('/drift', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const data = await buildDriftDetector(prisma, req.user.accountId, { siteId });
+    return res.json({ success: true, data });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/drift]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build drift report.' });
   }
 });
 

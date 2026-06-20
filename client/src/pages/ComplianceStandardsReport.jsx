@@ -26,6 +26,7 @@ import ChangeBriefCard from '../components/ChangeBriefCard';
 import AccessBlockerCard from '../components/AccessBlockerCard';
 import EvidenceGapCard from '../components/EvidenceGapCard';
 import ProposalCard from '../components/ProposalCard';
+import DriftDetectorCard from '../components/DriftDetectorCard';
 import { useAuth } from '../context/AuthContext';
 import { fmtDate } from '../lib/equipment';
 
@@ -124,6 +125,9 @@ export default function ComplianceStandardsReport() {
 
         {/* #2 Evidence coverage — requirement→evidence gaps (account/site). */}
         <EvidenceGapCard siteId={siteId || null} />
+
+        {/* #4 Compliance drift / repeat failures — program-change recommendations. */}
+        <DriftDetectorCard siteId={siteId || null} />
 
         {/* What changed since last cycle — diff vs the prior snapshot. */}
         <ChangeBriefCard siteId={siteId || null} />
