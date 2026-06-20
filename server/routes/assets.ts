@@ -42,8 +42,11 @@ const CONDITION_VALUES = ['C1', 'C2', 'C3'];
 // params are validated inline like the other filters). Same literal lives in
 // routes/bootstrap.ts — keep them identical.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const worstCondition = (a, b, c) =>
-  ['C3', 'C2', 'C1'].find(v => [a, b, c].includes(v)) || 'C2';
+// Variadic worst-of (C3 > C2 > C1). Takes the three human axes plus the
+// computed governing flags (autoConditionC3 -> 'C3', autoConditionMonitoring
+// -> 'C2'); extra nullable args are tolerated.
+const worstCondition = (...ratings) =>
+  ['C3', 'C2', 'C1'].find(v => ratings.includes(v)) || 'C2';
 
 // Canonical EquipmentType list — single source of truth in lib/equipmentTypes
 // (mirrors the Prisma enum; this file used to carry its own copy and drifted).
@@ -1007,11 +1010,16 @@ router.put('/:id', requireManager, async (req, res) => {
       if (conditionCriticality !== undefined) updateData.conditionCriticality = criticality;
       if (conditionEnvironment !== undefined) updateData.conditionEnvironment = environment;
 
-      // NFPA 70B §9.3.1: the missed-cycle auto-C3 flag is a SEPARATE governing
-      // input, so a qualified person re-assessing the physical/criticality/
-      // environment axes here never silently drops a neglect-driven C3. C3 is
-      // the worst rating, so a set flag simply wins.
-      const newGoverning = existing.autoConditionC3 ? 'C3' : worstCondition(physical, criticality, environment);
+      // NFPA 70B §9.3.1 / condition-based maintenance: the auto flags are
+      // SEPARATE governing inputs, so a qualified person re-assessing the
+      // physical/criticality/environment axes here never silently drops a
+      // neglect-driven C3 (missed cycles) or a telemetry-driven C2 (unaddressed
+      // continuous-monitoring notification). Worst-of folds them back in.
+      const newGoverning = worstCondition(
+        physical, criticality, environment,
+        existing.autoConditionC3 ? 'C3' : null,
+        existing.autoConditionMonitoring ? 'C2' : null,
+      );
       updateData.governingCondition = newGoverning;
       if (newGoverning !== existing.governingCondition) {
         governingFrom = existing.governingCondition;

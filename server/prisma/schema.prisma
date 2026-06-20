@@ -13,29 +13,29 @@ datasource db {
 // PENDING BROTHER VALIDATION â€” these 5 options are our best guess for the
 // electrical-maintenance service context; validate with real customer discovery.
 enum QuoteDriver {
-  down_now          // Asset is down right now â€” triggers EMERGENCY mode
+  down_now // Asset is down right now â€” triggers EMERGENCY mode
   suspected_failing // Intermittent issues / early warning signs
   failed_inspection // Failed NETA/NFPA inspection or audit finding
   planned_replacement // Scheduled capital replacement project
-  budgetary         // Just gathering numbers for future budget cycle
+  budgetary // Just gathering numbers for future budget cycle
 }
 
 // Quote Request: customer's target timeline to proceed.
 // PENDING BROTHER VALIDATION â€” adjust wording to match how your reps quote these.
 enum QuoteTimeline {
-  immediately       // ASAP (pairs with down_now driver)
-  within_1_week     // Need action within 7 days
-  within_30_days    // Need to schedule within the month
+  immediately // ASAP (pairs with down_now driver)
+  within_1_week // Need action within 7 days
+  within_30_days // Need to schedule within the month
   next_budget_cycle // Planning, no immediate urgency
 }
 
 // Quote Request: current status in the service rep workflow.
 enum QuoteRequestStatus {
-  requested  // Customer submitted; rep has not yet responded
-  quoted     // Rep sent a quote (quotedAt + quoteNotes populated)
-  accepted   // Customer accepted the quote
-  declined   // Customer declined â€” reason captured (audit/liability trail)
-  draft      // Saved by the customer but NOT yet sent (no rep email / partner event)
+  requested // Customer submitted; rep has not yet responded
+  quoted // Rep sent a quote (quotedAt + quoteNotes populated)
+  accepted // Customer accepted the quote
+  declined // Customer declined â€” reason captured (audit/liability trail)
+  draft // Saved by the customer but NOT yet sent (no rep email / partner event)
 }
 
 enum AccountStatus {
@@ -61,8 +61,8 @@ enum UserRole {
   admin
   manager
   viewer
-  consultant  // Maintenance Vendor account manager â€” receives alerts in tandem
-  oem_admin   // OEM service org fleet manager â€” cross-account read-only view
+  consultant // Maintenance Vendor account manager â€” receives alerts in tandem
+  oem_admin // OEM service org fleet manager â€” cross-account read-only view
   super_admin // Platform super-admin â€” can manage PartnerOrganizations and bootstrap OEM users
 }
 
@@ -165,6 +165,16 @@ enum AlertStatus {
   cancelled
 }
 
+// Phase 4 #8: continuous condition-monitoring reading status. OK = within
+// thresholds; WARN = crossed a warn band; CRIT = crossed a critical band. A
+// CRIT reading is the NFPA 70B:2023 "unaddressed continuous-monitoring
+// notification" that drives the asset to Condition 2 until acknowledged.
+enum TelemetryStatus {
+  OK
+  WARN
+  CRIT
+}
+
 enum IngestionStatus {
   processing
   review_pending
@@ -182,9 +192,9 @@ enum PartnerEventType {
 }
 
 enum RetentionTier {
-  STANDARD    // 7 years
-  HEALTHCARE  // 10 years
-  UTILITY     // permanent (never archived)
+  STANDARD // 7 years
+  HEALTHCARE // 10 years
+  UTILITY // permanent (never archived)
   CUSTOM
 }
 
@@ -193,20 +203,20 @@ enum RetentionTier {
 // covers a scanned/printed LOTO procedure (vs. the structured LotoProc model);
 // the rest cover the usual facilities-compliance paper trail.
 enum DocType {
-  oem_manual             // Manufacturer operation + maintenance manual
-  wiring_diagram         // One-lines, schematics, as-built drawings
-  loto_pdf               // Scanned/printed LOTO procedure (PDF backup)
-  test_report            // NETA / contractor test report
-  inspection_report      // Insurance or regulatory inspection report
-  commissioning_report   // Initial energisation / SAT report
-  warranty               // Warranty certificate or service contract
+  oem_manual // Manufacturer operation + maintenance manual
+  wiring_diagram // One-lines, schematics, as-built drawings
+  loto_pdf // Scanned/printed LOTO procedure (PDF backup)
+  test_report // NETA / contractor test report
+  inspection_report // Insurance or regulatory inspection report
+  commissioning_report // Initial energisation / SAT report
+  warranty // Warranty certificate or service contract
   other
 }
 
 // Lockout/Tagout procedure lifecycle.
 enum LotoStatus {
-  draft    // Being authored; not yet in use
-  active   // Current approved procedure for this asset
+  draft // Being authored; not yet in use
+  active // Current approved procedure for this asset
   archived // Superseded by a newer revision
 }
 
@@ -258,11 +268,11 @@ model Account {
   // for fleet-level visibility by oem_admin users.
   partnerOrgId             String?
   // Partner flywheel: assigned service rep + fallback rep routing
-  assignedRepId            String?   // FK â†’ User (primary rep)
-  fallbackRepId            String?   // FK â†’ User (fallback rep, nullable)
+  assignedRepId            String? // FK â†’ User (primary rep)
+  fallbackRepId            String? // FK â†’ User (fallback rep, nullable)
   // Data retention tier for PartnerEventLog archival
   retentionTier            RetentionTier @default(STANDARD)
-  retentionCustomYears     Int?          // used when retentionTier=CUSTOM
+  retentionCustomYears     Int? // used when retentionTier=CUSTOM
   // Per-tenant total headcount â€” drives cost-per-employee KPI tiles.
   // Nullable so existing accounts continue to work.
   fteCount                 Int?
@@ -312,22 +322,25 @@ model Account {
   lotoSteps              LotoStep[]
   disasterEvents         DisasterEvent[]
   assetTemplates         AssetTemplate[]
+  telemetryChannels      TelemetryChannel[]
+  telemetryReadings      TelemetryReading[]
+  telemetryNotifications TelemetryNotification[]
 
-  partnerOrg             PartnerOrganization? @relation(fields: [partnerOrgId], references: [id], onDelete: SetNull)
-  assignedRep            User?                @relation("AssignedRep", fields: [assignedRepId], references: [id], onDelete: SetNull)
-  fallbackRep            User?                @relation("FallbackRep", fields: [fallbackRepId], references: [id], onDelete: SetNull)
-  partnerInvites         PartnerInvite[]
-  partnerEventLogs       PartnerEventLog[]
-  incidentLogs           IncidentLog[]
-  shareLinks             ShareLink[]
-  ingestJobs             IngestJob[]
+  partnerOrg       PartnerOrganization? @relation(fields: [partnerOrgId], references: [id], onDelete: SetNull)
+  assignedRep      User?                @relation("AssignedRep", fields: [assignedRepId], references: [id], onDelete: SetNull)
+  fallbackRep      User?                @relation("FallbackRep", fields: [fallbackRepId], references: [id], onDelete: SetNull)
+  partnerInvites   PartnerInvite[]
+  partnerEventLogs PartnerEventLog[]
+  incidentLogs     IncidentLog[]
+  shareLinks       ShareLink[]
+  ingestJobs       IngestJob[]
   // Enterprise SSO / SCIM (feature/sso-polis)
-  ssoConnections         SsoConnection[]
-  ssoDomains             SsoDomain[]
-  scimDirectories        ScimDirectory[]
-  ssoRoleMappings        SsoRoleMapping[]
-  ssoLoginStates         SsoLoginState[]
-  ssoHandoffs            SsoHandoff[]
+  ssoConnections   SsoConnection[]
+  ssoDomains       SsoDomain[]
+  scimDirectories  ScimDirectory[]
+  ssoRoleMappings  SsoRoleMapping[]
+  ssoLoginStates   SsoLoginState[]
+  ssoHandoffs      SsoHandoff[]
 
   @@map("accounts")
 }
@@ -344,7 +357,7 @@ enum IngestJobStatus {
   done
   failed
   needs_review // parsed, but the confidence gate parked it for human approval
-  rejected     // a reviewer discarded it; no assets were written
+  rejected // a reviewer discarded it; no assets were written
 }
 
 model IngestJob {
@@ -399,16 +412,16 @@ model IngestJob {
 // Customer accounts are linked via partnerOrgId.  Users with role oem_admin
 // on any account in the same partner org get cross-account fleet visibility.
 model PartnerOrganization {
-  id                 String    @id @default(uuid())
+  id                 String   @id @default(uuid())
   name               String
   logoUrl            String?
-  primaryColor       String?   // hex, e.g. "#0057b8"
+  primaryColor       String? // hex, e.g. "#0057b8"
   website            String?
   webhookUrl         String?
-  webhookSecret      String?   // 32-byte hex; HMAC-SHA256 signing key
-  digestIntervalDays Int       @default(1) // 1â€“7 days; OEM configurable
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  webhookSecret      String? // 32-byte hex; HMAC-SHA256 signing key
+  digestIntervalDays Int      @default(1) // 1â€“7 days; OEM configurable
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   accounts         Account[]
   partnerInvites   PartnerInvite[]
@@ -480,43 +493,44 @@ model User {
   createdAt                     DateTime  @default(now())
   updatedAt                     DateTime  @updatedAt
 
-  account                  Account                 @relation(fields: [accountId], references: [id])
-  uploadedDocuments        Document[]              @relation("Uploader")
-  communications           Communication[]         @relation("CommunicationCreator")
-  reviewedIngestions       IngestionSession[]      @relation("IngestionReviewer")
-  alertPreferences         AlertPreference[]
-  activityLogs             ActivityLog[]
-  sentInvites              UserInvite[]            @relation("InviteCreator")
-  consultantAccesses       ConsultantAccess[]      @relation("ConsultantUser")
-  grantedConsultants       ConsultantAccess[]      @relation("ConsultantGrantor")
-  revokedConsultants       ConsultantAccess[]      @relation("ConsultantRevoker")
-  refreshTokens            RefreshToken[]
-  createdCustomFields      CustomFieldDefinition[] @relation("CustomFieldCreator")
-  aiUsage                  AiUsage[]
-  preferences              UserPreference[]
-  notificationLogs         NotificationLog[]
-  acknowledgedRevisions    StandardRevisionAlert[] @relation("RevisionAcknowledger")
-  resolvedDeficiencies     Deficiency[]            @relation("DeficiencyResolver")
-  complianceSnapshots      ComplianceSnapshot[]    @relation("SnapshotGenerator")
-  ownedAssets              Asset[]                 @relation("AssetOwner")
-  assignedRecommendations  AuditRecommendation[]   @relation("RecAssignee")
-  quoteRequests            QuoteRequest[]          @relation("QuoteRequestCreator")
-  approvedLotoProcs        LotoProc[]              @relation("LotoProcApprover")
-  createdLotoProcs         LotoProc[]              @relation("LotoProcCreator")
-  declaredDisasters        DisasterEvent[]         @relation("DisasterDeclarer")
-  sentPartnerInvites       PartnerInvite[]         @relation("PartnerInviter")
-  assignedRepAccounts      Account[]               @relation("AssignedRep")
-  fallbackRepAccounts      Account[]               @relation("FallbackRep")
-  assignedEventLogs        PartnerEventLog[]       @relation("EventLogRep")
-  ssoHandoffs              SsoHandoff[]
+  account                 Account                 @relation(fields: [accountId], references: [id])
+  uploadedDocuments       Document[]              @relation("Uploader")
+  communications          Communication[]         @relation("CommunicationCreator")
+  reviewedIngestions      IngestionSession[]      @relation("IngestionReviewer")
+  alertPreferences        AlertPreference[]
+  activityLogs            ActivityLog[]
+  sentInvites             UserInvite[]            @relation("InviteCreator")
+  consultantAccesses      ConsultantAccess[]      @relation("ConsultantUser")
+  grantedConsultants      ConsultantAccess[]      @relation("ConsultantGrantor")
+  revokedConsultants      ConsultantAccess[]      @relation("ConsultantRevoker")
+  refreshTokens           RefreshToken[]
+  createdCustomFields     CustomFieldDefinition[] @relation("CustomFieldCreator")
+  aiUsage                 AiUsage[]
+  preferences             UserPreference[]
+  notificationLogs        NotificationLog[]
+  acknowledgedRevisions   StandardRevisionAlert[] @relation("RevisionAcknowledger")
+  resolvedDeficiencies    Deficiency[]            @relation("DeficiencyResolver")
+  complianceSnapshots     ComplianceSnapshot[]    @relation("SnapshotGenerator")
+  ownedAssets             Asset[]                 @relation("AssetOwner")
+  assignedRecommendations AuditRecommendation[]   @relation("RecAssignee")
+  quoteRequests           QuoteRequest[]          @relation("QuoteRequestCreator")
+  approvedLotoProcs       LotoProc[]              @relation("LotoProcApprover")
+  createdLotoProcs        LotoProc[]              @relation("LotoProcCreator")
+  declaredDisasters       DisasterEvent[]         @relation("DisasterDeclarer")
+  sentPartnerInvites      PartnerInvite[]         @relation("PartnerInviter")
+  assignedRepAccounts     Account[]               @relation("AssignedRep")
+  fallbackRepAccounts     Account[]               @relation("FallbackRep")
+  assignedEventLogs       PartnerEventLog[]       @relation("EventLogRep")
+  ackedTelemetryNotifs    TelemetryNotification[] @relation("TelemetryNotificationAck")
+  ssoHandoffs             SsoHandoff[]
 
+  // SCIM upsert key: (directory, externalId) is unique per directory. Both
+  // NULL for password users — Postgres NULLs are distinct so no collision.
+  @@unique([scimDirectoryId, scimExternalId])
   @@index([accountId])
   // Password-reset lookups filter by passwordResetToken; without an index
   // every reset attempt is a full table scan.
   @@index([passwordResetToken])
-  // SCIM upsert key: (directory, externalId) is unique per directory. Both
-  // NULL for password users — Postgres NULLs are distinct so no collision.
-  @@unique([scimDirectoryId, scimExternalId])
   @@map("users")
 }
 
@@ -545,28 +559,28 @@ model UserPreference {
 // level (two concurrent CSV imports for the same contractor name).
 
 model Contractor {
-  id                    String   @id @default(uuid())
-  accountId             String
-  name                  String
+  id                String   @id @default(uuid())
+  accountId         String
+  name              String
   // In-house maintenance crew flag. NFPA 70B applies the same qualified-
   // person requirements regardless of employer; modeling internal staff as
   // a contractor row keeps work-order assignment uniform while letting the
   // UI label them honestly.
-  isInternal            Boolean  @default(false)
+  isInternal        Boolean  @default(false)
   // NETA-accredited company flag. Work orders for tasks where
   // requiresNetaCertified=true should be assigned to accredited contractors;
   // enforced at the route layer with an override + audit trail.
-  netaAccredited        Boolean  @default(false)
-  notes                 String?
-  supportEmail          String?
-  supportPhone          String?
-  supportPortalUrl      String?
-  portalUrl             String? // contractor scheduling/login portal
-  scoreSupport          Int? // 1-5 rating
-  scoreSatisfaction     Int? // 1-5 overall rating
-  aliases               Json? // string[] of org-specific alternate names / procurement codes
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  netaAccredited    Boolean  @default(false)
+  notes             String?
+  supportEmail      String?
+  supportPhone      String?
+  supportPortalUrl  String?
+  portalUrl         String? // contractor scheduling/login portal
+  scoreSupport      Int? // 1-5 rating
+  scoreSatisfaction Int? // 1-5 overall rating
+  aliases           Json? // string[] of org-specific alternate names / procurement codes
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   account        Account          @relation(fields: [accountId], references: [id])
   techs          ContractorTech[]
@@ -580,15 +594,15 @@ model Contractor {
 
 // Field technicians employed by a contractor; assignable to work orders.
 model ContractorTech {
-  id              String         @id @default(uuid())
-  contractorId    String
-  name            String
-  email           String?
-  phone           String?
-  title           String?
+  id                          String         @id @default(uuid())
+  contractorId                String
+  name                        String
+  email                       String?
+  phone                       String?
+  title                       String?
   // ANSI/NETA ETT certification level of this tech. Work orders carry the
   // minimum level required; assignment validation happens at the route layer.
-  netaCertLevel   NetaCertLevel?
+  netaCertLevel               NetaCertLevel?
   // â”€â”€ Qualification provenance (NFPA 70E 110.2(A)(1) + insurer audits) â”€â”€â”€â”€
   // qualifiedPersonDesignatedAt: date of the EMPLOYER'S written qualified-
   // person designation (a training certificate alone is insufficient).
@@ -603,13 +617,13 @@ model ContractorTech {
   // ANSI/NETA EMW-2026 created the Qualified Electrical Equipment Maintenance
   // Worker (QEMW) certification. First-mover window ~12-18 months before
   // PowerDB/Accruent builds this. 3-year renewal cycle per the standard.
-  qemwCertNumber  String?   // certificate number issued by NETA
-  qemwExpiresAt   DateTime? // expiry date (drives 60d + 14d alert cron)
-  qemwIssuingBody String?   // "NETA" (only currently-recognized body)
-  lastContactedAt DateTime?
-  notes           String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  qemwCertNumber              String? // certificate number issued by NETA
+  qemwExpiresAt               DateTime? // expiry date (drives 60d + 14d alert cron)
+  qemwIssuingBody             String? // "NETA" (only currently-recognized body)
+  lastContactedAt             DateTime?
+  notes                       String?
+  createdAt                   DateTime       @default(now())
+  updatedAt                   DateTime       @updatedAt
 
   contractor Contractor  @relation(fields: [contractorId], references: [id])
   workOrders WorkOrder[]
@@ -628,22 +642,22 @@ model ContractorTech {
 // (e.g. asset.areaId must belong to asset.buildingId when both are set).
 
 model Site {
-  id                   String    @id @default(uuid())
-  accountId            String
-  name                 String
-  address              String?
-  city                 String?
-  state                String?
-  postalCode           String?
+  id                  String    @id @default(uuid())
+  accountId           String
+  name                String
+  address             String?
+  city                String?
+  state               String?
+  postalCode          String?
   // Customer-side contacts for alert routing (maintenance supervisor /
   // plant manager live as Users; this is the on-site coordination contact).
-  primaryContactName   String?
-  primaryContactEmail  String?
-  primaryContactPhone  String?
-  notes                String?
-  archivedAt           DateTime? // soft-delete; assets keep their siteId
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  primaryContactName  String?
+  primaryContactEmail String?
+  primaryContactPhone String?
+  notes               String?
+  archivedAt          DateTime? // soft-delete; assets keep their siteId
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   account             Account              @relation(fields: [accountId], references: [id])
   buildings           Building[]
@@ -732,39 +746,39 @@ model EquipmentPosition {
 // in the inherited model).
 
 model Asset {
-  id                    String          @id @default(uuid())
-  accountId             String
-  siteId                String
-  buildingId            String?
-  areaId                String?
-  positionId            String?
-  equipmentType         EquipmentType
-  manufacturer          String?
-  model                 String?
-  serialNumber          String?
+  id                            String          @id @default(uuid())
+  accountId                     String
+  siteId                        String
+  buildingId                    String?
+  areaId                        String?
+  positionId                    String?
+  equipmentType                 EquipmentType
+  manufacturer                  String?
+  model                         String?
+  serialNumber                  String?
   // Nameplate fields vary wildly by equipment type (kVA + primary/secondary
   // voltage for transformers, kW + RPM for generators, AIC rating for
   // breakers...) â€” JSONB with per-type Zod validation at the route layer.
-  nameplateData         Json?
-  installDate           DateTime?
-  lastCommissionedDate  DateTime?
+  nameplateData                 Json?
+  installDate                   DateTime?
+  lastCommissionedDate          DateTime?
   // NFPA 70B:2023 three-axis condition assessment. Defaults to C2 (base
   // interval) until a qualified person assesses the asset.
-  conditionPhysical     ConditionRating @default(C2)
-  conditionCriticality  ConditionRating @default(C2)
-  conditionEnvironment  ConditionRating @default(C2)
+  conditionPhysical             ConditionRating @default(C2)
+  conditionCriticality          ConditionRating @default(C2)
+  conditionEnvironment          ConditionRating @default(C2)
   // Responsible person for this asset. Drives alert routing (owner receives
   // every tier for their assets, in addition to the role matrix) and the
   // "equipment owner" answer auditors expect. Nullable â€” unowned assets
   // fall back to pure role routing.
-  ownerId               String?
+  ownerId                       String?
   // Electrical topology: the asset this one is FED FROM (its upstream
   // source). Self-relation forming the power-path graph â€” upstream chain =
   // walk fedFrom links to the source; downstream = children of this node.
   // Drives the Power Path card and outage-impact answers ("de-energize this
   // switchgear â†’ these N assets lose power"). Cycle prevention enforced at
   // the route layer (a feed loop is always data-entry error).
-  fedFromAssetId        String?
+  fedFromAssetId                String?
   // â”€â”€ Risk dimensions (2026-06-07 buyer-priority analysis) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Three axes beyond the NFPA 70B condition assessment: infrastructure
   // criticality (consequence of failure), financial exposure (repair cost +
@@ -774,37 +788,45 @@ model Asset {
   // NOTE: criticalityScore (1=low â€¦ 5=failure means injury/shutdown/fines)
   // is INFRASTRUCTURE criticality and deliberately separate from
   // conditionCriticality (the NFPA 70B C1-C3 maintenance-interval axis).
-  criticalityScore      Int?
+  criticalityScore              Int?
   // Degradation score (1=good â€¦ 5=severe) on the physical-condition axis.
   // Distinct from conditionPhysical/conditionCriticality/conditionEnvironment
   // (those are NFPA 70B C1-C3 maintenance-interval ratings). This integer
   // enables the Degradation Priority Score: DPS = conditionScore Ã— criticalityScore
   // (range 1â€“25, higher = more urgent service needed).
-  conditionScore        Int?
+  conditionScore                Int?
   // Stored DPS: conditionScore Ã— criticalityScore. Recomputed by the route
   // layer whenever either input changes so list queries can ORDER BY without
   // a computed expression. NULL when either factor is NULL.
-  priorityScore         Int?
-  repairCostEstimate    Decimal? @db.Decimal(14, 2) // parts + labor + downtime, USD
-  spareLeadTimeWeeks    Int? // long-lead spares risk (transformers can be 50+ weeks)
-  redundancyStatus      String? // N | N_PLUS_1 | TWO_N
-  requiresPredictiveMaintenance Boolean @default(false) // oil/DGA, PD, vibration class
+  priorityScore                 Int?
+  repairCostEstimate            Decimal?        @db.Decimal(14, 2) // parts + labor + downtime, USD
+  spareLeadTimeWeeks            Int? // long-lead spares risk (transformers can be 50+ weeks)
+  redundancyStatus              String? // N | N_PLUS_1 | TWO_N
+  requiresPredictiveMaintenance Boolean         @default(false) // oil/DGA, PD, vibration class
   // Governing condition = worst of the three axes (C3 wins). Stored and
   // recomputed by the route layer on every condition write so list queries
   // and the scheduler never re-derive it. Drives interval selection on
   // MaintenanceTaskDefinition (intervalC1/C2/C3Months).
-  governingCondition    ConditionRating @default(C2)
+  governingCondition            ConditionRating @default(C2)
   // NFPA 70B Â§9.3.1: an asset that has missed its last two successive
   // maintenance cycles is treated as Condition 3. Computed by the daily
   // missedCyclePolicy cron as a SEPARATE governing input (worst-of also
   // considers this flag) so it tightens every interval WITHOUT overwriting a
   // qualified person's physical/criticality/environment assessment. Cleared
   // automatically once maintenance catches up.
-  autoConditionC3       Boolean         @default(false)
-  inService             Boolean         @default(true)
-  isEnergized           Boolean         @default(true)
-  notes                 String?
-  archivedAt            DateTime? // soft-delete; history (work orders, samples) stays addressable
+  autoConditionC3               Boolean         @default(false)
+  // Phase 4 #8: set true while the asset has >=1 OPEN (unacknowledged) CRIT
+  // continuous-monitoring notification. A SEPARATE governing input (worst-of
+  // also considers this flag as a C2 driver) so an unaddressed telemetry
+  // breach tightens the interval to the Condition-2 base WITHOUT overwriting a
+  // qualified person's physical/criticality/environment assessment. Cleared
+  // automatically when the channel returns to OK or a reviewer acknowledges.
+  // Mirrors autoConditionC3 (NFPA 70B:2023 condition-based maintenance).
+  autoConditionMonitoring       Boolean         @default(false)
+  inService                     Boolean         @default(true)
+  isEnergized                   Boolean         @default(true)
+  notes                         String?
+  archivedAt                    DateTime? // soft-delete; history (work orders, samples) stays addressable
   // â”€â”€ EOL / Obsolescence (Task 23 â€” Modernization Revenue Engine) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // OEM-published lifecycle dates. When endOfSupport is set the
   // modernizationRiskScore cron normalises over a 5-year window
@@ -812,37 +834,40 @@ model Asset {
   // IEEE/NFPA base-life + condition-multiplier heuristic.
   // Backlog: expose these via outbound webhook/API so OEM CRMs (Brightlayer,
   // EcoStruxure, ABB Ability, Xcelerator) can pull asset health scores.
-  endOfManufacture      DateTime? // OEM last manufacture date
-  endOfSupport          DateTime? // OEM last support/parts date
-  obsolescenceStatus    String?   // ACTIVE | ACTIVE_UNSUPPORTED | DISCONTINUED | OBSOLETE
-  criticalSparesAvailable Boolean? // true = spares in OEM/distributor inventory
-  sparePartsLeadTimeDays  Int?    // estimated lead time (days) for critical spares
-  replacementCostCents    Int?    // all-in replacement estimate (USD cents)
-  modernizationRiskScore  Float?  // 0-1+ RUL score; recomputed daily by modernizationAlerts cron
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  endOfManufacture              DateTime? // OEM last manufacture date
+  endOfSupport                  DateTime? // OEM last support/parts date
+  obsolescenceStatus            String? // ACTIVE | ACTIVE_UNSUPPORTED | DISCONTINUED | OBSOLETE
+  criticalSparesAvailable       Boolean? // true = spares in OEM/distributor inventory
+  sparePartsLeadTimeDays        Int? // estimated lead time (days) for critical spares
+  replacementCostCents          Int? // all-in replacement estimate (USD cents)
+  modernizationRiskScore        Float? // 0-1+ RUL score; recomputed daily by modernizationAlerts cron
+  createdAt                     DateTime        @default(now())
+  updatedAt                     DateTime        @updatedAt
 
-  account           Account              @relation(fields: [accountId], references: [id])
-  site              Site                 @relation(fields: [siteId], references: [id])
-  building          Building?            @relation(fields: [buildingId], references: [id])
-  area              Area?                @relation(fields: [areaId], references: [id])
-  position          EquipmentPosition?   @relation(fields: [positionId], references: [id])
-  owner             User?                @relation("AssetOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  fedFrom           Asset?               @relation("PowerPath", fields: [fedFromAssetId], references: [id], onDelete: SetNull)
-  feedsDownstream   Asset[]              @relation("PowerPath")
-  schedules         MaintenanceSchedule[]
-  workOrders        WorkOrder[]
-  deficiencies      Deficiency[]
-  labSamples        LabSample[]
-  documents         Document[]
-  communications    Communication[]
-  alerts            Alert[]
-  activityLogs      ActivityLog[]
-  customFieldValues CustomFieldValue[]
-  quoteRequests     QuoteRequest[]
-  lotoProcs         LotoProc[]
-  incidentLogs      IncidentLog[]
-  studyAssets       SystemStudyAsset[]
+  account                Account                 @relation(fields: [accountId], references: [id])
+  site                   Site                    @relation(fields: [siteId], references: [id])
+  building               Building?               @relation(fields: [buildingId], references: [id])
+  area                   Area?                   @relation(fields: [areaId], references: [id])
+  position               EquipmentPosition?      @relation(fields: [positionId], references: [id])
+  owner                  User?                   @relation("AssetOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  fedFrom                Asset?                  @relation("PowerPath", fields: [fedFromAssetId], references: [id], onDelete: SetNull)
+  feedsDownstream        Asset[]                 @relation("PowerPath")
+  schedules              MaintenanceSchedule[]
+  workOrders             WorkOrder[]
+  deficiencies           Deficiency[]
+  labSamples             LabSample[]
+  documents              Document[]
+  communications         Communication[]
+  alerts                 Alert[]
+  activityLogs           ActivityLog[]
+  customFieldValues      CustomFieldValue[]
+  quoteRequests          QuoteRequest[]
+  lotoProcs              LotoProc[]
+  incidentLogs           IncidentLog[]
+  studyAssets            SystemStudyAsset[]
+  telemetryChannels      TelemetryChannel[]
+  telemetryReadings      TelemetryReading[]
+  telemetryNotifications TelemetryNotification[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -914,8 +939,8 @@ model MaintenanceTaskDefinition {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
-  account       Account?            @relation(fields: [accountId], references: [id])
-  standard      ComplianceStandard? @relation(fields: [standardId], references: [id])
+  account       Account?              @relation(fields: [accountId], references: [id])
+  standard      ComplianceStandard?   @relation(fields: [standardId], references: [id])
   schedules     MaintenanceSchedule[]
   templateTasks AssetTemplateTask[]
 
@@ -933,28 +958,28 @@ model MaintenanceTaskDefinition {
 //   governing condition (or conditionOverride when set).
 
 model MaintenanceSchedule {
-  id                      String           @id @default(uuid())
-  accountId               String
-  assetId                 String
-  taskDefinitionId        String
-  lastCompletedDate       DateTime?
-  nextDueDate             DateTime? // null until first completion or manual anchor
+  id                     String           @id @default(uuid())
+  accountId              String
+  assetId                String
+  taskDefinitionId       String
+  lastCompletedDate      DateTime?
+  nextDueDate            DateTime? // null until first completion or manual anchor
   // Alert lead times. Scheduling lead (180d default) opens the engineer
   // booking window for the contractor; customer lead (90d default) starts
   // customer-side planning notices.
-  leadTimeSchedulingDays  Int              @default(180)
-  leadTimeCustomerDays    Int              @default(90)
+  leadTimeSchedulingDays Int              @default(180)
+  leadTimeCustomerDays   Int              @default(90)
   // Per-schedule condition override â€” e.g. a C1 asset whose battery string
   // the engineer insists on treating as C3. Null = use asset.governingCondition.
-  conditionOverride       ConditionRating?
+  conditionOverride      ConditionRating?
   // Provenance for completions recorded without a work order: who actually
   // performed the task (free text â€” name + employer). WO-based completions
   // carry richer provenance on the work order itself.
-  lastPerformedByName     String?
-  isActive                Boolean          @default(true)
-  notes                   String?
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
+  lastPerformedByName    String?
+  isActive               Boolean          @default(true)
+  notes                  String?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
 
   account        Account                   @relation(fields: [accountId], references: [id])
   asset          Asset                     @relation(fields: [assetId], references: [id], onDelete: Cascade)
@@ -1003,14 +1028,14 @@ model WorkOrder {
   // Ambient conditions at test time and the calibrated instruments used.
   // testEquipment: [{ make, model, serial, calDate }] â€” calibration must be
   // within 12 months of the test date, NIST-traceable.
-  ambientTempC     Decimal? @db.Decimal(5, 1)
-  humidityPct      Decimal? @db.Decimal(5, 1)
+  ambientTempC     Decimal?         @db.Decimal(5, 1)
+  humidityPct      Decimal?         @db.Decimal(5, 1)
   testEquipment    Json?
   // #27 NFPA 70B year-0 baseline: an acceptance / commissioning test is the
   // trend anchor for the asset's life (vs. "first maintenance test wins").
   // Set on test-report ingest; the test-history endpoint surfaces it as the
   // baseline event and the ingest path skips YoY trend flags on it.
-  isAcceptanceTest Boolean  @default(false)
+  isAcceptanceTest Boolean          @default(false)
   reportPdfUrl     String? // contractor-issued test report (also attachable via Document)
   notes            String?
   createdAt        DateTime         @default(now())
@@ -1040,32 +1065,32 @@ model WorkOrder {
 // NETA MTS 5.4 requires BOTH as-found and as-left values recorded.
 
 model TestMeasurement {
-  id              String        @id @default(uuid())
-  accountId       String
-  workOrderId     String
-  measurementType String // "insulation_resistance", "contact_resistance", "ttr", ...
-  phase           String? // "A" | "B" | "C" | "N" | "A-B" ... free-form per test type
-  asFoundValue    Decimal?      @db.Decimal(16, 4)
-  asFoundUnit     String? // "MÎ©", "ÂµÎ©", "Â°C", ...
-  asLeftValue     Decimal?      @db.Decimal(16, 4)
-  asLeftUnit      String?
-  passFail        ResultRating?
+  id               String        @id @default(uuid())
+  accountId        String
+  workOrderId      String
+  measurementType  String // "insulation_resistance", "contact_resistance", "ttr", ...
+  phase            String? // "A" | "B" | "C" | "N" | "A-B" ... free-form per test type
+  asFoundValue     Decimal?      @db.Decimal(16, 4)
+  asFoundUnit      String? // "MÎ©", "ÂµÎ©", "Â°C", ...
+  asLeftValue      Decimal?      @db.Decimal(16, 4)
+  asLeftUnit       String?
+  passFail         ResultRating?
   // NETA MTS Â§5.4.2 #8: expected results placed beside actuals for direct
   // comparison (e.g. "â‰¥100 MÎ© per NETA Table 100.1", "Â±20% of trip curve").
-  expectedRange   String?
-  testVoltage     String? // applied test voltage, e.g. "1000 V DC"
+  expectedRange    String?
+  testVoltage      String? // applied test voltage, e.g. "1000 V DC"
   // IR thermography fields (Infraspection/NETA): load at scan time must be
   // recorded (â‰¥40% rule per HSB/Zurich); severityPriority is the NETA Î”T
   // priority 1 (repair immediately) â€¦ 4 (possible deficiency).
-  loadPercent     Decimal?      @db.Decimal(5, 1)
+  loadPercent      Decimal?      @db.Decimal(5, 1)
   severityPriority Int?
-  notes           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
   // Forensics/immutability: deleting a reading (evidence) is a SOFT delete -
   // the row is retained with deletedAt set and excluded from all reads, so a
   // reading can be reconstructed/recovered rather than truly vanishing.
-  deletedAt       DateTime?
+  deletedAt        DateTime?
 
   account   Account   @relation(fields: [accountId], references: [id])
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
@@ -1114,7 +1139,7 @@ model Deficiency {
 enum IncidentType {
   PROTECTIVE_TRIP // breaker / protective device tripped
   RELAY_OPERATION // protective relay operated
-  ALARM           // alarm / annunciator activation
+  ALARM // alarm / annunciator activation
   ARC_FLASH_EVENT // arc-flash / arcing event
   OTHER
 }
@@ -1203,10 +1228,10 @@ model IncidentLog {
 // same migration (fresh-PoC DBs only â€” no production data existed).
 
 model SystemStudy {
-  id             String    @id @default(uuid())
+  id             String   @id @default(uuid())
   accountId      String
   siteId         String
-  studyType      String    @default("arc_flash") // arc_flash | short_circuit | coordination | one_line_review
+  studyType      String   @default("arc_flash") // arc_flash | short_circuit | coordination | one_line_review
   performedDate  DateTime
   expiresAt      DateTime // performedDate + 5yr; engine flags approaching expiry
   performedBy    String? // engineering firm name
@@ -1221,13 +1246,13 @@ model SystemStudy {
   reportPdfUrl   String?
   notes          String?
   supersededById String? // newer study that replaces this one
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  account      Account       @relation(fields: [accountId], references: [id])
-  site         Site          @relation(fields: [siteId], references: [id])
-  supersededBy SystemStudy?  @relation("StudyChain", fields: [supersededById], references: [id])
-  supersedes   SystemStudy[] @relation("StudyChain")
+  account       Account            @relation(fields: [accountId], references: [id])
+  site          Site               @relation(fields: [siteId], references: [id])
+  supersededBy  SystemStudy?       @relation("StudyChain", fields: [supersededById], references: [id])
+  supersedes    SystemStudy[]      @relation("StudyChain")
   coveredAssets SystemStudyAsset[]
 
   @@index([accountId])
@@ -1330,39 +1355,39 @@ model AuditRecommendation {
 // gas columns null and carry results in `resultsData`.
 
 model LabSample {
-  id            String        @id @default(uuid())
-  accountId     String
-  assetId       String
-  workOrderId   String? // sample may be pulled during a work order
-  sampleType    String // "dga" | "oil_quality" | "fuel" (string, not enum â€” lab menus grow)
-  sampleDate    DateTime
-  labName       String?
+  id           String        @id @default(uuid())
+  accountId    String
+  assetId      String
+  workOrderId  String? // sample may be pulled during a work order
+  sampleType   String // "dga" | "oil_quality" | "fuel" (string, not enum â€” lab menus grow)
+  sampleDate   DateTime
+  labName      String?
   // IEEE C57.104 DGA gases, ppm.
-  h2            Decimal?      @db.Decimal(10, 2)
-  ch4           Decimal?      @db.Decimal(10, 2)
-  c2h2          Decimal?      @db.Decimal(10, 2)
-  c2h4          Decimal?      @db.Decimal(10, 2)
-  c2h6          Decimal?      @db.Decimal(10, 2)
-  co            Decimal?      @db.Decimal(10, 2)
-  co2           Decimal?      @db.Decimal(10, 2)
+  h2           Decimal?      @db.Decimal(10, 2)
+  ch4          Decimal?      @db.Decimal(10, 2)
+  c2h2         Decimal?      @db.Decimal(10, 2)
+  c2h4         Decimal?      @db.Decimal(10, 2)
+  c2h6         Decimal?      @db.Decimal(10, 2)
+  co           Decimal?      @db.Decimal(10, 2)
+  co2          Decimal?      @db.Decimal(10, 2)
   // O2 + N2 complete the IEEE C57.104-2019 gas set; the O2/N2 ratio
   // distinguishes sealed vs free-breathing units and selects which
   // reference table applies.
-  o2            Decimal?      @db.Decimal(10, 2)
-  n2            Decimal?      @db.Decimal(10, 2)
+  o2           Decimal?      @db.Decimal(10, 2)
+  n2           Decimal?      @db.Decimal(10, 2)
   // IEEE C57.104-2019 DGA status (1 = normal, 2 = caution â‰¥90th pct,
   // 3 = action required â‰¥95th pct) and the fault diagnosis code from
   // Duval/Rogers interpretation (PD, T1, T2, T3, D1, D2).
-  ieeeStatus    Int?
-  faultCode     String?
+  ieeeStatus   Int?
+  faultCode    String?
   // Non-DGA results (dielectric strength, moisture, acidity, fuel
   // contamination...) â€” sparse per-type shape, JSONB like nameplateData.
-  resultsData   Json?
-  resultRating  ResultRating?
-  reportPdfUrl  String?
-  notes         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  resultsData  Json?
+  resultRating ResultRating?
+  reportPdfUrl String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   account   Account    @relation(fields: [accountId], references: [id])
   asset     Asset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
@@ -1380,17 +1405,17 @@ model LabSample {
 // marked as no-work periods (production freeze).
 
 model BlackoutWindow {
-  id        String   @id @default(uuid())
-  accountId String
-  siteId    String
-  startsAt  DateTime
-  endsAt    DateTime
+  id             String   @id @default(uuid())
+  accountId      String
+  siteId         String
+  startsAt       DateTime
+  endsAt         DateTime
   // true  = this window is WHEN outage work may happen (planned shutdown)
   // false = this window is a freeze â€” no work may be scheduled inside it
-  isOutageWindow Boolean @default(true)
-  reason    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isOutageWindow Boolean  @default(true)
+  reason         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   account Account @relation(fields: [accountId], references: [id])
   site    Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
@@ -1439,8 +1464,8 @@ model StandardRevisionAlert {
 model ComplianceSnapshot {
   id            String   @id @default(uuid())
   accountId     String
-  siteId        String?  // null = all sites in the account
-  standardCode  String?  // e.g. "NFPA 70B"; null = all standards
+  siteId        String? // null = all sites in the account
+  standardCode  String? // e.g. "NFPA 70B"; null = all standards
   // kind: 'compliance' = per-standard evidence pack; 'emp' = the generated
   // written EMP document (NFPA 70B Â§4.2) â€” same immutable-storage +
   // hash-chain-anchor pipeline, different renderer.
@@ -1449,10 +1474,10 @@ model ComplianceSnapshot {
   auditVisitId  String?
   generatedById String?
   filename      String
-  filePath      String   // storage key (path on disk or S3 object key)
+  filePath      String // storage key (path on disk or S3 object key)
   sizeBytes     Int?
-  sha256        String   // integrity hash; also in the audit-log row's details
-  stats         Json?    // counts at generation time { assets, schedules, current, overdue, openDeficiencies }
+  sha256        String // integrity hash; also in the audit-log row's details
+  stats         Json? // counts at generation time { assets, schedules, current, overdue, openDeficiencies }
   createdAt     DateTime @default(now())
 
   account     Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -1475,7 +1500,7 @@ model AccessBlocker {
   accountId    String
   siteId       String?
   assetId      String?
-  kind         String    // LOCKED_DOOR | OUTAGE_NEEDED | MISSING_LABEL | ACCESS_LIMIT | OTHER
+  kind         String // LOCKED_DOOR | OUTAGE_NEEDED | MISSING_LABEL | ACCESS_LIMIT | OTHER
   description  String?
   status       String    @default("open") // open | resolved
   createdById  String?
@@ -1522,7 +1547,7 @@ model Document {
   workOrderId String?
   accountId   String
   filename    String
-  filePath    String   // storage key (path on disk or S3 object key); '__external__' for URL-only docs
+  filePath    String // storage key (path on disk or S3 object key); '__external__' for URL-only docs
   fileType    String
   encrypted   Boolean  @default(false) // AES-256-GCM encrypted at upload time
   version     Int      @default(1)
@@ -1761,8 +1786,8 @@ model ExtractionEvent {
   id              String    @id @default(uuid())
   accountId       String
   userId          String?
-  kind            String    // 'test_report' | 'nameplate' | 'photo_inspect'
-  engine          String    // source: pdfplumber | pdfplumber-ocr | pdfjs | pdfplumber+ai | ai | vision
+  kind            String // 'test_report' | 'nameplate' | 'photo_inspect'
+  engine          String // source: pdfplumber | pdfplumber-ocr | pdfjs | pdfplumber+ai | ai | vision
   ocr             Boolean   @default(false)
   aiUsed          Boolean   @default(false)
   // Coverage â€” un-backfillable QA signal + honest multi-asset truncation flag.
@@ -1783,7 +1808,7 @@ model ExtractionEvent {
   committedAt     DateTime?
   fieldsCommitted Int?
   fieldsCorrected Int?
-  corrections     Json?     // [{ field, before, after, formFamily }]
+  corrections     Json? // [{ field, before, after, formFamily }]
   reviewMs        Int?
   createdAt       DateTime  @default(now())
 
@@ -2142,10 +2167,10 @@ model QuoteRequest {
   driver          QuoteDriver
   timeline        QuoteTimeline
   outageAvailable Boolean? // can the asset be de-energised for service?
-  outageWindow    String?  // when â€” free text, e.g. "Saturdays after 10pm"
+  outageWindow    String? // when â€” free text, e.g. "Saturdays after 10pm"
   budgeted        Boolean? // has budget been approved?
   budgetNotes     String?
-  attachmentNotes String?  // photos, IR scans, test reports
+  attachmentNotes String? // photos, IR scans, test reports
   emergencyMode   Boolean            @default(false) // true when driver=down_now
   // System-generated trigger type â€” null when submitted manually by the customer.
   // Values: MODERNIZATION_EOL | ARC_FLASH_STUDY | QEMW_TRAINING
@@ -2154,7 +2179,7 @@ model QuoteRequest {
   // deficiencies, overdue tasks, downstream topology. Stored so the rep
   // always sees the state of the asset when the request was submitted.
   dossierSnapshot Json?
-  notes           String?  // free-text from the requester
+  notes           String? // free-text from the requester
   // DPS-derived priority: emergency | high | normal | low.
   // Auto-set at creation time from the asset's priorityScore
   // (DPS >= 20 -> emergency, 16-19 -> high, 10-15 -> normal, <10 -> low).
@@ -2167,9 +2192,9 @@ model QuoteRequest {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  asset       Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  requestedBy User    @relation("QuoteRequestCreator", fields: [requestedById], references: [id])
+  account     Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  asset       Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy User        @relation("QuoteRequestCreator", fields: [requestedById], references: [id])
   workOrders  WorkOrder[]
 
   @@index([accountId])
@@ -2322,7 +2347,7 @@ model DisasterEvent {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  account  Account? @relation(fields: [accountId],  references: [id], onDelete: SetNull)
+  account  Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   declarer User?    @relation("DisasterDeclarer", fields: [declaredBy], references: [id], onDelete: SetNull)
 
   @@index([accountId])
@@ -2339,13 +2364,13 @@ model DisasterEvent {
 model WebhookDelivery {
   id         String   @id @default(uuid())
   accountId  String
-  event      String   // e.g. "assets.imported"
-  deliveryId String   // per-delivery UUID sent in X-ServiceCycle-Delivery-Id
-  status     String   // "delivered" | "failed"
-  statusCode Int?     // HTTP response code, null on network error
-  responseMs Int?     // round-trip milliseconds
-  error      String?  // error message on failure (max 1000 chars)
-  payload    Json     // the full payload that was sent
+  event      String // e.g. "assets.imported"
+  deliveryId String // per-delivery UUID sent in X-ServiceCycle-Delivery-Id
+  status     String // "delivered" | "failed"
+  statusCode Int? // HTTP response code, null on network error
+  responseMs Int? // round-trip milliseconds
+  error      String? // error message on failure (max 1000 chars)
+  payload    Json // the full payload that was sent
   createdAt  DateTime @default(now())
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -2364,20 +2389,20 @@ model WebhookDelivery {
 
 model AssetTemplate {
   id                                   String        @id @default(uuid())
-  accountId                            String?       // NULL = global seed; set = account-custom
-  name                                 String        // "Pad-Mount Transformer 500 kVA"
+  accountId                            String? // NULL = global seed; set = account-custom
+  name                                 String // "Pad-Mount Transformer 500 kVA"
   description                          String?
   equipmentType                        EquipmentType
   // Default values pre-filled on the New Asset form
-  defaultCriticalityScore              Int?          // 1-5
-  defaultRedundancyStatus              String?       // N | N_PLUS_1 | TWO_N
+  defaultCriticalityScore              Int? // 1-5
+  defaultRedundancyStatus              String? // N | N_PLUS_1 | TWO_N
   defaultRequiresPredictiveMaintenance Boolean       @default(false)
   // Suggested nameplate key/value hints pre-populating the nameplate editor.
-  nameplateDefaults                    Json?         // { "kVA": "", "primaryVoltage": "", ... }
+  nameplateDefaults                    Json? // { "kVA": "", "primaryVoltage": "", ... }
   createdAt                            DateTime      @default(now())
   updatedAt                            DateTime      @updatedAt
 
-  account         Account?              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account         Account?            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   taskDefinitions AssetTemplateTask[]
 
   @@index([accountId])
@@ -2390,7 +2415,7 @@ model AssetTemplateTask {
   templateId       String
   taskDefinitionId String
 
-  template       AssetTemplate             @relation(fields: [templateId],       references: [id], onDelete: Cascade)
+  template       AssetTemplate             @relation(fields: [templateId], references: [id], onDelete: Cascade)
   taskDefinition MaintenanceTaskDefinition @relation(fields: [taskDefinitionId], references: [id], onDelete: Cascade)
 
   @@unique([templateId, taskDefinitionId])
@@ -2410,11 +2435,11 @@ model AssetTemplateTask {
 // Read-only aggregation only â€” no pipeline/win-loss tracking (CRM territory).
 model ServiceRateCard {
   id           String   @id @default(uuid())
-  partnerOrgId String?  // null = platform default
-  accountId    String?  // null = OEM default; account-level overrides supported
-  serviceType  String   // see values above
-  minCents     Int      // minimum estimate (USD cents)
-  maxCents     Int      // maximum estimate (USD cents)
+  partnerOrgId String? // null = platform default
+  accountId    String? // null = OEM default; account-level overrides supported
+  serviceType  String // see values above
+  minCents     Int // minimum estimate (USD cents)
+  maxCents     Int // maximum estimate (USD cents)
   notes        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -2432,19 +2457,19 @@ model ServiceRateCard {
 // Resending invalidates the prior token by overwriting tokenHash + expiresAt.
 
 model PartnerInvite {
-  id           String               @id @default(cuid())
+  id           String              @id @default(cuid())
   partnerOrgId String
-  partnerOrg   PartnerOrganization  @relation(fields: [partnerOrgId], references: [id])
+  partnerOrg   PartnerOrganization @relation(fields: [partnerOrgId], references: [id])
   inviteeEmail String
   invitedById  String
-  invitedBy    User                 @relation("PartnerInviter", fields: [invitedById], references: [id])
-  tokenHash    String               @unique  // SHA-256 of the actual 32-byte hex token
+  invitedBy    User                @relation("PartnerInviter", fields: [invitedById], references: [id])
+  tokenHash    String              @unique // SHA-256 of the actual 32-byte hex token
   expiresAt    DateTime
   acceptedAt   DateTime?
   revokedAt    DateTime?
-  accountId    String?              // set on accept â€” FK to Account
-  account      Account?             @relation(fields: [accountId], references: [id])
-  createdAt    DateTime             @default(now())
+  accountId    String? // set on accept â€” FK to Account
+  account      Account?            @relation(fields: [accountId], references: [id])
+  createdAt    DateTime            @default(now())
 
   @@index([partnerOrgId])
   @@index([invitedById])
@@ -2458,24 +2483,24 @@ model PartnerInvite {
 // Soft-archive only: archived=true, never hard-deleted.
 
 model PartnerEventLog {
-  id                       String               @id @default(cuid())
-  partnerOrgId             String
-  partnerOrg               PartnerOrganization  @relation(fields: [partnerOrgId], references: [id])
-  accountId                String
-  account                  Account              @relation(fields: [accountId], references: [id])
-  eventType                PartnerEventType
-  payload                  Json
-  assignedRepId            String?
-  assignedRep              User?                @relation("EventLogRep", fields: [assignedRepId], references: [id])
-  digestSentAt             DateTime?            // set when included in a digest email
-  immediateEmailSentAt     DateTime?            // set for IMMEDIATE_DEFICIENCY instant email
-  webhookSentAt            DateTime?
-  webhookAttempts          Int                  @default(0)
-  webhookLastFailedAt      DateTime?
-  seenAt                   DateTime?
-  actionedAt               DateTime?
-  archived                 Boolean              @default(false)
-  createdAt                DateTime             @default(now())
+  id                   String              @id @default(cuid())
+  partnerOrgId         String
+  partnerOrg           PartnerOrganization @relation(fields: [partnerOrgId], references: [id])
+  accountId            String
+  account              Account             @relation(fields: [accountId], references: [id])
+  eventType            PartnerEventType
+  payload              Json
+  assignedRepId        String?
+  assignedRep          User?               @relation("EventLogRep", fields: [assignedRepId], references: [id])
+  digestSentAt         DateTime? // set when included in a digest email
+  immediateEmailSentAt DateTime? // set for IMMEDIATE_DEFICIENCY instant email
+  webhookSentAt        DateTime?
+  webhookAttempts      Int                 @default(0)
+  webhookLastFailedAt  DateTime?
+  seenAt               DateTime?
+  actionedAt           DateTime?
+  archived             Boolean             @default(false)
+  createdAt            DateTime            @default(now())
 
   @@index([partnerOrgId])
   @@index([accountId])
@@ -2553,7 +2578,7 @@ model ScimDirectory {
   polisDirectoryId String   @unique
   polisTenant      String
   polisProduct     String   @default("servicecycle")
-  type             String?  // e.g. "okta-scim-v2", "azure-scim-v2"
+  type             String? // e.g. "okta-scim-v2", "azure-scim-v2"
   label            String?
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
@@ -2570,7 +2595,7 @@ model ScimDirectory {
 model SsoRoleMapping {
   id        String   @id @default(uuid())
   accountId String
-  idpGroup  String   // the group/claim value as it arrives from the IdP
+  idpGroup  String // the group/claim value as it arrives from the IdP
   role      UserRole
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2630,7 +2655,7 @@ model ScimEvent {
   id               String   @id @default(uuid())
   eventKey         String   @unique
   polisDirectoryId String?
-  directoryId      String?  // our ScimDirectory id when resolved
+  directoryId      String? // our ScimDirectory id when resolved
   eventType        String
   status           String   @default("processed") // processed | ignored | error
   createdAt        DateTime @default(now())
@@ -2638,4 +2663,104 @@ model ScimEvent {
   @@index([createdAt])
   @@index([directoryId])
   @@map("scim_events")
+}
+
+// --- Phase 4 #8: Continuous condition-monitoring telemetry ---------------------
+// Forward-looking maintenance: edge gateways / condition-monitoring platforms
+// push periodic readings (winding/bushing temperature, vibration RMS, partial
+// discharge, online DGA, load) into the v1 API. Each reading is graded against
+// the channel's warn/crit thresholds; a CRIT breach raises a TelemetryNotification
+// and escalates the asset to NFPA 70B:2023 Condition 2 until addressed. The
+// 2026 OT transport standard is OPC-UA + MQTT/Sparkplug B; we ingest over an
+// API-key-scoped HTTP push endpoint and document the edge-gateway bridge
+// (docs/api/TELEMETRY.md) rather than running a broker in-process.
+
+// A monitored signal on one asset (e.g. "winding_temp", "vibration_rms").
+// Thresholds are optional: an auto-created channel ingests history with no
+// grading (status always OK) until a threshold is set. warn/crit come in HIGH
+// and LOW pairs so the same model handles "higher is worse" (temperature,
+// vibration, PD) and "lower is worse" (insulation resistance, oil level).
+model TelemetryChannel {
+  id            String           @id @default(uuid())
+  accountId     String
+  assetId       String
+  key           String // stable machine key, e.g. "winding_temp"
+  label         String? // human label, e.g. "Winding Temperature"
+  unit          String? // "C", "mm/s", "pC", "MOhm", ...
+  warnHigh      Decimal?         @db.Decimal(16, 4)
+  critHigh      Decimal?         @db.Decimal(16, 4)
+  warnLow       Decimal?         @db.Decimal(16, 4)
+  critLow       Decimal?         @db.Decimal(16, 4)
+  enabled       Boolean          @default(true)
+  lastValue     Decimal?         @db.Decimal(16, 4)
+  lastStatus    TelemetryStatus?
+  lastReadingAt DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  account       Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  asset         Asset                   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  readings      TelemetryReading[]
+  notifications TelemetryNotification[]
+
+  @@unique([assetId, key])
+  @@index([accountId])
+  @@index([accountId, assetId])
+  @@map("telemetry_channels")
+}
+
+// One time-series sample on a channel. recordedAt is the device timestamp;
+// externalId (when supplied) dedups at-least-once gateway delivery.
+model TelemetryReading {
+  id         String          @id @default(uuid())
+  accountId  String
+  channelId  String
+  assetId    String // denormalized for per-asset time-series queries
+  value      Decimal         @db.Decimal(16, 4)
+  unit       String?
+  status     TelemetryStatus
+  recordedAt DateTime // device-supplied measurement time
+  source     String? // e.g. "edge-gateway-01", "opcua-bridge"
+  externalId String? // gateway-side id for dedup (unique per channel)
+  createdAt  DateTime        @default(now())
+
+  account Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  channel TelemetryChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  asset   Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, externalId])
+  @@index([channelId, recordedAt])
+  @@index([accountId, recordedAt])
+  @@index([assetId, recordedAt])
+  @@map("telemetry_readings")
+}
+
+// A breach event raised on a WARN/CRIT transition. An OPEN (acknowledgedAt
+// null) CRIT notification is the NFPA 70B "unaddressed notification" that holds
+// the asset at Condition 2. Auto-resolved when the channel returns to OK, or
+// manually acknowledged via the API.
+model TelemetryNotification {
+  id               String          @id @default(uuid())
+  accountId        String
+  assetId          String
+  channelId        String
+  status           TelemetryStatus // WARN | CRIT
+  value            Decimal         @db.Decimal(16, 4)
+  threshold        Decimal?        @db.Decimal(16, 4)
+  thresholdKind    String? // "warnHigh" | "critHigh" | "warnLow" | "critLow"
+  message          String
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+  autoResolved     Boolean         @default(false) // true = cleared by a return-to-OK reading
+  createdAt        DateTime        @default(now())
+
+  account        Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  asset          Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  channel        TelemetryChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?            @relation("TelemetryNotificationAck", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([accountId, acknowledgedAt])
+  @@index([assetId, acknowledgedAt])
+  @@index([channelId, acknowledgedAt])
+  @@map("telemetry_notifications")
 }

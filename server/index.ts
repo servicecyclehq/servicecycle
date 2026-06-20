@@ -233,6 +233,7 @@ const v1AssetRoutes      = require('./routes/v1/assets');
 const v1ContractorRoutes = require('./routes/v1/contractors');
 const v1WorkOrderRoutes  = require('./routes/v1/workOrders');   // Phase 3 #7 bi-directional
 const v1DeficiencyRoutes = require('./routes/v1/deficiencies'); // Phase 3 #7
+const v1TelemetryRoutes  = require('./routes/v1/telemetry');    // Phase 4 #8 condition-monitoring
 const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
 const quoteRequestRoutes    = require('./routes/quoteRequests');
@@ -953,6 +954,7 @@ const leaveBehindLimiter = rateLimit({
   [v1ContractorRoutes,     '/api/v1/contractors'],
   [v1WorkOrderRoutes,      '/api/v1/work-orders'],
   [v1DeficiencyRoutes,     '/api/v1/deficiencies'],
+  [v1TelemetryRoutes,      '/api/v1/telemetry'],
 ].forEach(([r, base]) => { try { installValidation(r, base); } catch (e) { console.error('[validation] install failed for', base, e && e.message); } });
 
 app.use('/api/', apiLimiter);
@@ -1394,6 +1396,7 @@ app.use('/api/v1/assets',      v1VersionTag, requestId, v1IpLimiter, authenticat
 app.use('/api/v1/contractors', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1ContractorRoutes);
 app.use('/api/v1/work-orders', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1WorkOrderRoutes);
 app.use('/api/v1/deficiencies', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1DeficiencyRoutes);
+app.use('/api/v1/telemetry',    v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1TelemetryRoutes);
 
 // ── v0.20.0: API key management — admin only, uses JWT auth ──────────────────
 // Mounted under /api/settings so it inherits the settings-page UX convention.
