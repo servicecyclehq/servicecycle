@@ -652,11 +652,19 @@ router.post('/refresh', async (req, res) => {
       console.warn(`[auth] Refresh token reuse detected for user ${stored.userId} — all tokens revoked`);
       // v0.68.0 (audit Medium): audit-log the cascade so a refresh-token
       // theft replay is visible in the activity log.
+      // FIX (2026-06-20 audit): the previous code read `user` here, but `user`
+      // is a const declared ~16 lines BELOW this branch — referencing it hit the
+      // JS temporal dead zone and threw a ReferenceError, so this audit row was
+      // NEVER written on any reuse/theft-replay path. Resolve the account id
+      // from the stored token's userId instead (the only id known in this branch).
       try {
+        const reuseUser = await prisma.user.findUnique({
+          where:  { id: stored.userId },
+          select: { accountId: true },
+        });
         writeActivityLog({
           userId:    stored.userId,
-          // @ts-ignore -- user is assigned before this catch branch runs
-          accountId: user && user.accountId ? user.accountId : null,
+          accountId: reuseUser?.accountId ?? null,
           action:    'refresh_token_revoked_reuse_detected',
           details:   { revokedCount: cascade.count, ip: req.ip || null },
         });

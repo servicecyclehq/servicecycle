@@ -107,7 +107,16 @@ router.get('/', async (req: any, res) => {
       return new Date(b.declaredAt).getTime() - new Date(a.declaredAt).getTime();
     });
 
-    res.json({ success: true, data: { events: merged } });
+    // SECURITY: system (regional) events carry a global affectedSiteIds array
+    // spanning EVERY tenant whose sites matched the NWS zone. Never return other
+    // tenants' site ids — narrow system events to the caller's own sites.
+    const events = merged.map((ev: any) =>
+      ev.accountId === null && Array.isArray(ev.affectedSiteIds)
+        ? { ...ev, affectedSiteIds: ev.affectedSiteIds.filter((sid: string) => mySiteSet.has(sid)) }
+        : ev
+    );
+
+    res.json({ success: true, data: { events } });
   } catch (err) {
     console.error('GET /disaster-events error:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch disaster events' });
@@ -157,6 +166,9 @@ router.get('/regional', requireManager, async (req: any, res) => {
 
         return {
           ...ev,
+          // SECURITY: strip the cross-tenant global site list on system events;
+          // expose only the caller's own affected sites (myAffectedSites below).
+          ...(ev.accountId === null ? { affectedSiteIds: mySites.map((s) => s.id) } : {}),
           myAffectedSites:     mySites,
           myAffectedSiteCount: mySites.length,
           myHighRiskAssets:    highRiskAssets,
@@ -312,8 +324,10 @@ router.post('/declare', async (req: any, res) => {
 });
 
 // ── POST /api/disaster-events/:id/resolve ────────────────────────────────────
-// Resolve a declaration. Only the declaring account or a manager can resolve.
-router.post('/:id/resolve', async (req: any, res) => {
+// Resolve a declaration. [manager+] — matches the documented intent and the
+// client (which only renders the Resolve control for admin/manager). Blocks
+// read-only consultant/viewer writes, consistent with the sibling /scan route.
+router.post('/:id/resolve', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
 

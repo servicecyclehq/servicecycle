@@ -84,13 +84,24 @@ router.post('/accept', authenticateToken, async (req: any, res: any) => {
     // NEVER from the request body.
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, accountId: true, email: true },
+      select: { id: true, accountId: true, email: true, account: { select: { partnerOrgId: true } } },
     });
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
     // The invite is addressed to a specific email; only that person may accept.
     if (String(user.email || '').toLowerCase() !== String(invite.inviteeEmail || '').toLowerCase()) {
       return res.status(403).json({ error: 'This invite was sent to a different email address. Sign in as the invited user to accept it.' });
+    }
+
+    // SECURITY: don't silently transfer an account already managed by a
+    // DIFFERENT partner org. Mirrors the fleet POST /accounts/:id/link 409
+    // guard. Without this, an account managed by contractor A could be moved to
+    // contractor B the moment any of its users accepts a B invite to their
+    // mailbox, handing B full fleet visibility into A's customer. Re-accepting
+    // the same org (idempotent) and linking a currently-unlinked account remain allowed.
+    const currentOrgId = user.account?.partnerOrgId ?? null;
+    if (currentOrgId && currentOrgId !== invite.partnerOrgId) {
+      return res.status(409).json({ error: 'This account is already linked to a different partner organization. Contact support to transfer it.' });
     }
 
     // Atomically: link account, mark invite accepted

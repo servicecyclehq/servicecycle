@@ -141,6 +141,17 @@ router.post('/:id/restore', requireAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Revoked access record not found' });
     }
 
+    // Guard against duplicate active grants (mirror /grant's precheck). Without
+    // this, restoring an old revoked record while a NEWER active grant already
+    // exists for the same consultant would create two concurrent active rows,
+    // breaking the "at most one active grant per consultant" invariant.
+    const activeExisting = await prisma.consultantAccess.findFirst({
+      where: { accountId: req.user.accountId, consultantId: old.consultantId, isActive: true },
+    });
+    if (activeExisting) {
+      return res.status(409).json({ success: false, error: 'This consultant already has active access.' });
+    }
+
     const [record] = await prisma.$transaction([
       prisma.consultantAccess.create({
         data: {

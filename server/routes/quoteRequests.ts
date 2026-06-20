@@ -398,18 +398,25 @@ router.patch('/:id/status', requireManager, async (req, res) => {
     let createdWorkOrder = null;
     if (status === 'accepted' && existing.status !== 'accepted') {
       try {
-        const already = await prisma.workOrder.findFirst({
-          where:  { accountId: req.user.accountId, quoteRequestId: existing.id },
-          select: { id: true },
-        });
-        if (!already) {
+        // Idempotency (TOCTOU): two concurrent accepts both read existing.status
+        // as not-accepted and would each create a work order. The find-then-create
+        // below runs in a SERIALIZABLE transaction so Postgres SSI aborts the
+        // loser (caught + logged), guaranteeing exactly one auto-WO per quote
+        // even under double-submit. There is no DB unique constraint on
+        // workOrder.quoteRequestId, so the isolation level is the guard.
+        createdWorkOrder = await prisma.$transaction(async (tx: any) => {
+          const already = await tx.workOrder.findFirst({
+            where:  { accountId: req.user.accountId, quoteRequestId: existing.id },
+            select: { id: true },
+          });
+          if (already) return null;
           // Prefer the most-overdue active schedule; else the soonest-due.
-          const sched = await prisma.maintenanceSchedule.findFirst({
+          const sched = await tx.maintenanceSchedule.findFirst({
             where:   { accountId: req.user.accountId, assetId: existing.assetId, isActive: true, nextDueDate: { not: null } },
             orderBy: { nextDueDate: 'asc' },
             select:  { id: true },
           });
-          createdWorkOrder = await prisma.workOrder.create({
+          return tx.workOrder.create({
             data: {
               accountId:      req.user.accountId,
               assetId:        existing.assetId,
@@ -421,9 +428,10 @@ router.patch('/:id/status', requireManager, async (req, res) => {
             },
             select: { id: true, status: true, scheduleId: true, scheduledDate: true },
           });
-        }
+        }, { isolationLevel: 'Serializable' });
       } catch (woErr: any) {
-        // Never fail the accept on the side-effect; surface nothing to break the lifecycle.
+        // Never fail the accept on the side-effect (incl. a serialization abort
+        // when a concurrent request already created the WO).
         console.error('[quoteRequests accept->WO]', woErr?.message || woErr);
       }
     }

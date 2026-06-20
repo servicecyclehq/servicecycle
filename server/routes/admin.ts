@@ -25,7 +25,7 @@
 
 const express = require('express');
 import prisma from '../lib/prisma';
-const { requireAdmin } = require('../middleware/roles');
+const { requireAdmin, requireSuperAdmin } = require('../middleware/roles');
 const earlyAccessRouter = require('./earlyAccess');  // (L7)
 const { getDailyCap, getAccountCapOverride, UNLIMITED } = require('../lib/aiQuota');
 
@@ -469,7 +469,13 @@ router.get('/metrics/overview', requireAdmin, async (req, res) => {
 // Cheap to call (single query against the pg system view); admin-only so
 // the counts aren't enumerable by tenants. Sample output:
 //   { success: true, data: { total: 4, active: 1, idle: 3, idleInTx: 0, max: 100, utilizationPct: 4 } }
-router.get('/db-pool-health', requireAdmin, async (req, res) => {
+// SECURITY (2026-06-20 audit): operator-only infra data (platform-wide
+// pg_stat_activity), with no client UI dependency — gated to super_admin so a
+// customer admin (or, on a demo box, an auto-provisioned sandbox admin) cannot
+// enumerate the platform's DB pool state. (The sibling /metrics/overview leaks
+// platform-wide BI but backs a customer-facing page; it is flagged separately
+// for a coordinated server+client gating change.)
+router.get('/db-pool-health', requireSuperAdmin, async (req, res) => {
   try {
     // datname filter scopes to the servicecycle database; postgres role excluded
     // so internal autovacuum / replication connections don't inflate the count.

@@ -62,6 +62,12 @@ function verifySvix(secret: string, headers: any, rawBody: string): boolean {
   try {
     const id = headers['svix-id']; const ts = headers['svix-timestamp']; const sigHeader = headers['svix-signature'];
     if (!id || !ts || !sigHeader) return false;
+    // Replay protection: reject a signature whose timestamp is outside a ±5min
+    // tolerance window (the Svix-recommended default). Without this, a captured
+    // signed payload could be replayed indefinitely since the HMAC stays valid.
+    const tsNum = Number(ts);
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(tsNum) || Math.abs(nowSec - tsNum) > 5 * 60) return false;
     const key = Buffer.from(String(secret).replace(/^whsec_/, ''), 'base64');
     const expected = crypto.createHmac('sha256', key).update(`${id}.${ts}.${rawBody}`).digest('base64');
     return String(sigHeader).split(' ').some((part: string) => {

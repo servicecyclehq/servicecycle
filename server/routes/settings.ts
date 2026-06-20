@@ -249,8 +249,12 @@ router.get('/', requireAdmin, async (req, res) => {
         ...merged,
         // Never send plaintext key to client
         AI_API_KEY:        maskKey(plaintextKey),
-        // Admin-only partial preview to let them verify "does this look like my key"
-        _apiKeyPreview:    apiKeyPreview(plaintextKey),
+        // Admin-only partial preview to let them verify "does this look like my key".
+        // Only emit when the key is the account's OWN DB-stored key. When it falls
+        // back to the shared platform env key, that credential belongs to the
+        // operator (not the tenant), so leaking its last-4 to every tenant admin
+        // would expose entropy about a shared secret they didn't provide.
+        _apiKeyPreview:    hasDbKey ? apiKeyPreview(plaintextKey) : null,
         _apiKeySet:        hasDbKey || hasEnvKey,
         _apiKeyFromDb:     hasDbKey,
         // Convenience flag: AI is enabled AND a key is actually configured.
@@ -612,6 +616,32 @@ router.post('/test', requireAdmin, async (req, res) => {
     const isMasked = (v) => !v || /^[•]+$/.test(v);
 
     const submitted = req.body || {};
+
+    // SSRF + stored-key exfil guard (parity with the PUT / save-time guard at
+    // ~line 340). /test turns AZURE_OPENAI_ENDPOINT into a server-side fetch
+    // target via complete(). Without this an admin could (a) point the server at
+    // an internal / cloud-metadata URL and (b) have the account's stored AI key
+    // transmitted there by sending the masked placeholder for AI_API_KEY (which
+    // falls back to base.AI_API_KEY). So: when an ad-hoc azure endpoint is
+    // submitted, require an explicit key (never send the stored one to a
+    // caller-chosen host) and SSRF-validate the endpoint.
+    const effectiveProvider = submitted.AI_PROVIDER || base.AI_PROVIDER || 'anthropic';
+    const submittedAzureEp  = typeof submitted.AZURE_OPENAI_ENDPOINT === 'string' ? submitted.AZURE_OPENAI_ENDPOINT.trim() : '';
+    const usesCustomAzureEndpoint = effectiveProvider === 'azure_openai' && !!submittedAzureEp && !/^[•]+$/.test(submittedAzureEp);
+    if (usesCustomAzureEndpoint) {
+      if (isMasked(submitted.AI_API_KEY)) {
+        return res.status(400).json({ success: false, error: 'Provide an API key when testing a custom AI endpoint — the stored key is not sent to ad-hoc endpoints.' });
+      }
+      if (process.env.ALLOW_INTERNAL_AI_ENDPOINT !== 'true') {
+        const { validateWebhookUrl } = require('../lib/webhook');
+        const { valid, reason } = await validateWebhookUrl(submittedAzureEp)
+          .catch(() => ({ valid: false, reason: 'validation-error' }));
+        if (!valid) {
+          return res.status(400).json({ success: false, error: `AI endpoint blocked: ${reason}` });
+        }
+      }
+    }
+
     const testSettings: any = {
       provider:        submitted.AI_PROVIDER        || base.AI_PROVIDER || 'anthropic',
       apiKey:          isMasked(submitted.AI_API_KEY) ? base.AI_API_KEY : submitted.AI_API_KEY,

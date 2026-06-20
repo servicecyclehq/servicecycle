@@ -29,7 +29,11 @@ const RATE_LIMIT_MAX       = 30;
 const ipWindows = new Map(); // ip -> array of timestamps within window
 
 function ipKey(req) {
-  return (req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+  // Use Express's trust-proxy-resolved req.ip rather than the raw, client-
+  // spoofable X-Forwarded-For header, so an attacker can't rotate XFF values to
+  // evade this per-IP crash-telemetry limiter. (The global apiLimiter, which
+  // keys on the same resolved IP, also fronts this route as defense-in-depth.)
+  return String(req.ip || 'unknown').trim();
 }
 
 function isRateLimited(ip) {

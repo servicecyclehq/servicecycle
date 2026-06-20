@@ -108,6 +108,17 @@ async function approveOne(job: any, userId: string, opts: { siteId?: string | nu
   const commitAccountId = job.targetAccountId || job.accountId;
   const siteId = opts.siteId || job.siteId || await _firstSiteId(commitAccountId);
   if (!siteId) throw Object.assign(new Error('No site available to place these assets — create a site first.'), { httpStatus: 400 });
+  // SECURITY: a client-supplied siteId must belong to the account the assets are
+  // being committed to. Without this, an approver could pass another tenant's
+  // site id and attach the newly-created assets to a foreign tenant's site.
+  // (job.siteId / _firstSiteId are account-derived and need no re-check.)
+  if (opts.siteId) {
+    const ownsSite = await prisma.site.findFirst({
+      where:  { id: String(opts.siteId), accountId: commitAccountId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!ownsSite) throw Object.assign(new Error('Site not found in this account.'), { httpStatus: 404 });
+  }
 
   let preview = job.result;
   let edited = false;

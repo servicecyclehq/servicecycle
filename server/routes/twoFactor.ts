@@ -254,13 +254,19 @@ router.post('/enable', authenticateToken, async (req, res) => {
     }
 
     const secret = decryptSecret(user.twoFactorSecret);
-    if (!verifyCode(code, secret)) {
+    // H1 (replay): capture the matched time-step and persist it as
+    // twoFactorLastUsedStep so the SAME code used to enable 2FA cannot be
+    // replayed at the first verify-login (within the ~30s window). Previously
+    // /enable left twoFactorLastUsedStep null, so the enable code was a valid,
+    // not-yet-recorded login code.
+    const totpResult = verifyCodeWithStep(code, secret);
+    if (!totpResult.valid) {
       return res.status(400).json({ success: false, error: 'Invalid verification code — please try again' });
     }
 
     await prisma.user.update({
       where: { id: req.user.id },
-      data:  { twoFactorEnabled: true },
+      data:  { twoFactorEnabled: true, twoFactorLastUsedStep: totpResult.step },
     });
 
     return res.json({ success: true, message: '2FA has been enabled on your account.' });
@@ -417,16 +423,41 @@ router.post('/verify-login', totpLimiter, async (req, res) => {
       newLastUsedStep = totpResult.step;
     }
 
-    // Code is valid — clear fail counter, update lastLogin, persist step
+    // Code is valid — clear fail counter, update lastLogin, persist step.
     _clearTotpUserFails(user.id);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        lastLogin: new Date(),
-        ...(newLastUsedStep !== null ? { twoFactorLastUsedStep: newLastUsedStep } : {}),
-        ...(backupUpdate !== null ? { twoFactorBackupCodes: backupUpdate } : {}),
-      },
-    });
+    if (newLastUsedStep !== null) {
+      // H1 (concurrency-safe replay prevention): the serial pre-check above
+      // (totpResult.step <= stored) closes the sequential replay, but two
+      // requests carrying the SAME not-yet-used code can both read the same old
+      // step before either writes (TOCTOU). Claim the step atomically: only
+      // advance when the stored step is still null or strictly older. Postgres
+      // serializes the two row updates, so exactly one wins (count===1); the
+      // loser matches 0 rows and is rejected as a replay.
+      const claim = await prisma.user.updateMany({
+        where: {
+          id: user.id,
+          OR: [
+            { twoFactorLastUsedStep: null },
+            { twoFactorLastUsedStep: { lt: newLastUsedStep } },
+          ],
+        },
+        data: { lastLogin: new Date(), twoFactorLastUsedStep: newLastUsedStep },
+      });
+      if (claim.count === 0) {
+        _recordTotpUserFail(user.id);
+        return res.status(401).json({ success: false, error: 'Code already used — please wait for the next code.' });
+      }
+    } else {
+      // Backup-code path: the one-time code was already consumed in-memory
+      // (consumeBackupCode) and is persisted here. Step replay does not apply.
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          lastLogin: new Date(),
+          ...(backupUpdate !== null ? { twoFactorBackupCodes: backupUpdate } : {}),
+        },
+      });
+    }
 
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.accountId);
 

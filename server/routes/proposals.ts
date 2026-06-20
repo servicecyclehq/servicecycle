@@ -91,8 +91,12 @@ router.get('/', requireManagerOrOem, async (req: any, res: any) => {
 // - POST /api/proposals/request-contact -
 // Customer-side demand capture: "request a quote / meeting / call" about the
 // program. Notifies the account's service rep by email with the customer's
-// choice + optional note. Any authenticated user on the account.
-router.post('/request-contact', async (req: any, res: any) => {
+// choice + optional note. This is a WRITE path (persists a PartnerEventLog
+// inbox row + sends rep email), so it carries the same writer-tier gate as the
+// rest of the proposal surface — admin/manager/oem_admin only. consultant
+// (read-only-with-attribution) and viewer are blocked, matching the in-app
+// ProposalCard which is only rendered for those same roles (canSeeProposal).
+router.post('/request-contact', requireManagerOrOem, async (req: any, res: any) => {
   try {
     const mode = String(req.body?.mode || 'quote');
     if (!['quote', 'meeting', 'call'].includes(mode)) {

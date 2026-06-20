@@ -819,6 +819,27 @@ const aiIpLimiter = rateLimit({
 });
 
 
+// v1 public-API per-IP backstop. The global apiLimiter SKIPS /api/v1/* (skip
+// list above) so authenticated batch integrations sharing one office IP aren't
+// forced into the 30/min anonymous bucket. But that skip ALSO left
+// unauthenticated / invalid-key traffic on /api/v1/* with no limiter at all:
+// authenticateApiKey returns 401 before the per-key apiKeyLimiter ever runs, so
+// a `Bearer <garbage>` flood drove unthrottled indexed api_key lookups (a
+// brute-force / DB-load amplifier). This IP-keyed limiter runs BEFORE
+// authenticateApiKey so bad-key traffic is bounded. 300/min/IP sits well above
+// any real multi-key office burst (the per-key budget is 60/min) while capping
+// the unauthenticated abuse vector. Keyed via the same Cloudflare-aware
+// _clientIpKey the other anonymous limiters use.
+const v1IpLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max:      300,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator:    _clientIpKey,
+  handler:         rateLimitHandler, // (D2) Retry-After
+  message: { success: false, error: 'Too many API requests from this network — slow down.' },
+});
+
 // Feedback limiter: 5 submissions per hour per user. (M10)
 // authenticateToken runs before this limiter, so req.user is always populated.
 // Keying by userId avoids any IP/IPv6 concerns.
@@ -1319,10 +1340,10 @@ app.use('/api/custom-fields',     authenticateToken, customFieldRoutes);
 
 // ── v0.20.0: Public REST API (v1) — API key auth ─────────────────────────────
 // All /api/v1/* routes are authenticated with machine-to-machine API keys
-// (apiKeyAuth middleware) rather than JWT. The apiKeyLimiter (60 req/min per
-// key) runs immediately after auth so a bad/expired key still gets rate-limited
-// by the outer apiLimiter (30/min anonymous) before reaching the auth check.
-// Read-only — no write endpoints exist in v1.
+// (apiKeyAuth middleware) rather than JWT. The global apiLimiter SKIPS this
+// surface, so an IP-keyed v1IpLimiter runs FIRST (before authenticateApiKey) to
+// bound unauthenticated / invalid-key floods; the per-key apiKeyLimiter (60/min)
+// then governs authenticated traffic. Read-only — no write endpoints exist in v1.
 // v0.37.1 W5 MT-128: public OpenAPI spec + Swagger UI. Registered BEFORE
 // the authenticated v1 mounts so the spec endpoints don't get caught by
 // apiKeyAuth — integrators need to read API docs before they have a key.
@@ -1335,8 +1356,8 @@ openapiRoute.register(app);
 // see which version they hit. Single source of truth - when v2 lands, copy
 // this for /api/v2 and add Deprecation/Sunset to the v1 middleware.
 const v1VersionTag = (req, res, next) => { res.set('API-Version', '1'); next(); };
-app.use('/api/v1/assets',      v1VersionTag, requestId, authenticateApiKey, apiKeyLimiter, v1AssetRoutes);
-app.use('/api/v1/contractors', v1VersionTag, requestId, authenticateApiKey, apiKeyLimiter, v1ContractorRoutes);
+app.use('/api/v1/assets',      v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1AssetRoutes);
+app.use('/api/v1/contractors', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1ContractorRoutes);
 
 // ── v0.20.0: API key management — admin only, uses JWT auth ──────────────────
 // Mounted under /api/settings so it inherits the settings-page UX convention.

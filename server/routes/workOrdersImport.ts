@@ -377,10 +377,26 @@ async function prepare(req): Promise<any> {
 
 // ---- POST /preview ----------------------------------------------------------
 
+// CWE-1236: strip leading spreadsheet-formula triggers so preview cells echoed
+// back to the client can't become active formulas if pasted into Excel/
+// LibreOffice. Mirrors the sibling deficiencies/schedules/assets import routes.
+function sanitizeFormulaPrefix(s: string): string {
+  if (!s) return s;
+  return s.replace(/^[=+\-@\t\r\n]+/, '');
+}
+
 router.post('/preview', requireManager, handleUpload, async (req, res) => {
   try {
     const ctx = await prepare(req);
     if (ctx.error) return res.status(ctx.error.status).json(ctx.error.body);
+    // Sanitize free-text cells in the preview sample before reflecting to client.
+    const safeSample = ctx.rows.slice(0, 10).map((row: any) => {
+      const safe: any = {};
+      for (const [k, v] of Object.entries(row)) {
+        safe[k] = typeof v === 'string' ? sanitizeFormulaPrefix(v) : v;
+      }
+      return safe;
+    });
     return res.json({
       success: true,
       data: {
@@ -389,7 +405,7 @@ router.post('/preview', requireManager, handleUpload, async (req, res) => {
         headers:          ctx.headers,
         suggestedMapping: ctx.mapping,
         schemaFields:     SCHEMA_FIELDS,
-        sampleRows:       ctx.rows.slice(0, 10),
+        sampleRows:       safeSample,
         validationErrors: ctx.validationErrors,
         unmatchedSerials: ctx.unmatchedSerials,
         matchedCount:     ctx.rows.length - ctx.validationErrors.length - ctx.unmatchedSerials.length,

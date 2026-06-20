@@ -27,8 +27,23 @@ const express = require('express');
 const { z }   = require('zod');
 import prisma from '../lib/prisma';
 const { sendEmail, earlyAccessReplyHtml, earlyAccessNotificationHtml } = require('../lib/email');
+const { authenticateToken } = require('../middleware/auth');
+const { requireAdmin }      = require('../middleware/roles');
 
 const router = express.Router();
+
+// Lead PII must never be readable from a demo sandbox, even by a demo "admin"
+// (demo shares the ops DB). Mirrors admin.ts denyOnDemo so the guard travels
+// with the route regardless of which mount serves it.
+function denyOnDemo(req, res, next) {
+  if (process.env.DEMO_MODE === 'true') {
+    return res.status(403).json({
+      success: false,
+      error:   'Early-access leads are not viewable from the demo sandbox.',
+    });
+  }
+  next();
+}
 
 // ── Submit schema ────────────────────────────────────────────────────────────
 // `website` is the honeypot — we expect empty. `timing` is free-form to avoid
@@ -120,11 +135,15 @@ router.post('/', async (req, res) => {
   return res.status(201).json({ success: true, data: { id: row.id } });
 });
 
-// ── GET /api/early-access (admin) ────────────────────────────────────────────
-// Wired by the admin router (or under authenticateToken + requireAdmin). The
-// route handler here is pure — auth/role gates live at mount time so this
-// file stays usable from both the public and the admin entry points.
-router.get('/list', async (req, res) => {
+// ── GET /api/early-access/list (admin) ───────────────────────────────────────
+// SECURITY: this router is mounted on BOTH the PUBLIC path (index.ts:
+// `app.use('/api/early-access', countryGate, earlyAccessRoutes)` — no auth) and
+// the admin path (admin.ts: behind requireAdmin + denyOnDemo). Because Express
+// routers match every sub-path, /list was reachable UNAUTHENTICATED via the
+// public mount, dumping the entire lead/prospect PII table. The gate must
+// therefore live ON THE ROUTE, not just at mount time — authenticate + require
+// admin + denyOnDemo here so it is safe no matter which mount serves it.
+router.get('/list', authenticateToken, requireAdmin, denyOnDemo, async (req, res) => {
   const take    = Math.min(parseInt(req.query.take || '50', 10), 200);
   const cursor  = req.query.cursor || null;
   try {

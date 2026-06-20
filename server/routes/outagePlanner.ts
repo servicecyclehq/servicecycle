@@ -472,6 +472,33 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
     }
     const siteByAsset = new Map(assets.map((a: any) => [a.id, a.siteId]));
 
+    // SECURITY (cross-tenant nested-write): WorkOrder.scheduleId is a raw FK with
+    // no account constraint, and the WO COMPLETE transition rolls the linked
+    // schedule forward by id alone (routes/workOrders.ts). An unvalidated
+    // scheduleId in the body therefore lets a manager pin ANOTHER tenant's
+    // schedule onto their own WO and corrupt that tenant's NFPA/NETA due dates
+    // on completion. Validate every submitted scheduleId belongs to this account
+    // AND to the asset it is paired with before any of it is written.
+    const allSchedIds = [...new Set(
+      selections.flatMap((s: any) => Array.isArray(s.scheduleIds) ? s.scheduleIds.map(String) : [])
+    )];
+    const ownedSchedules = allSchedIds.length
+      ? await prisma.maintenanceSchedule.findMany({
+          where: { id: { in: allSchedIds }, accountId },
+          select: { id: true, assetId: true },
+        })
+      : [];
+    const schedAssetById = new Map(ownedSchedules.map((s: any) => [s.id, s.assetId]));
+    for (const sel of selections) {
+      const selAssetId = String(sel.assetId);
+      const ids = Array.isArray(sel.scheduleIds) ? sel.scheduleIds.map(String) : [];
+      for (const sid of ids) {
+        if (schedAssetById.get(sid) !== selAssetId) {
+          return res.status(400).json({ success: false, error: 'One or more schedules not found for the specified asset in this account' });
+        }
+      }
+    }
+
     // 1. One BlackoutWindow per distinct site (full-day planned shutdown).
     const blackouts: any[] = [];
     if (createBlackout) {
@@ -620,6 +647,28 @@ router.post('/work-order', requireManager, async (req: any, res: any) => {
     const assetIds = assetSchedules.map((a: any) => String(a.assetId));
     const assets   = await prisma.asset.findMany({ where: { id: { in: assetIds }, accountId, archivedAt: null }, select: { id: true } });
     if (assets.length !== assetIds.length) return res.status(400).json({ success: false, error: 'One or more assets not found in this account' });
+
+    // SECURITY (cross-tenant nested-write): mirror /commit — validate every
+    // submitted scheduleId belongs to this account AND its paired asset before
+    // writing it onto a WorkOrder.scheduleId FK (see /commit note above).
+    const allSchedIds = [...new Set(
+      assetSchedules.flatMap((a: any) => Array.isArray(a.scheduleIds) ? a.scheduleIds.map(String) : [])
+    )];
+    const ownedSchedules = allSchedIds.length
+      ? await prisma.maintenanceSchedule.findMany({
+          where: { id: { in: allSchedIds }, accountId },
+          select: { id: true, assetId: true },
+        })
+      : [];
+    const schedAssetById = new Map(ownedSchedules.map((s: any) => [s.id, s.assetId]));
+    for (const { assetId, scheduleIds } of assetSchedules) {
+      const ids = Array.isArray(scheduleIds) ? scheduleIds.map(String) : [];
+      for (const sid of ids) {
+        if (schedAssetById.get(sid) !== String(assetId)) {
+          return res.status(400).json({ success: false, error: 'One or more schedules not found for the specified asset in this account' });
+        }
+      }
+    }
     const created = [];
     for (const { assetId, scheduleIds } of assetSchedules) {
       const primaryScheduleId = Array.isArray(scheduleIds) && scheduleIds.length > 0 ? scheduleIds[0] : null;

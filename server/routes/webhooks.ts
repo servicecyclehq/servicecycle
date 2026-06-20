@@ -1,4 +1,3 @@
-const { listForAccount, dismissOne } = require('../lib/webhookDlq');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 /**
  * server/routes/webhooks.js
@@ -37,7 +36,7 @@ const { z }  = require('zod');
 import prisma from '../lib/prisma';
 const { requireAdmin } = require('../middleware/roles');
 const { encrypt, decryptIfEncrypted } = require('../lib/crypto');
-const { validateWebhookUrl, deliverWebhook, buildTestPayload, signPayload } = require('../lib/webhook');
+const { validateWebhookUrl, deliverWebhook, buildTestPayload, signPayload, postOnce } = require('../lib/webhook');
 
 const MAX_ENDPOINTS_PER_ACCOUNT = 5;
 
@@ -414,42 +413,28 @@ router.post('/:id/test', async (req, res) => {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const signature = signPayload(body, timestamp, secret);
 
-    const { valid, reason: ssrfReason } = await validateWebhookUrl(url).catch(() => ({ valid: false, reason: 'validation-error' }));
+    // SSRF (F-SSRF-REBIND): validate AND pin. validateWebhookUrl resolves the
+    // host and returns the vetted public IPs; postOnce connects ONLY to those
+    // IPs via pinnedLookup. The previous code validated then sent with the
+    // global fetch(url), which re-resolves the hostname at connect time — a
+    // low-TTL attacker domain could pass validation with a public A record and
+    // then rebind to a private / cloud-metadata IP (169.254.169.254) when fetch
+    // connected. Routing through postOnce (the same path production deliveries
+    // use) closes that DNS-rebinding TOCTOU window.
+    const { valid, addresses, reason: ssrfReason } = await validateWebhookUrl(url).catch(() => ({ valid: false, reason: 'validation-error' }));
     if (!valid) {
       return res.status(400).json({ success: false, error: `Blocked: ${ssrfReason}` });
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-
-    let result;
-    try {
-      const fetchRes = await fetch(url, {
-        method:   'POST',
-        redirect: 'error',
-        headers:  {
-          'Content-Type':        'application/json',
-          'X-ServiceCycle-Signature': signature,
-          'X-ServiceCycle-Timestamp': timestamp,    // H4: parity with production deliveries
-          'User-Agent':               'ServiceCycle-Webhook/1.0',
-        },
-        body,
-        signal: controller.signal,
-      });
-      if (!fetchRes.ok) {
-        const text = (await fetchRes.text().catch(() => '')).slice(0, 200);
-        result = { ok: false, status: fetchRes.status, reason: text || `HTTP ${fetchRes.status}` };
-      } else {
-        result = { ok: true, status: fetchRes.status };
-      }
-    } catch (fetchErr) {
-      result = {
-        ok:     false,
-        reason: fetchErr.name === 'AbortError' ? 'timeout' : (fetchErr.message || 'network-error'),
-      };
-    } finally {
-      clearTimeout(timer);
-    }
+    const result = await postOnce({
+      url,
+      addresses,
+      body,
+      signature,
+      timestamp,
+      deliveryId: crypto.randomUUID(),
+      timeoutMs:  5000,
+    });
 
     if (!result.ok) {
       return res.status(502).json({ success: false, error: result.reason, status: result.status });
@@ -463,38 +448,12 @@ router.post('/:id/test', async (req, res) => {
 });
 
 
-// ── GET /api/webhooks/dlq ────────────────────────────────────────────────
-// H10 (audit High, 2026-05-22): list DLQ rows for the caller's account
-// so admins can inspect failed deliveries before the 30-day prune.
-router.get('/dlq', async (req, res) => {
-  try {
-    const rows = await listForAccount({
-      accountId: req.user.accountId,
-      limit:     req.query.limit,
-    });
-    return res.json({ success: true, data: rows });
-  } catch (err) {
-    console.error('[webhooks/dlq] list error:', err.message);
-    return res.status(500).json({ success: false, error: 'Server error' });
-  }
-});
-
-// ── DELETE /api/webhooks/dlq/:id ────────────────────────────────────────
-// H10: dismiss a single DLQ row. Scoped by accountId so tenants can't
-// touch other tenants' rows. 404 on miss.
-router.delete('/dlq/:id', async (req, res) => {
-  try {
-    const ok = await dismissOne({
-      accountId: req.user.accountId,
-      id:        req.params.id,
-    });
-    if (!ok) return res.status(404).json({ success: false, error: 'DLQ row not found' });
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('[webhooks/dlq] dismiss error:', err.message);
-    return res.status(500).json({ success: false, error: 'Server error' });
-  }
-});
+// NOTE (2026-06-20 audit): a second, divergent set of GET /dlq and
+// DELETE /dlq/:id handlers (backed by lib/webhookDlq listForAccount/dismissOne)
+// previously lived here. They were DEAD — Express matches the first registration,
+// so the canonical accountId-scoped handlers above (GET /dlq line ~85,
+// DELETE /dlq/:id line ~194) always served these paths. The dead duplicates were
+// removed to prevent a future edit landing on a handler that never runs.
 
 module.exports = router;
 

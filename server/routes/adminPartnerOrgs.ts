@@ -23,12 +23,14 @@ const router = express.Router();
 // List all PartnerOrganizations with account count and oem_admin user count.
 router.get('/', async (req: any, res: any) => {
   try {
+    // SECURITY: never serialize webhookSecret (the 32-byte HMAC-SHA256 signing
+    // key) into an API response — it can land in browser history / proxy logs
+    // and lets a holder forge signed webhook payloads. Explicit select omits it.
     const orgs = await prisma.partnerOrganization.findMany({
-      where: { deletedAt: undefined }, // soft-delete filter handled below
-      include: {
-        _count: {
-          select: { accounts: true },
-        },
+      select: {
+        id: true, name: true, logoUrl: true, primaryColor: true, website: true,
+        webhookUrl: true, digestIntervalDays: true, createdAt: true, updatedAt: true,
+        _count: { select: { accounts: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -89,6 +91,10 @@ router.post('/', async (req: any, res: any) => {
         primaryColor: primaryColor ?? null,
         website:      website      ?? null,
       },
+      select: {
+        id: true, name: true, logoUrl: true, primaryColor: true, website: true,
+        webhookUrl: true, digestIntervalDays: true, createdAt: true, updatedAt: true,
+      },
     });
 
     res.status(201).json({ org });
@@ -112,12 +118,25 @@ router.patch('/:id', async (req: any, res: any) => {
     if (!existing) return res.status(404).json({ error: 'Partner org not found' });
 
     const data: Record<string, any> = {};
-    if (name       !== undefined) data.name         = name.trim();
+    if (name !== undefined) {
+      // Guard the .trim() below: a non-string name (number/object/array) would
+      // throw and surface as a 500 instead of a clean 400.
+      if (typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'name must be a non-empty string' });
+      }
+      data.name = name.trim();
+    }
     if (logoUrl    !== undefined) data.logoUrl       = logoUrl;
     if (primaryColor !== undefined) data.primaryColor = primaryColor;
     if (website    !== undefined) data.website       = website;
 
-    const org = await prisma.partnerOrganization.update({ where: { id }, data });
+    const org = await prisma.partnerOrganization.update({
+      where: { id }, data,
+      select: {
+        id: true, name: true, logoUrl: true, primaryColor: true, website: true,
+        webhookUrl: true, digestIntervalDays: true, createdAt: true, updatedAt: true,
+      },
+    });
     res.json({ org });
   } catch (err) {
     console.error('[adminPartnerOrgs PATCH /:id]', err);

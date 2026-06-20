@@ -262,7 +262,12 @@ function inviteHtml({ inviterName, companyName, role, link }) {
 }
 
 function feedbackHtml({ userName, userEmail, userRole, companyName, category, message, pageUrl, submittedAt }) {
-  const safeMsg = message.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  // Every interpolated field here is user-controlled (pageUrl + profile name/
+  // email/company come straight from the request / user record), so escape them
+  // all to prevent HTML/markup injection (phishing links, layout spoofing) into
+  // the operator's support inbox. Previously only `message` was partially escaped.
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const safeMsg = esc(message).replace(/\n/g, '<br>');
   return `
 <div style="font-family:sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
   <div style="margin-bottom:20px;">
@@ -272,7 +277,7 @@ function feedbackHtml({ userName, userEmail, userRole, companyName, category, me
 
   <div style="background:#1e2330;border-radius:6px;padding:16px 20px;margin-bottom:20px;border-left:3px solid #6366f1;">
     <div style="font-size:13px;font-weight:700;color:#a5b4fc;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Category</div>
-    <div style="font-size:16px;font-weight:600;color:#fff;">${category}</div>
+    <div style="font-size:16px;font-weight:600;color:#fff;">${esc(category)}</div>
   </div>
 
   <div style="background:#1e2330;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
@@ -283,12 +288,12 @@ function feedbackHtml({ userName, userEmail, userRole, companyName, category, me
   <div style="background:#1e2330;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
     <div style="font-size:13px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">Submitted By</div>
     <table style="width:100%;border-collapse:collapse;">
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;width:110px;">Name</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${userName}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Email</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${userEmail}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Role</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;text-transform:capitalize;">${userRole}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Account</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${companyName}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Page</td><td style="padding:3px 0;font-size:13px;color:#a5b4fc;">${pageUrl}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Time</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${submittedAt}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;width:110px;">Name</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(userName)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Email</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(userEmail)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Role</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;text-transform:capitalize;">${esc(userRole)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Account</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(companyName)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Page</td><td style="padding:3px 0;font-size:13px;color:#a5b4fc;">${esc(pageUrl)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Time</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(submittedAt)}</td></tr>
     </table>
   </div>
 
