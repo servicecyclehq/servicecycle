@@ -52,6 +52,7 @@ const { buildChangeBrief } = require('../lib/changeBrief');
 const { buildAssetEvidenceTrace, buildEvidenceGapSummary } = require('../lib/evidenceTrace');
 const { buildDriftDetector } = require('../lib/driftDetector');
 const { buildAuditFindings } = require('../lib/auditFindings');
+const { buildForgottenAssets } = require('../lib/forgottenAssets');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -285,6 +286,24 @@ router.get('/audit-findings', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/audit-findings]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build audit findings.' });
+  }
+});
+
+// ── GET /forgotten-assets?siteId=&years= ──────────────────────────────────────
+// Phase 1 #2 -- the "forgotten / untracked assets" lens. Two buckets: assets on
+// NO maintenance program (untracked; same set as Path-to-100 uncovered) and
+// assets on a program but not serviced in > N years / never serviced (forgotten).
+// `years` defaults to 3 (clamped 1-20). Any authenticated role -- this is a read.
+router.get('/forgotten-assets', async (req, res) => {
+  try {
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const years = req.query.years !== undefined ? Number(req.query.years) : undefined;
+    const data = await buildForgottenAssets(prisma, req.user.accountId, { siteId, years });
+    return res.json({ success: true, data });
+  } catch (err) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/forgotten-assets]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build forgotten-assets view.' });
   }
 });
 

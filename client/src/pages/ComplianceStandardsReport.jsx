@@ -26,6 +26,7 @@ import ChangeBriefCard from '../components/ChangeBriefCard';
 import AccessBlockerCard from '../components/AccessBlockerCard';
 import EvidenceGapCard from '../components/EvidenceGapCard';
 import AuditFailureCard from '../components/AuditFailureCard';
+import ForgottenAssetsCard from '../components/ForgottenAssetsCard';
 import ProposalCard from '../components/ProposalCard';
 import DriftDetectorCard from '../components/DriftDetectorCard';
 import { useAuth } from '../context/AuthContext';
@@ -132,6 +133,9 @@ export default function ComplianceStandardsReport() {
 
         {/* #4 Compliance drift / repeat failures — program-change recommendations. */}
         <DriftDetectorCard siteId={siteId || null} />
+
+        {/* #2 Forgotten / untracked assets — off-the-radar equipment. */}
+        <ForgottenAssetsCard siteId={siteId || null} />
 
         {/* What changed since last cycle — diff vs the prior snapshot. */}
         <ChangeBriefCard siteId={siteId || null} />
