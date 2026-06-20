@@ -14,15 +14,24 @@ const crypto = require('crypto');
 import prisma from '../lib/prisma';
 const { requireManager } = require('../middleware/roles');
 const { buildComplianceGap } = require('../lib/complianceReport');
+const { buildUnderwritingPackage } = require('../lib/underwritingPackage');
 
 const DEFAULT_DAYS = 14;
 const MAX_DAYS = 90;
 
+// Allowed break-glass package kinds. 'compliance_package' = the auditor view
+// (default, backward-compatible); 'underwriting' = the richer insurer packet (#3).
+const SHARE_KINDS = ['compliance_package', 'underwriting'];
+
 /**
- * The read-only compliance package an auditor/insurer sees. No PII beyond the
- * company name + compliance posture. Shared by the public route.
+ * The read-only package an auditor/insurer sees. No PII beyond the company name +
+ * compliance / risk posture. Shared by the public route. `kind` selects the
+ * auditor compliance view (default) or the #3 insurer underwriting packet.
  */
-async function buildSharePackage(accountId: string) {
+async function buildSharePackage(accountId: string, kind: string = 'compliance_package') {
+  if (kind === 'underwriting') {
+    return buildUnderwritingPackage(prisma, accountId);
+  }
   const now = new Date();
   const [account, gap, latestSnapshot] = await Promise.all([
     prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
@@ -55,15 +64,16 @@ router.post('/', requireManager, async (req: any, res: any) => {
     if (!Number.isFinite(days) || days <= 0) days = DEFAULT_DAYS;
     days = Math.min(days, MAX_DAYS);
     const label = typeof body.label === 'string' ? body.label.slice(0, 120) : null;
+    const kind = SHARE_KINDS.includes(body.kind) ? body.kind : 'compliance_package';
 
     const token = crypto.randomBytes(24).toString('hex');
     const expiresAt = new Date(Date.now() + days * 86_400_000);
     const link = await prisma.shareLink.create({
       data: {
         accountId: req.user.accountId, token, label,
-        kind: 'compliance_package', expiresAt, createdById: req.user.id,
+        kind, expiresAt, createdById: req.user.id,
       },
-      select: { id: true, token: true, label: true, expiresAt: true, createdAt: true },
+      select: { id: true, token: true, label: true, kind: true, expiresAt: true, createdAt: true },
     });
     return res.status(201).json({ success: true, data: { ...link, path: `/share/${link.token}` } });
   } catch (err: any) {
@@ -79,7 +89,7 @@ router.get('/', requireManager, async (req: any, res: any) => {
     const links = await prisma.shareLink.findMany({
       where:   { accountId: req.user.accountId },
       orderBy: { createdAt: 'desc' },
-      select:  { id: true, token: true, label: true, expiresAt: true, revokedAt: true, viewCount: true, lastViewedAt: true, createdAt: true },
+      select:  { id: true, token: true, label: true, kind: true, expiresAt: true, revokedAt: true, viewCount: true, lastViewedAt: true, createdAt: true },
     });
     const decorated = links.map((l: any) => ({
       ...l,

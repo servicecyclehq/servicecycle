@@ -28,6 +28,7 @@ import EvidenceGapCard from '../components/EvidenceGapCard';
 import AuditFailureCard from '../components/AuditFailureCard';
 import ForgottenAssetsCard from '../components/ForgottenAssetsCard';
 import ProposalCard from '../components/ProposalCard';
+import InsurerPackageCard from '../components/InsurerPackageCard';
 import DriftDetectorCard from '../components/DriftDetectorCard';
 import { useAuth } from '../context/AuthContext';
 import { fmtDate } from '../lib/equipment';
@@ -59,6 +60,8 @@ export default function ComplianceStandardsReport() {
   const navigate = useNavigate();
   const { role } = useAuth();
   const canSeeProposal = ['admin', 'manager', 'oem_admin'].includes(role);
+  // #3 insurer package + break-glass links: creation is requireManager (admin/manager).
+  const canManageInsurer = ['admin', 'manager'].includes(role);
   // C1: drill-downs record this report as the origin for their BackLink.
   const fromState = useFromState();
 
@@ -127,6 +130,9 @@ export default function ComplianceStandardsReport() {
 
         {/* #5 Multi-year proposal (manager+; the route is requireManager). */}
         {canSeeProposal && <ProposalCard />}
+
+        {/* #3 Insurer underwriting package + break-glass share link (manager+). */}
+        {canManageInsurer && <InsurerPackageCard />}
 
         {/* #2 Evidence coverage — requirement→evidence gaps (account/site). */}
         <EvidenceGapCard siteId={siteId || null} />

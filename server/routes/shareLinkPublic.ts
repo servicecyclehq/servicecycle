@@ -19,14 +19,14 @@ router.get('/:token', async (req: any, res: any) => {
 
     const link = await prisma.shareLink.findUnique({
       where:  { token },
-      select: { id: true, accountId: true, label: true, expiresAt: true, revokedAt: true },
+      select: { id: true, accountId: true, label: true, kind: true, expiresAt: true, revokedAt: true },
     });
     const now = new Date();
     if (!link || link.revokedAt || link.expiresAt <= now) {
       return res.status(404).json({ success: false, error: 'This link is no longer available.' });
     }
 
-    const pkg = await buildSharePackage(link.accountId);
+    const pkg = await buildSharePackage(link.accountId, link.kind);
 
     // View telemetry for the owner — best-effort, never blocks the response.
     prisma.shareLink.update({
@@ -52,6 +52,7 @@ router.get('/:token', async (req: any, res: any) => {
       success: true,
       data: {
         ...pkg,
+        kind: link.kind,
         readOnly: true,
         sharedWith: link.label || null,
         expiresAt: link.expiresAt,

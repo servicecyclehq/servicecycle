@@ -16,6 +16,19 @@ function fmtDate(d) {
   return Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function fmtUsd(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  return `$${Math.round(Number(n)).toLocaleString('en-US')}`;
+}
+
+function fmtRange(r) {
+  if (!r) return '—';
+  if (r.min === r.max) return fmtUsd(r.min);
+  return `${fmtUsd(r.min)} – ${fmtUsd(r.max)}`;
+}
+
+const SEV_COLOR = { critical: '#b91c1c', high: '#c2410c', medium: '#b45309', low: '#3f6212' };
+
 export default function SharedCompliancePage() {
   const { token } = useParams();
   const [data, setData] = useState(null);
@@ -47,6 +60,97 @@ export default function SharedCompliancePage() {
     </div>
   );
   if (!data) return null;
+
+  // #3 -- insurer underwriting packet layout (richer than the auditor view).
+  if (data.kind === 'underwriting') {
+    const rd = data.readiness || {};
+    const rp = data.riskPosture || {};
+    const fin = data.financial || {};
+    const ev = data.evidenceIntegrity || {};
+    const sev = rp.bySeverity || {};
+    const uwColor = rd.overallRate == null ? '#64748b' : rd.overallRate >= 90 ? '#15803d' : rd.overallRate >= 70 ? '#92400e' : '#b91c1c';
+    const cell = { padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8 };
+    return (
+      <div style={wrap}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+          <h1 style={{ fontSize: 20, margin: 0 }}>ServiceCycle · Insurer Underwriting Package</h1>
+          <span style={{ fontSize: 12, color: '#6d28d9', fontWeight: 700 }}>READ-ONLY</span>
+        </div>
+        <div style={{ fontSize: 13, color: '#5b6373', marginTop: 4 }}>{data.watermark}</div>
+        <div style={{ fontSize: 13, color: '#5b6373' }}>
+          {data.standard || 'NFPA 70B'} · generated {fmtDate(data.generatedAt)} · link expires {fmtDate(data.expiresAt)}
+        </div>
+
+        <h2 style={{ fontSize: 24, marginTop: 24, marginBottom: 2 }}>{data.companyName}</h2>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginTop: 12 }}>
+          <div style={{ fontSize: 48, fontWeight: 800, color: uwColor }}>{rd.overallRate == null ? '—' : `${rd.overallRate}%`}</div>
+          <div style={{ fontSize: 13, color: '#5b6373' }}>
+            NFPA 70B honest compliance rate · maturity {rd.score ?? '—'}/100 ({rd.levelLabel || '—'})<br />
+            Schedule compliance {rd.complianceRate ?? '—'}% · Coverage {rd.coverageRate ?? '—'}%
+            {' '}({rd.coveredAssets ?? 0}/{rd.totalAssets ?? 0} assets) · Evidence on file {rd.documentedPct ?? '—'}%
+          </div>
+        </div>
+
+        <h3 style={{ fontSize: 16, marginTop: 28 }}>Risk posture</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div style={cell}>
+            <div style={{ fontSize: 22, fontWeight: 800 }}>{rp.totalFindings ?? 0}</div>
+            <div style={{ fontSize: 12, color: '#5b6373' }}>likely audit findings ({rp.categories ?? 0} categories)</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              {['critical', 'high', 'medium', 'low'].filter((k) => sev[k] > 0).map((k) => (
+                <span key={k} style={{ color: SEV_COLOR[k], fontWeight: 700, marginRight: 8 }}>{sev[k]} {k}</span>
+              ))}
+            </div>
+          </div>
+          <div style={cell}>
+            <div style={{ fontSize: 22, fontWeight: 800 }}>{rp.untrackedAssets ?? 0}</div>
+            <div style={{ fontSize: 12, color: '#5b6373' }}>assets on no maintenance program</div>
+          </div>
+          <div style={cell}>
+            <div style={{ fontSize: 22, fontWeight: 800 }}>{rp.forgottenAssets ?? 0}</div>
+            <div style={{ fontSize: 12, color: '#5b6373' }}>not serviced in 3+ yrs{rp.neverServiced > 0 ? ` (${rp.neverServiced} never)` : ''}</div>
+          </div>
+        </div>
+        {rp.topFindings && rp.topFindings.length > 0 && (
+          <ul style={{ paddingLeft: 18, lineHeight: 1.7, marginTop: 12 }}>
+            {rp.topFindings.map((f, i) => (
+              <li key={i} style={{ fontSize: 14 }}>
+                <span style={{ color: SEV_COLOR[f.severity] || '#5b6373', fontWeight: 700 }}>{f.title}</span>
+                <span style={{ color: '#5b6373' }}> — {f.count}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <h3 style={{ fontSize: 16, marginTop: 28 }}>Capital plan ({fin.currency || 'USD'} ranges)</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div style={cell}><div style={{ fontSize: 12, color: '#5b6373' }}>1-year</div><div style={{ fontSize: 16, fontWeight: 700 }}>{fmtRange(fin.plan?.year1)}</div></div>
+          <div style={cell}><div style={{ fontSize: 12, color: '#5b6373' }}>3-year (cumulative)</div><div style={{ fontSize: 16, fontWeight: 700 }}>{fmtRange(fin.plan?.year3)}</div></div>
+          <div style={cell}><div style={{ fontSize: 12, color: '#5b6373' }}>5-year (cumulative)</div><div style={{ fontSize: 16, fontWeight: 700 }}>{fmtRange(fin.plan?.year5)}</div></div>
+        </div>
+        <div style={{ fontSize: 12, color: '#5b6373', marginTop: 8 }}>
+          Total maintenance debt {fmtRange(fin.debtTotal)} · repair backlog {fmtUsd(fin.repairBacklog?.amount)} across {fin.repairBacklog?.assets ?? 0} asset(s).
+        </div>
+
+        <div style={{ marginTop: 24, ...cell }}>
+          <strong>Evidence integrity:</strong>{' '}
+          {ev.snapshotCount ?? 0} immutable, hash-chained snapshot(s) on file.
+          {ev.latestSnapshot ? (
+            <>
+              {' '}Latest {ev.latestSnapshot.kind === 'emp' ? 'EMP document' : 'compliance pack'} generated {fmtDate(ev.latestSnapshot.date)}.
+              <div style={{ color: '#5b6373', wordBreak: 'break-all', marginTop: 4, fontFamily: 'monospace', fontSize: 11 }}>SHA-256 {ev.latestSnapshot.sha256}</div>
+            </>
+          ) : ' No snapshot generated yet.'}
+        </div>
+
+        <div style={{ marginTop: 24, fontSize: 11, color: '#94a3b8' }}>{data.disclaimer}</div>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 11, color: '#94a3b8' }}>
+          Read-only summary shared by the facility for underwriting review. Powered by ServiceCycle.
+        </div>
+      </div>
+    );
+  }
 
   const rate = data.overallRate;
   const rateColor = rate == null ? '#64748b' : rate >= 90 ? '#15803d' : rate >= 70 ? '#92400e' : '#b91c1c';

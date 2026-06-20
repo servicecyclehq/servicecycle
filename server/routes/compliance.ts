@@ -53,6 +53,7 @@ const { buildAssetEvidenceTrace, buildEvidenceGapSummary } = require('../lib/evi
 const { buildDriftDetector } = require('../lib/driftDetector');
 const { buildAuditFindings } = require('../lib/auditFindings');
 const { buildForgottenAssets } = require('../lib/forgottenAssets');
+const { buildUnderwritingPackage } = require('../lib/underwritingPackage');
 const { generateSnapshot, persistSnapshot, utcStamp } = require('../lib/snapshotPipeline');
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
@@ -304,6 +305,21 @@ router.get('/forgotten-assets', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/forgotten-assets]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build forgotten-assets view.' });
+  }
+});
+
+// ── GET /underwriting-package ─────────────────────────────────────────────────
+// Phase 1 #3 -- the one-click insurer underwriting packet: NFPA 70B compliance +
+// maturity readiness, ranked risk posture (#1) + off-radar equipment (#2), the
+// Maintenance Debt Ledger capital-plan $ ranges, and tamper-evident snapshot
+// integrity. Same data behind the break-glass insurer share link. Any auth role.
+router.get('/underwriting-package', async (req, res) => {
+  try {
+    const data = await buildUnderwritingPackage(prisma, req.user.accountId);
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[compliance/underwriting-package]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build underwriting package.' });
   }
 });
 
