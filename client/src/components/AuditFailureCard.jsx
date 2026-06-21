@@ -15,10 +15,10 @@ import { ShieldAlert } from 'lucide-react';
 import api from '../api/client';
 
 const SEV_META = {
-  critical: { color: '#b91c1c', bg: '#fef2f2', label: 'Critical' },
-  high:     { color: '#c2410c', bg: '#fff7ed', label: 'High' },
-  medium:   { color: '#b45309', bg: '#fffbeb', label: 'Medium' },
-  low:      { color: '#3f6212', bg: '#f7fee7', label: 'Low' },
+  critical: { color: 'var(--chip-red-fg)', bg: 'var(--chip-red-bg)', label: 'Critical' },
+  high:     { color: 'var(--chip-orange-fg)', bg: 'var(--chip-orange-bg)', label: 'High' },
+  medium:   { color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)', label: 'Medium' },
+  low:      { color: 'var(--chip-green-fg)', bg: 'var(--chip-green-bg)', label: 'Low' },
 };
 
 function readinessColor(score) {
@@ -45,7 +45,7 @@ export default function AuditFailureCard({ siteId = null }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Loading audit-readiness view…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const r = data.readiness || {};
@@ -59,7 +59,7 @@ export default function AuditFailureCard({ siteId = null }) {
         <ShieldAlert size={18} />
         <div className="card-title" style={{ flex: 1 }}>What Will Fail an Audit</div>
         {!s.clean && (
-          <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: '#b91c1c' }}>
+          <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--chip-red-fg)' }}>
             {s.totalFindings} item{s.totalFindings === 1 ? '' : 's'} across {s.categories} finding{s.categories === 1 ? '' : 's'}
           </span>
         )}
@@ -89,7 +89,7 @@ export default function AuditFailureCard({ siteId = null }) {
         </div>
 
         {s.clean ? (
-          <div style={{ color: '#15803d', fontSize: 'var(--font-size-sm)' }}>
+          <div style={{ color: 'var(--chip-green-fg)', fontSize: 'var(--font-size-sm)' }}>
             No likely audit findings detected. Coverage, on-time maintenance, evidence, and the written EMP all check out for this scope.
           </div>
         ) : (

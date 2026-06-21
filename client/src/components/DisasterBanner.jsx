@@ -15,9 +15,9 @@ import { AlertTriangle, X } from 'lucide-react';
 import api from '../api/client';
 
 const SEV_STYLES = {
-  emergency: { bg: '#fef2f2', border: '#ef4444', color: '#dc2626', label: 'EMERGENCY' },
-  warning:   { bg: '#fffbeb', border: '#f59e0b', color: '#d97706', label: 'WARNING' },
-  watch:     { bg: '#fff7ed', border: '#f97316', color: '#ea580c', label: 'WATCH' },
+  emergency: { bg: 'var(--chip-red-bg)', border: '#ef4444', color: 'var(--chip-red-fg)', label: 'EMERGENCY' },
+  warning:   { bg: 'var(--chip-amber-bg)', border: '#f59e0b', color: 'var(--chip-amber-fg)', label: 'WARNING' },
+  watch:     { bg: 'var(--chip-orange-bg)', border: '#f97316', color: 'var(--chip-orange-fg)', label: 'WATCH' },
 };
 
 export default function DisasterBanner() {

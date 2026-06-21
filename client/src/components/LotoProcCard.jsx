@@ -19,7 +19,7 @@ import Toast from './Toast';
 
 const STATUS_META = {
   draft:    { bg: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', label: 'Draft',    dot: '⬜' },
-  active:   { bg: '#f0fdf4', color: '#15803d', label: 'Active',   dot: '🟢' },
+  active:   { bg: 'var(--chip-green-bg)', color: 'var(--chip-green-fg)', label: 'Active',   dot: '🟢' },
   archived: { bg: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', label: 'Archived', dot: '⬛' },
 };
 
@@ -34,12 +34,12 @@ const ENERGY_ICONS = {
 };
 
 const STEP_COLORS = {
-  shutdown:  { bg: '#fff7ed', color: '#c2410c', label: 'Shutdown' },
-  isolation: { bg: '#eff6ff', color: '#1d4ed8', label: 'Isolation' },
-  lockout:   { bg: '#fef2f2', color: '#b91c1c', label: 'Lockout' },
-  verify:    { bg: '#f0fdf4', color: '#15803d', label: 'Verify' },
-  restore:   { bg: '#faf5ff', color: '#7e22ce', label: 'Restore' },
-  release:   { bg: '#f0f9ff', color: '#0369a1', label: 'Release' },
+  shutdown:  { bg: 'var(--chip-orange-bg)', color: 'var(--chip-orange-fg)', label: 'Shutdown' },
+  isolation: { bg: 'var(--chip-blue-bg)', color: 'var(--chip-blue-fg)', label: 'Isolation' },
+  lockout:   { bg: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)', label: 'Lockout' },
+  verify:    { bg: 'var(--chip-green-bg)', color: 'var(--chip-green-fg)', label: 'Verify' },
+  restore:   { bg: 'var(--chip-purple-bg)', color: 'var(--chip-purple-fg)', label: 'Restore' },
+  release:   { bg: 'var(--chip-blue-bg)', color: 'var(--chip-blue-fg)', label: 'Release' },
 };
 
 function fmtDate(dt) {

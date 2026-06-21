@@ -13,9 +13,9 @@ import api from '../api/client';
 import Toast from './Toast';
 
 const COND_META = {
-  C1: { label: 'C1 · Good', hint: 'intervals stretch ×2.5', color: '#15803d', bg: '#f0fdf4' },
-  C2: { label: 'C2 · Fair', hint: 'base NETA interval',     color: '#1d4ed8', bg: '#eff6ff' },
-  C3: { label: 'C3 · Poor', hint: 'intervals tighten ×0.25', color: '#b91c1c', bg: '#fff1f1' },
+  C1: { label: 'C1 · Good', hint: 'intervals stretch ×2.5', color: 'var(--chip-green-fg)', bg: 'var(--chip-green-bg)' },
+  C2: { label: 'C2 · Fair', hint: 'base NETA interval',     color: 'var(--chip-blue-fg)', bg: 'var(--chip-blue-bg)' },
+  C3: { label: 'C3 · Poor', hint: 'intervals tighten ×0.25', color: 'var(--chip-red-fg)', bg: 'var(--chip-red-bg)' },
 };
 
 export default function ConditionIntervalCard({ asset, canWrite, onApplied }) {

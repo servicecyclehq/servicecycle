@@ -15,10 +15,10 @@ import api from '../api/client';
 import { fmtDate } from '../lib/equipment';
 
 const STATUS_META = {
-  documented:   { bg: '#dcfce7', color: '#15803d', label: 'Documented' },
-  stale:        { bg: '#ffedd5', color: '#b45309', label: 'Stale (overdue)' },
-  undocumented: { bg: '#fef9c3', color: '#92400e', label: 'No record on file' },
-  missing:      { bg: '#fee2e2', color: '#b91c1c', label: 'Missing' },
+  documented:   { bg: '#dcfce7', color: 'var(--chip-green-fg)', label: 'Documented' },
+  stale:        { bg: 'var(--chip-amber-bg)', color: 'var(--chip-amber-fg)', label: 'Stale (overdue)' },
+  undocumented: { bg: 'var(--chip-amber-bg)', color: 'var(--chip-amber-fg)', label: 'No record on file' },
+  missing:      { bg: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)', label: 'Missing' },
 };
 
 export default function AssetEvidenceTraceCard({ assetId }) {
@@ -40,7 +40,7 @@ export default function AssetEvidenceTraceCard({ assetId }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return null;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data || data.summary.requirements === 0) return null;
 
   const s = data.summary;
@@ -56,7 +56,7 @@ export default function AssetEvidenceTraceCard({ assetId }) {
       </div>
       <div className="card-body">
         {s.gapTotal === 0 ? (
-          <div style={{ color: '#15803d', fontSize: 'var(--font-size-sm)', marginBottom: 8 }}>Every requirement on this asset has documented evidence on file.</div>
+          <div style={{ color: 'var(--chip-green-fg)', fontSize: 'var(--font-size-sm)', marginBottom: 8 }}>Every requirement on this asset has documented evidence on file.</div>
         ) : (
           <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 8 }}>
             {s.missing} missing · {s.undocumented} no record on file · {s.stale} stale.
@@ -89,7 +89,7 @@ export default function AssetEvidenceTraceCard({ assetId }) {
                     </div>
                   )}
                 </div>
-                {r.overdue && <span style={{ fontSize: 11, color: '#b91c1c', whiteSpace: 'nowrap' }}>{r.daysOverdue}d overdue</span>}
+                {r.overdue && <span style={{ fontSize: 11, color: 'var(--chip-red-fg)', whiteSpace: 'nowrap' }}>{r.daysOverdue}d overdue</span>}
               </div>
             );
           })}

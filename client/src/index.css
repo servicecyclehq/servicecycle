@@ -1197,6 +1197,7 @@ tbody tr:hover td { background: color-mix(in srgb, var(--color-primary) 5%, tran
   --chip-blue-fg:#2563eb; --chip-blue-bg:#eff6ff;
   --chip-slate-fg:#64748b; --chip-slate-bg:#f1f5f9;
   --chip-slate-soft-fg:#94a3b8; --chip-slate-soft-bg:#f8fafc;
+  --chip-purple-fg:#7e22ce; --chip-purple-bg:#f5f3ff;
 }
 [data-theme="dark"]{
   --chip-red-fg:#fca5a5; --chip-red-bg:#4a1a1a;
@@ -1206,4 +1207,5 @@ tbody tr:hover td { background: color-mix(in srgb, var(--color-primary) 5%, tran
   --chip-blue-fg:#93c5fd; --chip-blue-bg:#10283d;
   --chip-slate-fg:#cbd5e1; --chip-slate-bg:#1f2733;
   --chip-slate-soft-fg:#94a3b8; --chip-slate-soft-bg:#1b212b;
+  --chip-purple-fg:#c4b5fd; --chip-purple-bg:#2a1e44;
 }

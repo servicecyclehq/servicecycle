@@ -68,11 +68,11 @@ const TIMELINE_VALUE_LABELS = {
 };
 
 const STATUS_META = {
-  draft:     { label: 'Draft',      color: '#92400e', bg: '#fffbeb' },
-  requested: { label: 'Requested',  color: '#3b82f6', bg: '#eff6ff' },
-  quoted:    { label: 'Quote sent', color: '#7c3aed', bg: '#f5f3ff' },
-  accepted:  { label: 'Accepted',   color: '#059669', bg: '#f0fdf4' },
-  declined:  { label: 'Declined',   color: '#dc2626', bg: '#fef2f2' },
+  draft:     { label: 'Draft',      color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)' },
+  requested: { label: 'Requested',  color: '#3b82f6', bg: 'var(--chip-blue-bg)' },
+  quoted:    { label: 'Quote sent', color: '#7c3aed', bg: 'var(--chip-purple-bg)' },
+  accepted:  { label: 'Accepted',   color: '#059669', bg: 'var(--chip-green-bg)' },
+  declined:  { label: 'Declined',   color: 'var(--chip-red-fg)', bg: 'var(--chip-red-bg)' },
 };
 
 function StatusBadge({ status }) {
@@ -216,14 +216,14 @@ export default function QuoteRequestButton({ asset }) {
               background: '#fef2f2', border: '2px solid #dc2626', borderRadius: 10,
               padding: '18px 20px', marginBottom: 20, textAlign: 'center',
             }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--chip-red-fg)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                 ⚠️ Emergency — Do Not Wait on Email
               </div>
               {serviceRep.serviceRepPhone && (
                 <a
                   href={`tel:${serviceRep.serviceRepPhone.replace(/\D/g, '')}`}
                   style={{
-                    display: 'block', fontSize: 28, fontWeight: 900, color: '#dc2626',
+                    display: 'block', fontSize: 28, fontWeight: 900, color: 'var(--chip-red-fg)',
                     textDecoration: 'none', letterSpacing: '0.03em', margin: '8px 0',
                   }}
                 >
@@ -244,7 +244,7 @@ export default function QuoteRequestButton({ asset }) {
             {/* Q1 — Driver (PENDING BROTHER VALIDATION) */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontWeight: 700, marginBottom: 6, fontSize: 'var(--font-size-sm)' }}>
-                1. What prompted this request? <span style={{ color: '#dc2626' }}>*</span>
+                1. What prompted this request? <span style={{ color: 'var(--chip-red-fg)' }}>*</span>
               </label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {DRIVER_OPTIONS.map(opt => (
@@ -274,7 +274,7 @@ export default function QuoteRequestButton({ asset }) {
             {/* Q2 — Timeline (PENDING BROTHER VALIDATION) */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontWeight: 700, marginBottom: 6, fontSize: 'var(--font-size-sm)' }}>
-                2. How quickly is service needed? <span style={{ color: '#dc2626' }}>*</span>
+                2. How quickly is service needed? <span style={{ color: 'var(--chip-red-fg)' }}>*</span>
               </label>
               <select
                 className="input"
@@ -443,7 +443,7 @@ export default function QuoteRequestButton({ asset }) {
                   borderBottom: '1px solid var(--color-border)',
                 }}>
                   <StatusBadge status={qr.status} />
-                  {qr.emergencyMode && <span title="Emergency request" style={{ color: '#dc2626', fontWeight: 700 }}>🚨</span>}
+                  {qr.emergencyMode && <span title="Emergency request" style={{ color: 'var(--chip-red-fg)', fontWeight: 700 }}>🚨</span>}
                   <span style={{ color: 'var(--color-text-secondary)' }}>{fmtDate(qr.createdAt)}</span>
                   <span>{driverLabel}</span>
                   <span style={{ color: 'var(--color-text-secondary)' }}>·</span>

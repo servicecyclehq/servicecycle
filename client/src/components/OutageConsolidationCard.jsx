@@ -20,8 +20,8 @@ import Toast from './Toast';
 import { fmtDate } from '../lib/equipment';
 
 const STATUS_COLOR = {
-  overdue:  { bg: '#fff1f1', color: '#b91c1c', label: 'Overdue' },
-  due:      { bg: '#fffbeb', color: '#92400e', label: 'Due' },
+  overdue:  { bg: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)', label: 'Overdue' },
+  due:      { bg: 'var(--chip-amber-bg)', color: 'var(--chip-amber-fg)', label: 'Due' },
   pending:  { bg: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', label: 'Upcoming' },
 };
 
