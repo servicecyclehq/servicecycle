@@ -6,6 +6,8 @@
 // uncovered asset), tagged with the points it recovers, with a one-click action.
 // Also surfaces the honest Compliance% · Coverage% pair the headline tile hides.
 //
+// Bold redesign: a literal progress bar to 100% headlines the card.
+//
 // Props: { siteId?: string|null, compact?: bool, limit?: number, onChanged?: fn }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -97,6 +99,8 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
 
   const rows = data.actions.slice(0, compact ? Math.min(limit, 5) : limit);
   const fully = data.summary.fullyCompliant;
+  const overallColor = data.overallRate >= 90 ? '#15803d' : data.overallRate >= 70 ? '#92400e' : '#b91c1c';
+  const overallPct = Math.max(0, Math.min(100, data.overallRate));
 
   return (
     <div className="card mb-16">
@@ -105,7 +109,6 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
         <Target size={18} />
         <div className="card-title" style={{ flex: 1 }}>Path to 100% Compliance</div>
         {(() => {
-          const overallColor = data.overallRate >= 90 ? '#15803d' : data.overallRate >= 70 ? '#92400e' : '#b91c1c';
           // label + value + plain-English hover. Hover (the title attr) shows on
           // desktop; the inline label keeps it clear on touch where there's no hover.
           const metric = (value, label, title, color) => (
@@ -140,6 +143,13 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
           </div>
         ) : (
           <>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: overallColor }}>{data.overallRate}%</span>
+                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{Math.max(0, 100 - data.overallRate)}% to fully compliant</span>
+              </div>
+              <div className="sc-progress"><i style={{ width: `${overallPct}%`, background: overallColor }} /></div>
+            </div>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
               {data.summary.totalActions} task{data.summary.totalActions !== 1 ? 's' : ''} stand between you and 100%
               {' '}· <strong>{data.summary.overdueCount}</strong> overdue, <strong>{data.summary.unbaselinedCount}</strong> need baselining,

@@ -1119,3 +1119,68 @@ select.filter-select option,
    of whatever auto-layout dealt that day. Pair with a <colgroup>. */
 .table-even table { table-layout: fixed; width: 100%; }
 .table-even td { overflow: hidden; text-overflow: ellipsis; }
+
+/* ============================================================================
+   BOLD REDESIGN LAYER  (feature/bold-redesign)
+   Appended after the base styles. Cosmetic-only: refines the design tokens and
+   restyles SHARED component classes so every screen lifts at once. No structural
+   or layout changes. Works in both light and dark. Safe to revert by deleting
+   everything below this banner.
+   ========================================================================== */
+
+/* -- Refined token base (light) ------------------------------------------- */
+:root {
+  --color-bg: #f4f7fa;
+  --color-border: #e7ecf2;
+  --color-border-strong: #d3dbe6;
+  --color-text-secondary: #44505f;
+  --color-text-muted: #6b7688;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgb(2 6 23 / 0.04);
+  --shadow: 0 1px 2px rgb(2 6 23 / 0.05), 0 12px 28px -14px rgb(2 6 23 / 0.14);
+  --shadow-md: 0 2px 6px -2px rgb(2 6 23 / 0.08), 0 22px 46px -20px rgb(2 6 23 / 0.18);
+  --sc-surface-2: #eef2f7;
+}
+
+/* -- Refined token base (dark) -------------------------------------------- */
+[data-theme="dark"] {
+  --color-border: #2a313c;
+  --color-border-strong: #3a424e;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.40);
+  --shadow: 0 1px 3px rgb(0 0 0 / 0.45), 0 16px 34px -16px rgb(0 0 0 / 0.55);
+  --shadow-md: 0 4px 10px -2px rgb(0 0 0 / 0.50), 0 24px 48px -20px rgb(0 0 0 / 0.60);
+  --sc-surface-2: #1b212b;
+}
+
+/* -- Typography: stronger hierarchy --------------------------------------- */
+.page-title { font-size: 28px; font-weight: 800; letter-spacing: -0.025em; }
+.card-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+
+/* -- Cards: rounder, more depth, more breathing room ---------------------- */
+.card { border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.card-header { padding: 18px 22px; }
+.card-body { padding: 22px; }
+
+/* -- Buttons: rounder, confident ------------------------------------------ */
+.btn { border-radius: var(--radius); font-weight: 600; }
+.btn-primary { box-shadow: var(--shadow-sm); }
+
+/* -- Inputs / selects / search: match the new radius ---------------------- */
+.form-control, .search-input, .filter-select { border-radius: var(--radius); }
+
+/* -- Tables: airier rows, crisp headers, subtle hover --------------------- */
+th { font-size: 10.5px; letter-spacing: 0.07em; padding: 13px 16px; }
+td { padding: 14px 16px; }
+tbody tr:hover td { background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+
+/* -- Badges + KPI tiles --------------------------------------------------- */
+.badge { font-weight: 700; }
+.stat-tile { border-radius: var(--radius-lg); }
+
+/* -- Data-viz helpers (used by the dashboard hero components) -------------- */
+.sc-progress { height: 12px; border-radius: 999px; background: var(--sc-surface-2); overflow: hidden; }
+.sc-progress > i { display: block; height: 100%; border-radius: 999px; transition: width .4s ease; }
+.sc-spark { display: block; width: 100%; height: 36px; }
+.sc-ring { transform: rotate(-90deg); }
+.sc-ring-fill { transition: stroke-dashoffset .5s ease; }
