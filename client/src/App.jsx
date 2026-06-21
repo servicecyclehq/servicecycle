@@ -23,6 +23,26 @@ function RequireRole({ roles, children, denyOnDemo = false }) {
   return children;
 }
 
+// Field-labor (field_tech / subcontractor) is a phone-only, assignment-scoped
+// role: it's server-side default-denied off the desktop APIs, so we keep it in
+// Field Mode. These wrappers swap in the lean field-labor screens for a
+// field_tech and bounce them out of the desktop shell.
+function FieldHomeByRole() {
+  const { user } = useAuth();
+  return user?.role === 'field_tech' ? <FieldJobs /> : <FieldHome />;
+}
+function FieldAssetByRole() {
+  const { user } = useAuth();
+  return user?.role === 'field_tech' ? <FieldJob /> : <FieldAsset />;
+}
+function ShellOrField({ children }) {
+  // Non-blocking (preserves the ProtectedRoute soft-gate): only redirect once
+  // we know the user is a field_tech.
+  const { user } = useAuth();
+  if (user?.role === 'field_tech') return <Navigate to="/field" replace />;
+  return children;
+}
+
 // W6 (audit Cluster B P0): code-splitting. Every route is a dynamic
 // import so the initial JS bundle only contains the shell + the route
 // the visitor actually lands on.
@@ -141,6 +161,8 @@ const FieldLayout             = lazyWithReload(() => import('./pages/field/Field
 const FieldHome               = lazyWithReload(() => import('./pages/field/FieldHome'));
 const FieldScan               = lazyWithReload(() => import('./pages/field/FieldScan'));
 const FieldAsset              = lazyWithReload(() => import('./pages/field/FieldAsset'));
+const FieldJobs               = lazyWithReload(() => import('./pages/field/FieldJobs')); // field-labor "My Jobs"
+const FieldJob                = lazyWithReload(() => import('./pages/field/FieldJob'));  // field-labor job card
 const FieldNewAsset           = lazyWithReload(() => import('./pages/field/FieldNewAsset'));
 const FieldBatchNameplate     = lazyWithReload(() => import('./pages/field/FieldBatchNameplate')); // #13 batch nameplate
 
@@ -230,7 +252,7 @@ function AppRoutes() {
           {/* Root: marketing landing page for visitors, dashboard for logged-in users */}
           <Route
             path="/"
-            element={user ? <Navigate to="/dashboard" replace /> : <LandingPage />}
+            element={user ? <Navigate to={user.role === 'field_tech' ? '/field' : '/dashboard'} replace /> : <LandingPage />}
           />
 
           {/* First-run operator wizard (S8) — pre-auth, only reachable on a
@@ -276,11 +298,11 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<FieldHome />} />
+            <Route index element={<FieldHomeByRole />} />
             <Route path="scan" element={<FieldScan />} />
             <Route path="new" element={<FieldNewAsset />} />
             <Route path="batch" element={<FieldBatchNameplate />} />
-            <Route path="asset/:id" element={<FieldAsset />} />
+            <Route path="asset/:id" element={<FieldAssetByRole />} />
           </Route>
 
           {/* Protected — all routes inside the shell layout */}
@@ -288,7 +310,9 @@ function AppRoutes() {
             path="/"
             element={
               <ProtectedRoute>
-                <Layout />
+                <ShellOrField>
+                  <Layout />
+                </ShellOrField>
               </ProtectedRoute>
             }
           >

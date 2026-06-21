@@ -715,6 +715,62 @@ router.put('/:id', requireManager, async (req, res) => {
   }
 });
 
+// ─── PUT /api/work-orders/:id/assignment ──────────────────────────────────────
+// Assign (or clear) the field-labor / subcontractor login responsible for this
+// work order. The principal (admin/manager) sets it; a field_tech assignee then
+// sees this job — and only their assigned jobs — through the scoped /api/field
+// surface. Body: { userId: "<uuid>" } to assign, { userId: null } to unassign.
+// The assignee must be an ACTIVE user on the same account.
+router.put('/:id/assignment', requireManager, async (req, res) => {
+  try {
+    const wo = await prisma.workOrder.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const { userId } = req.body || {};
+    if (userId !== null && userId !== undefined) {
+      // Validate the assignee is a real, active, same-account user. This is the
+      // tenant guard on the assignment binding — you can only hand work to
+      // someone inside your own account.
+      const assignee = await prisma.user.findFirst({
+        where:  { id: String(userId), accountId: req.user.accountId, isActive: true },
+        select: { id: true, name: true, role: true },
+      });
+      if (!assignee) return res.status(404).json({ success: false, error: 'Assignee not found on this account' });
+
+      const updated = await prisma.workOrder.update({
+        where:  { id: wo.id },
+        data:   { assignedUserId: assignee.id },
+        select: { id: true, assignedUserId: true },
+      });
+      await writeActivityLog({
+        userId:  req.user.id,
+        action:  'work_order_assigned',
+        details: { workOrderId: wo.id, assigneeUserId: assignee.id, assigneeRole: assignee.role },
+      });
+      return res.json({ success: true, data: { workOrder: updated, assignee } });
+    }
+
+    // Unassign.
+    const updated = await prisma.workOrder.update({
+      where:  { id: wo.id },
+      data:   { assignedUserId: null },
+      select: { id: true, assignedUserId: true },
+    });
+    await writeActivityLog({
+      userId:  req.user.id,
+      action:  'work_order_unassigned',
+      details: { workOrderId: wo.id },
+    });
+    return res.json({ success: true, data: { workOrder: updated, assignee: null } });
+  } catch (err) {
+    console.error('Assign work order error:', err);
+    res.status(500).json({ success: false, error: 'Failed to assign work order' });
+  }
+});
+
 // ═══ Test measurements ════════════════════════════════════════════════════════
 // NETA MTS 5.4: BOTH as-found and as-left values belong on the test record.
 // Contractors typically deliver a sheet of readings at once, so the create

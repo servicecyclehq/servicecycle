@@ -65,6 +65,7 @@ enum UserRole {
   oem_admin // OEM service org fleet manager â€” cross-account read-only view
   group_admin // Enterprise group (HoldCo) admin â€” cross-OpCo read-only roll-up over accounts sharing an enterpriseGroupId
   super_admin // Platform super-admin â€” can manage PartnerOrganizations and bootstrap OEM users
+  field_tech // Field-labor / subcontractor login â€” assigned-jobs-only. NO pricing, NO full customer list. Default-deny everywhere except the assignment-scoped /api/field surface; sees only WorkOrders where assignedUserId = their id.
 }
 
 // Equipment taxonomy. Expanded 2026-06-07 from the buyer-priority analysis
@@ -532,6 +533,7 @@ model User {
   assignedEventLogs       PartnerEventLog[]       @relation("EventLogRep")
   ackedTelemetryNotifs    TelemetryNotification[] @relation("TelemetryNotificationAck")
   ssoHandoffs             SsoHandoff[]
+  assignedWorkOrders      WorkOrder[]             @relation("WorkOrderAssignee")
 
   // SCIM upsert key: (directory, externalId) is unique per directory. Both
   // NULL for password users — Postgres NULLs are distinct so no collision.
@@ -1019,6 +1021,11 @@ model WorkOrder {
   quoteRequestId   String?
   contractorId     String?
   assignedTechId   String?
+  // Direct work-order -> login-user assignment (field-labor / subcontractor).
+  // Distinct from assignedTechId, which points at a ContractorTech record (not
+  // a login). A field_tech user's entire world is the set of work orders where
+  // assignedUserId = their id; the /api/field surface scopes to it.
+  assignedUserId   String?
   // Minimum NETA cert level required for this job (from the task definition
   // at creation time; editable).
   netaCertLevel    NetaCertLevel?
@@ -1056,6 +1063,7 @@ model WorkOrder {
   quoteRequest QuoteRequest?        @relation(fields: [quoteRequestId], references: [id], onDelete: SetNull)
   contractor   Contractor?          @relation(fields: [contractorId], references: [id])
   assignedTech ContractorTech?      @relation(fields: [assignedTechId], references: [id])
+  assignedUser User?                @relation("WorkOrderAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
   measurements TestMeasurement[]
   deficiencies Deficiency[]
   labSamples   LabSample[]
@@ -1067,6 +1075,7 @@ model WorkOrder {
   @@index([assetId])
   @@index([scheduleId])
   @@index([contractorId])
+  @@index([assignedUserId])
   @@map("work_orders")
 }
 

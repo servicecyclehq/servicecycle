@@ -1,29 +1,48 @@
 /**
- * /api/field — Field Mode read endpoints for technicians on a phone.
+ * /api/field — Field Mode endpoints for technicians on a phone.
  *
- * Two screens, two endpoints, one round-trip each (these power a phone on
- * bad signal — every payload is deliberately slim):
+ *   GET  /api/field/summary                       — the tech's "My Day"
+ *   GET  /api/field/asset/:id                     — the field card a QR lands on
+ *   GET  /api/field/assignments                   — the sub's "My Jobs" (assigned WOs)
+ *   POST /api/field/work-orders/:id/measurements  — record a NETA reading
+ *   POST /api/field/work-orders/:id/complete      — mark an assigned WO complete
+ *   POST /api/field/deficiencies                  — report a finding
  *
- *   GET /api/field/summary    — the tech's "My Day": overdue + due-soon
- *                               schedules, open work orders, open
- *                               deficiencies. Optional ?siteId= narrows to
- *                               one site. 25 items per list, most-urgent
- *                               first.
- *   GET /api/field/asset/:id  — the field card a QR label lands on:
- *                               asset context + active schedules (with
- *                               status) + open deficiencies + open work
- *                               orders, all in one query.
+ * FIELD-LABOR SCOPE. Any authenticated role may use these (the person holding
+ * the phone next to the switchgear is exactly who should). For the field_tech
+ * (subcontractor) role every read and write is CLAMPED to the user's assigned
+ * work — they see only assets reachable from work orders where
+ * assignedUserId = their id, and may only write against those. Non-field_tech
+ * roles keep the account-wide view. The scope helper lives in lib/fieldScope;
+ * the role itself is default-denied off every other route by the boundary in
+ * middleware/auth (see lib/fieldRoleScope). TENANCY: every query also filters
+ * accountId = req.user.accountId — the hard tenant boundary, scope on top.
  *
- * Read-only — any authenticated role (the person holding the phone next to
- * the switchgear is exactly who should see this). Mounted behind
- * authenticateToken in index.ts. TENANCY: every query filters
- * accountId = req.user.accountId.
+ * Mounted behind authenticateToken in index.ts.
  */
 
 const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
+const { getFieldAssignmentScope } = require('../lib/fieldScope');
+const { parseVoiceReading, hintTokens } = require('../lib/voiceCapture');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// NETA decal / per-measurement pass-fail ratings (mirrors the WorkOrder route).
+const RESULT_RATINGS = ['GREEN', 'YELLOW', 'RED'];
+// Convenience aliases accepted from the field UI + voice parser.
+const PASSFAIL_ALIASES: Record<string, string> = {
+  pass: 'GREEN', green: 'GREEN', ok: 'GREEN', normal: 'GREEN',
+  marginal: 'YELLOW', yellow: 'YELLOW',
+  fail: 'RED', red: 'RED',
+};
+function normalizePassFail(v: any): string | null | undefined {
+  if (v === undefined || v === null || v === '') return null;
+  const s = String(v).trim();
+  if (RESULT_RATINGS.includes(s)) return s;
+  const mapped = PASSFAIL_ALIASES[s.toLowerCase()];
+  return mapped || undefined; // undefined = invalid sentinel
+}
 
 // Slim asset shape shared by every summary list item — enough to render a
 // recognizable card line ("SWITCHGEAR · Square D Model 6 · S/N 123 — Plant 2")
@@ -56,6 +75,10 @@ router.get('/summary', async (req, res) => {
     const { siteId } = req.query;
     const TAKE = 25;
 
+    // Field-labor scope: a field_tech sees only assets reachable from their
+    // assigned work orders; non-field_tech roles get the account-wide view.
+    const scope = await getFieldAssignmentScope(prisma, req.user);
+
     if (siteId !== undefined) {
       if (!UUID_RE.test(String(siteId))) {
         return res.status(400).json({ success: false, error: 'siteId must be a uuid' });
@@ -71,9 +94,11 @@ router.get('/summary', async (req, res) => {
     const soonCutoff = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     // Asset-side filter applied to every list: live (non-archived) assets,
-    // optionally narrowed to one site.
+    // optionally narrowed to one site, and — for a field_tech — clamped to the
+    // assets reachable from their assigned work (empty set ⇒ they see nothing).
     const assetFilter: any = { archivedAt: null };
     if (siteId) assetFilter.siteId = String(siteId);
+    if (scope) assetFilter.id = { in: [...scope.assetIds] };
 
     const scheduleSelect = {
       id: true, nextDueDate: true,
@@ -107,6 +132,8 @@ router.get('/summary', async (req, res) => {
           accountId,
           status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
           asset: assetFilter,
+          // field_tech: only their assigned jobs, never the whole board.
+          ...(scope ? { assignedUserId: req.user.id } : {}),
         },
         select: {
           id: true, status: true, scheduledDate: true,
@@ -179,6 +206,14 @@ router.get('/summary', async (req, res) => {
 //   openWorkOrders   — id, status, taskName (from the schedule's task def)
 router.get('/asset/:id', async (req, res) => {
   try {
+    // Field-labor scope: a field_tech may only open an asset that one of their
+    // assigned work orders points at. Deny with 404 (not 403) so the card
+    // can't be used to probe which assets exist outside their assignment.
+    const scope = await getFieldAssignmentScope(prisma, req.user);
+    if (scope && !scope.assetIds.has(req.params.id)) {
+      return res.status(404).json({ success: false, error: 'Asset not found' });
+    }
+
     const asset = await prisma.asset.findFirst({
       where: { id: req.params.id, accountId: req.user.accountId },
       select: {
@@ -245,6 +280,282 @@ router.get('/asset/:id', async (req, res) => {
   } catch (err) {
     console.error('Field asset card error:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch asset' });
+  }
+});
+
+// ─── Scoped write surface ─────────────────────────────────────────────────────
+// The field-labor (field_tech) role is default-denied on the global
+// /api/work-orders + /api/deficiencies routes (those are manager-gated and
+// would also leak the whole board). These /api/field write endpoints are the
+// sub's ONLY way to record work, and every one re-checks assignment scope:
+//   field_tech  → the target work order/asset MUST belong to their assignment
+//   manager+    → any work order/asset in the account (Field Mode on a phone)
+// accountId is the hard tenant boundary in both cases.
+
+// Resolve a work order the caller may act on, honouring field-labor scope.
+// Returns the work order row (id, status, assetId) or null (404-worthy).
+async function resolveScopedWorkOrder(user, workOrderId) {
+  const where: any = { id: workOrderId, accountId: user.accountId };
+  if (user.role === 'field_tech') where.assignedUserId = user.id;
+  return prisma.workOrder.findFirst({
+    where,
+    select: { id: true, status: true, assetId: true },
+  });
+}
+
+// ─── GET /api/field/assignments ───────────────────────────────────────────────
+// The sub's "My Jobs": open work orders assigned to the caller (assignedUserId
+// = me), newest-scheduled first. Same shape for every role — it always means
+// "assigned to me" — so a manager who isn't assigned simply sees an empty list.
+router.get('/assignments', async (req, res) => {
+  try {
+    const rows = await prisma.workOrder.findMany({
+      where: {
+        accountId:      req.user.accountId,
+        assignedUserId: req.user.id,
+        status:         { in: ['SCHEDULED', 'IN_PROGRESS'] },
+      },
+      select: {
+        id: true, status: true, scheduledDate: true,
+        schedule: { select: { taskDefinition: { select: { taskName: true } } } },
+        asset: { select: FIELD_ASSET_SELECT },
+      },
+      orderBy: { scheduledDate: 'asc' },
+      take: 100,
+    });
+    res.json({
+      success: true,
+      data: {
+        assignments: rows.map((wo) => ({
+          id: wo.id, status: wo.status, scheduledDate: wo.scheduledDate,
+          taskName: wo.schedule?.taskDefinition?.taskName ?? null,
+          asset: wo.asset,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error('Field assignments error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch assignments' });
+  }
+});
+
+// Validate a single measurement payload (focused subset of the WorkOrder
+// route's validator — the field form/voice submit one reading at a time).
+function buildFieldMeasurement(accountId, workOrderId, raw) {
+  if (!raw || typeof raw !== 'object') return { error: 'measurement must be an object' };
+  const { measurementType, phase, asFoundValue, asFoundUnit, asLeftValue, asLeftUnit, passFail, notes } = raw;
+  if (!measurementType || typeof measurementType !== 'string' || !measurementType.trim()) {
+    return { error: 'measurementType is required' };
+  }
+  const pf = normalizePassFail(passFail);
+  if (pf === undefined) return { error: `passFail must be one of ${RESULT_RATINGS.join(', ')} (or pass/fail)` };
+  const num = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    return Number.isNaN(n) ? undefined : n;
+  };
+  const found = num(asFoundValue);
+  const left  = num(asLeftValue);
+  if (found === undefined || left === undefined) return { error: 'asFoundValue/asLeftValue must be numeric' };
+  return {
+    data: {
+      accountId, workOrderId,
+      measurementType: measurementType.trim(),
+      phase:        phase || null,
+      asFoundValue: found,
+      asFoundUnit:  asFoundUnit || null,
+      asLeftValue:  left,
+      asLeftUnit:   asLeftUnit || null,
+      passFail:     pf || null,
+      notes:        notes || null,
+    },
+  };
+}
+
+// ─── POST /api/field/work-orders/:id/measurements ─────────────────────────────
+// Record a NETA test measurement against an assigned work order.
+router.post('/work-orders/:id/measurements', async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.id))) {
+      return res.status(400).json({ success: false, error: 'id must be a uuid' });
+    }
+    const wo = await resolveScopedWorkOrder(req.user, req.params.id);
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const built = buildFieldMeasurement(req.user.accountId, wo.id, req.body);
+    if (built.error) return res.status(400).json({ success: false, error: built.error });
+
+    const measurement = await prisma.testMeasurement.create({ data: built.data });
+    res.status(201).json({ success: true, data: { measurement } });
+  } catch (err) {
+    console.error('Field measurement error:', err);
+    res.status(500).json({ success: false, error: 'Failed to record measurement' });
+  }
+});
+
+// ─── POST /api/field/work-orders/:id/complete ─────────────────────────────────
+// Mark an assigned work order COMPLETE. Optional asLeftCondition (C1/C2/C3).
+const CONDITION_RATINGS = ['C1', 'C2', 'C3'];
+router.post('/work-orders/:id/complete', async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.id))) {
+      return res.status(400).json({ success: false, error: 'id must be a uuid' });
+    }
+    const wo = await resolveScopedWorkOrder(req.user, req.params.id);
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const data: any = { status: 'COMPLETE', completedDate: new Date() };
+    if (req.body?.asLeftCondition != null && req.body.asLeftCondition !== '') {
+      if (!CONDITION_RATINGS.includes(req.body.asLeftCondition)) {
+        return res.status(400).json({ success: false, error: `asLeftCondition must be one of ${CONDITION_RATINGS.join(', ')}` });
+      }
+      data.asLeftCondition = req.body.asLeftCondition;
+    }
+    if (typeof req.body?.notes === 'string' && req.body.notes.trim()) data.notes = req.body.notes.trim();
+
+    const updated = await prisma.workOrder.update({
+      where: { id: wo.id },
+      select: { id: true, status: true, completedDate: true, asLeftCondition: true },
+      data,
+    });
+    res.json({ success: true, data: { workOrder: updated } });
+  } catch (err) {
+    console.error('Field work-order complete error:', err);
+    res.status(500).json({ success: false, error: 'Failed to complete work order' });
+  }
+});
+
+// ─── POST /api/field/deficiencies ─────────────────────────────────────────────
+// Report a finding against an in-scope asset.
+const SEVERITIES = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
+router.post('/deficiencies', async (req, res) => {
+  try {
+    const { assetId, severity, description, correctiveAction } = req.body || {};
+    if (!assetId || !UUID_RE.test(String(assetId))) {
+      return res.status(400).json({ success: false, error: 'assetId (uuid) is required' });
+    }
+    if (!SEVERITIES.includes(severity)) {
+      return res.status(400).json({ success: false, error: `severity must be one of ${SEVERITIES.join(', ')}` });
+    }
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      return res.status(400).json({ success: false, error: 'description is required' });
+    }
+
+    // Scope: field_tech may only report on an asset in their assignment set;
+    // manager+ on any account asset. Always re-check account ownership.
+    const scope = await getFieldAssignmentScope(prisma, req.user);
+    if (scope && !scope.assetIds.has(String(assetId))) {
+      return res.status(404).json({ success: false, error: 'Asset not found' });
+    }
+    const asset = await prisma.asset.findFirst({
+      where: { id: String(assetId), accountId: req.user.accountId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const deficiency = await prisma.deficiency.create({
+      data: {
+        accountId:        req.user.accountId,
+        assetId:          asset.id,
+        severity,
+        description:      description.trim(),
+        correctiveAction: typeof correctiveAction === 'string' && correctiveAction.trim() ? correctiveAction.trim() : null,
+      },
+      select: { id: true, severity: true, description: true, createdAt: true },
+    });
+    res.status(201).json({ success: true, data: { deficiency } });
+  } catch (err) {
+    console.error('Field deficiency error:', err);
+    res.status(500).json({ success: false, error: 'Failed to report deficiency' });
+  }
+});
+
+// ─── POST /api/field/voice/parse ──────────────────────────────────────────────
+// Frictionless voice capture. The phone transcribes speech with the browser's
+// Web Speech API and POSTs the TEXT here; we parse it into a structured
+// measurement PROPOSAL and (best-effort) match the spoken asset within the
+// caller's scope. The client pre-fills the measurement form from the proposal
+// and the tech CONFIRMS before saving — we never auto-write from a voice guess.
+//
+// Body: { transcript: string, assetId?: uuid }
+//   - assetId given (e.g. the tech is already on the QR-scanned card): we attach
+//     that asset's open, in-scope work orders so the reading has a target.
+//   - no assetId: we match proposal.assetHint against the caller's SCOPED
+//     inventory and return candidate assets to choose from.
+const VOICE_FIELD_ASSET_SELECT = {
+  id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true,
+  site:     { select: { id: true, name: true } },
+  position: { select: { name: true, code: true } },
+};
+router.post('/voice/parse', async (req, res) => {
+  try {
+    const { transcript, assetId } = req.body || {};
+    if (!transcript || typeof transcript !== 'string' || !transcript.trim()) {
+      return res.status(400).json({ success: false, error: 'transcript is required' });
+    }
+    if (transcript.length > 2000) {
+      return res.status(400).json({ success: false, error: 'transcript too long' });
+    }
+
+    const proposal = parseVoiceReading(transcript);
+    const scope = await getFieldAssignmentScope(prisma, req.user);
+
+    // Open work orders on `assetId` the caller may write to (scope-aware).
+    async function openWorkOrdersFor(aid) {
+      const where: any = { accountId: req.user.accountId, assetId: aid, status: { in: ['SCHEDULED', 'IN_PROGRESS'] } };
+      if (scope) where.assignedUserId = req.user.id;
+      const wos = await prisma.workOrder.findMany({
+        where,
+        select: { id: true, status: true, schedule: { select: { taskDefinition: { select: { taskName: true } } } } },
+        orderBy: { scheduledDate: 'asc' },
+        take: 10,
+      });
+      return wos.map((w) => ({ id: w.id, status: w.status, taskName: w.schedule?.taskDefinition?.taskName ?? null }));
+    }
+
+    let asset: any = null;
+    let candidates: any[] = [];
+
+    if (assetId !== undefined && assetId !== null && assetId !== '') {
+      if (!UUID_RE.test(String(assetId))) {
+        return res.status(400).json({ success: false, error: 'assetId must be a uuid' });
+      }
+      if (scope && !scope.assetIds.has(String(assetId))) {
+        return res.status(404).json({ success: false, error: 'Asset not found' });
+      }
+      asset = await prisma.asset.findFirst({
+        where:  { id: String(assetId), accountId: req.user.accountId, archivedAt: null },
+        select: VOICE_FIELD_ASSET_SELECT,
+      });
+      if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+      asset.openWorkOrders = await openWorkOrdersFor(asset.id);
+    } else if (proposal.assetHint) {
+      const toks = hintTokens(proposal.assetHint);
+      if (toks.length) {
+        const orConds: any[] = [];
+        for (const t of toks) {
+          orConds.push({ serialNumber: { contains: t, mode: 'insensitive' } });
+          orConds.push({ model:        { contains: t, mode: 'insensitive' } });
+          orConds.push({ manufacturer: { contains: t, mode: 'insensitive' } });
+          orConds.push({ position: { name: { contains: t, mode: 'insensitive' } } });
+          orConds.push({ position: { code: { contains: t, mode: 'insensitive' } } });
+        }
+        const where: any = { accountId: req.user.accountId, archivedAt: null, OR: orConds };
+        if (scope) where.id = { in: [...scope.assetIds] };
+        candidates = await prisma.asset.findMany({ where, select: VOICE_FIELD_ASSET_SELECT, take: 5 });
+        // Exactly one match → resolve it directly so the client can save in one tap.
+        if (candidates.length === 1) {
+          asset = candidates[0];
+          asset.openWorkOrders = await openWorkOrdersFor(asset.id);
+          candidates = [];
+        }
+      }
+    }
+
+    res.json({ success: true, data: { proposal, asset, candidates } });
+  } catch (err) {
+    console.error('Field voice parse error:', err);
+    res.status(500).json({ success: false, error: 'Failed to parse voice reading' });
   }
 });
 

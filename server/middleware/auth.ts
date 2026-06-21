@@ -1,4 +1,5 @@
 const { verifyToken } = require('../lib/jwtSecrets');
+const { isFieldTechAllowed } = require('../lib/fieldRoleScope');
 import prisma from '../lib/prisma';
 
 // L3: in-memory debounce cache for Account.lastActiveAt updates.
@@ -107,6 +108,22 @@ async function authenticateToken(req, res, next) {
     // Don't leak the epoch column to downstream handlers / req.user consumers.
     const { tokenEpoch: _omit, ...safeUser } = user;
     req.user = safeUser;
+
+    // Field-labor default-deny boundary (the permission boundary for the
+    // field_tech / subcontractor role). A field_tech may only reach the
+    // assignment-scoped field surface + session essentials; every other
+    // authenticated route — pricing (rate cards, quotes, proposals, revenue,
+    // compliance), the full customer/asset/site lists, user management — is
+    // denied HERE at the universal chokepoint so the boundary covers new
+    // routes too. The scoped /api/field handlers further clamp reads/writes to
+    // the user's assigned work. See lib/fieldRoleScope.ts.
+    if (user.role === 'field_tech' && !isFieldTechAllowed(req.originalUrl || req.url)) {
+      return res.status(403).json({
+        success: false,
+        error:   'field_role_scope',
+        message: 'This account is limited to assigned field work.',
+      });
+    }
     // L3: debounced demo-account activity stamp. Fire-and-forget.
     // v0.33.0 (Pass-5 F-DEMO-02): gated on write methods only. A bare
     // GET — including the /api/auth/me poll the SPA fires on focus —

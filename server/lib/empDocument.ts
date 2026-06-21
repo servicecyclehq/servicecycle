@@ -29,6 +29,13 @@
  * they render with honest placeholder text the program owner must complete,
  * rather than pretending the generated document is the whole program.
  *
+ * The eleven sections are bracketed by an unnumbered "Purpose & Scope" front
+ * matter (states why the program exists + what it governs, per §4.2) and a
+ * closing "Program Approval" block with a signature line so the responsible
+ * person can attest to it — what makes the output presentable to an auditor.
+ * Section 2 additionally reports single-line-diagram / system-documentation
+ * coverage (the §4.2-named foundation) from the asset feed graph.
+ *
  * Inputs read from AccountSetting (managed via /api/compliance/emp-settings):
  *   EMP_COORDINATOR_USER_ID — program owner (same-account user id)
  *   RETENTION_POLICY_TEXT   — adopted records-retention policy text
@@ -127,6 +134,9 @@ async function buildEmpData(prisma, accountId) {
       equipmentType:      true,
       governingCondition: true,
       inService:          true,
+      // §4.2 system documentation: the electrical power path (upstream source)
+      // backs the single-line-diagram coverage statistic in Section 2.
+      fedFromAssetId:     true,
       site: { select: { id: true, name: true } },
     },
   });
@@ -143,6 +153,8 @@ async function buildEmpData(prisma, accountId) {
   const equipmentSurvey = {
     totalAssets: assets.length,
     inService:   assets.filter((a) => a.inService).length,
+    // §4.2 system documentation: how many assets have their upstream feed mapped.
+    powerPathMapped: assets.filter((a) => a.fedFromAssetId).length,
     byType:      [...byType.entries()].sort((x, y) => x[0].localeCompare(y[0]))
                    .map(([type, count]) => ({ type, count })),
     bySite:      [...bySite.entries()].sort((x, y) => x[0].localeCompare(y[0]))
@@ -416,11 +428,51 @@ function sectionHeading(doc, ctx, number, title) {
   ctx.y = lineY + 10;
 }
 
+// Section-level heading WITHOUT a number — used for the front-matter
+// "Purpose & Scope" and the closing "Program Approval" blocks so they read as
+// peers of the eleven §4.2 sections without disturbing their 1–11 numbering.
+function unnumberedHeading(doc, ctx, title) {
+  ensureSpace(doc, ctx, 50);
+  doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13)
+     .text(title, PAGE.margin, ctx.y, { width: PAGE.contentW });
+  const lineY = doc.y + 4;
+  doc.moveTo(PAGE.margin, lineY).lineTo(PAGE.margin + PAGE.contentW, lineY)
+     .strokeColor(COLORS.accent).lineWidth(1).stroke();
+  ctx.y = lineY + 10;
+}
+
 function subHeading(doc, ctx, title) {
   ensureSpace(doc, ctx, 28);
   doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(10)
      .text(title, PAGE.margin, ctx.y, { width: PAGE.contentW });
   ctx.y = doc.y + 4;
+}
+
+// A printed-name line plus signature + date rule lines, for the program
+// owner's wet/electronic attestation (Program Approval block). An EMP an
+// auditor will accept needs a place for the responsible person to sign.
+function signatureBlock(doc, ctx, ownerName) {
+  ensureSpace(doc, ctx, 70);
+  doc.font(FONT_REG).fontSize(9.5).fillColor(COLORS.textMuted)
+     .text('Program owner (printed):', PAGE.margin, ctx.y, { lineBreak: false });
+  doc.font(FONT_BOLD).fontSize(9.5).fillColor(COLORS.text)
+     .text(ownerName || '________________________________', PAGE.margin + 140, ctx.y, { lineBreak: false });
+  ctx.y += 34;
+
+  const sigW  = Math.round(PAGE.contentW * 0.58);
+  const dateX = PAGE.margin + sigW + 24;
+  const dateW = PAGE.contentW - sigW - 24;
+  // Rule lines.
+  doc.moveTo(PAGE.margin, ctx.y).lineTo(PAGE.margin + sigW, ctx.y)
+     .strokeColor(COLORS.textMuted).lineWidth(0.75).stroke();
+  doc.moveTo(dateX, ctx.y).lineTo(dateX + dateW, ctx.y)
+     .strokeColor(COLORS.textMuted).lineWidth(0.75).stroke();
+  // Labels beneath.
+  doc.font(FONT_REG).fontSize(8).fillColor(COLORS.textMuted)
+     .text('Signature', PAGE.margin, ctx.y + 4, { width: sigW, lineBreak: false });
+  doc.font(FONT_REG).fontSize(8).fillColor(COLORS.textMuted)
+     .text('Date', dateX, ctx.y + 4, { width: dateW, lineBreak: false });
+  ctx.y += 22;
 }
 
 function paragraph(doc, ctx, text, opts: any = {}) {
@@ -583,6 +635,28 @@ function drawCoverPage(doc, empData, meta) {
 
 // ── section writers ───────────────────────────────────────────────────────────
 
+// Front matter — Purpose & Scope. §4.2 expects the EMP to state WHY it exists
+// and WHAT equipment/systems it governs before enumerating the program
+// elements. Rendered unnumbered so the eleven §4.2 sections keep their numbers.
+function writePurposeScope(doc, ctx, empData) {
+  const s = empData.equipmentSurvey;
+  unnumberedHeading(doc, ctx, 'Purpose & Scope');
+  paragraph(doc, ctx,
+    `This document is the written Electrical Maintenance Program (EMP) for ${empData.accountName}, ` +
+    'established and maintained in conformance with NFPA 70B:2023, Standard for Electrical Equipment ' +
+    'Maintenance, §4.2 (Electrical Maintenance Program). Its purpose is to define how the organization ' +
+    'preserves the safety, reliability, and design performance of its electrical equipment through ' +
+    'planned, condition-based maintenance, inspection, and testing.');
+  paragraph(doc, ctx,
+    `The program applies to the ${s.totalAssets} electrical asset${s.totalAssets === 1 ? '' : 's'} ` +
+    `inventoried in Section 2 across ${s.bySite.length} site${s.bySite.length === 1 ? '' : 's'} under the ` +
+    'organization’s control. Maintenance intervals, procedures, and personnel qualifications are governed ' +
+    'by NFPA 70B:2023 and the NETA MTS / IEEE / NFPA 110/99 references cited per task. Two program elements ' +
+    'for which ServiceCycle holds no source data — design for maintainability (Section 10) and the ' +
+    'electrical safety program interface (Section 11) — are documented by reference to the ' +
+    'organization’s own standards.');
+}
+
 function writeSection1Ownership(doc, ctx, empData) {
   sectionHeading(doc, ctx, 1, 'Program Ownership & Responsibilities');
   if (empData.coordinator) {
@@ -632,6 +706,21 @@ function writeSection2Survey(doc, ctx, empData) {
       { cond: 'C2 — fair (base intervals)',        count: String(s.byCondition.C2) },
       { cond: 'C3 — poor (compressed intervals)',  count: String(s.byCondition.C3) },
     ]);
+  // §4.2 system documentation: single-line diagrams are the standard's named
+  // foundation for an effective maintenance program. The platform tracks the
+  // electrical power path (fedFrom) as a queryable feed graph; report its
+  // coverage and be honest that it supplements — does not replace — the
+  // controlled single-line diagrams the program owner must keep current.
+  subHeading(doc, ctx, 'System documentation & single-line diagrams');
+  paragraph(doc, ctx,
+    'NFPA 70B:2023 §4.2 treats current, accurate system documentation — single-line diagrams chief among ' +
+    `them — as the foundation of an effective maintenance program. ServiceCycle records the electrical ` +
+    `power path between assets: ${s.powerPathMapped} of ${s.totalAssets} inventoried ` +
+    `asset${s.totalAssets === 1 ? '' : 's'} ${s.powerPathMapped === 1 ? 'has' : 'have'} an upstream source ` +
+    'mapped, forming a feed graph used for outage-impact and coordination answers. This feed graph ' +
+    'supplements but does not replace the facility’s controlled single-line/one-line diagrams; the program ' +
+    'owner must keep those diagrams current and reconcile them against this inventory whenever equipment ' +
+    'is added, removed, or re-fed.');
 }
 
 function writeSection3Condition(doc, ctx, empData) {
@@ -834,6 +923,21 @@ function writeSection11Esp(doc, ctx) {
     { oblique: true, color: COLORS.textMuted });
 }
 
+// Closing matter — Program Approval & attestation. A "regulator-ready" EMP is
+// one the responsible person can sign. The attestation also makes explicit that
+// the document plus the two externally-documented elements together constitute
+// the program under §4.2.
+function writeProgramApproval(doc, ctx, empData, meta) {
+  unnumberedHeading(doc, ctx, 'Program Approval');
+  paragraph(doc, ctx,
+    `This Electrical Maintenance Program was generated from live system data on ${meta.generatedAtIso} ` +
+    'and reflects the program as actually implemented in ServiceCycle at that time. By signing below, the ' +
+    'program owner attests that this document — together with the externally-documented elements referenced ' +
+    'in Sections 10 and 11 — constitutes the organization’s documented Electrical Maintenance Program under ' +
+    'NFPA 70B:2023 §4.2, and that the responsibilities described in Section 1 have been accepted.');
+  signatureBlock(doc, ctx, empData.coordinator ? empData.coordinator.name : null);
+}
+
 // ── entry point ───────────────────────────────────────────────────────────────
 
 /**
@@ -893,6 +997,7 @@ function renderEmpPdf(empData, meta) {
       doc.addPage();
       const ctx = { y: PAGE.margin };
 
+      writePurposeScope(doc, ctx, empData);
       writeSection1Ownership(doc, ctx, empData);
       writeSection2Survey(doc, ctx, empData);
       writeSection3Condition(doc, ctx, empData);
@@ -904,6 +1009,7 @@ function renderEmpPdf(empData, meta) {
       writeSection9Records(doc, ctx, empData);
       writeSection10Design(doc, ctx);
       writeSection11Esp(doc, ctx);
+      writeProgramApproval(doc, ctx, empData, meta);
 
       doc.end();
     } catch (err) {

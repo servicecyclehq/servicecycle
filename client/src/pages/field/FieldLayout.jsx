@@ -19,7 +19,8 @@ function getInitial(name = '') {
 }
 
 export default function FieldLayout() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const isFieldTech = user?.role === 'field_tech';
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', display: 'flex', flexDirection: 'column' }}>
@@ -56,19 +57,36 @@ export default function FieldLayout() {
 
         <div style={{ flex: 1 }} />
 
-        <Link
-          to="/dashboard"
-          style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            minHeight: 40, padding: '0 12px',
-            fontSize: 'var(--font-size-ui)', fontWeight: 600,
-            color: 'var(--color-primary)', textDecoration: 'none',
-            border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
-            background: 'var(--color-bg)',
-          }}
-        >
-          Full site →
-        </Link>
+        {isFieldTech ? (
+          // A subcontractor has no desktop site — offer sign-out, not "full site".
+          <button
+            type="button"
+            onClick={logout}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              minHeight: 40, padding: '0 12px', cursor: 'pointer',
+              fontSize: 'var(--font-size-ui)', fontWeight: 600,
+              color: 'var(--color-primary)', background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
+            }}
+          >
+            Sign out
+          </button>
+        ) : (
+          <Link
+            to="/dashboard"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              minHeight: 40, padding: '0 12px',
+              fontSize: 'var(--font-size-ui)', fontWeight: 600,
+              color: 'var(--color-primary)', textDecoration: 'none',
+              border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
+              background: 'var(--color-bg)',
+            }}
+          >
+            Full site →
+          </Link>
+        )}
 
         <div
           aria-hidden="true"
