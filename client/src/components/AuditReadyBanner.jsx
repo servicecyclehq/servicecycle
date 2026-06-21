@@ -63,15 +63,18 @@ export default function AuditReadyBanner() {
   const ready = gap && gap.summary.fullyCompliant;
   const items = gap ? gap.summary.totalActions : 0;
   const Icon = ready ? ShieldCheck : ShieldAlert;
-  const bg = ready ? 'var(--color-success-bg, #f0fdf4)' : '#fffbeb';
-  const border = ready ? 'var(--color-success-border, #bbf7d0)' : '#fde68a';
-  const color = ready ? '#15803d' : '#92400e';
+  // Themed `card` surface + a colored top accent (like the KPI stat-tiles), so
+  // the banner matches the rest of the dashboard in BOTH light and dark mode.
+  // Previously a hardcoded cream bg (#fffbeb) that washed out in dark mode (the
+  // text color adapts to the theme but the background didn't) and clashed in
+  // light mode. Accent: red when items are open, green when fully compliant.
+  const accent = ready ? 'var(--color-success, #22c55e)' : 'var(--color-danger, #dc2626)';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
-      padding: '12px 16px', marginBottom: 16, borderRadius: 10, background: bg, border: `1px solid ${border}` }}>
+    <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      padding: '12px 16px', marginBottom: 16, borderTop: `3px solid ${accent}` }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      <Icon size={22} style={{ color }} />
+      <Icon size={22} style={{ color: accent }} />
       <div style={{ flex: 1, minWidth: 240 }}>
         <div style={{ fontWeight: 700, color: 'var(--color-text)' }}>
           {gap == null ? 'Checking audit readiness…'

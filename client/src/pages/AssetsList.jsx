@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Download, Plus, Upload, Zap } from 'lucide-react';
 import api from '../api/client';
 import { downloadAuthedFile } from '../api/download';
@@ -29,7 +29,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { kbdActivate } from '../lib/a11y';
 import EmptyState from '../components/EmptyState';
 import Toast from '../components/Toast';
-import { useFromState } from '../components/BackLink';
+import BackLink, { useFromState } from '../components/BackLink';
 import ColumnPicker from '../components/ColumnPicker';
 import HeaderFilter, { filterIsActive } from '../components/HeaderFilter';
 import {
@@ -190,6 +190,7 @@ function NextDueCell({ schedule }) {
 export default function AssetsList() {
   useDocumentTitle('Assets');
   const navigate = useNavigate();
+  const location = useLocation();
   // C1: row clicks record this list (path only — filters live in state, not
   // the URL) as the origin for AssetDetail's BackLink.
   const fromState = useFromState();
@@ -458,6 +459,15 @@ export default function AssetsList() {
 
   return (
     <>
+      {/* When drilled in from another page (e.g. Dashboard → Priority assets →
+          By volume → an equipment type), show a back link to that origin. Only
+          when an explicit origin was recorded — a sidebar visit to /assets has
+          no `from` and shows no back link. */}
+      {location.state?.from && (
+        <div style={{ marginBottom: 8 }}>
+          <BackLink fallback="/dashboard" fallbackLabel="Dashboard" />
+        </div>
+      )}
       <div className="page-header">
         <div>
           <h1 className="page-title">Assets</h1>
