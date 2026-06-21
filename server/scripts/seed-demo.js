@@ -729,6 +729,8 @@ async function _seedAccount() {
   const defsByType = await _loadGlobalDefsByType(prisma);
   const { byKey: schedules, count: scheduleCount } =
     await _createSchedules(prisma, account.id, assets, defsByType, story);
+  const _histWO = await _createHistoricalWorkOrders(prisma, account.id, schedules, apex.id, 5);
+  console.log('  seeded ' + _histWO + ' historical work orders (5yr)');
 
   // ── Archived assets (G2) ──────────────────────────────────────────────────
   // Retired equipment so the Archived Assets view (?archived=true) isn't
