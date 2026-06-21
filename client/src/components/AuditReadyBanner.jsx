@@ -63,16 +63,19 @@ export default function AuditReadyBanner() {
   const ready = gap && gap.summary.fullyCompliant;
   const items = gap ? gap.summary.totalActions : 0;
   const Icon = ready ? ShieldCheck : ShieldAlert;
-  // Themed `card` surface + a colored top accent (like the KPI stat-tiles), so
-  // the banner matches the rest of the dashboard in BOTH light and dark mode.
-  // Previously a hardcoded cream bg (#fffbeb) that washed out in dark mode (the
-  // text color adapts to the theme but the background didn't) and clashed in
-  // light mode. Accent: red when items are open, green when fully compliant.
+  // Themed `card` surface + the SAME fading top-ribbon the KPI stat-tiles use
+  // (reuses .stat-tile[data-accented]::before — linear-gradient to 25% on the
+  // right — for visual consistency), so the banner matches the rest of the
+  // dashboard in BOTH light and dark mode. Previously a hardcoded cream bg
+  // (#fffbeb) that washed out in dark mode; then a SOLID red border that didn't
+  // fade like the other cards. Accent: red when items are open, green when
+  // fully compliant.
   const accent = ready ? 'var(--color-success, #22c55e)' : 'var(--color-danger, #dc2626)';
 
   return (
-    <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
-      padding: '12px 16px', marginBottom: 16, borderTop: `3px solid ${accent}` }}>
+    <div className="card stat-tile" data-accented="true"
+      style={{ '--tile-accent': accent, display: 'flex', alignItems: 'center', gap: 14,
+      flexWrap: 'wrap', padding: '12px 16px', marginBottom: 16 }}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <Icon size={22} style={{ color: accent }} />
       <div style={{ flex: 1, minWidth: 240 }}>
