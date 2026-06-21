@@ -30,6 +30,7 @@
 const FIELD_TECH_ALLOWED_PREFIXES = [
   '/api/field',        // assignment-scoped field surface (reads + scoped writes + voice)
   '/api/auth',         // /me, /logout, /refresh, AI-consent — session lifecycle
+  '/api/config',       // read-only client bootstrap (feature flags, aiEnabled) — no pricing/customers
   '/api/preferences',  // per-user UI state (saved views, column visibility) — no pricing/customers
   '/api/errors',       // render-crash telemetry
 ];

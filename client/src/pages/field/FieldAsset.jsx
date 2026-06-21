@@ -27,6 +27,7 @@ import { useAiConsent } from '../../context/AiConsentContext';
 import Toast from '../../components/Toast';
 import NameplateReview from '../../components/NameplateReview';
 import IncidentLogCard from '../../components/IncidentLogCard';
+import VoiceCaptureButton from '../../components/field/VoiceCaptureButton';
 import {
   EQUIPMENT_TYPE_LABELS, CONDITION_META, SEVERITY_META, WO_STATUS_META,
   assetLabel, fmtDate,
@@ -526,6 +527,19 @@ export default function FieldAsset() {
     }
   }
 
+  // Voice → prefill the measurement form. The tech reviews and taps Save;
+  // nothing is auto-committed. Maps the parsed NETA result to the pass/fail
+  // toggle and auto-selects the work order when the parse resolved one.
+  function applyVoiceToMeasurement({ proposal, asset: matched }) {
+    if (!proposal) return;
+    if (proposal.measurementType) setMeasType(proposal.measurementType);
+    if (proposal.value != null) setMeasAfValue(String(proposal.value));
+    if (proposal.unit) setMeasAfUnit(proposal.unit);
+    if (proposal.passFail) setMeasPassFail(proposal.passFail === 'RED' ? 'fail' : (proposal.passFail === 'GREEN' ? 'pass' : null));
+    const matchedWO = matched?.openWorkOrders?.[0]?.id;
+    if (matchedWO && openWOs.some((w) => w.id === matchedWO)) setMeasWoId(matchedWO);
+  }
+
   // ── (d) Add test measurement ────────────────────────────────────────────────
   async function handleAddMeasurement() {
     if (measBusy || !measWoId || !measAfValue.trim()) return;
@@ -969,6 +983,8 @@ export default function FieldAsset() {
       {openWOs.length > 0 && (
         <SectionCard title="Record measurement" accent="var(--color-primary)">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '6px 0' }}>
+            {/* Voice-first capture — speak "Breaker 42, IR normal, 68" to prefill. */}
+            <VoiceCaptureButton assetId={id} onParsed={applyVoiceToMeasurement} />
             {openWOs.length > 1 && (
               <div>
                 <label style={mFldLabel}>Work Order</label>
