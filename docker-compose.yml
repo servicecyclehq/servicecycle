@@ -401,7 +401,9 @@ services:
     command:
       - sh
       - -c
-      - "npm run build && npm run preview -- --host 0.0.0.0 --port 5173"
+      # NODE_OPTIONS heap bump: the droplet is a 1GB box and vite's build OOMs
+      # at Node's default heap; raise the ceiling so it can spill into swap.
+      - "NODE_OPTIONS=--max-old-space-size=2048 npm run build && npm run preview -- --host 0.0.0.0 --port 5173"
 
 
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
