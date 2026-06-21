@@ -43,6 +43,7 @@ import AssetLotoCard from '../components/AssetLotoCard';
 import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import NameplateCard from '../components/NameplateCard';
 import IncidentLogCard from '../components/IncidentLogCard';
+import ArcFlashTrend from '../components/ArcFlashTrend';
 import DgaImportCard from '../components/DgaImportCard';
 import ThermographyImportCard from '../components/ThermographyImportCard';
 
@@ -852,6 +853,9 @@ export default function AssetDetail() {
 
         {/* ── Incidents / protective-device operations (#24) ───────────────── */}
         <IncidentLogCard assetId={asset.id} />
+
+        {/* ── Arc-flash incident-energy trend (#25 headline) ───────────────── */}
+        <ArcFlashTrend assetId={asset.id} />
 
         {/* ── Oil / DGA import (#28) — oil-filled transformers ─────────────── */}
         {/* Gated behind the per-account dga_import flag (lib/accountFeatures) —

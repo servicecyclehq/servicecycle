@@ -137,4 +137,62 @@ describe('#25 arc-flash study asset coverage', () => {
   });
 });
 
+describe('#25 IEEE 1584 inputs, DANGER classification, and per-asset trend', () => {
+  test('binds with IEEE 1584 inputs and validates electrode config', async () => {
+    const ok = await request(app)
+      .post(`/api/sites/studies/${studyId}/assets`)
+      .set('Authorization', auth(manager))
+      .send({
+        assetId: rootAssetId, busName: 'SWGR-1 Main Bus', nominalVoltage: '480V',
+        incidentEnergyCalCm2: 8.4, arcFlashBoundaryIn: 36, workingDistanceIn: 18,
+        boltedFaultCurrentKA: 25.3, arcingCurrentKA: 14.1, electrodeConfig: 'vcb',
+        conductorGapMm: 32, clearingTimeMs: 83, upstreamDevice: 'Main 800A',
+      });
+    expect(ok.status).toBe(201);
+    const labels = await request(app).get(`/api/sites/studies/${studyId}/label-data`).set('Authorization', auth(manager));
+    const root = labels.body.data.labels.find((l: any) => l.assetId === rootAssetId);
+    expect(root.boltedFaultCurrentKA).toBe(25.3);
+    expect(root.electrodeConfig).toBe('VCB'); // upper-cased on input
+    expect(root.hazardClass).toBe('WARNING'); // 8.4 cal/cm² @ 480V
+
+    const bad = await request(app).post(`/api/sites/studies/${studyId}/assets`).set('Authorization', auth(manager))
+      .send({ assetId: rootAssetId, electrodeConfig: 'XYZ' });
+    expect(bad.status).toBe(400);
+  });
+
+  test('classifies DANGER above 40 cal/cm² or above 600V', async () => {
+    await request(app).post(`/api/sites/studies/${studyId}/assets`).set('Authorization', auth(manager))
+      .send({ assetId: childAssetId, nominalVoltage: '480V', arcFlashBoundaryIn: 60, incidentEnergyCalCm2: 52, workingDistanceIn: 18 });
+    const l1 = await request(app).get(`/api/sites/studies/${studyId}/label-data`).set('Authorization', auth(manager));
+    expect(l1.body.data.labels.find((l: any) => l.assetId === childAssetId).hazardClass).toBe('DANGER'); // 52 > 40
+
+    await request(app).post(`/api/sites/studies/${studyId}/assets`).set('Authorization', auth(manager))
+      .send({ assetId: rootAssetId, nominalVoltage: '13.8kV', arcFlashBoundaryIn: 120, incidentEnergyCalCm2: 6, workingDistanceIn: 36 });
+    const l2 = await request(app).get(`/api/sites/studies/${studyId}/label-data`).set('Authorization', auth(manager));
+    expect(l2.body.data.labels.find((l: any) => l.assetId === rootAssetId).hazardClass).toBe('DANGER'); // 13.8kV > 600V
+  });
+
+  test('per-asset trend spans study revisions oldest->newest with delta', async () => {
+    const s2 = await request(app).post(`/api/sites/${siteId}/studies`).set('Authorization', auth(manager))
+      .send({ studyType: 'arc_flash', performedDate: '2026-02-01', method: 'IEEE 1584-2018' });
+    const study2Id = s2.body.data.study.id;
+    await request(app).post(`/api/sites/studies/${study2Id}/assets`).set('Authorization', auth(manager))
+      .send({ assetId: rootAssetId, nominalVoltage: '13.8kV', incidentEnergyCalCm2: 18, arcFlashBoundaryIn: 140, workingDistanceIn: 36 });
+
+    const res = await request(app).get(`/api/sites/arc-flash/asset/${rootAssetId}/trend`).set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    const pts = res.body.data.points;
+    expect(pts.length).toBe(2);
+    expect(new Date(pts[0].performedDate).getTime()).toBeLessThan(new Date(pts[1].performedDate).getTime());
+    expect(res.body.data.trend.direction).toBe('increasing'); // 6 -> 18
+    expect(res.body.data.latest.incidentEnergyCalCm2).toBe(18);
+    expect(res.body.data.latest.hazardClass).toBe('DANGER'); // 13.8kV
+  });
+
+  test('trend is account-scoped (other tenant 404s)', async () => {
+    const res = await request(app).get(`/api/sites/arc-flash/asset/${rootAssetId}/trend`).set('Authorization', auth(other));
+    expect(res.status).toBe(404);
+  });
+});
+
 export {};
