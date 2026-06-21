@@ -52,6 +52,25 @@ function describe(a) {
   return [a.equipmentType, a.manufacturer, a.model, a.serialNumber].filter(Boolean).join(' / ');
 }
 
+// Consumer/appliance brands that have leaked into the demo as mis-typed
+// "switchgear" via test ingestion -- never a credible arc-flash subject.
+const JUNK_MFR = /electrolux|frigidaire|whirlpool|samsung|lg electronics|ge appliances|home products|kenmore|maytag|bosch home/i;
+
+// Rank real electrical-distribution equipment so we attach the trend to a
+// believable bus, not a random asset.
+const TYPE_RANK = { SWITCHGEAR: 5, SWITCHBOARD: 4, MCC: 4, PANELBOARD: 3, BUSWAY: 2, TRANSFORMER_LIQUID: 2, TRANSFORMER_DRY: 2 };
+
+// Higher = better arc-flash demo subject.
+function score(a) {
+  let s = TYPE_RANK[a.equipmentType] || 0;
+  if (s === 0) return -100; // not distribution equipment
+  if (JUNK_MFR.test(a.manufacturer || '') || JUNK_MFR.test(a.model || '')) return -100;
+  const blob = JSON.stringify(a.nameplateData || {}).toLowerCase();
+  if (/voltageclass|busrating|"aic"|kaic/.test(blob)) s += 3; // real switchgear nameplate
+  if (isMediumVoltage(a.nameplateData)) s += 5;               // MV -> DANGER story
+  return s;
+}
+
 async function main() {
   const now = new Date();
 
@@ -61,27 +80,32 @@ async function main() {
   });
   if (!site) { console.log('SKIP: Riverside Plant site not found in demo account'); return; }
 
-  const existing = await prisma.systemStudy.findFirst({
+  // Re-runnable: clear any prior trend-demo studies (cascade drops their
+  // bindings) so we can always re-target the best available asset.
+  const priorMarked = await prisma.systemStudy.findMany({
     where: { accountId: DEMO_ACCOUNT_ID, siteId: site.id, notes: { contains: MARKER } },
     select: { id: true },
   });
-  if (existing) { console.log('SKIP: trend-demo studies already present (' + existing.id + ')'); return; }
+  if (priorMarked.length) {
+    const ids = priorMarked.map((s) => s.id);
+    await prisma.systemStudy.updateMany({ where: { id: { in: ids } }, data: { supersededById: null } });
+    await prisma.systemStudy.deleteMany({ where: { id: { in: ids } } });
+    console.log('Reset: removed ' + ids.length + ' prior trend-demo studies.');
+  }
 
-  // Pick the subject asset: prefer MV switchgear, then any switchgear, then any.
-  const switchgear = await prisma.asset.findMany({
-    where: { accountId: DEMO_ACCOUNT_ID, siteId: site.id, equipmentType: 'SWITCHGEAR', archivedAt: null },
+  // Inventory all Riverside assets, then pick the most credible distribution
+  // bus (scored: type rank + real switchgear nameplate + MV; junk excluded).
+  const all = await prisma.asset.findMany({
+    where: { accountId: DEMO_ACCOUNT_ID, siteId: site.id, archivedAt: null },
     select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, nameplateData: true },
     orderBy: { createdAt: 'asc' },
   });
-  let asset = switchgear.find((a) => isMediumVoltage(a.nameplateData)) || switchgear[0] || null;
-  if (!asset) {
-    asset = await prisma.asset.findFirst({
-      where: { accountId: DEMO_ACCOUNT_ID, siteId: site.id, archivedAt: null },
-      select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, nameplateData: true },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-  if (!asset) { console.log('SKIP: no assets found at Riverside Plant to attach a study to'); return; }
+  console.log('Riverside assets (' + all.length + '):');
+  for (const a of all) console.log('  [score ' + score(a) + '] ' + describe(a));
+
+  const ranked = all.filter((a) => score(a) > 0).sort((x, y) => score(y) - score(x));
+  const asset = ranked[0] || null;
+  if (!asset) { console.log('SKIP: no credible distribution asset at Riverside to attach a study to'); return; }
 
   const mv = isMediumVoltage(asset.nameplateData);
   const nominalVoltage = mv ? '13.8kV' : '480V';
