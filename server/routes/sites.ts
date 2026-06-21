@@ -850,6 +850,29 @@ function assetLabel(a) {
     || a.equipmentType;
 }
 
+// IEEE 1584-2018 electrode configurations (validated on input).
+const ELECTRODE_CONFIGS = new Set(['VCB', 'VCBB', 'HCB', 'VOA', 'HOA']);
+
+// Parse a nominal-voltage label string ("480V", "13.8kV", "208") to volts.
+function parseVolts(raw) {
+  if (!raw) return null;
+  const m = String(raw).match(/([\d.]+)\s*(kv|v)?/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  return /kv/i.test(m[2] || '') ? n * 1000 : n;
+}
+
+// NFPA 70E §130.5(H): the label header is red DANGER when incident energy
+// exceeds 40 cal/cm² OR system voltage is over 600V; otherwise orange WARNING.
+function hazardClass(incidentEnergyCalCm2, nominalVoltage) {
+  const volts = parseVolts(nominalVoltage);
+  if ((incidentEnergyCalCm2 != null && incidentEnergyCalCm2 > 40) || (volts != null && volts > 600)) {
+    return 'DANGER';
+  }
+  return 'WARNING';
+}
+
 // ─── POST /api/sites/studies/:id/assets ───────────────────────────────────────
 // Bind one asset (and optionally its power-path downstream) to a study, with
 // per-bus incident-energy label data. Idempotent upsert on (studyId, assetId).
@@ -867,6 +890,9 @@ router.post('/studies/:id/assets', requireManager, async (req, res) => {
       assetId, busName, nominalVoltage,
       incidentEnergyCalCm2, arcFlashBoundaryIn, workingDistanceIn,
       ppeCategory, includeDownstream,
+      // IEEE 1584-2018 calculation inputs (optional)
+      boltedFaultCurrentKA, arcingCurrentKA, electrodeConfig,
+      conductorGapMm, clearingTimeMs, upstreamDevice,
     } = req.body;
 
     if (!assetId) return res.status(400).json({ success: false, error: 'assetId is required' });
@@ -880,8 +906,23 @@ router.post('/studies/:id/assets', requireManager, async (req, res) => {
     const ie = coerceLabelNum(incidentEnergyCalCm2);
     const afb = coerceLabelNum(arcFlashBoundaryIn);
     const wd = coerceLabelNum(workingDistanceIn);
-    if (!ie.ok || !afb.ok || !wd.ok) {
-      return res.status(400).json({ success: false, error: 'Numeric label fields must be non-negative numbers' });
+    // IEEE 1584 numeric inputs (same non-negative coercion).
+    const bfc = coerceLabelNum(boltedFaultCurrentKA);
+    const arc = coerceLabelNum(arcingCurrentKA);
+    const gap = coerceLabelNum(conductorGapMm);
+    const clr = coerceLabelNum(clearingTimeMs);
+    if (!ie.ok || !afb.ok || !wd.ok || !bfc.ok || !arc.ok || !gap.ok || !clr.ok) {
+      return res.status(400).json({ success: false, error: 'Numeric label/input fields must be non-negative numbers' });
+    }
+    let electrode: string | null | undefined;
+    if (electrodeConfig === undefined) electrode = undefined;
+    else if (electrodeConfig === null || electrodeConfig === '') electrode = null;
+    else {
+      const e = String(electrodeConfig).toUpperCase();
+      if (!ELECTRODE_CONFIGS.has(e)) {
+        return res.status(400).json({ success: false, error: 'electrodeConfig must be one of VCB, VCBB, HCB, VOA, HOA' });
+      }
+      electrode = e;
     }
     let ppe: number | null | undefined;
     if (ppeCategory === undefined) ppe = undefined;
@@ -903,6 +944,13 @@ router.post('/studies/:id/assets', requireManager, async (req, res) => {
     if (afb.value !== undefined) rootData.arcFlashBoundaryIn = afb.value;
     if (wd.value !== undefined)  rootData.workingDistanceIn = wd.value;
     if (ppe !== undefined)       rootData.ppeCategory = ppe;
+    // IEEE 1584 inputs
+    if (bfc.value !== undefined)       rootData.boltedFaultCurrentKA = bfc.value;
+    if (arc.value !== undefined)       rootData.arcingCurrentKA = arc.value;
+    if (gap.value !== undefined)       rootData.conductorGapMm = gap.value;
+    if (clr.value !== undefined)       rootData.clearingTimeMs = clr.value;
+    if (electrode !== undefined)       rootData.electrodeConfig = electrode;
+    if (upstreamDevice !== undefined)  rootData.upstreamDevice = upstreamDevice || null;
 
     await prisma.systemStudyAsset.upsert({
       where:  { studyId_assetId: { studyId: study.id, assetId: rootAsset.id } },
@@ -1001,6 +1049,14 @@ router.get('/studies/:id/label-data', async (req, res) => {
         workingDistanceIn:    wd,
         ppeCategory:          c.ppeCategory,
         labelComplete:        complete,
+        hazardClass:          hazardClass(ie, c.nominalVoltage),
+        // IEEE 1584 inputs (engineering review + trend/what-if)
+        boltedFaultCurrentKA: c.boltedFaultCurrentKA != null ? Number(c.boltedFaultCurrentKA) : null,
+        arcingCurrentKA:      c.arcingCurrentKA != null ? Number(c.arcingCurrentKA) : null,
+        electrodeConfig:      c.electrodeConfig ?? null,
+        conductorGapMm:       c.conductorGapMm != null ? Number(c.conductorGapMm) : null,
+        clearingTimeMs:       c.clearingTimeMs != null ? Number(c.clearingTimeMs) : null,
+        upstreamDevice:       c.upstreamDevice ?? null,
       };
     });
 
@@ -1026,6 +1082,81 @@ router.get('/studies/:id/label-data', async (req, res) => {
   } catch (err) {
     console.error('Study label-data error:', err);
     res.status(500).json({ success: false, error: 'Failed to build label data' });
+  }
+});
+
+// ─── GET /api/sites/arc-flash/asset/:assetId/trend ────────────────────────────
+// Per-asset incident-energy history across every arc-flash study that has
+// covered this asset, oldest→newest. The data-trend moat: shows whether a bus
+// is getting more hazardous over study revisions, with DANGER/WARNING class and
+// the IEEE 1584 inputs behind each point. Any authenticated role may read.
+router.get('/arc-flash/asset/:assetId/trend', async (req, res) => {
+  try {
+    const asset = await prisma.asset.findFirst({
+      where:  { id: req.params.assetId, accountId: req.user.accountId },
+      select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true },
+    });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const rows = await prisma.systemStudyAsset.findMany({
+      where: { assetId: asset.id, accountId: req.user.accountId, study: { studyType: 'arc_flash' } },
+      include: {
+        study: { select: { id: true, performedDate: true, expiresAt: true, method: true, peName: true, performedBy: true, supersededById: true } },
+      },
+    });
+
+    const points = rows
+      .map((r: any) => {
+        const ie = r.incidentEnergyCalCm2 != null ? Number(r.incidentEnergyCalCm2) : null;
+        return {
+          studyId:              r.study.id,
+          performedDate:        r.study.performedDate,
+          expiresAt:            r.study.expiresAt,
+          isCurrent:            r.study.supersededById == null,
+          method:               r.study.method,
+          peName:               r.study.peName,
+          performedBy:          r.study.performedBy,
+          busName:              r.busName,
+          nominalVoltage:       r.nominalVoltage,
+          incidentEnergyCalCm2: ie,
+          arcFlashBoundaryIn:   r.arcFlashBoundaryIn != null ? Number(r.arcFlashBoundaryIn) : null,
+          workingDistanceIn:    r.workingDistanceIn != null ? Number(r.workingDistanceIn) : null,
+          ppeCategory:          r.ppeCategory,
+          hazardClass:          hazardClass(ie, r.nominalVoltage),
+          boltedFaultCurrentKA: r.boltedFaultCurrentKA != null ? Number(r.boltedFaultCurrentKA) : null,
+          arcingCurrentKA:      r.arcingCurrentKA != null ? Number(r.arcingCurrentKA) : null,
+          electrodeConfig:      r.electrodeConfig ?? null,
+          clearingTimeMs:       r.clearingTimeMs != null ? Number(r.clearingTimeMs) : null,
+        };
+      })
+      .sort((a: any, b: any) => new Date(a.performedDate).getTime() - new Date(b.performedDate).getTime());
+
+    // Trend delta across the energy-method points (PPE-only points carry no number).
+    const energyPts = points.filter((p: any) => p.incidentEnergyCalCm2 != null);
+    let trend: any = null;
+    if (energyPts.length >= 2) {
+      const first = energyPts[0].incidentEnergyCalCm2;
+      const last  = energyPts[energyPts.length - 1].incidentEnergyCalCm2;
+      trend = {
+        first, last,
+        deltaCalCm2: Math.round((last - first) * 100) / 100,
+        direction:   last > first ? 'increasing' : last < first ? 'decreasing' : 'flat',
+        everDanger:  energyPts.some((p: any) => p.incidentEnergyCalCm2 > 40),
+      };
+    }
+
+    res.json({
+      success: true,
+      data: {
+        asset:  { id: asset.id, label: assetLabel(asset), equipmentType: asset.equipmentType },
+        points,
+        latest: points.length ? points[points.length - 1] : null,
+        trend,
+      },
+    });
+  } catch (err) {
+    console.error('Arc flash trend error:', err);
+    res.status(500).json({ success: false, error: 'Failed to build arc flash trend' });
   }
 });
 

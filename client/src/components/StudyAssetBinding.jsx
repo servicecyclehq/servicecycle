@@ -24,6 +24,9 @@ function methodLine(l) {
 const EMPTY = {
   assetId: '', busName: '', nominalVoltage: '', incidentEnergyCalCm2: '',
   arcFlashBoundaryIn: '', workingDistanceIn: '', ppeCategory: '', includeDownstream: false,
+  // IEEE 1584-2018 inputs (optional)
+  boltedFaultCurrentKA: '', arcingCurrentKA: '', electrodeConfig: '',
+  conductorGapMm: '', clearingTimeMs: '', upstreamDevice: '',
 };
 
 const inputStyle = {
@@ -68,6 +71,13 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
         workingDistanceIn: form.workingDistanceIn === '' ? undefined : form.workingDistanceIn,
         ppeCategory: form.ppeCategory === '' ? undefined : form.ppeCategory,
         includeDownstream: form.includeDownstream,
+        // IEEE 1584 inputs
+        boltedFaultCurrentKA: form.boltedFaultCurrentKA === '' ? undefined : form.boltedFaultCurrentKA,
+        arcingCurrentKA: form.arcingCurrentKA === '' ? undefined : form.arcingCurrentKA,
+        electrodeConfig: form.electrodeConfig || undefined,
+        conductorGapMm: form.conductorGapMm === '' ? undefined : form.conductorGapMm,
+        clearingTimeMs: form.clearingTimeMs === '' ? undefined : form.clearingTimeMs,
+        upstreamDevice: form.upstreamDevice || undefined,
       };
       const r = await api.post('/api/sites/studies/' + study.id + '/assets', body);
       setForm(EMPTY);
@@ -94,9 +104,11 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
     const dateStr = s.performedDate ? new Date(s.performedDate).toLocaleDateString() : '';
     const provparts = [dateStr ? 'Study ' + dateStr : '', s.peName ? esc(s.peName) + (s.peLicense ? ' (Lic. ' + esc(s.peLicense) + ')' : '') : '', s.method ? esc(s.method) : ''].filter(Boolean);
     const prov = provparts.join(' &middot; ');
-    const cards = labels.map(l => (
-      '<div class="lbl' + (l.labelComplete ? '' : ' inc') + '">' +
-        '<div class="hd">WARNING</div>' +
+    const cards = labels.map((l) => {
+      const isDanger = l.hazardClass === 'DANGER';
+      return (
+      '<div class="lbl' + (isDanger ? ' dgr' : '') + (l.labelComplete ? '' : ' inc') + '">' +
+        '<div class="hd">' + (isDanger ? 'DANGER' : 'WARNING') + '</div>' +
         '<div class="sub">Arc Flash &amp; Shock Hazard &middot; Appropriate PPE Required</div>' +
         '<div class="rows">' +
           '<div class="eq">' + esc(l.busName || l.assetLabel) + '</div>' +
@@ -107,7 +119,8 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
         '<div class="ft">' + prov + '</div>' +
         (l.labelComplete ? '' : '<div class="warn">INCOMPLETE - missing required NFPA 70E label fields</div>') +
       '</div>'
-    )).join('');
+      );
+    }).join('');
     const html =
       '<!doctype html><html><head><meta charset="utf-8"><title>Arc-flash labels - ' + esc(s.siteName || '') + '</title>' +
       '<style>' +
@@ -118,6 +131,8 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
       '.lbl.inc{border-color:#b91c1c}' +
       '.hd{background:#ea580c;color:#fff;font-weight:800;font-size:20px;text-align:center;letter-spacing:.06em;padding:6px}' +
       '.lbl.inc .hd{background:#b91c1c}' +
+      '.lbl.dgr{border-color:#b91c1c}' +
+      '.lbl.dgr .hd{background:#b91c1c}' +
       '.sub{background:#fff7ed;color:#7c2d12;font-size:11px;text-align:center;padding:4px;border-bottom:1px solid #fed7aa}' +
       '.rows{padding:8px 10px;font-size:12px}' +
       '.rows .eq{font-weight:700;font-size:13px;margin-bottom:4px}' +
@@ -165,7 +180,7 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
           <tbody>
             {labels.map(l => (
               <tr key={l.assetId}>
-                <td>{l.busName || l.assetLabel}</td>
+                <td>{l.busName || l.assetLabel}{l.hazardClass === 'DANGER' && <span style={{ marginLeft: 6, fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: 'var(--color-danger, #b91c1c)', padding: '1px 5px', borderRadius: 4 }}>DANGER</span>}</td>
                 <td>{l.nominalVoltage || '-'}</td>
                 <td>{l.arcFlashBoundaryIn != null ? l.arcFlashBoundaryIn + ' in' : '-'}</td>
                 <td>{l.incidentEnergyCalCm2 != null && l.workingDistanceIn != null
@@ -204,6 +219,20 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
               <option value="">PPE category (or use IE)</option>
               {['0', '1', '2', '3', '4'].map(p => <option key={p} value={p}>PPE {p}</option>)}
             </select>
+          </div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-secondary)', margin: '2px 0 6px' }}>
+            Engineering inputs (IEEE 1584-2018, optional &mdash; powers trend &amp; what-if)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 8 }}>
+            <input placeholder="Bolted fault current (kA)" type="number" min="0" step="any" value={form.boltedFaultCurrentKA} onChange={e => set('boltedFaultCurrentKA', e.target.value)} style={inputStyle} />
+            <input placeholder="Arcing current (kA)" type="number" min="0" step="any" value={form.arcingCurrentKA} onChange={e => set('arcingCurrentKA', e.target.value)} style={inputStyle} />
+            <select value={form.electrodeConfig} onChange={e => set('electrodeConfig', e.target.value)} style={inputStyle}>
+              <option value="">Electrode config...</option>
+              {['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <input placeholder="Conductor gap (mm)" type="number" min="0" step="any" value={form.conductorGapMm} onChange={e => set('conductorGapMm', e.target.value)} style={inputStyle} />
+            <input placeholder="Clearing time (ms)" type="number" min="0" step="any" value={form.clearingTimeMs} onChange={e => set('clearingTimeMs', e.target.value)} style={inputStyle} />
+            <input placeholder="Upstream device" value={form.upstreamDevice} onChange={e => set('upstreamDevice', e.target.value)} style={inputStyle} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
