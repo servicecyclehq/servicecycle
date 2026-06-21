@@ -6,23 +6,23 @@
  * The base demo seed (seed-demo.js) creates a single arc_flash SystemStudy at
  * Riverside but binds no assets to it, so the per-asset ArcFlashTrend card
  * (which needs >=2 arc_flash studies covering ONE asset) never renders. This
- * script adds a realistic two-study revision history for the 15 kV lead
- * switchgear SWGR-1A-1 (serial NS-96-3311-1):
+ * script adds a realistic two-study revision history for a Riverside switchgear
+ * bus so the trend card lights up.
  *
- *   - Prior study  (~4.2 yr ago):  14.2 cal/cm2  (superseded)
- *   - Current study (~60 days ago): 19.6 cal/cm2  (re-study after the utility
- *                                                  transformer upsizing raised
- *                                                  available fault current)
+ * It auto-picks the subject asset (prefers a medium-voltage switchgear so the
+ * label is DANGER class per NFPA 70E 130.5(H); falls back to any switchgear,
+ * then any asset) and tailors the incident-energy story to the bus voltage:
+ *   - MV bus: 14.2 -> 19.6 cal/cm2, DANGER (13.8 kV > 600 V)
+ *   - LV bus:  8.4 -> 12.1 cal/cm2, WARNING, rising trend
+ * Either way the re-study (after a utility transformer upsizing raised the
+ * available fault current) shows incident energy climbing across revisions --
+ * the data-trend "moat" the feature is built around.
  *
- * Both are DANGER class (13.8 kV > 600 V per NFPA 70E 130.5(H)); the card shows
- * a red DANGER badge plus the rising incident-energy trend -- the data-trend
- * "moat" the feature is built around.
- *
- * Safe to run repeatedly: it bails if its marked studies already exist, and it
- * only ADDS rows (no deletes). Targets the pinned demo account only.
+ * Safe to run repeatedly: bails if its marked studies already exist; only ADDS
+ * rows. Targets the pinned demo account only.
  *
  * Run inside the server container:
- *   docker exec -T servicecycle-server node scripts/seed-arcflash-trend-demo.js
+ *   docker exec servicecycle-server node scripts/seed-arcflash-trend-demo.js
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
@@ -31,10 +31,26 @@ const prisma = new PrismaClient();
 
 const DEMO_ACCOUNT_ID = '11111111-1111-4111-8111-111111111111';
 const MARKER = '[af-trend-demo]';
-const ASSET_SERIAL = 'NS-96-3311-1'; // SWGR-1A-1, the 15 kV lead switchgear
 
 function addDays(date, days) { const d = new Date(date); d.setDate(d.getDate() + days); return d; }
 function addMonths(date, months) { const d = new Date(date); d.setMonth(d.getMonth() + months); return d; }
+
+// Heuristic: is this nameplate a medium-voltage (>600 V) bus? Scans the JSON
+// blob for a "<num> kV" hint or an explicit high voltageClass.
+function isMediumVoltage(nameplateData) {
+  if (!nameplateData) return false;
+  const blob = JSON.stringify(nameplateData).toLowerCase();
+  const m = blob.match(/(\d+(?:\.\d+)?)\s*kv/);
+  if (m) {
+    const kv = parseFloat(m[1]);
+    if (isFinite(kv) && kv >= 1) return true;
+  }
+  return false;
+}
+
+function describe(a) {
+  return [a.equipmentType, a.manufacturer, a.model, a.serialNumber].filter(Boolean).join(' / ');
+}
 
 async function main() {
   const now = new Date();
@@ -45,17 +61,42 @@ async function main() {
   });
   if (!site) { console.log('SKIP: Riverside Plant site not found in demo account'); return; }
 
-  const asset = await prisma.asset.findFirst({
-    where: { accountId: DEMO_ACCOUNT_ID, serialNumber: ASSET_SERIAL },
-    select: { id: true, equipmentType: true },
-  });
-  if (!asset) { console.log('SKIP: SWGR-1A-1 (serial ' + ASSET_SERIAL + ') not found'); return; }
-
   const existing = await prisma.systemStudy.findFirst({
     where: { accountId: DEMO_ACCOUNT_ID, siteId: site.id, notes: { contains: MARKER } },
     select: { id: true },
   });
   if (existing) { console.log('SKIP: trend-demo studies already present (' + existing.id + ')'); return; }
+
+  // Pick the subject asset: prefer MV switchgear, then any switchgear, then any.
+  const switchgear = await prisma.asset.findMany({
+    where: { accountId: DEMO_ACCOUNT_ID, siteId: site.id, equipmentType: 'SWITCHGEAR', archivedAt: null },
+    select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, nameplateData: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  let asset = switchgear.find((a) => isMediumVoltage(a.nameplateData)) || switchgear[0] || null;
+  if (!asset) {
+    asset = await prisma.asset.findFirst({
+      where: { accountId: DEMO_ACCOUNT_ID, siteId: site.id, archivedAt: null },
+      select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, nameplateData: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+  if (!asset) { console.log('SKIP: no assets found at Riverside Plant to attach a study to'); return; }
+
+  const mv = isMediumVoltage(asset.nameplateData);
+  const nominalVoltage = mv ? '13.8kV' : '480V';
+  const priorIE = mv ? 14.2 : 8.4;
+  const curIE = mv ? 19.6 : 12.1;
+  const priorAFB = mv ? 68 : 38;
+  const curAFB = mv ? 88 : 54;
+  const wd = mv ? 36 : 18;
+  const gap = mv ? 152 : 32;
+  const priorBolted = mv ? 20.0 : 22.0;
+  const curBolted = mv ? 24.0 : 28.0;
+  const priorArc = mv ? 19.1 : 12.4;
+  const curArc = mv ? 22.7 : 15.6;
+
+  console.log('Subject asset: ' + asset.id + '  [' + describe(asset) + ']  voltage=' + (mv ? 'MV' : 'LV'));
 
   // Prior study (~4.2 yr ago) -- will be superseded by the current re-study.
   const priorDate = addDays(now, -Math.round(4.2 * 365));
@@ -64,7 +105,7 @@ async function main() {
     studyType: 'arc_flash', performedDate: priorDate, expiresAt: addMonths(priorDate, 60),
     performedBy: 'Hawthorne Power Engineering, PLLC', method: 'IEEE 1584-2018',
     peName: 'S. Hawthorne, PE', peLicense: 'IA PE 21487', trigger: 'scheduled',
-    notes: MARKER + ' Prior incident-energy study at Substation A (SWGR-1A main bus).',
+    notes: MARKER + ' Prior incident-energy study at Substation A.',
   } });
 
   // Current re-study (~60 days ago).
@@ -74,7 +115,7 @@ async function main() {
     studyType: 'arc_flash', performedDate: curDate, expiresAt: addMonths(curDate, 60),
     performedBy: 'Hawthorne Power Engineering, PLLC', method: 'IEEE 1584-2018',
     peName: 'S. Hawthorne, PE', peLicense: 'IA PE 21487', trigger: 'utility_change',
-    notes: MARKER + ' Re-study after utility transformer upsizing; available fault current rose ~20->24 kA, raising incident energy at the SWGR-1A main bus.',
+    notes: MARKER + ' Re-study after utility transformer upsizing; available fault current rose, raising incident energy at the bus.',
   } });
 
   // Prior is superseded BY current (so isCurrent flags resolve correctly).
@@ -89,22 +130,21 @@ async function main() {
   }
 
   await bind(prior.id, {
-    busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
-    incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 4,
-    boltedFaultCurrentKA: 20.0, arcingCurrentKA: 19.1, electrodeConfig: 'VCB',
-    conductorGapMm: 152, clearingTimeMs: 240, upstreamDevice: 'Utility 51 relay / CB-101',
+    busName: 'SWGR-1A Main Bus', nominalVoltage,
+    incidentEnergyCalCm2: priorIE, arcFlashBoundaryIn: priorAFB, workingDistanceIn: wd, ppeCategory: 4,
+    boltedFaultCurrentKA: priorBolted, arcingCurrentKA: priorArc, electrodeConfig: 'VCB',
+    conductorGapMm: gap, clearingTimeMs: 240, upstreamDevice: 'Utility 51 relay / CB-101',
   });
   await bind(current.id, {
-    busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
-    incidentEnergyCalCm2: 19.6, arcFlashBoundaryIn: 88, workingDistanceIn: 36, ppeCategory: 4,
-    boltedFaultCurrentKA: 24.0, arcingCurrentKA: 22.7, electrodeConfig: 'VCB',
-    conductorGapMm: 152, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
+    busName: 'SWGR-1A Main Bus', nominalVoltage,
+    incidentEnergyCalCm2: curIE, arcFlashBoundaryIn: curAFB, workingDistanceIn: wd, ppeCategory: 4,
+    boltedFaultCurrentKA: curBolted, arcingCurrentKA: curArc, electrodeConfig: 'VCB',
+    conductorGapMm: gap, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
   });
 
   console.log('OK: seeded arc-flash trend demo.');
-  console.log('  asset=' + asset.id + ' (SWGR-1A-1)');
-  console.log('  prior=' + prior.id + ' (14.2 cal/cm2)  current=' + current.id + ' (19.6 cal/cm2)');
-  console.log('  Trend: 14.2 -> 19.6 cal/cm2 across 2 arc_flash studies, DANGER (13.8kV).');
+  console.log('  prior=' + prior.id + ' (' + priorIE + ' cal/cm2)  current=' + current.id + ' (' + curIE + ' cal/cm2)');
+  console.log('  Trend: ' + priorIE + ' -> ' + curIE + ' cal/cm2 across 2 arc_flash studies, ' + (mv ? 'DANGER (13.8kV)' : 'WARNING (480V)') + '.');
 }
 
 main()
