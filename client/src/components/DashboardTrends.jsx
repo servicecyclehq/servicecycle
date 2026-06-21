@@ -1,35 +1,67 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// DashboardTrends.jsx — bold-redesign KPI sparkline strip.
+// DashboardTrends.jsx — bold-redesign KPI trend strip (Option G: full-bleed
+// area chart + trend-delta badge — "enterprise-grade bold").
 //
-// Real trend lines (no fabricated client data): pulls GET /api/dashboard/trends,
-// which aggregates COMPLETE work orders into monthly "completed" + "on-time %"
-// series. Renders nothing until there's history, so it's inert on a fresh demo
-// and only lights up once the 5-year seed history (or real completions) exist.
+// Real trend lines only (no fabricated client data): GET /api/dashboard/trends
+// aggregates COMPLETE work orders into monthly "completed" + "on-time %" series.
+// Renders nothing until history exists, so it's inert on a fresh demo and only
+// lights up once the seeded 5-year history (or real completions) exist.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
 import api from '../api/client';
 
-function Spark({ values, color }) {
-  const present = values.filter((v) => v != null);
-  if (present.length < 2) return null;
-  const max = Math.max(...present, 1);
-  const min = Math.min(...present, 0);
-  const range = max - min || 1;
-  const W = 100, H = 32;
-  const pts = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * W;
-      const y = v == null ? H : H - ((v - min) / range) * H;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+// Carry forward (then back-fill leading) nulls so the line is continuous over
+// every month even when a month had no completions to compute on-time from.
+function fillNulls(arr) {
+  const out = arr.slice();
+  let last = null;
+  for (let i = 0; i < out.length; i++) { if (out[i] != null) last = out[i]; else out[i] = last; }
+  const firstNonNull = out.find((v) => v != null);
+  for (let i = 0; i < out.length; i++) { if (out[i] == null) out[i] = firstNonNull ?? 0; }
+  return out;
+}
+
+function TrendCard({ label, value, deltaText, deltaUp, values, color, gradId }) {
+  const W = 320, H = 62, pad = 5;
+  const mn = Math.min(...values), mx = Math.max(...values), range = (mx - mn) || 1;
+  const pts = values.map((x, i) => ({
+    x: pad + (i * (W - 2 * pad)) / (values.length - 1),
+    y: H - pad - ((x - mn) / range) * (H - 2 * pad),
+  }));
+  const line = 'M' + pts.map((q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' L ');
+  const area = `${line} L ${pts[pts.length - 1].x.toFixed(1)} ${H} L ${pts[0].x.toFixed(1)} ${H} Z`;
+  const last = pts[pts.length - 1];
+  const dc = deltaUp ? 'var(--color-success, #16a34a)' : 'var(--color-danger, #dc2626)';
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true"
-      style={{ width: '100%', height: 36, display: 'block', color, marginTop: 8 }}>
-      <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="2.5"
-        strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className="card stat-tile" style={{ position: 'relative', overflow: 'hidden', minHeight: 124, padding: '18px 20px' }}>
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div>
+          <div className="stat-tile-label">{label}</div>
+          <div className="stat-tile-value">{value}</div>
+        </div>
+        {deltaText && (
+          <span style={{ fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, color: dc, background: `color-mix(in srgb, ${dc} 13%, transparent)`, padding: '3px 10px', borderRadius: 999, whiteSpace: 'nowrap' }}>
+            {deltaUp ? '▲' : '▼'} {deltaText}
+          </span>
+        )}
+      </div>
+      <div style={{ position: 'relative', zIndex: 1, fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>last 24 months</div>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 62, pointerEvents: 'none' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="62" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" stopColor={color} stopOpacity="0.30" />
+              <stop offset="1" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path d={area} fill={`url(#${gradId})`} />
+          <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx={last.x.toFixed(1)} cy={last.y.toFixed(1)} r="3.4" fill={color} />
+        </svg>
+      </div>
+    </div>
   );
 }
 
@@ -42,30 +74,28 @@ export default function DashboardTrends() {
       .catch(() => setSeries([]));
   }, []);
 
-  if (!series || series.length === 0) return null;
+  if (!series || series.length < 2) return null;
 
   const completed = series.map((s) => s.completed);
-  const onTime = series.map((s) => s.onTimeRate);
   const totalCompleted = completed.reduce((a, b) => a + (b || 0), 0);
   if (totalCompleted === 0) return null; // no history yet — stay inert
 
-  const lastOnTime = [...onTime].reverse().find((v) => v != null);
+  const onTime = fillNulls(series.map((s) => s.onTimeRate));
 
-  const cards = [
-    { label: 'Maintenance completed', value: totalCompleted.toLocaleString(), sub: 'monthly · last 24 mo', vals: completed, color: 'var(--color-primary)' },
-    { label: 'On-time rate', value: lastOnTime != null ? `${lastOnTime}%` : '—', sub: 'trend · last 24 mo', vals: onTime, color: 'var(--color-success)' },
-  ];
+  const cFirst = completed.find((x) => x > 0) ?? 0;
+  const cLast = completed[completed.length - 1];
+  const cUp = cLast >= cFirst;
+  const cDelta = cFirst > 0 ? `${cUp ? '+' : ''}${Math.round(((cLast - cFirst) / cFirst) * 100)}%` : null;
+
+  const oFirst = onTime[0];
+  const oLast = onTime[onTime.length - 1];
+  const oUp = oLast >= oFirst;
+  const oDelta = `${Math.abs(oLast - oFirst)} pts`;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 20 }}>
-      {cards.map((c, i) => (
-        <div key={i} className="card stat-tile" style={{ padding: '18px 22px' }}>
-          <div className="stat-tile-label">{c.label}</div>
-          <div className="stat-tile-value">{c.value}</div>
-          <Spark values={c.vals} color={c.color} />
-          <div className="stat-tile-sub">{c.sub}</div>
-        </div>
-      ))}
+      <TrendCard label="Maintenance completed" value={totalCompleted.toLocaleString()} deltaText={cDelta} deltaUp={cUp} values={completed} color="var(--color-primary)" gradId="sctGradCompleted" />
+      <TrendCard label="On-time rate" value={`${oLast}%`} deltaText={oDelta} deltaUp={oUp} values={onTime} color="var(--color-success, #16a34a)" gradId="sctGradOnTime" />
     </div>
   );
 }
