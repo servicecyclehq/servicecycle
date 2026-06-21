@@ -327,8 +327,15 @@ async function _createHistoricalWorkOrders(db, accountId, schedulesByKey, contra
     if (!Number.isFinite(intervalDays) || intervalDays < 30) intervalDays = 365;
     let due = addDays(last, -intervalDays);
     while (due >= cutoff) {
-      const r = (i * 37) % 100;
-      const lateDays = r < 70 ? (r % 5) : (r < 92 ? 7 + (r % 10) : 25 + (r % 25));
+      // On-time rate trends ~80% (oldest) -> ~100% (recent) with a gentle
+      // month-to-month wiggle, clamped to 80-100. Endpoint counts on-time as
+      // completedDate within a 7-day grace of the due date.
+      const recency = Math.max(0, Math.min(1, (due - cutoff) / (now - cutoff)));
+      const monthIdx = Math.round((due - cutoff) / (30.44 * 86400000));
+      let target = 80 + 20 * recency + 6 * Math.sin(monthIdx * 0.8);
+      target = Math.max(80, Math.min(100, target));
+      const h = (i * 73 + monthIdx * 17) % 100;
+      const lateDays = h < target ? (h % 6) : (12 + (h % 28));
       const completed = addDays(due, lateDays);
       if (completed < now) {
         const c = conds[i % conds.length];
