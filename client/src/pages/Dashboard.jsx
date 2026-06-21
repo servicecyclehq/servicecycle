@@ -20,6 +20,7 @@ import PathTo100 from '../components/PathTo100';
 import MaturityScoreCard from '../components/MaturityScoreCard';
 import AuditReadyBanner from '../components/AuditReadyBanner';
 import ComplianceDocsCard from '../components/ComplianceDocsCard';
+import DashboardTrends from '../components/DashboardTrends';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { CriticalityBadge } from './AssetsList';
@@ -809,6 +810,7 @@ export default function Dashboard() {
             <MaturityScoreCard compact />
             <PathTo100 compact />
             <ComplianceDocsCard />
+            <DashboardTrends />
 
             {/* ── KPI tiles ─────────────────────────────────────────────── */}
             {/* B1 (2026-06-11): severity reads left→right — Overdue leads,
