@@ -518,6 +518,45 @@ router.get('/priority', async (req, res) => {
   }
 });
 
+// GET /trends - monthly maintenance-completion trend for dashboard sparklines,
+// derived from COMPLETE work orders (no new tables). on-time = completedDate
+// within a 7-day grace of scheduledDate. Query: ?months=24 (clamped 6..60).
+router.get('/trends', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const months = Math.min(60, Math.max(6, parseInt(String(req.query.months || '24'), 10) || 24));
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+    const wos = await prisma.workOrder.findMany({
+      where: { accountId, status: 'COMPLETE', completedDate: { gte: start } },
+      select: { completedDate: true, scheduledDate: true },
+    });
+    const buckets = new Map<string, any>();
+    for (let m = 0; m < months; m++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - (months - 1) + m, 1);
+      buckets.set(d.getFullYear() + '-' + d.getMonth(), { label: d.toISOString().slice(0, 7), completed: 0, onTime: 0 });
+    }
+    const GRACE = 7 * 24 * 3600 * 1000;
+    for (const wo of wos) {
+      if (!wo.completedDate) continue;
+      const cd = new Date(wo.completedDate);
+      const b = buckets.get(cd.getFullYear() + '-' + cd.getMonth());
+      if (!b) continue;
+      b.completed++;
+      if (wo.scheduledDate && cd.getTime() <= new Date(wo.scheduledDate).getTime() + GRACE) b.onTime++;
+    }
+    const series = Array.from(buckets.values()).map((b: any) => ({
+      month: b.label,
+      completed: b.completed,
+      onTimeRate: b.completed > 0 ? Math.round((b.onTime / b.completed) * 100) : null,
+    }));
+    return res.json({ success: true, data: { series } });
+  } catch (err: any) {
+    console.error('[dashboard/trends]', err && err.message);
+    return res.status(500).json({ success: false, error: 'Failed to load trends.' });
+  }
+});
+
 module.exports = router;
 
 export {};
