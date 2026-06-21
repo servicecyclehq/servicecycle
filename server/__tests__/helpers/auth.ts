@@ -11,7 +11,7 @@ function getPrisma() {
   return _prisma;
 }
 
-export type TestRole = 'admin' | 'manager' | 'viewer' | 'consultant' | 'oem_admin' | 'group_admin' | 'super_admin';
+export type TestRole = 'admin' | 'manager' | 'viewer' | 'consultant' | 'oem_admin' | 'group_admin' | 'super_admin' | 'field_tech';
 
 export interface TestUser {
   id: string;
