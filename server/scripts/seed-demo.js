@@ -314,6 +314,46 @@ async function _createSchedules(db, accountId, assetsByKey, defsByType, story) {
 }
 
 // Create an asset, deriving governingCondition = worst of the three axes.
+async function _createHistoricalWorkOrders(db, accountId, schedulesByKey, contractorId, years = 5) {
+  const now = new Date();
+  const cutoff = addDays(now, -years * 365);
+  const conds = ['C1', 'C1', 'C2', 'C1', 'C2', 'C3'];
+  const batch = [];
+  let i = 0;
+  for (const sched of Object.values(schedulesByKey)) {
+    const last = new Date(sched.lastCompletedDate);
+    const next = new Date(sched.nextDueDate);
+    let intervalDays = Math.round((next - last) / 86400000);
+    if (!Number.isFinite(intervalDays) || intervalDays < 30) intervalDays = 365;
+    let due = addDays(last, -intervalDays);
+    while (due >= cutoff) {
+      const r = (i * 37) % 100;
+      const lateDays = r < 70 ? (r % 5) : (r < 92 ? 7 + (r % 10) : 25 + (r % 25));
+      const completed = addDays(due, lateDays);
+      if (completed < now) {
+        const c = conds[i % conds.length];
+        batch.push({
+          accountId,
+          scheduleId: sched.id,
+          assetId: sched.assetId,
+          contractorId: contractorId || null,
+          status: 'COMPLETE',
+          scheduledDate: new Date(due),
+          completedDate: completed,
+          asFoundCondition: c,
+          asLeftCondition: c === 'C3' ? 'C2' : c,
+          createdAt: completed,
+        });
+        i++;
+      }
+      due = addDays(due, -intervalDays);
+    }
+  }
+  for (let k = 0; k < batch.length; k += 500) {
+    await db.workOrder.createMany({ data: batch.slice(k, k + 500) });
+  }
+  return batch.length;
+}
 async function _createAsset(db, accountId, spec) {
   const cp = spec.conditionPhysical    || 'C2';
   const cc = spec.conditionCriticality || 'C2';
