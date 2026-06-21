@@ -19,11 +19,11 @@ import { useAuth } from '../context/AuthContext';
 import Toast from './Toast';
 
 const KIND_META = {
-  overdue:         { bg: '#fff1f1', color: '#b91c1c', label: 'Overdue' },
-  unbaselined:     { bg: '#fffbeb', color: '#92400e', label: 'Needs baseline' },
-  uncovered:       { bg: '#eff6ff', color: '#1d4ed8', label: 'No program' },
-  emp_coordinator: { bg: '#f5f3ff', color: '#6d28d9', label: 'EMP §4.2' },
-  emp_review:      { bg: '#f5f3ff', color: '#6d28d9', label: 'EMP §4.2' },
+  overdue:         { bg: 'var(--chip-red-bg)',   color: 'var(--chip-red-fg)',   label: 'Overdue' },
+  unbaselined:     { bg: 'var(--chip-amber-bg)', color: 'var(--chip-amber-fg)', label: 'Needs baseline' },
+  uncovered:       { bg: 'var(--chip-blue-bg)',  color: 'var(--chip-blue-fg)',  label: 'No program' },
+  emp_coordinator: { bg: 'var(--chip-blue-bg)',  color: 'var(--chip-blue-fg)',  label: 'EMP §4.2' },
+  emp_review:      { bg: 'var(--chip-blue-bg)',  color: 'var(--chip-blue-fg)',  label: 'EMP §4.2' },
 };
 
 function ActionButton({ row, busy, onRun }) {

@@ -1151,6 +1151,9 @@ select.filter-select option,
   --shadow: 0 1px 3px rgb(0 0 0 / 0.45), 0 16px 34px -16px rgb(0 0 0 / 0.55);
   --shadow-md: 0 4px 10px -2px rgb(0 0 0 / 0.50), 0 24px 48px -20px rgb(0 0 0 / 0.60);
   --sc-surface-2: #1b212b;
+  --color-bg: #0d1117;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
 }
 
 /* -- Typography: stronger hierarchy --------------------------------------- */
@@ -1184,3 +1187,23 @@ tbody tr:hover td { background: color-mix(in srgb, var(--color-primary) 5%, tran
 .sc-spark { display: block; width: 100%; height: 36px; }
 .sc-ring { transform: rotate(-90deg); }
 .sc-ring-fill { transition: stroke-dashoffset .5s ease; }
+
+/* -- Status chip tokens (lib/equipment.js metas; dark-aware) --------------- */
+:root{
+  --chip-red-fg:#dc2626; --chip-red-bg:#fef2f2;
+  --chip-amber-fg:#d97706; --chip-amber-bg:#fffbeb;
+  --chip-orange-fg:#ea580c; --chip-orange-bg:#fff7ed;
+  --chip-green-fg:#16a34a; --chip-green-bg:#f0fdf4;
+  --chip-blue-fg:#2563eb; --chip-blue-bg:#eff6ff;
+  --chip-slate-fg:#64748b; --chip-slate-bg:#f1f5f9;
+  --chip-slate-soft-fg:#94a3b8; --chip-slate-soft-bg:#f8fafc;
+}
+[data-theme="dark"]{
+  --chip-red-fg:#fca5a5; --chip-red-bg:#4a1a1a;
+  --chip-amber-fg:#fcd34d; --chip-amber-bg:#3a2e0a;
+  --chip-orange-fg:#fdba74; --chip-orange-bg:#3a230f;
+  --chip-green-fg:#86efac; --chip-green-bg:#0f2818;
+  --chip-blue-fg:#93c5fd; --chip-blue-bg:#10283d;
+  --chip-slate-fg:#cbd5e1; --chip-slate-bg:#1f2733;
+  --chip-slate-soft-fg:#94a3b8; --chip-slate-soft-bg:#1b212b;
+}

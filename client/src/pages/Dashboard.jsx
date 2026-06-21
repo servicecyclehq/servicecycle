@@ -837,11 +837,13 @@ export default function Dashboard() {
               <KpiTile
                 label="Due in 60 days" value={due.due60}
                 sub="Cumulative window"
+                accent={'var(--color-success, #22c55e)'}
                 onClick={() => navigate('/calendar?due=60')}
               />
               <KpiTile
                 label="Due in 90 days" value={due.due90}
                 sub="Cumulative window"
+                accent={'var(--color-success, #22c55e)'}
                 onClick={() => navigate('/calendar?due=90')}
               />
             </div>
