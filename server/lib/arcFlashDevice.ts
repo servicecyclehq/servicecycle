@@ -64,6 +64,8 @@ export function deviceToBusFields(device: any): any {
   if (!device || typeof device !== 'object') return {};
   return {
     deviceType: cleanStr(device.deviceType) || null,
+    tripUnitType: cleanStr(device.tripUnitType) || null,
+    fuseClass: cleanStr(device.fuseClass) || null,
     deviceManufacturer: cleanStr(device.manufacturer) || null,
     deviceModel: cleanStr(device.model) || null,
     deviceRatingA: coerceNum(device.sensorRatingA) ?? coerceNum(device.frameRatingA),
@@ -200,7 +202,7 @@ function busForGap(b: any) {
     busName: b.busName, equipmentTypeGuess: b.equipmentTypeGuess, nominalVoltage: b.nominalVoltage,
     boltedFaultCurrentKA: coerceNum(b.boltedFaultCurrentKA), clearingTimeMs: coerceNum(b.clearingTimeMs),
     electrodeConfig: b.electrodeConfig, conductorGapMm: coerceNum(b.conductorGapMm), workingDistanceIn: coerceNum(b.workingDistanceIn),
-    deviceType: b.deviceType, deviceRatingA: coerceNum(b.deviceRatingA), deviceSettings: b.deviceSettings,
+    deviceType: b.deviceType, tripUnitType: b.tripUnitType, deviceRatingA: coerceNum(b.deviceRatingA), deviceSettings: b.deviceSettings,
     cableLengthFt: coerceNum(b.cableLengthFt), cableSize: b.cableSize,
   };
 }
@@ -218,6 +220,8 @@ export async function regapIngestBusAfterDevice(prisma: any, busId: string, opts
   const cable = opts.cable || {};
   const data: any = {};
   if (df.deviceType != null) data.deviceType = df.deviceType;
+  if (df.tripUnitType != null) data.tripUnitType = df.tripUnitType;
+  if (df.fuseClass != null) data.fuseClass = df.fuseClass;
   if (df.deviceManufacturer != null) data.deviceManufacturer = df.deviceManufacturer;
   if (df.deviceModel != null) data.deviceModel = df.deviceModel;
   if (df.deviceRatingA != null) data.deviceRatingA = df.deviceRatingA;

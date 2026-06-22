@@ -50,6 +50,8 @@ const photoUpload = multer({
 });
 
 const DEVICE_TYPES = new Set(['breaker', 'fuse', 'relay', 'switch']);
+const TRIP_UNIT_TYPES = new Set(['none', 'thermal_magnetic', 'electronic_lsi', 'electronic_lsig']);
+const FUSE_CLASSES = new Set(['L', 'RK1', 'RK5', 'J', 'T', 'CC', 'G', 'CF', 'H', 'K', 'other']);
 
 // Public projection of a ProtectiveDevice row.
 function deviceOut(d: any) {
@@ -114,7 +116,7 @@ function busForGap(b: any) {
     busName: b.busName, equipmentTypeGuess: b.equipmentTypeGuess, nominalVoltage: b.nominalVoltage,
     boltedFaultCurrentKA: numOrNull(b.boltedFaultCurrentKA), clearingTimeMs: numOrNull(b.clearingTimeMs),
     electrodeConfig: b.electrodeConfig, conductorGapMm: numOrNull(b.conductorGapMm), workingDistanceIn: numOrNull(b.workingDistanceIn),
-    deviceType: b.deviceType, deviceRatingA: numOrNull(b.deviceRatingA), deviceSettings: b.deviceSettings,
+    deviceType: b.deviceType, tripUnitType: b.tripUnitType, deviceRatingA: numOrNull(b.deviceRatingA), deviceSettings: b.deviceSettings,
     cableLengthFt: numOrNull(b.cableLengthFt), cableSize: b.cableSize,
   };
 }
@@ -127,7 +129,7 @@ function busOut(b: any) {
     boltedFaultCurrentKA: numOrNull(b.boltedFaultCurrentKA), arcingCurrentKA: numOrNull(b.arcingCurrentKA),
     electrodeConfig: b.electrodeConfig, conductorGapMm: numOrNull(b.conductorGapMm), clearingTimeMs: numOrNull(b.clearingTimeMs),
     workingDistanceIn: numOrNull(b.workingDistanceIn), upstreamDevice: b.upstreamDevice,
-    deviceType: b.deviceType, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
+    deviceType: b.deviceType, tripUnitType: b.tripUnitType, fuseClass: b.fuseClass, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
     deviceRatingA: numOrNull(b.deviceRatingA), deviceSettings: b.deviceSettings,
     cableLengthFt: numOrNull(b.cableLengthFt), cableSize: b.cableSize, cableMaterial: b.cableMaterial,
     incidentEnergyCalCm2: numOrNull(b.incidentEnergyCalCm2), arcFlashBoundaryIn: numOrNull(b.arcFlashBoundaryIn), ppeCategory: b.ppeCategory,
@@ -319,6 +321,16 @@ router.patch('/ingest/:id/bus/:busId', requireManager, async (req: any, res: any
     for (const f of ['deviceType', 'deviceManufacturer', 'deviceModel', 'cableSize', 'cableMaterial']) {
       if (b[f] !== undefined) patch[f] = b[f] || null;
     }
+    if (b.tripUnitType !== undefined) {
+      if (b.tripUnitType === null || b.tripUnitType === '') patch.tripUnitType = null;
+      else if (!TRIP_UNIT_TYPES.has(String(b.tripUnitType))) return res.status(400).json({ success: false, error: 'tripUnitType must be none|thermal_magnetic|electronic_lsi|electronic_lsig' });
+      else patch.tripUnitType = b.tripUnitType;
+    }
+    if (b.fuseClass !== undefined) {
+      if (b.fuseClass === null || b.fuseClass === '') patch.fuseClass = null;
+      else if (!FUSE_CLASSES.has(String(b.fuseClass))) return res.status(400).json({ success: false, error: 'fuseClass invalid' });
+      else patch.fuseClass = b.fuseClass;
+    }
     if (b.deviceSettings !== undefined) {
       if (b.deviceSettings === null || b.deviceSettings === '') patch.deviceSettings = null;
       else if (typeof b.deviceSettings === 'object') patch.deviceSettings = b.deviceSettings;
@@ -475,7 +487,8 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
             arcFlashBoundaryIn: b.arcFlashBoundaryIn ?? undefined, ppeCategory: b.ppeCategory ?? undefined,
             // Persist the field-collected protective-device + feeder-cable record
             // onto the durable per-study snapshot (was being dropped before).
-            deviceType: b.deviceType ?? undefined, deviceManufacturer: b.deviceManufacturer ?? undefined,
+            deviceType: b.deviceType ?? undefined, tripUnitType: b.tripUnitType ?? undefined, fuseClass: b.fuseClass ?? undefined,
+            deviceManufacturer: b.deviceManufacturer ?? undefined,
             deviceModel: b.deviceModel ?? undefined, deviceRatingA: b.deviceRatingA ?? undefined,
             deviceSettings: b.deviceSettings ?? undefined,
             cableLengthFt: b.cableLengthFt ?? undefined, cableSize: b.cableSize ?? undefined, cableMaterial: b.cableMaterial ?? undefined,

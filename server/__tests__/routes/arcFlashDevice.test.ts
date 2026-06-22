@@ -224,6 +224,15 @@ describe('gap engine: fixed-trip devices need no recorded settings (Brady findin
   test('no device at all stays blocked', () => {
     expect(devBlocked(analyzeBusGaps({ ...base }))).toBe(true);
   });
+  test('electronic LSIG breaker (type+rating, NO settings) now correctly NEEDS settings -> blocked', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'breaker', deviceRatingA: 800, tripUnitType: 'electronic_lsig' }))).toBe(true);
+  });
+  test('electronic LSIG breaker WITH settings -> satisfied', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'breaker', deviceRatingA: 800, tripUnitType: 'electronic_lsig', deviceSettings: { ltPickupA: 640 } }))).toBe(false);
+  });
+  test('thermal-magnetic breaker (explicit trip-unit, no settings) -> satisfied via TCC', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'breaker', deviceRatingA: 225, tripUnitType: 'thermal_magnetic' }))).toBe(false);
+  });
 });
 
 describe('arc-flash dashboard aggregate', () => {

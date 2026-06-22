@@ -1317,6 +1317,8 @@ model SystemStudyAsset {
   // shock boundaries, mitigation flags, trip-unit/fuse enums — are the
   // PE-reviewed schema-bootstrap migration; see ARC_FLASH_DOMAIN_MODEL.md.)
   deviceType           String? // breaker | fuse | relay | switch
+  tripUnitType         TripUnitType? // adjustable (electronic_lsi/lsig) => settings required; else not
+  fuseClass            FuseClass? // when deviceType = fuse
   deviceManufacturer   String?
   deviceModel          String?
   deviceRatingA        Decimal? @db.Decimal(10, 1) // frame / sensor amp rating
@@ -2844,6 +2846,32 @@ model TelemetryNotification {
 // DRAFT system model + per-bus IEEE 1584 gap punch list. Reviewed-and-confirmed
 // before anything touches real assets. Account-scoped at the app layer (scalar
 // FKs, no relation objects) so this change stays purely additive to the schema.
+// --- Arc-flash device taxonomy (schema-bootstrap slice 1, from ARC_FLASH_DOMAIN_MODEL.md) ---
+// Trip-unit type is what determines whether recorded SETTINGS are required: only
+// adjustable units (electronic LSI/LSIG, and relays) need settings; thermal-mag
+// breakers, fuses, and switches derive clearing time from the published TCC.
+enum TripUnitType {
+  none // fuse / switch / unknown
+  thermal_magnetic // fixed MCCB
+  electronic_lsi // adjustable: long/short/instantaneous
+  electronic_lsig // adjustable: long/short/instantaneous/ground-fault
+}
+
+// UL/CSA fuse classes (settings never apply; class + amp rating drive the TCC).
+enum FuseClass {
+  L
+  RK1
+  RK5
+  J
+  T
+  CC
+  G
+  CF
+  H
+  K
+  other
+}
+
 model ArcFlashIngest {
   id               String    @id @default(uuid())
   accountId        String
@@ -2898,6 +2926,8 @@ model ArcFlashIngestBus {
   // panels) + FEEDER CABLE. Clearing time is DERIVED from device + settings via
   // the device's TCC curve, not a number a tech reads off the breaker.
   deviceType           String? // breaker | fuse | relay | switch
+  tripUnitType         TripUnitType? // adjustable (electronic_lsi/lsig) => settings required; else not
+  fuseClass            FuseClass? // when deviceType = fuse
   deviceManufacturer   String?
   deviceModel          String?
   deviceRatingA        Decimal? @db.Decimal(10, 1) // frame / sensor amp rating
@@ -2939,6 +2969,8 @@ model ProtectiveDevice {
   ingestBusId         String? // provenance: collected against this arc-flash ingest bus
   label               String // human label, e.g. "Main CB 52-M1"
   deviceType          String? // breaker | fuse | relay | switch
+  tripUnitType        TripUnitType? // adjustable (electronic_lsi/lsig) => settings required; else not
+  fuseClass           FuseClass? // when deviceType = fuse
   manufacturer        String?
   model               String? // series / catalog
   partNumber          String?

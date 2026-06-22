@@ -109,10 +109,20 @@ function evalMusts(bus: any) {
   // read "settings" off a molded-case thermal-mag breaker or a fuse — type +
   // rating IS the complete field record there.
   const devType = String(bus.deviceType || '').toLowerCase();
+  const tripUnit = String(bus.tripUnitType || '').toLowerCase(); // none|thermal_magnetic|electronic_lsi|electronic_lsig
   const hasSettings = present(bus.deviceSettings);
   const hasDeviceRating = present(bus.deviceRatingA);
   const clearingDirect = present(bus.clearingTimeMs);
-  const fixedTrip = devType === 'fuse' || devType === 'breaker' || devType === 'switch';
+  // Adjustable trip units (electronic LSI/LSIG) and relays need RECORDED settings.
+  // Everything else (fuses, thermal-magnetic breakers, switches) derives clearing
+  // time from the published TCC given type + rating. tripUnitType is authoritative
+  // when recorded; otherwise fall back to deviceType (a bare "breaker" is treated
+  // as fixed-trip until a trip unit type says otherwise).
+  const adjustable = tripUnit === 'electronic_lsi' || tripUnit === 'electronic_lsig' || devType === 'relay';
+  const fixedTrip = !adjustable && (
+    tripUnit === 'thermal_magnetic' || tripUnit === 'none' ||
+    (tripUnit === '' && (devType === 'fuse' || devType === 'breaker' || devType === 'switch'))
+  );
   let deviceOk: boolean;
   let deviceVia: string | null;
   let deviceNote: string;
@@ -120,11 +130,14 @@ function evalMusts(bus: any) {
     deviceOk = true; deviceVia = 'explicit clearing time'; deviceNote = 'Clearing time provided directly.';
   } else if (hasSettings && present(bus.deviceType) && hasDeviceRating) {
     deviceOk = true; deviceVia = 'device + settings'; deviceNote = 'Device rating + trip settings provided.';
-  } else if (devType === 'relay') {
-    deviceOk = false; deviceVia = null; deviceNote = 'Record the protective relay settings (pickup / time-dial / curve).';
+  } else if (adjustable) {
+    deviceOk = false; deviceVia = null;
+    deviceNote = devType === 'relay'
+      ? 'Record the protective relay settings (pickup / time-dial / curve).'
+      : 'Adjustable electronic trip unit - record its LSIG trip settings (or the resulting clearing time).';
   } else if (fixedTrip && hasDeviceRating) {
     deviceOk = true; deviceVia = 'device identified (TCC)';
-    deviceNote = 'Device identified (type + frame/rating); clearing time derives from its published TCC. Confirm trip settings only if it is an adjustable electronic trip unit.';
+    deviceNote = 'Device identified (type + frame/rating); clearing time derives from its published TCC.';
   } else {
     deviceOk = false; deviceVia = null;
     deviceNote = 'Record the upstream protective device: type + frame/sensor rating (plus trip settings if it has an adjustable electronic trip unit), or fuse class + rating.';
