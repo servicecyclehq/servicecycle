@@ -45,7 +45,14 @@ const fmtShortDate = (iso) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+// Single-input filters (text / multi-select) read fine at 248px. The date and
+// number filters lay TWO inputs side by side, and native date inputs have a min
+// intrinsic width that won't shrink unless the flex children get min-width:0 — so
+// those popovers get a wider card AND shrinkable columns to keep both inputs
+// (and the date picker's calendar glyph) inside the card background.
 const POP_WIDTH = 248;
+const POP_WIDTH_WIDE = 312;
+const isTwoInput = (type) => type === 'date' || type === 'number';
 
 const inputStyle = {
   width: '100%',
@@ -82,10 +89,12 @@ export default function HeaderFilter({ label, type, options = [], value, onChang
     : type === 'date' ? { from: '', to: '' }
     :                   { min: '', max: '' };
 
+  const popWidth = isTwoInput(type) ? POP_WIDTH_WIDE : POP_WIDTH;
+
   function openPopover() {
     const r = btnRef.current.getBoundingClientRect();
-    let left = align === 'right' ? r.right - POP_WIDTH : r.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - POP_WIDTH - 8));
+    let left = align === 'right' ? r.right - popWidth : r.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - popWidth - 8));
     const top = Math.min(r.bottom + 4, window.innerHeight - 60);
     setPos({ top, left });
     setQuery('');
@@ -197,7 +206,7 @@ export default function HeaderFilter({ label, type, options = [], value, onChang
           aria-label={`Filter by ${label}`}
           style={{
             position: 'fixed', top: pos.top, left: pos.left, zIndex: 60,
-            width: POP_WIDTH,
+            width: popWidth,
             background: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius, 8px)',
@@ -271,7 +280,7 @@ export default function HeaderFilter({ label, type, options = [], value, onChang
 
           {type === 'date' && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <label style={miniLabelStyle}>From</label>
                 <input
                   type="date"
@@ -281,7 +290,7 @@ export default function HeaderFilter({ label, type, options = [], value, onChang
                   style={inputStyle}
                 />
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <label style={miniLabelStyle}>To</label>
                 <input
                   type="date"
@@ -296,7 +305,7 @@ export default function HeaderFilter({ label, type, options = [], value, onChang
 
           {type === 'number' && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <label style={miniLabelStyle}>Min</label>
                 <input
                   type="number"
@@ -307,7 +316,7 @@ export default function HeaderFilter({ label, type, options = [], value, onChang
                   style={inputStyle}
                 />
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <label style={miniLabelStyle}>Max</label>
                 <input
                   type="number"
