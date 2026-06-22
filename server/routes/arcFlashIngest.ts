@@ -26,6 +26,7 @@ const { extractArcFlashDocument } = require('../lib/arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('../lib/arcFlashGap');
 const { buildCollectionTasks, extractDeviceFromPhoto } = require('../lib/arcFlashDevice');
 const { scoreBusConfidence, pickDeviceSource } = require('../lib/arcFlashConfidence');
+const { diffIngestRevisions } = require('../lib/arcFlashDrift');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -315,6 +316,51 @@ router.get('/ingest/:id', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash ingest get error:', e);
     res.status(500).json({ success: false, error: 'Failed to load ingest' });
+  }
+});
+
+// Shape a bus row for the drift engine (Decimals -> numbers; keep the topology +
+// device fields the diff compares).
+function busForDrift(b: any) {
+  return {
+    busName: b.busName, nominalVoltage: b.nominalVoltage,
+    boltedFaultCurrentKA: numOrNull(b.boltedFaultCurrentKA), clearingTimeMs: numOrNull(b.clearingTimeMs),
+    deviceRatingA: numOrNull(b.deviceRatingA), deviceType: b.deviceType, tripUnitType: b.tripUnitType,
+    fedFromBusName: b.fedFromBusName, deviceSettings: b.deviceSettings,
+  };
+}
+
+// ── GET /ingest/:id/drift ── Slice 2.8b: material change vs the prior confirmed
+// revision for this site -> re-study recommendation. Read-only, computed live.
+router.get('/ingest/:id/drift', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const ingest = await prisma.arcFlashIngest.findFirst({
+      where: { id: req.params.id, accountId },
+      select: { id: true, siteId: true, createdAt: true, confirmedAt: true },
+    });
+    if (!ingest) return res.status(404).json({ success: false, error: 'Ingest not found' });
+
+    // The prior confirmed revision = the most recent OTHER confirmed ingest for
+    // this site, confirmed before this one's reference time.
+    const ref = ingest.confirmedAt || ingest.createdAt;
+    const prior = await prisma.arcFlashIngest.findFirst({
+      where: { accountId, siteId: ingest.siteId, status: 'confirmed', id: { not: ingest.id }, confirmedAt: { lt: ref } },
+      orderBy: { confirmedAt: 'desc' },
+      select: { id: true, confirmedAt: true },
+    });
+
+    const curBuses = await prisma.arcFlashIngestBus.findMany({ where: { ingestId: ingest.id }, orderBy: { seq: 'asc' } });
+    let priorRev: any = null;
+    if (prior) {
+      const pb = await prisma.arcFlashIngestBus.findMany({ where: { ingestId: prior.id }, orderBy: { seq: 'asc' } });
+      priorRev = { id: prior.id, confirmedAt: prior.confirmedAt, buses: pb.map(busForDrift) };
+    }
+    const report = diffIngestRevisions(priorRev, { buses: curBuses.map(busForDrift) });
+    res.json({ success: true, data: { drift: report } });
+  } catch (e) {
+    console.error('arc-flash drift error:', e);
+    res.status(500).json({ success: false, error: 'Failed to compute drift' });
   }
 });
 

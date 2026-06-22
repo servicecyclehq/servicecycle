@@ -159,6 +159,47 @@ function FieldCollection({ ingest, canWrite, onChanged }) {
   );
 }
 
+/**
+ * Slice 2.8b — drift vs the prior confirmed revision for this site. Self-hides
+ * unless there's a prior revision AND a material change (added/removed bus, or a
+ * changed voltage / fault current / device / trip settings / topology). Surfaces
+ * the re-study recommendation; a licensed PE decides whether to re-run.
+ */
+function fmtVal(v) { return v == null || v === '' ? '—' : (typeof v === 'object' ? JSON.stringify(v) : String(v)); }
+
+function DriftBanner({ ingestId }) {
+  const [drift, setDrift] = useState(null);
+  useEffect(() => {
+    let live = true;
+    api.get(`/api/arc-flash/ingest/${ingestId}/drift`)
+      .then(r => { if (live) setDrift(r.data?.data?.drift || null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [ingestId]);
+
+  if (!drift || !drift.hasPrior || !drift.materialChange) return null;
+
+  return (
+    <div style={{ border: '1px solid var(--color-warning, #c2410c)', background: 'var(--color-warning-bg, #fff7ed)', borderRadius: 6, padding: '10px 12px', marginTop: 12, fontSize: '0.78rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '0.66rem', fontWeight: 700, color: '#fff', background: 'var(--color-warning, #c2410c)', padding: '2px 7px', borderRadius: 4 }}>RE-STUDY RECOMMENDED</span>
+        <strong>Change vs prior confirmed revision</strong>
+      </div>
+      <div style={{ color: 'var(--color-text-secondary)', marginTop: 6 }}>{drift.summary}</div>
+      <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+        {drift.busChanges.map((b, i) => (
+          <li key={i} style={{ marginBottom: 3 }}>
+            <strong>{b.busName}</strong> — {b.change}
+            {b.fields && b.fields.length > 0 && (
+              <span style={{ color: 'var(--color-text-secondary)' }}>: {b.fields.map(f => `${f.label} ${fmtVal(f.from)} → ${fmtVal(f.to)}${f.pct != null ? ` (${f.pct}%)` : ''}`).join('; ')}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
   const [ingests, setIngests] = useState([]);
   const [draft, setDraft] = useState(null); // { ingest, buses, reviewPackage }
@@ -313,6 +354,9 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
               </ol>
             </div>
           )}
+
+          {/* Drift vs the prior confirmed revision (re-study trigger) */}
+          <DriftBanner ingestId={ing.id} key={ing.id} />
 
           {/* Per-bus model + gaps */}
           <table className="data-table" style={{ width: '100%', fontSize: '0.74rem', marginTop: 12 }}>
