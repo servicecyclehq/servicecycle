@@ -26,6 +26,139 @@ function Chip({ band, children }) {
   );
 }
 
+const HAZARD_COLOR = { DANGER: 'var(--color-danger, #b91c1c)', WARNING: 'var(--color-warning, #c2410c)' };
+
+/**
+ * Slice 2.7 — field-collection of the hard inputs (upstream device + trip
+ * settings + feeder cable) that block a bus. Generate tasks from the gap list,
+ * then record a device by hand or by photo-read; the bus re-gaps on submit.
+ */
+function FieldCollection({ ingest, canWrite, onChanged }) {
+  const [tasks, setTasks] = useState([]);
+  const [openId, setOpenId] = useState(null);
+  const [form, setForm] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [note, setNote] = useState(null);
+
+  const load = useCallback(() => {
+    api.get('/api/arc-flash/collection-tasks?ingestId=' + ingest.id)
+      .then(r => setTasks(r.data?.data?.tasks || []))
+      .catch(() => setTasks([]));
+  }, [ingest.id]);
+  useEffect(() => { load(); }, [load]);
+
+  async function generate() {
+    setBusy(true); setErr(null); setNote(null);
+    try {
+      const r = await api.post(`/api/arc-flash/ingest/${ingest.id}/collection-tasks`, {});
+      const d = r.data?.data;
+      setNote(d.created ? `Generated ${d.created} field task(s).` : (d.skipped ? `All blocked buses already have tasks (${d.skipped}).` : 'No blocked buses need collection.'));
+      load();
+    } catch (e) { setErr(e?.response?.data?.error || 'Could not generate tasks.'); }
+    finally { setBusy(false); }
+  }
+
+  async function photoRead(taskId, fileEl) {
+    const f = fileEl.files?.[0];
+    if (!f) return;
+    setBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append('photo', f);
+      const r = await api.post('/api/arc-flash/photo-read', fd);
+      const dev = r.data?.data?.device || {};
+      setForm(prev => ({
+        ...prev,
+        deviceType: dev.deviceType || prev.deviceType || '',
+        sensorRatingA: dev.sensorRatingA ?? prev.sensorRatingA ?? '',
+        manufacturer: dev.manufacturer || prev.manufacturer || '',
+        model: dev.model || prev.model || '',
+        settings: dev.settings ? JSON.stringify(dev.settings) : (prev.settings || ''),
+      }));
+      setNote('Photo read — review the pre-filled values, then save.');
+    } catch (e) { setErr(e?.response?.data?.message || e?.response?.data?.error || 'Photo read unavailable.'); }
+    finally { setBusy(false); }
+  }
+
+  async function collect(taskId) {
+    setBusy(true); setErr(null); setNote(null);
+    let settings = null;
+    if (form.settings) { try { settings = JSON.parse(form.settings); } catch { setErr('Settings must be valid JSON, e.g. {"longTimePickup":0.9}'); setBusy(false); return; } }
+    const device = {
+      deviceType: form.deviceType || null, manufacturer: form.manufacturer || null, model: form.model || null,
+      sensorRatingA: form.sensorRatingA || null, settings,
+    };
+    const cable = { cableSize: form.cableSize || null, cableLengthFt: form.cableLengthFt || null, cableMaterial: form.cableMaterial || null };
+    try {
+      await api.post(`/api/field/arc-flash/tasks/${taskId}/collect`, { device, cable });
+      setOpenId(null); setForm({});
+      load();
+      if (onChanged) onChanged();
+    } catch (e) { setErr(e?.response?.data?.error || 'Could not save collection.'); }
+    finally { setBusy(false); }
+  }
+
+  const open = tasks.filter(t => t.status !== 'collected' && t.status !== 'cancelled');
+  const done = tasks.filter(t => t.status === 'collected');
+  const inp = { fontSize: '0.72rem', width: '100%', boxSizing: 'border-box' };
+
+  return (
+    <div style={{ marginTop: 14, borderTop: '1px dashed var(--color-border)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <strong style={{ fontSize: '0.82rem' }}>Field collection — get the missing device + cable data</strong>
+        {canWrite && <button className="btn-link" onClick={generate} disabled={busy} style={{ fontSize: '0.76rem' }}>Generate field tasks from gaps</button>}
+      </div>
+      {note && <div style={{ color: 'var(--color-success, #16a34a)', fontSize: '0.76rem', marginTop: 6 }}>{note}</div>}
+      {err && <div style={{ color: 'var(--color-danger)', fontSize: '0.76rem', marginTop: 6 }}>{err}</div>}
+
+      {open.length === 0 && done.length === 0 && (
+        <div style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary)', marginTop: 6 }}>No collection tasks yet. Generate them from the blocked buses above.</div>
+      )}
+
+      {open.map(t => (
+        <div key={t.id} style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: '8px 10px', marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: '0.78rem' }}>{t.busName}</span>
+            <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {t.hazardClass && <span style={{ fontSize: '0.64rem', fontWeight: 700, color: '#fff', background: HAZARD_COLOR[t.hazardClass] || 'var(--color-text-secondary)', padding: '2px 6px', borderRadius: 4 }}>{t.hazardClass}</span>}
+              {t.requiresOutage && <span style={{ fontSize: '0.64rem', color: 'var(--color-text-secondary)' }}>outage</span>}
+              {t.requiresQualifiedPerson && <span style={{ fontSize: '0.64rem', color: 'var(--color-text-secondary)' }}>qualified person</span>}
+            </span>
+          </div>
+          <div style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>{t.instructions}</div>
+          {t.ppeNote && <div style={{ fontSize: '0.68rem', color: 'var(--color-text-secondary)', marginTop: 3, fontStyle: 'italic' }}>{t.ppeNote}</div>}
+          {canWrite && (openId === t.id ? (
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6 }}>
+              <select style={inp} value={form.deviceType || ''} onChange={e => setForm({ ...form, deviceType: e.target.value })}>
+                <option value="">device type</option><option value="breaker">breaker</option><option value="fuse">fuse</option><option value="relay">relay</option><option value="switch">switch</option>
+              </select>
+              <input style={inp} placeholder="sensor/plug A" value={form.sensorRatingA || ''} onChange={e => setForm({ ...form, sensorRatingA: e.target.value })} />
+              <input style={inp} placeholder="manufacturer" value={form.manufacturer || ''} onChange={e => setForm({ ...form, manufacturer: e.target.value })} />
+              <input style={inp} placeholder="model" value={form.model || ''} onChange={e => setForm({ ...form, model: e.target.value })} />
+              <input style={{ ...inp, gridColumn: '1 / -1' }} placeholder='trip settings JSON, e.g. {"longTimePickup":0.9,"instantaneous":6}' value={form.settings || ''} onChange={e => setForm({ ...form, settings: e.target.value })} />
+              <input style={inp} placeholder="cable size" value={form.cableSize || ''} onChange={e => setForm({ ...form, cableSize: e.target.value })} />
+              <input style={inp} placeholder="cable ft" value={form.cableLengthFt || ''} onChange={e => setForm({ ...form, cableLengthFt: e.target.value })} />
+              <input style={inp} placeholder="Cu/Al" value={form.cableMaterial || ''} onChange={e => setForm({ ...form, cableMaterial: e.target.value })} />
+              <label className="btn-link" style={{ fontSize: '0.72rem', cursor: 'pointer', alignSelf: 'center' }}>
+                Photo-read<input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => photoRead(t.id, e.target)} />
+              </label>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn-link" onClick={() => { setOpenId(null); setForm({}); }} style={{ fontSize: '0.74rem' }}>Cancel</button>
+                <button className="btn" onClick={() => collect(t.id)} disabled={busy} style={{ fontSize: '0.74rem' }}>{busy ? 'Saving…' : 'Save device & re-gap'}</button>
+              </div>
+            </div>
+          ) : (
+            <button className="btn-link" onClick={() => { setOpenId(t.id); setForm({}); setNote(null); setErr(null); }} style={{ fontSize: '0.74rem', marginTop: 6 }}>Record device</button>
+          ))}
+        </div>
+      ))}
+
+      {done.length > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--color-success, #16a34a)', marginTop: 8 }}>✓ Collected: {done.map(t => t.busName).join(', ')}</div>}
+    </div>
+  );
+}
+
 export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
   const [ingests, setIngests] = useState([]);
   const [draft, setDraft] = useState(null); // { ingest, buses, reviewPackage }
@@ -220,6 +353,9 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
               })}
             </tbody>
           </table>
+
+          {/* Field collection — close the blocked-bus gaps (device + cable) */}
+          <FieldCollection ingest={ing} canWrite={canWrite} onChanged={() => openDraft(ing.id)} />
 
           {/* Confirm bar */}
           {!confirmed && canWrite && (
