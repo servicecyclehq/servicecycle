@@ -121,6 +121,20 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
         </div>
       )}
 
+      {data?.contradictions?.length > 0 && (
+        <div style={{ ...card, borderColor: data.contradictions.some(f => f.severity === 'error') ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)' }} role="alert">
+          <h3 style={h3}>Sanity checks</h3>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.82rem' }}>
+            {data.contradictions.map((f, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: f.severity === 'error' ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)', padding: '1px 6px', borderRadius: 3 }}>{f.severity === 'error' ? 'ERROR' : 'CHECK'}</span>
+                {' '}{f.message}{f.detail ? <span style={{ color: 'var(--color-text-secondary)' }}> ({f.detail})</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!data?.hasArcFlash && (
         <div style={{ ...card, color: 'var(--color-text-secondary)' }}>
           No arc-flash study data, devices, or tasks recorded for this asset yet. Upload a one-line or study report on the site to populate it.

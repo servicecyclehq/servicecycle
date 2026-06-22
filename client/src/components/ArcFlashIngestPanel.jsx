@@ -200,6 +200,39 @@ function DriftBanner({ ingestId }) {
   );
 }
 
+/**
+ * Slice 2.8c — contradiction / sanity-check findings for the draft. Self-hides
+ * when there are none. Errors = physically impossible / under-protective;
+ * warnings = suspicious, confirm. SC raises the flag; the PE adjudicates.
+ */
+function SevTag({ severity }) {
+  const isErr = severity === 'error';
+  return <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: isErr ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)', padding: '1px 6px', borderRadius: 3 }}>{isErr ? 'ERROR' : 'CHECK'}</span>;
+}
+
+function ContradictionsPanel({ contradictions }) {
+  const findings = contradictions?.findings || [];
+  if (findings.length === 0) return null;
+  const { errorCount = 0, warningCount = 0 } = contradictions;
+  const borderColor = errorCount > 0 ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)';
+  return (
+    <div style={{ border: `1px solid ${borderColor}`, borderRadius: 6, padding: '10px 12px', marginTop: 12, fontSize: '0.78rem' }}>
+      <strong>Sanity checks</strong>
+      <span style={{ color: 'var(--color-text-secondary)', marginLeft: 8 }}>
+        {errorCount > 0 ? `${errorCount} error${errorCount === 1 ? '' : 's'}` : ''}{errorCount > 0 && warningCount > 0 ? ', ' : ''}{warningCount > 0 ? `${warningCount} to confirm` : ''}
+      </span>
+      <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+        {findings.map((f, i) => (
+          <li key={i} style={{ marginBottom: 4 }}>
+            <SevTag severity={f.severity} /> <strong>{f.busName}</strong> — {f.message}
+            {f.detail && <span style={{ color: 'var(--color-text-secondary)' }}> ({f.detail})</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
   const [ingests, setIngests] = useState([]);
   const [draft, setDraft] = useState(null); // { ingest, buses, reviewPackage }
@@ -357,6 +390,9 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
 
           {/* Drift vs the prior confirmed revision (re-study trigger) */}
           <DriftBanner ingestId={ing.id} key={ing.id} />
+
+          {/* Contradiction / sanity-check findings */}
+          <ContradictionsPanel contradictions={draft.contradictions} />
 
           {/* Per-bus model + gaps */}
           <table className="data-table" style={{ width: '100%', fontSize: '0.74rem', marginTop: 12 }}>

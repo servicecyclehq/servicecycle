@@ -27,6 +27,7 @@ const { analyzeBusGaps, summarizeIngestBands } = require('../lib/arcFlashGap');
 const { buildCollectionTasks, extractDeviceFromPhoto } = require('../lib/arcFlashDevice');
 const { scoreBusConfidence, pickDeviceSource } = require('../lib/arcFlashConfidence');
 const { diffIngestRevisions } = require('../lib/arcFlashDrift');
+const { checkSystemContradictions, checkBusContradictions } = require('../lib/arcFlashSanity');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -311,6 +312,7 @@ router.get('/ingest/:id', async (req: any, res: any) => {
         },
         buses: buses.map(busOut),
         reviewPackage: buildReviewPackage(ingest, buses),
+        contradictions: checkSystemContradictions(buses, ingest.systemMeta || {}),
       },
     });
   } catch (e) {
@@ -1042,6 +1044,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
         hasArcFlash: studyAssets.length > 0 || devices.length > 0 || tasks.length > 0 || tests.length > 0 || customValues.length > 0,
         current,
         confidence: current ? current.confidence : null,
+        contradictions: current ? checkBusContradictions(current, { utilityMaxFaultKA: current.study?.sourceModel?.utilityMaxFaultKA ?? null }) : [],
         labelSeverity: current ? (current.labelSeverity || (danger ? 'danger' : 'warning')) : null,
         studyAssets,
         devices: devices.map(deviceOut),
