@@ -50,10 +50,18 @@ export const REPORTS = [
   {
     id: 'arc-flash-fleet',
     name: 'Arc Flash Fleet Dashboard',
-    description: 'Arc-flash risk rolled up across every site: DANGER coverage and percentage, blocked buses still needing data, average data-confidence, open sanity-check findings, and studies expiring within 90 days. The portfolio view for where to act first.',
+    description: 'Arc-flash risk rolled up across every site: DANGER coverage and percentage, blocked buses still needing data, average data-confidence, open sanity-check findings, and studies expiring within 90 days. The portfolio view for where to act first. Generate an on-demand audit / insurer bundle from here.',
     icon: Zap,
     planned: false,
     to: '/reports/arc-flash-fleet',
+  },
+  {
+    id: 'arc-flash-heatmap',
+    name: 'Arc Flash Heat-Map',
+    description: 'A color-coded grid of every labelled bus, grouped by site and shaded by incident energy (the NFPA 70E hazard) with a data-confidence outline. The at-a-glance view of where the arc-flash heat concentrates across your plants.',
+    icon: Zap,
+    planned: false,
+    to: '/reports/arc-flash-heatmap',
   },
   {
     id: 'emp-document',
