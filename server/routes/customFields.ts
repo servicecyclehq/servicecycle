@@ -144,7 +144,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', requireAdmin, async (req, res) => {
   try {
-    const { name, type, helpText, required, options, displayOrder } = req.body || {};
+    const { name, type, helpText, required, options, displayOrder, appliesTo } = req.body || {};
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ success: false, error: 'name is required' });
     }
@@ -182,6 +182,9 @@ router.post('/', requireAdmin, async (req, res) => {
           helpText:     helpText?.trim() || null,
           required:     !!required,
           options:      cleanOptions,
+          // Slice H: tag the field for the arc-flash equipment long tail (else a
+          // general asset field). Values stay on the asset-scoped value table.
+          appliesTo:    appliesTo === 'arc_flash' ? 'arc_flash' : null,
           displayOrder: Number.isFinite(displayOrder) ? parseInt(displayOrder, 10) : count,
         },
       });
@@ -232,6 +235,11 @@ router.put('/:id', requireAdmin, async (req, res) => {
     if ('displayOrder' in req.body && Number.isFinite(req.body.displayOrder)) {
       data.displayOrder = parseInt(req.body.displayOrder, 10);
       if (data.displayOrder !== existing.displayOrder) changes.push('displayOrder');
+    }
+    if ('appliesTo' in req.body) {
+      const a = req.body.appliesTo === 'arc_flash' ? 'arc_flash' : null;
+      data.appliesTo = a;
+      if (a !== existing.appliesTo) changes.push('appliesTo');
     }
     if ('options' in req.body && existing.type === 'select') {
       try { data.options = cleanSelectOptions(req.body.options); }

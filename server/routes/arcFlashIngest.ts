@@ -99,6 +99,12 @@ function numOrNull(v: any): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+function intOrNull(v: any): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
 // Parse a nominal-voltage label ("480V", "13.8kV", "208") to volts (for the
 // DANGER test: >40 cal/cm2 OR >600 V, per NFPA 70E labeling).
 function voltsOf(raw: any): number | null {
@@ -141,6 +147,7 @@ function busOut(b: any) {
     deviceType: b.deviceType, tripUnitType: b.tripUnitType, fuseClass: b.fuseClass, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
     deviceRatingA: numOrNull(b.deviceRatingA), deviceSettings: b.deviceSettings,
     cableLengthFt: numOrNull(b.cableLengthFt), cableSize: b.cableSize, cableMaterial: b.cableMaterial,
+    conductorsPerPhase: b.conductorsPerPhase, conduitType: b.conduitType,
     incidentEnergyCalCm2: numOrNull(b.incidentEnergyCalCm2), arcFlashBoundaryIn: numOrNull(b.arcFlashBoundaryIn), ppeCategory: b.ppeCategory,
     gaps: b.gaps, readiness: b.readiness, confidence: b.confidence, resolution: b.resolution, matchedAssetId: b.matchedAssetId,
   };
@@ -327,9 +334,10 @@ router.patch('/ingest/:id/bus/:busId', requireManager, async (req: any, res: any
     if (b.nominalVoltage !== undefined) patch.nominalVoltage = b.nominalVoltage || null;
     if (b.upstreamDevice !== undefined) patch.upstreamDevice = b.upstreamDevice || null;
     // 2.6 — protective-device + feeder-cable fields collected in review/field.
-    for (const f of ['deviceType', 'deviceManufacturer', 'deviceModel', 'cableSize', 'cableMaterial']) {
+    for (const f of ['deviceType', 'deviceManufacturer', 'deviceModel', 'cableSize', 'cableMaterial', 'conduitType']) {
       if (b[f] !== undefined) patch[f] = b[f] || null;
     }
+    if (b.conductorsPerPhase !== undefined) patch.conductorsPerPhase = (b.conductorsPerPhase === null || b.conductorsPerPhase === '') ? null : intOrNull(b.conductorsPerPhase);
     if (b.tripUnitType !== undefined) {
       if (b.tripUnitType === null || b.tripUnitType === '') patch.tripUnitType = null;
       else if (!TRIP_UNIT_TYPES.has(String(b.tripUnitType))) return res.status(400).json({ success: false, error: 'tripUnitType must be none|thermal_magnetic|electronic_lsi|electronic_lsig' });
@@ -481,6 +489,23 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
         select: { id: true },
       });
       studyId = study.id;
+
+      // Slice E: persist the extracted source/system model (utility + main
+      // transformer) onto a durable StudySourceModel for the produced study.
+      const u = (sm.utility || {}) as any;
+      const tx = (sm.mainTransformer || {}) as any;
+      const hasSource = ['maxFaultKA', 'minFaultKA', 'xr'].some((k) => u[k] != null) || tx.kva != null;
+      if (hasSource) {
+        await prisma.studySourceModel.create({
+          data: {
+            accountId, siteId: ingest.siteId, studyId: study.id,
+            utilityMaxFaultKA: numOrNull(u.maxFaultKA), utilityMinFaultKA: numOrNull(u.minFaultKA), utilityXr: numOrNull(u.xr),
+            transformerKva: numOrNull(tx.kva), transformerPrimaryV: intOrNull(tx.primaryVoltage), transformerSecondaryV: intOrNull(tx.secondaryVoltage),
+            transformerImpedancePct: numOrNull(tx.impedancePct),
+          },
+        });
+      }
+
       for (const b of buses) {
         const assetId = nameToAssetId.get(b.busName);
         if (!assetId) continue;
@@ -501,6 +526,7 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
             deviceModel: b.deviceModel ?? undefined, deviceRatingA: b.deviceRatingA ?? undefined,
             deviceSettings: b.deviceSettings ?? undefined,
             cableLengthFt: b.cableLengthFt ?? undefined, cableSize: b.cableSize ?? undefined, cableMaterial: b.cableMaterial ?? undefined,
+            conductorsPerPhase: b.conductorsPerPhase ?? undefined, conduitType: b.conduitType ?? undefined,
             // Bootstrap slices B/D/F: carry outcomes/enclosure/mitigation + derive the DANGER/WARNING severity.
             requiredArcRatingCalCm2: b.requiredArcRatingCalCm2 ?? undefined, ppeMethod: b.ppeMethod ?? undefined,
             shockLimitedApproachIn: b.shockLimitedApproachIn ?? undefined, shockRestrictedApproachIn: b.shockRestrictedApproachIn ?? undefined,
@@ -735,6 +761,271 @@ router.get('/dashboard', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash dashboard error:', e);
     res.status(500).json({ success: false, error: 'Failed to load arc-flash dashboard' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Slice E — source / system model (per study)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function sourceModelOut(s: any) {
+  return {
+    id: s.id, studyId: s.studyId, siteId: s.siteId,
+    utilityMaxFaultKA: numOrNull(s.utilityMaxFaultKA), utilityMinFaultKA: numOrNull(s.utilityMinFaultKA), utilityXr: numOrNull(s.utilityXr),
+    transformerKva: numOrNull(s.transformerKva), transformerPrimaryV: s.transformerPrimaryV, transformerSecondaryV: s.transformerSecondaryV,
+    transformerImpedancePct: numOrNull(s.transformerImpedancePct), transformerXr: numOrNull(s.transformerXr), transformerConnection: s.transformerConnection,
+    motorContributionHp: s.motorContributionHp, motorContributionCount: s.motorContributionCount,
+    generatorKva: numOrNull(s.generatorKva), generatorVoltageV: s.generatorVoltageV, generatorSubtransientXdPct: numOrNull(s.generatorSubtransientXdPct),
+    below125kvaFlag: s.below125kvaFlag, notes: s.notes, updatedAt: s.updatedAt,
+  };
+}
+
+function sourceModelFromBody(b: any) {
+  const data: any = {};
+  for (const f of ['utilityMaxFaultKA', 'utilityMinFaultKA', 'utilityXr', 'transformerKva', 'transformerImpedancePct', 'transformerXr', 'generatorKva', 'generatorSubtransientXdPct']) {
+    if (b[f] !== undefined) data[f] = numOrNull(b[f]);
+  }
+  for (const f of ['transformerPrimaryV', 'transformerSecondaryV', 'motorContributionHp', 'motorContributionCount', 'generatorVoltageV']) {
+    if (b[f] !== undefined) data[f] = intOrNull(b[f]);
+  }
+  if (b.transformerConnection !== undefined) data.transformerConnection = b.transformerConnection ? String(b.transformerConnection).slice(0, 80) : null;
+  if (b.notes !== undefined) data.notes = b.notes ? String(b.notes).slice(0, 2000) : null;
+  if (b.below125kvaFlag !== undefined) data.below125kvaFlag = (b.below125kvaFlag === null || b.below125kvaFlag === '') ? null : !!b.below125kvaFlag;
+  return data;
+}
+
+// ── GET /studies/:studyId/source-model ────────────────────────────────────────
+router.get('/studies/:studyId/source-model', async (req: any, res: any) => {
+  try {
+    const study = await prisma.systemStudy.findFirst({ where: { id: req.params.studyId, accountId: req.user.accountId }, select: { id: true } });
+    if (!study) return res.status(404).json({ success: false, error: 'Study not found' });
+    const sm = await prisma.studySourceModel.findUnique({ where: { studyId: study.id } });
+    res.json({ success: true, data: { sourceModel: sm ? sourceModelOut(sm) : null } });
+  } catch (e) {
+    console.error('arc-flash source-model get error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load source model' });
+  }
+});
+
+// ── PUT /studies/:studyId/source-model ── upsert the source/system model ──────
+router.put('/studies/:studyId/source-model', requireManager, async (req: any, res: any) => {
+  try {
+    const study = await prisma.systemStudy.findFirst({ where: { id: req.params.studyId, accountId: req.user.accountId }, select: { id: true, siteId: true } });
+    if (!study) return res.status(404).json({ success: false, error: 'Study not found' });
+    const data = sourceModelFromBody(req.body || {});
+    const sm = await prisma.studySourceModel.upsert({
+      where: { studyId: study.id },
+      update: data,
+      create: { accountId: req.user.accountId, siteId: study.siteId, studyId: study.id, ...data },
+    });
+    await logActivity(req.user.id, req.user.accountId, 'arc_flash_source_model_saved', { studyId: study.id });
+    res.json({ success: true, data: { sourceModel: sourceModelOut(sm) } });
+  } catch (e) {
+    console.error('arc-flash source-model put error:', e);
+    res.status(500).json({ success: false, error: 'Failed to save source model' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Slice G — NETA as-found / as-left device-test linkage
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TEST_TYPES = new Set(['relay_calibration', 'breaker_trip_test', 'primary_injection', 'as_found_as_left', 'other']);
+
+function settingsObj(v: any): any {
+  return (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) ? v : null;
+}
+
+function deviceTestOut(t: any) {
+  return {
+    id: t.id, siteId: t.siteId, assetId: t.assetId, protectiveDeviceId: t.protectiveDeviceId, systemStudyAssetId: t.systemStudyAssetId, ingestBusId: t.ingestBusId,
+    testType: t.testType, testDate: t.testDate, performedBy: t.performedBy, asFoundSettings: t.asFoundSettings, asLeftSettings: t.asLeftSettings,
+    matchesStudy: t.matchesStudy, driftFlagged: t.driftFlagged, result: t.result, notes: t.notes, reportUrl: t.reportUrl, createdAt: t.createdAt, updatedAt: t.updatedAt,
+  };
+}
+
+// Drift = recorded settings changed (as-found != as-left) OR they no longer match
+// the study's assumed settings → the incident-energy result may be stale (NETA).
+function computeDrift(asFound: any, asLeft: any, matchesStudy: boolean | null | undefined): boolean {
+  if (matchesStudy === false) return true;
+  if (asFound && asLeft) { try { return JSON.stringify(asFound) !== JSON.stringify(asLeft); } catch { return false; } }
+  return false;
+}
+
+// ── POST /device-tests ── record a NETA test (relay cal / trip test / as-found) ─
+router.post('/device-tests', requireManager, async (req: any, res: any) => {
+  try {
+    const b = req.body || {};
+    const accountId = req.user.accountId;
+    if (!b.siteId) return res.status(400).json({ success: false, error: 'siteId is required' });
+    const site = await prisma.site.findFirst({ where: { id: b.siteId, accountId }, select: { id: true } });
+    if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
+    if (b.assetId) { const a = await prisma.asset.findFirst({ where: { id: b.assetId, accountId }, select: { id: true } }); if (!a) return res.status(404).json({ success: false, error: 'assetId not found' }); }
+    if (b.protectiveDeviceId) { const d = await prisma.protectiveDevice.findFirst({ where: { id: b.protectiveDeviceId, accountId }, select: { id: true } }); if (!d) return res.status(404).json({ success: false, error: 'protectiveDeviceId not found' }); }
+
+    const testType = TEST_TYPES.has(String(b.testType)) ? String(b.testType) : 'other';
+    const asFound = settingsObj(b.asFoundSettings);
+    const asLeft = settingsObj(b.asLeftSettings);
+    const matchesStudy = (b.matchesStudy === undefined || b.matchesStudy === null || b.matchesStudy === '') ? null : !!b.matchesStudy;
+    const drift = computeDrift(asFound, asLeft, matchesStudy) || b.driftFlagged === true;
+
+    const rec = await prisma.deviceTestRecord.create({
+      data: {
+        accountId, siteId: b.siteId, assetId: b.assetId || null, protectiveDeviceId: b.protectiveDeviceId || null,
+        systemStudyAssetId: b.systemStudyAssetId || null, ingestBusId: b.ingestBusId || null,
+        testType, testDate: b.testDate ? new Date(b.testDate) : null, performedBy: b.performedBy ? String(b.performedBy).slice(0, 200) : null,
+        asFoundSettings: asFound ?? undefined, asLeftSettings: asLeft ?? undefined, matchesStudy,
+        driftFlagged: drift, result: b.result ? String(b.result).slice(0, 40) : null, notes: b.notes ? String(b.notes).slice(0, 2000) : null,
+        reportUrl: b.reportUrl ? String(b.reportUrl).slice(0, 1000) : null, recordedById: req.user.id,
+      },
+    });
+    await logActivity(req.user.id, accountId, 'arc_flash_device_test_recorded', { testId: rec.id, testType, driftFlagged: drift, assetId: b.assetId || null });
+    res.status(201).json({ success: true, data: { test: deviceTestOut(rec), driftFlagged: drift } });
+  } catch (e) {
+    console.error('arc-flash device-test create error:', e);
+    res.status(500).json({ success: false, error: 'Failed to record device test' });
+  }
+});
+
+// ── GET /device-tests?assetId=&siteId=&protectiveDeviceId= ── list test records ─
+router.get('/device-tests', async (req: any, res: any) => {
+  try {
+    const where: any = { accountId: req.user.accountId };
+    if (req.query.assetId) where.assetId = String(req.query.assetId);
+    if (req.query.siteId) where.siteId = String(req.query.siteId);
+    if (req.query.protectiveDeviceId) where.protectiveDeviceId = String(req.query.protectiveDeviceId);
+    if (req.query.systemStudyAssetId) where.systemStudyAssetId = String(req.query.systemStudyAssetId);
+    const rows = await prisma.deviceTestRecord.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 });
+    res.json({ success: true, data: { tests: rows.map(deviceTestOut), anyStale: rows.some((r: any) => r.driftFlagged) } });
+  } catch (e) {
+    console.error('arc-flash device-test list error:', e);
+    res.status(500).json({ success: false, error: 'Failed to list device tests' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Surfacing — consolidated per-asset Arc Flash payload
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Flatten + coerce a SystemStudyAsset row (with its study) for the per-asset tab.
+function studyAssetOut(s: any) {
+  const st = s.study || {};
+  return {
+    id: s.id, busName: s.busName, nominalVoltage: s.nominalVoltage,
+    incidentEnergyCalCm2: numOrNull(s.incidentEnergyCalCm2), arcFlashBoundaryIn: numOrNull(s.arcFlashBoundaryIn),
+    workingDistanceIn: numOrNull(s.workingDistanceIn), ppeCategory: s.ppeCategory,
+    boltedFaultCurrentKA: numOrNull(s.boltedFaultCurrentKA), arcingCurrentKA: numOrNull(s.arcingCurrentKA),
+    arcingCurrentReducedKA: numOrNull(s.arcingCurrentReducedKA), governingScenario: s.governingScenario,
+    electrodeConfig: s.electrodeConfig, conductorGapMm: numOrNull(s.conductorGapMm), clearingTimeMs: numOrNull(s.clearingTimeMs),
+    upstreamDevice: s.upstreamDevice, deviceType: s.deviceType, tripUnitType: s.tripUnitType, fuseClass: s.fuseClass,
+    deviceManufacturer: s.deviceManufacturer, deviceModel: s.deviceModel, deviceRatingA: numOrNull(s.deviceRatingA), deviceSettings: s.deviceSettings,
+    cableLengthFt: numOrNull(s.cableLengthFt), cableSize: s.cableSize, cableMaterial: s.cableMaterial, conductorsPerPhase: s.conductorsPerPhase, conduitType: s.conduitType,
+    requiredArcRatingCalCm2: numOrNull(s.requiredArcRatingCalCm2), ppeMethod: s.ppeMethod,
+    shockLimitedApproachIn: numOrNull(s.shockLimitedApproachIn), shockRestrictedApproachIn: numOrNull(s.shockRestrictedApproachIn),
+    labelSeverity: s.labelSeverity, enclosureType: s.enclosureType,
+    enclosureHeightMm: numOrNull(s.enclosureHeightMm), enclosureWidthMm: numOrNull(s.enclosureWidthMm), enclosureDepthMm: numOrNull(s.enclosureDepthMm),
+    ermsPresent: s.ermsPresent, zsiEnabled: s.zsiEnabled, differentialPresent: s.differentialPresent, arcResistant: s.arcResistant, nec24087Method: s.nec24087Method,
+    calcMethod: s.calcMethod,
+    study: {
+      id: st.id, studyType: st.studyType, performedDate: st.performedDate, expiresAt: st.expiresAt,
+      method: st.method, peName: st.peName, peLicense: st.peLicense, superseded: !!st.supersededById,
+      sourceModel: st.sourceModel ? sourceModelOut(st.sourceModel) : null,
+    },
+  };
+}
+
+// ── GET /asset/:assetId ── everything arc-flash about one asset (the tab data) ─
+router.get('/asset/:assetId', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true, equipmentType: true, siteId: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const [studyAssetsRaw, devices, tasks, tests, customValues] = await Promise.all([
+      prisma.systemStudyAsset.findMany({
+        where: { assetId: asset.id, accountId },
+        include: { study: { select: { id: true, studyType: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.protectiveDevice.findMany({ where: { assetId: asset.id, accountId, status: 'active' }, orderBy: { createdAt: 'desc' } }),
+      prisma.arcFlashCollectionTask.findMany({ where: { assetId: asset.id, accountId, status: { in: ['open', 'in_progress'] } }, orderBy: { createdAt: 'desc' } }),
+      prisma.deviceTestRecord.findMany({ where: { assetId: asset.id, accountId }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      prisma.customFieldValue.findMany({ where: { assetId: asset.id, definition: { appliesTo: 'arc_flash', archivedAt: null } }, include: { definition: true } }),
+    ]);
+
+    const studyAssets = studyAssetsRaw.map(studyAssetOut);
+    // Current label = the row from the latest non-superseded study (fallback: newest performedDate).
+    const sorted = studyAssets.slice().sort((a: any, b: any) => {
+      const sa = a.study.superseded ? 0 : 1, sb = b.study.superseded ? 0 : 1;
+      if (sa !== sb) return sb - sa;
+      return new Date(b.study.performedDate || 0).getTime() - new Date(a.study.performedDate || 0).getTime();
+    });
+    const current = sorted[0] || null;
+    const danger = current ? (((current.incidentEnergyCalCm2 != null && current.incidentEnergyCalCm2 > 40) || (voltsOf(current.nominalVoltage) || 0) > 600)) : false;
+
+    res.json({
+      success: true,
+      data: {
+        assetId: asset.id,
+        siteId: asset.siteId,
+        hasArcFlash: studyAssets.length > 0 || devices.length > 0 || tasks.length > 0 || tests.length > 0 || customValues.length > 0,
+        current,
+        labelSeverity: current ? (current.labelSeverity || (danger ? 'danger' : 'warning')) : null,
+        studyAssets,
+        devices: devices.map(deviceOut),
+        collectionTasks: tasks.map(taskOut),
+        deviceTests: tests.map(deviceTestOut),
+        staleStudy: tests.some((t: any) => t.driftFlagged),
+        customFields: customValues
+          .filter((v: any) => v.definition)
+          .map((v: any) => ({ definitionId: v.definitionId, name: v.definition.name, type: v.definition.type, value: v.value })),
+      },
+    });
+  } catch (e) {
+    console.error('arc-flash asset summary error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load arc-flash asset summary' });
+  }
+});
+
+// ── GET /report ── account-wide arc-flash label report (Reports hub) ──────────
+// Every current (non-superseded) per-bus label across the account: the NFPA 70E
+// 130.5(H) fields + DANGER/WARNING severity + study expiry. Printable from the
+// Reports section. Manager/admin only (mounted under the manager-gated hub use).
+router.get('/report', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const soon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const rows = await prisma.systemStudyAsset.findMany({
+      where: { accountId, study: { supersededById: null } },
+      include: {
+        study: { select: { performedDate: true, expiresAt: true, method: true, studyType: true } },
+        asset: { select: { id: true, equipmentType: true, site: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 2000,
+    });
+    const out = rows.map((s: any) => {
+      const ie = numOrNull(s.incidentEnergyCalCm2);
+      const v = voltsOf(s.nominalVoltage);
+      const sev = s.labelSeverity || (((ie != null && ie > 40) || (v != null && v > 600)) ? 'danger' : (ie != null || v != null ? 'warning' : null));
+      return {
+        assetId: s.assetId, busName: s.busName, site: s.asset?.site?.name || null, equipmentType: s.asset?.equipmentType || null,
+        nominalVoltage: s.nominalVoltage, incidentEnergyCalCm2: ie, arcFlashBoundaryIn: numOrNull(s.arcFlashBoundaryIn),
+        ppeCategory: s.ppeCategory, requiredArcRatingCalCm2: numOrNull(s.requiredArcRatingCalCm2),
+        labelSeverity: sev, performedDate: s.study?.performedDate || null, expiresAt: s.study?.expiresAt || null,
+        expiringSoon: s.study?.expiresAt ? new Date(s.study.expiresAt) <= soon : false,
+      };
+    });
+    const summary = {
+      total: out.length,
+      danger: out.filter((r: any) => r.labelSeverity === 'danger').length,
+      warning: out.filter((r: any) => r.labelSeverity === 'warning').length,
+      expiringSoon: out.filter((r: any) => r.expiringSoon).length,
+    };
+    res.json({ success: true, data: { rows: out, summary } });
+  } catch (e) {
+    console.error('arc-flash report error:', e);
+    res.status(500).json({ success: false, error: 'Failed to build arc-flash report' });
   }
 });
 

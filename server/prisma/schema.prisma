@@ -1272,6 +1272,7 @@ model SystemStudy {
   supersededBy  SystemStudy?       @relation("StudyChain", fields: [supersededById], references: [id])
   supersedes    SystemStudy[]      @relation("StudyChain")
   coveredAssets SystemStudyAsset[]
+  sourceModel   StudySourceModel? // slice E: utility/transformer/motor/generator source model
 
   @@index([accountId])
   @@index([accountId, expiresAt])
@@ -1304,7 +1305,7 @@ model SystemStudyAsset {
   // may only ship the label outputs.
   boltedFaultCurrentKA Decimal? @db.Decimal(10, 2) // 3φ bolted fault current, kA
   arcingCurrentKA      Decimal? @db.Decimal(10, 2) // arcing current, kA
-  electrodeConfig      String? // IEEE 1584 electrode config: VCB|VCBB|HCB|VOA|HOA
+  electrodeConfig      ElectrodeConfig? // IEEE 1584 electrode config: VCB|VCBB|HCB|VOA|HOA
   conductorGapMm       Decimal? @db.Decimal(6, 1) // conductor gap, mm
   clearingTimeMs       Decimal? @db.Decimal(10, 1) // upstream protective-device clearing time, ms
   upstreamDevice       String? // protective device that clears this bus (label/free text)
@@ -1326,6 +1327,8 @@ model SystemStudyAsset {
   cableLengthFt        Decimal? @db.Decimal(10, 1)
   cableSize            String?
   cableMaterial        String? // Cu | Al
+  conductorsPerPhase   Int? // slice E: # conductors per phase (cable impedance)
+  conduitType          String? // slice E: steel | pvc | al (conduit reactance)
   // --- Slice B: outcome / label (study results) ---
   requiredArcRatingCalCm2   Decimal?       @db.Decimal(10, 2) // min arc rating (ATPV/EBT) for the incident-energy PPE method
   ppeMethod                 PpeMethod? // which method this label uses
@@ -1357,6 +1360,46 @@ model SystemStudyAsset {
   @@index([studyId])
   @@index([assetId])
   @@map("system_study_assets")
+}
+
+// ─── Slice E: arc-flash source / system model ────────────────────────────────
+// The not-per-bus inputs that feed the short-circuit study which produces the
+// available fault current at every bus: the utility at the point of common
+// coupling (MAX and MIN fault + X/R), the main transformer, and motor/generator
+// fault contributions. One per SystemStudy. Scalar FK to the study (additive).
+model StudySourceModel {
+  id        String @id @default(uuid())
+  accountId String
+  siteId    String
+  studyId   String @unique
+  // Utility / point of common coupling — the root of the whole fault tree.
+  utilityMaxFaultKA Decimal? @db.Decimal(10, 2) // worst-case available fault current
+  utilityMinFaultKA Decimal? @db.Decimal(10, 2) // min case can govern (slower arcing)
+  utilityXr         Decimal? @db.Decimal(10, 2) // X/R at the service entrance
+  // Main transformer (determines secondary fault current).
+  transformerKva          Decimal? @db.Decimal(12, 2)
+  transformerPrimaryV     Int?
+  transformerSecondaryV   Int?
+  transformerImpedancePct Decimal? @db.Decimal(6, 2) // %Z
+  transformerXr           Decimal? @db.Decimal(10, 2)
+  transformerConnection   String? // e.g. delta-wye
+  // Motor + generator contributions (no 50 HP exemption in IEEE 1584-2018).
+  motorContributionHp        Int? // total connected HP contributing fault current
+  motorContributionCount     Int?
+  generatorKva               Decimal? @db.Decimal(12, 2)
+  generatorVoltageV          Int?
+  generatorSubtransientXdPct Decimal? @db.Decimal(6, 2) // Xd"
+  // IEEE 1584-2018 sec 4.3: surface (never auto-apply) the old <125 kVA / <240 V flag.
+  below125kvaFlag Boolean?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  study SystemStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([siteId])
+  @@map("study_source_models")
 }
 
 // â”€â”€â”€ Audit Visits + Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2004,6 +2047,7 @@ model CustomFieldDefinition {
   name         String // display label
   fieldKey     String // slug, unique per account
   type         String // text | textarea | number | date | checkbox | select
+  appliesTo    String? // null|asset = general; arc_flash = arc-flash equipment long tail (slice H)
   helpText     String?
   required     Boolean   @default(false)
   options      Json? // for select: [{ value, label }]
@@ -2921,6 +2965,17 @@ enum CalcMethod {
   manufacturer_test
 }
 
+// Electrode configuration as a closed enum (slice C; promoted from String).
+// IEEE 1584-2018 defines exactly these five conductor/electrode arrangements;
+// the choice can change incident energy 40%+ at the same current + clearing time.
+enum ElectrodeConfig {
+  VCB // vertical conductors in a metal box (default enclosed case)
+  VCBB // vertical conductors terminated in an insulating barrier, in a box
+  HCB // horizontal conductors in a box
+  VOA // vertical conductors in open air
+  HOA // horizontal conductors in open air
+}
+
 model ArcFlashIngest {
   id               String    @id @default(uuid())
   accountId        String
@@ -2966,7 +3021,7 @@ model ArcFlashIngestBus {
   nominalVoltage       String?
   boltedFaultCurrentKA Decimal? @db.Decimal(10, 2)
   arcingCurrentKA      Decimal? @db.Decimal(10, 2)
-  electrodeConfig      String?
+  electrodeConfig      ElectrodeConfig?
   conductorGapMm       Decimal? @db.Decimal(6, 1)
   clearingTimeMs       Decimal? @db.Decimal(10, 1)
   workingDistanceIn    Decimal? @db.Decimal(10, 1)
@@ -2984,6 +3039,8 @@ model ArcFlashIngestBus {
   cableLengthFt        Decimal? @db.Decimal(10, 1)
   cableSize            String? // e.g. "500 kcmil", "#2 AWG"
   cableMaterial        String? // Cu | Al
+  conductorsPerPhase   Int? // slice E: # conductors per phase (cable impedance)
+  conduitType          String? // slice E: steel | pvc | al (conduit reactance)
   // Bootstrap slices B/D/F (mirror SystemStudyAsset so confirm carries them).
   requiredArcRatingCalCm2   Decimal?       @db.Decimal(10, 2)
   ppeMethod                 PpeMethod?
@@ -3097,4 +3154,40 @@ model ArcFlashCollectionTask {
   @@index([assignedUserId, status])
   @@index([ingestId])
   @@map("arc_flash_collection_tasks")
+}
+
+// ─── Slice G: NETA as-found / as-left test linkage ───────────────────────────
+// Arc-flash incident energy is only valid if the protective devices actually
+// trip at the settings the study assumed. A NETA relay-calibration / breaker
+// trip-test record links to the device/asset/bus and captures as-found vs
+// as-left settings; if they differ (or differ from the study), the study may be
+// stale. Scalar FKs only (pure-append migration).
+model DeviceTestRecord {
+  id                 String    @id @default(uuid())
+  accountId          String
+  siteId             String
+  assetId            String?
+  protectiveDeviceId String?
+  systemStudyAssetId String?
+  ingestBusId        String?
+  testType           String // relay_calibration | breaker_trip_test | primary_injection | as_found_as_left | other
+  testDate           DateTime?
+  performedBy        String?
+  asFoundSettings    Json?
+  asLeftSettings     Json?
+  matchesStudy       Boolean? // do as-left settings match the study's assumed settings?
+  driftFlagged       Boolean   @default(false) // as-found != as-left OR differs from study -> study may be stale
+  result             String? // pass | fail | conditional
+  notes              String?
+  reportUrl          String?
+  recordedById       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, siteId])
+  @@index([assetId])
+  @@index([protectiveDeviceId])
+  @@index([systemStudyAssetId])
+  @@map("device_test_records")
 }
