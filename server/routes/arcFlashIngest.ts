@@ -1215,4 +1215,120 @@ router.get('/report', async (req: any, res: any) => {
   }
 });
 
+// ── GET /audit-bundle ── Slice 3c: insurer / auditor package + exec posture ────
+// A single on-demand snapshot of the whole arc-flash program: a compliance
+// POSTURE scorecard (coverage, DANGER, confidence, sanity errors, expiring/expired
+// studies, open field tasks), a prioritized ITEMS-TO-RESOLVE punch list, the full
+// label schedule, and the per-site rollup. Exposure is expressed as deterministic
+// risk INDICATORS (counts) — not fabricated dollar figures. Manager/admin via the
+// Reports gate. Read-only.
+router.get('/audit-bundle', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const now = Date.now();
+    const soon = new Date(now + 90 * 24 * 60 * 60 * 1000);
+    const [account, rows, devices, driftTests, openTasks] = await Promise.all([
+      prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
+      prisma.systemStudyAsset.findMany({
+        where: { accountId, study: { supersededById: null } },
+        include: {
+          study: { select: { id: true, performedDate: true, expiresAt: true, method: true, peName: true, sourceModel: { select: { utilityMaxFaultKA: true } } } },
+          asset: { select: { id: true, equipmentType: true, siteId: true, site: { select: { name: true } } } },
+        },
+        take: 3000,
+      }),
+      prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { not: null } }, select: { assetId: true, source: true }, take: 5000 }),
+      prisma.deviceTestRecord.findMany({ where: { accountId, driftFlagged: true, assetId: { not: null } }, select: { assetId: true }, take: 5000 }),
+      prisma.arcFlashCollectionTask.count({ where: { accountId, status: { in: ['open', 'in_progress'] } } }),
+    ]);
+
+    const devByAsset = new Map<string, any[]>();
+    for (const d of devices) { if (!d.assetId) continue; const arr = devByAsset.get(d.assetId) || []; arr.push(d); devByAsset.set(d.assetId, arr); }
+    const driftAssets = new Set(driftTests.map((t: any) => t.assetId));
+
+    const labels: any[] = [];
+    const items: any[] = [];
+    const siteMap = new Map<string, any>();
+    const expiredStudyIds = new Set<string>();
+    const expiringStudyIds = new Set<string>();
+    let dangerBuses = 0, warningBuses = 0, blockedBuses = 0, lowConfidenceBuses = 0, sanityErrors = 0, sanityWarnings = 0, confSum = 0;
+
+    for (const r of rows) {
+      const bus = busForFleet(r, r.asset?.equipmentType);
+      const ie = numOrNull(r.incidentEnergyCalCm2);
+      const v = voltsOf(r.nominalVoltage);
+      const sev = r.labelSeverity || (((ie != null && ie > 40) || (v != null && v > 600)) ? 'danger' : (ie != null || v != null ? 'warning' : null));
+      const danger = sev === 'danger';
+      const g = analyzeBusGaps(busForGap(bus));
+      const conf = scoreBusConfidence({ bus, study: { performedDate: r.study?.performedDate, expiresAt: r.study?.expiresAt, superseded: false }, deviceSource: pickDeviceSource(devByAsset.get(r.assetId) || []), driftFlagged: driftAssets.has(r.assetId) });
+      const finds = checkBusContradictions(bus, { utilityMaxFaultKA: r.study?.sourceModel?.utilityMaxFaultKA ?? null });
+      const expired = r.study?.expiresAt ? new Date(r.study.expiresAt).getTime() < now : false;
+      const expiringSoon = r.study?.expiresAt ? (!expired && new Date(r.study.expiresAt) <= soon) : false;
+      const siteName = r.asset?.site?.name || 'Unassigned';
+
+      if (danger) dangerBuses++; else if (sev === 'warning') warningBuses++;
+      if (g.readiness === 'blocked') blockedBuses++;
+      if (conf.band === 'red') lowConfidenceBuses++;
+      confSum += conf.score;
+      const errs = finds.filter((f: any) => f.severity === 'error');
+      sanityErrors += errs.length;
+      sanityWarnings += finds.length - errs.length;
+      if (r.study?.id) { if (expired) expiredStudyIds.add(r.study.id); else if (expiringSoon) expiringStudyIds.add(r.study.id); }
+
+      labels.push({
+        assetId: r.assetId, busName: r.busName, site: siteName, equipmentType: r.asset?.equipmentType || null,
+        nominalVoltage: r.nominalVoltage, incidentEnergyCalCm2: ie, arcFlashBoundaryIn: numOrNull(r.arcFlashBoundaryIn),
+        ppeCategory: r.ppeCategory, requiredArcRatingCalCm2: numOrNull(r.requiredArcRatingCalCm2), labelSeverity: sev,
+        performedDate: r.study?.performedDate || null, expiresAt: r.study?.expiresAt || null, expired, expiringSoon,
+        readiness: g.readiness, confidence: { score: conf.score, band: conf.band },
+      });
+
+      // Prioritized punch list (lower priority number = more urgent).
+      for (const f of errs) items.push({ priority: 1, type: 'sanity_error', site: siteName, busName: r.busName, assetId: r.assetId, detail: f.message });
+      if (expired) items.push({ priority: 2, type: 'study_expired', site: siteName, busName: r.busName, assetId: r.assetId, detail: `Study expired ${new Date(r.study.expiresAt).toLocaleDateString()}` });
+      if (danger) items.push({ priority: 3, type: 'danger_bus', site: siteName, busName: r.busName, assetId: r.assetId, detail: ie != null ? `Incident energy ${ie} cal/cm^2` : 'DANGER (>600 V)' });
+      if (g.readiness === 'blocked') items.push({ priority: 4, type: 'blocked_bus', site: siteName, busName: r.busName, assetId: r.assetId, detail: 'Missing required IEEE 1584 inputs' });
+      if (expiringSoon) items.push({ priority: 5, type: 'study_expiring', site: siteName, busName: r.busName, assetId: r.assetId, detail: `Study expires ${new Date(r.study.expiresAt).toLocaleDateString()}` });
+
+      const sid = r.asset?.siteId || 'unassigned';
+      let site = siteMap.get(sid);
+      if (!site) { site = { siteId: sid, siteName, busCount: 0, dangerCount: 0, blockedCount: 0, lowConfidenceCount: 0, confSum: 0, sanityErrors: 0, expiringStudies: new Set<string>(), expiredStudies: new Set<string>() }; siteMap.set(sid, site); }
+      site.busCount++; if (danger) site.dangerCount++; if (g.readiness === 'blocked') site.blockedCount++;
+      if (conf.band === 'red') site.lowConfidenceCount++; site.confSum += conf.score; site.sanityErrors += errs.length;
+      if (r.study?.id) { if (expired) site.expiredStudies.add(r.study.id); else if (expiringSoon) site.expiringStudies.add(r.study.id); }
+    }
+
+    items.sort((a, b) => a.priority - b.priority);
+    const sites = Array.from(siteMap.values()).map((s: any) => ({
+      siteId: s.siteId, siteName: s.siteName, busCount: s.busCount, dangerCount: s.dangerCount, blockedCount: s.blockedCount,
+      lowConfidenceCount: s.lowConfidenceCount, avgConfidence: s.busCount ? Math.round(s.confSum / s.busCount) : null,
+      sanityErrors: s.sanityErrors, expiringStudies: s.expiringStudies.size, expiredStudies: s.expiredStudies.size,
+    })).sort((a, b) => b.dangerCount - a.dangerCount);
+
+    const posture = {
+      sites: sites.length, labelledBuses: labels.length, dangerBuses, warningBuses, blockedBuses,
+      avgConfidence: labels.length ? Math.round(confSum / labels.length) : null, lowConfidenceBuses,
+      sanityErrors, sanityWarnings, studiesExpiring90d: expiringStudyIds.size, studiesExpired: expiredStudyIds.size,
+      openCollectionTasks: openTasks,
+      exposureNote: 'Risk is shown as deterministic indicators (DANGER buses, expired/expiring studies, unresolved sanity errors). ServiceCycle is the data layer; a licensed PE runs and stamps the study. Dollar exposure depends on your operations and insurer terms.',
+    };
+
+    res.json({
+      success: true,
+      data: {
+        generatedAt: new Date().toISOString(),
+        account: { name: account?.companyName || null },
+        posture,
+        itemsToResolve: items.slice(0, 250),
+        itemsToResolveTotal: items.length,
+        sites,
+        labels,
+      },
+    });
+  } catch (e) {
+    console.error('arc-flash audit-bundle error:', e);
+    res.status(500).json({ success: false, error: 'Failed to build arc-flash audit bundle' });
+  }
+});
+
 module.exports = router;

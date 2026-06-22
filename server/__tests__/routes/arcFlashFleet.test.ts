@@ -68,3 +68,22 @@ describe('GET /api/arc-flash/fleet', () => {
     expect(totals.dangerCount).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('GET /api/arc-flash/audit-bundle', () => {
+  test('requires auth', async () => {
+    await request(app).get('/api/arc-flash/audit-bundle').expect(401);
+  });
+
+  test('returns posture, prioritized items, and the label schedule', async () => {
+    const res = await request(app).get('/api/arc-flash/audit-bundle').set('Authorization', auth(manager)).expect(200);
+    const { posture, itemsToResolve, labels, sites } = res.body.data;
+    expect(posture.dangerBuses).toBeGreaterThanOrEqual(1);
+    expect(posture.sanityErrors).toBeGreaterThanOrEqual(1);
+    expect(labels.length).toBeGreaterThanOrEqual(1);
+    expect(sites.length).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(itemsToResolve)).toBe(true);
+    expect(itemsToResolve.length).toBeGreaterThanOrEqual(1);
+    // a sanity error (priority 1) sorts ahead of the danger-bus item (priority 3)
+    expect(itemsToResolve[0].priority).toBeLessThanOrEqual(itemsToResolve[itemsToResolve.length - 1].priority);
+  });
+});
