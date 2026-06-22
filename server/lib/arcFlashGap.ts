@@ -101,9 +101,34 @@ function evalMusts(bus: any) {
   const cableOk = present(bus.cableLengthFt) && present(bus.cableSize);
   const faultOk = faultDirect || cableOk;
 
-  const deviceFull = present(bus.deviceType) && present(bus.deviceRatingA) && present(bus.deviceSettings);
+  // protectiveDevice: clearing time can be given directly, computed from
+  // adjustable trip SETTINGS, or — for a FUSE or a fixed-trip (thermal-magnetic)
+  // breaker — derived from the device's published TCC once type + frame/rating
+  // are known. Recorded settings are only obtainable (and required) for an
+  // ADJUSTABLE electronic trip unit or a protective relay; a field tech can't
+  // read "settings" off a molded-case thermal-mag breaker or a fuse — type +
+  // rating IS the complete field record there.
+  const devType = String(bus.deviceType || '').toLowerCase();
+  const hasSettings = present(bus.deviceSettings);
+  const hasDeviceRating = present(bus.deviceRatingA);
   const clearingDirect = present(bus.clearingTimeMs);
-  const deviceOk = deviceFull || clearingDirect;
+  const fixedTrip = devType === 'fuse' || devType === 'breaker' || devType === 'switch';
+  let deviceOk: boolean;
+  let deviceVia: string | null;
+  let deviceNote: string;
+  if (clearingDirect) {
+    deviceOk = true; deviceVia = 'explicit clearing time'; deviceNote = 'Clearing time provided directly.';
+  } else if (hasSettings && present(bus.deviceType) && hasDeviceRating) {
+    deviceOk = true; deviceVia = 'device + settings'; deviceNote = 'Device rating + trip settings provided.';
+  } else if (devType === 'relay') {
+    deviceOk = false; deviceVia = null; deviceNote = 'Record the protective relay settings (pickup / time-dial / curve).';
+  } else if (fixedTrip && hasDeviceRating) {
+    deviceOk = true; deviceVia = 'device identified (TCC)';
+    deviceNote = 'Device identified (type + frame/rating); clearing time derives from its published TCC. Confirm trip settings only if it is an adjustable electronic trip unit.';
+  } else {
+    deviceOk = false; deviceVia = null;
+    deviceNote = 'Record the upstream protective device: type + frame/sensor rating (plus trip settings if it has an adjustable electronic trip unit), or fuse class + rating.';
+  }
 
   return {
     nominalVoltage: { ok: voltageOk, via: voltageOk ? 'provided' : null,
@@ -111,9 +136,7 @@ function evalMusts(bus: any) {
     faultCurrent: { ok: faultOk, via: faultDirect ? 'study/utility value' : cableOk ? 'computable from feeder cable' : null,
       note: faultOk ? (faultDirect ? 'Provided (study/utility).' : 'Will be computed from the feeder cable + upstream source.')
         : 'Obtain the available fault current (short-circuit study / utility), OR record the feeder cable length + size so it can be computed from upstream.' },
-    protectiveDevice: { ok: deviceOk, via: deviceFull ? 'device + settings' : clearingDirect ? 'explicit clearing time' : null,
-      note: deviceOk ? (deviceFull ? 'Device rating + trip settings provided.' : 'Clearing time provided directly.')
-        : 'Record the upstream protective device: frame/sensor rating + trip settings (long/short/inst/ground-fault), or fuse class + rating. Clearing time derives from these via the device TCC.' },
+    protectiveDevice: { ok: deviceOk, via: deviceVia, note: deviceNote },
   };
 }
 

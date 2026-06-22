@@ -183,3 +183,5 @@ async function main() {
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
+
+export {}; // module scope (avoid global const collision with other scripts under tsc)

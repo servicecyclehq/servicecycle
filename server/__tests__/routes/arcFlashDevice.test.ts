@@ -204,6 +204,28 @@ describe('field collection (scoped) closes the loop', () => {
   });
 });
 
+describe('gap engine: fixed-trip devices need no recorded settings (Brady finding)', () => {
+  const { analyzeBusGaps } = require('../../lib/arcFlashGap');
+  const base = { busName: 'B', equipmentTypeGuess: 'PANELBOARD', nominalVoltage: '480V', boltedFaultCurrentKA: 10 };
+  const devBlocked = (g: any) => (g.missingRequired || []).includes('protectiveDevice');
+  test('fuse + rating (no settings) satisfies the protective-device must-obtain', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'fuse', deviceRatingA: 200 }))).toBe(false);
+  });
+  test('thermal-mag breaker + rating (no settings) satisfies via the published TCC', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'breaker', deviceRatingA: 225 }))).toBe(false);
+  });
+  test('relay still requires settings', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'relay', deviceRatingA: 600 }))).toBe(true);
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'relay', deviceRatingA: 600, deviceSettings: { pickup: 0.8 } }))).toBe(false);
+  });
+  test('a device type with no rating stays blocked', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base, deviceType: 'breaker' }))).toBe(true);
+  });
+  test('no device at all stays blocked', () => {
+    expect(devBlocked(analyzeBusGaps({ ...base }))).toBe(true);
+  });
+});
+
 describe('arc-flash dashboard aggregate', () => {
   test('returns account-scoped counts', async () => {
     const res = await request(app).get('/api/arc-flash/dashboard').set('Authorization', auth(manager));

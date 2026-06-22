@@ -49,3 +49,5 @@ const out = lines.join('\n');
 console.log(out);
 const outPath = process.env.AF_SIM_OUT || (file.replace(/\.json$/, '') + '.gapreport.md');
 try { fs.writeFileSync(outPath, out); console.log('\nWrote ' + outPath); } catch { /* stdout is enough */ }
+
+export {}; // module scope (avoid global const collision with other scripts under tsc)
