@@ -40,6 +40,7 @@ export default function CustomFieldsSection({ isAdmin }) {
   const [newOptions,  setNewOptions]  = useState(''); // comma-separated for select
   const [newHelp,     setNewHelp]     = useState('');
   const [newCategory, setNewCategory] = useState(''); // '' = global (all contracts)
+  const [newAppliesTo, setNewAppliesTo] = useState(''); // '' = general asset field; 'arc_flash' = arc-flash long tail
 
   function load() {
     setLoading(true);
@@ -70,6 +71,7 @@ export default function CustomFieldsSection({ isAdmin }) {
         required:   newRequired,
         helpText:   newHelp.trim() || undefined,
         categoryId: newCategory || null,
+        appliesTo:  newAppliesTo || undefined,
       };
       if (newType === 'select') {
         body.options = newOptions.split(',').map(s => s.trim()).filter(Boolean);
@@ -87,7 +89,7 @@ export default function CustomFieldsSection({ isAdmin }) {
         setError(d.error || 'Failed to create field');
       } else {
         setNewName(''); setNewType('text'); setNewRequired(false);
-        setNewOptions(''); setNewHelp(''); setNewCategory('');
+        setNewOptions(''); setNewHelp(''); setNewCategory(''); setNewAppliesTo('');
         load();
       }
     } finally {
@@ -289,6 +291,18 @@ export default function CustomFieldsSection({ isAdmin }) {
             style={{ width: '100%', padding: '6px 10px', fontSize: 'var(--font-size-ui)', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-surface)', color: 'var(--color-text)', marginBottom: 10, boxSizing: 'border-box' }}
           />
         )}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>Applies to</label>
+          <select
+            aria-label="Applies to"
+            value={newAppliesTo}
+            onChange={(e) => setNewAppliesTo(e.target.value)}
+            style={{ maxWidth: 280, width: '100%', padding: '6px 10px', fontSize: 'var(--font-size-ui)', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-surface)', color: 'var(--color-text)' }}
+          >
+            <option value="">General asset field</option>
+            <option value="arc_flash">Arc-flash equipment (shown on the Arc Flash tab)</option>
+          </select>
+        </div>
         <input
           value={newHelp}
           onChange={(e) => setNewHelp(e.target.value)}

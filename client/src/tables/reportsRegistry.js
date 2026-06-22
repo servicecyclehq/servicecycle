@@ -19,7 +19,7 @@
 
 import {
   BarChart3, AlertTriangle, FileCheck2, Download, BookOpen,
-  ClipboardList, TrendingUp, ShieldCheck, LineChart, Archive,
+  ClipboardList, TrendingUp, ShieldCheck, LineChart, Archive, Zap,
 } from 'lucide-react';
 
 export const REPORTS = [
@@ -38,6 +38,14 @@ export const REPORTS = [
     icon: LineChart,
     planned: false,
     to: '/reports/revenue',
+  },
+  {
+    id: 'arc-flash-labels',
+    name: 'Arc Flash Label Report',
+    description: 'Every current NFPA 70E 130.5(H) arc-flash label across your sites — nominal voltage, incident energy, arc-flash boundary, PPE / minimum arc rating, and DANGER/WARNING severity — with study dates and which studies are expiring within 90 days. The label schedule auditors and insurers ask for.',
+    icon: Zap,
+    planned: false,
+    to: '/reports/arc-flash',
   },
   {
     id: 'emp-document',

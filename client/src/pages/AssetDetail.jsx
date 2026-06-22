@@ -44,6 +44,7 @@ import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import NameplateCard from '../components/NameplateCard';
 import IncidentLogCard from '../components/IncidentLogCard';
 import ArcFlashTrend from '../components/ArcFlashTrend';
+import ArcFlashAssetTab from '../components/ArcFlashAssetTab';
 import DgaImportCard from '../components/DgaImportCard';
 import ThermographyImportCard from '../components/ThermographyImportCard';
 
@@ -492,17 +493,38 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
             <textarea className="form-control form-control-wide" aria-label="Notes" rows={3} value={form.notes} onChange={e => setF('notes', e.target.value)} />
           </div>
 
-          {fieldDefs.length > 0 && (
-            <div className="form-group" style={{ marginTop: 12 }}>
-              <label className="form-label">Custom Fields</label>
-              <CustomFieldInputs
-                definitions={fieldDefs}
-                values={customFields}
-                onChange={(id, v) => setCustomFields(p => ({ ...p, [id]: v }))}
-                disabled={saving}
-              />
-            </div>
-          )}
+          {(() => {
+            // Slice H: general asset fields vs the arc-flash equipment long tail.
+            // Both feed the same customFields state + the same save path.
+            const generalDefs = fieldDefs.filter(d => d.appliesTo !== 'arc_flash');
+            const arcFlashDefs = fieldDefs.filter(d => d.appliesTo === 'arc_flash');
+            return (
+              <>
+                {generalDefs.length > 0 && (
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label className="form-label">Custom Fields</label>
+                    <CustomFieldInputs
+                      definitions={generalDefs}
+                      values={customFields}
+                      onChange={(id, v) => setCustomFields(p => ({ ...p, [id]: v }))}
+                      disabled={saving}
+                    />
+                  </div>
+                )}
+                {arcFlashDefs.length > 0 && (
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label className="form-label">Arc Flash Fields</label>
+                    <CustomFieldInputs
+                      definitions={arcFlashDefs}
+                      values={customFields}
+                      onChange={(id, v) => setCustomFields(p => ({ ...p, [id]: v }))}
+                      disabled={saving}
+                    />
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button type="submit" className="btn btn-primary" disabled={saving}>
@@ -818,7 +840,7 @@ export default function AssetDetail() {
       </div>
 
       <div className="detail-tabs">
-        {[['overview', 'Overview'], ['testing', 'Testing & Trends']].map(([key, label]) => (
+        {[['overview', 'Overview'], ['testing', 'Testing & Trends'], ...(accountFeatures.arc_flash_studies ? [['arcflash', 'Arc Flash']] : [])].map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -835,6 +857,7 @@ export default function AssetDetail() {
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
 
         {activeTab === 'testing' && <TestingTrendsTab asset={asset} canWrite={canWrite} />}
+        {activeTab === 'arcflash' && <ArcFlashAssetTab assetId={asset.id} canWrite={canWrite} />}
         {activeTab === 'overview' && (<>
 
         {editing && (
