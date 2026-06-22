@@ -64,6 +64,14 @@ export const REPORTS = [
     to: '/reports/arc-flash-heatmap',
   },
   {
+    id: 'arc-flash-search',
+    name: 'Arc Flash Search',
+    description: 'Ask in plain English — "480V MCC over 8 cal that are blocked", "DANGER buses with low confidence", "switchgear with expired studies" — and get the matching buses, with the interpretation shown so results are explainable.',
+    icon: Zap,
+    planned: false,
+    to: '/reports/arc-flash-search',
+  },
+  {
     id: 'emp-document',
     name: 'Export EMP Document',
     description: 'Download your formal Electrical Maintenance Program (NFPA 70B §4.2) as a PDF — asset inventory, maintenance intervals, 24-month work-order history, condition ratings, open deficiencies, and personnel qualifications. Required by insurance carriers at policy renewal.',

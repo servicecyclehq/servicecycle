@@ -28,6 +28,7 @@ const { buildCollectionTasks, extractDeviceFromPhoto } = require('../lib/arcFlas
 const { scoreBusConfidence, pickDeviceSource } = require('../lib/arcFlashConfidence');
 const { diffIngestRevisions } = require('../lib/arcFlashDrift');
 const { checkSystemContradictions, checkBusContradictions } = require('../lib/arcFlashSanity');
+const { parseQuery, matchRow } = require('../lib/arcFlashSearch');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1328,6 +1329,57 @@ router.get('/audit-bundle', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash audit-bundle error:', e);
     res.status(500).json({ success: false, error: 'Failed to build arc-flash audit bundle' });
+  }
+});
+
+// ── GET /search?q= ── Slice 3e: deterministic natural-language facility search ─
+// Parse a plain-English query into structured filters and match the current label
+// rows. Returns the interpretation (so it's explainable) + the matches. Read-only.
+router.get('/search', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const q = String(req.query.q || '');
+    const parsed = parseQuery(q);
+    const now = Date.now();
+    const soon = new Date(now + 90 * 24 * 60 * 60 * 1000);
+
+    const [rows, devices, driftTests] = await Promise.all([
+      prisma.systemStudyAsset.findMany({
+        where: { accountId, study: { supersededById: null } },
+        include: {
+          study: { select: { performedDate: true, expiresAt: true, sourceModel: { select: { utilityMaxFaultKA: true } } } },
+          asset: { select: { id: true, equipmentType: true, site: { select: { name: true } } } },
+        },
+        take: 3000,
+      }),
+      prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { not: null } }, select: { assetId: true, source: true }, take: 5000 }),
+      prisma.deviceTestRecord.findMany({ where: { accountId, driftFlagged: true, assetId: { not: null } }, select: { assetId: true }, take: 5000 }),
+    ]);
+    const devByAsset = new Map<string, any[]>();
+    for (const d of devices) { if (!d.assetId) continue; const arr = devByAsset.get(d.assetId) || []; arr.push(d); devByAsset.set(d.assetId, arr); }
+    const driftAssets = new Set(driftTests.map((t: any) => t.assetId));
+
+    const enriched = rows.map((r: any) => {
+      const bus = busForFleet(r, r.asset?.equipmentType);
+      const ie = numOrNull(r.incidentEnergyCalCm2);
+      const v = voltsOf(r.nominalVoltage);
+      const sev = r.labelSeverity || (((ie != null && ie > 40) || (v != null && v > 600)) ? 'danger' : (ie != null || v != null ? 'warning' : null));
+      const g = analyzeBusGaps(busForGap(bus));
+      const conf = scoreBusConfidence({ bus, study: { performedDate: r.study?.performedDate, expiresAt: r.study?.expiresAt, superseded: false }, deviceSource: pickDeviceSource(devByAsset.get(r.assetId) || []), driftFlagged: driftAssets.has(r.assetId) });
+      const expired = r.study?.expiresAt ? new Date(r.study.expiresAt).getTime() < now : false;
+      return {
+        assetId: r.assetId, busName: r.busName, site: r.asset?.site?.name || null, equipmentType: r.asset?.equipmentType || null,
+        nominalVoltage: r.nominalVoltage, incidentEnergyCalCm2: ie, labelSeverity: sev, readiness: g.readiness,
+        confidence: { score: conf.score, band: conf.band },
+        expired, expiringSoon: r.study?.expiresAt ? (!expired && new Date(r.study.expiresAt) <= soon) : false,
+      };
+    });
+
+    const matched = enriched.filter((row: any) => matchRow(row, parsed.filters));
+    res.json({ success: true, data: { query: q, interpreted: parsed.recognized, unrecognized: parsed.unrecognized, total: matched.length, matched: matched.slice(0, 500) } });
+  } catch (e) {
+    console.error('arc-flash search error:', e);
+    res.status(500).json({ success: false, error: 'Failed to run arc-flash search' });
   }
 });
 
