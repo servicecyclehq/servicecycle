@@ -47,12 +47,14 @@ function numOrNull(v: any): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-// Shape a bus row/record for the gap engine.
+// Shape a bus row/record for the gap engine (incl. 2.6 device + cable inputs).
 function busForGap(b: any) {
   return {
     busName: b.busName, equipmentTypeGuess: b.equipmentTypeGuess, nominalVoltage: b.nominalVoltage,
     boltedFaultCurrentKA: numOrNull(b.boltedFaultCurrentKA), clearingTimeMs: numOrNull(b.clearingTimeMs),
     electrodeConfig: b.electrodeConfig, conductorGapMm: numOrNull(b.conductorGapMm), workingDistanceIn: numOrNull(b.workingDistanceIn),
+    deviceType: b.deviceType, deviceRatingA: numOrNull(b.deviceRatingA), deviceSettings: b.deviceSettings,
+    cableLengthFt: numOrNull(b.cableLengthFt), cableSize: b.cableSize,
   };
 }
 
@@ -64,6 +66,9 @@ function busOut(b: any) {
     boltedFaultCurrentKA: numOrNull(b.boltedFaultCurrentKA), arcingCurrentKA: numOrNull(b.arcingCurrentKA),
     electrodeConfig: b.electrodeConfig, conductorGapMm: numOrNull(b.conductorGapMm), clearingTimeMs: numOrNull(b.clearingTimeMs),
     workingDistanceIn: numOrNull(b.workingDistanceIn), upstreamDevice: b.upstreamDevice,
+    deviceType: b.deviceType, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
+    deviceRatingA: numOrNull(b.deviceRatingA), deviceSettings: b.deviceSettings,
+    cableLengthFt: numOrNull(b.cableLengthFt), cableSize: b.cableSize, cableMaterial: b.cableMaterial,
     incidentEnergyCalCm2: numOrNull(b.incidentEnergyCalCm2), arcFlashBoundaryIn: numOrNull(b.arcFlashBoundaryIn), ppeCategory: b.ppeCategory,
     gaps: b.gaps, readiness: b.readiness, confidence: b.confidence, resolution: b.resolution, matchedAssetId: b.matchedAssetId,
   };
@@ -159,6 +164,9 @@ router.post('/ingest', requireManager, (req: any, res: any) => {
             nominalVoltage: b.nominalVoltage, boltedFaultCurrentKA: b.boltedFaultCurrentKA, arcingCurrentKA: b.arcingCurrentKA,
             electrodeConfig: b.electrodeConfig, conductorGapMm: b.conductorGapMm, clearingTimeMs: b.clearingTimeMs,
             workingDistanceIn: b.workingDistanceIn, upstreamDevice: b.upstreamDevice,
+            deviceType: b.deviceType, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
+            deviceRatingA: b.deviceRatingA, deviceSettings: b.deviceSettings ?? undefined,
+            cableLengthFt: b.cableLengthFt, cableSize: b.cableSize, cableMaterial: b.cableMaterial,
             incidentEnergyCalCm2: b.incidentEnergyCalCm2, arcFlashBoundaryIn: b.arcFlashBoundaryIn, ppeCategory: b.ppeCategory,
             gaps: g, readiness: g.readiness, confidence: g.confidence, resolution: b.equipmentTypeGuess ? 'create' : 'pending',
           },
@@ -246,7 +254,15 @@ router.patch('/ingest/:id/bus/:busId', requireManager, async (req: any, res: any
     if (b.fedFromBusName !== undefined) patch.fedFromBusName = b.fedFromBusName || null;
     if (b.nominalVoltage !== undefined) patch.nominalVoltage = b.nominalVoltage || null;
     if (b.upstreamDevice !== undefined) patch.upstreamDevice = b.upstreamDevice || null;
-    for (const f of ['boltedFaultCurrentKA', 'arcingCurrentKA', 'conductorGapMm', 'clearingTimeMs', 'workingDistanceIn', 'incidentEnergyCalCm2', 'arcFlashBoundaryIn']) {
+    // 2.6 — protective-device + feeder-cable fields collected in review/field.
+    for (const f of ['deviceType', 'deviceManufacturer', 'deviceModel', 'cableSize', 'cableMaterial']) {
+      if (b[f] !== undefined) patch[f] = b[f] || null;
+    }
+    if (b.deviceSettings !== undefined) {
+      if (b.deviceSettings === null || b.deviceSettings === '') patch.deviceSettings = null;
+      else if (typeof b.deviceSettings === 'object') patch.deviceSettings = b.deviceSettings;
+    }
+    for (const f of ['boltedFaultCurrentKA', 'arcingCurrentKA', 'conductorGapMm', 'clearingTimeMs', 'workingDistanceIn', 'incidentEnergyCalCm2', 'arcFlashBoundaryIn', 'deviceRatingA', 'cableLengthFt']) {
       if (b[f] !== undefined) patch[f] = b[f] === null || b[f] === '' ? null : numOrNull(b[f]);
     }
     if (b.electrodeConfig !== undefined) {

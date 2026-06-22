@@ -1,48 +1,40 @@
 /**
  * lib/arcFlashGap.ts — the arc-flash "what's missing per bus to run IEEE 1584"
- * gap-analysis engine (Slice 2 centerpiece / easy-button moat).
+ * gap-analysis engine (Slice 2 centerpiece, reworked in 2.6 for how studies are
+ * ACTUALLY data-collected, per the field-PE review).
  *
- * Given a bus extracted from a one-line or study report, this DETERMINISTICALLY
- * decides, per IEEE 1584-2018, which calculation inputs are present, which can
- * be pre-populated with the standard's typical-by-equipment-class values
- * (flagged "confirm"), and which must be obtained from field/utility/coordination
- * data before a PE can run the study. The output is the per-bus punch list +
- * confidence band the Review Package is built from.
+ * Per-bus required inputs, framed as a field collector gathers them:
+ *   nominalVoltage   — system voltage at the bus.
+ *   faultCurrent     — available fault current at the bus (from the short-circuit
+ *                      study / utility), OR the feeder CABLE length + size to
+ *                      compute it from the upstream source.
+ *   protectiveDevice — the upstream device's rating + trip SETTINGS (breaker
+ *                      frame/sensor + LSIG, or fuse class/rating). Clearing time
+ *                      is DERIVED from these via the device TCC, so an explicit
+ *                      clearing time also satisfies it.
+ * These are must-obtain (collected down to 480V panels; a tech opens the door to
+ * read the device). The TYPICAL set — electrode config, conductor gap, working
+ * distance — is pre-populated from IEEE 1584-2018 by equipment class.
  *
- * IMPORTANT (engineering-guidelines #7): confidence here is derived from the
- * deterministic presence/plausibility of inputs — NOT from any LLM's
- * self-reported confidence (LLM confidence is systematically overconfident).
+ * IMPORTANT (engineering-guidelines #7): confidence is DETERMINISTIC from input
+ * presence/plausibility — never an LLM's self-reported confidence.
  *
- * SC is the DATA layer. These typical values are IEEE 1584-2018 Table-9-class
- * guidance to pre-populate a draft; a licensed PE still runs and stamps the
- * actual study. Every defaulted value is surfaced as "typical — confirm".
+ * SC is the DATA layer; a licensed PE runs + stamps the study (in SKM/ETAP/
+ * EasyPower). Every defaulted value is surfaced as "typical — confirm".
  */
 
 'use strict';
 
-// ── IEEE 1584-2018 required calculation inputs ───────────────────────────────
-// Two categories:
-//   must_obtain — site/utility/coordination facts that cannot be safely assumed
-//                 (a wrong assumption changes the answer materially).
-//   typical     — pre-populated from the standard's by-equipment-class values
-//                 (electrode config, conductor gap, working distance), shown for
-//                 confirmation. Missing typicals don't block a draft calc.
-export const MUST_OBTAIN = ['nominalVoltage', 'boltedFaultCurrentKA', 'clearingTimeMs'];
+export const MUST_OBTAIN = ['nominalVoltage', 'faultCurrent', 'protectiveDevice'];
 export const TYPICAL = ['electrodeConfig', 'conductorGapMm', 'workingDistanceIn'];
 
 const FIELD_LABEL: Record<string, string> = {
-  nominalVoltage:       'System voltage',
-  boltedFaultCurrentKA: 'Bolted fault current',
-  clearingTimeMs:       'Protective-device clearing time',
-  electrodeConfig:      'Electrode configuration',
-  conductorGapMm:       'Conductor gap',
-  workingDistanceIn:    'Working distance',
-};
-
-const MUST_OBTAIN_NOTE: Record<string, string> = {
-  nominalVoltage:       'Read the system voltage at this bus off the one-line.',
-  boltedFaultCurrentKA: 'Obtain from the short-circuit study or the utility available-fault-current letter.',
-  clearingTimeMs:       'Derive from the upstream protective device clearing time at the arcing current (coordination / TCC data).',
+  nominalVoltage:    'System voltage',
+  faultCurrent:      'Available fault current',
+  protectiveDevice:  'Upstream device + trip settings',
+  electrodeConfig:   'Electrode configuration',
+  conductorGapMm:    'Conductor gap',
+  workingDistanceIn: 'Working distance',
 };
 
 // Parse a nominal-voltage label ("480V", "13.8kV", "208") to volts.
@@ -55,14 +47,15 @@ function parseVolts(raw: any): number | null {
   return /kv/i.test(m[2] || '') ? n * 1000 : n;
 }
 
-// A field "counts" as present only if it carries a usable, plausible value.
+// A value "counts" as present only if usable: a finite non-negative number, a
+// non-empty object (e.g. device settings JSON), or a non-empty string.
 function present(v: any): boolean {
   if (v == null || v === '') return false;
   if (typeof v === 'number') return Number.isFinite(v) && v >= 0;
+  if (typeof v === 'object') return Object.keys(v).length > 0;
   return true;
 }
 
-// Map our EquipmentType enum to an IEEE-1584 equipment family for default lookup.
 function equipFamily(equipmentType: any): string {
   const t = String(equipmentType || '').toUpperCase();
   if (t === 'SWITCHGEAR' || t === 'SWITCHBOARD') return 'switchgear';
@@ -71,24 +64,21 @@ function equipFamily(equipmentType: any): string {
   return 'other';
 }
 
-// Voltage class buckets used by the typical-value table.
 function voltageClass(volts: number | null): string | null {
   if (volts == null) return null;
   if (volts <= 600) return 'lv';
   if (volts <= 5000) return 'mv5';
-  return 'mv15'; // 1584-2018 model tops out at 15 kV; >15 kV flagged elsewhere
+  return 'mv15';
 }
 
 // IEEE 1584-2018 typical electrode config / conductor gap / working distance by
-// equipment class. Values are the standard's representative figures used to
-// pre-populate a draft; always confirmed by the engineer.
+// equipment class — representative figures used to pre-populate a draft; always
+// confirmed by the engineer.
 export function ieee1584Defaults(equipmentType: any, nominalVoltage: any): any {
   const fam = equipFamily(equipmentType);
   const vc = voltageClass(parseVolts(nominalVoltage));
-
   if (fam === 'cable') {
-    return { available: true, className: 'Cable', electrodeConfig: 'VCB', conductorGapMm: 13, workingDistanceIn: 18,
-      note: 'IEEE 1584-2018 typical for cable — confirm.' };
+    return { available: true, className: 'Cable', electrodeConfig: 'VCB', conductorGapMm: 13, workingDistanceIn: 18, note: 'IEEE 1584-2018 typical for cable — confirm.' };
   }
   if (fam === 'switchgear') {
     if (vc === 'lv')   return { available: true, className: 'LV switchgear (<=600 V)', electrodeConfig: 'VCB', conductorGapMm: 32,  workingDistanceIn: 24, note: 'IEEE 1584-2018 typical for LV switchgear — confirm (electrode VCB; VCBB if barriered).' };
@@ -100,43 +90,53 @@ export function ieee1584Defaults(equipmentType: any, nominalVoltage: any): any {
     if (vc === 'mv5')  return { available: true, className: 'MV MCC (<=5 kV)',  electrodeConfig: 'VCB', conductorGapMm: 104, workingDistanceIn: 36, note: 'IEEE 1584-2018 typical for 5 kV equipment — confirm.' };
     if (vc === 'mv15') return { available: true, className: 'MV MCC (<=15 kV)', electrodeConfig: 'VCB', conductorGapMm: 152, workingDistanceIn: 36, note: 'IEEE 1584-2018 typical for 15 kV equipment — confirm.' };
   }
-  return { available: false, className: 'Unknown equipment class',
-    note: vc == null
-      ? 'Confirm equipment type and system voltage to pre-fill typical gap / working distance.'
-      : 'Confirm equipment type to pre-fill typical gap / working distance.' };
+  return { available: false, className: 'Unknown equipment class', note: vc == null ? 'Confirm equipment type and system voltage to pre-fill typical gap / working distance.' : 'Confirm equipment type to pre-fill typical gap / working distance.' };
 }
 
-// Analyze one bus: classify every required IEEE 1584 input, apply typical
-// defaults where the equipment class allows, and roll up readiness + a
-// deterministic confidence band.
+// Evaluate the three composite must-obtain inputs for a bus.
+function evalMusts(bus: any) {
+  const voltageOk = present(bus.nominalVoltage);
+
+  const faultDirect = present(bus.boltedFaultCurrentKA);
+  const cableOk = present(bus.cableLengthFt) && present(bus.cableSize);
+  const faultOk = faultDirect || cableOk;
+
+  const deviceFull = present(bus.deviceType) && present(bus.deviceRatingA) && present(bus.deviceSettings);
+  const clearingDirect = present(bus.clearingTimeMs);
+  const deviceOk = deviceFull || clearingDirect;
+
+  return {
+    nominalVoltage: { ok: voltageOk, via: voltageOk ? 'provided' : null,
+      note: voltageOk ? 'Provided.' : 'Read the system voltage at this bus off the one-line.' },
+    faultCurrent: { ok: faultOk, via: faultDirect ? 'study/utility value' : cableOk ? 'computable from feeder cable' : null,
+      note: faultOk ? (faultDirect ? 'Provided (study/utility).' : 'Will be computed from the feeder cable + upstream source.')
+        : 'Obtain the available fault current (short-circuit study / utility), OR record the feeder cable length + size so it can be computed from upstream.' },
+    protectiveDevice: { ok: deviceOk, via: deviceFull ? 'device + settings' : clearingDirect ? 'explicit clearing time' : null,
+      note: deviceOk ? (deviceFull ? 'Device rating + trip settings provided.' : 'Clearing time provided directly.')
+        : 'Record the upstream protective device: frame/sensor rating + trip settings (long/short/inst/ground-fault), or fuse class + rating. Clearing time derives from these via the device TCC.' },
+  };
+}
+
+// Analyze one bus: classify required inputs, apply typical defaults where the
+// equipment class allows, roll up readiness + a deterministic confidence band.
 export function analyzeBusGaps(bus: any): any {
   const defaults = ieee1584Defaults(bus.equipmentTypeGuess, bus.nominalVoltage);
   const equipmentKnown = equipFamily(bus.equipmentTypeGuess) !== 'other';
+  const musts = evalMusts(bus);
+
   const fields: any[] = [];
   const missingRequired: string[] = [];
   const defaultsApplied: string[] = [];
 
-  // Must-obtain inputs: present or missing (never defaulted).
-  for (const f of MUST_OBTAIN) {
-    const has = present(bus[f]);
-    fields.push({
-      field: f, label: FIELD_LABEL[f], category: 'must_obtain',
-      status: has ? 'present' : 'missing',
-      value: has ? bus[f] : null,
-      note: has ? 'Provided.' : MUST_OBTAIN_NOTE[f],
-    });
-    if (!has) missingRequired.push(f);
+  for (const key of MUST_OBTAIN) {
+    const m = (musts as any)[key];
+    fields.push({ field: key, label: FIELD_LABEL[key], category: 'must_obtain', status: m.ok ? 'present' : 'missing', via: m.via, note: m.note });
+    if (!m.ok) missingRequired.push(key);
   }
 
-  // Typical inputs: present, else defaulted from the equipment class, else missing.
-  const defaultFor: Record<string, any> = {
-    electrodeConfig:   defaults.electrodeConfig,
-    conductorGapMm:    defaults.conductorGapMm,
-    workingDistanceIn: defaults.workingDistanceIn,
-  };
+  const defaultFor: Record<string, any> = { electrodeConfig: defaults.electrodeConfig, conductorGapMm: defaults.conductorGapMm, workingDistanceIn: defaults.workingDistanceIn };
   for (const f of TYPICAL) {
-    const has = present(bus[f]);
-    if (has) {
+    if (present(bus[f])) {
       fields.push({ field: f, label: FIELD_LABEL[f], category: 'typical', status: 'present', value: bus[f], note: 'Provided.' });
     } else if (defaults.available && defaultFor[f] != null) {
       fields.push({ field: f, label: FIELD_LABEL[f], category: 'typical', status: 'defaulted', value: null, defaultValue: defaultFor[f], note: defaults.note });
@@ -147,18 +147,15 @@ export function analyzeBusGaps(bus: any): any {
     }
   }
 
-  // Readiness: blocked if any must-obtain missing OR a typical can't even be
-  // defaulted; ready if everything is present; otherwise defaultable.
-  const mustMissing = MUST_OBTAIN.some((f) => !present(bus[f]));
+  const mustMissing = MUST_OBTAIN.some((k) => !(musts as any)[k].ok);
   const typicalUndefaultable = TYPICAL.some((f) => !present(bus[f]) && !(defaults.available && defaultFor[f] != null));
-  const allPresent = MUST_OBTAIN.concat(TYPICAL).every((f) => present(bus[f]));
+  const allPresent = !mustMissing && TYPICAL.every((f) => present(bus[f]));
 
   let readiness: string;
   if (mustMissing || typicalUndefaultable) readiness = 'blocked';
   else if (allPresent) readiness = 'ready';
   else readiness = 'defaultable';
 
-  // Deterministic confidence band.
   let confidence: string;
   if (readiness === 'blocked') confidence = 'red';
   else if (readiness === 'ready' && equipmentKnown) confidence = 'green';
@@ -181,12 +178,27 @@ function buildSummary(bus: any, readiness: string, missingRequired: string[], de
   return `${name}: ${parts.join('; ')}.`;
 }
 
+// System/utility-level gaps: the utility available fault current (max + min) and
+// X/R at the point of common coupling are the source of the whole fault tree.
+export function analyzeSystemGaps(systemMeta: any): any {
+  const sm = systemMeta || {};
+  const u = sm.utility || {};
+  const items = [
+    { field: 'utilityMaxFaultKA', label: 'Utility max available fault current (PCC)', ok: present(u.maxFaultKA), note: 'From the utility, at the point of common coupling (service entrance).' },
+    { field: 'utilityMinFaultKA', label: 'Utility min available fault current (PCC)', ok: present(u.minFaultKA), note: 'Min case drives the worst arcing duration; request both from the utility.' },
+    { field: 'utilityXR', label: 'Utility X/R ratio (PCC)', ok: present(u.xr), note: 'X/R at the service entrance, from the utility.' },
+  ];
+  return { items, missing: items.filter((i) => !i.ok).map((i) => i.field), complete: items.every((i) => i.ok) };
+}
+
 // Roll up per-bus bands into the ingest-level summary (worst band wins).
+// readyBusCount = buses whose must-obtain field data is fully collected (not
+// blocked) — typicals may still be IEEE-defaulted.
 export function summarizeIngestBands(results: any[]): any {
   let overall = 'green';
   let ready = 0;
   for (const r of results) {
-    if (r.readiness === 'ready') ready++;
+    if (r.readiness !== 'blocked') ready++;
     if (r.confidence === 'red') overall = 'red';
     else if (r.confidence === 'yellow' && overall !== 'red') overall = 'yellow';
   }

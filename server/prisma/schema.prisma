@@ -2878,6 +2878,17 @@ model ArcFlashIngestBus {
   clearingTimeMs       Decimal? @db.Decimal(10, 1)
   workingDistanceIn    Decimal? @db.Decimal(10, 1)
   upstreamDevice       String?
+  // Slice 2.6 — upstream PROTECTIVE DEVICE (collected in the field down to 480V
+  // panels) + FEEDER CABLE. Clearing time is DERIVED from device + settings via
+  // the device's TCC curve, not a number a tech reads off the breaker.
+  deviceType           String? // breaker | fuse | relay | switch
+  deviceManufacturer   String?
+  deviceModel          String?
+  deviceRatingA        Decimal? @db.Decimal(10, 1) // frame / sensor amp rating
+  deviceSettings       Json? // LSIG trip settings (long/short/inst/gf) or fuse class+rating
+  cableLengthFt        Decimal? @db.Decimal(10, 1)
+  cableSize            String? // e.g. "500 kcmil", "#2 AWG"
+  cableMaterial        String? // Cu | Al
   incidentEnergyCalCm2 Decimal? @db.Decimal(10, 2)
   arcFlashBoundaryIn   Decimal? @db.Decimal(10, 1)
   ppeCategory          Int?
