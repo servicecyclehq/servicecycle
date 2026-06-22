@@ -119,6 +119,7 @@ export default function ArcFlashFleet() {
             Confidence is a deterministic 0–100 data-trust score (input completeness, study freshness, field verification, setting drift) — not a certification of the calculation. Sanity errors are physically impossible or under-protective values to fix before the label is trusted.
           </p>
 
+          <RiskScore />
           <AuditBundle />
           <RegulatoryReview />
           <ImportResults onApplied={load} />
@@ -203,6 +204,66 @@ function ImportResults({ onApplied }) {
               Unmatched: {preview.unmatched.slice(0, 8).map(u => u.busName).join(', ')}{preview.unmatched.length > 8 ? '…' : ''}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Slice 10 — portfolio / insurer risk score + anonymized network benchmark.
+function riskColor(band) { return band === 'low' ? '#15803d' : band === 'moderate' ? '#b45309' : '#b91c1c'; }
+function RiskScore() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run() {
+    setLoading(true); setErr('');
+    try {
+      const r = await api.get('/api/arc-flash/risk-score');
+      setData(r.data?.data || null);
+    } catch { setErr('Could not compute the risk score.'); }
+    finally { setLoading(false); }
+  }
+
+  const b = data?.benchmark;
+  return (
+    <div className="card" style={{ padding: '14px 16px', marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1rem' }}>Portfolio risk score</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--color-text-secondary)', fontSize: '0.82rem' }}>
+            A 0–100 arc-flash safety score (higher = safer) for executives and insurers, with an anonymized benchmark against the network.
+          </p>
+        </div>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={run} disabled={loading}>{loading ? 'Scoring…' : 'Compute score'}</button>
+      </div>
+
+      {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
+
+      {data && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '2.2rem', fontWeight: 800, color: riskColor(data.band) }}>{data.score}</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>/ 100 · <strong style={{ color: riskColor(data.band) }}>{data.band} risk</strong></span>
+          </div>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: '0.8rem' }}>
+            {data.factors.map((f, i) => (
+              <li key={i} style={{ marginBottom: 2 }}>{f.label}: {f.detail}{f.penalty > 0 ? <span style={{ color: 'var(--color-danger)' }}> (−{f.penalty})</span> : null}</li>
+            ))}
+          </ul>
+
+          <div style={{ marginTop: 12, borderTop: '1px dashed var(--color-border)', paddingTop: 10, fontSize: '0.82rem' }}>
+            {b?.available ? (
+              <div>
+                <strong>Network benchmark</strong> ({b.accountCount} anonymized portfolios):
+                your DANGER share is <strong>{b.yourDangerPct}%</strong> vs a network median of <strong>{b.medianDangerPct}%</strong> (25th–75th: {b.p25DangerPct}%–{b.p75DangerPct}%).
+                You are safer than <strong>{b.yourSafetyPercentile}%</strong> of the network.
+              </div>
+            ) : (
+              <div style={{ color: 'var(--color-text-secondary)' }}>Network benchmark withheld until at least {b?.minAccounts} portfolios contribute (privacy floor). Currently {b?.accountCount}.</div>
+            )}
+          </div>
         </div>
       )}
     </div>

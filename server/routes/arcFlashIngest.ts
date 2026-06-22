@@ -40,6 +40,7 @@ const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 const { buildTimeline } = require('../lib/arcFlashTimeline');
 const { assessRegulatoryStatus } = require('../lib/arcFlashRegulatory');
 const { buildOneLine } = require('../lib/arcFlashOneLine');
+const { computeRiskScore, buildBenchmark } = require('../lib/arcFlashRiskScore');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1485,6 +1486,44 @@ router.get('/tcc-library', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash tcc-library error:', e);
     res.status(500).json({ success: false, error: 'Failed to search the device library' });
+  }
+});
+
+// ── GET /risk-score ── Slice 10: portfolio/insurer risk score + benchmark ─────
+// The account's deterministic arc-flash safety score (0-100, higher = safer) plus
+// where it sits in the anonymized network. The benchmark is aggregate-only and
+// withheld below the k-anonymity floor — no other account's data is ever exposed.
+// Manager/admin via the Reports gate.
+router.get('/risk-score', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const now = new Date();
+    const [labelledBuses, dangerBuses, totalStudies, expiredStudies] = await Promise.all([
+      prisma.systemStudyAsset.count({ where: { accountId, study: { supersededById: null } } }),
+      prisma.systemStudyAsset.count({ where: { accountId, study: { supersededById: null }, labelSeverity: 'danger' } }),
+      prisma.systemStudy.count({ where: { accountId, supersededById: null, studyType: 'arc_flash' } }),
+      prisma.systemStudy.count({ where: { accountId, supersededById: null, studyType: 'arc_flash', expiresAt: { lt: now } } }),
+    ]);
+    const metrics = { labelledBuses, dangerBuses, totalStudies, expiredStudies };
+    const risk = computeRiskScore(metrics);
+
+    // Anonymized network benchmark: per-account DANGER ratio across all accounts,
+    // ids discarded before aggregation. k-anon enforced in buildBenchmark.
+    const [totals, dangers] = await Promise.all([
+      prisma.systemStudyAsset.groupBy({ by: ['accountId'], where: { study: { supersededById: null } }, _count: { _all: true } }),
+      prisma.systemStudyAsset.groupBy({ by: ['accountId'], where: { study: { supersededById: null }, labelSeverity: 'danger' }, _count: { _all: true } }),
+    ]);
+    const dangerByAcct = new Map(dangers.map((d: any) => [d.accountId, d._count._all]));
+    const ratios = totals
+      .filter((t: any) => t._count._all > 0)
+      .map((t: any) => (dangerByAcct.get(t.accountId) || 0) / t._count._all);
+    const yourRatio = labelledBuses > 0 ? dangerBuses / labelledBuses : 0;
+    const benchmark = buildBenchmark(ratios, yourRatio);
+
+    res.json({ success: true, data: { score: risk.score, band: risk.band, factors: risk.factors, metrics, benchmark } });
+  } catch (e) {
+    console.error('arc-flash risk-score error:', e);
+    res.status(500).json({ success: false, error: 'Failed to compute the risk score' });
   }
 });
 
