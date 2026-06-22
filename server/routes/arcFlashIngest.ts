@@ -35,6 +35,7 @@ const QRCode = require('qrcode');
 const crypto = require('crypto');
 const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
+const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1145,6 +1146,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
         current,
         confidence: current ? current.confidence : null,
         contradictions: current ? checkBusContradictions(current, { utilityMaxFaultKA: current.study?.sourceModel?.utilityMaxFaultKA ?? null }) : [],
+        mitigations: current ? recommendMitigations(current) : null,
         labelSeverity: current ? (current.labelSeverity || (danger ? 'danger' : 'warning')) : null,
         studyAssets,
         devices: devices.map(deviceOut),
@@ -1209,6 +1211,31 @@ router.post('/asset/:assetId/issue-label', requireManager, async (req: any, res:
   } catch (e) {
     console.error('arc-flash issue-label error:', e);
     res.status(500).json({ success: false, error: 'Failed to issue label' });
+  }
+});
+
+// ── POST /asset/:assetId/what-if ── Slice 4.5: mitigation what-if + ROI ───────
+// Models the effect of a USER/PE-supplied expected reduction % on the asset's
+// current incident energy: energy-after, PPE-band change, whether it clears the
+// >40 cal DANGER line, and $/cal-reduced. SC does NOT run IEEE 1584 — the
+// reduction % is an input, and the result is flagged "confirm by re-study".
+router.post('/asset/:assetId/what-if', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const rows = await prisma.systemStudyAsset.findMany({
+      where: { assetId: asset.id, accountId },
+      include: { study: { select: { performedDate: true, supersededById: true } } },
+    });
+    if (!rows.length) return res.status(400).json({ success: false, error: 'No bound study to model against.' });
+    const current = currentStudyAssetRow(rows);
+    const b = req.body || {};
+    const result = estimateMitigationRoi({ currentIeCalCm2: current?.incidentEnergyCalCm2, estReductionPct: b.estReductionPct, mitigationCostUsd: b.mitigationCostUsd });
+    res.json({ success: true, data: { mitigationKey: b.mitigationKey || null, busName: current?.busName || null, result } });
+  } catch (e) {
+    console.error('arc-flash what-if error:', e);
+    res.status(500).json({ success: false, error: 'Failed to model the mitigation' });
   }
 });
 

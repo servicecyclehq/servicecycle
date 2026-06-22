@@ -295,11 +295,94 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
         </div>
       )}
 
+      {data?.mitigations?.options?.length > 0 && <MitigationCard assetId={assetId} mitigations={data.mitigations} current={current} canWrite={canWrite} />}
+
       {data?.current && <LabelPortal assetId={assetId} canWrite={canWrite} />}
 
       {canWrite && <TccLookup />}
 
       <ArcFlashTrend assetId={assetId} />
+    </div>
+  );
+}
+
+// Slice 4 / 4.5 — incident-energy-reduction upsell + what-if ROI. Lists applicable
+// mitigations (request a quote) and models a user/PE-supplied reduction estimate.
+function MitigationCard({ assetId, mitigations, current, canWrite }) {
+  const [quoted, setQuoted] = useState({});
+  const [wf, setWf] = useState({ pct: '', cost: '' });
+  const [roi, setRoi] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function requestQuote(opt) {
+    setErr('');
+    try {
+      await api.post('/api/quote-requests', {
+        assetId, driver: 'failed_inspection', timeline: 'within_30_days', triggerType: 'ARC_FLASH_MITIGATION',
+        notes: `Arc-flash incident-energy reduction: ${opt.label}. ${opt.mechanism}`,
+      });
+      setQuoted(q => ({ ...q, [opt.key]: true }));
+    } catch (e) { setErr(e?.response?.data?.error || 'Could not submit the quote request.'); }
+  }
+
+  async function runWhatIf(e) {
+    e.preventDefault();
+    setBusy(true); setErr('');
+    try {
+      const r = await api.post(`/api/arc-flash/asset/${assetId}/what-if`, { estReductionPct: wf.pct, mitigationCostUsd: wf.cost || undefined });
+      setRoi(r.data?.data?.result || null);
+    } catch (e2) { setErr(e2?.response?.data?.error || 'Could not model the mitigation.'); }
+    finally { setBusy(false); }
+  }
+
+  const ie = current?.incidentEnergyCalCm2;
+  return (
+    <div style={card}>
+      <h3 style={{ ...h3, marginBottom: 2 }}>Incident-energy reduction</h3>
+      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: 10 }}>{mitigations.note}</div>
+
+      {mitigations.options.map(o => (
+        <div key={o.key} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 8, marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <strong style={{ fontSize: '0.84rem' }}>{o.label}
+              <span style={{ marginLeft: 6, fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: o.category === 'reduce_energy' ? '#15803d' : '#2563eb', padding: '1px 6px', borderRadius: 3 }}>{o.category === 'reduce_energy' ? 'REDUCE ENERGY' : 'WORKER SAFETY'}</span>
+            </strong>
+            {canWrite && (quoted[o.key]
+              ? <span style={{ fontSize: '0.76rem', color: 'var(--color-success, #16a34a)' }}>✓ Quote requested</span>
+              : <button type="button" className="btn btn-secondary btn-sm" onClick={() => requestQuote(o)}>Request a quote</button>)}
+          </div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 3 }}>{o.mechanism}</div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: 2, fontStyle: 'italic' }}>{o.caveat}</div>
+        </div>
+      ))}
+
+      {/* What-if sandbox (4.5) */}
+      {ie != null && (
+        <div style={{ marginTop: 14, borderTop: '1px dashed var(--color-border)', paddingTop: 12 }}>
+          <strong style={{ fontSize: '0.82rem' }}>What-if: model a reduction</strong>
+          <div style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary)', margin: '2px 0 8px' }}>
+            Current incident energy: <strong>{ie} cal/cm²</strong>. Enter your (or your PE's) expected reduction — ServiceCycle does the arithmetic, not the IEEE 1584 calc.
+          </div>
+          <form onSubmit={runWhatIf} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input style={{ fontSize: '0.8rem', width: 130 }} placeholder="reduction %" value={wf.pct} onChange={e => setWf({ ...wf, pct: e.target.value })} />
+            <input style={{ fontSize: '0.8rem', width: 150 }} placeholder="mitigation $ (optional)" value={wf.cost} onChange={e => setWf({ ...wf, cost: e.target.value })} />
+            <button type="submit" className="btn btn-secondary btn-sm" disabled={busy || !wf.pct}>{busy ? 'Modeling…' : 'Model'}</button>
+          </form>
+          {roi?.ok && (
+            <div style={{ marginTop: 10, fontSize: '0.82rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px 16px' }}>
+              <Field label="Incident energy after" value={`${roi.ieAfterCalCm2} cal/cm²`} />
+              <Field label="Reduced by" value={`${roi.calReduced} cal/cm²`} />
+              <Field label="Clears DANGER (>40)?" value={roi.removesDanger ? 'Yes' : 'No'} />
+              <Field label="PPE category" value={`${roi.ppeBefore ?? '—'} → ${roi.ppeAfter ?? '—'}`} />
+              {roi.costPerCalReduced != null && <Field label="$ / cal reduced" value={`$${roi.costPerCalReduced}`} />}
+            </div>
+          )}
+          {roi?.ok && <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: 8, fontStyle: 'italic' }}>{roi.caveat}</div>}
+        </div>
+      )}
+
+      {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
     </div>
   );
 }
