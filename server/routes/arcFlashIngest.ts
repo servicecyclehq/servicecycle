@@ -29,6 +29,7 @@ const { scoreBusConfidence, pickDeviceSource } = require('../lib/arcFlashConfide
 const { diffIngestRevisions } = require('../lib/arcFlashDrift');
 const { checkSystemContradictions, checkBusContradictions } = require('../lib/arcFlashSanity');
 const { parseQuery, matchRow } = require('../lib/arcFlashSearch');
+const { buildExportRows, toCsv, EXPORT_COLUMNS } = require('../lib/arcFlashExport');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1329,6 +1330,40 @@ router.get('/audit-bundle', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash audit-bundle error:', e);
     res.status(500).json({ success: false, error: 'Failed to build arc-flash audit bundle' });
+  }
+});
+
+// ── GET /export ── Slice 3.5a: export the collected model for SKM/EasyPower ────
+// CSV (default) or JSON of every current bound bus + its IEEE 1584 inputs, device,
+// cable, and source model — so the PE imports the field-collected data instead of
+// re-keying it. Optional ?siteId= scope. Manager/admin via the Reports gate.
+router.get('/export', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const where: any = { accountId, study: { supersededById: null } };
+    if (req.query.siteId) where.asset = { siteId: String(req.query.siteId) };
+    const rows = await prisma.systemStudyAsset.findMany({
+      where,
+      include: {
+        study: { select: { sourceModel: true } },
+        asset: { select: { equipmentType: true, siteId: true, site: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5000,
+    });
+    const records = buildExportRows(rows);
+
+    if (String(req.query.format || 'csv').toLowerCase() === 'json') {
+      return res.json({ success: true, data: { columns: EXPORT_COLUMNS.map(([key, label]: any) => ({ key, label })), records } });
+    }
+    const csv = toCsv(records);
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="arc-flash-model-${stamp}.csv"`);
+    res.send(csv);
+  } catch (e) {
+    console.error('arc-flash export error:', e);
+    res.status(500).json({ success: false, error: 'Failed to export arc-flash model' });
   }
 });
 

@@ -27,6 +27,21 @@ export default function ArcFlashFleet() {
       .finally(() => setLoading(false));
   }, []);
 
+  const [exporting, setExporting] = useState(false);
+  async function exportModel() {
+    setExporting(true);
+    try {
+      const r = await api.get('/api/arc-flash/export', { params: { format: 'csv' }, responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `arc-flash-model-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch { /* non-fatal */ }
+    finally { setExporting(false); }
+  }
+
   const sites = data?.sites || [];
   const t = data?.totals;
 
@@ -40,7 +55,10 @@ export default function ArcFlashFleet() {
             Arc-flash risk across every site: DANGER coverage, data confidence, sanity-check findings, and expiring studies. ServiceCycle is the data layer; a licensed PE runs and stamps the study.
           </p>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={exportModel} disabled={exporting} title="Export the collected model as CSV for SKM / ETAP / EasyPower">{exporting ? 'Exporting…' : 'Export model (CSV)'}</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
+        </div>
       </div>
 
       {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
