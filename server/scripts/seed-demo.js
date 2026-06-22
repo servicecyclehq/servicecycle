@@ -1332,6 +1332,45 @@ async function _seedAccount() {
     notes: 'Site-wide incident energy analysis incl. Substation A and mezzanine lineup. Re-study due inside 10 months — budget approval pending.',
   } });
 
+  // Arc-flash PRIOR study (~9 yr ago) + per-bus incident-energy bindings on the
+  // SWGR-1A lead 15 kV switchgear, so the Slice 1 per-asset ArcFlashTrend card
+  // renders a real DANGER-class rising-energy history. The arc_flash study above
+  // stays the CURRENT one (preserving the "approaching 5-yr clock" narrative).
+  const afPriorPerformed = addDays(now, -Math.round(9 * 365));
+  const arcFlashPrior = await prisma.systemStudy.create({ data: {
+    accountId: account.id, siteId: riverside.id,
+    studyType: 'arc_flash',
+    performedDate: afPriorPerformed,
+    expiresAt: addMonths(afPriorPerformed, 60),
+    performedBy: 'Hawthorne Power Engineering, PLLC',
+    method: 'IEEE 1584-2018',
+    peName: 'S. Hawthorne, PE', peLicense: 'IA PE 21487',
+    trigger: 'scheduled',
+    notes: 'Prior incident-energy study at Substation A; superseded by the current study after the utility transformer upsizing raised available fault current.',
+  } });
+  // The current arc_flash study supersedes this prior one.
+  await prisma.systemStudy.update({ where: { id: arcFlashPrior.id }, data: { supersededById: arcFlash.id } });
+  // Bind the SWGR-1A-1 lead 15 kV switchgear to both studies; incident energy
+  // rises 14.2 -> 19.6 cal/cm2 (DANGER class, 13.8 kV > 600 V) across revisions.
+  const afTrendBus = assets['SWGR-1A-1'];
+  if (afTrendBus) {
+    await prisma.systemStudyAsset.create({ data: {
+      accountId: account.id, studyId: arcFlashPrior.id, assetId: afTrendBus.id,
+      busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
+      incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 4,
+      boltedFaultCurrentKA: 20.0, arcingCurrentKA: 19.1, electrodeConfig: 'VCB',
+      conductorGapMm: 152, clearingTimeMs: 240, upstreamDevice: 'Utility 51 relay / CB-101',
+    } });
+    await prisma.systemStudyAsset.create({ data: {
+      accountId: account.id, studyId: arcFlash.id, assetId: afTrendBus.id,
+      busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
+      incidentEnergyCalCm2: 19.6, arcFlashBoundaryIn: 88, workingDistanceIn: 36, ppeCategory: 4,
+      boltedFaultCurrentKA: 24.0, arcingCurrentKA: 22.7, electrodeConfig: 'VCB',
+      conductorGapMm: 152, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
+    } });
+    console.log('  [seed] arc-flash trend bound on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 DANGER');
+  }
+
   // Short-circuit study ~3 years ago — PE license on the report cover.
   const scPerformed = addDays(now, -Math.round(3 * 365));
   await prisma.systemStudy.create({ data: {
