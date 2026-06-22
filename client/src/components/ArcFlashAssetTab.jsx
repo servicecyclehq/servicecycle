@@ -297,11 +297,82 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
 
       {data?.mitigations?.options?.length > 0 && <MitigationCard assetId={assetId} mitigations={data.mitigations} current={current} canWrite={canWrite} />}
 
+      {data?.current && <PermitCard assetId={assetId} />}
+
       {data?.current && <LabelPortal assetId={assetId} canWrite={canWrite} />}
 
       {canWrite && <TccLookup />}
 
       <ArcFlashTrend assetId={assetId} />
+    </div>
+  );
+}
+
+// Slice 5 — energized-work-permit (NFPA 70E 130.2(B)) pre-fill + issuance gate.
+function PermitCard({ assetId }) {
+  const [permit, setPermit] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function generate() {
+    setBusy(true); setErr('');
+    try {
+      const r = await api.get(`/api/arc-flash/asset/${assetId}/permit`);
+      setPermit(r.data?.data?.permit || null);
+    } catch (e) { setErr(e?.response?.data?.error || 'Could not build the permit.'); }
+    finally { setBusy(false); }
+  }
+
+  const h = permit?.hazard || {};
+  const canIssue = permit?.validation?.canIssue;
+  return (
+    <div style={card} id="arc-flash-permit">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <h3 style={{ ...h3, marginBottom: 2 }}>Energized-work permit</h3>
+          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>NFPA 70E 130.2(B) — pre-filled from the current study, with an issuance check.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={generate} disabled={busy}>{busy ? 'Building…' : (permit ? 'Refresh' : 'Generate permit')}</button>
+          {permit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>}
+        </div>
+      </div>
+
+      {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
+
+      {permit && (
+        <>
+          {canIssue ? (
+            <div className="alert alert-success" style={{ marginTop: 12 }}>Study is valid — permit may be issued. A qualified person and the responsible manager complete and sign it.</div>
+          ) : (
+            <div className="alert alert-error" style={{ marginTop: 12 }}>
+              <strong>Do not issue — study not valid:</strong>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{permit.validation.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            </div>
+          )}
+
+          <div style={{ marginTop: 12, ...dlGrid }}>
+            <Field label="Equipment" value={[h && permit.equipment.busName, permit.equipment.equipmentType].filter(Boolean).join(' · ') || '—'} />
+            <Field label="Voltage" value={permit.equipment.nominalVoltage || '—'} />
+            <Field label="Incident energy" value={num(h.incidentEnergyCalCm2, 'cal/cm²')} />
+            <Field label="Arc-flash boundary" value={num(h.arcFlashBoundaryIn, 'in')} />
+            <Field label="Limited approach" value={num(h.shockLimitedApproachIn, 'in')} />
+            <Field label="Restricted approach" value={num(h.shockRestrictedApproachIn, 'in')} />
+            <Field label="PPE category" value={h.ppeCategory != null ? `Cat ${h.ppeCategory}` : '—'} />
+            <Field label="Min arc rating" value={num(h.requiredArcRatingCalCm2, 'cal/cm²')} />
+            <Field label="Hazard class" value={h.hazardClass || '—'} />
+            <Field label="Study date" value={fmtDate(permit.study.performedDate)} />
+            <Field label="Study expires" value={fmtDate(permit.study.expiresAt)} />
+            <Field label="Engineer" value={permit.study.peName || permit.study.method || '—'} />
+          </div>
+
+          <h4 style={{ margin: '14px 0 6px', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>To complete on the permit</h4>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem' }}>
+            {permit.toComplete.map((t, i) => <li key={i} style={{ marginBottom: 2 }}>{t}</li>)}
+          </ul>
+          <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: 8, fontStyle: 'italic' }}>{permit.disclaimer}</div>
+        </>
+      )}
     </div>
   );
 }

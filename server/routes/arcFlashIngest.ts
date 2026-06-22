@@ -36,6 +36,7 @@ const crypto = require('crypto');
 const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
+const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1211,6 +1212,36 @@ router.post('/asset/:assetId/issue-label', requireManager, async (req: any, res:
   } catch (e) {
     console.error('arc-flash issue-label error:', e);
     res.status(500).json({ success: false, error: 'Failed to issue label' });
+  }
+});
+
+// ── GET /asset/:assetId/permit ── Slice 5: energized-work-permit + issuance gate ─
+// Pre-fills the NFPA 70E 130.2(B) permit from the current label and blocks
+// issuance when the study is missing / expired / superseded. Any authed role can
+// view (field crews need it); the site program governs who signs.
+router.get('/asset/:assetId/permit', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true, equipmentType: true, site: { select: { name: true } } } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const rows = await prisma.systemStudyAsset.findMany({
+      where: { assetId: asset.id, accountId },
+      include: { study: { select: { performedDate: true, expiresAt: true, peName: true, method: true, supersededById: true } } },
+    });
+    const current = currentStudyAssetRow(rows);
+    if (!current) return res.status(400).json({ success: false, error: 'No bound study for this asset.' });
+    const busShape = {
+      busName: current.busName, nominalVoltage: current.nominalVoltage,
+      incidentEnergyCalCm2: numOrNull(current.incidentEnergyCalCm2), arcFlashBoundaryIn: numOrNull(current.arcFlashBoundaryIn),
+      workingDistanceIn: numOrNull(current.workingDistanceIn), shockLimitedApproachIn: numOrNull(current.shockLimitedApproachIn),
+      shockRestrictedApproachIn: numOrNull(current.shockRestrictedApproachIn), ppeCategory: current.ppeCategory,
+      requiredArcRatingCalCm2: numOrNull(current.requiredArcRatingCalCm2),
+    };
+    const permit = buildEnergizedWorkPermit({ bus: busShape, study: current.study, asset });
+    res.json({ success: true, data: { permit } });
+  } catch (e) {
+    console.error('arc-flash permit error:', e);
+    res.status(500).json({ success: false, error: 'Failed to build the permit' });
   }
 });
 
