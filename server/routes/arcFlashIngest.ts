@@ -97,6 +97,17 @@ function numOrNull(v: any): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+// Parse a nominal-voltage label ("480V", "13.8kV", "208") to volts (for the
+// DANGER test: >40 cal/cm2 OR >600 V, per NFPA 70E labeling).
+function voltsOf(raw: any): number | null {
+  if (raw == null) return null;
+  const m = String(raw).match(/([\d.]+)\s*(kv|v)?/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  return /kv/i.test(m[2] || '') ? n * 1000 : n;
+}
+
 // Shape a bus row/record for the gap engine (incl. 2.6 device + cable inputs).
 function busForGap(b: any) {
   return {
@@ -652,6 +663,41 @@ router.post('/photo-read', requireManager, (req: any, res: any) => {
       res.status(500).json({ success: false, error: 'Failed to read device photo' });
     }
   });
+});
+
+// ── GET /dashboard ── account-level arc-flash health card (surfacing) ─────────
+// The four numbers that answer "where's my arc-flash risk + what's outstanding":
+// DANGER buses (incident energy > 40 cal/cm2), studies expiring soon, blocked
+// buses still needing data, and open field-collection tasks. Read-only.
+router.get('/dashboard', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const soon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const liveIngests = await prisma.arcFlashIngest.findMany({ where: { accountId, status: { not: 'confirmed' } }, select: { id: true }, take: 1000 });
+    const liveIds = liveIngests.map((i: any) => i.id);
+
+    const [studyAssets, studiesExpiringSoon, blockedBuses, openCollectionTasks] = await Promise.all([
+      prisma.systemStudyAsset.findMany({ where: { accountId }, select: { busName: true, incidentEnergyCalCm2: true, nominalVoltage: true, assetId: true, studyId: true }, take: 2000 }),
+      prisma.systemStudy.count({ where: { accountId, expiresAt: { lte: soon } } }),
+      liveIds.length ? prisma.arcFlashIngestBus.count({ where: { ingestId: { in: liveIds }, readiness: 'blocked' } }) : Promise.resolve(0),
+      prisma.arcFlashCollectionTask.count({ where: { accountId, status: { in: ['open', 'in_progress'] } } }),
+    ]);
+
+    // DANGER = incident energy > 40 cal/cm2 OR system voltage > 600 V (NFPA 70E).
+    const danger = studyAssets.filter((s: any) => { const ie = numOrNull(s.incidentEnergyCalCm2); const v = voltsOf(s.nominalVoltage); return (ie != null && ie > 40) || (v != null && v > 600); });
+    const topDanger = danger
+      .sort((a: any, b: any) => (numOrNull(b.incidentEnergyCalCm2) || 0) - (numOrNull(a.incidentEnergyCalCm2) || 0))
+      .slice(0, 5)
+      .map((t: any) => ({ busName: t.busName, incidentEnergyCalCm2: numOrNull(t.incidentEnergyCalCm2), nominalVoltage: t.nominalVoltage, assetId: t.assetId, studyId: t.studyId }));
+
+    res.json({
+      success: true,
+      data: { dangerBuses: danger.length, studiesExpiringSoon, blockedBuses, openCollectionTasks, topDanger },
+    });
+  } catch (e) {
+    console.error('arc-flash dashboard error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load arc-flash dashboard' });
+  }
 });
 
 module.exports = router;

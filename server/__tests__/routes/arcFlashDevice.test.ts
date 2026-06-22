@@ -203,3 +203,22 @@ describe('field collection (scoped) closes the loop', () => {
     expect(devs.body.data.devices.some((d: any) => d.source === 'field' && d.sensorRatingA === 400)).toBe(true);
   });
 });
+
+describe('arc-flash dashboard aggregate', () => {
+  test('returns account-scoped counts', async () => {
+    const res = await request(app).get('/api/arc-flash/dashboard').set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    const d = res.body.data;
+    expect(d.blockedBuses).toBeGreaterThanOrEqual(1);     // PNL-9C still blocked
+    expect(d.openCollectionTasks).toBeGreaterThanOrEqual(1); // PNL-9C task open/in_progress
+    expect(Array.isArray(d.topDanger)).toBe(true);
+  });
+
+  test('cross-account sees zeros', async () => {
+    const res = await request(app).get('/api/arc-flash/dashboard').set('Authorization', auth(other));
+    expect(res.status).toBe(200);
+    expect(res.body.data.blockedBuses).toBe(0);
+    expect(res.body.data.openCollectionTasks).toBe(0);
+    expect(res.body.data.dangerBuses).toBe(0);
+  });
+});

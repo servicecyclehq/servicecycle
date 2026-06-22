@@ -21,6 +21,7 @@ import MaturityScoreCard from '../components/MaturityScoreCard';
 import AuditReadyBanner from '../components/AuditReadyBanner';
 import ComplianceDocsCard from '../components/ComplianceDocsCard';
 import DashboardTrends from '../components/DashboardTrends';
+import ArcFlashDashboardCard from '../components/ArcFlashDashboardCard';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { CriticalityBadge } from './AssetsList';
@@ -810,6 +811,7 @@ export default function Dashboard() {
             <MaturityScoreCard compact />
             <PathTo100 compact />
             <ComplianceDocsCard />
+            <ArcFlashDashboardCard />
             <DashboardTrends />
 
             {/* ── KPI tiles ─────────────────────────────────────────────── */}
