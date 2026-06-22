@@ -1163,32 +1163,50 @@ router.get('/report', async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const soon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    const rows = await prisma.systemStudyAsset.findMany({
-      where: { accountId, study: { supersededById: null } },
-      include: {
-        study: { select: { performedDate: true, expiresAt: true, method: true, studyType: true } },
-        asset: { select: { id: true, equipmentType: true, site: { select: { name: true } } } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 2000,
-    });
+    const [rows, devices, driftTests] = await Promise.all([
+      prisma.systemStudyAsset.findMany({
+        where: { accountId, study: { supersededById: null } },
+        include: {
+          study: { select: { performedDate: true, expiresAt: true, method: true, studyType: true } },
+          asset: { select: { id: true, equipmentType: true, site: { select: { name: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 2000,
+      }),
+      prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { not: null } }, select: { assetId: true, source: true }, take: 5000 }),
+      prisma.deviceTestRecord.findMany({ where: { accountId, driftFlagged: true, assetId: { not: null } }, select: { assetId: true }, take: 5000 }),
+    ]);
+    // 3b — per-row data-confidence (2.8a). Device provenance + drift are
+    // asset-level; completeness + study age are per-row.
+    const devByAsset = new Map<string, any[]>();
+    for (const d of devices) { if (!d.assetId) continue; const arr = devByAsset.get(d.assetId) || []; arr.push(d); devByAsset.set(d.assetId, arr); }
+    const driftAssets = new Set(driftTests.map((t: any) => t.assetId));
     const out = rows.map((s: any) => {
       const ie = numOrNull(s.incidentEnergyCalCm2);
       const v = voltsOf(s.nominalVoltage);
       const sev = s.labelSeverity || (((ie != null && ie > 40) || (v != null && v > 600)) ? 'danger' : (ie != null || v != null ? 'warning' : null));
+      const conf = scoreBusConfidence({
+        bus: busForFleet(s, s.asset?.equipmentType),
+        study: { performedDate: s.study?.performedDate, expiresAt: s.study?.expiresAt, superseded: false },
+        deviceSource: pickDeviceSource(devByAsset.get(s.assetId) || []), driftFlagged: driftAssets.has(s.assetId),
+      });
       return {
         assetId: s.assetId, busName: s.busName, site: s.asset?.site?.name || null, equipmentType: s.asset?.equipmentType || null,
         nominalVoltage: s.nominalVoltage, incidentEnergyCalCm2: ie, arcFlashBoundaryIn: numOrNull(s.arcFlashBoundaryIn),
         ppeCategory: s.ppeCategory, requiredArcRatingCalCm2: numOrNull(s.requiredArcRatingCalCm2),
         labelSeverity: sev, performedDate: s.study?.performedDate || null, expiresAt: s.study?.expiresAt || null,
         expiringSoon: s.study?.expiresAt ? new Date(s.study.expiresAt) <= soon : false,
+        confidence: { score: conf.score, band: conf.band },
       };
     });
+    const confScores = out.map((r: any) => r.confidence?.score).filter((x: any) => typeof x === 'number');
     const summary = {
       total: out.length,
       danger: out.filter((r: any) => r.labelSeverity === 'danger').length,
       warning: out.filter((r: any) => r.labelSeverity === 'warning').length,
       expiringSoon: out.filter((r: any) => r.expiringSoon).length,
+      avgConfidence: confScores.length ? Math.round(confScores.reduce((a: number, b: number) => a + b, 0) / confScores.length) : null,
+      lowConfidence: out.filter((r: any) => r.confidence?.band === 'red').length,
     };
     res.json({ success: true, data: { rows: out, summary } });
   } catch (e) {
