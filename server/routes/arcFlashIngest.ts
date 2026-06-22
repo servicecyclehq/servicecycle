@@ -34,6 +34,7 @@ const { parseResultsCsv, matchResults } = require('../lib/arcFlashResultsImport'
 const QRCode = require('qrcode');
 const crypto = require('crypto');
 const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
+const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1384,6 +1385,24 @@ router.get('/audit-bundle', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash audit-bundle error:', e);
     res.status(500).json({ success: false, error: 'Failed to build arc-flash audit bundle' });
+  }
+});
+
+// ── GET /tcc-library ── Slice 3.5d: OEM / published-TCC device lookup ──────────
+// Turn a nameplate (manufacturer / model / type / rating) into a structured
+// device + its published-TCC reference + a class-typical clearing time, so the
+// field tech doesn't hand-look-up the curve. Deterministic seed library; every
+// result is flagged "typical — verify against the published TCC". Any authed role.
+router.get('/tcc-library', async (req: any, res: any) => {
+  try {
+    const q = req.query || {};
+    const ratingA = q.ratingA != null && q.ratingA !== '' ? Number(q.ratingA) : undefined;
+    const matches = searchTcc({ manufacturer: q.manufacturer, model: q.model, deviceType: q.type || q.deviceType, ratingA, q: q.q });
+    const suggestion = suggestFromDevice({ manufacturer: q.manufacturer, model: q.model, deviceType: q.type || q.deviceType, ratingA });
+    res.json({ success: true, data: { matches: matches.slice(0, 10), suggestion } });
+  } catch (e) {
+    console.error('arc-flash tcc-library error:', e);
+    res.status(500).json({ success: false, error: 'Failed to search the device library' });
   }
 });
 

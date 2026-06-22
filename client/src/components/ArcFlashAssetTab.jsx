@@ -297,7 +297,69 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
 
       {data?.current && <LabelPortal assetId={assetId} canWrite={canWrite} />}
 
+      {canWrite && <TccLookup />}
+
       <ArcFlashTrend assetId={assetId} />
+    </div>
+  );
+}
+
+// Slice 3.5d — published-TCC device lookup. Turn a nameplate into a structured
+// device + curve reference + class-typical clearing time (verify against the TCC).
+function TccLookup() {
+  const [f, setF] = useState({ manufacturer: '', model: '', type: '', ratingA: '' });
+  const [out, setOut] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  async function search(e) {
+    e.preventDefault();
+    setBusy(true); setSearched(true);
+    try {
+      const params = {};
+      for (const k of ['manufacturer', 'model', 'type', 'ratingA']) if (f[k]) params[k] = f[k];
+      const r = await api.get('/api/arc-flash/tcc-library', { params });
+      setOut(r.data?.data || null);
+    } catch { setOut(null); }
+    finally { setBusy(false); }
+  }
+
+  const inp = { fontSize: '0.8rem', padding: '5px 7px' };
+  const matches = out?.matches || [];
+  return (
+    <div style={card}>
+      <h3 style={{ ...h3, marginBottom: 2 }}>Published TCC lookup</h3>
+      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
+        Identify an upstream device from its nameplate and get its published-TCC reference + a class-typical clearing time. Verify against the manufacturer's TCC at the bus fault current.
+      </div>
+      <form onSubmit={search} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input style={inp} placeholder="manufacturer" value={f.manufacturer} onChange={e => setF({ ...f, manufacturer: e.target.value })} />
+        <input style={inp} placeholder="model / series" value={f.model} onChange={e => setF({ ...f, model: e.target.value })} />
+        <select style={inp} value={f.type} onChange={e => setF({ ...f, type: e.target.value })}>
+          <option value="">any type</option><option value="breaker">breaker</option><option value="fuse">fuse</option>
+        </select>
+        <input style={{ ...inp, width: 90 }} placeholder="rating A" value={f.ratingA} onChange={e => setF({ ...f, ratingA: e.target.value })} />
+        <button type="submit" className="btn btn-secondary btn-sm" disabled={busy}>{busy ? 'Searching…' : 'Look up'}</button>
+      </form>
+
+      {searched && !busy && (matches.length > 0 ? (
+        <table className="data-table" style={{ width: '100%', fontSize: '0.76rem', marginTop: 12 }}>
+          <thead><tr><th>Device</th><th>Type</th><th>Frame (A)</th><th>Typical clearing</th><th>Published TCC</th></tr></thead>
+          <tbody>
+            {matches.map((m, i) => (
+              <tr key={i}>
+                <td><strong>{m.manufacturer}</strong> · {m.series}</td>
+                <td>{m.deviceType}{m.tripUnitType ? ` (${TRIP_LABEL[m.tripUnitType] || m.tripUnitType})` : ''}{m.fuseClass ? ` Class ${m.fuseClass}` : ''}</td>
+                <td>{m.frameMinA}–{m.frameMaxA}</td>
+                <td>~{m.typicalClearingTimeMs} ms</td>
+                <td style={{ color: 'var(--color-text-secondary)' }}>{m.curveRef}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 10 }}>No library match — record the device manually and attach the manufacturer's TCC.</div>
+      ))}
     </div>
   );
 }
