@@ -39,6 +39,7 @@ const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlash
 const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 const { buildTimeline } = require('../lib/arcFlashTimeline');
 const { assessRegulatoryStatus } = require('../lib/arcFlashRegulatory');
+const { buildOneLine } = require('../lib/arcFlashOneLine');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1484,6 +1485,48 @@ router.get('/tcc-library', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash tcc-library error:', e);
     res.status(500).json({ success: false, error: 'Failed to search the device library' });
+  }
+});
+
+// ── GET /site/:siteId/one-line ── Slice 6: auto-built power-path one-line ──────
+// Assembles the single-line graph forward from the site's collected assets
+// (fedFromAssetId topology) + each asset's current arc-flash label. Any authed.
+router.get('/site/:siteId/one-line', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const site = await prisma.site.findFirst({ where: { id: req.params.siteId, accountId }, select: { id: true, name: true } });
+    if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
+
+    const assets = await prisma.asset.findMany({
+      where: { accountId, siteId: site.id },
+      select: { id: true, equipmentType: true, fedFromAssetId: true, nameplateData: true },
+      take: 5000,
+    });
+    const assetIds = assets.map((a: any) => a.id);
+    const labelRows = assetIds.length ? await prisma.systemStudyAsset.findMany({
+      where: { accountId, assetId: { in: assetIds }, study: { supersededById: null } },
+      select: { assetId: true, busName: true, nominalVoltage: true, incidentEnergyCalCm2: true, labelSeverity: true, study: { select: { performedDate: true } } },
+      orderBy: { createdAt: 'desc' },
+    }) : [];
+    const labelByAsset = new Map<string, any>();
+    for (const r of labelRows) if (!labelByAsset.has(r.assetId)) labelByAsset.set(r.assetId, r); // newest first wins
+
+    const merged = assets.map((a: any) => {
+      const l = labelByAsset.get(a.id) || {};
+      return {
+        id: a.id, equipmentType: a.equipmentType, fedFromAssetId: a.fedFromAssetId,
+        name: (a.nameplateData && a.nameplateData.busName) || l.busName || a.equipmentType,
+        nominalVoltage: l.nominalVoltage || (a.nameplateData && a.nameplateData.nominalVoltage) || null,
+        incidentEnergyCalCm2: l.incidentEnergyCalCm2 != null ? numOrNull(l.incidentEnergyCalCm2) : null,
+        labelSeverity: l.labelSeverity || null,
+      };
+    });
+
+    const graph = buildOneLine(merged);
+    res.json({ success: true, data: { site: { id: site.id, name: site.name }, ...graph } });
+  } catch (e) {
+    console.error('arc-flash one-line error:', e);
+    res.status(500).json({ success: false, error: 'Failed to build the one-line' });
   }
 });
 

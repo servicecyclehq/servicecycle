@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
+import ArcFlashOneLine from './ArcFlashOneLine';
 
 /**
  * Arc-flash Slice 2 — ingest + review panel (mounted on SiteDetail, behind the
@@ -339,6 +340,9 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
 
       {err && <div style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 8 }}>{err}</div>}
       {confirmMsg && <div style={{ color: 'var(--color-success, #16a34a)', fontSize: '0.82rem', marginTop: 8, fontWeight: 600 }}>{confirmMsg}</div>}
+
+      {/* Auto-built power-path one-line for the whole site */}
+      <ArcFlashOneLine siteId={siteId} />
 
       {/* Prior drafts */}
       {ingests.length > 0 && (
