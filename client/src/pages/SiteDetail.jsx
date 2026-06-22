@@ -23,6 +23,7 @@ import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import StudyAssetBinding from '../components/StudyAssetBinding';
+import ArcFlashIngestPanel from '../components/ArcFlashIngestPanel';
 import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
@@ -852,6 +853,10 @@ export default function SiteDetail() {
           }}>
             Auditors ask for: current arc flash study, short-circuit + coordination studies
             (≤5 years), and a dated one-line diagram review.
+          </div>
+
+          <div style={{ padding: '14px 20px 0' }}>
+            <ArcFlashIngestPanel siteId={site.id} canWrite={canWrite} />
           </div>
 
           {canWrite && studyFormOpen && (
