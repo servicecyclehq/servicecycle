@@ -473,6 +473,12 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
             clearingTimeMs: b.clearingTimeMs ?? undefined, workingDistanceIn: b.workingDistanceIn ?? undefined,
             upstreamDevice: b.upstreamDevice ?? undefined, incidentEnergyCalCm2: b.incidentEnergyCalCm2 ?? undefined,
             arcFlashBoundaryIn: b.arcFlashBoundaryIn ?? undefined, ppeCategory: b.ppeCategory ?? undefined,
+            // Persist the field-collected protective-device + feeder-cable record
+            // onto the durable per-study snapshot (was being dropped before).
+            deviceType: b.deviceType ?? undefined, deviceManufacturer: b.deviceManufacturer ?? undefined,
+            deviceModel: b.deviceModel ?? undefined, deviceRatingA: b.deviceRatingA ?? undefined,
+            deviceSettings: b.deviceSettings ?? undefined,
+            cableLengthFt: b.cableLengthFt ?? undefined, cableSize: b.cableSize ?? undefined, cableMaterial: b.cableMaterial ?? undefined,
           },
         });
         boundCount++;

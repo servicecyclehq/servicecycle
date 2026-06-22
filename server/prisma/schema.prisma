@@ -1308,6 +1308,22 @@ model SystemStudyAsset {
   conductorGapMm       Decimal? @db.Decimal(6, 1) // conductor gap, mm
   clearingTimeMs       Decimal? @db.Decimal(10, 1) // upstream protective-device clearing time, ms
   upstreamDevice       String? // protective device that clears this bus (label/free text)
+  // ─── Durable protective-device + feeder-cable record (Slice 2.7+ "build it
+  // out"). The ingest draft (ArcFlashIngestBus) collected these and the new
+  // ProtectiveDevice table holds the live version; persist them HERE too so each
+  // study revision keeps its own snapshot and the record can be tracked
+  // study-over-study (the year-over-year axis) without losing the field data.
+  // Names mirror ArcFlashIngestBus. (Richer fields — enclosure dims, arc rating,
+  // shock boundaries, mitigation flags, trip-unit/fuse enums — are the
+  // PE-reviewed schema-bootstrap migration; see ARC_FLASH_DOMAIN_MODEL.md.)
+  deviceType           String? // breaker | fuse | relay | switch
+  deviceManufacturer   String?
+  deviceModel          String?
+  deviceRatingA        Decimal? @db.Decimal(10, 1) // frame / sensor amp rating
+  deviceSettings       Json? // LSIG trip settings or fuse class+rating
+  cableLengthFt        Decimal? @db.Decimal(10, 1)
+  cableSize            String?
+  cableMaterial        String? // Cu | Al
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

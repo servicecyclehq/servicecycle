@@ -244,3 +244,20 @@ describe('arc-flash dashboard aggregate', () => {
     expect(res.body.data.dangerBuses).toBe(0);
   });
 });
+
+describe('confirm persists the collected device/cable onto the durable study record', () => {
+  test('confirm + createStudy carries the field-collected breaker to SystemStudyAsset', async () => {
+    const res = await request(app)
+      .post(`/api/arc-flash/ingest/${ingestId}/confirm`)
+      .set('Authorization', auth(manager))
+      .send({ createStudy: true, studyType: 'arc_flash' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.studyId).toBeTruthy();
+    expect(res.body.data.boundCount).toBeGreaterThanOrEqual(1);
+    // MCC-9B had a breaker collected in the field earlier; it must survive onto the study binding.
+    const ssa = await prisma.systemStudyAsset.findFirst({ where: { studyId: res.body.data.studyId, busName: 'MCC-9B' } });
+    expect(ssa).toBeTruthy();
+    expect(ssa.deviceType).toBe('breaker');
+    expect(Number(ssa.deviceRatingA)).toBe(400);
+  });
+});
