@@ -120,6 +120,7 @@ export default function ArcFlashFleet() {
           </p>
 
           <AuditBundle />
+          <RegulatoryReview />
           <ImportResults onApplied={load} />
         </>
       )}
@@ -201,6 +202,65 @@ function ImportResults({ onApplied }) {
             <div style={{ marginTop: 6, color: 'var(--color-warning)' }}>
               Unmatched: {preview.unmatched.slice(0, 8).map(u => u.busName).join(', ')}{preview.unmatched.length > 8 ? '…' : ''}
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Slice 12 — regulatory-change review: studies on an outdated NFPA 70E / IEEE
+// 1584 edition basis. Lazy (button) so the page doesn't auto-run the scan.
+function fmtDateShort(d) { try { return d ? new Date(d).toLocaleDateString() : '—'; } catch { return '—'; } }
+function RegulatoryReview() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run() {
+    setLoading(true); setErr('');
+    try {
+      const r = await api.get('/api/arc-flash/regulatory-review');
+      setData(r.data?.data || null);
+    } catch { setErr('Could not run the regulatory review.'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="card" style={{ padding: '14px 16px', marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1rem' }}>Regulatory review</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--color-text-secondary)', fontSize: '0.82rem' }}>
+            Studies on a superseded IEEE 1584 edition or performed before NFPA 70E-2024 — a code change (not a physical one) that may age the label.
+          </p>
+        </div>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={run} disabled={loading}>{loading ? 'Scanning…' : 'Run review'}</button>
+      </div>
+
+      {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
+
+      {data && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: '0.84rem', marginBottom: 8 }}>
+            {data.outdated === 0
+              ? <span style={{ color: 'var(--color-success, #16a34a)' }}>All {data.totalStudies} current arc-flash studies are on the current code basis.</span>
+              : <span><strong>{data.outdated}</strong> of {data.totalStudies} current studies are on an outdated code basis.</span>}
+          </div>
+          {data.flagged?.length > 0 && (
+            <table className="data-table" style={{ width: '100%', fontSize: '0.78rem' }}>
+              <thead><tr><th>Study date</th><th>Basis</th><th>Assets</th><th>Why</th></tr></thead>
+              <tbody>
+                {data.flagged.map((s, i) => (
+                  <tr key={s.studyId || i}>
+                    <td>{fmtDateShort(s.performedDate)}</td>
+                    <td>{s.method || (s.ieeeEdition ? `IEEE 1584-${s.ieeeEdition}` : '—')}</td>
+                    <td>{s.assetCount}</td>
+                    <td style={{ color: 'var(--color-text-secondary)' }}>{s.reasons.join(' ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}

@@ -38,6 +38,7 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
 const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 const { buildTimeline } = require('../lib/arcFlashTimeline');
+const { assessRegulatoryStatus } = require('../lib/arcFlashRegulatory');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1483,6 +1484,36 @@ router.get('/tcc-library', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash tcc-library error:', e);
     res.status(500).json({ success: false, error: 'Failed to search the device library' });
+  }
+});
+
+// ── GET /regulatory-review ── Slice 12: studies on an outdated code basis ──────
+// Flags current studies calculated on a superseded IEEE 1584 edition or performed
+// before the current NFPA 70E edition took effect — a regulatory (not physical)
+// reason a label may need review. Manager/admin via the Reports gate.
+router.get('/regulatory-review', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const studies = await prisma.systemStudy.findMany({
+      where: { accountId, supersededById: null, studyType: 'arc_flash' },
+      select: { id: true, performedDate: true, expiresAt: true, method: true, peName: true },
+      take: 2000,
+    });
+    const flagged: any[] = [];
+    for (const s of studies) {
+      const status = assessRegulatoryStatus(s);
+      if (!status.outdated) continue;
+      const assetCount = await prisma.systemStudyAsset.count({ where: { studyId: s.id, accountId } });
+      flagged.push({
+        studyId: s.id, performedDate: s.performedDate, expiresAt: s.expiresAt, method: s.method, peName: s.peName,
+        ieeeEdition: status.ieeeEdition, reasons: status.reasons, assetCount,
+      });
+    }
+    flagged.sort((a, b) => new Date(a.performedDate || 0).getTime() - new Date(b.performedDate || 0).getTime());
+    res.json({ success: true, data: { totalStudies: studies.length, outdated: flagged.length, flagged } });
+  } catch (e) {
+    console.error('arc-flash regulatory-review error:', e);
+    res.status(500).json({ success: false, error: 'Failed to run the regulatory review' });
   }
 });
 
