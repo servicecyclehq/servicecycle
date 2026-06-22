@@ -22,6 +22,7 @@
 
 const ai = require('./ai');
 const { extractPdfText } = require('./testReportParse');
+const { rasterizePdf } = require('./rasterizePdf');
 
 const PROMPT_VERSION = 'af-extract-v1';
 
@@ -207,56 +208,103 @@ function normalizeMedia(mimeType: any): string {
 
 // ── Public entry point ───────────────────────────────────────────────────────
 
+function firstNonNull(...vals: any[]): any { for (const v of vals) if (v != null) return v; return null; }
+
+// Run the vision model on ONE image buffer and normalize the result.
+async function visionExtractOne(buffer: Buffer, mediaType: string, settings: any): Promise<any> {
+  const out = await ai.completeWithImage({ imageBuffer: buffer, mediaType, prompt: VISION_PROMPT, maxTokens: 4096, settings });
+  const text = out && out.text ? out.text : '';
+  let parsed: any;
+  try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
+  catch { return { systemMeta: null, buses: [], warnings: ['Could not parse the AI response as JSON.'], rawJsonText: text }; }
+  const norm = normalizeExtraction(parsed);
+  return { systemMeta: norm.systemMeta, buses: norm.buses, warnings: norm.warnings, rawJsonText: text };
+}
+
+// Merge per-page extractions: union buses (dedup by name, fill nulls from later
+// pages), take the first non-null system fact for each field.
+function mergeExtractions(list: any[]): any {
+  const warnings: string[] = [];
+  const sm: any = { sourceVoltage: null, mainTransformer: { kva: null, primaryVoltage: null, secondaryVoltage: null, impedancePct: null }, serviceFaultCurrentKA: null, studyMeta: { peName: null, date: null, method: null, software: null } };
+  const byName = new Map<string, any>();
+  let rawJsonText = '';
+  for (const x of list) {
+    if (!x) continue;
+    warnings.push(...(x.warnings || []));
+    if (x.rawJsonText && !rawJsonText) rawJsonText = x.rawJsonText;
+    const m = x.systemMeta;
+    if (m) {
+      sm.sourceVoltage = firstNonNull(sm.sourceVoltage, m.sourceVoltage);
+      sm.serviceFaultCurrentKA = firstNonNull(sm.serviceFaultCurrentKA, m.serviceFaultCurrentKA);
+      if (m.mainTransformer) for (const k of ['kva', 'primaryVoltage', 'secondaryVoltage', 'impedancePct']) sm.mainTransformer[k] = firstNonNull(sm.mainTransformer[k], m.mainTransformer[k]);
+      if (m.studyMeta) for (const k of ['peName', 'date', 'method', 'software']) sm.studyMeta[k] = firstNonNull(sm.studyMeta[k], m.studyMeta[k]);
+    }
+    for (const b of (x.buses || [])) {
+      const key = String(b.busName || '').toLowerCase();
+      if (!key) continue;
+      if (!byName.has(key)) byName.set(key, b);
+      else {
+        const merged: any = { ...byName.get(key) };
+        for (const k of Object.keys(b)) if (merged[k] == null && b[k] != null) merged[k] = b[k];
+        byName.set(key, merged);
+      }
+    }
+  }
+  return { systemMeta: sm, buses: [...byName.values()], warnings, rawJsonText };
+}
+
+// Assemble the final return envelope + a no-buses warning if empty.
+function finalize(method: string, aiProvider: any, norm: any, warnings: string[]): any {
+  const all = [...warnings, ...(norm.warnings || [])];
+  if (!norm.buses || !norm.buses.length) all.push('No buses were extracted — the document may not be a one-line / study, or the scan is too low quality.');
+  return { method, aiProvider: aiProvider ?? null, promptVersion: PROMPT_VERSION, systemMeta: norm.systemMeta ?? null, buses: norm.buses || [], warnings: all, rawJsonText: norm.rawJsonText || '' };
+}
+
 // Extract a structured arc-flash system model from an uploaded document.
-// Returns { method, aiProvider, promptVersion, systemMeta, buses, warnings, rawJsonText }.
-// Fails SOFT: an unreadable / unsupported file yields an empty model + a clear
-// warning rather than throwing, so the route can park it for review.
+// Image -> vision; text-layer PDF -> text parse; scanned/vector PDF -> AUTO
+// rasterize to image(s) -> vision (no manual conversion). Fails SOFT: an
+// unreadable / unsupported file yields an empty model + a clear warning.
 async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string; fileName?: string; settings?: any }): Promise<any> {
   const { buffer, mimeType, fileName, settings = {} } = opts;
   const warnings: string[] = [];
   const isImage = /image\/(png|jpe?g|webp)/i.test(mimeType || '') || /\.(png|jpe?g|webp)$/i.test(fileName || '');
   const isPdf = /pdf/i.test(mimeType || '') || /\.pdf$/i.test(fileName || '');
 
-  let method: string;
-  let rawJsonText = '';
-  let aiProvider: string | null = null;
-
+  // Image upload -> vision directly.
   if (isImage) {
-    method = 'vision';
-    const out = await ai.completeWithImage({ imageBuffer: buffer, mediaType: normalizeMedia(mimeType), prompt: VISION_PROMPT, maxTokens: 4096, settings });
-    rawJsonText = out && out.text ? out.text : '';
-  } else if (isPdf) {
+    const one = await visionExtractOne(buffer, normalizeMedia(mimeType), settings);
+    return finalize('vision', null, one, warnings);
+  }
+
+  if (isPdf) {
     let pdfText = '';
     try { pdfText = await extractPdfText(buffer); } catch (e: any) { warnings.push('PDF text extraction failed: ' + (e && e.message ? e.message : e)); }
     const meaningful = (pdfText || '').replace(/\s+/g, ' ').trim();
     if (meaningful.length >= 120) {
-      method = 'text';
+      // Text-layer PDF (study report) -> text path.
       const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(meaningful), maxTokens: 4096, task: 'extract', settings });
-      rawJsonText = out && out.text ? out.text : '';
-      aiProvider = out && out.provider ? out.provider : null;
-    } else {
-      // No text layer (scanned or vector CAD). Server-side rasterization isn't
-      // wired yet, so ask for an image — the honest, frictionless fallback.
-      warnings.push('This PDF has no extractable text layer (scanned or vector CAD one-line). Upload a PNG/JPG image of the one-line so vision can read it.');
+      const text = out && out.text ? out.text : '';
+      let parsed: any;
+      try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
+      catch { warnings.push('Could not parse the AI response as JSON — try re-uploading.'); return { method: 'text', aiProvider: out && out.provider ? out.provider : null, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText: text }; }
+      const norm = normalizeExtraction(parsed);
+      return finalize('text', out && out.provider ? out.provider : null, { ...norm, rawJsonText: text }, warnings);
+    }
+    // Scanned / vector PDF (no text layer) -> AUTO-RASTERIZE then vision.
+    const pages = await rasterizePdf(buffer, { maxPages: 4 });
+    if (!pages.length) {
+      warnings.push('This PDF has no text layer and could not be auto-converted to an image. Upload a PNG/JPG of the one-line instead.');
       return { method: 'needs_image', aiProvider: null, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText: '' };
     }
-  } else {
-    warnings.push('Unsupported file type for arc-flash extraction (' + (mimeType || fileName || 'unknown') + '). Upload a PDF study report or a PNG/JPG one-line image.');
-    return { method: 'unsupported', aiProvider: null, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText: '' };
+    const perPage: any[] = [];
+    for (const pg of pages) perPage.push(await visionExtractOne(pg, 'image/png', settings));
+    const merged = mergeExtractions(perPage);
+    if (pages.length > 1) warnings.push(`Auto-converted ${pages.length} PDF page(s) to images for reading.`);
+    return finalize('vision_pdf', null, merged, warnings);
   }
 
-  let parsed: any;
-  try {
-    parsed = ai.parseJSON(rawJsonText, 'arc-flash-extract');
-  } catch (e: any) {
-    warnings.push('Could not parse the AI response as JSON — try re-uploading or a clearer scan.');
-    return { method, aiProvider, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText };
-  }
-
-  const norm = normalizeExtraction(parsed);
-  warnings.push(...norm.warnings);
-  if (!norm.buses.length) warnings.push('No buses were extracted — the document may not be a one-line / study, or the scan is too low quality.');
-  return { method, aiProvider, promptVersion: PROMPT_VERSION, systemMeta: norm.systemMeta, buses: norm.buses, warnings, rawJsonText };
+  warnings.push('Unsupported file type for arc-flash extraction (' + (mimeType || fileName || 'unknown') + '). Upload a PDF study report or a PNG/JPG one-line image.');
+  return { method: 'unsupported', aiProvider: null, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText: '' };
 }
 
 export { extractArcFlashDocument, normalizeExtraction, mapEquipmentType, PROMPT_VERSION };

@@ -10,10 +10,14 @@ jest.mock('../../lib/ai', () => ({
 jest.mock('../../lib/testReportParse', () => ({
   extractPdfText: jest.fn(),
 }));
+jest.mock('../../lib/rasterizePdf', () => ({
+  rasterizePdf: jest.fn(),
+}));
 
 import { extractArcFlashDocument, normalizeExtraction, mapEquipmentType } from '../../lib/arcFlashExtract';
 const ai = require('../../lib/ai');
 const { extractPdfText } = require('../../lib/testReportParse');
+const { rasterizePdf } = require('../../lib/rasterizePdf');
 
 const buf = Buffer.from('dummy');
 
@@ -99,13 +103,29 @@ describe('extractArcFlashDocument — routing + extraction', () => {
     expect(r.buses[0].equipmentTypeGuess).toBe('PANELBOARD');
   });
 
-  test('scanned/vector PDF (no text layer) -> needs_image, no AI call', async () => {
-    extractPdfText.mockResolvedValue('   '); // empty text layer
+  test('scanned PDF auto-rasterizes to images -> vision_pdf, buses merged across pages', async () => {
+    extractPdfText.mockResolvedValue(''); // no text layer
+    rasterizePdf.mockResolvedValue([Buffer.from('p1'), Buffer.from('p2')]); // two rendered pages
+    ai.completeWithImage
+      .mockResolvedValueOnce({ text: JSON.stringify({ system: { sourceVoltage: '13.8kV' }, buses: [{ busName: 'SWGR-1A', equipmentType: 'switchgear' }] }) })
+      .mockResolvedValueOnce({ text: JSON.stringify({ system: {}, buses: [{ busName: 'MCC-2', equipmentType: 'mcc', nominalVoltage: '480V' }] }) });
+    const r = await extractArcFlashDocument({ buffer: buf, mimeType: 'application/pdf', fileName: 'scan.pdf' });
+    expect(r.method).toBe('vision_pdf');
+    expect(rasterizePdf).toHaveBeenCalledTimes(1);
+    expect(ai.completeWithImage).toHaveBeenCalledTimes(2); // one vision call per page
+    expect(ai.complete).not.toHaveBeenCalled();
+    expect(r.buses.map((b: any) => b.busName).sort()).toEqual(['MCC-2', 'SWGR-1A']);
+    expect(r.systemMeta.sourceVoltage).toBe('13.8kV');
+    expect(r.warnings.join(' ')).toMatch(/Auto-converted 2/);
+  });
+
+  test('scanned PDF that cannot be rasterized -> needs_image fallback', async () => {
+    extractPdfText.mockResolvedValue('   ');
+    rasterizePdf.mockResolvedValue([]); // rasterization failed (best-effort)
     const r = await extractArcFlashDocument({ buffer: buf, mimeType: 'application/pdf', fileName: 'scan.pdf' });
     expect(r.method).toBe('needs_image');
     expect(r.buses).toHaveLength(0);
-    expect(ai.complete).not.toHaveBeenCalled();
-    expect(r.warnings.join(' ')).toMatch(/no extractable text/i);
+    expect(r.warnings.join(' ')).toMatch(/could not be auto-converted|upload a png/i);
   });
 
   test('unsupported file type -> unsupported, clear warning', async () => {
