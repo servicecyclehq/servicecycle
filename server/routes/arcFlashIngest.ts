@@ -37,6 +37,7 @@ const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
 const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
+const { buildTimeline } = require('../lib/arcFlashTimeline');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1212,6 +1213,27 @@ router.post('/asset/:assetId/issue-label', requireManager, async (req: any, res:
   } catch (e) {
     console.error('arc-flash issue-label error:', e);
     res.status(500).json({ success: false, error: 'Failed to issue label' });
+  }
+});
+
+// ── GET /asset/:assetId/timeline ── Slice 11: time-machine of the bus history ──
+// One chronological stream: study revisions, label issuances, NETA tests (drift),
+// collected devices. Assembled from existing records. Any authed role.
+router.get('/asset/:assetId/timeline', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const [studyAssets, deviceTests, devices] = await Promise.all([
+      prisma.systemStudyAsset.findMany({ where: { assetId: asset.id, accountId }, include: { study: { select: { performedDate: true, peName: true } } } }),
+      prisma.deviceTestRecord.findMany({ where: { assetId: asset.id, accountId }, take: 200 }),
+      prisma.protectiveDevice.findMany({ where: { assetId: asset.id, accountId }, take: 200 }),
+    ]);
+    const events = buildTimeline({ studyAssets, deviceTests, devices });
+    res.json({ success: true, data: { events } });
+  } catch (e) {
+    console.error('arc-flash timeline error:', e);
+    res.status(500).json({ success: false, error: 'Failed to build the timeline' });
   }
 });
 

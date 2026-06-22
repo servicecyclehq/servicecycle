@@ -304,6 +304,40 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
       {canWrite && <TccLookup />}
 
       <ArcFlashTrend assetId={assetId} />
+
+      <ArcFlashTimelineCard assetId={assetId} />
+    </div>
+  );
+}
+
+// Slice 11 — time-machine: the bus's arc-flash history as one chronological
+// stream. Self-loads; hides entirely when there's nothing to show.
+const TL_DOT = { study: '#2563eb', label_printed: '#15803d', device_test: '#b45309', device_collected: '#6b7280' };
+function ArcFlashTimelineCard({ assetId }) {
+  const [events, setEvents] = useState(null);
+  useEffect(() => {
+    let live = true;
+    api.get(`/api/arc-flash/asset/${assetId}/timeline`)
+      .then(r => { if (live) setEvents(r.data?.data?.events || []); })
+      .catch(() => { if (live) setEvents([]); });
+    return () => { live = false; };
+  }, [assetId]);
+
+  if (!events || events.length === 0) return null;
+  return (
+    <div style={card}>
+      <h3 style={h3}>History timeline ({events.length})</h3>
+      <div style={{ position: 'relative', paddingLeft: 18 }}>
+        {events.map((e, i) => (
+          <div key={i} style={{ position: 'relative', paddingBottom: 12 }}>
+            <span style={{ position: 'absolute', left: -18, top: 3, width: 9, height: 9, borderRadius: '50%', background: TL_DOT[e.type] || '#9ca3af', boxShadow: '0 0 0 2px var(--color-surface)' }} />
+            {i < events.length - 1 && <span style={{ position: 'absolute', left: -14, top: 12, bottom: 0, width: 1, background: 'var(--color-border)' }} />}
+            <div style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary)' }}>{fmtDate(e.date)}</div>
+            <div style={{ fontSize: '0.84rem', fontWeight: 600, color: e.severity === 'danger' ? 'var(--color-danger, #b91c1c)' : 'inherit' }}>{e.title}</div>
+            {e.detail && <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>{e.detail}</div>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
