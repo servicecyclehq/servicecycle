@@ -110,6 +110,15 @@ function voltsOf(raw: any): number | null {
   return /kv/i.test(m[2] || '') ? n * 1000 : n;
 }
 
+// NFPA 70E DANGER header when incident energy > 40 cal/cm2 OR nominal voltage
+// > 600 V; else WARNING. null when we have neither input yet.
+function deriveLabelSeverity(b: any): 'danger' | 'warning' | null {
+  const ie = numOrNull(b.incidentEnergyCalCm2);
+  const v = voltsOf(b.nominalVoltage);
+  if (ie == null && v == null) return null;
+  return ((ie != null && ie > 40) || (v != null && v > 600)) ? 'danger' : 'warning';
+}
+
 // Shape a bus row/record for the gap engine (incl. 2.6 device + cable inputs).
 function busForGap(b: any) {
   return {
@@ -492,6 +501,16 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
             deviceModel: b.deviceModel ?? undefined, deviceRatingA: b.deviceRatingA ?? undefined,
             deviceSettings: b.deviceSettings ?? undefined,
             cableLengthFt: b.cableLengthFt ?? undefined, cableSize: b.cableSize ?? undefined, cableMaterial: b.cableMaterial ?? undefined,
+            // Bootstrap slices B/D/F: carry outcomes/enclosure/mitigation + derive the DANGER/WARNING severity.
+            requiredArcRatingCalCm2: b.requiredArcRatingCalCm2 ?? undefined, ppeMethod: b.ppeMethod ?? undefined,
+            shockLimitedApproachIn: b.shockLimitedApproachIn ?? undefined, shockRestrictedApproachIn: b.shockRestrictedApproachIn ?? undefined,
+            labelSeverity: deriveLabelSeverity(b) ?? undefined,
+            enclosureType: b.enclosureType ?? undefined, enclosureHeightMm: b.enclosureHeightMm ?? undefined,
+            enclosureWidthMm: b.enclosureWidthMm ?? undefined, enclosureDepthMm: b.enclosureDepthMm ?? undefined,
+            ermsPresent: b.ermsPresent ?? undefined, zsiEnabled: b.zsiEnabled ?? undefined,
+            differentialPresent: b.differentialPresent ?? undefined, arcResistant: b.arcResistant ?? undefined,
+            nec24087Method: b.nec24087Method ?? undefined, calcMethod: b.calcMethod ?? undefined,
+            arcingCurrentReducedKA: b.arcingCurrentReducedKA ?? undefined, governingScenario: b.governingScenario ?? undefined,
           },
         });
         boundCount++;

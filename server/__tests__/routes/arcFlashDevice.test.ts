@@ -268,5 +268,8 @@ describe('confirm persists the collected device/cable onto the durable study rec
     expect(ssa).toBeTruthy();
     expect(ssa.deviceType).toBe('breaker');
     expect(Number(ssa.deviceRatingA)).toBe(400);
+    expect(ssa.labelSeverity).toBe('warning'); // 480 V, no high incident energy
+    const swgr = await prisma.systemStudyAsset.findFirst({ where: { studyId: res.body.data.studyId, busName: 'SWGR-9A' } });
+    expect(swgr.labelSeverity).toBe('danger'); // 13.8 kV > 600 V
   });
 });

@@ -1326,6 +1326,26 @@ model SystemStudyAsset {
   cableLengthFt        Decimal? @db.Decimal(10, 1)
   cableSize            String?
   cableMaterial        String? // Cu | Al
+  // --- Slice B: outcome / label (study results) ---
+  requiredArcRatingCalCm2   Decimal?       @db.Decimal(10, 2) // min arc rating (ATPV/EBT) for the incident-energy PPE method
+  ppeMethod                 PpeMethod? // which method this label uses
+  shockLimitedApproachIn    Decimal?       @db.Decimal(10, 1)
+  shockRestrictedApproachIn Decimal?       @db.Decimal(10, 1)
+  labelSeverity             LabelSeverity? // derived DANGER (>40 cal or >600 V) / WARNING
+  // --- Slice D: enclosure (IEEE 1584-2018 size correction) ---
+  enclosureType             EnclosureType?
+  enclosureHeightMm         Decimal?       @db.Decimal(8, 1)
+  enclosureWidthMm          Decimal?       @db.Decimal(8, 1)
+  enclosureDepthMm          Decimal?       @db.Decimal(8, 1)
+  // --- Slice F: mitigation + dual-scenario ---
+  ermsPresent               Boolean?
+  zsiEnabled                Boolean?
+  differentialPresent       Boolean?
+  arcResistant              Boolean?
+  nec24087Method            String? // documented arc-energy-reduction method when trip setting >= 1200 A
+  calcMethod                CalcMethod?
+  arcingCurrentReducedKA    Decimal?       @db.Decimal(10, 2) // reduced (VarCf) arcing-current scenario
+  governingScenario         String? // "full" | "reduced" - which gave the higher energy
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -2872,6 +2892,35 @@ enum FuseClass {
   other
 }
 
+// Outcome / label enums (schema-bootstrap slice B).
+enum PpeMethod {
+  incident_energy // arc rating (ATPV/EBT) vs incident energy
+  ppe_category // NFPA 70E Table 130.7(C)(15) category 1-4
+}
+
+enum LabelSeverity {
+  warning
+  danger // incident energy > 40 cal/cm2 OR nominal voltage > 600 V
+}
+
+// Enclosure class for the IEEE 1584-2018 size correction (slice D).
+enum EnclosureType {
+  panelboard
+  mcc
+  lv_switchgear
+  mv_switchgear
+  cable
+  open_air
+  other
+}
+
+// Per-bus calculation method (slice F).
+enum CalcMethod {
+  ieee_1584_2018
+  lee_method // > 15 kV or outside IEEE 1584 applicability
+  manufacturer_test
+}
+
 model ArcFlashIngest {
   id               String    @id @default(uuid())
   accountId        String
@@ -2935,6 +2984,24 @@ model ArcFlashIngestBus {
   cableLengthFt        Decimal? @db.Decimal(10, 1)
   cableSize            String? // e.g. "500 kcmil", "#2 AWG"
   cableMaterial        String? // Cu | Al
+  // Bootstrap slices B/D/F (mirror SystemStudyAsset so confirm carries them).
+  requiredArcRatingCalCm2   Decimal?       @db.Decimal(10, 2)
+  ppeMethod                 PpeMethod?
+  shockLimitedApproachIn    Decimal?       @db.Decimal(10, 1)
+  shockRestrictedApproachIn Decimal?       @db.Decimal(10, 1)
+  labelSeverity             LabelSeverity?
+  enclosureType             EnclosureType?
+  enclosureHeightMm         Decimal?       @db.Decimal(8, 1)
+  enclosureWidthMm          Decimal?       @db.Decimal(8, 1)
+  enclosureDepthMm          Decimal?       @db.Decimal(8, 1)
+  ermsPresent               Boolean?
+  zsiEnabled                Boolean?
+  differentialPresent       Boolean?
+  arcResistant              Boolean?
+  nec24087Method            String?
+  calcMethod                CalcMethod?
+  arcingCurrentReducedKA    Decimal?       @db.Decimal(10, 2)
+  governingScenario         String?
   incidentEnergyCalCm2 Decimal? @db.Decimal(10, 2)
   arcFlashBoundaryIn   Decimal? @db.Decimal(10, 1)
   ppeCategory          Int?
