@@ -12,6 +12,16 @@ const router = require('express').Router();
 const { z } = require('zod');
 import prisma from '../../lib/prisma';
 const { buildOneLine } = require('../../lib/arcFlashOneLine');
+const { buildEnergizedWorkPermit } = require('../../lib/arcFlashPermit');
+const { requireScope } = require('../../middleware/apiKeyAuth');
+
+function currentRowOf(rows: any[]): any {
+  return rows.slice().sort((a: any, b: any) => {
+    const sa = a.study?.supersededById ? 0 : 1, sb = b.study?.supersededById ? 0 : 1;
+    if (sa !== sb) return sb - sa;
+    return new Date(b.study?.performedDate || 0).getTime() - new Date(a.study?.performedDate || 0).getTime();
+  })[0] || null;
+}
 
 function n(v: any): number | null {
   if (v == null || v === '') return null;
@@ -109,6 +119,62 @@ router.get('/one-line', async (req: any, res: any) => {
   });
 
   res.json({ site: { id: site.id, name: site.name }, ...buildOneLine(merged) });
+});
+
+// ── GET /api/v1/arc-flash/work-order-precheck?assetId= ── Slice 8 (CMMS loop) ──
+// A CMMS/EAM calls this before issuing a work order on energized equipment: it
+// returns whether the arc-flash study is valid (canIssue) + the hazard data to
+// stamp on the permit. Block the WO when canIssue is false. Read scope.
+router.get('/work-order-precheck', async (req: any, res: any) => {
+  const accountId = req.apiKeyAccountId;
+  const assetId = req.query.assetId ? String(req.query.assetId) : null;
+  if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) return res.status(400).json({ error: 'assetId (uuid) is required' });
+  const asset = await prisma.asset.findFirst({ where: { id: assetId, accountId }, select: { id: true, equipmentType: true, site: { select: { name: true } } } });
+  if (!asset) return res.status(404).json({ error: 'Asset not found' });
+  const rows = await prisma.systemStudyAsset.findMany({
+    where: { assetId: asset.id, accountId },
+    include: { study: { select: { performedDate: true, expiresAt: true, peName: true, method: true, supersededById: true } } },
+  });
+  const current = currentRowOf(rows);
+  const permit = buildEnergizedWorkPermit({ bus: current || { busName: null }, study: current?.study || null, asset });
+  res.json({ assetId: asset.id, canIssue: permit.validation.canIssue, reasons: permit.validation.reasons, hazard: permit.hazard, study: permit.study });
+});
+
+// ── POST /api/v1/arc-flash/devices ── Slice 8: write verified settings back ────
+// A CMMS/EAM (or a PE tool) pushes a verified protective-device record back into
+// SC's data layer. Creates a durable ProtectiveDevice (source=import). Write scope.
+const DeviceBody = z.object({
+  assetId: z.string().regex(/^[0-9a-f-]{36}$/i),
+  label: z.string().max(200).optional(),
+  deviceType: z.enum(['breaker', 'fuse', 'relay', 'switch']).optional(),
+  manufacturer: z.string().max(200).optional(),
+  model: z.string().max(200).optional(),
+  partNumber: z.string().max(200).optional(),
+  frameRatingA: z.coerce.number().nonnegative().optional(),
+  sensorRatingA: z.coerce.number().nonnegative().optional(),
+  settings: z.record(z.any()).optional(),
+});
+router.post('/devices', requireScope('write'), async (req: any, res: any) => {
+  const accountId = req.apiKeyAccountId;
+  const parsed = DeviceBody.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+  const b = parsed.data;
+  const asset = await prisma.asset.findFirst({ where: { id: b.assetId, accountId }, select: { id: true, siteId: true } });
+  if (!asset) return res.status(404).json({ error: 'Asset not found' });
+
+  const device = await prisma.protectiveDevice.create({
+    data: {
+      accountId, siteId: asset.siteId, assetId: asset.id,
+      label: b.label || [b.manufacturer, b.model].filter(Boolean).join(' ') || 'Imported device',
+      deviceType: b.deviceType || null, manufacturer: b.manufacturer || null,
+      model: b.model || null, partNumber: b.partNumber || null,
+      frameRatingA: b.frameRatingA ?? null, sensorRatingA: b.sensorRatingA ?? null,
+      settings: b.settings && Object.keys(b.settings).length ? b.settings : null,
+      source: 'import', settingsCollectedAt: new Date(),
+    },
+    select: { id: true, assetId: true, deviceType: true, manufacturer: true, model: true, frameRatingA: true, sensorRatingA: true, settings: true, source: true, status: true, createdAt: true },
+  });
+  res.status(201).json({ device });
 });
 
 module.exports = router;

@@ -12,7 +12,9 @@ let app: any;
 let prisma: any;
 let admin: TestUser;
 let readKey: string;
+let writeKey: string;
 let siteId: string;
+let mainId: string;
 
 const bearer = (k: string) => `Bearer ${k}`;
 async function mintKey(accountId: string, scopes: string[]): Promise<string> {
@@ -26,10 +28,12 @@ beforeAll(async () => {
   prisma = require('../../lib/prisma').default;
   admin = await createTestUser('admin');
   readKey = await mintKey(admin.accountId, ['read']);
+  writeKey = await mintKey(admin.accountId, ['read', 'write']);
 
   const site = await prisma.site.create({ data: { accountId: admin.accountId, name: `V1AF ${Date.now()}` } });
   siteId = site.id;
   const main = await prisma.asset.create({ data: { accountId: admin.accountId, siteId, equipmentType: 'SWITCHGEAR' } });
+  mainId = main.id;
   const mcc = await prisma.asset.create({ data: { accountId: admin.accountId, siteId, equipmentType: 'MCC', fedFromAssetId: main.id } });
   const study = await prisma.systemStudy.create({ data: { accountId: admin.accountId, siteId, studyType: 'arc_flash', performedDate: new Date(), expiresAt: new Date(Date.now() + 4 * 365 * 864e5), method: 'IEEE 1584-2018' } });
   await prisma.systemStudyAsset.create({ data: { accountId: admin.accountId, studyId: study.id, assetId: main.id, busName: 'SWGR-1A', nominalVoltage: '480V', incidentEnergyCalCm2: 52, labelSeverity: 'danger' } });
@@ -38,7 +42,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const acc = admin.accountId;
-  for (const t of ['apiKey', 'systemStudyAsset', 'systemStudy', 'asset', 'site']) {
+  for (const t of ['apiKey', 'protectiveDevice', 'systemStudyAsset', 'systemStudy', 'asset', 'site']) {
     try { await (prisma as any)[t].deleteMany({ where: { accountId: acc } }); } catch {}
   }
   try { await prisma.user.delete({ where: { id: admin.id } }); } catch {}
@@ -76,5 +80,32 @@ describe('GET /api/v1/arc-flash/one-line', () => {
     expect(r.body.edges.length).toBe(1);
     const mcc = r.body.nodes.find((nn: any) => nn.name === 'MCC-7');
     expect(mcc.level).toBe(1);
+  });
+});
+
+describe('Slice 8 — CMMS closed-loop primitives', () => {
+  test('work-order precheck returns canIssue for a valid study', async () => {
+    const r = await request(app).get(`/api/v1/arc-flash/work-order-precheck?assetId=${mainId}`).set('Authorization', bearer(readKey)).expect(200);
+    expect(r.body.canIssue).toBe(true);
+    expect(r.body.hazard).toHaveProperty('incidentEnergyCalCm2');
+  });
+
+  test('device write-back requires the write scope', async () => {
+    await request(app).post('/api/v1/arc-flash/devices').set('Authorization', bearer(readKey))
+      .send({ assetId: mainId, deviceType: 'breaker', sensorRatingA: 800 }).expect(403);
+  });
+
+  test('a write key pushes verified device settings back', async () => {
+    const r = await request(app).post('/api/v1/arc-flash/devices').set('Authorization', bearer(writeKey))
+      .send({ assetId: mainId, deviceType: 'breaker', manufacturer: 'Square D', sensorRatingA: 800, settings: { ltPickupA: 640 } })
+      .expect(201);
+    expect(r.body.device.source).toBe('import');
+    expect(r.body.device.assetId).toBe(mainId);
+    expect(r.body.device.settings).toMatchObject({ ltPickupA: 640 });
+  });
+
+  test('cannot write to another tenant asset is enforced by 404', async () => {
+    await request(app).post('/api/v1/arc-flash/devices').set('Authorization', bearer(writeKey))
+      .send({ assetId: '00000000-0000-0000-0000-000000000000', deviceType: 'breaker' }).expect(404);
   });
 });
