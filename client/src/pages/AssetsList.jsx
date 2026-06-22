@@ -521,7 +521,7 @@ export default function AssetsList() {
           <input
             type="search"
             className="search-input"
-            placeholder="Search manufacturer, model, serial #, site…"
+            placeholder="Search equipment, tag/code, location, manufacturer, serial…"
             aria-label="Search assets"
             value={search}
             onChange={e => setSearch(e.target.value)}

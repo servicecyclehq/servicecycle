@@ -480,12 +480,21 @@ router.get('/', async (req, res) => {
     // Search across nameplate identity fields AND the parent site name —
     // "where is that Square D transformer" and "everything at Plant 2"
     // both need to work from one box.
+    // Broad asset search: equipment identity (manufacturer/model/serial), free
+    // text (notes), and the full location hierarchy + equipment-position tag, so
+    // an identifier like "SWGR-1A-1" (the position code) or a location name
+    // surfaces the asset. ⚠ Mirrored in routes/bootstrap.ts — keep in sync.
     if (search) {
       where.OR = [
         { manufacturer: { contains: search, mode: 'insensitive' } },
         { model:        { contains: search, mode: 'insensitive' } },
         { serialNumber: { contains: search, mode: 'insensitive' } },
-        { site: { name: { contains: search, mode: 'insensitive' } } },
+        { notes:        { contains: search, mode: 'insensitive' } },
+        { site:     { name: { contains: search, mode: 'insensitive' } } },
+        { building: { name: { contains: search, mode: 'insensitive' } } },
+        { area:     { name: { contains: search, mode: 'insensitive' } } },
+        { position: { name: { contains: search, mode: 'insensitive' } } },
+        { position: { code: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
