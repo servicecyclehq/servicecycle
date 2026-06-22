@@ -1294,6 +1294,8 @@ const dgaIngestRoutes = require('./routes/dgaIngest'); // #28 transformer-oil DG
 app.use('/api/assets',          authenticateToken, dgaIngestRoutes);
 const thermographyIngestRoutes = require('./routes/thermographyIngest'); // #29 IR thermography ingest
 app.use('/api/assets',          authenticateToken, thermographyIngestRoutes);
+const arcFlashIngestRoutes = require('./routes/arcFlashIngest'); // arc-flash Slice 2: one-line/study ingest + gap analysis
+app.use('/api/arc-flash',       authenticateToken, ingestLimiter, arcFlashIngestRoutes);
 app.use('/api/sites',           authenticateToken, siteRoutes);
 app.use('/api/contractors',     authenticateToken, contractorRoutes);
 app.use('/api/schedules/import', authenticateToken, ingestLimiter, schedulesImportRoutes);
