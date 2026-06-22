@@ -234,6 +234,7 @@ const v1ContractorRoutes = require('./routes/v1/contractors');
 const v1WorkOrderRoutes  = require('./routes/v1/workOrders');   // Phase 3 #7 bi-directional
 const v1DeficiencyRoutes = require('./routes/v1/deficiencies'); // Phase 3 #7
 const v1TelemetryRoutes  = require('./routes/v1/telemetry');    // Phase 4 #8 condition-monitoring
+const v1ArcFlashRoutes   = require('./routes/v1/arcFlash');     // Slice 9 arc-flash read surface
 const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
 const quoteRequestRoutes    = require('./routes/quoteRequests');
@@ -1400,6 +1401,7 @@ app.use('/api/v1/contractors', v1VersionTag, requestId, v1IpLimiter, authenticat
 app.use('/api/v1/work-orders', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1WorkOrderRoutes);
 app.use('/api/v1/deficiencies', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1DeficiencyRoutes);
 app.use('/api/v1/telemetry',    v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1TelemetryRoutes);
+app.use('/api/v1/arc-flash',    v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1ArcFlashRoutes);
 
 // ── v0.20.0: API key management — admin only, uses JWT auth ──────────────────
 // Mounted under /api/settings so it inherits the settings-page UX convention.
