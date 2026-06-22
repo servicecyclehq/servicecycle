@@ -25,6 +25,7 @@ const { uploadFile } = require('../lib/storage');
 const { extractArcFlashDocument } = require('../lib/arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('../lib/arcFlashGap');
 const { buildCollectionTasks, extractDeviceFromPhoto } = require('../lib/arcFlashDevice');
+const { scoreBusConfidence, pickDeviceSource } = require('../lib/arcFlashConfidence');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -934,6 +935,18 @@ function studyAssetOut(s: any) {
   };
 }
 
+// Map a flattened studyAssetOut row + the asset's equipment type into the shape
+// the gap engine / confidence scorer read.
+function busFromStudyAssetRow(s: any, equipmentType: any) {
+  return {
+    busName: s.busName, equipmentTypeGuess: equipmentType, nominalVoltage: s.nominalVoltage,
+    boltedFaultCurrentKA: s.boltedFaultCurrentKA, clearingTimeMs: s.clearingTimeMs,
+    electrodeConfig: s.electrodeConfig, conductorGapMm: s.conductorGapMm, workingDistanceIn: s.workingDistanceIn,
+    deviceType: s.deviceType, tripUnitType: s.tripUnitType, deviceRatingA: s.deviceRatingA, deviceSettings: s.deviceSettings,
+    cableLengthFt: s.cableLengthFt, cableSize: s.cableSize,
+  };
+}
+
 // ── GET /asset/:assetId ── everything arc-flash about one asset (the tab data) ─
 router.get('/asset/:assetId', async (req: any, res: any) => {
   try {
@@ -953,7 +966,19 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
       prisma.customFieldValue.findMany({ where: { assetId: asset.id, definition: { appliesTo: 'arc_flash', archivedAt: null } }, include: { definition: true } }),
     ]);
 
-    const studyAssets = studyAssetsRaw.map(studyAssetOut);
+    const studyAssets: any[] = studyAssetsRaw.map(studyAssetOut);
+    // Slice 2.8a — deterministic per-bus confidence/trust score. Field-verified
+    // device provenance + drift are asset-level signals; completeness + study age
+    // are per-row.
+    const deviceSource = pickDeviceSource(devices);
+    const driftFlagged = tests.some((t: any) => t.driftFlagged);
+    for (const s of studyAssets) {
+      s.confidence = scoreBusConfidence({
+        bus: busFromStudyAssetRow(s, asset.equipmentType),
+        study: { performedDate: s.study?.performedDate, expiresAt: s.study?.expiresAt, superseded: s.study?.superseded },
+        deviceSource, driftFlagged,
+      });
+    }
     // Current label = the row from the latest non-superseded study (fallback: newest performedDate).
     const sorted = studyAssets.slice().sort((a: any, b: any) => {
       const sa = a.study.superseded ? 0 : 1, sb = b.study.superseded ? 0 : 1;
@@ -970,6 +995,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
         siteId: asset.siteId,
         hasArcFlash: studyAssets.length > 0 || devices.length > 0 || tasks.length > 0 || tests.length > 0 || customValues.length > 0,
         current,
+        confidence: current ? current.confidence : null,
         labelSeverity: current ? (current.labelSeverity || (danger ? 'danger' : 'warning')) : null,
         studyAssets,
         devices: devices.map(deviceOut),

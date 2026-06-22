@@ -46,6 +46,26 @@ function Field({ label, value }) {
 
 function sevColor(s) { return s === 'danger' ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)'; }
 
+// Slice 2.8a — per-bus confidence/trust band color (green/yellow/red).
+function bandColor(b) { return b === 'green' ? '#15803d' : b === 'yellow' ? '#b45309' : '#b91c1c'; }
+
+// Compact trust meter: "Trust 78%" pill, band-colored, hover shows the factor
+// breakdown. Deterministic score from the API (study age, completeness, field
+// verification, drift) — NOT a certification of the calculation.
+function ConfidenceBadge({ c, size = 'md' }) {
+  if (!c || typeof c.score !== 'number') return null;
+  const pad = size === 'sm' ? '1px 6px' : '4px 10px';
+  const fs = size === 'sm' ? '0.68rem' : '0.75rem';
+  return (
+    <span
+      title={c.summary || ''}
+      style={{ display: 'inline-block', fontSize: fs, fontWeight: 700, color: '#fff', background: bandColor(c.band), padding: pad, borderRadius: 4, whiteSpace: 'nowrap' }}
+    >
+      Trust {c.score}%{c.capped ? ' ⚠' : ''}
+    </span>
+  );
+}
+
 export default function ArcFlashAssetTab({ assetId, canWrite }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,6 +99,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <ConfidenceBadge c={data?.confidence} />
           {sev && (
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff', background: sevColor(sev), padding: '4px 10px', borderRadius: 4 }}>
               {sev === 'danger' ? 'DANGER' : 'WARNING'}
@@ -87,6 +108,12 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
         </div>
       </div>
+
+      {data?.confidence?.summary && (
+        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 6 }}>
+          Data confidence: {data.confidence.summary}
+        </div>
+      )}
 
       {data?.staleStudy && (
         <div className="alert alert-warning mb-16" role="alert" style={{ marginTop: 16 }}>
@@ -181,7 +208,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
         <div style={card}>
           <h3 style={h3}>Study coverage ({data.studyAssets.length})</h3>
           <table className="data-table" style={{ width: '100%', fontSize: '0.78rem' }}>
-            <thead><tr><th>Study date</th><th>Method</th><th>IE (cal/cm²)</th><th>Severity</th><th>Status</th></tr></thead>
+            <thead><tr><th>Study date</th><th>Method</th><th>IE (cal/cm²)</th><th>Severity</th><th>Trust</th><th>Status</th></tr></thead>
             <tbody>
               {data.studyAssets.map((s, i) => (
                 <tr key={s.id || i}>
@@ -189,6 +216,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
                   <td>{s.study?.method || '—'}</td>
                   <td>{num(s.incidentEnergyCalCm2)}</td>
                   <td style={{ fontWeight: 600, color: s.labelSeverity ? sevColor(s.labelSeverity) : 'inherit' }}>{s.labelSeverity ? s.labelSeverity.toUpperCase() : '—'}</td>
+                  <td>{s.confidence ? <ConfidenceBadge c={s.confidence} size="sm" /> : '—'}</td>
                   <td>{s.study?.superseded ? 'superseded' : 'current'}</td>
                 </tr>
               ))}
