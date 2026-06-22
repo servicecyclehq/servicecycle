@@ -149,6 +149,7 @@ const ComplianceStandardDetailReport = lazyWithReload(() => import('./pages/Comp
 const AuditSnapshotsPage             = lazyWithReload(() => import('./pages/AuditSnapshotsPage'));
 const OverdueReport                  = lazyWithReload(() => import('./pages/OverdueReport'));    // overdue maintenance report (admin/manager)
 const ArcFlashReport                 = lazyWithReload(() => import('./pages/ArcFlashReport'));   // arc-flash label report (admin/manager)
+const ArcFlashFleet                  = lazyWithReload(() => import('./pages/ArcFlashFleet'));    // arc-flash fleet dashboard (admin/manager)
 const StandardsLibrary               = lazyWithReload(() => import('./pages/StandardsLibrary')); // standards reference library (admin/manager)
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 const EquipmentTemplates             = lazyWithReload(() => import('./pages/EquipmentTemplates')); // equipment template library
@@ -418,6 +419,11 @@ function AppRoutes() {
             <Route path="reports/arc-flash" element={
               <RequireRole roles={['admin', 'manager']}>
                 <ArcFlashReport />
+              </RequireRole>
+            } />
+            <Route path="reports/arc-flash-fleet" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <ArcFlashFleet />
               </RequireRole>
             } />
 

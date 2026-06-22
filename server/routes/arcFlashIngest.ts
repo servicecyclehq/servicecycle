@@ -813,6 +813,99 @@ router.get('/dashboard', async (req: any, res: any) => {
   }
 });
 
+// Shape a raw SystemStudyAsset row (+ its asset's equipment type) for the gap /
+// confidence / contradiction engines.
+function busForFleet(r: any, equipmentType: any) {
+  return {
+    busName: r.busName, equipmentTypeGuess: equipmentType, nominalVoltage: r.nominalVoltage,
+    boltedFaultCurrentKA: numOrNull(r.boltedFaultCurrentKA), arcingCurrentKA: numOrNull(r.arcingCurrentKA),
+    arcingCurrentReducedKA: numOrNull(r.arcingCurrentReducedKA), clearingTimeMs: numOrNull(r.clearingTimeMs),
+    electrodeConfig: r.electrodeConfig, conductorGapMm: numOrNull(r.conductorGapMm), workingDistanceIn: numOrNull(r.workingDistanceIn),
+    deviceType: r.deviceType, tripUnitType: r.tripUnitType, deviceRatingA: numOrNull(r.deviceRatingA), deviceSettings: r.deviceSettings,
+    cableLengthFt: numOrNull(r.cableLengthFt), cableSize: r.cableSize,
+    incidentEnergyCalCm2: numOrNull(r.incidentEnergyCalCm2), requiredArcRatingCalCm2: numOrNull(r.requiredArcRatingCalCm2), ppeCategory: r.ppeCategory,
+  };
+}
+
+// ── GET /fleet ── Slice 3a: cross-site arc-flash rollup ───────────────────────
+// Per-site DANGER %, label readiness, average confidence (2.8a), open
+// contradictions (2.8c), and expiring studies — the "where is my arc-flash risk
+// across the whole portfolio" view. Read-only; manager/admin via the Reports gate.
+router.get('/fleet', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const soon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const [rows, devices, driftTests] = await Promise.all([
+      prisma.systemStudyAsset.findMany({
+        where: { accountId, study: { supersededById: null } },
+        include: {
+          study: { select: { id: true, performedDate: true, expiresAt: true, supersededById: true, method: true, sourceModel: { select: { utilityMaxFaultKA: true } } } },
+          asset: { select: { id: true, equipmentType: true, siteId: true, site: { select: { name: true } } } },
+        },
+        take: 3000,
+      }),
+      prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { not: null } }, select: { assetId: true, source: true }, take: 5000 }),
+      prisma.deviceTestRecord.findMany({ where: { accountId, driftFlagged: true, assetId: { not: null } }, select: { assetId: true }, take: 5000 }),
+    ]);
+
+    const devByAsset = new Map<string, any[]>();
+    for (const d of devices) { if (!d.assetId) continue; const arr = devByAsset.get(d.assetId) || []; arr.push(d); devByAsset.set(d.assetId, arr); }
+    const driftAssets = new Set(driftTests.map((t: any) => t.assetId));
+
+    const sites = new Map<string, any>();
+    for (const r of rows) {
+      const siteId = r.asset?.siteId || 'unassigned';
+      const siteName = r.asset?.site?.name || 'Unassigned';
+      let site = sites.get(siteId);
+      if (!site) { site = { siteId, siteName, busCount: 0, dangerCount: 0, blockedCount: 0, lowConfidenceCount: 0, confidenceSum: 0, errorCount: 0, warningCount: 0, studyIds: new Set<string>(), expiringStudyIds: new Set<string>() }; sites.set(siteId, site); }
+
+      const bus = busForFleet(r, r.asset?.equipmentType);
+      const ie = numOrNull(r.incidentEnergyCalCm2);
+      const v = voltsOf(r.nominalVoltage);
+      const danger = (ie != null && ie > 40) || (v != null && v > 600);
+      const g = analyzeBusGaps(busForGap(bus));
+      const deviceSource = pickDeviceSource(devByAsset.get(r.assetId) || []);
+      const drift = driftAssets.has(r.assetId);
+      const conf = scoreBusConfidence({ bus, study: { performedDate: r.study?.performedDate, expiresAt: r.study?.expiresAt, superseded: !!r.study?.supersededById }, deviceSource, driftFlagged: drift });
+      const finds = checkBusContradictions(bus, { utilityMaxFaultKA: r.study?.sourceModel?.utilityMaxFaultKA ?? null });
+
+      site.busCount++;
+      if (danger) site.dangerCount++;
+      if (g.readiness === 'blocked') site.blockedCount++;
+      site.confidenceSum += conf.score;
+      if (conf.band === 'red') site.lowConfidenceCount++;
+      site.errorCount += finds.filter((f: any) => f.severity === 'error').length;
+      site.warningCount += finds.filter((f: any) => f.severity === 'warning').length;
+      if (r.study?.id) {
+        site.studyIds.add(r.study.id);
+        if (r.study.expiresAt && new Date(r.study.expiresAt) <= soon) site.expiringStudyIds.add(r.study.id);
+      }
+    }
+
+    const siteList = Array.from(sites.values()).map((s: any) => ({
+      siteId: s.siteId, siteName: s.siteName, busCount: s.busCount, dangerCount: s.dangerCount,
+      dangerPct: s.busCount ? Math.round((s.dangerCount / s.busCount) * 100) : 0,
+      blockedCount: s.blockedCount, lowConfidenceCount: s.lowConfidenceCount,
+      avgConfidence: s.busCount ? Math.round(s.confidenceSum / s.busCount) : null,
+      contradictionErrors: s.errorCount, contradictionWarnings: s.warningCount,
+      studyCount: s.studyIds.size, expiringStudies: s.expiringStudyIds.size,
+    })).sort((a, b) => (b.dangerCount - a.dangerCount) || (a.avgConfidence ?? 100) - (b.avgConfidence ?? 100));
+
+    const totals = siteList.reduce((acc: any, s: any) => ({
+      sites: acc.sites + 1, busCount: acc.busCount + s.busCount, dangerCount: acc.dangerCount + s.dangerCount,
+      blockedCount: acc.blockedCount + s.blockedCount, lowConfidenceCount: acc.lowConfidenceCount + s.lowConfidenceCount,
+      contradictionErrors: acc.contradictionErrors + s.contradictionErrors, contradictionWarnings: acc.contradictionWarnings + s.contradictionWarnings,
+      expiringStudies: acc.expiringStudies + s.expiringStudies, confWeighted: acc.confWeighted + (s.avgConfidence ?? 0) * s.busCount,
+    }), { sites: 0, busCount: 0, dangerCount: 0, blockedCount: 0, lowConfidenceCount: 0, contradictionErrors: 0, contradictionWarnings: 0, expiringStudies: 0, confWeighted: 0 });
+    const avgConfidence = totals.busCount ? Math.round(totals.confWeighted / totals.busCount) : null;
+
+    res.json({ success: true, data: { sites: siteList, totals: { ...totals, confWeighted: undefined, avgConfidence } } });
+  } catch (e) {
+    console.error('arc-flash fleet error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load arc-flash fleet rollup' });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Slice E — source / system model (per study)
 // ═══════════════════════════════════════════════════════════════════════════

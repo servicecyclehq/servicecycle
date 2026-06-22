@@ -48,6 +48,14 @@ export const REPORTS = [
     to: '/reports/arc-flash',
   },
   {
+    id: 'arc-flash-fleet',
+    name: 'Arc Flash Fleet Dashboard',
+    description: 'Arc-flash risk rolled up across every site: DANGER coverage and percentage, blocked buses still needing data, average data-confidence, open sanity-check findings, and studies expiring within 90 days. The portfolio view for where to act first.',
+    icon: Zap,
+    planned: false,
+    to: '/reports/arc-flash-fleet',
+  },
+  {
     id: 'emp-document',
     name: 'Export EMP Document',
     description: 'Download your formal Electrical Maintenance Program (NFPA 70B §4.2) as a PDF — asset inventory, maintenance intervals, 24-month work-order history, condition ratings, open deficiencies, and personnel qualifications. Required by insurance carriers at policy renewal.',
