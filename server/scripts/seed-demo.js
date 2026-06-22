@@ -182,6 +182,11 @@ async function _resetDemoAccount() {
   await prisma.communication.deleteMany({ where: filter }).catch(() => {});
   await prisma.ingestionSession.deleteMany({ where: filter }).catch(() => {});
   await prisma.document.deleteMany({ where: filter }).catch(() => {});
+  // Arc-flash field records are scalar-FK (no cascade) — clear them explicitly so
+  // they don't accumulate across reseeds.
+  await prisma.deviceTestRecord.deleteMany({ where: filter }).catch(() => {});
+  await prisma.arcFlashCollectionTask.deleteMany({ where: filter }).catch(() => {});
+  await prisma.protectiveDevice.deleteMany({ where: filter }).catch(() => {});
   await prisma.asset.deleteMany({ where: filter });
 
   // ── Hierarchy + site-scoped rows ──────────────────────────────────────────
@@ -1361,14 +1366,54 @@ async function _seedAccount() {
       boltedFaultCurrentKA: 20.0, arcingCurrentKA: 19.1, electrodeConfig: 'VCB',
       conductorGapMm: 152, clearingTimeMs: 240, upstreamDevice: 'Utility 51 relay / CB-101',
     } });
-    await prisma.systemStudyAsset.create({ data: {
+    const afCurrentBind = await prisma.systemStudyAsset.create({ data: {
       accountId: account.id, studyId: arcFlash.id, assetId: afTrendBus.id,
       busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
       incidentEnergyCalCm2: 19.6, arcFlashBoundaryIn: 88, workingDistanceIn: 36, ppeCategory: 4,
+      requiredArcRatingCalCm2: 25, labelSeverity: 'danger',
       boltedFaultCurrentKA: 24.0, arcingCurrentKA: 22.7, electrodeConfig: 'VCB',
       conductorGapMm: 152, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
+      deviceType: 'relay', tripUnitType: 'electronic_lsig', deviceRatingA: 1200,
     } });
-    console.log('  [seed] arc-flash trend bound on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 DANGER');
+
+    // Source / system model for the current study (per-asset source card + risk).
+    await prisma.studySourceModel.create({ data: {
+      accountId: account.id, siteId: riverside.id, studyId: arcFlash.id,
+      utilityMaxFaultKA: 32.0, utilityMinFaultKA: 18.5, utilityXr: 12.4,
+      transformerKva: 2500, transformerPrimaryV: 13800, transformerSecondaryV: 480,
+      transformerImpedancePct: 5.75, transformerConnection: 'delta-wye',
+      notes: 'Utility raised available fault current after the 2500 kVA transformer upsizing.',
+    } }).catch(() => {});
+
+    // Collected upstream protective device (devices list + timeline event).
+    await prisma.protectiveDevice.create({ data: {
+      accountId: account.id, siteId: riverside.id, assetId: afTrendBus.id,
+      label: 'Utility 51 relay / CB-101', deviceType: 'relay',
+      manufacturer: 'SEL', model: '751', sensorRatingA: 1200,
+      settings: { pickupA: 960, timeDial: 3.5, curve: 'U3' },
+      source: 'field', settingsCollectedAt: addDays(now, -120),
+    } }).catch(() => {});
+
+    // NETA as-found/as-left test WITH drift -> stale-study banner + timeline event
+    // + caps the data-confidence band below green.
+    await prisma.deviceTestRecord.create({ data: {
+      accountId: account.id, siteId: riverside.id, assetId: afTrendBus.id,
+      testType: 'as_found_as_left', testDate: addDays(now, -90), performedBy: 'NETA tech - Substation A',
+      asFoundSettings: { pickupA: 1040, timeDial: 4.0 }, asLeftSettings: { pickupA: 960, timeDial: 3.5 },
+      matchesStudy: false, driftFlagged: true, result: 'conditional',
+      notes: 'As-found relay pickup higher than the study assumed; reset to study values. Re-study recommended.',
+    } }).catch(() => {});
+
+    // A previously-printed QR label snapshot at the OLDER value, so scanning the
+    // public /l/<token> portal shows a printed-vs-current mismatch (current 19.6
+    // vs printed 14.2 cal/cm2 -> "reprint" banner).
+    await prisma.systemStudyAsset.update({ where: { id: afCurrentBind.id }, data: {
+      publicToken: 'demoswgr1a1' + Math.random().toString(36).slice(2, 12),
+      printedAt: addDays(now, -Math.round(3.8 * 365)),
+      printedSnapshot: { nominalVoltage: '13.8kV', incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 4, requiredArcRatingCalCm2: 25, labelSeverity: 'danger' },
+    } }).catch(() => {});
+
+    console.log('  [seed] arc-flash trend on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 DANGER; + source model, device, NETA drift, stale printed label');
   }
 
   // Short-circuit study ~3 years ago — PE license on the report cover.

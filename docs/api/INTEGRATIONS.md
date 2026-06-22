@@ -29,6 +29,10 @@ flows back to advance the NFPA 70B schedule.
 | `GET /work-orders`, `/work-orders/{id}` | yes | -- |
 | `POST /work-orders` (create / complete) | -- | **yes (write scope)** |
 | `GET /deficiencies`, `/deficiencies/{id}` | yes | -- |
+| `GET /arc-flash/labels` (current NFPA 70E labels) | yes | -- |
+| `GET /arc-flash/one-line?siteId=` (power-path graph) | yes | -- |
+| `GET /arc-flash/work-order-precheck?assetId=` | yes | -- |
+| `POST /arc-flash/devices` (push verified device) | -- | **yes (write scope)** |
 
 ### The closed loop
 
@@ -43,6 +47,24 @@ flows back to advance the NFPA 70B schedule.
 4. (Optional) Subscribe to outbound **webhooks** (Settings -> Webhooks) for
    `maintenance.due` / `maintenance.overdue` events to push step 1 in real time
    instead of polling.
+
+### The arc-flash closed loop
+
+ServiceCycle is the **data layer** for arc-flash (it captures the IEEE 1584 inputs
+and the NFPA 70E label outputs; a licensed PE runs and stamps the study). The v1
+arc-flash surface lets a CMMS/EAM sync and guard that data:
+
+1. **Sync the labels:** `GET /api/v1/arc-flash/labels` (filter `?siteId=` / `?severity=`)
+   to mirror the current NFPA 70E 130.5(H) labels, and `GET /arc-flash/one-line?siteId=`
+   for the power-path graph.
+2. **Gate energized work:** before issuing a work order on energized equipment,
+   call `GET /api/v1/arc-flash/work-order-precheck?assetId=`. **Block the work
+   order when `canIssue` is `false`** (study missing / expired / superseded); the
+   response carries the hazard data to stamp on the energized-work permit.
+3. **Write verified settings back:** when a technician confirms a protective-device
+   setting in the CMMS, `POST /api/v1/arc-flash/devices` (write-scoped key) pushes
+   it back as a durable device record (`source = import`), keeping SC's data layer
+   in sync with the field.
 
 ---
 
@@ -110,7 +132,9 @@ or map to Work Orders if Field Service is enabled.
   a pure CRM mirror; write only where completions flow back), and rotate via
   Settings -> API Keys (revocation is immediate).
 - All endpoints are strictly account-scoped to the key's account.
-- The write-back is the only mutation the public API performs today; assets,
-  deficiencies, sites, and schedules are managed in ServiceCycle and surfaced
-  read-only here. More write endpoints will land in later `/api/v1` increments
-  (the version contract will not break within v1).
+- The public API performs two mutations today: the work-order write-back
+  (`POST /work-orders`) and the arc-flash device write-back
+  (`POST /arc-flash/devices`); both require the `write` scope. Everything else --
+  assets, deficiencies, sites, schedules, and arc-flash labels -- is managed in
+  ServiceCycle and surfaced read-only here. More write endpoints will land in
+  later `/api/v1` increments (the version contract will not break within v1).

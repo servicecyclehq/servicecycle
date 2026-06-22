@@ -1604,7 +1604,185 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
+  /arc-flash/labels:
+    get:
+      operationId: listArcFlashLabels
+      summary: List arc-flash labels
+      description: |
+        Paginated current (non-superseded) NFPA 70E 130.5(H) arc-flash labels for
+        the account associated with the API key. The canonical label surface a
+        CMMS / EAM / analytics tool syncs from.
+      tags: [Arc Flash]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: siteId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [danger, warning] }
+      responses:
+        '200':
+          description: Paginated label list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page, limit, total]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        assetId: { type: string, format: uuid }
+                        busName: { type: string, nullable: true }
+                        equipmentType: { type: string, nullable: true }
+                        siteId: { type: string, format: uuid, nullable: true }
+                        site: { type: string, nullable: true }
+                        nominalVoltage: { type: string, nullable: true }
+                        incidentEnergyCalCm2: { type: number, nullable: true }
+                        arcFlashBoundaryIn: { type: number, nullable: true }
+                        workingDistanceIn: { type: number, nullable: true }
+                        ppeCategory: { type: integer, nullable: true }
+                        requiredArcRatingCalCm2: { type: number, nullable: true }
+                        labelSeverity: { type: string, nullable: true, enum: [danger, warning] }
+                        studyPerformedDate: { type: string, format: date-time, nullable: true }
+                        studyExpiresAt: { type: string, format: date-time, nullable: true }
+                        studyMethod: { type: string, nullable: true }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  total: { type: integer }
+                  totalPages: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /arc-flash/one-line:
+    get:
+      operationId: getArcFlashOneLine
+      summary: Power-path one-line graph for a site
+      description: |
+        The auto-built single-line graph for a site: nodes (assets with their
+        current arc-flash label and a topological level) and edges (feed links),
+        assembled from the collected asset graph.
+      tags: [Arc Flash]
+      parameters:
+        - name: siteId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: One-line graph
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  site: { type: object }
+                  nodes: { type: array, items: { type: object } }
+                  edges: { type: array, items: { type: object } }
+                  maxLevel: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Site not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /arc-flash/work-order-precheck:
+    get:
+      operationId: arcFlashWorkOrderPrecheck
+      summary: Work-order issuance precheck
+      description: |
+        Returns whether the arc-flash study for an asset is valid (`canIssue`) plus
+        the hazard data to stamp on an energized-work permit. A CMMS calls this
+        before issuing a work order and BLOCKS the order when `canIssue` is false
+        (study missing, expired, or superseded).
+      tags: [Arc Flash]
+      parameters:
+        - name: assetId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Precheck result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assetId: { type: string, format: uuid }
+                  canIssue: { type: boolean }
+                  reasons: { type: array, items: { type: string } }
+                  hazard: { type: object }
+                  study: { type: object }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Asset not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /arc-flash/devices:
+    post:
+      operationId: createArcFlashDevice
+      summary: Push a verified protective device (write-back)
+      description: |
+        Writes a verified protective-device record back into ServiceCycle's data
+        layer (`source = import`). Requires an API key with the `write` scope. The
+        SC-side surface a CMMS / PE tool uses to sync confirmed device settings.
+      tags: [Arc Flash]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId]
+              properties:
+                assetId: { type: string, format: uuid }
+                label: { type: string, maxLength: 200 }
+                deviceType: { type: string, enum: [breaker, fuse, relay, switch] }
+                manufacturer: { type: string }
+                model: { type: string }
+                partNumber: { type: string }
+                frameRatingA: { type: number }
+                sensorRatingA: { type: number }
+                settings: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Device created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device: { type: object }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: API key lacks the write scope
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Asset not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
 tags:
+  - name: Arc Flash
+    description: Arc-flash labels, power-path one-line, work-order precheck, and device write-back
   - name: Contracts
     description: Contract read operations
   - name: Work Orders
