@@ -1,0 +1,195 @@
+/**
+ * lib/arcFlashDevice.ts — Slice 2.7 field-collection helpers.
+ *
+ * The moat: the hardest-to-get arc-flash inputs are the upstream PROTECTIVE
+ * DEVICE (frame/sensor rating + LSIG trip settings, or fuse class/rating) and the
+ * FEEDER CABLE — read by opening the equipment door down to 480V panels. This
+ * module turns an ingest's gap punch-list into field-collection TASKS, maps a
+ * collected device back onto a bus for re-gapping, and reads a breaker/fuse PHOTO
+ * into a structured device draft (the easy-button for the invasive part).
+ *
+ * Honest by design: photo-read is a "strong draft you correct," never a stamp;
+ * confidence/gap scoring stays deterministic in lib/arcFlashGap.ts.
+ */
+
+'use strict';
+
+const ai = require('./ai');
+
+const PHOTO_PROMPT_VERSION = 'af-device-photo-v1';
+
+// ── small local normalizers (kept independent of arcFlashExtract) ─────────────
+function cleanStr(v: any): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s || /^(null|n\/a|na|none|-|unknown)$/i.test(s)) return null;
+  return s;
+}
+function coerceNum(v: any): number | null {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) && v >= 0 ? v : null;
+  const m = String(v).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+function parseVolts(raw: any): number | null {
+  if (raw == null) return null;
+  const m = String(raw).match(/([\d.]+)\s*(kv|v)?/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  return /kv/i.test(m[2] || '') ? n * 1000 : n;
+}
+
+const DEVICE_TYPES = new Set(['breaker', 'fuse', 'relay', 'switch']);
+function normDeviceType(v: any): string | null {
+  const s = cleanStr(v);
+  if (!s) return null;
+  const l = s.toLowerCase();
+  if (DEVICE_TYPES.has(l)) return l;
+  if (/breaker|cb\b|mccb|icb|acb|molded|insulated/.test(l)) return 'breaker';
+  if (/fuse/.test(l)) return 'fuse';
+  if (/relay|51|50|protective relay/.test(l)) return 'relay';
+  if (/switch|disconnect|fusible/.test(l)) return 'switch';
+  return null;
+}
+
+/**
+ * Map a durable ProtectiveDevice (or a collected draft) onto the bus device
+ * fields the gap engine reads. sensorRatingA drives the curve; fall back to frame.
+ */
+export function deviceToBusFields(device: any): any {
+  if (!device || typeof device !== 'object') return {};
+  return {
+    deviceType: cleanStr(device.deviceType) || null,
+    deviceManufacturer: cleanStr(device.manufacturer) || null,
+    deviceModel: cleanStr(device.model) || null,
+    deviceRatingA: coerceNum(device.sensorRatingA) ?? coerceNum(device.frameRatingA),
+    deviceSettings: device.settings && typeof device.settings === 'object' && Object.keys(device.settings).length ? device.settings : null,
+  };
+}
+
+// Conservative hazard class for a collection task: only WARNING when we KNOW the
+// bus is LV (<=600 V) and not high-energy; otherwise DANGER (incl. unknown) so the
+// collector PPEs up for the worst case until the study proves otherwise.
+function hazardForBus(bus: any): string {
+  const v = parseVolts(bus.nominalVoltage);
+  const ie = coerceNum(bus.incidentEnergyCalCm2);
+  const ppe = coerceNum(bus.ppeCategory);
+  if (v != null && v <= 600 && (ie == null || ie <= 40) && (ppe == null || ppe <= 2)) return 'WARNING';
+  return 'DANGER';
+}
+
+const PPE_NOTE_DANGER = 'Treat as DANGER until a study proves otherwise: de-energize and verify absence of voltage where possible; if energized work is unavoidable, a qualified person in arc-rated PPE for the worst-case incident energy, per NFPA 70E.';
+const PPE_NOTE_WARNING = 'Qualified person only; arc-rated PPE appropriate to the equipment, per NFPA 70E. Prefer an electrically safe (de-energized) condition before opening.';
+
+/**
+ * Turn the gap punch-list into field-collection task drafts — one per BLOCKED
+ * bus. Each task spells out exactly what to open and record, carries the missing
+ * must-obtain fields, and is sequenced for safety (PPE / outage / qualified).
+ * Pure: returns drafts; the caller persists + dedups.
+ */
+export function buildCollectionTasks(buses: any[]): any[] {
+  const tasks: any[] = [];
+  for (const b of buses || []) {
+    const gaps = (b.gaps || {}) as any;
+    const fields = Array.isArray(gaps.fields) ? gaps.fields : [];
+    const missingMusts = fields.filter((f: any) => f.category === 'must_obtain' && f.status === 'missing');
+    // Only blocked buses need collection; a ready/defaultable bus has its musts.
+    if (b.readiness !== 'blocked' && !missingMusts.length) continue;
+
+    const needDevice = missingMusts.some((f: any) => f.field === 'protectiveDevice');
+    const needFault = missingMusts.some((f: any) => f.field === 'faultCurrent');
+    const needVoltage = missingMusts.some((f: any) => f.field === 'nominalVoltage');
+
+    const todo: string[] = [];
+    if (needVoltage) todo.push('read the system voltage at this bus');
+    if (needDevice) todo.push('record the UPSTREAM protective device: type + frame/sensor rating + trip settings (long/short/inst/ground-fault), or fuse class + rating');
+    if (needFault) todo.push('record the available fault current (short-circuit study / utility), OR the feeder cable length + size + material so it can be computed');
+    if (!todo.length) continue;
+
+    const where = b.busName || 'this bus';
+    const instructions = `Open ${where} and ${todo.join('; ')}.`;
+    const hazardClass = hazardForBus(b);
+    tasks.push({
+      ingestBusId: b.id || null,
+      busName: b.busName || 'Unnamed bus',
+      instructions,
+      neededFields: missingMusts.map((f: any) => ({ field: f.field, label: f.label })),
+      hazardClass,
+      ppeNote: hazardClass === 'DANGER' ? PPE_NOTE_DANGER : PPE_NOTE_WARNING,
+      // Reading device settings / cable means opening the door -> prefer an outage.
+      requiresOutage: needDevice || needFault,
+      requiresQualifiedPerson: true,
+    });
+  }
+  return tasks;
+}
+
+// ── photo-read: breaker trip-unit / fuse / relay photo -> device draft ────────
+const PHOTO_CONTRACT = `Return STRICT JSON only (no prose, no markdown fences) matching exactly:
+{
+  "deviceType": "breaker|fuse|relay|switch|null",
+  "manufacturer": "string|null",
+  "model": "string|null (series / catalog, e.g. \\"PowerPact H\\", \\"Micrologic 6.0\\")",
+  "partNumber": "string|null",
+  "frameRatingA": number_or_null,
+  "sensorRatingA": number_or_null,
+  "settings": "object|null — for a breaker: {longTimePickup, longTimeDelay, shortTimePickup, shortTimeDelay, instantaneous, groundFault} reading dial positions / display values; for a fuse: {fuseClass, fuseRatingA}",
+  "confidenceNote": "string|null (what was hard to read)"
+}
+Rules: read ONLY what is visible. Use null for anything you cannot read — NEVER guess a rating or a trip setting. Dial positions and displayed setpoints are values; transcribe them as shown.`;
+
+const PHOTO_PROMPT =
+  'This image shows an electrical protective device: a molded-case/insulated-case circuit breaker trip unit (possibly with rotary dials or an electronic display), a fuse, or a protective relay. Read the nameplate and any visible trip settings (dial positions, displayed setpoints). Extract the structured device record for arc-flash data collection. ' +
+  PHOTO_CONTRACT;
+
+function normalizeDevice(parsed: any): any {
+  const r = parsed && typeof parsed === 'object' ? parsed : {};
+  const s = r.settings && typeof r.settings === 'object' ? r.settings : null;
+  return {
+    deviceType: normDeviceType(r.deviceType),
+    manufacturer: cleanStr(r.manufacturer),
+    model: cleanStr(r.model),
+    partNumber: cleanStr(r.partNumber),
+    frameRatingA: coerceNum(r.frameRatingA),
+    sensorRatingA: coerceNum(r.sensorRatingA),
+    settings: s && Object.keys(s).length ? s : null,
+    confidenceNote: cleanStr(r.confidenceNote),
+  };
+}
+
+function normalizeMedia(mimeType: any): string {
+  const m = String(mimeType || '').toLowerCase();
+  if (m.includes('png')) return 'image/png';
+  if (m.includes('webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+/**
+ * Read a device photo into a structured draft via the BYO-AI vision path. Fails
+ * SOFT: an unreadable image yields an empty draft + a clear warning rather than
+ * throwing, so the field flow never dead-ends.
+ */
+export async function extractDeviceFromPhoto(opts: { buffer: Buffer; mimeType?: string; settings?: any }): Promise<any> {
+  const { buffer, mimeType, settings = {} } = opts;
+  let out: any;
+  try {
+    out = await ai.completeWithImage({ imageBuffer: buffer, mediaType: normalizeMedia(mimeType), prompt: PHOTO_PROMPT, maxTokens: 1500, settings });
+  } catch (e: any) {
+    return { device: null, warnings: ['Photo read failed: ' + (e && e.message ? e.message : String(e))], promptVersion: PHOTO_PROMPT_VERSION, rawJsonText: '' };
+  }
+  const text = out && out.text ? out.text : '';
+  let parsed: any;
+  try { parsed = ai.parseJSON(text, 'arc-flash-device-photo'); }
+  catch { return { device: null, warnings: ['Could not parse the AI response as JSON — re-take the photo with the nameplate/dials in focus.'], promptVersion: PHOTO_PROMPT_VERSION, rawJsonText: text }; }
+  const device = normalizeDevice(parsed);
+  const warnings: string[] = [];
+  if (!device.deviceType && !device.manufacturer && !device.model && device.sensorRatingA == null && device.frameRatingA == null) {
+    warnings.push('Nothing recognizable was read from the photo — confirm it shows the device nameplate / trip unit.');
+  }
+  return { device, warnings, promptVersion: PHOTO_PROMPT_VERSION, aiProvider: out && out.provider ? out.provider : null, rawJsonText: text };
+}
+
+export { PHOTO_PROMPT_VERSION, normalizeDevice, hazardForBus };

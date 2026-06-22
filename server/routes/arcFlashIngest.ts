@@ -24,6 +24,7 @@ import prisma from '../lib/prisma';
 const { uploadFile } = require('../lib/storage');
 const { extractArcFlashDocument } = require('../lib/arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('../lib/arcFlashGap');
+const { buildCollectionTasks, extractDeviceFromPhoto } = require('../lib/arcFlashDevice');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -40,6 +41,55 @@ const upload = multer({
 });
 
 const ELECTRODE_CONFIGS = new Set(['VCB', 'VCBB', 'HCB', 'VOA', 'HOA']);
+
+// Photo upload for the device photo-read (image only, 10 MB) — mirrors assetPhotoInspect.
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (_req: any, file: any, cb: any) => cb(null, /image\/(png|jpe?g|webp)/i.test(file.mimetype || '')),
+});
+
+const DEVICE_TYPES = new Set(['breaker', 'fuse', 'relay', 'switch']);
+
+// Public projection of a ProtectiveDevice row.
+function deviceOut(d: any) {
+  return {
+    id: d.id, siteId: d.siteId, assetId: d.assetId, ingestBusId: d.ingestBusId, label: d.label,
+    deviceType: d.deviceType, manufacturer: d.manufacturer, model: d.model, partNumber: d.partNumber,
+    frameRatingA: numOrNull(d.frameRatingA), sensorRatingA: numOrNull(d.sensorRatingA), settings: d.settings,
+    settingsCollectedAt: d.settingsCollectedAt, collectedById: d.collectedById, photoKey: d.photoKey,
+    source: d.source, supersededById: d.supersededById, status: d.status, createdAt: d.createdAt, updatedAt: d.updatedAt,
+  };
+}
+
+// Public projection of an ArcFlashCollectionTask row.
+function taskOut(t: any) {
+  return {
+    id: t.id, siteId: t.siteId, ingestId: t.ingestId, ingestBusId: t.ingestBusId, assetId: t.assetId,
+    busName: t.busName, instructions: t.instructions, neededFields: t.neededFields, status: t.status,
+    assignedUserId: t.assignedUserId, hazardClass: t.hazardClass, ppeNote: t.ppeNote,
+    requiresOutage: t.requiresOutage, requiresQualifiedPerson: t.requiresQualifiedPerson,
+    collectedDeviceId: t.collectedDeviceId, collectedById: t.collectedById, collectedAt: t.collectedAt,
+    createdAt: t.createdAt, updatedAt: t.updatedAt,
+  };
+}
+
+// Build the durable-device create payload from a request body (shared by create
+// + supersede + field collect). Validates device type if present.
+function deviceDataFromBody(b: any): { data?: any; error?: string } {
+  const data: any = {};
+  data.label = b.label ? String(b.label).slice(0, 200) : null;
+  if (b.deviceType != null && b.deviceType !== '') {
+    const dt = String(b.deviceType).toLowerCase();
+    if (!DEVICE_TYPES.has(dt)) return { error: 'deviceType must be one of breaker, fuse, relay, switch' };
+    data.deviceType = dt;
+  }
+  for (const f of ['manufacturer', 'model', 'partNumber']) if (b[f] !== undefined) data[f] = b[f] ? String(b[f]).slice(0, 200) : null;
+  for (const f of ['frameRatingA', 'sensorRatingA']) if (b[f] !== undefined) data[f] = numOrNull(b[f]);
+  if (b.settings !== undefined) data.settings = (b.settings && typeof b.settings === 'object' && Object.keys(b.settings).length) ? b.settings : null;
+  if (b.photoKey !== undefined) data.photoKey = b.photoKey ? String(b.photoKey).slice(0, 500) : null;
+  return { data };
+}
 
 function numOrNull(v: any): number | null {
   if (v == null || v === '') return null;
@@ -426,6 +476,182 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     console.error('arc-flash confirm error:', e);
     res.status(500).json({ success: false, error: 'Failed to confirm ingest' });
   }
+});
+
+// ── POST /ingest/:id/collection-tasks ── generate field tasks from blocked buses ─
+router.post('/ingest/:id/collection-tasks', requireManager, async (req: any, res: any) => {
+  try {
+    const ingest = await prisma.arcFlashIngest.findFirst({ where: { id: req.params.id, accountId: req.user.accountId }, select: { id: true, siteId: true } });
+    if (!ingest) return res.status(404).json({ success: false, error: 'Ingest not found' });
+    const buses = await prisma.arcFlashIngestBus.findMany({ where: { ingestId: ingest.id }, orderBy: { seq: 'asc' } });
+    const drafts = buildCollectionTasks(buses);
+    if (!drafts.length) return res.json({ success: true, data: { created: 0, skipped: 0, tasks: [] } });
+
+    // Dedup: skip a bus that already has a live (non-cancelled) task for this ingest.
+    const existing = await prisma.arcFlashCollectionTask.findMany({
+      where: { ingestId: ingest.id, status: { not: 'cancelled' } }, select: { ingestBusId: true },
+    });
+    const have = new Set(existing.map((t: any) => t.ingestBusId).filter(Boolean));
+
+    const created: any[] = [];
+    let skipped = 0;
+    for (const d of drafts) {
+      if (d.ingestBusId && have.has(d.ingestBusId)) { skipped++; continue; }
+      const t = await prisma.arcFlashCollectionTask.create({
+        data: {
+          accountId: req.user.accountId, siteId: ingest.siteId, ingestId: ingest.id, ingestBusId: d.ingestBusId,
+          busName: d.busName, instructions: d.instructions, neededFields: d.neededFields ?? undefined,
+          hazardClass: d.hazardClass, ppeNote: d.ppeNote, requiresOutage: d.requiresOutage,
+          requiresQualifiedPerson: d.requiresQualifiedPerson, createdById: req.user.id,
+        },
+      });
+      created.push(taskOut(t));
+    }
+    await logActivity(req.user.id, req.user.accountId, 'arc_flash_collection_tasks_generated', { ingestId: ingest.id, created: created.length, skipped });
+    res.status(201).json({ success: true, data: { created: created.length, skipped, tasks: created } });
+  } catch (e) {
+    console.error('arc-flash collection-tasks generate error:', e);
+    res.status(500).json({ success: false, error: 'Failed to generate collection tasks' });
+  }
+});
+
+// ── GET /collection-tasks?siteId=&status= ── list collection tasks ────────────
+router.get('/collection-tasks', async (req: any, res: any) => {
+  try {
+    const where: any = { accountId: req.user.accountId };
+    if (req.query.siteId) where.siteId = String(req.query.siteId);
+    if (req.query.status) where.status = String(req.query.status);
+    if (req.query.ingestId) where.ingestId = String(req.query.ingestId);
+    const rows = await prisma.arcFlashCollectionTask.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 });
+    res.json({ success: true, data: { tasks: rows.map(taskOut) } });
+  } catch (e) {
+    console.error('arc-flash collection-tasks list error:', e);
+    res.status(500).json({ success: false, error: 'Failed to list collection tasks' });
+  }
+});
+
+// ── PATCH /collection-tasks/:id ── assign / status / cancel ───────────────────
+router.patch('/collection-tasks/:id', requireManager, async (req: any, res: any) => {
+  try {
+    const task = await prisma.arcFlashCollectionTask.findFirst({ where: { id: req.params.id, accountId: req.user.accountId } });
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+    const b = req.body || {};
+    const patch: any = {};
+    if (b.status !== undefined) {
+      if (!['open', 'in_progress', 'collected', 'cancelled'].includes(b.status)) return res.status(400).json({ success: false, error: 'status must be open|in_progress|collected|cancelled' });
+      patch.status = b.status;
+    }
+    if (b.assignedUserId !== undefined) {
+      if (b.assignedUserId) {
+        const u = await prisma.user.findFirst({ where: { id: b.assignedUserId, accountId: req.user.accountId }, select: { id: true } });
+        if (!u) return res.status(404).json({ success: false, error: 'assignedUserId not found in this account' });
+        patch.assignedUserId = u.id;
+      } else patch.assignedUserId = null;
+    }
+    if (b.instructions !== undefined) patch.instructions = b.instructions ? String(b.instructions).slice(0, 2000) : task.instructions;
+    const updated = await prisma.arcFlashCollectionTask.update({ where: { id: task.id }, data: patch });
+    res.json({ success: true, data: { task: taskOut(updated) } });
+  } catch (e) {
+    console.error('arc-flash collection-task patch error:', e);
+    res.status(500).json({ success: false, error: 'Failed to update task' });
+  }
+});
+
+// ── POST /devices ── create a durable ProtectiveDevice ────────────────────────
+router.post('/devices', requireManager, async (req: any, res: any) => {
+  try {
+    const b = req.body || {};
+    if (!b.siteId) return res.status(400).json({ success: false, error: 'siteId is required' });
+    if (!b.label) return res.status(400).json({ success: false, error: 'label is required' });
+    const site = await prisma.site.findFirst({ where: { id: b.siteId, accountId: req.user.accountId }, select: { id: true } });
+    if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
+    if (b.assetId) {
+      const a = await prisma.asset.findFirst({ where: { id: b.assetId, accountId: req.user.accountId }, select: { id: true } });
+      if (!a) return res.status(404).json({ success: false, error: 'assetId not found' });
+    }
+    const { data, error } = deviceDataFromBody(b);
+    if (error) return res.status(400).json({ success: false, error });
+    const device = await prisma.protectiveDevice.create({
+      data: {
+        accountId: req.user.accountId, siteId: b.siteId, assetId: b.assetId || null, ingestBusId: b.ingestBusId || null,
+        label: data.label, deviceType: data.deviceType ?? null, manufacturer: data.manufacturer ?? null,
+        model: data.model ?? null, partNumber: data.partNumber ?? null, frameRatingA: data.frameRatingA ?? null,
+        sensorRatingA: data.sensorRatingA ?? null, settings: data.settings ?? undefined, photoKey: data.photoKey ?? null,
+        source: b.source === 'photo' || b.source === 'import' || b.source === 'manual' ? b.source : 'manual',
+        collectedById: req.user.id, settingsCollectedAt: data.settings ? new Date() : null,
+      },
+    });
+    await logActivity(req.user.id, req.user.accountId, 'arc_flash_device_created', { deviceId: device.id, siteId: b.siteId, assetId: b.assetId || null });
+    res.status(201).json({ success: true, data: { device: deviceOut(device) } });
+  } catch (e) {
+    console.error('arc-flash device create error:', e);
+    res.status(500).json({ success: false, error: 'Failed to create device' });
+  }
+});
+
+// ── GET /devices?siteId=&assetId=&ingestBusId=&status= ── list devices ────────
+router.get('/devices', async (req: any, res: any) => {
+  try {
+    const where: any = { accountId: req.user.accountId };
+    if (req.query.siteId) where.siteId = String(req.query.siteId);
+    if (req.query.assetId) where.assetId = String(req.query.assetId);
+    if (req.query.ingestBusId) where.ingestBusId = String(req.query.ingestBusId);
+    where.status = req.query.status ? String(req.query.status) : 'active';
+    const rows = await prisma.protectiveDevice.findMany({ where, orderBy: { createdAt: 'desc' }, take: 200 });
+    res.json({ success: true, data: { devices: rows.map(deviceOut) } });
+  } catch (e) {
+    console.error('arc-flash device list error:', e);
+    res.status(500).json({ success: false, error: 'Failed to list devices' });
+  }
+});
+
+// ── POST /devices/:id/supersede ── version a device (settings changed) ────────
+router.post('/devices/:id/supersede', requireManager, async (req: any, res: any) => {
+  try {
+    const old = await prisma.protectiveDevice.findFirst({ where: { id: req.params.id, accountId: req.user.accountId } });
+    if (!old) return res.status(404).json({ success: false, error: 'Device not found' });
+    if (old.status === 'superseded') return res.status(409).json({ success: false, error: 'Device already superseded' });
+    const b = req.body || {};
+    const { data, error } = deviceDataFromBody({ ...old, ...b, label: b.label ?? old.label });
+    if (error) return res.status(400).json({ success: false, error });
+    const next = await prisma.protectiveDevice.create({
+      data: {
+        accountId: old.accountId, siteId: old.siteId, assetId: old.assetId, ingestBusId: old.ingestBusId,
+        label: data.label || old.label, deviceType: data.deviceType ?? old.deviceType, manufacturer: data.manufacturer ?? old.manufacturer,
+        model: data.model ?? old.model, partNumber: data.partNumber ?? old.partNumber,
+        frameRatingA: data.frameRatingA ?? old.frameRatingA, sensorRatingA: data.sensorRatingA ?? old.sensorRatingA,
+        settings: data.settings ?? (old.settings ?? undefined), photoKey: data.photoKey ?? old.photoKey,
+        source: b.source || 'manual', collectedById: req.user.id, settingsCollectedAt: new Date(),
+      },
+    });
+    await prisma.protectiveDevice.update({ where: { id: old.id }, data: { status: 'superseded', supersededById: next.id } });
+    await logActivity(req.user.id, req.user.accountId, 'arc_flash_device_superseded', { oldId: old.id, newId: next.id });
+    res.status(201).json({ success: true, data: { device: deviceOut(next), supersededId: old.id } });
+  } catch (e) {
+    console.error('arc-flash device supersede error:', e);
+    res.status(500).json({ success: false, error: 'Failed to supersede device' });
+  }
+});
+
+// ── POST /photo-read ── read a breaker/fuse/relay photo into a device draft ───
+// Review-first: returns a parsed draft; nothing is persisted until the reviewer
+// saves it (POST /devices) or a field collect submits it.
+router.post('/photo-read', requireManager, (req: any, res: any) => {
+  if (String(process.env.AI_ENABLED || '').toLowerCase() === 'false') {
+    return res.status(503).json({ success: false, error: 'ai_disabled', message: 'AI features are turned off for this deployment.' });
+  }
+  photoUpload.single('photo')(req, res, async (err: any) => {
+    if (err) return res.status(400).json({ success: false, error: err.message || 'Upload failed' });
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: 'Upload a JPG/PNG/WebP photo of the device' });
+      const result = await extractDeviceFromPhoto({ buffer: req.file.buffer, mimeType: req.file.mimetype });
+      await logActivity(req.user.id, req.user.accountId, 'arc_flash_device_photo_read', { hasDevice: !!(result && result.device), warnings: (result && result.warnings) || [] });
+      res.json({ success: true, data: { device: result.device, warnings: result.warnings || [], promptVersion: result.promptVersion } });
+    } catch (e) {
+      console.error('arc-flash photo-read error:', e);
+      res.status(500).json({ success: false, error: 'Failed to read device photo' });
+    }
+  });
 });
 
 module.exports = router;
