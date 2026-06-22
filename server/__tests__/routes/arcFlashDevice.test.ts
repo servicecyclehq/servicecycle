@@ -180,3 +180,26 @@ describe('device photo-read', () => {
     expect(res.body.data.device.settings.longTimePickup).toBe(0.9);
   });
 });
+
+describe('field collection (scoped) closes the loop', () => {
+  test('collecting a device on a blocked bus moves it toward ready', async () => {
+    const list = await request(app).get(`/api/arc-flash/collection-tasks?siteId=${siteId}`).set('Authorization', auth(manager));
+    const mccTask = list.body.data.tasks.find((t: any) => t.busName === 'MCC-9B');
+    expect(mccTask).toBeTruthy();
+    const res = await request(app)
+      .post(`/api/field/arc-flash/tasks/${mccTask.id}/collect`)
+      .set('Authorization', auth(manager))
+      .send({ device: { deviceType: 'breaker', manufacturer: 'Eaton', sensorRatingA: 400, settings: { longTimePickup: 0.9, instantaneous: 5 } } });
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('collected');
+    expect(res.body.data.deviceId).toBeTruthy();
+    expect(res.body.data.readiness).toBe('defaultable'); // device closed the must-obtain; typicals IEEE-defaulted
+  });
+
+  test('task is now collected and a durable field device exists', async () => {
+    const tasks = await request(app).get('/api/field/arc-flash/tasks?status=collected').set('Authorization', auth(manager));
+    expect(tasks.body.data.tasks.some((t: any) => t.busName === 'MCC-9B')).toBe(true);
+    const devs = await request(app).get(`/api/arc-flash/devices?siteId=${siteId}`).set('Authorization', auth(manager));
+    expect(devs.body.data.devices.some((d: any) => d.source === 'field' && d.sensorRatingA === 400)).toBe(true);
+  });
+});

@@ -15,6 +15,7 @@
 'use strict';
 
 const ai = require('./ai');
+const { analyzeBusGaps, summarizeIngestBands } = require('./arcFlashGap');
 
 const PHOTO_PROMPT_VERSION = 'af-device-photo-v1';
 
@@ -190,6 +191,50 @@ export async function extractDeviceFromPhoto(opts: { buffer: Buffer; mimeType?: 
     warnings.push('Nothing recognizable was read from the photo — confirm it shows the device nameplate / trip unit.');
   }
   return { device, warnings, promptVersion: PHOTO_PROMPT_VERSION, aiProvider: out && out.provider ? out.provider : null, rawJsonText: text };
+}
+
+// Shape an ingest-bus row for the gap engine (Decimals -> numbers — present()
+// in arcFlashGap can't read a Prisma Decimal object directly).
+function busForGap(b: any) {
+  return {
+    busName: b.busName, equipmentTypeGuess: b.equipmentTypeGuess, nominalVoltage: b.nominalVoltage,
+    boltedFaultCurrentKA: coerceNum(b.boltedFaultCurrentKA), clearingTimeMs: coerceNum(b.clearingTimeMs),
+    electrodeConfig: b.electrodeConfig, conductorGapMm: coerceNum(b.conductorGapMm), workingDistanceIn: coerceNum(b.workingDistanceIn),
+    deviceType: b.deviceType, deviceRatingA: coerceNum(b.deviceRatingA), deviceSettings: b.deviceSettings,
+    cableLengthFt: coerceNum(b.cableLengthFt), cableSize: b.cableSize,
+  };
+}
+
+/**
+ * Apply a collected device (+ optional feeder cable) onto an ingest bus, re-run
+ * the gap engine, and re-roll the parent ingest's readiness summary. Closes the
+ * loop: field collection -> the blocked bus moves toward ready. Returns null if
+ * the bus is gone. Caller owns auth/tenancy.
+ */
+export async function regapIngestBusAfterDevice(prisma: any, busId: string, opts: { device?: any; cable?: any } = {}): Promise<any> {
+  const bus = await prisma.arcFlashIngestBus.findUnique({ where: { id: busId } });
+  if (!bus) return null;
+  const df = deviceToBusFields(opts.device || {});
+  const cable = opts.cable || {};
+  const data: any = {};
+  if (df.deviceType != null) data.deviceType = df.deviceType;
+  if (df.deviceManufacturer != null) data.deviceManufacturer = df.deviceManufacturer;
+  if (df.deviceModel != null) data.deviceModel = df.deviceModel;
+  if (df.deviceRatingA != null) data.deviceRatingA = df.deviceRatingA;
+  if (df.deviceSettings != null) data.deviceSettings = df.deviceSettings;
+  if (cable.cableLengthFt != null && cable.cableLengthFt !== '') data.cableLengthFt = coerceNum(cable.cableLengthFt);
+  if (cable.cableSize != null && cable.cableSize !== '') data.cableSize = String(cable.cableSize).slice(0, 100);
+  if (cable.cableMaterial != null && cable.cableMaterial !== '') data.cableMaterial = String(cable.cableMaterial).slice(0, 40);
+
+  const merged = { ...bus, ...data };
+  const g = analyzeBusGaps(busForGap(merged));
+  data.gaps = g; data.readiness = g.readiness; data.confidence = g.confidence;
+  const updated = await prisma.arcFlashIngestBus.update({ where: { id: bus.id }, data });
+
+  const all = await prisma.arcFlashIngestBus.findMany({ where: { ingestId: bus.ingestId } });
+  const summary = summarizeIngestBands(all.map((x: any) => x.gaps).filter(Boolean));
+  await prisma.arcFlashIngest.update({ where: { id: bus.ingestId }, data: { overallBand: summary.overallBand, readyBusCount: summary.readyBusCount, totalBusCount: all.length } });
+  return { bus: updated, readiness: g.readiness, confidence: g.confidence, summary };
 }
 
 export { PHOTO_PROMPT_VERSION, normalizeDevice, hazardForBus };

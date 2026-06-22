@@ -25,6 +25,7 @@ const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
 const { getFieldAssignmentScope } = require('../lib/fieldScope');
 const { parseVoiceReading, hintTokens } = require('../lib/voiceCapture');
+const { regapIngestBusAfterDevice } = require('../lib/arcFlashDevice');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -556,6 +557,93 @@ router.post('/voice/parse', async (req, res) => {
   } catch (err) {
     console.error('Field voice parse error:', err);
     res.status(500).json({ success: false, error: 'Failed to parse voice reading' });
+  }
+});
+
+// ─── Arc-flash field collection (Slice 2.7) ───────────────────────────────────
+// The invasive part of an arc-flash study — opening equipment to read the
+// upstream device + trip settings + feeder cable — done on the phone by the
+// assigned tech. Same scope rule as the rest of /api/field: field_tech sees/acts
+// on only their assigned tasks; manager+ gets the account-wide view.
+const FIELD_DEVICE_TYPES = new Set(['breaker', 'fuse', 'relay', 'switch']);
+const afClean = (v: any) => { if (v == null) return null; const s = String(v).trim(); return s ? s.slice(0, 200) : null; };
+const afNum = (v: any) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : null; };
+function fieldTaskOut(t: any) {
+  return {
+    id: t.id, siteId: t.siteId, ingestId: t.ingestId, ingestBusId: t.ingestBusId, busName: t.busName,
+    instructions: t.instructions, neededFields: t.neededFields, status: t.status, hazardClass: t.hazardClass,
+    ppeNote: t.ppeNote, requiresOutage: t.requiresOutage, requiresQualifiedPerson: t.requiresQualifiedPerson,
+    assignedUserId: t.assignedUserId, collectedDeviceId: t.collectedDeviceId, collectedAt: t.collectedAt, createdAt: t.createdAt,
+  };
+}
+
+// ─── GET /api/field/arc-flash/tasks ──────────────────────────────────────────
+// The tech's open collection tasks. field_tech → only tasks assigned to them.
+router.get('/arc-flash/tasks', async (req, res) => {
+  try {
+    const where: any = { accountId: req.user.accountId };
+    if (req.user.role === 'field_tech') where.assignedUserId = req.user.id;
+    where.status = req.query.status ? String(req.query.status) : { not: 'cancelled' };
+    if (req.query.siteId) where.siteId = String(req.query.siteId);
+    const rows = await prisma.arcFlashCollectionTask.findMany({ where, orderBy: [{ status: 'asc' }, { createdAt: 'desc' }], take: 200 });
+    res.json({ success: true, data: { tasks: rows.map(fieldTaskOut) } });
+  } catch (err) {
+    console.error('Field arc-flash tasks error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch collection tasks' });
+  }
+});
+
+// ─── POST /api/field/arc-flash/tasks/:id/collect ─────────────────────────────
+// Record the collected device (+ optional feeder cable). Creates a durable
+// ProtectiveDevice, marks the task collected, and re-gaps the linked ingest bus
+// so a blocked bus moves toward ready. field_tech clamped to assigned tasks.
+router.post('/arc-flash/tasks/:id/collect', async (req, res) => {
+  try {
+    const where: any = { id: req.params.id, accountId: req.user.accountId };
+    if (req.user.role === 'field_tech') where.assignedUserId = req.user.id;
+    const task = await prisma.arcFlashCollectionTask.findFirst({ where });
+    if (!task) return res.status(404).json({ success: false, error: 'Task not found' });
+    if (task.status === 'collected') return res.status(409).json({ success: false, error: 'Task already collected' });
+
+    const b = req.body || {};
+    const dev = (b.device && typeof b.device === 'object') ? b.device : {};
+    let deviceType: string | null = null;
+    if (dev.deviceType != null && dev.deviceType !== '') {
+      const dt = String(dev.deviceType).toLowerCase();
+      if (!FIELD_DEVICE_TYPES.has(dt)) return res.status(400).json({ success: false, error: 'device.deviceType must be one of breaker, fuse, relay, switch' });
+      deviceType = dt;
+    }
+    const hasSettings = dev.settings && typeof dev.settings === 'object' && Object.keys(dev.settings).length > 0;
+
+    const device = await prisma.protectiveDevice.create({
+      data: {
+        accountId: req.user.accountId, siteId: task.siteId, assetId: task.assetId || null, ingestBusId: task.ingestBusId || null,
+        label: afClean(dev.label) || `${task.busName} upstream device`,
+        deviceType, manufacturer: afClean(dev.manufacturer), model: afClean(dev.model), partNumber: afClean(dev.partNumber),
+        frameRatingA: afNum(dev.frameRatingA), sensorRatingA: afNum(dev.sensorRatingA),
+        settings: hasSettings ? dev.settings : undefined, photoKey: afClean(dev.photoKey),
+        source: 'field', collectedById: req.user.id, settingsCollectedAt: hasSettings ? new Date() : null,
+      },
+    });
+
+    await prisma.arcFlashCollectionTask.update({
+      where: { id: task.id },
+      data: { status: 'collected', collectedDeviceId: device.id, collectedById: req.user.id, collectedAt: new Date() },
+    });
+
+    let regap: any = null;
+    if (task.ingestBusId) {
+      try { regap = await regapIngestBusAfterDevice(prisma, task.ingestBusId, { device, cable: b.cable || {} }); }
+      catch (e: any) { console.error('field collect re-gap error:', e?.message); }
+    }
+
+    res.json({
+      success: true,
+      data: { deviceId: device.id, taskId: task.id, status: 'collected', readiness: regap ? regap.readiness : null, confidence: regap ? regap.confidence : null },
+    });
+  } catch (err) {
+    console.error('Field arc-flash collect error:', err);
+    res.status(500).json({ success: false, error: 'Failed to record collection' });
   }
 });
 
