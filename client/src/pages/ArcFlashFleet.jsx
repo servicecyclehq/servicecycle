@@ -2,7 +2,7 @@
 // Cross-site rollup: DANGER %, label readiness, average data-confidence (2.8a),
 // open sanity-check findings (2.8c), and expiring studies — the "where is my
 // arc-flash risk across the whole portfolio" view. Manager/admin via the route.
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import BackLink from '../components/BackLink';
@@ -19,13 +19,14 @@ export default function ArcFlashFleet() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
     api.get('/api/arc-flash/fleet')
       .then(r => setData(r.data?.data || null))
       .catch(() => setError('Failed to load the arc-flash fleet rollup.'))
       .finally(() => setLoading(false));
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   const [exporting, setExporting] = useState(false);
   async function exportModel() {
@@ -119,6 +120,7 @@ export default function ArcFlashFleet() {
           </p>
 
           <AuditBundle />
+          <ImportResults onApplied={load} />
         </>
       )}
     </div>
@@ -130,6 +132,78 @@ function Tile({ label, value, color }) {
     <div className="card" style={{ padding: '12px 14px' }}>
       <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>{label}</div>
       <div style={{ fontSize: '1.5rem', fontWeight: 700, color: color || 'var(--color-text)' }}>{value}</div>
+    </div>
+  );
+}
+
+// Slice 3.5b — round-trip the PE's stamped results back in. Upload the results
+// CSV, preview the matched changes, then apply. Pairs with "Export model".
+const FIELD_LABEL = {
+  incidentEnergyCalCm2: 'Incident energy', arcFlashBoundaryIn: 'Arc-flash boundary',
+  ppeCategory: 'PPE category', requiredArcRatingCalCm2: 'Required arc rating', workingDistanceIn: 'Working distance',
+};
+function ImportResults({ onApplied }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  function onFile(e) {
+    setFile(e.target.files?.[0] || null); setPreview(null); setMsg(''); setErr('');
+  }
+
+  async function run(isPreview) {
+    if (!file) { setErr('Choose a results CSV first.'); return; }
+    setBusy(true); setErr(''); setMsg('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('preview', isPreview ? 'true' : 'false');
+      const r = await api.post('/api/arc-flash/import-results', fd);
+      const d = r.data?.data;
+      if (isPreview) { setPreview(d); }
+      else { setMsg(`Applied ${d.applied} update(s). ${d.unmatchedCount} unmatched.`); setPreview(null); setFile(null); if (onApplied) onApplied(); }
+    } catch (e) { setErr(e?.response?.data?.error || 'Import failed.'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card" style={{ padding: '14px 16px', marginTop: 16 }}>
+      <h2 style={{ margin: 0, fontSize: '1rem' }}>Import stamped results</h2>
+      <p style={{ margin: '4px 0 10px', color: 'var(--color-text-secondary)', fontSize: '0.82rem' }}>
+        Upload the PE's results CSV (incident energy, boundary, PPE, arc rating per bus). SC matches by site + bus and updates the label outputs. Round-trips with “Export model”.
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input type="file" accept=".csv,text/csv" onChange={onFile} aria-label="Results CSV" />
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!file || busy} onClick={() => run(true)}>{busy ? 'Working…' : 'Preview'}</button>
+        {preview && preview.matched > 0 && <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => run(false)}>Apply {preview.matched} update(s)</button>}
+      </div>
+
+      {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
+      {msg && <div className="alert alert-success" style={{ marginTop: 10 }}>{msg}</div>}
+
+      {preview && (
+        <div style={{ marginTop: 12, fontSize: '0.82rem' }}>
+          <div style={{ color: 'var(--color-text-secondary)' }}>
+            Recognized columns: {preview.recognized?.map(f => FIELD_LABEL[f] || f).join(', ') || '—'}. {preview.matched} bus(es) to update, {preview.unmatchedCount} unmatched.
+          </div>
+          {preview.updates?.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {preview.updates.slice(0, 12).map((u, i) => (
+                <li key={i} style={{ marginBottom: 3 }}>
+                  <strong>{u.site ? `${u.site} / ` : ''}{u.busName}</strong>: {Object.entries(u.changes).map(([f, ch]) => `${FIELD_LABEL[f] || f} ${ch.from ?? '—'} → ${ch.to}`).join('; ')}
+                </li>
+              ))}
+            </ul>
+          )}
+          {preview.unmatched?.length > 0 && (
+            <div style={{ marginTop: 6, color: 'var(--color-warning)' }}>
+              Unmatched: {preview.unmatched.slice(0, 8).map(u => u.busName).join(', ')}{preview.unmatched.length > 8 ? '…' : ''}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

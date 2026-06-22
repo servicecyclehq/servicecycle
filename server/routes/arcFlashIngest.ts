@@ -30,6 +30,7 @@ const { diffIngestRevisions } = require('../lib/arcFlashDrift');
 const { checkSystemContradictions, checkBusContradictions } = require('../lib/arcFlashSanity');
 const { parseQuery, matchRow } = require('../lib/arcFlashSearch');
 const { buildExportRows, toCsv, EXPORT_COLUMNS } = require('../lib/arcFlashExport');
+const { parseResultsCsv, matchResults } = require('../lib/arcFlashResultsImport');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1365,6 +1366,63 @@ router.get('/export', async (req: any, res: any) => {
     console.error('arc-flash export error:', e);
     res.status(500).json({ success: false, error: 'Failed to export arc-flash model' });
   }
+});
+
+// ── POST /import-results ── Slice 3.5b: round-trip stamped study results back in ─
+// Accepts the PE's results CSV (per-bus incident energy / boundary / PPE / arc
+// rating / working distance), matches to bound buses by (site, bus), and updates
+// the label OUTPUTS. preview:true returns the diff without persisting (review
+// first); without it, applies + re-derives DANGER/WARNING. Manager/admin.
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
+router.post('/import-results', requireManager, (req: any, res: any) => {
+  csvUpload.single('file')(req, res, async (uErr: any) => {
+  try {
+    if (uErr) return res.status(400).json({ success: false, error: uErr.message || 'Upload failed' });
+    const accountId = req.user.accountId;
+    const csv = req.file ? req.file.buffer.toString('utf8') : (req.body && req.body.csv);
+    if (!csv || typeof csv !== 'string') return res.status(400).json({ success: false, error: 'Upload the results CSV (file field) or provide { csv }.' });
+    const preview = String((req.body && req.body.preview) ?? '') === 'true' || (req.body && req.body.preview === true);
+
+    const { rows, recognized, errors } = parseResultsCsv(csv);
+    if (errors.length && !rows.length) return res.status(400).json({ success: false, error: errors.join(' ') });
+
+    const bound = await prisma.systemStudyAsset.findMany({
+      where: { accountId, study: { supersededById: null } },
+      select: {
+        id: true, busName: true, nominalVoltage: true,
+        incidentEnergyCalCm2: true, arcFlashBoundaryIn: true, ppeCategory: true, requiredArcRatingCalCm2: true, workingDistanceIn: true,
+        asset: { select: { site: { select: { name: true } } } },
+      },
+      take: 5000,
+    });
+    const buses = bound.map((b: any) => ({
+      id: b.id, busName: b.busName, site: b.asset?.site?.name || null, nominalVoltage: b.nominalVoltage,
+      incidentEnergyCalCm2: numOrNull(b.incidentEnergyCalCm2), arcFlashBoundaryIn: numOrNull(b.arcFlashBoundaryIn),
+      ppeCategory: b.ppeCategory, requiredArcRatingCalCm2: numOrNull(b.requiredArcRatingCalCm2), workingDistanceIn: numOrNull(b.workingDistanceIn),
+    }));
+    const voltByBus = new Map(buses.map((b: any) => [b.id, b.nominalVoltage]));
+    const { updates, unmatched } = matchResults(rows, buses);
+
+    if (preview) {
+      return res.json({ success: true, data: { preview: true, recognized, errors, updates, unmatched, matched: updates.length, unmatchedCount: unmatched.length } });
+    }
+
+    let applied = 0;
+    for (const u of updates) {
+      const data: any = {};
+      for (const [field, ch] of Object.entries(u.changes)) data[field] = (ch as any).to;
+      // Re-derive the NFPA 70E severity from the new incident energy + voltage.
+      data.labelSeverity = deriveLabelSeverity({ incidentEnergyCalCm2: data.incidentEnergyCalCm2 ?? null, nominalVoltage: voltByBus.get(u.busId) }) ?? undefined;
+      await prisma.systemStudyAsset.update({ where: { id: u.busId }, data });
+      applied++;
+    }
+    await logActivity(req.user.id, accountId, 'arc_flash_results_imported', { applied, unmatched: unmatched.length, recognized });
+    res.json({ success: true, data: { preview: false, recognized, errors, applied, unmatched, unmatchedCount: unmatched.length } });
+  } catch (e) {
+    console.error('arc-flash import-results error:', e);
+    res.status(500).json({ success: false, error: 'Failed to import results' });
+  }
+  });
 });
 
 // ── GET /search?q= ── Slice 3e: deterministic natural-language facility search ─
