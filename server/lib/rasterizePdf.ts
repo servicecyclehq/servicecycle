@@ -18,6 +18,7 @@ const os = require('os');
 const path = require('path');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'rasterize_pdf.py');
+const PY = process.env.PYEXTRACT_PYTHON || 'python3'; // configurable (Windows often has 'python', not 'python3')
 
 async function rasterizePdf(buffer: Buffer, opts: { maxPages?: number; scaleTo?: number } = {}): Promise<Buffer[]> {
   const maxPages = opts.maxPages || 4;
@@ -35,7 +36,7 @@ async function rasterizePdf(buffer: Buffer, opts: { maxPages?: number; scaleTo?:
       const finish = (n: number) => { if (!done) { done = true; resolve(n); } };
       let py: any;
       try {
-        py = spawn('python3', [SCRIPT, pdfPath, prefix, String(maxPages), String(scaleTo)], { timeout: 60000 });
+        py = spawn(PY, [SCRIPT, pdfPath, prefix, String(maxPages), String(scaleTo)], { timeout: 60000 });
       } catch {
         return finish(0);
       }
