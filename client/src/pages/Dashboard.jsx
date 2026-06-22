@@ -808,10 +808,10 @@ export default function Dashboard() {
             {/* V5 "Inspector's here" readiness + one-click EMP, and V6 fix-it
                 list — verbs before counts, both above the KPI tiles. */}
             <AuditReadyBanner />
+            <ArcFlashDashboardCard />
             <MaturityScoreCard compact />
             <PathTo100 compact />
             <ComplianceDocsCard />
-            <ArcFlashDashboardCard />
             <DashboardTrends />
 
             {/* ── KPI tiles ─────────────────────────────────────────────── */}
