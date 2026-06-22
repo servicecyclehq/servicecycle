@@ -2907,3 +2907,79 @@ model ArcFlashIngestBus {
   @@index([ingestId, seq])
   @@map("arc_flash_ingest_buses")
 }
+
+// --- Slice 2.7: field-collection of protective-device data + photo-read --------
+// The 80% of an arc-flash study that is field-collected is the upstream
+// PROTECTIVE DEVICE (frame/sensor rating + LSIG trip settings or fuse class) and
+// the FEEDER CABLE, read by opening the equipment door down to 480V panels.
+// ProtectiveDevice is the DURABLE record of that collected device (the ingest bus
+// is a draft; this survives confirm and versions over time). Scalar FKs only so
+// this stays a pure-append migration.
+model ProtectiveDevice {
+  id                  String    @id @default(uuid())
+  accountId           String
+  siteId              String
+  assetId             String? // the protected/served asset (bus), once known
+  ingestBusId         String? // provenance: collected against this arc-flash ingest bus
+  label               String // human label, e.g. "Main CB 52-M1"
+  deviceType          String? // breaker | fuse | relay | switch
+  manufacturer        String?
+  model               String? // series / catalog
+  partNumber          String?
+  frameRatingA        Decimal? @db.Decimal(10, 1)
+  sensorRatingA       Decimal? @db.Decimal(10, 1) // sensor / plug rating (drives the curve)
+  settings            Json? // LSIG trip settings (long/short/inst/gf) or fuse class+rating
+  settingsCollectedAt DateTime?
+  collectedById       String?
+  photoKey            String? // storage key of the trip-unit / nameplate photo
+  source              String   @default("field") // field | photo | manual | import
+  supersededById      String? // versioning: the newer record that replaces this one
+  status              String   @default("active") // active | superseded
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, siteId])
+  @@index([assetId])
+  @@index([ingestBusId])
+  @@index([accountId, status])
+  @@map("protective_devices")
+}
+
+// A field-collection task generated from an ingest's BLOCKED buses: "open panel X
+// and record the upstream device + trip settings + feeder cable". Collecting this
+// data is itself an arc-flash hazard (door open / energized), so the task carries
+// conservative PPE + outage + qualified-person sequencing. Distinct from
+// WorkOrder, which requires an assetId and is NETA-test-shaped; these target buses
+// that are not assets yet. Scalar FKs only (pure-append migration).
+model ArcFlashCollectionTask {
+  id                      String    @id @default(uuid())
+  accountId               String
+  siteId                  String
+  ingestId                String?
+  ingestBusId             String?
+  assetId                 String?
+  busName                 String
+  instructions            String // what to open + record
+  neededFields            Json? // the gap punch-list this task closes
+  status                  String    @default("open") // open | in_progress | collected | cancelled
+  assignedUserId          String? // a field_tech user
+  // Safety sequencing (collection is itself an arc-flash hazard):
+  hazardClass             String? // DANGER | WARNING (from the bus's current label / conservative)
+  ppeNote                 String? // conservative PPE guidance for the collector
+  requiresOutage          Boolean   @default(false)
+  requiresQualifiedPerson Boolean   @default(true)
+  collectedDeviceId       String? // -> ProtectiveDevice once collected
+  collectedById           String?
+  collectedAt             DateTime?
+  createdById             String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, siteId])
+  @@index([accountId, status])
+  @@index([assignedUserId, status])
+  @@index([ingestId])
+  @@map("arc_flash_collection_tasks")
+}
