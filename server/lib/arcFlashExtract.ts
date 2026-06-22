@@ -23,6 +23,7 @@
 const ai = require('./ai');
 const { extractPdfText } = require('./testReportParse');
 const { rasterizePdf } = require('./rasterizePdf');
+const { extractPdfPlumber } = require('./pdfText');
 
 const PROMPT_VERSION = 'af-extract-v1';
 
@@ -82,9 +83,29 @@ const VISION_PROMPT =
   'This image is an electrical one-line (single-line) diagram. Read every bus, switchboard, switchgear, MCC, panel, transformer and their connections. Extract the structured system model for IEEE 1584 arc-flash analysis. ' +
   JSON_CONTRACT;
 
-function buildUserPrompt(reportText: string): string {
-  // Cap the text we send so a 40-page report stays within budget; the model
-  // only needs the device/rating tables, which sit early + in summary tables.
+// Flatten deterministically-extracted tables to a compact, capped text block.
+function tablesToText(tables: any[]): string {
+  if (!Array.isArray(tables) || !tables.length) return '';
+  const lines: string[] = [];
+  for (const tbl of tables) {
+    if (!Array.isArray(tbl)) continue;
+    for (const row of tbl) lines.push((Array.isArray(row) ? row : []).map((c: any) => String(c == null ? '' : c)).join(' | '));
+    lines.push('');
+    if (lines.join('\n').length > 10000) break; // token guard
+  }
+  return lines.join('\n').slice(0, 10000);
+}
+
+function buildUserPrompt(reportText: string, tables?: any[]): string {
+  const tbl = tablesToText(tables || []);
+  if (tbl) {
+    // pdfplumber found ruled tables — they carry the per-bus device / rating /
+    // IEEE 1584 data. Send the TABLES as the high-value payload + a smaller text
+    // excerpt for context: fewer, more focused tokens than dumping the report.
+    const ctx = reportText.length > 8000 ? reportText.slice(0, 8000) + '\n...[truncated]' : reportText;
+    return 'Extract the structured system model. The TABLES below were extracted deterministically and carry the per-bus device, rating, and IEEE 1584 data — rely on them first; the TEXT is for context.\n\nTABLES:\n' + tbl + '\n\nTEXT:\n' + ctx;
+  }
+  // No tables — cap the raw text so a long report stays within budget.
   const clipped = reportText.length > 24000 ? reportText.slice(0, 24000) + '\n...[truncated]' : reportText;
   return 'Extract the structured system model from this study report text:\n\n' + clipped;
 }
@@ -293,12 +314,23 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
   }
 
   if (isPdf) {
+    // Deterministic-first: pdfplumber (best at the ruled tables study reports are
+    // full of) -> pdfjs fallback. Vision only fires when there is NO text layer,
+    // so we never spend vision tokens on a text-based study.
     let pdfText = '';
-    try { pdfText = await extractPdfText(buffer); } catch (e: any) { warnings.push('PDF text extraction failed: ' + (e && e.message ? e.message : e)); }
+    let tables: any[] = [];
+    try {
+      const det = await extractPdfPlumber(buffer);
+      if (det && det.ok && det.text) { pdfText = det.text; tables = Array.isArray(det.tables) ? det.tables : []; }
+    } catch { /* fail-open to pdfjs */ }
+    if (!pdfText || pdfText.replace(/\s+/g, ' ').trim().length < 120) {
+      try { pdfText = await extractPdfText(buffer); } catch (e: any) { warnings.push('PDF text extraction failed: ' + (e && e.message ? e.message : e)); }
+      tables = [];
+    }
     const meaningful = (pdfText || '').replace(/\s+/g, ' ').trim();
     if (meaningful.length >= 120) {
       // Text-layer PDF (study report) -> text path.
-      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(meaningful), maxTokens: 4096, task: 'extract', settings });
+      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(pdfText, tables), maxTokens: 4096, task: 'extract', settings });
       const text = out && out.text ? out.text : '';
       let parsed: any;
       try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }

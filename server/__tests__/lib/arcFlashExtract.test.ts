@@ -13,11 +13,15 @@ jest.mock('../../lib/testReportParse', () => ({
 jest.mock('../../lib/rasterizePdf', () => ({
   rasterizePdf: jest.fn(),
 }));
+jest.mock('../../lib/pdfText', () => ({
+  extractPdfPlumber: jest.fn(),
+}));
 
 import { extractArcFlashDocument, normalizeExtraction, mapEquipmentType } from '../../lib/arcFlashExtract';
 const ai = require('../../lib/ai');
 const { extractPdfText } = require('../../lib/testReportParse');
 const { rasterizePdf } = require('../../lib/rasterizePdf');
+const { extractPdfPlumber } = require('../../lib/pdfText');
 
 const buf = Buffer.from('dummy');
 
@@ -36,7 +40,7 @@ const FIXTURE = {
   ],
 };
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => { jest.clearAllMocks(); extractPdfPlumber.mockResolvedValue({ ok: false }); });
 
 describe('mapEquipmentType', () => {
   test('maps common one-line labels to the enum', () => {
@@ -92,6 +96,16 @@ describe('extractArcFlashDocument — routing + extraction', () => {
     expect(r.buses[1].equipmentTypeGuess).toBe('MCC');
     expect(r.buses[1].boltedFaultCurrentKA).toBeNull(); // 'N/A'
     expect(r.systemMeta.mainTransformer.kva).toBe(1500);
+  });
+
+  test('text path prefers deterministic pdfplumber (tables); does NOT fall back to pdfjs', async () => {
+    extractPdfPlumber.mockResolvedValue({ ok: true, text: 'A'.repeat(400), tables: [[['Bus', 'kA'], ['SWGR-1A', '22']]] });
+    ai.complete.mockResolvedValue({ text: JSON.stringify(FIXTURE), provider: 'groq' });
+    const r = await extractArcFlashDocument({ buffer: buf, mimeType: 'application/pdf', fileName: 'study.pdf' });
+    expect(r.method).toBe('text');
+    expect(extractPdfPlumber).toHaveBeenCalledTimes(1);
+    expect(extractPdfText).not.toHaveBeenCalled(); // pdfjs not needed when pdfplumber has the text
+    expect(r.buses).toHaveLength(2);
   });
 
   test('vision path: image upload -> ai.completeWithImage', async () => {
