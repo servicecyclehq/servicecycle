@@ -29,6 +29,8 @@
 
 'use strict';
 
+require('dotenv/config'); // load server/.env so AI_ENABLED + provider keys are present when run via tsx
+
 const fs = require('fs');
 const path = require('path');
 

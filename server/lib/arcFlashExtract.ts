@@ -249,7 +249,7 @@ function firstNonNull(...vals: any[]): any { for (const v of vals) if (v != null
 
 // Run the vision model on ONE image buffer and normalize the result.
 async function visionExtractOne(buffer: Buffer, mediaType: string, settings: any): Promise<any> {
-  const out = await ai.completeWithImage({ imageBuffer: buffer, mediaType, prompt: VISION_PROMPT, maxTokens: 4096, settings });
+  const out = await ai.completeWithImage({ imageBuffer: buffer, mediaType, prompt: VISION_PROMPT, maxTokens: 8192, settings });
   const text = out && out.text ? out.text : '';
   let parsed: any;
   try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
@@ -330,7 +330,7 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
     const meaningful = (pdfText || '').replace(/\s+/g, ' ').trim();
     if (meaningful.length >= 120) {
       // Text-layer PDF (study report) -> text path.
-      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(pdfText, tables), maxTokens: 4096, task: 'extract', settings });
+      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(pdfText, tables), maxTokens: 8192, task: 'extract', settings });
       const text = out && out.text ? out.text : '';
       let parsed: any;
       try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
