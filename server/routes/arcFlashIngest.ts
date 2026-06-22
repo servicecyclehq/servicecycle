@@ -31,6 +31,9 @@ const { checkSystemContradictions, checkBusContradictions } = require('../lib/ar
 const { parseQuery, matchRow } = require('../lib/arcFlashSearch');
 const { buildExportRows, toCsv, EXPORT_COLUMNS } = require('../lib/arcFlashExport');
 const { parseResultsCsv, matchResults } = require('../lib/arcFlashResultsImport');
+const QRCode = require('qrcode');
+const crypto = require('crypto');
+const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 
 async function logActivity(userId: string, accountId: string, action: string, details: any = null) {
   try {
@@ -1155,6 +1158,56 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
   } catch (e) {
     console.error('arc-flash asset summary error:', e);
     res.status(500).json({ success: false, error: 'Failed to load arc-flash asset summary' });
+  }
+});
+
+// Pick the current (latest non-superseded, else newest) study-asset row.
+function currentStudyAssetRow(rows: any[]): any {
+  return rows.slice().sort((a: any, b: any) => {
+    const sa = a.study?.supersededById ? 0 : 1, sb = b.study?.supersededById ? 0 : 1;
+    if (sa !== sb) return sb - sa;
+    return new Date(b.study?.performedDate || 0).getTime() - new Date(a.study?.performedDate || 0).getTime();
+  })[0] || null;
+}
+
+function sanitizeOrigin(raw: any): string {
+  const s = String(raw || '').trim();
+  return /^https?:\/\/[A-Za-z0-9.\-]+(:\d+)?$/.test(s) ? s : '';
+}
+
+// ── POST /asset/:assetId/issue-label ── Slice 3.5c: issue / reprint the QR label ─
+// Mints (or reuses) a stable public token for the asset's current label, snapshots
+// the printed values, and returns a QR encoding the public portal URL. Scanning it
+// later resolves to the LIVE record + flags a printed-vs-current mismatch.
+router.post('/asset/:assetId/issue-label', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+
+    const rows = await prisma.systemStudyAsset.findMany({
+      where: { assetId: asset.id, accountId },
+      include: { study: { select: { performedDate: true, supersededById: true } } },
+    });
+    if (!rows.length) return res.status(400).json({ success: false, error: 'No bound study to label for this asset yet.' });
+    const current = currentStudyAssetRow(rows);
+    const snapshot = labelSnapshot(current);
+
+    const anchor = rows.find((r: any) => r.publicToken) || current;
+    const token = anchor.publicToken || crypto.randomBytes(16).toString('hex');
+    await prisma.systemStudyAsset.update({ where: { id: anchor.id }, data: { publicToken: token, printedSnapshot: snapshot, printedAt: new Date() } });
+    await logActivity(req.user.id, accountId, 'arc_flash_label_issued', { assetId: asset.id, token });
+
+    const origin = sanitizeOrigin(req.body && req.body.origin);
+    const path = `/l/${token}`;
+    const url = origin ? origin + path : path;
+    let qrDataUrl: string | null = null;
+    try { qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 256 }); } catch { qrDataUrl = null; }
+
+    res.json({ success: true, data: { token, path, url, qrDataUrl, label: snapshot, printedAt: new Date().toISOString() } });
+  } catch (e) {
+    console.error('arc-flash issue-label error:', e);
+    res.status(500).json({ success: false, error: 'Failed to issue label' });
   }
 });
 

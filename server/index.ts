@@ -1426,6 +1426,9 @@ const shareLinkRoutes = require('./routes/shareLinks');
 app.use('/api/share-links', authenticateToken, shareLinkRoutes);
 const shareLinkPublicRoutes = require('./routes/shareLinkPublic');
 app.use('/api/public/share', shareLinkPublicRoutes); // no auth — token is the credential
+// Arc-flash QR/NFC label portal (Slice 3.5c) — public read of the live label.
+const arcFlashLabelPublicRoutes = require('./routes/arcFlashLabelPublic');
+app.use('/api/public/arc-flash-label', arcFlashLabelPublicRoutes); // no auth — token is the credential
 
 // Phase 2 — revenue-attribution dashboard (closed-loop engagement → pipeline → $)
 const revenueAttributionRoutes = require('./routes/revenueAttribution');

@@ -295,7 +295,54 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
         </div>
       )}
 
+      {data?.current && <LabelPortal assetId={assetId} canWrite={canWrite} />}
+
       <ArcFlashTrend assetId={assetId} />
+    </div>
+  );
+}
+
+// Slice 3.5c — issue / reprint the QR/NFC label. The QR encodes a public portal
+// URL that resolves to the live record and flags a printed-vs-current mismatch.
+function LabelPortal({ assetId, canWrite }) {
+  const [out, setOut] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function issue() {
+    setBusy(true); setErr('');
+    try {
+      const r = await api.post(`/api/arc-flash/asset/${assetId}/issue-label`, { origin: window.location.origin });
+      setOut(r.data?.data || null);
+    } catch (e) { setErr(e?.response?.data?.error || 'Could not issue the label.'); }
+    finally { setBusy(false); }
+  }
+  if (!canWrite) return null;
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <h3 style={{ ...h3, marginBottom: 2 }}>QR / NFC label</h3>
+          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+            A scannable label that opens the live record — and warns when the printed sticker is out of date.
+          </div>
+        </div>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={issue} disabled={busy}>{busy ? 'Working…' : (out ? 'Reprint' : 'Issue QR label')}</button>
+      </div>
+
+      {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
+
+      {out && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          {out.qrDataUrl && <img src={out.qrDataUrl} alt="Arc flash label QR code" width={140} height={140} style={{ border: '1px solid var(--color-border)', borderRadius: 6 }} />}
+          <div style={{ fontSize: '0.8rem' }}>
+            <div style={{ color: 'var(--color-text-secondary)' }}>Scan to open the live label:</div>
+            <div style={{ wordBreak: 'break-all', fontFamily: 'monospace', fontSize: '0.74rem', marginTop: 4 }}>{out.url}</div>
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => window.print()}>Print</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

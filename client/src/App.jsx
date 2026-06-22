@@ -110,6 +110,7 @@ const ResetPassword           = lazyWithReload(() => import('./pages/ResetPasswo
 const AcceptInvite            = lazyWithReload(() => import('./pages/AcceptInvite'));
 const InviteAcceptPage        = lazyWithReload(() => import('./pages/InviteAcceptPage')); // partner invite accept
 const SharedCompliancePage    = lazyWithReload(() => import('./pages/SharedCompliancePage')); // #21 public auditor/insurer share
+const PublicArcFlashLabel     = lazyWithReload(() => import('./pages/PublicArcFlashLabel'));  // 3.5c public QR/NFC arc-flash label portal
 const TryParserPage           = lazyWithReload(() => import('./pages/TryParserPage')); // #17 public parser-as-funnel
 const Dashboard               = lazyWithReload(() => import('./pages/Dashboard'));
 // ServiceCycle core domain pages
@@ -273,6 +274,7 @@ function AppRoutes() {
           <Route path="/invite/accept" element={<InviteAcceptPage />} />
           <Route path="/sso/callback" element={<SsoCallback />} />{/* enterprise SSO token handoff */}
           <Route path="/share/:token" element={<SharedCompliancePage />} />{/* #21 public auditor/insurer view */}
+          <Route path="/l/:token" element={<PublicArcFlashLabel />} />{/* 3.5c public QR/NFC arc-flash label portal */}
           <Route path="/try" element={<TryParserPage />} />{/* #17 public parser-as-funnel */}
 
           {/* (A2/A3) Legal pages — public, no Layout shell, no auth required.

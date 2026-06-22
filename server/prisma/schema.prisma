@@ -1349,6 +1349,10 @@ model SystemStudyAsset {
   calcMethod                CalcMethod?
   arcingCurrentReducedKA    Decimal?       @db.Decimal(10, 2) // reduced (VarCf) arcing-current scenario
   governingScenario         String? // "full" | "reduced" - which gave the higher energy
+  // --- Slice 3.5c: live QR/NFC label-as-portal + printed-vs-current mismatch ---
+  publicToken               String?        @unique // unguessable; the QR/NFC encodes a public URL carrying it
+  printedSnapshot           Json? // label values captured when the physical label was last issued/printed
+  printedAt                 DateTime? // when the physical label was last issued/printed
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
