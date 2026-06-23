@@ -16,6 +16,7 @@
 
 const ai = require('./ai');
 const { analyzeBusGaps, summarizeIngestBands } = require('./arcFlashGap');
+const { SC_DATA_LAYER_DISCLAIMER } = require('./arcFlashCopy');
 
 const PHOTO_PROMPT_VERSION = 'af-device-photo-v1';
 
@@ -125,6 +126,7 @@ export function buildCollectionTasks(buses: any[]): any[] {
       // Reading device settings / cable means opening the door -> prefer an outage.
       requiresOutage: needDevice || needFault,
       requiresQualifiedPerson: true,
+      disclaimer: SC_DATA_LAYER_DISCLAIMER,
     });
   }
   return tasks;

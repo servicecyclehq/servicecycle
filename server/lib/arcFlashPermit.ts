@@ -14,6 +14,8 @@
 
 'use strict';
 
+const { SC_DATA_LAYER_DISCLAIMER } = require('./arcFlashCopy');
+
 function num(v: any): number | null {
   if (v == null || v === '') return null;
   const n = Number(v);
@@ -93,6 +95,6 @@ export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: an
       'Authorizing manager signature and date',
     ],
     validation,
-    disclaimer: 'ServiceCycle pre-fills the hazard data from the current study and checks the study is valid. A qualified person and the responsible manager must complete, authorize, and sign this permit per NFPA 70E and your electrical safety program.',
+    disclaimer: 'ServiceCycle pre-filled this permit from the current study and checked the study is valid. ' + SC_DATA_LAYER_DISCLAIMER,
   };
 }

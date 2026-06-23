@@ -13,6 +13,7 @@ const { z } = require('zod');
 import prisma from '../../lib/prisma';
 const { buildOneLine } = require('../../lib/arcFlashOneLine');
 const { buildEnergizedWorkPermit } = require('../../lib/arcFlashPermit');
+const { SC_DATA_LAYER_DISCLAIMER } = require('../../lib/arcFlashCopy');
 const { requireScope } = require('../../middleware/apiKeyAuth');
 
 function currentRowOf(rows: any[]): any {
@@ -137,7 +138,7 @@ router.get('/work-order-precheck', async (req: any, res: any) => {
   });
   const current = currentRowOf(rows);
   const permit = buildEnergizedWorkPermit({ bus: current || { busName: null }, study: current?.study || null, asset });
-  res.json({ assetId: asset.id, canIssue: permit.validation.canIssue, reasons: permit.validation.reasons, hazard: permit.hazard, study: permit.study });
+  res.json({ assetId: asset.id, canIssue: permit.validation.canIssue, reasons: permit.validation.reasons, hazard: permit.hazard, study: permit.study, disclaimer: SC_DATA_LAYER_DISCLAIMER });
 });
 
 // ── POST /api/v1/arc-flash/devices ── Slice 8: write verified settings back ────
