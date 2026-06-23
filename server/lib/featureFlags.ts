@@ -23,6 +23,16 @@ const ALL_FEATURES = [
   'alerts',            // Maintenance-due & overdue alerts
 ];
 
+// ── UI-view preference keys ────────────────────────────────────────────────────
+// Stored alongside the grant-gated page features inside the same hiddenFeatures
+// JSON, but these are pure VIEW preferences (not access). Any user may toggle
+// them regardless of what the admin has granted — they hide nothing the user
+// isn't already entitled to see.
+//   infoTips — show the click-to-open glossary tips (default ON; stored value
+//              `true` means the user has TURNED TIPS OFF, matching the
+//              hidden-means-off semantics of every other key in this object).
+const UI_PREF_KEYS = ['infoTips'];
+
 // ── Role-based defaults ───────────────────────────────────────────────────────
 // Applied when a user is first created OR when their role changes.
 // Admins always get full access (enforced in the permissions save route too).
@@ -89,6 +99,28 @@ function sanitizeFlags(flags, role = 'viewer') {
   return clean;
 }
 
-module.exports = { ALL_FEATURES, FEATURE_DEFAULTS, defaultFlagsForRole, sanitizeFlags };
+/**
+ * Cleans a user-submitted hiddenFeatures object.
+ *  - Grant-gated page features (ALL_FEATURES): a user can always UN-hide, but
+ *    can only HIDE a feature the admin actually granted them.
+ *  - UI-view prefs (UI_PREF_KEYS, e.g. infoTips): any user may set either way;
+ *    they gate display only, not access.
+ * Unknown keys and non-boolean values are dropped. Returns a fresh object.
+ */
+function sanitizeHiddenFeatures(input, granted = {}) {
+  const clean = {};
+  if (!input || typeof input !== 'object') return clean;
+  for (const f of ALL_FEATURES) {
+    if (typeof input[f] === 'boolean') {
+      if (!input[f] || granted[f] === true) clean[f] = input[f];
+    }
+  }
+  for (const k of UI_PREF_KEYS) {
+    if (typeof input[k] === 'boolean') clean[k] = input[k];
+  }
+  return clean;
+}
+
+module.exports = { ALL_FEATURES, UI_PREF_KEYS, FEATURE_DEFAULTS, defaultFlagsForRole, sanitizeFlags, sanitizeHiddenFeatures };
 
 export {};

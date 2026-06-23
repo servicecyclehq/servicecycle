@@ -355,19 +355,19 @@ function MyViewCard({ user, updateHiddenFeatures }) {
   const granted = user?.featureFlags || {};
   const grantedFeatures = Object.keys(FEATURE_META).filter(f => granted[f] !== false);
 
-  if (grantedFeatures.length === 0) {
-    return (
-      <div className="card">
-        <div className="card-header"><div className="card-title">My View</div></div>
-        <div style={{ padding: '16px 20px 20px', fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
-          No optional features are currently enabled on your account. Contact an admin to request access.
-        </div>
-      </div>
-    );
-  }
+  // Info tips are a universal view preference (not a granted feature), so this
+  // row renders for everyone — even a user with no optional features enabled.
+  // hiddenFeatures.infoTips === true means the user has switched tips OFF;
+  // absent/false means ON (the default).
+  const tipsOn = hidden.infoTips !== true;
 
   function toggle(feature) {
     setHidden(prev => ({ ...prev, [feature]: !prev[feature] }));
+    setSaved(false);
+  }
+
+  function toggleTips() {
+    setHidden(prev => ({ ...prev, infoTips: prev.infoTips === true ? false : true }));
     setSaved(false);
   }
 
@@ -391,11 +391,62 @@ function MyViewCard({ user, updateHiddenFeatures }) {
         <div className="card-title">My View</div>
       </div>
       <div style={{ padding: '4px 20px 20px' }}>
-        <p style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', margin: '12px 0 16px', lineHeight: 1.5 }}>
-          Hide features you don't use from the sidebar. You can re-show them here at any time — contact an admin if a feature you need isn't listed.
-        </p>
+        {/* Display preferences — info tips. Always shown (it is a view pref,
+            not a granted feature). */}
+        <div style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-secondary)', fontWeight: 600, margin: '14px 0 8px' }}>
+          Display
+        </div>
+        <label
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 14px', borderRadius: 'var(--radius)',
+            border: '1px solid var(--color-border)',
+            cursor: 'pointer', userSelect: 'none',
+            background: tipsOn ? '' : 'var(--color-surface)',
+            opacity: tipsOn ? 1 : 0.7,
+            transition: 'all 0.1s',
+          }}
+        >
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--font-size-ui)', fontWeight: 500 }}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" style={{ width: 15, height: 15, color: 'var(--color-text-secondary)' }} aria-hidden="true">
+                <circle cx="8" cy="8" r="6.5" /><line x1="8" y1="7" x2="8" y2="11.5" /><circle cx="8" cy="4.6" r="0.7" fill="currentColor" stroke="none" />
+              </svg>
+              Info tips
+            </span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 400 }}>
+              Show the small (i) markers that explain ServiceCycle’s scores and labels.
+            </span>
+          </span>
+          <span
+            onClick={toggleTips}
+            role="switch"
+            aria-checked={tipsOn}
+            aria-label="Show info tips"
+            style={{
+              display: 'inline-flex', width: 36, height: 20, borderRadius: 10,
+              background: tipsOn ? 'var(--color-primary)' : 'var(--color-border)',
+              position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: 'absolute', top: 2, left: tipsOn ? 18 : 2,
+              width: 16, height: 16, borderRadius: '50%', background: 'var(--color-surface)',
+              transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+            }} />
+          </span>
+        </label>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {grantedFeatures.length > 0 ? (
+          <>
+            <div style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-secondary)', fontWeight: 600, margin: '18px 0 8px' }}>
+              Sidebar features
+            </div>
+            <p style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', margin: '0 0 14px', lineHeight: 1.5 }}>
+              Hide features you don't use from the sidebar. You can re-show them here at any time — contact an admin if a feature you need isn't listed.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {grantedFeatures.map(f => {
             const m = FEATURE_META[f];
             const isHidden = !!hidden[f];
@@ -437,7 +488,13 @@ function MyViewCard({ user, updateHiddenFeatures }) {
               </label>
             );
           })}
-        </div>
+            </div>
+          </>
+        ) : (
+          <p style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', margin: '18px 0 0', lineHeight: 1.5 }}>
+            No optional sidebar features are currently enabled on your account. Contact an admin to request access.
+          </p>
+        )}
 
         {error && <div role="alert" className="alert alert-error" style={{ marginTop: 12 }}>{error}</div>}
         <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>

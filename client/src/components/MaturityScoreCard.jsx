@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Gauge, TrendingUp } from 'lucide-react';
 import api from '../api/client';
+import Tip from './Tip';
 
 const LEVEL_COLOR = {
   1: '#b91c1c', // Reactive
@@ -104,7 +105,7 @@ export default function MaturityScoreCard({ siteId = null, compact = false }) {
     <div className="card mb-16">
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <Gauge size={18} />
-        <div className="card-title" style={{ flex: 1 }}>NFPA 70B Program Maturity</div>
+        <div className="card-title" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>NFPA 70B Program Maturity<Tip term="maturityScore" /></div>
         <span title={data.disclaimer} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: 'var(--color-text-secondary)', cursor: 'help' }}>
           vs the standard ⓘ
         </span>

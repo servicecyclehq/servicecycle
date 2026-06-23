@@ -32,6 +32,7 @@ import Toast from '../components/Toast';
 import BackLink, { useFromState } from '../components/BackLink';
 import ColumnPicker from '../components/ColumnPicker';
 import HeaderFilter, { filterIsActive } from '../components/HeaderFilter';
+import Tip from '../components/Tip';
 import {
   EQUIPMENT_TYPE_LABELS,
   CONDITION_META,
@@ -707,7 +708,7 @@ export default function AssetsList() {
                   <thead>
                     <tr>
                       {colVis.equipment   && <th>Equipment</th>}
-                      {colVis.condition   && <th>Condition</th>}
+                      {colVis.condition   && <th><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>Condition<Tip term="conditionRating" /></span></th>}
                       {colVis.nextDue     && <th>Next Due</th>}
                       {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Def.</th>}
                       {colVis.criticality && (

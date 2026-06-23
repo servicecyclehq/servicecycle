@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { z } = require('zod'); // (B6)
 const { requireAdmin, requireViewer } = require('../middleware/roles');
 const { sendEmail, inviteHtml } = require('../lib/email');
-const { defaultFlagsForRole, sanitizeFlags, ALL_FEATURES } = require('../lib/featureFlags');
+const { defaultFlagsForRole, sanitizeFlags, ALL_FEATURES, sanitizeHiddenFeatures } = require('../lib/featureFlags');
 const { validateBody } = require('../lib/validate'); // (B6)
 const { writeLog: writeActivityLog } = require('../lib/activityLog'); // GDPR export/erasure audit trail
 const { validate: validatePassword, validateStrength, loadAccountPolicy } = require('../lib/passwordPolicy'); // W4 audit + audit-7
@@ -293,16 +293,10 @@ router.put('/me/hidden-features', async (req, res) => {
     });
     const granted = currentUser?.featureFlags || {};
 
-    // Build cleaned hidden set — only allow hiding features that are granted
-    const clean: any = {};
-    for (const f of ALL_FEATURES) {
-      if (typeof hiddenFeatures[f] === 'boolean') {
-        // Can always un-hide; can only hide if it was granted
-        if (!hiddenFeatures[f] || granted[f] === true) {
-          clean[f] = hiddenFeatures[f];
-        }
-      }
-    }
+    // Build cleaned hidden set — grant-gated page features can only be hidden
+    // when granted; UI-view prefs (infoTips) are free to toggle. See
+    // sanitizeHiddenFeatures in lib/featureFlags.
+    const clean = sanitizeHiddenFeatures(hiddenFeatures, granted);
 
     const user = await prisma.user.update({
       where: { id: req.user.id },

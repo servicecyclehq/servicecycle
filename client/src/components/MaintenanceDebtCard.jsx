@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Landmark, Download } from 'lucide-react';
 import api from '../api/client';
+import Tip from './Tip';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
 
@@ -66,7 +67,7 @@ export default function MaintenanceDebtCard({ compact = false }) {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <Landmark size={18} />
-        <div className="card-title" style={{ flex: 1 }}>Maintenance Debt Ledger</div>
+        <div className="card-title" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>Maintenance Debt Ledger<Tip term="maintenanceDebt" /></div>
         <button className="btn btn-secondary btn-sm" onClick={exportCsv} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Download size={14} /> CSV
         </button>
