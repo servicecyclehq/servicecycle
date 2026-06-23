@@ -36,6 +36,7 @@ const crypto = require('crypto');
 const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
+const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
 const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 const { buildTimeline } = require('../lib/arcFlashTimeline');
@@ -1715,6 +1716,35 @@ router.get('/export', async (req: any, res: any) => {
     console.error('arc-flash export error:', e);
     res.status(500).json({ success: false, error: 'Failed to export arc-flash model' });
   }
+});
+
+// ── GET /afx/spec ── the open Arc Flash Data Exchange (AFX) standard, versioned ─
+// Any authed user can read the spec (it's an open standard). Also what powers a
+// "download the spec" link + documents our default export format.
+router.get('/afx/spec', (_req: any, res: any) => {
+  try {
+    res.json({ success: true, data: buildAfxSpec() });
+  } catch (e) {
+    console.error('afx spec error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load AFX spec' });
+  }
+});
+
+// ── POST /afx/validate ── conformance-check a CSV against AFX (manager+) ────────
+// Upload a file (or { csv }) → recognized/unknown columns, missing required
+// fields, and per-row type issues. Review-only; never persists.
+router.post('/afx/validate', requireManager, (req: any, res: any) => {
+  csvUpload.single('file')(req, res, async (uErr: any) => {
+    try {
+      if (uErr) return res.status(400).json({ success: false, error: uErr.message || 'Upload failed' });
+      const csv = req.file ? req.file.buffer.toString('utf8') : (req.body && req.body.csv);
+      if (!csv || typeof csv !== 'string') return res.status(400).json({ success: false, error: 'Upload a CSV (file field) or provide { csv }.' });
+      return res.json({ success: true, data: validateAfxCsv(csv) });
+    } catch (e) {
+      console.error('afx validate error:', e);
+      return res.status(500).json({ success: false, error: 'AFX validation failed' });
+    }
+  });
 });
 
 // ── POST /import-results ── Slice 3.5b: round-trip stamped study results back in ─

@@ -123,7 +123,83 @@ export default function ArcFlashFleet() {
           <AuditBundle />
           <RegulatoryReview />
           <ImportResults onApplied={load} />
+          <AfxPanel />
         </>
+      )}
+    </div>
+  );
+}
+
+// AFX — the open Arc Flash Data Exchange standard. Download the versioned spec,
+// and validate any CSV against it. The "Export model (CSV)" button above already
+// emits AFX-conformant data.
+function AfxPanel() {
+  const [spec, setSpec] = useState(null);
+  const [file, setFile] = useState(null);
+  const [report, setReport] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function loadSpec() {
+    if (spec) return spec;
+    const r = await api.get('/api/arc-flash/afx/spec');
+    setSpec(r.data?.data || null);
+    return r.data?.data;
+  }
+  async function downloadSpec() {
+    try {
+      const s = await loadSpec();
+      const blob = new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `afx-spec-v${s.afxVersion}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } catch { setErr('Could not load the AFX spec.'); }
+  }
+  async function validate() {
+    if (!file) { setErr('Choose a CSV to validate.'); return; }
+    setBusy(true); setErr(''); setReport(null);
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await api.post('/api/arc-flash/afx/validate', fd);
+      setReport(r.data?.data || null);
+    } catch (e) { setErr(e?.response?.data?.error || 'Validation failed.'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card" style={{ padding: '14px 16px', marginTop: 16 }}>
+      <h2 style={{ margin: 0, fontSize: '1rem' }}>Arc Flash Data Exchange (AFX)</h2>
+      <p style={{ margin: '4px 0 10px', color: 'var(--color-text-secondary)', fontSize: '0.82rem' }}>
+        Our open, versioned CSV/JSON standard for arc-flash study + label data, anchored on IEEE 1584-2018 inputs and NFPA 70E 130.5(H) outputs. The “Export model (CSV)” button above already emits AFX. Validate any file against the spec below.
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={downloadSpec}>Download AFX spec (JSON)</button>
+        <input type="file" accept=".csv,text/csv" onChange={e => { setFile(e.target.files?.[0] || null); setReport(null); setErr(''); }} aria-label="CSV to validate against AFX" />
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!file || busy} onClick={validate}>{busy ? 'Validating…' : 'Validate against AFX'}</button>
+      </div>
+
+      {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
+
+      {report && (
+        <div style={{ marginTop: 12, fontSize: '0.82rem' }}>
+          <div style={{ fontWeight: 700, color: report.ok ? 'var(--chip-green-fg, #16a34a)' : 'var(--chip-amber-fg, #d97706)' }}>
+            {report.ok ? '✓ Conforms to AFX' : 'Issues found'} — {report.summary.recognizedColumns} recognized, {report.summary.unknownColumns} unknown columns, {report.summary.missingRequired} missing required, {report.summary.rowIssues} row issue(s)
+          </div>
+          {report.missingRequired?.length > 0 && (
+            <div style={{ marginTop: 6, color: 'var(--color-danger)' }}>Missing required: {report.missingRequired.map(m => m.header).join(', ')}</div>
+          )}
+          {report.unknownColumns?.length > 0 && (
+            <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>Unknown columns (ignored): {report.unknownColumns.slice(0, 12).join(', ')}{report.unknownColumns.length > 12 ? '…' : ''}</div>
+          )}
+          {report.rowIssues?.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {report.rowIssues.slice(0, 10).map((it, i) => (
+                <li key={i}>Row {it.row}, <strong>{it.column}</strong>: “{it.value}” — {it.issue}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );
