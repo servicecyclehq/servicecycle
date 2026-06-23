@@ -15,7 +15,7 @@
 const router = require('express').Router();
 import prisma from '../lib/prisma';
 const { buildComplianceGap } = require('../lib/complianceReport');
-const { canViewSales, groupByAm } = require('../lib/salesRollup');
+const { canViewSales, groupByAm, selectAccountsToMove } = require('../lib/salesRollup');
 
 const DEMO = () => process.env.DEMO_MODE === 'true';
 // Cap how many accounts we run the (heavier) compliance gap for per request.
@@ -28,23 +28,27 @@ function scopeBlocked(req: any, partnerOrgId: string | null | undefined): boolea
   return !partnerOrgId && req.user.role !== 'super_admin' && !DEMO();
 }
 
+// Resolve the caller's account scope once (gate + fail-closed partnerOrg filter).
+// Returns { ok, status, error, accountWhere } so every sales endpoint shares one
+// security posture.
+async function resolveScope(req: any): Promise<any> {
+  if (!canViewSales(req.user, { demoMode: DEMO() })) {
+    return { ok: false, status: 403, error: 'Sales roll-up is available to operator staff only.' };
+  }
+  const caller = await prisma.account.findUnique({ where: { id: req.user.accountId }, select: { partnerOrgId: true } });
+  if (scopeBlocked(req, caller?.partnerOrgId)) {
+    return { ok: false, status: 403, error: 'No operator organization is linked to your account.' };
+  }
+  const accountWhere: any = { status: 'active' };
+  if (caller?.partnerOrgId) accountWhere.partnerOrgId = caller.partnerOrgId;
+  return { ok: true, accountWhere };
+}
+
 router.get('/rollup', async (req: any, res: any) => {
   try {
-    if (!canViewSales(req.user, { demoMode: DEMO() })) {
-      return res.status(403).json({ success: false, error: 'Sales roll-up is available to operator staff only.' });
-    }
-
-    const caller = await prisma.account.findUnique({
-      where: { id: req.user.accountId },
-      select: { partnerOrgId: true },
-    });
-    if (scopeBlocked(req, caller?.partnerOrgId)) {
-      return res.status(403).json({ success: false, error: 'No operator organization is linked to your account.' });
-    }
-
-    const accountWhere: any = { status: 'active' };
-    if (caller?.partnerOrgId) accountWhere.partnerOrgId = caller.partnerOrgId;
-    // else: demo / super_admin → all active accounts
+    const scope = await resolveScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ success: false, error: scope.error });
+    const accountWhere = scope.accountWhere;
 
     const accounts = await prisma.account.findMany({
       where: accountWhere,
@@ -103,6 +107,86 @@ router.get('/rollup', async (req: any, res: any) => {
   } catch (err: any) {
     console.error('[sales/rollup]', err);
     return res.status(500).json({ success: false, error: 'Sales roll-up query failed' });
+  }
+});
+
+// ── GET /api/sales/reps — assignment candidates (current AMs + operator team) ──
+// Valid targets to reassign a book to: users already acting as an AM on an
+// in-scope account, plus the caller's own account team (operator staff). Scoped
+// + deduped so we never leak a cross-tenant user directory.
+router.get('/reps', async (req: any, res: any) => {
+  try {
+    const scope = await resolveScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ success: false, error: scope.error });
+
+    const accounts = await prisma.account.findMany({ where: scope.accountWhere, select: { id: true, assignedRepId: true } });
+    const assignedIds = Array.from(new Set(accounts.map((a: any) => a.assignedRepId).filter(Boolean)));
+
+    // Current AMs (referenced by in-scope accounts) + the operator's own team.
+    const [assignedReps, teamReps] = await Promise.all([
+      assignedIds.length ? prisma.user.findMany({ where: { id: { in: assignedIds as string[] } }, select: { id: true, name: true, email: true } }) : Promise.resolve([]),
+      prisma.user.findMany({ where: { accountId: req.user.accountId, isActive: true }, select: { id: true, name: true, email: true } }),
+    ]);
+    const byId = new Map<string, any>();
+    for (const r of [...assignedReps, ...teamReps]) byId.set(r.id, r);
+
+    const bookCount = new Map<string, number>();
+    for (const a of accounts) if (a.assignedRepId) bookCount.set(a.assignedRepId, (bookCount.get(a.assignedRepId) || 0) + 1);
+
+    const reps = Array.from(byId.values())
+      .map((r: any) => ({ id: r.id, name: r.name || r.email || 'Unnamed', email: r.email || null, accountCount: bookCount.get(r.id) || 0 }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return res.json({ success: true, data: { reps } });
+  } catch (err: any) {
+    console.error('[sales/reps]', err);
+    return res.status(500).json({ success: false, error: 'Failed to list reps' });
+  }
+});
+
+// ── POST /api/sales/reassign — move a book (or selected accounts) to another AM ─
+// Body: { fromRepId (null = Unassigned bucket), toRepId, accountIds?, syncContact? }
+// Only in-scope accounts currently owned by fromRepId move; toRepId must be a
+// valid candidate (current AM or operator-team user). syncContact: when true,
+// copy the new rep's name/email onto the customer-facing serviceRep contact
+// (the UI only sets this after asking, so we never silently overwrite).
+router.post('/reassign', async (req: any, res: any) => {
+  try {
+    const scope = await resolveScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ success: false, error: scope.error });
+
+    const { fromRepId = null, toRepId, accountIds, syncContact } = req.body || {};
+    if (!toRepId || typeof toRepId !== 'string') {
+      return res.status(400).json({ success: false, error: 'toRepId is required.' });
+    }
+
+    // toRepId must be a legitimate candidate: a current AM in scope, or a user
+    // in the caller's operator team. (Mirrors GET /reps eligibility.)
+    const inScope = await prisma.account.findMany({ where: scope.accountWhere, select: { id: true, assignedRepId: true } });
+    const candidateIds = new Set<string>(inScope.map((a: any) => a.assignedRepId).filter(Boolean) as string[]);
+    const teamUser = await prisma.user.findFirst({ where: { id: toRepId, accountId: req.user.accountId, isActive: true }, select: { id: true, name: true, email: true } });
+    if (!teamUser && !candidateIds.has(toRepId)) {
+      return res.status(400).json({ success: false, error: 'toRepId is not a valid assignment target.' });
+    }
+
+    const moveIds = selectAccountsToMove(inScope, fromRepId, accountIds);
+    if (moveIds.length === 0) {
+      return res.json({ success: true, data: { moved: 0, accountIds: [] } });
+    }
+
+    const data: any = { assignedRepId: toRepId };
+    if (syncContact === true) {
+      const repUser = teamUser || await prisma.user.findUnique({ where: { id: toRepId }, select: { name: true, email: true } });
+      if (repUser) {
+        if (repUser.name) data.serviceRepName = repUser.name;
+        if (repUser.email) data.serviceRepEmail = repUser.email;
+      }
+    }
+    // updateMany is bounded to the eligible, in-scope, currently-owned set.
+    await prisma.account.updateMany({ where: { id: { in: moveIds }, ...scope.accountWhere }, data });
+    return res.json({ success: true, data: { moved: moveIds.length, accountIds: moveIds, contactSynced: syncContact === true } });
+  } catch (err: any) {
+    console.error('[sales/reassign]', err);
+    return res.status(500).json({ success: false, error: 'Reassignment failed' });
   }
 });
 

@@ -78,6 +78,114 @@ function RepCard({ rep }) {
   );
 }
 
+function accountsForRep(data, fromRepId) {
+  if (fromRepId === '') return data?.unassigned || [];
+  return (data?.reps || []).find(r => r.repId === fromRepId)?.accounts || [];
+}
+
+// Reassign a rep's book (or selected accounts) to another AM. Asks before
+// overwriting the customer-facing contact (serviceRep) when it would change it.
+function ReassignPanel({ data, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [reps, setReps] = useState([]);
+  const [fromRep, setFromRep] = useState('');
+  const [toRep, setToRep] = useState('');
+  const [picked, setPicked] = useState({}); // accountId -> bool
+  const [syncContact, setSyncContact] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    api.get('/api/sales/reps').then(r => setReps(r.data?.data?.reps || [])).catch(() => {});
+  }, [open]);
+
+  const book = accountsForRep(data, fromRep);
+  // Default: all of the from-rep's accounts selected.
+  useEffect(() => {
+    const next = {};
+    for (const a of book) next[a.accountId] = true;
+    setPicked(next);
+    setMsg('');
+  }, [fromRep]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedIds = book.filter(a => picked[a.accountId]).map(a => a.accountId);
+
+  async function move() {
+    if (!toRep || selectedIds.length === 0) return;
+    setBusy(true); setMsg('');
+    try {
+      const r = await api.post('/api/sales/reassign', {
+        fromRepId: fromRep === '' ? null : fromRep,
+        toRepId: toRep,
+        accountIds: selectedIds,
+        syncContact,
+      });
+      setMsg(`Moved ${r.data?.data?.moved ?? 0} account(s).`);
+      onDone && onDone();
+    } catch {
+      setMsg('Reassignment failed.');
+    } finally { setBusy(false); }
+  }
+
+  const sel = { width: '100%', padding: '6px 8px', fontSize: '0.85rem', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-bg)', color: 'var(--color-text)', marginTop: 3 };
+
+  return (
+    <div style={{ ...card, borderStyle: open ? 'solid' : 'dashed' }}>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{ all: 'unset', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s', color: 'var(--color-text-secondary)' }}>▸</span>
+        Reassign accounts
+      </button>
+      {open && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <label style={{ fontSize: '0.78rem' }}>Move from
+              <select style={sel} value={fromRep} onChange={e => setFromRep(e.target.value)}>
+                <option value="">— Unassigned —</option>
+                {(data?.reps || []).map(r => <option key={r.repId} value={r.repId}>{r.repName} ({r.accountCount})</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: '0.78rem' }}>Move to
+              <select style={sel} value={toRep} onChange={e => setToRep(e.target.value)}>
+                <option value="">Select a rep…</option>
+                {reps.filter(r => r.id !== fromRep).map(r => <option key={r.id} value={r.id}>{r.name}{r.accountCount ? ` (${r.accountCount})` : ''}</option>)}
+              </select>
+            </label>
+          </div>
+
+          {book.length === 0 ? (
+            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>No accounts in this book.</div>
+          ) : (
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: 6, maxHeight: 200, overflowY: 'auto' }}>
+              {book.map(a => (
+                <label key={a.accountId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', fontSize: '0.82rem', borderTop: '1px solid var(--color-border)' }}>
+                  <input type="checkbox" checked={!!picked[a.accountId]} onChange={e => setPicked(p => ({ ...p, [a.accountId]: e.target.checked }))} />
+                  <span style={{ flex: 1 }}>{a.companyName}</span>
+                  <span style={{ color: complianceColor(a.compliance), fontWeight: 700 }}>{pct(a.compliance)}</span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: '0.8rem' }}>
+            <input type="checkbox" checked={syncContact} onChange={e => setSyncContact(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>Also update the customer-facing contact (digest CC / Reply-To) to the new rep.
+              <span style={{ color: 'var(--color-text-secondary)' }}> Leave off to keep the existing contact — only check this if you want to overwrite it.</span>
+            </span>
+          </label>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy || !toRep || selectedIds.length === 0} onClick={move}>
+              {busy ? 'Moving…' : `Move ${selectedIds.length} account${selectedIds.length === 1 ? '' : 's'}`}
+            </button>
+            {msg && <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{msg}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SalesRollup() {
   useDocumentTitle('Sales roll-up');
   const [data, setData] = useState(null);
@@ -115,6 +223,7 @@ export default function SalesRollup() {
 
       {!loading && !err && data && (
         <>
+          <ReassignPanel data={data} onDone={load} />
           {data.reps.length === 0 && data.unassigned.length === 0 && (
             <div style={card}>No accounts in scope yet.</div>
           )}

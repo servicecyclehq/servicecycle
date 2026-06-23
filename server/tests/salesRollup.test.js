@@ -1,5 +1,5 @@
 // Unit coverage for the sales roll-up grouping + capability gate (Chunk B).
-const { canViewSales, groupByAm } = require('../lib/salesRollup');
+const { canViewSales, groupByAm, selectAccountsToMove } = require('../lib/salesRollup');
 
 describe('canViewSales (operator-only, leak-safe)', () => {
   test('operator roles always see it', () => {
@@ -63,5 +63,26 @@ describe('groupByAm', () => {
   test('aggregates the open-deficiency counts per rep', () => {
     const mark = out.reps.find(r => r.repId === 'r1');
     expect(mark.openDeficiencies).toBe(5);
+  });
+});
+
+describe('selectAccountsToMove', () => {
+  const accounts = [
+    { id: 'a1', assignedRepId: 'r1' },
+    { id: 'a2', assignedRepId: 'r1' },
+    { id: 'a3', assignedRepId: 'r2' },
+    { id: 'a4', assignedRepId: null },
+  ];
+  test('moves a rep\'s whole book when no subset given', () => {
+    expect(selectAccountsToMove(accounts, 'r1').sort()).toEqual(['a1', 'a2']);
+  });
+  test('moves only the requested subset, still constrained to the rep', () => {
+    expect(selectAccountsToMove(accounts, 'r1', ['a1', 'a3'])).toEqual(['a1']); // a3 is r2's, excluded
+  });
+  test('handles the Unassigned bucket (null fromRep)', () => {
+    expect(selectAccountsToMove(accounts, null)).toEqual(['a4']);
+  });
+  test('never moves an account owned by someone else', () => {
+    expect(selectAccountsToMove(accounts, 'r2', ['a1', 'a2', 'a3'])).toEqual(['a3']);
   });
 });

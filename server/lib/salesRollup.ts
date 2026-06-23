@@ -111,6 +111,28 @@ function groupByAm(opts: any): any {
   };
 }
 
-module.exports = { canViewSales, groupByAm, sortWorstFirst };
+/**
+ * Decide which accounts actually move in a reassignment. Pure + safe:
+ * only accounts that are (a) in the provided in-scope set AND (b) currently
+ * owned by fromRepId are eligible; if requestedIds is given, intersect with it
+ * (so the UI can move a selected subset). Returns the eligible account id list.
+ * @param accounts    in-scope [{ id, assignedRepId }]
+ * @param fromRepId   the departing rep (null/'' = the Unassigned bucket)
+ * @param requestedIds optional subset the caller asked to move
+ */
+function selectAccountsToMove(accounts: any[], fromRepId: any, requestedIds?: any): string[] {
+  const from = fromRepId || null;
+  const want = Array.isArray(requestedIds) && requestedIds.length ? new Set(requestedIds) : null;
+  const out: string[] = [];
+  for (const a of accounts || []) {
+    const owner = a.assignedRepId || null;
+    if (owner !== from) continue;
+    if (want && !want.has(a.id)) continue;
+    out.push(a.id);
+  }
+  return out;
+}
+
+module.exports = { canViewSales, groupByAm, sortWorstFirst, selectAccountsToMove };
 
 export {};
