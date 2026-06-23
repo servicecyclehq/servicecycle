@@ -205,6 +205,14 @@ function AfxPanel() {
         <input type="file" accept=".csv,text/csv" onChange={e => { setFile(e.target.files?.[0] || null); setReport(null); setErr(''); }} aria-label="CSV to validate against AFX" />
         <button type="button" className="btn btn-secondary btn-sm" disabled={!file || busy} onClick={validate}>{busy ? 'Validating…' : 'Validate against AFX'}</button>
       </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>Per-tool templates:</span>
+        {[['arcad', 'ARCAD'], ['skm', 'SKM PTW'], ['easypower', 'EasyPower']].map(([tool, label]) => (
+          <button key={tool} type="button" className="btn btn-secondary btn-sm"
+            onClick={() => downloadAuthedFile(`/api/arc-flash/afx/template?tool=${tool}`, `afx-template-${tool}.csv`).catch(() => {})}
+            title={`Download a ${label}-shaped CSV mapped from AFX`}>{label}</button>
+        ))}
+      </div>
 
       {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
 

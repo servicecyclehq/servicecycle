@@ -16,6 +16,12 @@
 
 const AFX_VERSION = '1.0';
 
+// Value-level aliases tolerated on import (vendor spellings of the same value).
+// e.g. ARCAD writes the standard VCBB electrode config as "VCCB".
+const ENUM_VALUE_ALIASES: Record<string, Record<string, string>> = {
+  electrodeConfig: { vccb: 'VCBB' },
+};
+
 const ENUMS: Record<string, string[]> = {
   electrodeConfig: ['VCB', 'VCBB', 'HCB', 'VOA', 'HOA'],
   tripUnitType: ['none', 'thermal_magnetic', 'electronic_lsi', 'electronic_lsig'],
@@ -116,6 +122,15 @@ function validateAfxRows(headers: string[], rows: any[], opts: any = {}): any {
     byHeader.set(f.header.toLowerCase(), f);
     byHeader.set(f.key.toLowerCase(), f);
   }
+  // Recognize vendor-tool column names too (ARCAD / SKM / EasyPower) when the
+  // caller supplies an alias index (header-lowercased -> AFX key).
+  if (opts.aliasIndex && typeof opts.aliasIndex.forEach === 'function') {
+    const byKey = new Map(AFX_FIELDS.map((f: any) => [f.key, f]));
+    opts.aliasIndex.forEach((key: string, headerLc: string) => {
+      const f = byKey.get(key);
+      if (f) byHeader.set(String(headerLc).toLowerCase(), f);
+    });
+  }
   const recognized: any[] = [];
   const unknown: string[] = [];
   const headerToField = new Map<string, any>();
@@ -137,7 +152,9 @@ function validateAfxRows(headers: string[], rows: any[], opts: any = {}): any {
       if (f.type === 'number' && !isFiniteNum(raw)) {
         rowIssues.push({ row: i + 1, column: header, value: String(raw), issue: 'not a number' });
       } else if (f.type === 'enum' && f.enum) {
-        const ok = f.enum.some((e: string) => e.toLowerCase() === String(raw).trim().toLowerCase());
+        const valLc = String(raw).trim().toLowerCase();
+        const aliased = ENUM_VALUE_ALIASES[f.key] && ENUM_VALUE_ALIASES[f.key][valLc];
+        const ok = f.enum.some((e: string) => e.toLowerCase() === valLc) || !!aliased;
         if (!ok) rowIssues.push({ row: i + 1, column: header, value: String(raw), issue: `not in {${f.enum.join('|')}}` });
       } else if (f.type === 'json') {
         try { JSON.parse(String(raw)); } catch { rowIssues.push({ row: i + 1, column: header, value: String(raw).slice(0, 40), issue: 'not valid JSON' }); }

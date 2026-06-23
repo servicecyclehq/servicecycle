@@ -37,6 +37,7 @@ const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
+const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const PDFDocument = require('pdfkit');
 const { buildLabelModel, drawArcFlashLabel, LABEL_W, LABEL_H } = require('../lib/arcFlashLabelDoc');
@@ -1739,10 +1740,31 @@ router.get('/export', async (req: any, res: any) => {
 // "download the spec" link + documents our default export format.
 router.get('/afx/spec', (_req: any, res: any) => {
   try {
-    res.json({ success: true, data: buildAfxSpec() });
+    res.json({ success: true, data: { ...buildAfxSpec(), tools: TOOLS, crosswalk: CROSSWALK } });
   } catch (e) {
     console.error('afx spec error:', e);
     res.status(500).json({ success: false, error: 'Failed to load AFX spec' });
+  }
+});
+
+// ── GET /afx/template?tool=arcad|skm|easypower ── per-tool column template ──────
+// Hand the PE a tool-shaped CSV (or JSON crosswalk) so the collected model
+// imports without re-keying. Built from real vendor artifacts (ARCAD form +
+// EasyPower's SKM import-mapping templates).
+router.get('/afx/template', (req: any, res: any) => {
+  try {
+    const tool = String(req.query.tool || '').toLowerCase();
+    const meta = buildToolTemplate(tool);
+    if (!meta) return res.status(400).json({ success: false, error: `Unknown tool. Use one of: ${TOOLS.join(', ')}.` });
+    if (String(req.query.format || 'csv').toLowerCase() === 'json') {
+      return res.json({ success: true, data: meta });
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="afx-template-${tool}.csv"`);
+    res.send(toolTemplateCsv(tool));
+  } catch (e) {
+    console.error('afx template error:', e);
+    res.status(500).json({ success: false, error: 'Failed to build template' });
   }
 });
 
@@ -1755,7 +1777,8 @@ router.post('/afx/validate', requireManager, (req: any, res: any) => {
       if (uErr) return res.status(400).json({ success: false, error: uErr.message || 'Upload failed' });
       const csv = req.file ? req.file.buffer.toString('utf8') : (req.body && req.body.csv);
       if (!csv || typeof csv !== 'string') return res.status(400).json({ success: false, error: 'Upload a CSV (file field) or provide { csv }.' });
-      return res.json({ success: true, data: validateAfxCsv(csv) });
+      // Alias-aware: recognize ARCAD / SKM / EasyPower column names too.
+      return res.json({ success: true, data: validateAfxCsv(csv, { aliasIndex: buildAliasIndex() }) });
     } catch (e) {
       console.error('afx validate error:', e);
       return res.status(500).json({ success: false, error: 'AFX validation failed' });
