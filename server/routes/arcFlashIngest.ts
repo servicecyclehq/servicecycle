@@ -1453,7 +1453,7 @@ router.get('/audit-bundle', async (req: any, res: any) => {
     const accountId = req.user.accountId;
     const now = Date.now();
     const soon = new Date(now + 90 * 24 * 60 * 60 * 1000);
-    const [account, rows, devices, driftTests, openTasks] = await Promise.all([
+    const [account, rows, devices, driftTests, openTasks, incidents] = await Promise.all([
       prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
       prisma.systemStudyAsset.findMany({
         where: { accountId, study: { supersededById: null } },
@@ -1466,6 +1466,7 @@ router.get('/audit-bundle', async (req: any, res: any) => {
       prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { not: null } }, select: { assetId: true, source: true }, take: 5000 }),
       prisma.deviceTestRecord.findMany({ where: { accountId, driftFlagged: true, assetId: { not: null } }, select: { assetId: true }, take: 5000 }),
       prisma.arcFlashCollectionTask.count({ where: { accountId, status: { in: ['open', 'in_progress'] } } }),
+      prisma.arcFlashIncident.findMany({ where: { accountId }, select: { id: true, assetId: true, busName: true, incidentType: true, occurredAt: true, injury: true, status: true, description: true }, orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }], take: 200 }),
     ]);
 
     const devByAsset = new Map<string, any[]>();
@@ -1524,6 +1525,15 @@ router.get('/audit-bundle', async (req: any, res: any) => {
       if (r.study?.id) { if (expired) site.expiredStudies.add(r.study.id); else if (expiringSoon) site.expiringStudies.add(r.study.id); }
     }
 
+    // Incident / near-miss history — a logged arc-flash event is a real
+    // diligence signal. Open (unresolved) events join the punch list at the same
+    // urgency as an expired study.
+    const openIncidents = (incidents || []).filter((i: any) => i.status !== 'closed');
+    const incidentsWithInjury = (incidents || []).filter((i: any) => i.injury).length;
+    for (const inc of openIncidents) {
+      items.push({ priority: 2, type: 'arc_flash_incident', site: null, busName: inc.busName || null, assetId: inc.assetId, detail: `${inc.injury ? 'Injury - ' : ''}${inc.incidentType} (unresolved): ${String(inc.description || '').slice(0, 80)}` });
+    }
+
     items.sort((a, b) => a.priority - b.priority);
     const sites = Array.from(siteMap.values()).map((s: any) => ({
       siteId: s.siteId, siteName: s.siteName, busCount: s.busCount, dangerCount: s.dangerCount, blockedCount: s.blockedCount,
@@ -1536,7 +1546,8 @@ router.get('/audit-bundle', async (req: any, res: any) => {
       avgConfidence: labels.length ? Math.round(confSum / labels.length) : null, lowConfidenceBuses,
       sanityErrors, sanityWarnings, studiesExpiring90d: expiringStudyIds.size, studiesExpired: expiredStudyIds.size,
       openCollectionTasks: openTasks,
-      exposureNote: 'Risk is shown as deterministic indicators (DANGER buses, expired/expiring studies, unresolved sanity errors). ServiceCycle is the data layer; a licensed PE runs and stamps the study. Dollar exposure depends on your operations and insurer terms.',
+      incidentsLogged: (incidents || []).length, openIncidents: openIncidents.length, incidentsWithInjury,
+      exposureNote: 'Risk is shown as deterministic indicators (DANGER buses, expired/expiring studies, unresolved sanity errors, logged incidents). ServiceCycle is the data layer; a licensed PE runs and stamps the study. Dollar exposure depends on your operations and insurer terms.',
     };
 
     res.json({
@@ -1549,6 +1560,7 @@ router.get('/audit-bundle', async (req: any, res: any) => {
         itemsToResolveTotal: items.length,
         sites,
         labels,
+        incidents: (incidents || []).slice(0, 50).map((i: any) => ({ id: i.id, assetId: i.assetId, busName: i.busName, incidentType: i.incidentType, occurredAt: i.occurredAt, injury: i.injury, status: i.status })),
       },
     });
   } catch (e) {

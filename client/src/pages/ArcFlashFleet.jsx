@@ -433,6 +433,7 @@ function RegulatoryReview() {
 const ITEM_LABEL = {
   sanity_error: 'Sanity error', study_expired: 'Study expired', danger_bus: 'DANGER bus',
   blocked_bus: 'Blocked (missing inputs)', study_expiring: 'Study expiring',
+  arc_flash_incident: 'Open incident',
 };
 
 // Slice 3c — on-demand insurer/auditor bundle: a compliance posture scorecard, a
@@ -491,6 +492,8 @@ function AuditBundle() {
             <Tile label="Studies expiring" value={p.studiesExpiring90d} />
             <Tile label="Blocked buses" value={p.blockedBuses} />
             <Tile label="Open field tasks" value={p.openCollectionTasks} />
+            <Tile label="Open incidents" value={p.openIncidents ?? 0} color={p.openIncidents > 0 ? 'var(--color-danger)' : undefined} />
+            <Tile label="Incident injuries" value={p.incidentsWithInjury ?? 0} color={p.incidentsWithInjury > 0 ? 'var(--color-danger)' : undefined} />
           </div>
 
           {bundle.itemsToResolve?.length > 0 && (
