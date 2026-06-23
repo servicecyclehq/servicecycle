@@ -37,6 +37,7 @@ const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
+const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
 const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 const { buildTimeline } = require('../lib/arcFlashTimeline');
@@ -1745,6 +1746,50 @@ router.post('/afx/validate', requireManager, (req: any, res: any) => {
       return res.status(500).json({ success: false, error: 'AFX validation failed' });
     }
   });
+});
+
+// ── GET /load-growth ── telemetry-derived load-growth flag (manager+) ──────────
+// Light arc-flash tie-in: if continuous condition-monitoring telemetry shows a
+// load channel growing past the same >10% threshold the integrity cron uses,
+// raise a flag that the study may need re-evaluating (NFPA 70E §130.5). SC
+// surfaces the signal only — it never recomputes incident energy, and it does
+// NOT auto-create a re-study quote (that stays a deliberate, Dustin-gated step).
+router.get('/load-growth', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const threshold = 10;
+    const channels = await prisma.telemetryChannel.findMany({
+      where: { accountId, enabled: true },
+      select: { id: true, key: true, label: true, unit: true, assetId: true },
+      take: 500,
+    });
+    const loadChannels = channels.filter(isLoadChannel).slice(0, 60);
+    const flagged: any[] = [];
+    let maxGrowthPct = 0;
+    for (const ch of loadChannels) {
+      const readings = await prisma.telemetryReading.findMany({
+        where: { channelId: ch.id }, select: { value: true, recordedAt: true },
+        orderBy: { recordedAt: 'desc' }, take: 200,
+      });
+      const a = assessLoadGrowth(readings.map((r: any) => ({ value: Number(r.value), recordedAt: r.recordedAt })));
+      if (!a.ok) continue;
+      if (a.growthPct > maxGrowthPct) maxGrowthPct = a.growthPct;
+      if (a.growthPct >= threshold) {
+        flagged.push({ channelId: ch.id, assetId: ch.assetId, label: ch.label || ch.key, unit: ch.unit || null, baseline: a.baseline, current: a.current, growthPct: a.growthPct });
+      }
+    }
+    flagged.sort((x, y) => y.growthPct - x.growthPct);
+    return res.json({ success: true, data: {
+      threshold,
+      exceedsThreshold: flagged.length > 0,
+      maxGrowthPct: Math.round(maxGrowthPct * 10) / 10,
+      channels: flagged,
+      note: flagged.length ? 'NFPA 70E §130.5 recommends reviewing the arc-flash study when load changes may alter incident energy. This is a telemetry-derived flag, not a recalculation — confirm with a re-study.' : null,
+    } });
+  } catch (e) {
+    console.error('arc-flash load-growth error:', e);
+    return res.status(500).json({ success: false, error: 'Failed to compute load growth' });
+  }
 });
 
 // ── POST /import-results ── Slice 3.5b: round-trip stamped study results back in ─

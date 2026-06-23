@@ -62,6 +62,8 @@ export default function ArcFlashFleet() {
         </div>
       </div>
 
+      <LoadGrowthBanner />
+
       {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
       {loading && <div className="card" style={{ padding: 16 }}>Loading…</div>}
 
@@ -126,6 +128,29 @@ export default function ArcFlashFleet() {
           <AfxPanel />
         </>
       )}
+    </div>
+  );
+}
+
+// Telemetry-derived load-growth flag. Self-hides unless a load channel has grown
+// past the >10% NFPA 70E §130.5 re-study threshold. Read-only signal; SC never
+// recomputes incident energy.
+function LoadGrowthBanner() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    api.get('/api/arc-flash/load-growth').then(r => setData(r.data?.data || null)).catch(() => {});
+  }, []);
+  if (!data || !data.exceedsThreshold) return null;
+  const top = data.channels[0];
+  return (
+    <div className="card mb-16" style={{ padding: '12px 16px', borderLeft: '4px solid var(--chip-amber-fg, #d97706)' }}>
+      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--chip-amber-fg, #d97706)' }}>
+        Telemetry: load growth up to {data.maxGrowthPct}% detected
+      </div>
+      <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+        {data.channels.length} load channel{data.channels.length === 1 ? '' : 's'} past the {data.threshold}% threshold
+        {top ? ` (e.g. ${top.label}: ${top.baseline}→${top.current}${top.unit ? ' ' + top.unit : ''}, +${top.growthPct}%)` : ''}. {data.note}
+      </div>
     </div>
   );
 }
