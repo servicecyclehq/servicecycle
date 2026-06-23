@@ -151,6 +151,7 @@ const AuditSnapshotsPage             = lazyWithReload(() => import('./pages/Audi
 const OverdueReport                  = lazyWithReload(() => import('./pages/OverdueReport'));    // overdue maintenance report (admin/manager)
 const ArcFlashReport                 = lazyWithReload(() => import('./pages/ArcFlashReport'));   // arc-flash label report (admin/manager)
 const ArcFlashFleet                  = lazyWithReload(() => import('./pages/ArcFlashFleet'));    // arc-flash fleet dashboard (admin/manager)
+const SalesRollup                    = lazyWithReload(() => import('./pages/SalesRollup'));      // sales-manager roll-up (operator staff)
 const ArcFlashHeatMap                = lazyWithReload(() => import('./pages/ArcFlashHeatMap'));  // arc-flash heat-map (admin/manager)
 const ArcFlashSearch                 = lazyWithReload(() => import('./pages/ArcFlashSearch'));   // arc-flash NL search (admin/manager)
 const StandardsLibrary               = lazyWithReload(() => import('./pages/StandardsLibrary')); // standards reference library (admin/manager)
@@ -343,6 +344,14 @@ function AppRoutes() {
             <Route path="add-data" element={
               <RequireRole roles={['admin', 'manager']}>
                 <AddData />
+              </RequireRole>
+            } />
+            {/* Chunk B: sales-manager roll-up. Client gate is broad (operator +
+                admin/manager); the SERVER is authoritative (operator staff only,
+                admin/manager allowed only in DEMO_MODE) and 403s otherwise. */}
+            <Route path="sales" element={
+              <RequireRole roles={['admin', 'manager', 'oem_admin', 'group_admin', 'super_admin']}>
+                <SalesRollup />
               </RequireRole>
             } />
             {/* #34 bulk historical backfill — zip of report PDFs/photos. */}

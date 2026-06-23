@@ -239,6 +239,7 @@ const apiKeyRoutes        = require('./routes/apiKeys');
 const webhookRoutes       = require('./routes/webhooks');
 const quoteRequestRoutes    = require('./routes/quoteRequests');
 const fleetDashboardRoutes  = require('./routes/fleetDashboard');
+const salesRoutes           = require('./routes/sales');
 const groupRoutes           = require('./routes/group');         // Phase 4 #9 enterprise-group roll-up
 const outagePlanRoutes      = require('./routes/outagePlan');
 const assetTemplateRoutes   = require('./routes/assetTemplates');
@@ -1415,6 +1416,7 @@ app.use('/api/webhooks', authenticateToken, webhookRoutes);
 
 // ── OEM Fleet Dashboard — cross-account view for oem_admin users ─────────────
 app.use('/api/fleet', authenticateToken, fleetDashboardRoutes);
+app.use('/api/sales', authenticateToken, salesRoutes);
 
 // ── Enterprise Group roll-up — cross-OpCo view for group_admin users (#9) ────
 app.use('/api/group', authenticateToken, groupRoutes);

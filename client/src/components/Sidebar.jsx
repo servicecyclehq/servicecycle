@@ -916,6 +916,18 @@ export default function Sidebar() {
             </NavLink>
           )}
 
+          {/* Sales roll-up — operator staff (cross-account). admin/manager see it
+              only in the demo sandbox; the server is authoritative. */}
+          {(['oem_admin', 'group_admin', 'super_admin'].includes(user?.role) || (demoMode && (user?.role === 'admin' || user?.role === 'manager'))) && (
+            <NavLink
+              to="/sales"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              <Users {...ICON_PROPS} />
+              Sales
+            </NavLink>
+          )}
+
           {/* Field Mode — phone-first technician surface (/field/*), plus an
               inline "Print QR labels" action (GET /api/assets/labels PDF). */}
           <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
