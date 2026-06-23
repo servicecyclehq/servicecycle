@@ -511,35 +511,39 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
 }
 
 // ── Collapsible grouped nav (Cloudflare-style) ───────────────────────────────
-// Per-user collapse state is remembered in localStorage, keyed by user id so a
-// shared browser doesn't bleed one account's layout into another's. Groups
-// default to EXPANDED (absent key = open). This mirrors the existing
-// column-visibility / theme persistence pattern (localStorage, per browser).
-function useCollapsedGroups(userId) {
-  const KEY = `sc_nav_groups_v1_${userId || 'anon'}`;
-  const [collapsed, setCollapsed] = useState(() => {
+// Per-user open/closed state is remembered in localStorage, keyed by user id so
+// a shared browser doesn't bleed one account's layout into another's. Map stores
+// OPEN groups (value true = expanded); an absent key means CLOSED, so groups
+// default to COLLAPSED and the user opens the ones they use. Mirrors the
+// existing column-visibility / theme persistence pattern (localStorage, per
+// browser). Key bumped to v2 when the default flipped from open to closed so a
+// stale v1 entry isn't misread.
+function useNavGroupState(userId) {
+  const KEY = `sc_nav_groups_v2_${userId || 'anon'}`;
+  const [openGroups, setOpenGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }
     catch { return {}; }
   });
   // Re-read when the active user changes (login/switch).
   useEffect(() => {
-    try { setCollapsed(JSON.parse(localStorage.getItem(KEY) || '{}') || {}); }
-    catch { setCollapsed({}); }
+    try { setOpenGroups(JSON.parse(localStorage.getItem(KEY) || '{}') || {}); }
+    catch { setOpenGroups({}); }
   }, [KEY]);
   const toggle = useCallback((id) => {
-    setCollapsed(prev => {
+    setOpenGroups(prev => {
       const next = { ...prev, [id]: !prev[id] };
       try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (_) { /* ignore */ }
       return next;
     });
   }, [KEY]);
-  return [collapsed, toggle];
+  return [openGroups, toggle];
 }
 
 // One collapsible section. Header is a button (keyboard-reachable, aria-expanded)
 // styled like the old uppercase section label, plus a rotating chevron.
-function NavGroup({ id, label, collapsed, onToggle, children }) {
-  const isOpen = !collapsed[id];
+// Default closed: a group is open only when its id is explicitly true.
+function NavGroup({ id, label, openState, onToggle, children }) {
+  const isOpen = !!openState[id];
   return (
     <div className="nav-group">
       <button
@@ -551,10 +555,10 @@ function NavGroup({ id, label, collapsed, onToggle, children }) {
           width: '100%', display: 'flex', alignItems: 'center', gap: 6,
           background: 'none', border: 'none', cursor: 'pointer',
           font: 'inherit', textAlign: 'left',
-          padding: '10px 12px 4px', marginTop: 6,
+          padding: '11px 12px 5px', marginTop: 6,
           color: 'var(--color-sidebar-label, var(--color-text-secondary))',
-          fontSize: 'var(--font-size-xs)', fontWeight: 700,
-          textTransform: 'uppercase', letterSpacing: '0.05em',
+          fontSize: 'var(--font-size-sm)', fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '0.04em',
         }}
       >
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"
@@ -572,7 +576,7 @@ export default function Sidebar() {
   const { user, logout, features, demoMode } = useAuth();
   const navigate = useNavigate();
   const sidebarLocation = useLocation();
-  const [collapsed, toggleGroup] = useCollapsedGroups(user?.id);
+  const [openGroups, toggleGroup] = useNavGroupState(user?.id);
   const [showFeedback, setShowFeedback] = useState(false);
   // Field Mode QR label sheet download (GET /api/assets/labels → PDF).
   const [labelsBusy, setLabelsBusy] = useState(false);
@@ -636,7 +640,7 @@ export default function Sidebar() {
         </NavLink>
 
         {/* ── Equipment ─────────────────────────────────────────────────── */}
-        <NavGroup id="equipment" label="Equipment" collapsed={collapsed} onToggle={toggleGroup}>
+        <NavGroup id="equipment" label="Equipment" openState={openGroups} onToggle={toggleGroup}>
           {/* Assets + quick-add button. Keeps the .nav-item-row wrapper so the
               inline `+` is visually grouped with the link. */}
           <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
@@ -710,7 +714,7 @@ export default function Sidebar() {
         </NavGroup>
 
         {/* ── Work ──────────────────────────────────────────────────────── */}
-        <NavGroup id="work" label="Work" collapsed={collapsed} onToggle={toggleGroup}>
+        <NavGroup id="work" label="Work" openState={openGroups} onToggle={toggleGroup}>
           <NavLink
             to="/work-orders"
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
@@ -738,7 +742,7 @@ export default function Sidebar() {
         </NavGroup>
 
         {/* ── Compliance ────────────────────────────────────────────────── */}
-        <NavGroup id="compliance" label="Compliance" collapsed={collapsed} onToggle={toggleGroup}>
+        <NavGroup id="compliance" label="Compliance" openState={openGroups} onToggle={toggleGroup}>
           {/* Account-wide NETA deficiency triage — all roles (read-only roles
               see the list; Resolve/Reopen are gated inside the page). */}
           <NavLink
@@ -768,7 +772,7 @@ export default function Sidebar() {
             check keeps the group visible for the Add-data / Import items even
             if a future role makes canReview false. */}
         {(user?.role === 'admin' || user?.role === 'manager' || canReview) && (
-          <NavGroup id="datain" label="Data in" collapsed={collapsed} onToggle={toggleGroup}>
+          <NavGroup id="datain" label="Data in" openState={openGroups} onToggle={toggleGroup}>
             {/* CMMS Import Hub — migrate from Maximo / SAP PM / Oracle EAM. */}
             {(user?.role === 'admin' || user?.role === 'manager') && (
               <NavLink
@@ -815,7 +819,7 @@ export default function Sidebar() {
         )}
 
         {/* ── Monitoring ────────────────────────────────────────────────── */}
-        <NavGroup id="monitoring" label="Monitoring" collapsed={collapsed} onToggle={toggleGroup}>
+        <NavGroup id="monitoring" label="Monitoring" openState={openGroups} onToggle={toggleGroup}>
           {features.alerts && (
             <NavLink
               to="/alerts"
@@ -846,7 +850,7 @@ export default function Sidebar() {
         </NavGroup>
 
         {/* ── Partners ──────────────────────────────────────────────────── */}
-        <NavGroup id="partners" label="Partners" collapsed={collapsed} onToggle={toggleGroup}>
+        <NavGroup id="partners" label="Partners" openState={openGroups} onToggle={toggleGroup}>
           <NavLink
             to="/contractors"
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
@@ -869,7 +873,7 @@ export default function Sidebar() {
 
         {/* ── Admin (role-gated) ────────────────────────────────────────── */}
         {(user?.role === 'admin' || user?.role === 'manager') && (
-          <NavGroup id="admin" label={user?.role === 'admin' ? 'Admin' : 'Audit'} collapsed={collapsed} onToggle={toggleGroup}>
+          <NavGroup id="admin" label={user?.role === 'admin' ? 'Admin' : 'Audit'} openState={openGroups} onToggle={toggleGroup}>
             {/* Activity Log is an audit/observability trail. Team Members and
                 Permissions live under Settings → Users & Roles. */}
             <NavLink
