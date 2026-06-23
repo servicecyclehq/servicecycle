@@ -3195,3 +3195,38 @@ model DeviceTestRecord {
   @@index([systemStudyAssetId])
   @@map("device_test_records")
 }
+
+// --- Arc-flash incident / near-miss register -------------------------------
+// Slice: a MANUAL event log the customer creates (SC detects nothing). On log,
+// SC snapshots the bus's current arc-flash data state so the record is self-
+// contextualizing, and feeds risk/audit as event history. Sensitive (injury /
+// OSHA) -> manager+ gated, never auto-shared. Scalar FKs only (pure append).
+model ArcFlashIncident {
+  id                 String    @id @default(uuid())
+  accountId          String
+  siteId             String?
+  assetId            String?
+  systemStudyAssetId String? // the label/bus involved, if known
+  busName            String?
+  incidentType       String    @default("near_miss") // near_miss | arc_flash | shock | equipment_failure | other
+  occurredAt         DateTime?
+  description        String // manual: what happened
+  injury             Boolean   @default(false)
+  injuryDetail       String?
+  ppeWorn            String? // what PPE the worker had on (free text)
+  workType           String? // energized | de_energized | inspection | other
+  oshaRecordable     Boolean? // customer determination, optional
+  correctiveAction   String?
+  studyStateSnapshot Json? // auto: label/study state at log time
+  reportUrl          String?
+  status             String    @default("open") // open | reviewed | closed
+  reportedById       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, siteId])
+  @@index([assetId])
+  @@index([accountId, status])
+  @@map("arc_flash_incidents")
+}

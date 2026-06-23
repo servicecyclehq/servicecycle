@@ -336,6 +336,122 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
       <ArcFlashTrend assetId={assetId} />
 
       <ArcFlashTimelineCard assetId={assetId} />
+
+      <IncidentsCard assetId={assetId} incidents={data?.incidents || []} canWrite={canWrite} onChange={load} />
+    </div>
+  );
+}
+
+// Arc-flash incident / near-miss register. Manual entry (manager+); on log the
+// server snapshots the current label/study state so the record self-contextualizes.
+// SC stores the customer's record and makes no fault or preventability call.
+const INCIDENT_TYPE_LABEL = { near_miss: 'Near miss', arc_flash: 'Arc flash', shock: 'Shock', equipment_failure: 'Equipment failure', other: 'Other' };
+const WORK_TYPE_LABEL = { energized: 'Energized', de_energized: 'De-energized', inspection: 'Inspection', other: 'Other' };
+const INC_EMPTY = { incidentType: 'near_miss', occurredAt: '', description: '', injury: false, injuryDetail: '', ppeWorn: '', workType: '', oshaRecordable: '', correctiveAction: '' };
+function IncidentsCard({ assetId, incidents, canWrite, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const [form, setForm] = useState(INC_EMPTY);
+  const inp = { width: '100%', padding: '5px 8px', fontSize: '0.82rem', border: '1px solid var(--color-border)', borderRadius: 4, marginTop: 3, background: 'var(--color-bg)', color: 'var(--color-text)' };
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.description.trim()) { setErr('Describe what happened.'); return; }
+    setSaving(true); setErr('');
+    try {
+      await api.post(`/api/arc-flash/asset/${assetId}/incidents`, {
+        incidentType: form.incidentType,
+        occurredAt: form.occurredAt || undefined,
+        description: form.description,
+        injury: !!form.injury,
+        injuryDetail: form.injuryDetail || undefined,
+        ppeWorn: form.ppeWorn || undefined,
+        workType: form.workType || undefined,
+        oshaRecordable: form.oshaRecordable === '' ? undefined : form.oshaRecordable === 'yes',
+        correctiveAction: form.correctiveAction || undefined,
+      });
+      setForm(INC_EMPTY); setOpen(false);
+      onChange && onChange();
+    } catch {
+      setErr('Could not log the incident.');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <h3 style={{ ...h3, marginBottom: 0 }}>Incidents &amp; near-misses{incidents.length > 0 ? ` (${incidents.length})` : ''}</h3>
+        {canWrite && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? 'Cancel' : 'Log an event'}</button>}
+      </div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+        A record of arc-flash events and near-misses on this equipment. Logged by your team; ServiceCycle snapshots the label/study state at the time of each event.
+      </div>
+
+      {open && canWrite && (
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+          {err && <div role="alert" className="alert alert-error" style={{ fontSize: '0.78rem' }}>{err}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+            <label style={{ fontSize: '0.78rem' }}>Type
+              <select style={inp} value={form.incidentType} onChange={e => setForm(f => ({ ...f, incidentType: e.target.value }))}>
+                {Object.entries(INCIDENT_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: '0.78rem' }}>When
+              <input type="date" style={inp} value={form.occurredAt} onChange={e => setForm(f => ({ ...f, occurredAt: e.target.value }))} />
+            </label>
+            <label style={{ fontSize: '0.78rem' }}>Work type
+              <select style={inp} value={form.workType} onChange={e => setForm(f => ({ ...f, workType: e.target.value }))}>
+                <option value="">—</option>
+                {Object.entries(WORK_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: '0.78rem' }}>OSHA recordable?
+              <select style={inp} value={form.oshaRecordable} onChange={e => setForm(f => ({ ...f, oshaRecordable: e.target.value }))}>
+                <option value="">Unknown</option><option value="yes">Yes</option><option value="no">No</option>
+              </select>
+            </label>
+          </div>
+          <label style={{ fontSize: '0.78rem' }}>What happened
+            <textarea style={{ ...inp, minHeight: 60 }} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Plain-English description of the event" />
+          </label>
+          <label style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={form.injury} onChange={e => setForm(f => ({ ...f, injury: e.target.checked }))} />
+            An injury occurred
+          </label>
+          {form.injury && (
+            <label style={{ fontSize: '0.78rem' }}>Injury detail
+              <input style={inp} value={form.injuryDetail} onChange={e => setForm(f => ({ ...f, injuryDetail: e.target.value }))} />
+            </label>
+          )}
+          <label style={{ fontSize: '0.78rem' }}>PPE worn
+            <input style={inp} value={form.ppeWorn} onChange={e => setForm(f => ({ ...f, ppeWorn: e.target.value }))} placeholder="e.g. Cat 2 arc-rated PPE" />
+          </label>
+          <label style={{ fontSize: '0.78rem' }}>Corrective action
+            <input style={inp} value={form.correctiveAction} onChange={e => setForm(f => ({ ...f, correctiveAction: e.target.value }))} />
+          </label>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={saving} style={{ justifySelf: 'start' }}>{saving ? 'Saving…' : 'Save event'}</button>
+        </form>
+      )}
+
+      {incidents.length > 0 ? (
+        <table className="data-table" style={{ width: '100%', fontSize: '0.78rem', marginTop: 12 }}>
+          <thead><tr><th>When</th><th>Type</th><th>What happened</th><th>Injury</th><th>Label then</th></tr></thead>
+          <tbody>
+            {incidents.map(i => (
+              <tr key={i.id}>
+                <td>{fmtDate(i.occurredAt || i.createdAt)}</td>
+                <td>{INCIDENT_TYPE_LABEL[i.incidentType] || i.incidentType}</td>
+                <td style={{ maxWidth: 280 }}>{i.description}</td>
+                <td style={{ fontWeight: 600, color: i.injury ? 'var(--color-danger)' : 'inherit' }}>{i.injury ? 'YES' : 'no'}</td>
+                <td>{i.studyStateSnapshot ? `${num(i.studyStateSnapshot.incidentEnergyCalCm2, 'cal/cm²')}${i.studyStateSnapshot.studyExpired ? ' · study expired' : ''}` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 10 }}>No events logged.</div>
+      )}
     </div>
   );
 }

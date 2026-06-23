@@ -35,6 +35,7 @@ const QRCode = require('qrcode');
 const crypto = require('crypto');
 const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
+const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
 const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
 const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 const { buildTimeline } = require('../lib/arcFlashTimeline');
@@ -1108,7 +1109,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
     const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true, equipmentType: true, siteId: true } });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
-    const [studyAssetsRaw, devices, tasks, tests, customValues] = await Promise.all([
+    const [studyAssetsRaw, devices, tasks, tests, customValues, incidents] = await Promise.all([
       prisma.systemStudyAsset.findMany({
         where: { assetId: asset.id, accountId },
         include: { study: { select: { id: true, studyType: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true } } },
@@ -1118,6 +1119,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
       prisma.arcFlashCollectionTask.findMany({ where: { assetId: asset.id, accountId, status: { in: ['open', 'in_progress'] } }, orderBy: { createdAt: 'desc' } }),
       prisma.deviceTestRecord.findMany({ where: { assetId: asset.id, accountId }, orderBy: { createdAt: 'desc' }, take: 50 }),
       prisma.customFieldValue.findMany({ where: { assetId: asset.id, definition: { appliesTo: 'arc_flash', archivedAt: null } }, include: { definition: true } }),
+      prisma.arcFlashIncident.findMany({ where: { assetId: asset.id, accountId }, orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }], take: 50 }),
     ]);
 
     const studyAssets: any[] = studyAssetsRaw.map(studyAssetOut);
@@ -1147,7 +1149,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
       data: {
         assetId: asset.id,
         siteId: asset.siteId,
-        hasArcFlash: studyAssets.length > 0 || devices.length > 0 || tasks.length > 0 || tests.length > 0 || customValues.length > 0,
+        hasArcFlash: studyAssets.length > 0 || devices.length > 0 || tasks.length > 0 || tests.length > 0 || customValues.length > 0 || incidents.length > 0,
         current,
         confidence: current ? current.confidence : null,
         contradictions: current ? checkBusContradictions(current, { utilityMaxFaultKA: current.study?.sourceModel?.utilityMaxFaultKA ?? null }) : [],
@@ -1161,11 +1163,93 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
         customFields: customValues
           .filter((v: any) => v.definition)
           .map((v: any) => ({ definitionId: v.definitionId, name: v.definition.name, type: v.definition.type, value: v.value })),
+        incidents: incidents.map(incidentOut),
       },
     });
   } catch (e) {
     console.error('arc-flash asset summary error:', e);
     res.status(500).json({ success: false, error: 'Failed to load arc-flash asset summary' });
+  }
+});
+
+// ── Arc-flash incident / near-miss register (manager+ - sensitive injury/OSHA data) ─
+// Manual entry; on create SC snapshots the current label/study state so the record
+// self-contextualizes. SC stores the customer's record; it makes no fault/blame call.
+router.post('/asset/:assetId/incidents', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true, siteId: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const b = req.body || {};
+    if (!b.description || typeof b.description !== 'string' || !b.description.trim()) {
+      return res.status(400).json({ success: false, error: 'A description of what happened is required.' });
+    }
+    // Snapshot the current label/study at log time.
+    const rows = await prisma.systemStudyAsset.findMany({
+      where: { assetId: asset.id, accountId },
+      include: { study: { select: { performedDate: true, expiresAt: true, supersededById: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const currentRaw = currentStudyAssetRow(rows);
+    const current = currentRaw ? studyAssetOut(currentRaw) : null;
+    const snapshot = buildStudyStateSnapshot(current);
+    const occurredAt = b.occurredAt ? new Date(b.occurredAt) : null;
+    const created = await prisma.arcFlashIncident.create({
+      data: {
+        accountId,
+        siteId: asset.siteId,
+        assetId: asset.id,
+        systemStudyAssetId: currentRaw?.id || null,
+        busName: current?.busName || null,
+        incidentType: normIncidentEnum(b.incidentType, INCIDENT_TYPES, 'near_miss'),
+        occurredAt: occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : null,
+        description: String(b.description).slice(0, 5000),
+        injury: !!b.injury,
+        injuryDetail: b.injuryDetail ? String(b.injuryDetail).slice(0, 2000) : null,
+        ppeWorn: b.ppeWorn ? String(b.ppeWorn).slice(0, 1000) : null,
+        workType: b.workType ? normIncidentEnum(b.workType, WORK_TYPES, 'other') : null,
+        oshaRecordable: typeof b.oshaRecordable === 'boolean' ? b.oshaRecordable : null,
+        correctiveAction: b.correctiveAction ? String(b.correctiveAction).slice(0, 5000) : null,
+        studyStateSnapshot: snapshot || undefined,
+        reportUrl: b.reportUrl ? String(b.reportUrl).slice(0, 1000) : null,
+        reportedById: req.user.id,
+      },
+    });
+    res.json({ success: true, data: { incident: incidentOut(created) } });
+  } catch (e) {
+    console.error('arc-flash incident create error:', e);
+    res.status(500).json({ success: false, error: 'Failed to log incident' });
+  }
+});
+
+router.get('/asset/:assetId/incidents', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const rows = await prisma.arcFlashIncident.findMany({ where: { assetId: asset.id, accountId }, orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }], take: 100 });
+    res.json({ success: true, data: { incidents: rows.map(incidentOut) } });
+  } catch (e) {
+    console.error('arc-flash incident list error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load incidents' });
+  }
+});
+
+router.patch('/incidents/:id', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const found = await prisma.arcFlashIncident.findFirst({ where: { id: req.params.id, accountId }, select: { id: true } });
+    if (!found) return res.status(404).json({ success: false, error: 'Incident not found' });
+    const b = req.body || {};
+    const data: any = {};
+    if (typeof b.status === 'string' && ['open', 'reviewed', 'closed'].includes(b.status)) data.status = b.status;
+    if (typeof b.correctiveAction === 'string') data.correctiveAction = b.correctiveAction.slice(0, 5000);
+    if (!Object.keys(data).length) return res.status(400).json({ success: false, error: 'Nothing to update.' });
+    const updated = await prisma.arcFlashIncident.update({ where: { id: found.id }, data });
+    res.json({ success: true, data: { incident: incidentOut(updated) } });
+  } catch (e) {
+    console.error('arc-flash incident update error:', e);
+    res.status(500).json({ success: false, error: 'Failed to update incident' });
   }
 });
 
