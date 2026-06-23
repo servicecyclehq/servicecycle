@@ -49,7 +49,19 @@ installGlobalErrorHandlers();
 
 // Register the PWA service worker (no-op in dev — see import note above).
 // immediate:true so updates are checked on every load, matching autoUpdate.
-registerSW({ immediate: true });
+// Plus: re-check for a new SW every 60s AND whenever the tab regains focus, so a
+// deploy reaches an already-open tab without a manual reload/unregister. With
+// registerType 'autoUpdate' (skipWaiting+clientsClaim) a found update activates
+// and reloads on its own — ending the "did it update?" dance.
+registerSW({
+  immediate: true,
+  onRegisteredSW(_swUrl, registration) {
+    if (!registration) return;
+    const check = () => { registration.update().catch(() => {}); };
+    setInterval(check, 60 * 1000);
+    window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+  },
+});
 
 // v0.92.19: take manual control of scroll restoration so the browser does not
 // restore a stale offset on reload/redirect (e.g. landing mid-dashboard after

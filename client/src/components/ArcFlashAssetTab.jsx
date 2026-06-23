@@ -66,6 +66,40 @@ function ConfidenceBadge({ c, size = 'md' }) {
   );
 }
 
+// Plain-English explainer for the "Data confidence" / Trust score — it's a
+// ServiceCycle-derived data-trust measure, NOT an industry-standard term and NOT
+// a certification of the calculation. Expands to show the factor breakdown.
+function ConfidenceExplainer({ c }) {
+  const [open, setOpen] = useState(false);
+  if (!c || typeof c.score !== 'number') return null;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+        Data confidence: {c.summary}{' '}
+        <button type="button" className="btn-link" onClick={() => setOpen(o => !o)} style={{ fontSize: '0.74rem', padding: 0 }}>
+          {open ? 'Hide' : "What's this?"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: '10px 12px', marginTop: 6, fontSize: '0.8rem', background: 'var(--color-surface)' }}>
+          <p style={{ margin: '0 0 8px' }}>
+            <strong>Data confidence</strong> is a ServiceCycle measure (0–100) of how much to trust this bus's posted arc-flash label <em>today</em> — judged on the data on file, not the calculation itself. Higher means the inputs are complete, the study is recent, and the upstream device was field-verified. It is <strong>not</strong> an IEEE or NFPA standard term and <strong>not</strong> a certification of the study — a licensed PE's stamped study is the authority.
+          </p>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>How this {c.score}% breaks down:</div>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {(c.factors || []).map((f, i) => (
+              <li key={i} style={{ marginBottom: 3 }}>
+                <strong>{f.label}</strong>: {f.points}/{f.max} — {f.detail}
+              </li>
+            ))}
+          </ul>
+          {c.capped && <div style={{ marginTop: 6, color: 'var(--color-warning, #c2410c)' }}>Capped below “high” because device-setting drift is flagged.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ArcFlashAssetTab({ assetId, canWrite }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -109,11 +143,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
         </div>
       </div>
 
-      {data?.confidence?.summary && (
-        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 6 }}>
-          Data confidence: {data.confidence.summary}
-        </div>
-      )}
+      <ConfidenceExplainer c={data?.confidence} />
 
       {data?.staleStudy && (
         <div className="alert alert-warning mb-16" role="alert" style={{ marginTop: 16 }}>

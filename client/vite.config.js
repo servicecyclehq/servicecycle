@@ -145,6 +145,13 @@ function pwaPlugin() {
       ],
     },
     workbox: {
+      // registerType 'autoUpdate' already injects skipWaiting + clientsClaim, but
+      // state them explicitly + clean up superseded precaches so a new deploy
+      // takes over on the next load instead of waiting for every tab to close
+      // (the "did it update?" dance).
+      skipWaiting: true,
+      clientsClaim: true,
+      cleanupOutdatedCaches: true,
       // SPA offline deep-links — but never intercept API navigations/requests.
       navigateFallback: 'index.html',
       navigateFallbackDenylist: [/^\/api/],
