@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, useRef, useLayoutEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, Suspense, lazy } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import { assetLabel } from '../lib/equipment';
@@ -510,10 +510,69 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
   );
 }
 
+// ── Collapsible grouped nav (Cloudflare-style) ───────────────────────────────
+// Per-user collapse state is remembered in localStorage, keyed by user id so a
+// shared browser doesn't bleed one account's layout into another's. Groups
+// default to EXPANDED (absent key = open). This mirrors the existing
+// column-visibility / theme persistence pattern (localStorage, per browser).
+function useCollapsedGroups(userId) {
+  const KEY = `sc_nav_groups_v1_${userId || 'anon'}`;
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }
+    catch { return {}; }
+  });
+  // Re-read when the active user changes (login/switch).
+  useEffect(() => {
+    try { setCollapsed(JSON.parse(localStorage.getItem(KEY) || '{}') || {}); }
+    catch { setCollapsed({}); }
+  }, [KEY]);
+  const toggle = useCallback((id) => {
+    setCollapsed(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (_) { /* ignore */ }
+      return next;
+    });
+  }, [KEY]);
+  return [collapsed, toggle];
+}
+
+// One collapsible section. Header is a button (keyboard-reachable, aria-expanded)
+// styled like the old uppercase section label, plus a rotating chevron.
+function NavGroup({ id, label, collapsed, onToggle, children }) {
+  const isOpen = !collapsed[id];
+  return (
+    <div className="nav-group">
+      <button
+        type="button"
+        className="nav-group-header"
+        aria-expanded={isOpen}
+        onClick={() => onToggle(id)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 6,
+          background: 'none', border: 'none', cursor: 'pointer',
+          font: 'inherit', textAlign: 'left',
+          padding: '10px 12px 4px', marginTop: 6,
+          color: 'var(--color-sidebar-label, var(--color-text-secondary))',
+          fontSize: 'var(--font-size-xs)', fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '0.05em',
+        }}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"
+          style={{ width: 10, height: 10, flexShrink: 0, transition: 'transform 0.15s', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
+          <path d="M3 6l5 4 5-4" />
+        </svg>
+        <span>{label}</span>
+      </button>
+      {isOpen && <div className="nav-group-items">{children}</div>}
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const { user, logout, features, demoMode } = useAuth();
   const navigate = useNavigate();
   const sidebarLocation = useLocation();
+  const [collapsed, toggleGroup] = useCollapsedGroups(user?.id);
   const [showFeedback, setShowFeedback] = useState(false);
   // Field Mode QR label sheet download (GET /api/assets/labels → PDF).
   const [labelsBusy, setLabelsBusy] = useState(false);
@@ -567,10 +626,7 @@ export default function Sidebar() {
       <GlobalSearch />
 
       <nav className="sidebar-nav">
-        <div className="nav-section-label">Workspace</div>
-        {/* v0.37.1 W5 MT-117: no .nav-item-row wrappers except the quick-add
-            row — restores the full-width active background paint that
-            Pass-3 MUST-FIX D1 flagged. */}
+        {/* Dashboard stays a plain top-level link — no group-of-one. */}
         <NavLink
           to="/dashboard"
           className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
@@ -579,305 +635,243 @@ export default function Sidebar() {
           Dashboard
         </NavLink>
 
-        {/* Assets + quick-add button. This row keeps the .nav-item-row
-            wrapper because of the inline `+` quick-add button — without
-            the wrapper the button would be a sibling of the NavLink, not
-            visually grouped with it. */}
-        <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
-          <NavLink
-            to="/assets"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            style={{ flex: 1 }}
-            onClick={(e) => {
-              e.preventDefault();
-              // v0.53.1: if user is already on /assets and there are any
-              // filters in the URL, signal AssetsList to clear them. Using
-              // Date.now() as the state value guarantees a fresh reference on
-              // every click so the consuming effect re-fires.
-              const onAssets = sidebarLocation.pathname === '/assets';
-              const hasQuery = (sidebarLocation.search || '').length > 1;
-              if (onAssets && hasQuery) {
-                navigate('/assets', { replace: true, state: { clearFilters: Date.now() } });
-              } else {
-                navigate('/assets');
-              }
-            }}
-          >
-            {Icons.assets}
-            Assets
-          </NavLink>
-          {features.assets_write && (
-            <button
-              onClick={() => navigate('/assets/new')}
-              title="Add asset"
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
-                display: 'flex', alignItems: 'center', flexShrink: 0, borderRadius: 4,
-                transition: 'color 0.1s',
+        {/* ── Equipment ─────────────────────────────────────────────────── */}
+        <NavGroup id="equipment" label="Equipment" collapsed={collapsed} onToggle={toggleGroup}>
+          {/* Assets + quick-add button. Keeps the .nav-item-row wrapper so the
+              inline `+` is visually grouped with the link. */}
+          <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
+            <NavLink
+              to="/assets"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              style={{ flex: 1 }}
+              onClick={(e) => {
+                e.preventDefault();
+                const onAssets = sidebarLocation.pathname === '/assets';
+                const hasQuery = (sidebarLocation.search || '').length > 1;
+                if (onAssets && hasQuery) {
+                  navigate('/assets', { replace: true, state: { clearFilters: Date.now() } });
+                } else {
+                  navigate('/assets');
+                }
               }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
             >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-                style={{ width: 14, height: 14 }}>
-                <line x1="8" y1="2" x2="8" y2="14"/>
-                <line x1="2" y1="8" x2="14" y2="8"/>
-              </svg>
-            </button>
-          )}
-        </div>
-
-        <NavLink
-          to="/assets/archived"
-          className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
-          style={{ fontSize: '0.82rem', paddingLeft: 28 }}
-        >
-          {Icons.archive}
-          Archive
-        </NavLink>
-
-        {/* C3 (2026-06-11): Equipment Template Library nested under Assets —
-            it pre-fills New Asset, so it lives with the asset register rather
-            than as a standalone top-level entry. All roles browse; managers+
-            create. */}
-        <NavLink
-          to="/equipment-templates"
-          className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
-          style={{ fontSize: '0.82rem', paddingLeft: 28 }}
-        >
-          {Icons.templates}
-          Templates
-        </NavLink>
-
-        <NavLink
-          to="/sites"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.sites}
-          Sites
-        </NavLink>
-
-        <NavLink
-          to="/work-orders"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.workOrders}
-          Work Orders
-        </NavLink>
-
-        {/* Account-wide NETA deficiency triage — all roles (read-only roles
-            see the list; Resolve/Reopen are gated inside the page). */}
-        <NavLink
-          to="/deficiencies"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.deficiencies}
-          Deficiencies
-        </NavLink>
-
-        <NavLink
-          to="/calendar"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.calendar}
-          Compliance Calendar
-        </NavLink>
-
-        {/* Audit visits + REC tracking — admin/manager only, matching the
-            /audits RequireRole gate in App.jsx. */}
-        {(user?.role === 'admin' || user?.role === 'manager') && (
-          <NavLink
-            to="/audits"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            {Icons.audits}
-            Audits
-          </NavLink>
-        )}
-
-        <NavLink
-          to="/contractors"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.contractors}
-          Contractors
-        </NavLink>
-
-        {features.alerts && (
-          <NavLink
-            to="/alerts"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            {Icons.alerts}
-            Alerts
-          </NavLink>
-        )}
-
-        {/* Disaster Response — all roles can see and declare emergencies. */}
-        <NavLink
-          to="/disaster-response"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.disaster}
-          Disaster Response
-        </NavLink>
-
-        {/* Industry news feed — all roles. */}
-        <NavLink
-          to="/news"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.news}
-          Industry News
-        </NavLink>
-
-        {/* Outage Consolidation Planner — account-wide view of assets needing outage work. */}
-        <NavLink
-          to="/outage-planner"
-          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        >
-          {Icons.outagePlan}
-          Outage Planner
-        </NavLink>
-
-        {/* CMMS Import Hub — migrate data from Maximo / SAP PM / Oracle EAM. */}
-        {(user?.role === 'admin' || user?.role === 'manager') && (
-          <NavLink
-            to="/add-data"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            {Icons.cmmsImport}
-            Add data
-          </NavLink>
-        )}
-
-        {/* Test-report PDF ingest (R1) — contractor's report → fix list. */}
-        {(user?.role === 'admin' || user?.role === 'manager') && (
-          <NavLink
-            to="/test-reports/import"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            {Icons.reports}
-            Import Test Report
-          </NavLink>
-        )}
-
-        {/* Review queue — email-in/backfill reports the confidence gate parked
-            for a human OK. Badge shows the pending count. manager+ only. */}
-        {canReview && (
-          <NavLink
-            to="/review"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            <ClipboardCheck {...ICON_PROPS} />
-            Review queue
-            {reviewCount > 0 && (
-              <span
-                className="nav-badge"
-                style={{ background: 'var(--color-warning-bg, #fef3c7)', color: 'var(--color-warning, #b45309)', fontWeight: 700 }}
-                aria-label={`${reviewCount} report${reviewCount === 1 ? '' : 's'} awaiting review`}
+              {Icons.assets}
+              Assets
+            </NavLink>
+            {features.assets_write && (
+              <button
+                onClick={() => navigate('/assets/new')}
+                title="Add asset"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
+                  display: 'flex', alignItems: 'center', flexShrink: 0, borderRadius: 4,
+                  transition: 'color 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
               >
-                {reviewCount > 99 ? '99+' : reviewCount}
-              </span>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
+                  style={{ width: 14, height: 14 }}>
+                  <line x1="8" y1="2" x2="8" y2="14"/>
+                  <line x1="2" y1="8" x2="14" y2="8"/>
+                </svg>
+              </button>
             )}
-          </NavLink>
-        )}
+          </div>
 
-        {/* Fleet Dashboard — OEM cross-account view. oem_admin role only. */}
-        {user?.role === 'oem_admin' && (
           <NavLink
-            to="/fleet"
+            to="/assets/archived"
+            className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
+            style={{ fontSize: '0.82rem', paddingLeft: 28 }}
+          >
+            {Icons.archive}
+            Archive
+          </NavLink>
+
+          {/* Equipment Template Library — pre-fills New Asset, so it nests
+              under the asset register. All roles browse; managers+ create. */}
+          <NavLink
+            to="/equipment-templates"
+            className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
+            style={{ fontSize: '0.82rem', paddingLeft: 28 }}
+          >
+            {Icons.templates}
+            Templates
+          </NavLink>
+
+          <NavLink
+            to="/sites"
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
           >
-            {Icons.fleetView}
-            Fleet View
+            {Icons.sites}
+            Sites
           </NavLink>
+        </NavGroup>
+
+        {/* ── Work ──────────────────────────────────────────────────────── */}
+        <NavGroup id="work" label="Work" collapsed={collapsed} onToggle={toggleGroup}>
+          <NavLink
+            to="/work-orders"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.workOrders}
+            Work Orders
+          </NavLink>
+
+          <NavLink
+            to="/calendar"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.calendar}
+            Compliance Calendar
+          </NavLink>
+
+          {/* Outage Consolidation Planner — assets needing outage work. */}
+          <NavLink
+            to="/outage-planner"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.outagePlan}
+            Outage Planner
+          </NavLink>
+        </NavGroup>
+
+        {/* ── Compliance ────────────────────────────────────────────────── */}
+        <NavGroup id="compliance" label="Compliance" collapsed={collapsed} onToggle={toggleGroup}>
+          {/* Account-wide NETA deficiency triage — all roles (read-only roles
+              see the list; Resolve/Reopen are gated inside the page). */}
+          <NavLink
+            to="/deficiencies"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.deficiencies}
+            Deficiencies
+          </NavLink>
+
+          {/* Audit visits + REC tracking — admin/manager only, matching the
+              /audits RequireRole gate in App.jsx. */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <NavLink
+              to="/audits"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.audits}
+              Audits
+            </NavLink>
+          )}
+        </NavGroup>
+
+        {/* ── Data in ───────────────────────────────────────────────────── */}
+        {/* Shown when the user can do at least one ingest action. canReview
+            already covers admin/manager/oem_admin; the explicit admin/manager
+            check keeps the group visible for the Add-data / Import items even
+            if a future role makes canReview false. */}
+        {(user?.role === 'admin' || user?.role === 'manager' || canReview) && (
+          <NavGroup id="datain" label="Data in" collapsed={collapsed} onToggle={toggleGroup}>
+            {/* CMMS Import Hub — migrate from Maximo / SAP PM / Oracle EAM. */}
+            {(user?.role === 'admin' || user?.role === 'manager') && (
+              <NavLink
+                to="/add-data"
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              >
+                {Icons.cmmsImport}
+                Add data
+              </NavLink>
+            )}
+
+            {/* Test-report PDF ingest (R1) — contractor's report → fix list. */}
+            {(user?.role === 'admin' || user?.role === 'manager') && (
+              <NavLink
+                to="/test-reports/import"
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              >
+                {Icons.reports}
+                Import Test Report
+              </NavLink>
+            )}
+
+            {/* Review queue — confidence-gated email-in/backfill reports parked
+                for a human OK. Badge shows the pending count. */}
+            {canReview && (
+              <NavLink
+                to="/review"
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              >
+                <ClipboardCheck {...ICON_PROPS} />
+                Review queue
+                {reviewCount > 0 && (
+                  <span
+                    className="nav-badge"
+                    style={{ background: 'var(--color-warning-bg, #fef3c7)', color: 'var(--color-warning, #b45309)', fontWeight: 700 }}
+                    aria-label={`${reviewCount} report${reviewCount === 1 ? '' : 's'} awaiting review`}
+                  >
+                    {reviewCount > 99 ? '99+' : reviewCount}
+                  </span>
+                )}
+              </NavLink>
+            )}
+          </NavGroup>
         )}
 
-        {/* Reports hub — manager / admin only. Top-level nav item; links to
-            /reports which shows the hub card grid. */}
+        {/* ── Monitoring ────────────────────────────────────────────────── */}
+        <NavGroup id="monitoring" label="Monitoring" collapsed={collapsed} onToggle={toggleGroup}>
+          {features.alerts && (
+            <NavLink
+              to="/alerts"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.alerts}
+              Alerts
+            </NavLink>
+          )}
+
+          {/* Industry news feed — all roles. */}
+          <NavLink
+            to="/news"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.news}
+            Industry News
+          </NavLink>
+
+          {/* Disaster Response — all roles can see and declare emergencies. */}
+          <NavLink
+            to="/disaster-response"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.disaster}
+            Disaster Response
+          </NavLink>
+        </NavGroup>
+
+        {/* ── Partners ──────────────────────────────────────────────────── */}
+        <NavGroup id="partners" label="Partners" collapsed={collapsed} onToggle={toggleGroup}>
+          <NavLink
+            to="/contractors"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            {Icons.contractors}
+            Contractors
+          </NavLink>
+
+          {/* Fleet Dashboard — OEM cross-account view. oem_admin only. */}
+          {user?.role === 'oem_admin' && (
+            <NavLink
+              to="/fleet"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.fleetView}
+              Fleet View
+            </NavLink>
+          )}
+        </NavGroup>
+
+        {/* ── Admin (role-gated) ────────────────────────────────────────── */}
         {(user?.role === 'admin' || user?.role === 'manager') && (
-          <NavLink
-            to="/reports"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-          >
-            {Icons.reports}
-            Reports
-          </NavLink>
-        )}
-
-        {/* Field Mode — phone-first technician surface (/field/*), plus an
-            inline "Print QR labels" action (GET /api/assets/labels PDF) so
-            the desktop user can produce the label sheets the field scanner
-            reads. C2 (2026-06-11): anchored at the very bottom of the nav —
-            it's a mode switch, not a sibling of the workspace pages, and
-            mid-list it broke the scan rhythm. */}
-        <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center', marginTop: 10 }}>
-          <NavLink
-            to="/field"
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            style={{ flex: 1 }}
-          >
-            {Icons.field}
-            Field Mode
-          </NavLink>
-          <button
-            onClick={handlePrintLabels}
-            disabled={labelsBusy}
-            title="Print QR labels (PDF)"
-            aria-label="Print QR labels"
-            style={{
-              background: 'none', border: 'none', cursor: labelsBusy ? 'default' : 'pointer',
-              padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
-              display: 'flex', alignItems: 'center', flexShrink: 0, borderRadius: 4,
-              transition: 'color 0.1s', opacity: labelsBusy ? 0.5 : 1,
-            }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-          >
-            <QrCode size={14} strokeWidth={1.75} />
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            try {
-              window.dispatchEvent(new CustomEvent('servicecycle:open-help', { detail: { moduleSlug: null } }));
-            } catch (_) { /* ignore */ }
-          }}
-          className="nav-item"
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            textAlign: 'left', font: 'inherit',
-            width: '100%', padding: undefined,
-          }}
-          title="Help for this screen"
-        >
-          <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <circle cx="8" cy="8" r="6.5"/>
-            <path d="M6 6.2a2 2 0 0 1 4 0c0 1.2-2 1.5-2 3"/>
-            <circle cx="8" cy="11.6" r="0.7" fill="currentColor"/>
-          </svg>
-          Help
-        </button>
-
-        {(user?.role === 'admin' || user?.role === 'manager') && (
-          <>
-            {/* 2026-05-10 v0.2.30 (role-tier walk N2): label this section
-                contextually. Admin sees Activity Log + Settings (+ Early-
-                access leads on non-demo) → "Admin" reads right. Manager only
-                sees Activity Log under here, so calling it "Admin" was a
-                mislabel; "Audit" matches the actual content (Activity Log is
-                an audit/observability trail, not an admin-config item). */}
-            <div className="nav-section-label" style={{ marginTop: 16 }}>
-              {user?.role === 'admin' ? 'Admin' : 'Audit'}
-            </div>
-            {/* Team Members and Permissions used to live here; per UX review
-                2026-05-01 they were folded under Settings → Users & Roles
-                so role management has one canonical home. The /users and
-                /permissions routes still work for bookmarks. */}
+          <NavGroup id="admin" label={user?.role === 'admin' ? 'Admin' : 'Audit'} collapsed={collapsed} onToggle={toggleGroup}>
+            {/* Activity Log is an audit/observability trail. Team Members and
+                Permissions live under Settings → Users & Roles. */}
             <NavLink
               to="/activity"
               className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
@@ -887,38 +881,100 @@ export default function Sidebar() {
               </svg>
               Activity Log
             </NavLink>
-            {user?.role === 'admin' && (
-              <>
-                {/* L7: lead-form submissions inbox.
-                    2026-05-10 review B1 fix: hide on DEMO_MODE. Every sandbox
-                    user is auto-provisioned with role='admin', so showing
-                    this link on demo would expose real production leads to
-                    anyone who registered. Real ops admins see leads on the
-                    non-DEMO_MODE deployment (the same one that fronts the
-                    marketing form). */}
-                {!demoMode && (
-                  <NavLink
-                    to="/admin/early-access"
-                    className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                  >
-                    <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M2 4l6 4 6-4"/>
-                      <rect x="2" y="3" width="12" height="10" rx="1.5"/>
-                    </svg>
-                    Early-access leads
-                  </NavLink>
-                )}
-                <NavLink
-                  to="/settings"
-                  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                >
-                  {Icons.settings}
-                  Settings
-                </NavLink>
-              </>
+            {/* Lead-form submissions inbox. Hidden on DEMO_MODE (every sandbox
+                user is auto-provisioned admin; would expose real leads). */}
+            {user?.role === 'admin' && !demoMode && (
+              <NavLink
+                to="/admin/early-access"
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              >
+                <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M2 4l6 4 6-4"/>
+                  <rect x="2" y="3" width="12" height="10" rx="1.5"/>
+                </svg>
+                Early-access leads
+              </NavLink>
             )}
-          </>
+          </NavGroup>
         )}
+
+        {/* ── Pinned bottom: primary destinations, not a collapsible group ── */}
+        <div className="nav-pinned" style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
+          {/* Reports hub — manager/admin only. Stands on its own as a primary
+              destination rather than nesting inside a group. */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <NavLink
+              to="/reports"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.reports}
+              Reports
+            </NavLink>
+          )}
+
+          {/* Field Mode — phone-first technician surface (/field/*), plus an
+              inline "Print QR labels" action (GET /api/assets/labels PDF). */}
+          <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
+            <NavLink
+              to="/field"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              style={{ flex: 1 }}
+            >
+              {Icons.field}
+              Field Mode
+            </NavLink>
+            <button
+              onClick={handlePrintLabels}
+              disabled={labelsBusy}
+              title="Print QR labels (PDF)"
+              aria-label="Print QR labels"
+              style={{
+                background: 'none', border: 'none', cursor: labelsBusy ? 'default' : 'pointer',
+                padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
+                display: 'flex', alignItems: 'center', flexShrink: 0, borderRadius: 4,
+                transition: 'color 0.1s', opacity: labelsBusy ? 0.5 : 1,
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+            >
+              <QrCode size={14} strokeWidth={1.75} />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                window.dispatchEvent(new CustomEvent('servicecycle:open-help', { detail: { moduleSlug: null } }));
+              } catch (_) { /* ignore */ }
+            }}
+            className="nav-item"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              textAlign: 'left', font: 'inherit',
+              width: '100%', padding: undefined,
+            }}
+            title="Help for this screen"
+          >
+            <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="8" cy="8" r="6.5"/>
+              <path d="M6 6.2a2 2 0 0 1 4 0c0 1.2-2 1.5-2 3"/>
+              <circle cx="8" cy="11.6" r="0.7" fill="currentColor"/>
+            </svg>
+            Help
+          </button>
+
+          {/* Account / Settings — admin only. Pinned with Field Mode + Help. */}
+          {user?.role === 'admin' && (
+            <NavLink
+              to="/settings"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.settings}
+              Settings
+            </NavLink>
+          )}
+        </div>
       </nav>
 
       {/* L9: Help & Share menu — contains all the outbound + meta actions
