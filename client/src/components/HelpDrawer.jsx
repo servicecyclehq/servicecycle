@@ -84,6 +84,8 @@ const ROUTE_MODULE_MAP = {
   // The compliance calendar is the schedules module's surface — there is no
   // 'calendar' help doc, so mapping it here previously 404'd the drawer.
   '/calendar':           'schedules',
+  // Outage Planner is a schedules surface (account-wide due/outage view).
+  '/outage-planner':     'schedules',
   '/contractors':        'contractors',
   '/alerts':             'alerts',
   '/reports':            'reports',
@@ -91,6 +93,12 @@ const ROUTE_MODULE_MAP = {
   '/add-data':           'imports',
   '/test-reports/import': 'imports',
   '/backfill':           'imports',
+  // Review queue is the human-OK step on the ingest paths — same module.
+  '/review':             'imports',
+  // Deficiencies are captured/triaged in the work-order flow.
+  '/deficiencies':       'work-orders',
+  // Fleet View is OEM cross-account reporting.
+  '/fleet':              'reports',
   '/settings':           'settings',
   '/users':              'settings',
   '/activity':           'settings',

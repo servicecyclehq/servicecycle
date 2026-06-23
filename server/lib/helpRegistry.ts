@@ -14,13 +14,21 @@
  * Slugs are the URL/topic key. Titles and descriptions are user-facing.
  * The order in MODULE_INDEX is the order the Help drawer's module picker
  * uses. It is the SINGLE SOURCE OF TRUTH and mirrors the left sidebar
- * (components/Sidebar.jsx) top-to-bottom: the feature modules run in the
- * exact sidebar order (Dashboard -> Assets -> Sites -> Work Orders ->
- * Compliance Calendar[schedules] -> Contractors -> Alerts -> Add data/
- * Import[imports] -> Reports -> Settings). Onboarding leads as the
- * zero-state "start here" doc (it has no sidebar entry), and the two
- * conceptual/reference docs (compliance-scoring, api-and-integrations)
- * are grouped at the end after the feature modules.
+ * (components/Sidebar.jsx) top-to-bottom, walking the grouped nav in order:
+ *   Dashboard
+ *   Equipment   -> Assets, Sites
+ *   Work        -> Work Orders, Compliance Calendar[schedules]
+ *   Data in     -> Add data / Import[imports]
+ *   Monitoring  -> Alerts
+ *   Partners    -> Contractors
+ *   (pinned)    -> Reports, Settings
+ * Only nav items that have a dedicated doc appear; grouped items without their
+ * own doc (Outage Planner, Deficiencies, Audits, Review queue, Disaster
+ * Response, Fleet View, Field Mode) fold into the nearest relevant module.
+ * The two start-here docs lead: Onboarding (the zero-state /setup + new-user
+ * path) then Setup & Onboarding (the admin's people/access manual). The two
+ * conceptual/reference docs (compliance-scoring, api-and-integrations) are
+ * grouped at the end after the feature modules.
  */
 
 'use strict';
@@ -36,12 +44,20 @@ const MODULE_INDEX = Object.freeze([
     title:        'Onboarding',
     description:  'Fresh-install /setup wizard, in-app new-user wizard, and the path from zero to a working compliance calendar.',
   },
-  // ── Feature modules — in exact left-sidebar order ──────────────────────
+  // The admin's people-and-access manual. Follows Onboarding as the second
+  // "start here" doc; it has no single sidebar entry (it spans Settings).
+  {
+    slug:         'setup-onboarding',
+    title:        'Setup & Onboarding',
+    description:  'For admins: add users, set roles and capabilities, assign the account/site point of contact, and the first-week checklist.',
+  },
+  // ── Feature modules — walking the grouped sidebar top-to-bottom ─────────
   {
     slug:         'dashboard',
     title:        'Dashboard',
     description:  'The morning-coffee view: what is due or overdue today, open deficiencies by severity, and the maintenance pipeline ahead.',
   },
+  // Equipment group
   {
     slug:         'assets',
     title:        'Assets',
@@ -52,6 +68,7 @@ const MODULE_INDEX = Object.freeze([
     title:        'Sites & Locations',
     description:  'The site → building → area → position hierarchy, on-site contacts, outage/blackout windows, and arc-flash studies.',
   },
+  // Work group
   {
     slug:         'work-orders',
     title:        'Work Orders',
@@ -62,21 +79,25 @@ const MODULE_INDEX = Object.freeze([
     title:        'Maintenance Schedules',
     description:  'Task definitions, condition-based intervals (C1/C2/C3), next-due computation, per-schedule overrides, and the compliance calendar.',
   },
-  {
-    slug:         'contractors',
-    title:        'Contractors',
-    description:  'NETA-certified testing contractors, field technicians and their certification levels, and the QEMW credential wallet.',
-  },
-  {
-    slug:         'alerts',
-    title:        'Alerts',
-    description:  'Daily digest, maintenance-due lead-time tiers, overdue escalation, per-user preferences, optional Slack and Teams channels.',
-  },
+  // Data in group
   {
     slug:         'imports',
     title:        'Imports',
     description:  'Test-report PDF ingest, email-in, bulk backfill, and spreadsheet / CMMS import — the frictionless data-in paths.',
   },
+  // Monitoring group
+  {
+    slug:         'alerts',
+    title:        'Alerts',
+    description:  'Daily digest, maintenance-due lead-time tiers, overdue escalation, per-user preferences, optional Slack and Teams channels.',
+  },
+  // Partners group
+  {
+    slug:         'contractors',
+    title:        'Contractors',
+    description:  'NETA-certified testing contractors, field technicians and their certification levels, and the QEMW credential wallet.',
+  },
+  // Pinned bottom
   {
     slug:         'reports',
     title:        'Reports',
