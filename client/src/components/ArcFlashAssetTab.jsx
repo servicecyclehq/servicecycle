@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
+import { downloadAuthedFile } from '../api/download';
 import ArcFlashTrend from './ArcFlashTrend';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,6 +140,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
               {sev === 'danger' ? 'DANGER' : 'WARNING'}
             </span>
           )}
+          {data?.current && <button type="button" className="btn btn-secondary btn-sm" onClick={() => downloadAuthedFile(`/api/arc-flash/asset/${assetId}/label.pdf`, `arc-flash-label.pdf`).catch(() => {})} title="Download a print-ready NFPA 70E label (4x6)">Label PDF</button>}
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
         </div>
       </div>

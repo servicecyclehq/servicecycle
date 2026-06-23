@@ -38,6 +38,9 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
+const PDFDocument = require('pdfkit');
+const { buildLabelModel, drawArcFlashLabel, LABEL_W, LABEL_H } = require('../lib/arcFlashLabelDoc');
+const { getAccountBranding } = require('../lib/partnerBranding');
 const { recommendMitigations, estimateMitigationRoi } = require('../lib/arcFlashMitigation');
 const { buildEnergizedWorkPermit } = require('../lib/arcFlashPermit');
 const { buildTimeline } = require('../lib/arcFlashTimeline');
@@ -1758,6 +1761,82 @@ router.post('/afx/validate', requireManager, (req: any, res: any) => {
       return res.status(500).json({ success: false, error: 'AFX validation failed' });
     }
   });
+});
+
+// ── Arc-flash hazard LABEL PDFs (NFPA 70E 130.5(H) / ANSI Z535.4) ──────────────
+// We generate the print-ready file (4x6, prints 1:1 on the customer's own label
+// stock); SC is not a printing platform. Single label + bulk (one per page).
+function streamLabelPdf(res: any, filename: string, render: (doc: any) => void) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const doc = new PDFDocument({ size: [LABEL_W, LABEL_H], margin: 0, autoFirstPage: false, info: { Title: 'Arc Flash Label', Author: 'ServiceCycle' } });
+  let destroyed = false;
+  const kill = () => { if (destroyed) return; destroyed = true; try { doc.unpipe(res); doc.destroy(); } catch (_) { /* noop */ } };
+  res.on('close', kill); res.on('error', kill);
+  doc.on('error', (err: any) => { try { console.error('[arc-flash label] stream error:', err?.message || err); if (!res.headersSent) res.status(500).end(); else if (res.writable) res.end(); } catch (_) { /* noop */ } destroyed = true; });
+  doc.pipe(res);
+  try { render(doc); } catch (e) { console.error('[arc-flash label] render error:', e); }
+  if (!destroyed) doc.end();
+}
+
+// GET /asset/:assetId/label.pdf — single current-label PDF (any authed; their data)
+router.get('/asset/:assetId/label.pdf', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true, equipmentType: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const rows = await prisma.systemStudyAsset.findMany({
+      where: { assetId: asset.id, accountId },
+      include: { study: { select: { performedDate: true, supersededById: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const current = currentStudyAssetRow(rows);
+    if (!current) return res.status(404).json({ success: false, error: 'No arc-flash label for this asset.' });
+    current.asset = { equipmentType: asset.equipmentType };
+    const [account, branding] = await Promise.all([
+      prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
+      getAccountBranding(accountId).catch(() => null),
+    ]);
+    const m = buildLabelModel(current, { facilityName: account?.companyName || null, brandName: branding?.name || null });
+    streamLabelPdf(res, `arc-flash-label-${(m.busName || 'equipment').replace(/[^a-z0-9]+/gi, '-')}.pdf`, (doc: any) => {
+      doc.addPage(); drawArcFlashLabel(doc, 0, 0, LABEL_W, LABEL_H, m);
+    });
+  } catch (e) {
+    console.error('arc-flash label pdf error:', e);
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to generate label' });
+  }
+});
+
+// GET /labels.pdf?siteId= — bulk: every current bound label, one per page.
+router.get('/labels.pdf', async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const where: any = { accountId, study: { supersededById: null } };
+    if (req.query.siteId) where.asset = { siteId: String(req.query.siteId) };
+    const rows = await prisma.systemStudyAsset.findMany({
+      where,
+      include: { study: { select: { performedDate: true, supersededById: true } }, asset: { select: { equipmentType: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+    if (rows.length === 0) return res.status(404).json({ success: false, error: 'No arc-flash labels to print.' });
+    const [account, branding] = await Promise.all([
+      prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
+      getAccountBranding(accountId).catch(() => null),
+    ]);
+    const facilityName = account?.companyName || null;
+    const brandName = branding?.name || null;
+    streamLabelPdf(res, `arc-flash-labels-${new Date().toISOString().slice(0, 10)}.pdf`, (doc: any) => {
+      for (const r of rows) {
+        const m = buildLabelModel(r, { facilityName, brandName });
+        doc.addPage();
+        try { drawArcFlashLabel(doc, 0, 0, LABEL_W, LABEL_H, m); } catch (e) { console.error('[arc-flash label] one label failed:', e); }
+      }
+    });
+  } catch (e) {
+    console.error('arc-flash labels pdf error:', e);
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to generate labels' });
+  }
 });
 
 // ── GET /load-growth ── telemetry-derived load-growth flag (manager+) ──────────
