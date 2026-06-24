@@ -166,6 +166,120 @@ function LoadGrowthBanner() {
 // AFX — the open Arc Flash Data Exchange standard. Download the versioned spec,
 // and validate any CSV against it. The "Export model (CSV)" button above already
 // emits AFX-conformant data.
+// ConformanceBadge: visual marker on per-tool template download buttons.
+// 'exact' = column names verified from vendor-published import templates.
+// 'draft' = structure confirmed but field names need verification against your tool version.
+function ConformanceBadge({ level }) {
+  if (level === 'exact') return (
+    <span title="Column names verified from vendor-published templates"
+      style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+        background: 'var(--chip-green-bg, #dcfce7)', color: 'var(--chip-green-fg, #16a34a)',
+        lineHeight: 1.4, whiteSpace: 'nowrap' }}>
+      EXACT
+    </span>
+  );
+  return (
+    <span title="Structure confirmed; verify column names against your specific tool version"
+      style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+        background: 'var(--chip-amber-bg, #fef3c7)', color: 'var(--chip-amber-fg, #d97706)',
+        lineHeight: 1.4, whiteSpace: 'nowrap' }}>
+      DRAFT
+    </span>
+  );
+}
+
+// SpecExplorer: renders the live /afx/spec field catalog inline so engineers can
+// browse required vs. optional fields, types, and example values without leaving SC.
+function SpecExplorer({ spec }) {
+  const [showMulti, setShowMulti] = useState(false);
+  const fields = spec?.fields || [];
+  const multiTables = spec?.multiTableSchema || {};
+  const afxVer = spec?.afxVersion || '?';
+  const since = spec?.since ? new Date(spec.since).getFullYear() : null;
+  const reqCount = fields.filter(f => f.required).length;
+  const optCount = fields.filter(f => !f.required).length;
+  return (
+    <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--color-surface-2, #f8fafc)',
+        borderRadius: 6, border: '1px solid var(--color-border)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div>
+          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>AFX v{afxVer} field catalog</span>
+          {since && <span style={{ marginLeft: 8, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+            IEEE 1584-2018 &middot; NFPA 70E 130.5(H) &middot; since {since}
+          </span>}
+        </div>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowMulti(m => !m)}>
+          {showMulti ? 'Flat spec' : 'Multi-table schema'}
+        </button>
+      </div>
+      {!showMulti && (
+        <>
+          <div style={{ fontSize: '0.78rem', fontWeight: 600, marginBottom: 4, color: 'var(--color-text-secondary)' }}>
+            {reqCount} required &middot; {optCount} optional
+          </div>
+          <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--color-surface-3, #f1f5f9)' }}>
+                {['Field', 'Type', 'Req', 'Description / example'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '3px 8px', borderBottom: '1px solid var(--color-border)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {fields.map((f, i) => (
+                <tr key={i} style={{ background: f.required ? 'var(--chip-green-bg, #f0fdf4)' : undefined,
+                    borderBottom: '1px solid var(--color-border)' }}>
+                  <td style={{ padding: '3px 8px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{f.column}</td>
+                  <td style={{ padding: '3px 8px', color: 'var(--color-text-secondary)' }}>{f.type || '---'}</td>
+                  <td style={{ padding: '3px 8px', textAlign: 'center' }}>
+                    {f.required
+                      ? <span style={{ color: 'var(--chip-green-fg, #16a34a)', fontWeight: 700 }}>yes</span>
+                      : <span style={{ color: 'var(--color-text-secondary)' }}>---</span>}
+                  </td>
+                  <td style={{ padding: '3px 8px', color: 'var(--color-text-secondary)', maxWidth: 260 }}>
+                    {f.description || ''}
+                    {f.example != null && <span style={{ marginLeft: 4, fontFamily: 'monospace', color: 'var(--color-text)' }}>e.g. {String(f.example)}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {showMulti && (
+        <div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: 6 }}>
+            Multi-table schema (Bus / Cable / Transformer / Device) topology keyed by exact string IDs.
+          </div>
+          {Object.entries(multiTables).map(([table, def]) => (
+            <div key={table} style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: 3 }}>{def.sheet || table}</div>
+              <table style={{ width: '100%', fontSize: '0.73rem', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--color-surface-3, #f1f5f9)' }}>
+                    {['AFX header', 'ETAP (draft)', 'EasyPower'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '2px 6px', borderBottom: '1px solid var(--color-border)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(def.fields || []).map((f, fi) => (
+                    <tr key={fi} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '2px 6px', fontFamily: 'monospace' }}>{f.afx || '---'}</td>
+                      <td style={{ padding: '2px 6px', fontFamily: 'monospace', color: 'var(--chip-amber-fg, #d97706)' }}>{f.etap || '---'}</td>
+                      <td style={{ padding: '2px 6px', fontFamily: 'monospace' }}>{f.easypower || '---'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AfxPanel() {
   const [spec, setSpec] = useState(null);
   const [file, setFile] = useState(null);
@@ -184,6 +298,7 @@ function AfxPanel() {
   const [impSites, setImpSites] = useState([]);
   const [impCreateSiteId, setImpCreateSiteId] = useState('');
   const [impDevices, setImpDevices] = useState(false);
+  const [specOpen, setSpecOpen] = useState(false);
 
   async function loadSpec() {
     if (spec) return spec;
@@ -226,6 +341,7 @@ function AfxPanel() {
     setImpBusy(true); setErr(''); setImpPreview(null);
     try {
       const fd = new FormData(); fd.append('file', impFile);
+      if (impOverwrite) fd.append('overwrite', 'true');
       const r = await api.post('/api/arc-flash/afx/import-multi/preview', fd);
       setImpPreview(r.data?.data || null); setImpApplyMsg('');
       if ((r.data?.data?.plan?.summary?.newBuses || 0) > 0 && impSites.length === 0) {
@@ -262,16 +378,33 @@ function AfxPanel() {
       </p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" className="btn btn-secondary btn-sm" onClick={downloadSpec}>Download AFX spec (JSON)</button>
+        <button type="button" className="btn btn-secondary btn-sm"
+          onClick={async () => { if (!specOpen) { try { await loadSpec(); } catch { setErr('Could not load AFX spec.'); return; } } setSpecOpen(o => !o); }}>
+          {specOpen ? 'Hide spec' : 'Browse spec in-app'}
+        </button>
         <input type="file" accept=".csv,text/csv" onChange={e => { setFile(e.target.files?.[0] || null); setReport(null); setErr(''); }} aria-label="CSV to validate against AFX" />
         <button type="button" className="btn btn-secondary btn-sm" disabled={!file || busy} onClick={validate}>{busy ? 'Validating…' : 'Validate against AFX'}</button>
       </div>
+      {specOpen && spec && <SpecExplorer spec={spec} />}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
         <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>Per-tool templates:</span>
-        {[['arcad', 'ARCAD'], ['skm', 'SKM PTW'], ['easypower', 'EasyPower']].map(([tool, label]) => (
-          <button key={tool} type="button" className="btn btn-secondary btn-sm"
-            onClick={() => downloadAuthedFile(`/api/arc-flash/afx/template?tool=${tool}`, `afx-template-${tool}.csv`).catch(() => {})}
-            title={`Download a ${label}-shaped CSV mapped from AFX`}>{label}</button>
+        {[['arcad', 'ARCAD', 'exact'], ['skm', 'SKM PTW', 'exact'], ['easypower', 'EasyPower', 'exact']].map(([tool, label, conf]) => (
+          <span key={tool} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <button type="button" className="btn btn-secondary btn-sm"
+              onClick={() => downloadAuthedFile(`/api/arc-flash/afx/template?tool=${tool}`, `afx-template-${tool}.csv`).catch(() => {})}
+              title={`${label} template - column names verified from published import templates`}>{label}</button>
+            <ConformanceBadge level={conf} />
+          </span>
         ))}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+          <button type="button" className="btn btn-secondary btn-sm"
+            onClick={() => downloadAuthedFile('/api/arc-flash/afx/template?tool=etap', 'afx-template-etap.csv').catch(() => {})}
+            title="ETAP DataX template - structure confirmed; verify column names against your tool version">ETAP</button>
+          <ConformanceBadge level="draft" />
+        </span>
+        <span style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+          EXACT = verified &middot; DRAFT = check with your tool
+        </span>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
         <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>Multi-table export (related Bus/Cable/Transformer/Device tabs):</span>
@@ -308,6 +441,39 @@ function AfxPanel() {
           )}
           {impPreview.plan.matchedByName?.length > 0 && (
             <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>Matches existing: {impPreview.plan.matchedByName.slice(0, 15).map(m => m.incoming).join(', ')}{impPreview.plan.matchedByName.length > 15 ? '…' : ''}</div>
+          )}
+          {impOverwrite && (impPreview.mergePreview?.totalConflicts || 0) > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 4, color: 'var(--chip-amber-fg, #d97706)' }}>
+                Overwrite preview â€” {impPreview.mergePreview.totalConflicts} field(s) on {impPreview.mergePreview.conflicts.length} bus(es) would change:
+              </div>
+              <table style={{ width: '100%', fontSize: '0.73rem', borderCollapse: 'collapse', marginBottom: 4 }}>
+                <thead>
+                  <tr style={{ background: 'var(--color-surface-2, #f8fafc)' }}>
+                    {['Bus', 'Field', 'Current value', 'Incoming value'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '2px 8px', borderBottom: '1px solid var(--color-border)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {impPreview.mergePreview.conflicts.slice(0, 25).flatMap((c, ci) =>
+                    Object.entries(c.changes).map(([field, ch], fi) => (
+                      <tr key={`${ci}-${fi}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '2px 8px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fi === 0 ? c.busName : ''}</td>
+                        <td style={{ padding: '2px 8px', fontFamily: 'monospace' }}>{field}</td>
+                        <td style={{ padding: '2px 8px', color: 'var(--chip-amber-fg, #d97706)' }}>{String(ch.old)}</td>
+                        <td style={{ padding: '2px 8px', color: 'var(--chip-green-fg, #16a34a)' }}>{String(ch.new)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              {impPreview.mergePreview.totalConflicts > 25 && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>
+                  â€¦ and more; apply to see the full diff in the activity log.
+                </div>
+              )}
+            </div>
           )}
           {impPreview.validation.ok && impPreview.plan.summary.matchedBuses > 0 && (
             <div style={{ marginTop: 10 }}>
