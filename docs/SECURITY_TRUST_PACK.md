@@ -33,7 +33,7 @@ Every security- and compliance-relevant event is written to a **per-account hash
 - **Two-factor authentication (TOTP):** supported per user; admins can require TOTP enrolment for all admin-role users on an account (`mfaRequiredForAdmins`). TOTP secrets are AES-256-GCM encrypted; replay is prevented by tracking the last used step; hashed one-time backup codes are supported.
 - **Instant token revocation:** access tokens embed a monotonic `tokenEpoch`; password change/reset bumps the epoch and kills every outstanding token immediately.
 - **Multi-tenant isolation:** enforced by account-scoped predicates on every query and FK constraints; covered by an integration test suite (`multiTenantIsolation`, `roleEnforcement`, `tokenEpochRevocation`).
-- **SSO / SAML + SCIM provisioning:** on the roadmap (not yet implemented). This document will be updated when shipped.
+- **SSO / SAML + SCIM provisioning:** ✅ shipped. Ory Polis-based OIDC + SAML + SCIM via `/auth/sso/*`. Ships dark by default (`SSO_ENABLED` flag); enabled per deployment. SCIM handles automated provisioning/deprovisioning from enterprise IdPs (Okta, Azure AD).
 
 ## 4. AI data flow (BYO-AI)
 
@@ -87,3 +87,11 @@ let an auditor prove the chain existed at a point in time without trusting our
 clock. Not yet enabled (it requires outbound egress + a TSA endpoint decision on
 the locked-down deployment); the hash chain is the current tamper-evidence
 mechanism.
+
+---
+
+## SOC 2 readiness
+
+A full Trust Service Criteria mapping (CC1–CC9, A1, C1) with code-level evidence
+pointers is maintained in `docs/SOC2_CONTROLS.md`. An incident response procedure
+is in `docs/INCIDENT_RESPONSE.md`.
