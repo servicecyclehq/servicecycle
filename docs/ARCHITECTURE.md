@@ -1,0 +1,327 @@
+# ServiceCycle -- System Architecture
+
+Last updated: 2026-06-23. Audience: engineering due-diligence / acquirer day-one read.
+
+---
+
+## 1. Purpose
+
+ServiceCycle is a **data-layer platform** for electrical-infrastructure maintenance programs.
+It ingests inspection reports, arc-flash studies, telemetry, and work-order history; surfaces
+compliance gaps, audit readiness, and safety-label currency; and exports to any downstream
+tool via open standards. It is NOT a calculation engine or safety authority -- it stores and
+reasons about data captured by qualified personnel and PE-stamped studies.
+
+---
+
+## 2. Tech Stack
+
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| API server | Node 20 + Express 4 (CommonJS/TS compiled via tsc) | All routes in `server/routes/` |
+| ORM | Prisma 5 (Postgres 16) | Schema at `server/prisma/schema.prisma` |
+| Database | PostgreSQL 16-alpine (Docker) | Named volume `postgres_data` |
+| Client SPA | React 18 + Vite 5 | `client/src/`; deployed to `/var/www/servicecycle/html` |
+| Auth | JWT (jose + jsonwebtoken) + bcrypt; optional SSO via Ory Polis (OIDC/SAML/SCIM) | SSO ships dark; `SSO_ENABLED` env flag |
+| File storage | Local filesystem (`./uploads/` bind-mount) OR S3-compatible (env-configured) | Sharp for image processing |
+| PDF generation | pdfkit (arc-flash labels, reports, proposals) | |
+| Email | Resend (transactional + inbound forwarding) | Inbound email -> asset card creation |
+| AI providers | Anthropic Claude (primary), Google Gemini, Groq -- cascade fallback | `lib/aiProviders/` |
+| Cron | node-cron (in-process) | Alerts, backup, demo-prune, digest |
+| Rate limiting | express-rate-limit (global + per-endpoint) | IP + authenticated budget tiers |
+| Logging | pino + pino-http | JSON structured logs |
+| Activity log | Append-only hash-chained `ActivityLog` table | Tamper-evident audit trail |
+
+---
+
+## 3. Deployment Topology
+
+```
+Internet
+   |
+   v
+nginx (servicecycle.app)
+   |-- /api  -->  Express :3002  (Docker: servicecycle-server)
+   |-- /*    -->  /var/www/servicecycle/html  (static SPA)
+   |
+   v
+PostgreSQL :5432  (Docker: servicecycle-db, named volume postgres_data)
+
+Uploads bind-mount: ./uploads   (host persistent)
+Backups bind-mount: ./backups   (nightly pg_dump.gz, 30-day retention)
+```
+
+**Single-machine deploy.** Docker Compose manages three services: `db`, `server`, `client`
+(the client container only builds; nginx serves the compiled static files from the host path).
+
+**CI/deploy loop (hands-free via vps-control MCP):**
+1. Push to `origin/main` via PowerShell.
+2. MCP `git_pull` to `/root/ServiceCycle` on the droplet.
+3. MCP `run_approved_command`: `docker compose ... up -d --build server` (runs `prisma migrate deploy` via `server-migrate` init container before the app starts).
+4. MCP `deploy_client {confirm:true}` -- builds SPA in-container, publishes to `/var/www/servicecycle/html`.
+5. Health check: `curl http://127.0.0.1:3002/api/health` -- expect `{"status":"ok"}`.
+
+**Environment:** single `.env` at repo root (Compose reads it). `DATABASE_URL`, `JWT_SECRET`,
+and `MASTER_KEY` are validated at startup; weak defaults refuse to boot.
+
+**SSO (ships dark):** Ory Polis sidecar (Apache-2.0); activated by setting `SSO_ENABLED=true`
+and starting the Polis container. OIDC + SAML + SCIM provisioning all wired.
+
+---
+
+## 4. Data Model -- Core Hierarchy
+
+```
+Account  (tenant root; all queries are account-scoped)
+  |
+  +-- Site
+  |     +-- Building -> Area -> EquipmentPosition
+  |     +-- Asset  (equipmentType enum, 25 types incl. all transformer classes)
+  |           +-- WorkOrder
+  |           |     +-- TestMeasurement
+  |           |     +-- Deficiency
+  |           +-- MaintenanceSchedule -> WorkOrder (task scheduling)
+  |           +-- SystemStudyAsset  (arc-flash bus binding)
+  |           +-- TelemetryChannel -> TelemetryReading
+  |           +-- ArcFlashIncident
+  |           +-- ProtectiveDevice
+  |           +-- Document
+  |
+  +-- SystemStudy  (arc-flash study, site-level)
+  |     +-- SystemStudyAsset  (one per bus; holds label/IE/PPE/expiry)
+  |     +-- StudySourceModel  (utility/transformer params for IEEE 1584 context)
+  |     +-- IngestionSession  (AI extract + gap punch-list)
+  |
+  +-- AuditVisit -> AuditRecommendation
+  +-- ActivityLog  (hash-chained, immutable, all mutations)
+  +-- ApiKey  (scoped read/write; v1 public API)
+  +-- User  (roles: admin/manager/viewer/consultant/field_tech/oem_admin/group_admin/super_admin)
+```
+
+**Cross-tenant structures:**
+- `PartnerOrganization` -- OEM/service-org fleet view across accounts sharing a `partnerOrgId`.
+- `EnterpriseGroup` -- HoldCo/OpCo roll-up across accounts sharing an `enterpriseGroupId`.
+- Both are operator-only/read-only; never expose one tenant's data to another.
+
+**Key invariants:**
+- Every Prisma query on a tenant resource includes `accountId` in the WHERE clause.
+- `field_tech` users are clamped to their assigned WorkOrders only (enforced in `lib/fieldRoleScope.ts`).
+- Pricing data (rate cards, revenue attribution) is internal-only; never crosses tenant boundaries.
+
+---
+
+## 5. Arc-Flash Pipeline
+
+The arc-flash pipeline is the headline feature and the primary acquisition asset.
+
+### 5a. Ingest (study -> structured data)
+
+```
+Upload PDF/CSV
+   |
+   v
+lib/arcFlashExtract.ts        -- text extraction (pdfjs-dist)
+   |
+   v
+lib/aiTestReportExtract.ts    -- AI gap-fill (Claude primary / Gemini / Groq fallback)
+   |
+   v
+IngestionSession               -- stores raw extract + gap punch-list
+   |
+   v
+/api/arc-flash/ingest/apply    -- operator reviews, then applies:
+                                  creates/updates SystemStudy + N SystemStudyAssets
+                                  (atomic $transaction, row-capped)
+```
+
+The AI never produces final values -- it drafts a punch-list of missing fields.
+A qualified person reviews before apply. SC is NOT running IEEE 1584 calculations.
+
+### 5b. Per-Asset Surface
+
+Each asset with a bound `SystemStudyAsset` exposes:
+- **Label** (DANGER/WARNING/CAUTION + IE + PPE + boundaries) -- NFPA 70E 130.5(H) fields.
+- **Permit** -- energized-work permit pre-filled from the label; issuance-gated on study validity.
+- **Timeline** -- chronological study revisions, NETA tests, label issuances.
+- **Incidents** -- near-miss / arc-flash incident register (snapshot study state at log time).
+- **Mitigations** -- PPE-reduction upsell recommendations (directional only; SC never stamps).
+- **TCC Library** -- published device settings lookup.
+- **QR/NFC portal** -- public token resolves live label; detects printed-vs-current mismatch.
+
+### 5c. Fleet View
+
+`GET /api/fleet` aggregates per-site:
+- Overall compliance rate, DANGER asset count, expiry distribution.
+- Incident counts (recent 365d, open, with injury).
+- Load-growth flags (>10% NFPA 130.5 threshold from telemetry).
+- Risk score (0-100 deterministic: DANGER share + expired studies + coverage).
+- Anonymous benchmark (k-anon gated, BENCHMARK_MIN_ACCOUNTS=5).
+
+### 5d. AFX -- Arc Flash Data Exchange Standard
+
+AFX v1 is a versioned open standard anchored on IEEE 1584-2018 + NFPA 70E 130.5(H).
+It is both the SC export format AND a published interchange specification.
+
+**Flat export:** `GET /api/arc-flash/export?format=csv|json` -- single-table per-bus label data.
+**Multi-table export:** `GET /api/afx/export-multi?tool=afx|etap|easypower&format=xlsx|json` --
+  Bus / Cable / Transformer / Device tables with deterministic IDs + topology (fedFromAssetId).
+**Validator:** `POST /api/afx/validate` (flat) + `POST /api/afx/validate-multi` (multi-table).
+**Per-tool templates:** `GET /api/afx/template?tool=arcad|skm|easypower` -- header-mapped CSVs.
+**Crosswalk:** `GET /api/afx/spec` returns the full field catalog + vendor header aliases
+  (ARCAD/SKM/EasyPower sourced from real vendor files).
+**Import:** `POST /api/afx/import-multi/preview` (dry-run) + `/apply` (fill-only or overwrite,
+  confirm-gated, atomic $transaction, 5000-row cap, full tenant isolation).
+
+**Competitor interop:**
+- ETAP: `etapAPI` REST + `etapPy` SDK (the one live-API bridge in the space; ETAP headers are draft).
+- EasyPower/SKM/ARCAD: import-template only (documented via real vendor files).
+
+### 5e. Label Generator
+
+`GET /api/arc-flash/asset/:id/label.pdf` -- single 4x6 print-ready PDF.
+`GET /api/arc-flash/labels.pdf?siteId=` -- bulk one-label-per-page PDF.
+Content branches by `ppeMethod` (incident-energy vs PPE-category) and voltage class.
+ANSI Z535.4 signal panel + NFPA 70E 130.5(H) fields. Facility name leads; SC brand minimal.
+SC generates the file; customer prints on their own durable stock.
+
+---
+
+## 6. Security Architecture
+
+### Authentication
+- **JWT** (HS256, algorithm pinned, `jose` + `jsonwebtoken`). Dual-secret rotation window supported.
+- **API keys** (SHA-256 hashed, scoped `read`/`write`). Used by the v1 public API.
+- **SSO** (Ory Polis OIDC/SAML/SCIM) -- ships dark, single env flag to enable.
+- **2FA** (TOTP via otplib) -- optional per-user.
+
+### Authorization
+- `authenticateToken` middleware on every non-public route.
+- Role hierarchy enforced in middleware: `requireRole(['admin','manager'])` etc.
+- `field_tech` default-deny: `isFieldTechAllowed()` clamps to assigned WorkOrders.
+- Cross-account views (`fleet`, `group`, `sales`) fail-closed with explicit partnerOrgId/groupId scope.
+- DEMO_MODE gates: sales roll-up and other operator-only views check `canViewSales()`.
+
+### Data isolation
+- Every Prisma query on tenant data includes `accountId` in the WHERE clause.
+- AFX import apply uses `updateMany { id, accountId }` for belt-and-suspenders tenant scope.
+- Idempotency keys (per-endpoint) prevent duplicate mutations.
+- `MAX_AFX_MULTI_ROWS = 5000` DoS row-cap on all import apply/preview/validate paths.
+
+### Activity log
+- Append-only `ActivityLog` table with SHA-256 hash chain (each entry hashes the previous).
+- All mutating server actions log to it; chains are verified by `lib/activityLogChain.ts`.
+- Surfaced to admins at `/api/activity`.
+
+### Other hardening
+- Helmet, CORS, compression on all responses.
+- express-rate-limit: global + per-endpoint authenticated/anonymous tiers.
+- `MASTER_KEY` (AES-256) for field-level encryption of sensitive data.
+- Startup validation rejects weak `JWT_SECRET` / `MASTER_KEY`.
+- Docker: `no-new-privileges:true`, tmpfs for ephemeral paths, `pids_limit`.
+- Nightly pg_dump.gz backup (30-day retention, `./backups/` bind-mount).
+
+---
+
+## 7. Key Invariants for Acquirers
+
+1. **SC is the data layer, not a safety authority.** Every gate that displays a yes/no makes
+   a DATA-VALIDITY check (is there a current study to pull from), not a safety judgment.
+   The canonical disclaimer string (`SC_DATA_LAYER_DISCLAIMER` in `lib/arcFlashCopy.ts`) is
+   rendered at every hazard gate.
+
+2. **No IEEE 1584 calculations.** SC stores the PE-stamped inputs and outputs; it never
+   recomputes incident energy. The AI never produces final values -- only a gap punch-list
+   a qualified engineer reviews.
+
+3. **Tenant isolation is belt-and-suspenders.** JWT accountId + Prisma WHERE accountId in
+   every query + role middleware + field_tech scope clamp + cross-account views fail-closed.
+
+4. **AFX export IS lossless.** The field keys in `lib/arcFlashAfx.ts` `EXPORT_COLUMNS` assert
+   1:1 with the AFX v1 spec. Round-trip export -> parse -> validate returns zero errors.
+
+5. **Activity log is tamper-evident.** SHA-256 chain; independent verification possible from
+   the exported log + the hash algorithm (documented in `lib/activityLogChain.ts`).
+
+6. **Migrations auto-apply on deploy.** `server-migrate` init container runs
+   `prisma migrate deploy` before the app starts; no manual migration step.
+
+7. **SSO is self-hosted, no managed spend.** Ory Polis is Apache-2.0 and can be transferred
+   with the product. No third-party SSO vendor lock-in or per-seat cost.
+
+---
+
+## 8. Directory Map
+
+```
+ServiceCycle/
+  server/
+    index.ts             -- Express app bootstrap, env validation, route mounting
+    routes/              -- ~60 route modules (one domain per file)
+    lib/                 -- Pure business logic (no Express imports)
+      arcFlash*.ts       -- Arc-flash domain library (extract/label/permit/AFX/...)
+      activityLog.ts     -- Log writer
+      activityLogChain.ts-- Hash-chain verify
+      salesRollup.ts     -- Sales-manager roll-up (operator-only, leak-safe)
+      telemetryLoadGrowth.ts -- Load-growth flag logic
+    middleware/
+      auth.ts            -- authenticateToken + field_tech scope
+      roles.ts           -- requireRole helper
+      demoGuard.ts       -- blocks destructive ops in DEMO_MODE
+    prisma/
+      schema.prisma      -- Single source of truth for DB schema
+      migrations/        -- Additive SQL migrations (append-only history)
+    __tests__/           -- Jest unit tests (pure lib functions; 66 DB-integration tests
+                         --   fail in sandbox without PG -- confirmed pre-existing)
+  client/
+    src/
+      App.jsx            -- Router + auth context
+      pages/             -- One file per route/page
+      components/        -- Shared UI components
+  docs/
+    ARCHITECTURE.md      -- This file
+    OFFBOARDING.md       -- No lock-in / data export guide
+    api/
+      AFX_SPEC.md        -- Human-readable AFX v1 field catalog
+      INTEGRATIONS.md    -- v1 public API integration guide
+      TELEMETRY.md       -- Telemetry push API guide
+    roadmap/             -- Versioned roadmap docs
+    security/            -- Security audit reports
+  docker-compose.yml     -- Production stack definition
+```
+
+---
+
+## 9. v1 Public API
+
+Base path: `/api/v1/`  Auth: `Authorization: ApiKey <key>` (read or write scope).
+
+Key endpoints:
+- `GET /work-orders` -- paginated work-order list (CMMS/EAM sync).
+- `POST /work-orders` -- write-back (write scope; rolls schedule forward).
+- `GET /deficiencies` -- open deficiency list.
+- `GET /arc-flash/labels` -- paginated NFPA 70E label data.
+- `GET /arc-flash/one-line?siteId=` -- power-path graph (SVG + JSON).
+- `GET /arc-flash/work-order-precheck?assetId=` -- block a WO on missing/expired study.
+- `POST /arc-flash/devices` -- push verified device settings back (write scope).
+
+Supports `Idempotency-Key` header. OpenAPI spec at `server/data/openapi/v1.yaml`.
+Full integration guide: `docs/api/INTEGRATIONS.md`.
+
+---
+
+## 10. Extending the Product
+
+**New equipment types:** append to `EquipmentType` enum in `schema.prisma` + a migration.
+  Never remove or rename enum values without a data migration plan.
+
+**New arc-flash fields:** add to `SystemStudyAsset` (label fields) or `StudySourceModel`
+  (upstream electrical params). Add to `AFX_FIELDS` in `lib/arcFlashAfx.ts` to include in export.
+
+**New role:** add to `UserRole` enum; update `lib/fieldRoleScope.ts` default-deny logic;
+  add gate in relevant routes.
+
+**New tenant cross-account view:** must fail-closed (explicit scope guard required);
+  never share pricing or contact data across tenants.
+
+**Migrations:** additive only (append columns/tables). Never modify existing columns in-place
+  without a migration. `prisma migrate deploy` runs automatically on server start.
