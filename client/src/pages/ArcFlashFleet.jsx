@@ -178,6 +178,8 @@ function AfxPanel() {
   const [impFile, setImpFile] = useState(null);
   const [impPreview, setImpPreview] = useState(null);
   const [impBusy, setImpBusy] = useState(false);
+  const [impApplyBusy, setImpApplyBusy] = useState(false);
+  const [impApplyMsg, setImpApplyMsg] = useState('');
 
   async function loadSpec() {
     if (spec) return spec;
@@ -221,9 +223,21 @@ function AfxPanel() {
     try {
       const fd = new FormData(); fd.append('file', impFile);
       const r = await api.post('/api/arc-flash/afx/import-multi/preview', fd);
-      setImpPreview(r.data?.data || null);
+      setImpPreview(r.data?.data || null); setImpApplyMsg('');
     } catch (e) { setErr(e?.response?.data?.error || 'Import preview failed.'); }
     finally { setImpBusy(false); }
+  }
+  async function applyImport() {
+    if (!impFile) return;
+    setImpApplyBusy(true); setErr(''); setImpApplyMsg('');
+    try {
+      const fd = new FormData(); fd.append('file', impFile); fd.append('confirm', 'true');
+      const r = await api.post('/api/arc-flash/afx/import-multi/apply', fd);
+      const d = r.data?.data || {};
+      setImpApplyMsg(`Applied: ${d.applied} bus(es) updated, ${d.summary?.fieldsSet || 0} field(s) filled. Existing values were left untouched.`);
+      setImpPreview(null);
+    } catch (e) { setErr(e?.response?.data?.error || 'Import apply failed.'); }
+    finally { setImpApplyBusy(false); }
   }
 
   return (
@@ -281,8 +295,18 @@ function AfxPanel() {
           {impPreview.plan.matchedByName?.length > 0 && (
             <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>Matches existing: {impPreview.plan.matchedByName.slice(0, 15).map(m => m.incoming).join(', ')}{impPreview.plan.matchedByName.length > 15 ? '…' : ''}</div>
           )}
+          {impPreview.validation.ok && impPreview.plan.summary.matchedBuses > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <button type="button" className="btn btn-primary btn-sm" disabled={impApplyBusy} onClick={applyImport}
+                title="Fill blank fields on matched buses only. Never overwrites existing values; never creates new buses.">
+                {impApplyBusy ? 'Applying…' : `Apply (fill-only) to ${impPreview.plan.summary.matchedBuses} matched bus(es)`}
+              </button>
+              <span style={{ marginLeft: 8, fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>Fills blanks only — existing values untouched. New buses are not created.</span>
+            </div>
+          )}
         </div>
       )}
+      {impApplyMsg && <div className="alert alert-success" style={{ marginTop: 10 }}>{impApplyMsg}</div>}
 
       {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
 

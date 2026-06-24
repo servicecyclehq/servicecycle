@@ -38,7 +38,7 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut, rollupIncidentsBySite } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
-const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
 const ExcelJS = require('exceljs');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const PDFDocument = require('pdfkit');
@@ -1931,6 +1931,48 @@ router.post('/afx/import-multi/preview', requireManager, (req: any, res: any) =>
     } catch (e) {
       console.error('afx import-multi preview error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to preview multi-table import' });
+    }
+  });
+});
+
+// ── POST /afx/import-multi/apply ── WRITES. Requires confirm:true. FILL-ONLY:
+// updates matched buses' BLANK fields from the import; never overwrites existing
+// values (can't clobber PE-stamped data), never creates new buses. Refuses if the
+// set has integrity errors. Idempotent. Every change goes to the activity log.
+router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
+  upload.single('file')(req, res, async (err: any) => {
+    try {
+      if (err) return res.status(400).json({ success: false, error: String(err.message || err) });
+      const accountId = req.user.accountId;
+      const confirm = req.body && (req.body.confirm === true || req.body.confirm === 'true');
+      if (!confirm) return res.status(400).json({ success: false, error: 'Refusing to write without confirm:true. Preview first, then re-submit with confirm.' });
+
+      let tables: any;
+      if (req.file && req.file.buffer) tables = await tablesFromWorkbook(req.file.buffer);
+      else if (req.body && (req.body.buses || req.body.cables || req.body.transformers || req.body.devices)) {
+        tables = { buses: req.body.buses || [], cables: req.body.cables || [], transformers: req.body.transformers || [], devices: req.body.devices || [] };
+      } else return res.status(400).json({ success: false, error: 'Provide a multi-table .xlsx (field "file") or a JSON tables body.' });
+
+      const validation = validateMultiTable(tables);
+      if (!validation.ok) return res.status(422).json({ success: false, error: `Import has ${validation.errors.length} integrity error(s). Fix them before applying.`, data: { validation } });
+
+      const existing = await prisma.systemStudyAsset.findMany({
+        where: { accountId, study: { supersededById: null } },
+        select: { id: true, busName: true, nominalVoltage: true, cableLengthFt: true, cableSize: true, cableMaterial: true, conductorsPerPhase: true },
+        take: 5000,
+      });
+      const { updates, summary } = buildFillUpdates(tables, existing);
+
+      let applied = 0;
+      if (updates.length) {
+        await prisma.$transaction(updates.map((u: any) => prisma.systemStudyAsset.update({ where: { id: u.id }, data: u.set })));
+        applied = updates.length;
+      }
+      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: 'fill_only' });
+      res.json({ success: true, data: { applied, summary, note: 'Fill-only: blank fields populated; existing values untouched. SC stores collected data; a licensed PE owns the arc-flash calculation.' } });
+    } catch (e) {
+      console.error('afx import-multi apply error:', e);
+      if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to apply multi-table import' });
     }
   });
 });

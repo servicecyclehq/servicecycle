@@ -312,6 +312,48 @@ function planMultiTableImport(tables: any, existingBusNames: string[]): any {
   };
 }
 
-module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport };
+/**
+ * Compute FILL-ONLY updates for matched buses. Pure, no writes. Conservative by
+ * design: a field is set ONLY when the incoming value is present AND the existing
+ * value is blank — it never overwrites data already in SC (so it can't clobber a
+ * PE's stamped values). New buses are reported, not created. Idempotent: re-running
+ * fills nothing once values are set.
+ * @param tables AFX-keyed { buses, cables, ... }
+ * @param existingRows [{ id, busName, nominalVoltage, cableLengthFt, cableSize, cableMaterial, conductorsPerPhase }]
+ * @returns { updates:[{id,set}], summary }
+ */
+function buildFillUpdates(tables: any, existingRows: any[]): any {
+  const t = tables || {};
+  const byKey = new Map<string, any>();
+  for (const r of (existingRows || [])) { const k = normKey(r.busName); if (k && !byKey.has(k)) byKey.set(k, r); }
+  const cableByTo = new Map<string, any>();
+  for (const c of (t.cables || [])) { const k = normKey(c.toBusId); if (k && !cableByTo.has(k)) cableByTo.set(k, c); }
+
+  const numOr = (v: any) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const intOr = (v: any) => { const n = numOr(v); return n == null ? null : Math.round(n); };
+  const blank = (v: any) => v == null || v === '';
+
+  const updates: any[] = [];
+  let matched = 0, skippedNew = 0, skippedNoChange = 0;
+  for (const b of (t.buses || [])) {
+    const k = normKey(b.busId);
+    const ex = k ? byKey.get(k) : null;
+    if (!ex) { skippedNew++; continue; }
+    matched++;
+    const cable = cableByTo.get(k) || {};
+    const set: any = {};
+    const fill = (field: string, val: any) => { if (val != null && val !== '' && blank(ex[field])) set[field] = val; };
+    fill('nominalVoltage', b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : null);
+    fill('cableLengthFt', numOr(cable.cableLengthFt));
+    fill('cableSize', cable.cableSize);
+    fill('cableMaterial', cable.cableMaterial);
+    fill('conductorsPerPhase', intOr(cable.conductorsPerPhase));
+    if (Object.keys(set).length) updates.push({ id: ex.id, set }); else skippedNoChange++;
+  }
+  const fieldsSet = updates.reduce((a, u) => a + Object.keys(u.set).length, 0);
+  return { updates, summary: { matched, willUpdate: updates.length, fieldsSet, skippedNew, skippedNoChange } };
+}
+
+module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates };
 
 export {};

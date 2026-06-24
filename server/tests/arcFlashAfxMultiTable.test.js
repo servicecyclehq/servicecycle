@@ -1,5 +1,5 @@
 // AFX v1.2 — multi-table builder (related Bus/Cable/Transformer/Device tables).
-const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport } = require('../lib/arcFlashAfxMultiTable');
+const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates } = require('../lib/arcFlashAfxMultiTable');
 
 describe('sanitizeId (exact-match-safe)', () => {
   test('trims, collapses whitespace, strips junk', () => {
@@ -142,6 +142,48 @@ describe('planMultiTableImport (dry-run)', () => {
 
   test('no existing buses = everything is a create', () => {
     expect(planMultiTableImport(tables, []).summary.newBuses).toBe(3);
+  });
+});
+
+describe('buildFillUpdates (fill-only, never overwrites)', () => {
+  const tables = {
+    buses: [
+      { busId: 'MAIN', nominalVoltageV: 13800 },
+      { busId: 'MCC_1', nominalVoltageV: 480 },
+      { busId: 'NEW_BUS', nominalVoltageV: 600 },
+    ],
+    cables: [{ cableId: 'C1', toBusId: 'MCC_1', cableLengthFt: '120', cableSize: '500', cableMaterial: 'Cu', conductorsPerPhase: '2' }],
+  };
+
+  test('fills blank fields on matched buses, coercing numerics', () => {
+    const existing = [
+      { id: 'a1', busName: 'MAIN', nominalVoltage: '13.8kV' }, // already set -> not overwritten
+      { id: 'a2', busName: ' mcc 1 ', nominalVoltage: null, cableLengthFt: null, cableSize: null, cableMaterial: null, conductorsPerPhase: null },
+    ];
+    const { updates, summary } = buildFillUpdates(tables, existing);
+    expect(summary.matched).toBe(2);
+    expect(summary.skippedNew).toBe(1); // NEW_BUS
+    const a2 = updates.find(u => u.id === 'a2');
+    expect(a2.set).toEqual({ nominalVoltage: '480V', cableLengthFt: 120, cableSize: '500', cableMaterial: 'Cu', conductorsPerPhase: 2 });
+    // a1 had nominalVoltage already -> no update at all
+    expect(updates.find(u => u.id === 'a1')).toBeUndefined();
+    expect(summary.skippedNoChange).toBe(1);
+  });
+
+  test('never overwrites an existing non-empty value', () => {
+    const existing = [{ id: 'a2', busName: 'MCC_1', nominalVoltage: '415V', cableSize: '4/0' }];
+    const { updates } = buildFillUpdates(tables, existing);
+    const a2 = updates.find(u => u.id === 'a2');
+    expect(a2.set.nominalVoltage).toBeUndefined(); // kept 415V
+    expect(a2.set.cableSize).toBeUndefined(); // kept 4/0
+    expect(a2.set.cableLengthFt).toBe(120); // but blank cable length got filled
+  });
+
+  test('idempotent: re-running against now-filled rows yields no updates', () => {
+    const filled = [{ id: 'a2', busName: 'MCC_1', nominalVoltage: '480V', cableLengthFt: 120, cableSize: '500', cableMaterial: 'Cu', conductorsPerPhase: 2 }];
+    const { updates, summary } = buildFillUpdates(tables, filled);
+    expect(updates).toHaveLength(0);
+    expect(summary.skippedNoChange).toBe(1);
   });
 });
 
