@@ -270,7 +270,8 @@ services:
       EMAIL_MOCK:     ${EMAIL_MOCK:-true}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
       EMAIL_FROM:     ${EMAIL_FROM:-}
-      SUPPORT_EMAIL:  ${SUPPORT_EMAIL:-}
+      SUPPORT_EMAIL:  ${SUPPORT_EMAIL:-support@servicecycle.app}
+      SALES_EMAIL:    ${SALES_EMAIL:-sales@servicecycle.app}
 
       # Slack â€” optional. Per-account configuration via Settings UI is the
       # primary surface; these env vars exist for operators who'd rather wire
