@@ -175,6 +175,9 @@ function AfxPanel() {
   const [mtFile, setMtFile] = useState(null);
   const [mtReport, setMtReport] = useState(null);
   const [mtBusy, setMtBusy] = useState(false);
+  const [impFile, setImpFile] = useState(null);
+  const [impPreview, setImpPreview] = useState(null);
+  const [impBusy, setImpBusy] = useState(false);
 
   async function loadSpec() {
     if (spec) return spec;
@@ -212,6 +215,16 @@ function AfxPanel() {
     } catch (e) { setErr(e?.response?.data?.error || 'Multi-table validation failed.'); }
     finally { setMtBusy(false); }
   }
+  async function previewImport() {
+    if (!impFile) { setErr('Choose a multi-table .xlsx to preview.'); return; }
+    setImpBusy(true); setErr(''); setImpPreview(null);
+    try {
+      const fd = new FormData(); fd.append('file', impFile);
+      const r = await api.post('/api/arc-flash/afx/import-multi/preview', fd);
+      setImpPreview(r.data?.data || null);
+    } catch (e) { setErr(e?.response?.data?.error || 'Import preview failed.'); }
+    finally { setImpBusy(false); }
+  }
 
   return (
     <div className="card" style={{ padding: '14px 16px', marginTop: 16 }}>
@@ -245,6 +258,31 @@ function AfxPanel() {
         <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e => { setMtFile(e.target.files?.[0] || null); setMtReport(null); setErr(''); }} aria-label="Multi-table xlsx to validate" />
         <button type="button" className="btn btn-secondary btn-sm" disabled={!mtFile || mtBusy} onClick={validateMulti}>{mtBusy ? 'Checking…' : 'Check integrity'}</button>
       </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>Preview an import (dry-run, writes nothing):</span>
+        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e => { setImpFile(e.target.files?.[0] || null); setImpPreview(null); setErr(''); }} aria-label="Multi-table xlsx to preview import" />
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!impFile || impBusy} onClick={previewImport}>{impBusy ? 'Previewing…' : 'Preview import'}</button>
+      </div>
+
+      {impPreview && (
+        <div style={{ marginTop: 12, fontSize: '0.82rem' }}>
+          <div style={{ fontWeight: 700 }}>
+            Dry run — nothing written. {impPreview.plan.summary.newBuses} new bus(es), {impPreview.plan.summary.matchedBuses} would update existing
+            {' · '}{impPreview.plan.summary.incomingDevices} device(s), {impPreview.plan.summary.incomingCables} cable(s), {impPreview.plan.summary.incomingTransformers} transformer(s) incoming
+          </div>
+          {!impPreview.validation.ok && (
+            <div style={{ marginTop: 6, color: 'var(--color-danger)' }}>
+              {impPreview.validation.errors.length} integrity error(s) — fix before importing. Run “Check integrity” for detail.
+            </div>
+          )}
+          {impPreview.plan.createBuses?.length > 0 && (
+            <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>New: {impPreview.plan.createBuses.slice(0, 15).join(', ')}{impPreview.plan.createBuses.length > 15 ? '…' : ''}</div>
+          )}
+          {impPreview.plan.matchedByName?.length > 0 && (
+            <div style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>Matches existing: {impPreview.plan.matchedByName.slice(0, 15).map(m => m.incoming).join(', ')}{impPreview.plan.matchedByName.length > 15 ? '…' : ''}</div>
+          )}
+        </div>
+      )}
 
       {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
 

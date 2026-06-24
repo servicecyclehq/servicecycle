@@ -1,5 +1,5 @@
 // AFX v1.2 — multi-table builder (related Bus/Cable/Transformer/Device tables).
-const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable } = require('../lib/arcFlashAfxMultiTable');
+const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport } = require('../lib/arcFlashAfxMultiTable');
 
 describe('sanitizeId (exact-match-safe)', () => {
   test('trims, collapses whitespace, strips junk', () => {
@@ -112,6 +112,36 @@ describe('validateMultiTable', () => {
   test('blank reference is allowed (unknown topology, not an error)', () => {
     const r = validateMultiTable({ ...good, cables: [{ cableId: 'C1', fromBusId: '', toBusId: 'MCC_1' }] });
     expect(r.ok).toBe(true);
+  });
+});
+
+describe('planMultiTableImport (dry-run)', () => {
+  const tables = {
+    buses: [{ busId: 'MAIN' }, { busId: 'MCC_1' }, { busId: 'NEW_BUS' }],
+    cables: [{ cableId: 'C1' }], transformers: [{ xfmrId: 'X1' }],
+    devices: [{ deviceId: 'D1' }, { deviceId: 'D2' }],
+  };
+  // existing buses use a different casing/spacing to prove normalized matching
+  const plan = planMultiTableImport(tables, ['main', ' MCC 1 ']);
+
+  test('splits incoming buses into matched (update) vs new (create) by normalized name', () => {
+    expect(plan.createBuses).toEqual(['NEW_BUS']);
+    expect(plan.updateBuses.sort()).toEqual(['MAIN', 'MCC_1']);
+  });
+
+  test('reports the existing name each incoming bus matched', () => {
+    expect(plan.matchedByName).toContainEqual({ incoming: 'MCC_1', existing: ' MCC 1 ' });
+  });
+
+  test('summary counts every incoming table', () => {
+    expect(plan.summary).toEqual({
+      incomingBuses: 3, newBuses: 1, matchedBuses: 2,
+      incomingCables: 1, incomingTransformers: 1, incomingDevices: 2,
+    });
+  });
+
+  test('no existing buses = everything is a create', () => {
+    expect(planMultiTableImport(tables, []).summary.newBuses).toBe(3);
   });
 });
 

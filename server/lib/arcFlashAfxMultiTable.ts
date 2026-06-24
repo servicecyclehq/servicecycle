@@ -270,6 +270,48 @@ function validateMultiTable(tables: any): any {
   return { ok: errors.length === 0, errors, warnings, stats };
 }
 
-module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable };
+// ── Import planning (DRY-RUN — computes what an import WOULD do; writes nothing) ─
+// Round-tripping a tool's model back INTO SC is a write operation, so it's gated
+// behind a preview: the customer sees exactly what would be created vs. updated
+// before anything is applied. This planner is pure; the apply step is separate and
+// confirm-gated.
+
+const normKey = (s: any) => sanitizeId(s, '').toUpperCase();
+
+/**
+ * Plan a multi-table import against the account's existing buses. Pure, no writes.
+ * @param tables { buses, cables, transformers, devices } (AFX-keyed rows)
+ * @param existingBusNames string[] of the account's current bus names
+ * @returns { summary, createBuses, updateBuses, matchedByName }
+ */
+function planMultiTableImport(tables: any, existingBusNames: string[]): any {
+  const t = tables || {};
+  const existing = new Map<string, string>(); // normKey -> the existing name it matched
+  for (const n of (existingBusNames || [])) { const k = normKey(n); if (k && !existing.has(k)) existing.set(k, n); }
+
+  const createBuses: string[] = [];
+  const updateBuses: string[] = [];
+  const matchedByName: Array<{ incoming: string; existing: string }> = [];
+  for (const b of (t.buses || [])) {
+    const id = b.busId == null ? '' : String(b.busId);
+    const k = normKey(id);
+    if (k && existing.has(k)) { updateBuses.push(id); matchedByName.push({ incoming: id, existing: existing.get(k)! }); }
+    else createBuses.push(id);
+  }
+
+  return {
+    summary: {
+      incomingBuses: (t.buses || []).length,
+      newBuses: createBuses.length,
+      matchedBuses: updateBuses.length,
+      incomingCables: (t.cables || []).length,
+      incomingTransformers: (t.transformers || []).length,
+      incomingDevices: (t.devices || []).length,
+    },
+    createBuses, updateBuses, matchedByName,
+  };
+}
+
+module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport };
 
 export {};

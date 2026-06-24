@@ -38,7 +38,7 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut, rollupIncidentsBySite } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
-const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
 const ExcelJS = require('exceljs');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const PDFDocument = require('pdfkit');
@@ -1906,6 +1906,31 @@ router.post('/afx/validate-multi', requireManager, (req: any, res: any) => {
     } catch (e) {
       console.error('afx validate-multi error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to validate multi-table set' });
+    }
+  });
+});
+
+// ── POST /afx/import-multi/preview ── DRY-RUN. Parse + validate + plan a
+// multi-table import against existing buses. Writes NOTHING — returns what an
+// import WOULD create vs. update so the customer can review before applying.
+router.post('/afx/import-multi/preview', requireManager, (req: any, res: any) => {
+  upload.single('file')(req, res, async (err: any) => {
+    try {
+      if (err) return res.status(400).json({ success: false, error: String(err.message || err) });
+      const accountId = req.user.accountId;
+      let tables: any;
+      if (req.file && req.file.buffer) tables = await tablesFromWorkbook(req.file.buffer);
+      else if (req.body && (req.body.buses || req.body.cables || req.body.transformers || req.body.devices)) {
+        tables = { buses: req.body.buses || [], cables: req.body.cables || [], transformers: req.body.transformers || [], devices: req.body.devices || [] };
+      } else return res.status(400).json({ success: false, error: 'Provide a multi-table .xlsx (field "file") or a JSON tables body.' });
+
+      const validation = validateMultiTable(tables);
+      const existing = await prisma.systemStudyAsset.findMany({ where: { accountId, study: { supersededById: null } }, select: { busName: true }, take: 5000 });
+      const plan = planMultiTableImport(tables, existing.map((r: any) => r.busName));
+      res.json({ success: true, data: { dryRun: true, validation, plan } });
+    } catch (e) {
+      console.error('afx import-multi preview error:', e);
+      if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to preview multi-table import' });
     }
   });
 });
