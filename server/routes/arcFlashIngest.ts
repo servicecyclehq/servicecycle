@@ -38,7 +38,8 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut, rollupIncidentsBySite } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
-const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const { normalizeKey: idemNormalizeKey, findStored: idemFindStored, store: idemStore } = require('../lib/apiIdempotency');
 const normBusKey = (s: any) => String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '');
 const MAX_AFX_MULTI_ROWS = 5000; // DoS guard: cap total rows an import request may carry
 const afxRowCount = (t: any) => (t?.buses?.length || 0) + (t?.cables?.length || 0) + (t?.transformers?.length || 0) + (t?.devices?.length || 0);
@@ -1939,9 +1940,11 @@ router.post('/afx/import-multi/preview', requireManager, (req: any, res: any) =>
 
       if (afxRowCount(tables) > MAX_AFX_MULTI_ROWS) return res.status(413).json({ success: false, error: `Too large: ${afxRowCount(tables)} rows exceeds the ${MAX_AFX_MULTI_ROWS}-row limit.` });
       const validation = validateMultiTable(tables);
-      const existing = await prisma.systemStudyAsset.findMany({ where: { accountId, study: { supersededById: null } }, select: { busName: true }, take: 5000 });
+      const existing = await prisma.systemStudyAsset.findMany({ where: { accountId, study: { supersededById: null } }, select: { busName: true, nominalVoltage: true, cableLengthFt: true, cableSize: true, cableMaterial: true, conductorsPerPhase: true }, take: 5000 });
       const plan = planMultiTableImport(tables, existing.map((r: any) => r.busName));
-      res.json({ success: true, data: { dryRun: true, validation, plan } });
+      const previewOverwrite = req.body && (req.body.mode === 'overwrite' || req.body.overwrite === true || req.body.overwrite === 'true');
+      const mergePreview = previewOverwrite ? buildMergeConflictPreview(tables, existing) : null;
+      res.json({ success: true, data: { dryRun: true, validation, plan, mergePreview } });
     } catch (e) {
       console.error('afx import-multi preview error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to preview multi-table import' });
@@ -1960,6 +1963,12 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
       const accountId = req.user.accountId;
       const confirm = req.body && (req.body.confirm === true || req.body.confirm === 'true');
       if (!confirm) return res.status(400).json({ success: false, error: 'Refusing to write without confirm:true. Preview first, then re-submit with confirm.' });
+
+      const ikey = idemNormalizeKey(req);
+      if (ikey) {
+        const stored = await idemFindStored(prisma, accountId, ikey);
+        if (stored) return res.status(stored.statusCode).json(stored.responseBody);
+      }
 
       let tables: any;
       if (req.file && req.file.buffer) tables = await tablesFromWorkbook(req.file.buffer);
@@ -2032,10 +2041,62 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
               });
               newAssetByKey.set(k, asset.id); created++;
             }
-            for (const link of [...(tables.cables || []), ...(tables.transformers || [])]) {
-              const toId = newAssetByKey.get(normBusKey(link.toBusId));
-              const fromId = newAssetByKey.get(normBusKey(link.fromBusId)) || existingAssetByKey.get(normBusKey(link.fromBusId));
+            // StudySourceModel: populate from a single unambiguous transformer when kVA data present.
+            // Design choice: 1 transformer with non-null kVA = unambiguous main source.
+            const xfmrsWithKva = (tables.transformers || []).filter((x: any) => numOrNull(x.transformerKva) != null);
+            if (xfmrsWithKva.length === 1) {
+              const tx1 = xfmrsWithKva[0];
+              try {
+                await tx.studySourceModel.create({
+                  data: { accountId, siteId: createSiteId, studyId: study.id,
+                    transformerKva: numOrNull(tx1.transformerKva),
+                    transformerPrimaryV: intOrNull(tx1.transformerPrimaryV),
+                    transformerSecondaryV: intOrNull(tx1.transformerSecondaryV),
+                    transformerImpedancePct: numOrNull(tx1.transformerImpedancePct) },
+                });
+              } catch (_) { /* no-op on duplicate */ }
+            }
+
+            // Transformer assets: each Transformer row becomes a real Asset (TRANSFORMER_DRY
+            // or TRANSFORMER_LIQUID) wired between its from-bus and to-bus. This inserts the
+            // transformer into the topology chain instead of a direct bus-to-bus link.
+            // Type heuristic: primary >= 15 kV (MV distribution) -> liquid-filled; else dry-type.
+            const xfmrAssetByKey = new Map<string, string>();
+            for (const xfmr of (tables.transformers || [])) {
+              const kX = normBusKey(xfmr.xfmrId);
+              const kTo = normBusKey(xfmr.toBusId);
+              const kFrom = normBusKey(xfmr.fromBusId);
+              // Only create a transformer asset when at least one connected bus is newly imported.
+              if (!newAssetByKey.has(kTo) && !newAssetByKey.has(kFrom)) continue;
+              const primaryV = numOrNull(xfmr.transformerPrimaryV);
+              const xfmrEqType: any = (primaryV != null && primaryV >= 15000) ? 'TRANSFORMER_LIQUID' : 'TRANSFORMER_DRY';
+              const xfmrAsset = await tx.asset.create({
+                data: {
+                  accountId, siteId: createSiteId, equipmentType: xfmrEqType,
+                  nameplateData: { busName: xfmr.xfmrId, importedFrom: 'afx_import',
+                    kva: xfmr.transformerKva || null, primaryV: xfmr.transformerPrimaryV || null,
+                    secondaryV: xfmr.transformerSecondaryV || null, impedancePct: xfmr.transformerImpedancePct || null },
+                  notes: `Transformer from AFX import (${xfmrEqType === 'TRANSFORMER_LIQUID' ? 'liquid-filled' : 'dry-type'}, ${xfmr.xfmrId}).`,
+                },
+                select: { id: true },
+              });
+              xfmrAssetByKey.set(kX, xfmrAsset.id); created++;
+            }
+            // Cable topology: from-bus feeds to-bus directly.
+            for (const c of (tables.cables || [])) {
+              const toId = newAssetByKey.get(normBusKey(c.toBusId));
+              const fromId = newAssetByKey.get(normBusKey(c.fromBusId)) || existingAssetByKey.get(normBusKey(c.fromBusId));
               if (toId && fromId && toId !== fromId) { await tx.asset.updateMany({ where: { id: toId, accountId }, data: { fedFromAssetId: fromId } }); feedsWired++; }
+            }
+            // Transformer topology: from-bus -> xfmr-asset -> to-bus.
+            // When no xfmr asset was created (both buses pre-existed), fall back to direct link.
+            for (const xfmr of (tables.transformers || [])) {
+              const xfmrId = xfmrAssetByKey.get(normBusKey(xfmr.xfmrId));
+              const toId = newAssetByKey.get(normBusKey(xfmr.toBusId));
+              const fromId = newAssetByKey.get(normBusKey(xfmr.fromBusId)) || existingAssetByKey.get(normBusKey(xfmr.fromBusId));
+              if (xfmrId && fromId && xfmrId !== fromId) { await tx.asset.updateMany({ where: { id: xfmrId, accountId }, data: { fedFromAssetId: fromId } }); feedsWired++; }
+              if (xfmrId && toId && toId !== xfmrId) { await tx.asset.updateMany({ where: { id: toId, accountId }, data: { fedFromAssetId: xfmrId } }); feedsWired++; }
+              else if (!xfmrId && toId && fromId && toId !== fromId) { await tx.asset.updateMany({ where: { id: toId, accountId }, data: { fedFromAssetId: fromId } }); feedsWired++; }
             }
           }
         }
@@ -2071,7 +2132,9 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
       if (created) parts.push(`created ${created} new`);
       if (devicesCreated) parts.push(`added ${devicesCreated} device(s)`);
       const note = `Import applied: ${parts.join(', ')}. SC stores collected data and a licensed PE owns the arc-flash calculation; existing values are never erased.`;
-      res.json({ success: true, data: { applied, created, feedsWired, devicesCreated, createdStudyId, summary, note } });
+      const responseBody = { success: true, data: { applied, created, feedsWired, devicesCreated, createdStudyId, summary, note } };
+      idemStore(prisma, { accountId, key: ikey, method: req.method, path: req.path, statusCode: 200, body: responseBody });
+      res.json(responseBody);
     } catch (e) {
       console.error('afx import-multi apply error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to apply multi-table import' });

@@ -270,6 +270,49 @@ function validateMultiTable(tables: any): any {
   return { ok: errors.length === 0, errors, warnings, stats };
 }
 
+/**
+ * Build a per-field merge-conflict preview for overwrite mode. Pure, no writes.
+ * For each matched bus, returns the fields that WOULD be overwritten with their
+ * old → new values. Companion to buildFillUpdates — call this in the preview
+ * endpoint when overwrite:true so the customer can see exactly what would change
+ * before applying.
+ * @param tables AFX-keyed { buses, cables, ... }
+ * @param existingRows [{ id, busName, nominalVoltage, cableLengthFt, cableSize, cableMaterial, conductorsPerPhase }]
+ * @returns { conflicts:[{busName, busId, changes:{field:{old,new}}}], totalConflicts }
+ */
+function buildMergeConflictPreview(tables: any, existingRows: any[]): any {
+  const t = tables || {};
+  const byKey = new Map<string, any>();
+  for (const r of (existingRows || [])) { const k = normKey(r.busName); if (k && !byKey.has(k)) byKey.set(k, r); }
+  const cableByTo = new Map<string, any>();
+  for (const c of (t.cables || [])) { const k = normKey(c.toBusId); if (k && !cableByTo.has(k)) cableByTo.set(k, c); }
+
+  const numOr = (v: any) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const intOr = (v: any) => { const n = numOr(v); return n == null ? null : Math.round(n); };
+  const blank = (v: any) => v == null || v === '';
+  const eq = (a: any, b: any) => String(a) === String(b);
+
+  const conflicts: any[] = [];
+  for (const b of (t.buses || [])) {
+    const k = normKey(b.busId);
+    const ex = k ? byKey.get(k) : null;
+    if (!ex) continue; // new bus — no conflict
+    const cable = cableByTo.get(k) || {};
+    const changes: Record<string, { old: any; new: any }> = {};
+    const check = (field: string, val: any) => {
+      if (val == null || val === '') return;
+      if (!blank(ex[field]) && !eq(ex[field], val)) changes[field] = { old: ex[field], new: val };
+    };
+    check('nominalVoltage', b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : null);
+    check('cableLengthFt', numOr(cable.cableLengthFt));
+    check('cableSize', cable.cableSize);
+    check('cableMaterial', cable.cableMaterial);
+    check('conductorsPerPhase', intOr(cable.conductorsPerPhase));
+    if (Object.keys(changes).length) conflicts.push({ busName: ex.busName, busId: b.busId, changes });
+  }
+  return { conflicts, totalConflicts: conflicts.length };
+}
+
 // ── Import planning (DRY-RUN — computes what an import WOULD do; writes nothing) ─
 // Round-tripping a tool's model back INTO SC is a write operation, so it's gated
 // behind a preview: the customer sees exactly what would be created vs. updated
@@ -378,6 +421,6 @@ function mapEquipmentType(raw: any): string {
   return EQUIPMENT_TYPES.has(s) ? s : 'PANELBOARD';
 }
 
-module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType, EQUIPMENT_TYPES };
+module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, EQUIPMENT_TYPES };
 
 export {};
