@@ -363,6 +363,21 @@ function buildFillUpdates(tables: any, existingRows: any[], opts: any = {}): any
   return { updates, summary: { matched, willUpdate: updates.length, fieldsSet, overwritten, skippedNew, skippedNoChange, mode: overwrite ? 'overwrite' : 'fill_only' } };
 }
 
-module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates };
+// Map an incoming equipment-type string to a valid Prisma EquipmentType. Pure.
+// Keep EQUIPMENT_TYPES in sync with schema.prisma enum EquipmentType. Unknown or
+// blank -> PANELBOARD (neutral LV default); the raw string is preserved by the
+// caller in nameplateData so nothing is lost.
+const EQUIPMENT_TYPES = new Set([
+  'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'SWITCHBOARD', 'PANELBOARD', 'BUSWAY',
+  'GENERATOR', 'MOTOR', 'MCC', 'VFD', 'UPS_BATTERY', 'BATTERY_SYSTEM', 'CIRCUIT_BREAKER', 'FUSE_GEAR',
+  'DISCONNECT_SWITCH', 'TRANSFER_SWITCH', 'PROTECTION_RELAY', 'GROUND_FAULT_PROTECTION', 'SURGE_ARRESTER',
+  'CABLE_LV', 'CABLE_MV_HV', 'CABLE_TRAY', 'GROUNDING_SYSTEM', 'EMERGENCY_LIGHTING', 'ARC_FLASH_PANEL', 'FIRE_PUMP_CONTROLLER',
+]);
+function mapEquipmentType(raw: any): string {
+  const s = String(raw == null ? '' : raw).trim().toUpperCase().replace(/[\s-]+/g, '_');
+  return EQUIPMENT_TYPES.has(s) ? s : 'PANELBOARD';
+}
+
+module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType, EQUIPMENT_TYPES };
 
 export {};

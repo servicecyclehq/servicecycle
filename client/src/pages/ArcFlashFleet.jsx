@@ -181,6 +181,8 @@ function AfxPanel() {
   const [impApplyBusy, setImpApplyBusy] = useState(false);
   const [impApplyMsg, setImpApplyMsg] = useState('');
   const [impOverwrite, setImpOverwrite] = useState(false);
+  const [impSites, setImpSites] = useState([]);
+  const [impCreateSiteId, setImpCreateSiteId] = useState('');
 
   async function loadSpec() {
     if (spec) return spec;
@@ -225,19 +227,25 @@ function AfxPanel() {
       const fd = new FormData(); fd.append('file', impFile);
       const r = await api.post('/api/arc-flash/afx/import-multi/preview', fd);
       setImpPreview(r.data?.data || null); setImpApplyMsg('');
+      if ((r.data?.data?.plan?.summary?.newBuses || 0) > 0 && impSites.length === 0) {
+        api.get('/api/sites').then(s => setImpSites(s.data?.data?.sites || [])).catch(() => {});
+      }
     } catch (e) { setErr(e?.response?.data?.error || 'Import preview failed.'); }
     finally { setImpBusy(false); }
   }
-  async function applyImport() {
+  async function applyImport(createNew) {
     if (!impFile) return;
+    if (createNew && !impCreateSiteId) { setErr('Choose a site for the new equipment.'); return; }
     setImpApplyBusy(true); setErr(''); setImpApplyMsg('');
     try {
       const fd = new FormData(); fd.append('file', impFile); fd.append('confirm', 'true');
       if (impOverwrite) fd.append('mode', 'overwrite');
+      if (createNew) { fd.append('createNew', 'true'); fd.append('siteId', impCreateSiteId); }
       const r = await api.post('/api/arc-flash/afx/import-multi/apply', fd);
       const d = r.data?.data || {};
       const ov = d.summary?.overwritten ? `, ${d.summary.overwritten} value(s) replaced` : '';
-      setImpApplyMsg(`Applied: ${d.applied} bus(es) updated, ${d.summary?.fieldsSet || 0} field(s) set${ov}. (mode: ${d.summary?.mode || 'fill_only'})`);
+      const cr = d.created ? `, ${d.created} new bus(es) created${d.feedsWired ? ` (${d.feedsWired} feed link(s))` : ''}` : '';
+      setImpApplyMsg(`Applied: ${d.applied} bus(es) updated${ov}${cr}. (mode: ${d.summary?.mode || 'fill_only'})`);
       setImpPreview(null);
     } catch (e) { setErr(e?.response?.data?.error || 'Import apply failed.'); }
     finally { setImpApplyBusy(false); }
@@ -300,7 +308,7 @@ function AfxPanel() {
           )}
           {impPreview.validation.ok && impPreview.plan.summary.matchedBuses > 0 && (
             <div style={{ marginTop: 10 }}>
-              <button type="button" className="btn btn-primary btn-sm" disabled={impApplyBusy} onClick={applyImport}
+              <button type="button" className="btn btn-primary btn-sm" disabled={impApplyBusy} onClick={() => applyImport(false)}
                 title="Apply to matched buses. Never creates new buses; never erases a value with a blank.">
                 {impApplyBusy ? 'Applying…' : `Apply${impOverwrite ? ' (overwrite)' : ' (fill-only)'} to ${impPreview.plan.summary.matchedBuses} matched bus(es)`}
               </button>
@@ -308,6 +316,19 @@ function AfxPanel() {
                 <input type="checkbox" checked={impOverwrite} onChange={e => setImpOverwrite(e.target.checked)} style={{ marginRight: 4 }} />
                 Overwrite differing values (default: fill blanks only)
               </label>
+            </div>
+          )}
+          {impPreview.validation.ok && impPreview.plan.summary.newBuses > 0 && (
+            <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
+              <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>{impPreview.plan.summary.newBuses} bus(es) don’t match anything in SC. Create them as new equipment under:</div>
+              <select value={impCreateSiteId} onChange={e => setImpCreateSiteId(e.target.value)} style={{ marginRight: 8 }} aria-label="Site for new equipment">
+                <option value="">Choose a site…</option>
+                {impSites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={impApplyBusy || !impCreateSiteId} onClick={() => applyImport(true)}
+                title="Create the unmatched buses as new assets under the chosen site, wiring feed topology from the Cables/Transformers tabs.">
+                {impApplyBusy ? 'Working…' : `Create ${impPreview.plan.summary.newBuses} new bus(es)${impPreview.plan.summary.matchedBuses ? ' + update matched' : ''}`}
+              </button>
             </div>
           )}
         </div>

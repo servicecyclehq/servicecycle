@@ -1,5 +1,5 @@
 // AFX v1.2 — multi-table builder (related Bus/Cable/Transformer/Device tables).
-const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates } = require('../lib/arcFlashAfxMultiTable');
+const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType } = require('../lib/arcFlashAfxMultiTable');
 
 describe('sanitizeId (exact-match-safe)', () => {
   test('trims, collapses whitespace, strips junk', () => {
@@ -201,6 +201,20 @@ describe('buildFillUpdates (fill-only, never overwrites)', () => {
     const existing = [{ id: 'a2', busName: 'MCC_1', nominalVoltage: '415V', cableSize: '4/0' }];
     const { updates } = buildFillUpdates(sparse, existing, { overwrite: true });
     expect(updates).toHaveLength(0); // nothing blanked out
+  });
+});
+
+describe('mapEquipmentType', () => {
+  test('passes through valid enum values (case/format-insensitive)', () => {
+    expect(mapEquipmentType('SWITCHGEAR')).toBe('SWITCHGEAR');
+    expect(mapEquipmentType('mcc')).toBe('MCC');
+    expect(mapEquipmentType('transformer dry')).toBe('TRANSFORMER_DRY');
+    expect(mapEquipmentType('cable-lv')).toBe('CABLE_LV');
+  });
+  test('unknown or blank falls back to PANELBOARD', () => {
+    expect(mapEquipmentType('weird gizmo')).toBe('PANELBOARD');
+    expect(mapEquipmentType('')).toBe('PANELBOARD');
+    expect(mapEquipmentType(null)).toBe('PANELBOARD');
   });
 });
 

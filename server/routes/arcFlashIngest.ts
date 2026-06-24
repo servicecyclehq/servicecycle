@@ -38,7 +38,8 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut, rollupIncidentsBySite } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
-const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const normBusKey = (s: any) => String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '');
 const ExcelJS = require('exceljs');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const PDFDocument = require('pdfkit');
@@ -1958,7 +1959,7 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
 
       const existing = await prisma.systemStudyAsset.findMany({
         where: { accountId, study: { supersededById: null } },
-        select: { id: true, busName: true, nominalVoltage: true, cableLengthFt: true, cableSize: true, cableMaterial: true, conductorsPerPhase: true },
+        select: { id: true, assetId: true, busName: true, nominalVoltage: true, cableLengthFt: true, cableSize: true, cableMaterial: true, conductorsPerPhase: true },
         take: 5000,
       });
       const overwrite = req.body && (req.body.mode === 'overwrite' || req.body.overwrite === true || req.body.overwrite === 'true');
@@ -1969,11 +1970,64 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
         await prisma.$transaction(updates.map((u: any) => prisma.systemStudyAsset.update({ where: { id: u.id }, data: u.set })));
         applied = updates.length;
       }
-      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode });
-      const note = overwrite
-        ? 'Overwrite mode: blank fields filled and differing values replaced (existing values never erased with blanks). SC stores collected data; a licensed PE owns the arc-flash calculation.'
-        : 'Fill-only: blank fields populated; existing values untouched. SC stores collected data; a licensed PE owns the arc-flash calculation.';
-      res.json({ success: true, data: { applied, summary, note } });
+
+      // ── createNew: stand up assets for buses that don't match anything ────────
+      // Requires an explicit siteId (where the new equipment lives). Creates one
+      // import study, an Asset + bound SystemStudyAsset per new bus, and wires
+      // fedFrom topology for the NEW assets from the Cables/Transformers tables.
+      let created = 0, feedsWired = 0;
+      let createdStudyId: string | null = null;
+      const wantCreate = req.body && (req.body.createNew === true || req.body.createNew === 'true');
+      if (wantCreate) {
+        const siteId = req.body.siteId ? String(req.body.siteId) : null;
+        if (!siteId) return res.status(400).json({ success: false, error: 'createNew requires siteId (which site the new equipment belongs to).' });
+        const site = await prisma.site.findFirst({ where: { id: siteId, accountId }, select: { id: true } });
+        if (!site) return res.status(404).json({ success: false, error: 'Site not found.' });
+
+        const plan = planMultiTableImport(tables, existing.map((r: any) => r.busName));
+        const busByKey = new Map<string, any>();
+        for (const b of (tables.buses || [])) { const k = normBusKey(b.busId); if (!busByKey.has(k)) busByKey.set(k, b); }
+        const cableByTo = new Map<string, any>();
+        for (const c of (tables.cables || [])) { const k = normBusKey(c.toBusId); if (k && !cableByTo.has(k)) cableByTo.set(k, c); }
+        const existingAssetByKey = new Map<string, string>();
+        for (const r of existing) { const k = normBusKey(r.busName); if (r.assetId && !existingAssetByKey.has(k)) existingAssetByKey.set(k, r.assetId); }
+
+        if (plan.createBuses.length) {
+          const performed = new Date();
+          const study = await prisma.systemStudy.create({
+            data: { accountId, siteId, studyType: 'one_line_review', performedDate: performed, expiresAt: new Date(performed.getFullYear() + 5, performed.getMonth(), performed.getDate()), method: 'AFX import', trigger: 'system_change', notes: 'Created from AFX multi-table import.' },
+            select: { id: true },
+          });
+          createdStudyId = study.id;
+          const newAssetByKey = new Map<string, string>();
+          for (const busId of plan.createBuses) {
+            const k = normBusKey(busId); const b = busByKey.get(k) || {}; const cable = cableByTo.get(k) || {};
+            const voltStr = b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : undefined;
+            const asset = await prisma.asset.create({
+              data: { accountId, siteId, equipmentType: mapEquipmentType(b.equipmentType) as any, nameplateData: { busName: busId, nominalVoltage: voltStr || null, importedFrom: 'afx_import' }, notes: `Created from AFX multi-table import (bus ${busId}).` },
+              select: { id: true },
+            });
+            await prisma.systemStudyAsset.create({
+              data: { accountId, studyId: study.id, assetId: asset.id, busName: busId, nominalVoltage: voltStr, cableLengthFt: numOrNull(cable.cableLengthFt) ?? undefined, cableSize: cable.cableSize || undefined, cableMaterial: cable.cableMaterial || undefined, conductorsPerPhase: intOrNull(cable.conductorsPerPhase) ?? undefined },
+            });
+            newAssetByKey.set(k, asset.id); created++;
+          }
+          // Wire fedFrom for NEW assets only (To = newly created). From may be existing or new.
+          for (const link of [...(tables.cables || []), ...(tables.transformers || [])]) {
+            const toId = newAssetByKey.get(normBusKey(link.toBusId));
+            const fromId = newAssetByKey.get(normBusKey(link.fromBusId)) || existingAssetByKey.get(normBusKey(link.fromBusId));
+            if (toId && fromId && toId !== fromId) { await prisma.asset.update({ where: { id: toId }, data: { fedFromAssetId: fromId } }); feedsWired++; }
+          }
+        }
+      }
+
+      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten, busesCreated: created, feedsWired, createdStudyId, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode });
+      const note = wantCreate
+        ? `Created ${created} new bus(es) and updated ${applied} existing. New equipment was added under the chosen site; SC stores collected data and a licensed PE owns the arc-flash calculation.`
+        : (overwrite
+          ? 'Overwrite mode: blank fields filled and differing values replaced (existing values never erased with blanks). SC stores collected data; a licensed PE owns the arc-flash calculation.'
+          : 'Fill-only: blank fields populated; existing values untouched. SC stores collected data; a licensed PE owns the arc-flash calculation.');
+      res.json({ success: true, data: { applied, created, feedsWired, createdStudyId, summary, note } });
     } catch (e) {
       console.error('afx import-multi apply error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to apply multi-table import' });
