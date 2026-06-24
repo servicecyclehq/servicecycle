@@ -24,6 +24,22 @@ const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
 const { requireManager } = require('../middleware/roles');
 const { writeLog } = require('../lib/activityLog');
+const { resolveAccountFeatures } = require('../lib/accountFeatures');
+
+// Feature guard: parts_module defaults ON. Returns 403 if account has disabled it.
+router.use(async (req: any, res: any, next: any) => {
+  if (!req.user) return next(); // unauthenticated — let requireManager handle 401
+  try {
+    const features = await resolveAccountFeatures(req.user.accountId);
+    if (!features.parts_module) {
+      return res.status(403).json({
+        success: false,
+        error: 'Parts & Inventory module is disabled. Enable it in Settings → General.',
+      });
+    }
+    next();
+  } catch { next(); }
+});
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -307,7 +323,7 @@ router.delete('/:id/inventory/:entryId', requireManager, async (req: any, res: a
     const entry = await prisma.spareInventory.findFirst({
       where: { id: String(req.params.entryId), accountId, partId: String(req.params.id) },
     });
-    if (!entry) return res.status(404).json({ success: false, error: 'Inventory entry not found.' });
+    if (!entry) return res.status(404).json({     success: false, error: 'Inventory entry not found.' });
 
     await prisma.spareInventory.delete({ where: { id: entry.id } });
     writeLog({

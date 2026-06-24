@@ -42,8 +42,11 @@ const ALL_FEATURE_KEYS = [
 const ACCOUNT_FEATURE_KEYS = [
   'dga_import', 'thermography_import', 'qemw_wallet',
   'arc_flash_studies', 'enterprise_trust', 'sso', 'neta_full_battery',
+  'parts_module',
 ];
-const ACCOUNT_FEATURE_DEFAULTS = Object.fromEntries(ACCOUNT_FEATURE_KEYS.map(k => [k, false]));
+// parts_module defaults ON (opt-out). All others default OFF (opt-in).
+const FEATURE_DEFAULT_ON = new Set(['parts_module']);
+const ACCOUNT_FEATURE_DEFAULTS = Object.fromEntries(ACCOUNT_FEATURE_KEYS.map(k => [k, FEATURE_DEFAULT_ON.has(k)]));
 
 /**
  * Computes the effective feature visibility for a user.

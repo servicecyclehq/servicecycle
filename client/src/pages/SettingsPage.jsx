@@ -83,6 +83,8 @@ export default function SettingsPage() {
     aiFeedbackUpstreamEnabled: false,
     // #16: auto-email the leave-behind PDF on WO completion (AccountSetting KV).
     autoSendLeaveBehind: false,
+    // Parts & Inventory module toggle (opt-out; default true).
+    partsModuleEnabled: true,
     // Phase 4: per-user boolean column. "Don't ask me each session"
     // suppresses the AI consent modal entirely for THIS user.
     aiConsentSilenced:       false,
@@ -130,6 +132,8 @@ export default function SettingsPage() {
             aiFeedbackUpstreamEnabled:  !!s.aiFeedbackUpstreamEnabled,
             // #16: auto-send leave-behind on WO completion
             autoSendLeaveBehind:        !!s.autoSendLeaveBehind,
+            // Parts & Inventory module toggle. Absent = enabled (opt-out default).
+            partsModuleEnabled:         s.partsModuleEnabled !== false,
             // Phase 4: per-user "don't ask me each session" — comes from
             // /api/auth/me via AuthContext (NOT /api/settings). Pulled
             // from the user prop below via a separate effect.
@@ -831,6 +835,38 @@ export default function SettingsPage() {
               }}
             >
               <div style={{ ...toggleThumb, transform: form.autoSendLeaveBehind === true ? 'translateX(20px)' : 'translateX(2px)' }} />
+            </div>
+          </label>
+        </section>
+
+        <section style={{ marginBottom: '2rem' }}>
+          <h2 style={sectionHeading}>Modules</h2>
+          <p style={sectionDesc}>
+            Enable or disable optional product modules for this account. Admin-only.
+          </p>
+          <label style={{ ...toggleRow, maxWidth: 560 }}>
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                Parts &amp; Inventory
+              </div>
+              <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem', marginTop: 2 }}>
+                Spare-parts catalog with per-asset stocking levels and below-minimum alerts. On by default.
+              </div>
+            </div>
+            <div
+              role="switch"
+              aria-checked={form.partsModuleEnabled === true}
+              tabIndex={isAdmin ? 0 : -1}
+              onClick={() => isAdmin && set('partsModuleEnabled', !form.partsModuleEnabled)}
+              onKeyDown={e => e.key === ' ' && isAdmin && set('partsModuleEnabled', !form.partsModuleEnabled)}
+              style={{
+                ...toggle,
+                background: form.partsModuleEnabled === true ? 'var(--accent)' : 'var(--color-text-muted)',
+                cursor: isAdmin ? 'pointer' : 'not-allowed',
+                opacity: isAdmin ? 1 : 0.6,
+              }}
+            >
+              <div style={{ ...toggleThumb, transform: form.partsModuleEnabled === true ? 'translateX(20px)' : 'translateX(2px)' }} />
             </div>
           </label>
         </section>

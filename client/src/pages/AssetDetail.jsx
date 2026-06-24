@@ -1273,8 +1273,11 @@ export default function AssetDetail() {
             collapsed. OSHA 29 CFR 1910.147 compliance anchor. */}
         <AssetLotoCard asset={asset} canWrite={canWrite} />
 
-        {/* Spare parts stocked for this asset: qty on hand, min levels, bin location. */}
-        <SpareInventoryPanel assetId={asset.id} canEdit={canWrite} />
+        {/* Spare parts stocked for this asset: qty on hand, min levels, bin location.
+            Hidden when parts_module feature flag is disabled for this account. */}
+        {accountFeatures.parts_module !== false && (
+          <SpareInventoryPanel assetId={asset.id} canEdit={canWrite} />
+        )}
 
 
         {/* ── Documents & Procedures ────────────────────────────────────────── */}

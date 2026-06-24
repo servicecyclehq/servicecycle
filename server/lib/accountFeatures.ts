@@ -32,10 +32,14 @@ const ACCOUNT_FEATURE_KEYS = [
   "sso",                  // enterprise SSO (OIDC/SAML) + SCIM admin surface (feature/sso-polis)
   "neta_full_battery",    // bulk-apply the full NETA test battery
                           // (OFF = lean manufacturer / 70B program only)
+  "parts_module",         // spare-parts catalog + per-asset inventory — default ON (opt-out)
 ];
 
+// Most features are opt-in (default OFF). parts_module is opt-out (default ON).
+const FEATURE_DEFAULT_ON = new Set(["parts_module"]);
+
 const ACCOUNT_FEATURE_DEFAULTS = ACCOUNT_FEATURE_KEYS.reduce((acc, k) => {
-  acc[k] = false;
+  acc[k] = FEATURE_DEFAULT_ON.has(k);
   return acc;
 }, {});
 
@@ -86,5 +90,8 @@ module.exports = {
   computeAccountFeatures,
   resolveAccountFeatures,
 };
+
+export {};
+
 
 export {};

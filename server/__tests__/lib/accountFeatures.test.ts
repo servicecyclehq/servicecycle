@@ -1,6 +1,6 @@
 /**
  * lib/accountFeatures resolution-order tests.
- *   defaults (all OFF) < env override < per-account AccountSetting override.
+ *   defaults (most OFF, parts_module ON) < env override < per-account AccountSetting override.
  */
 import '../helpers/setup';
 import { createTestUser, type TestUser } from '../helpers/auth';
@@ -28,9 +28,17 @@ afterAll(async () => {
 });
 
 describe('computeAccountFeatures (pure)', () => {
-  test('defaults are all OFF (lean)', () => {
+  test('defaults: most OFF (opt-in), parts_module ON (opt-out)', () => {
     const f = computeAccountFeatures({});
-    for (const k of ACCOUNT_FEATURE_KEYS) expect(f[k]).toBe(false);
+    for (const k of ACCOUNT_FEATURE_KEYS) {
+      if (k === 'parts_module') expect(f[k]).toBe(true);
+      else expect(f[k]).toBe(false);
+    }
+  });
+
+  test('parts_module can be disabled via per-account setting', () => {
+    const f = computeAccountFeatures({ 'feature.parts_module': 'false' });
+    expect(f.parts_module).toBe(false);
   });
 
   test('per-account setting flips a single flag on', () => {
@@ -63,6 +71,7 @@ describe('resolveAccountFeatures (DB)', () => {
     const f = await resolveAccountFeatures(manager.accountId);
     expect(f.thermography_import).toBe(true);
     expect(f.dga_import).toBe(false);
+    expect(f.parts_module).toBe(true); // default ON even without a DB row
   });
 });
 

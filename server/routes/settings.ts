@@ -290,6 +290,8 @@ router.get('/', requireAdmin, async (req, res) => {
         customerWeeklyDigest,
         alertCadence,
         customerQuarterlyCfo,
+        // parts_module toggle: absent/missing key means enabled (opt-out default).
+        partsModuleEnabled: dbRows['feature.parts_module'] !== 'false',
       },
     });
   } catch (err) {
@@ -425,7 +427,14 @@ router.put('/', async (req, res) => {
       alertCadenceUpdate = v;
     }
 
-    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && autoSendLeaveBehindUpdate === null && customerWeeklyDigestUpdate === null && customerQuarterlyCfoUpdate === null && alertCadenceUpdate === null && fteCountUpdate === null) {
+    // parts_module toggle — admin-only. Saves as feature.parts_module AccountSetting KV.
+    let partsModuleEnabledUpdate: boolean | null = null;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'partsModuleEnabled') && isAdmin) {
+      const v = req.body.partsModuleEnabled;
+      partsModuleEnabledUpdate = (v === true || v === 'true');
+    }
+
+    if (updates.length === 0 && aiBriefEnabledUpdate === null && aiConsentSilencedUpdate === null && aiFeedbackUpstreamUpdate === null && autoSendLeaveBehindUpdate === null && customerWeeklyDigestUpdate === null && customerQuarterlyCfoUpdate === null && alertCadenceUpdate === null && fteCountUpdate === null && partsModuleEnabledUpdate === null) {
       return res.status(400).json({ success: false, error: 'No valid settings provided' });
     }
 
@@ -570,6 +579,16 @@ router.put('/', async (req, res) => {
         where:  { accountId_key: { accountId: req.user.accountId, key } },
         update: { value: alertCadenceUpdate },
         create: { accountId: req.user.accountId, key, value: alertCadenceUpdate },
+      });
+    }
+
+    // parts_module toggle — saves as feature.parts_module AccountSetting KV.
+    if (partsModuleEnabledUpdate !== null) {
+      const key = 'feature.parts_module';
+      await prisma.accountSetting.upsert({
+        where:  { accountId_key: { accountId: req.user.accountId, key } },
+        update: { value: String(partsModuleEnabledUpdate) },
+        create: { accountId: req.user.accountId, key, value: String(partsModuleEnabledUpdate) },
       });
     }
 

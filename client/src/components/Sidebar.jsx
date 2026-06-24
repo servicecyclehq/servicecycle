@@ -743,7 +743,7 @@ export default function Sidebar() {
           </NavLink>
 
           {/* Parts catalog â€” manager+ only (role-gated in App.jsx). */}
-          {(user?.role === 'admin' || user?.role === 'manager') && (
+          {(user?.role === 'admin' || user?.role === 'manager') && accountFeatures?.parts_module !== false && (
             <NavLink
               to="/parts"
               className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
