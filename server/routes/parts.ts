@@ -34,7 +34,8 @@ function str(v: any, max = 500): string | undefined {
 }
 function posInt(v: any): number | undefined {
   const n = parseInt(v, 10);
-  return Number.isFinite(n) && n >= 0 ? n : undefined;
+  // Cap at PG INT max to avoid runtime overflow errors instead of 400s.
+  return Number.isFinite(n) && n >= 0 && n <= 2_147_483_647 ? n : undefined;
 }
 function posDec(v: any): number | undefined {
   const n = parseFloat(v);
