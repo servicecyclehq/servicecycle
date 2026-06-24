@@ -322,8 +322,9 @@ function planMultiTableImport(tables: any, existingBusNames: string[]): any {
  * @param existingRows [{ id, busName, nominalVoltage, cableLengthFt, cableSize, cableMaterial, conductorsPerPhase }]
  * @returns { updates:[{id,set}], summary }
  */
-function buildFillUpdates(tables: any, existingRows: any[]): any {
+function buildFillUpdates(tables: any, existingRows: any[], opts: any = {}): any {
   const t = tables || {};
+  const overwrite = !!(opts && opts.overwrite);
   const byKey = new Map<string, any>();
   for (const r of (existingRows || [])) { const k = normKey(r.busName); if (k && !byKey.has(k)) byKey.set(k, r); }
   const cableByTo = new Map<string, any>();
@@ -332,9 +333,10 @@ function buildFillUpdates(tables: any, existingRows: any[]): any {
   const numOr = (v: any) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
   const intOr = (v: any) => { const n = numOr(v); return n == null ? null : Math.round(n); };
   const blank = (v: any) => v == null || v === '';
+  const eq = (a: any, b: any) => String(a) === String(b);
 
   const updates: any[] = [];
-  let matched = 0, skippedNew = 0, skippedNoChange = 0;
+  let matched = 0, skippedNew = 0, skippedNoChange = 0, overwritten = 0;
   for (const b of (t.buses || [])) {
     const k = normKey(b.busId);
     const ex = k ? byKey.get(k) : null;
@@ -342,7 +344,14 @@ function buildFillUpdates(tables: any, existingRows: any[]): any {
     matched++;
     const cable = cableByTo.get(k) || {};
     const set: any = {};
-    const fill = (field: string, val: any) => { if (val != null && val !== '' && blank(ex[field])) set[field] = val; };
+    // fill-only: write a present incoming value into a BLANK field. overwrite:
+    // also replace a non-blank existing value, but only when it actually differs
+    // (and never clobber an existing value WITH a blank — imports add, never erase).
+    const fill = (field: string, val: any) => {
+      if (val == null || val === '') return;
+      if (blank(ex[field])) { set[field] = val; }
+      else if (overwrite && !eq(ex[field], val)) { set[field] = val; overwritten++; }
+    };
     fill('nominalVoltage', b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : null);
     fill('cableLengthFt', numOr(cable.cableLengthFt));
     fill('cableSize', cable.cableSize);
@@ -351,7 +360,7 @@ function buildFillUpdates(tables: any, existingRows: any[]): any {
     if (Object.keys(set).length) updates.push({ id: ex.id, set }); else skippedNoChange++;
   }
   const fieldsSet = updates.reduce((a, u) => a + Object.keys(u.set).length, 0);
-  return { updates, summary: { matched, willUpdate: updates.length, fieldsSet, skippedNew, skippedNoChange } };
+  return { updates, summary: { matched, willUpdate: updates.length, fieldsSet, overwritten, skippedNew, skippedNoChange, mode: overwrite ? 'overwrite' : 'fill_only' } };
 }
 
 module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates };

@@ -180,6 +180,7 @@ function AfxPanel() {
   const [impBusy, setImpBusy] = useState(false);
   const [impApplyBusy, setImpApplyBusy] = useState(false);
   const [impApplyMsg, setImpApplyMsg] = useState('');
+  const [impOverwrite, setImpOverwrite] = useState(false);
 
   async function loadSpec() {
     if (spec) return spec;
@@ -232,9 +233,11 @@ function AfxPanel() {
     setImpApplyBusy(true); setErr(''); setImpApplyMsg('');
     try {
       const fd = new FormData(); fd.append('file', impFile); fd.append('confirm', 'true');
+      if (impOverwrite) fd.append('mode', 'overwrite');
       const r = await api.post('/api/arc-flash/afx/import-multi/apply', fd);
       const d = r.data?.data || {};
-      setImpApplyMsg(`Applied: ${d.applied} bus(es) updated, ${d.summary?.fieldsSet || 0} field(s) filled. Existing values were left untouched.`);
+      const ov = d.summary?.overwritten ? `, ${d.summary.overwritten} value(s) replaced` : '';
+      setImpApplyMsg(`Applied: ${d.applied} bus(es) updated, ${d.summary?.fieldsSet || 0} field(s) set${ov}. (mode: ${d.summary?.mode || 'fill_only'})`);
       setImpPreview(null);
     } catch (e) { setErr(e?.response?.data?.error || 'Import apply failed.'); }
     finally { setImpApplyBusy(false); }
@@ -298,10 +301,13 @@ function AfxPanel() {
           {impPreview.validation.ok && impPreview.plan.summary.matchedBuses > 0 && (
             <div style={{ marginTop: 10 }}>
               <button type="button" className="btn btn-primary btn-sm" disabled={impApplyBusy} onClick={applyImport}
-                title="Fill blank fields on matched buses only. Never overwrites existing values; never creates new buses.">
-                {impApplyBusy ? 'Applying…' : `Apply (fill-only) to ${impPreview.plan.summary.matchedBuses} matched bus(es)`}
+                title="Apply to matched buses. Never creates new buses; never erases a value with a blank.">
+                {impApplyBusy ? 'Applying…' : `Apply${impOverwrite ? ' (overwrite)' : ' (fill-only)'} to ${impPreview.plan.summary.matchedBuses} matched bus(es)`}
               </button>
-              <span style={{ marginLeft: 8, fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>Fills blanks only — existing values untouched. New buses are not created.</span>
+              <label style={{ marginLeft: 10, fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+                <input type="checkbox" checked={impOverwrite} onChange={e => setImpOverwrite(e.target.checked)} style={{ marginRight: 4 }} />
+                Overwrite differing values (default: fill blanks only)
+              </label>
             </div>
           )}
         </div>

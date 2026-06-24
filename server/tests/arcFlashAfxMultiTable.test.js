@@ -185,6 +185,23 @@ describe('buildFillUpdates (fill-only, never overwrites)', () => {
     expect(updates).toHaveLength(0);
     expect(summary.skippedNoChange).toBe(1);
   });
+
+  test('overwrite mode replaces a differing existing value and counts it', () => {
+    const existing = [{ id: 'a2', busName: 'MCC_1', nominalVoltage: '415V', cableSize: '500' }]; // size already matches
+    const { updates, summary } = buildFillUpdates(tables, existing, { overwrite: true });
+    const a2 = updates.find(u => u.id === 'a2');
+    expect(a2.set.nominalVoltage).toBe('480V'); // 415 -> 480
+    expect(a2.set.cableSize).toBeUndefined(); // identical, not rewritten
+    expect(summary.overwritten).toBe(1);
+    expect(summary.mode).toBe('overwrite');
+  });
+
+  test('overwrite never erases an existing value with a blank incoming', () => {
+    const sparse = { buses: [{ busId: 'MCC_1' }], cables: [] }; // no incoming values at all
+    const existing = [{ id: 'a2', busName: 'MCC_1', nominalVoltage: '415V', cableSize: '4/0' }];
+    const { updates } = buildFillUpdates(sparse, existing, { overwrite: true });
+    expect(updates).toHaveLength(0); // nothing blanked out
+  });
 });
 
 describe('parseSheetRows (reverse header map)', () => {

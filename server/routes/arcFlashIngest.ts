@@ -1961,15 +1961,19 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
         select: { id: true, busName: true, nominalVoltage: true, cableLengthFt: true, cableSize: true, cableMaterial: true, conductorsPerPhase: true },
         take: 5000,
       });
-      const { updates, summary } = buildFillUpdates(tables, existing);
+      const overwrite = req.body && (req.body.mode === 'overwrite' || req.body.overwrite === true || req.body.overwrite === 'true');
+      const { updates, summary } = buildFillUpdates(tables, existing, { overwrite });
 
       let applied = 0;
       if (updates.length) {
         await prisma.$transaction(updates.map((u: any) => prisma.systemStudyAsset.update({ where: { id: u.id }, data: u.set })));
         applied = updates.length;
       }
-      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: 'fill_only' });
-      res.json({ success: true, data: { applied, summary, note: 'Fill-only: blank fields populated; existing values untouched. SC stores collected data; a licensed PE owns the arc-flash calculation.' } });
+      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode });
+      const note = overwrite
+        ? 'Overwrite mode: blank fields filled and differing values replaced (existing values never erased with blanks). SC stores collected data; a licensed PE owns the arc-flash calculation.'
+        : 'Fill-only: blank fields populated; existing values untouched. SC stores collected data; a licensed PE owns the arc-flash calculation.';
+      res.json({ success: true, data: { applied, summary, note } });
     } catch (e) {
       console.error('afx import-multi apply error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to apply multi-table import' });
