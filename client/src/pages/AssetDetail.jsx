@@ -40,6 +40,7 @@ import OutageConsolidationCard from '../components/OutageConsolidationCard';
 import ConditionIntervalCard from '../components/ConditionIntervalCard';
 import QuoteRequestButton from '../components/QuoteRequestButton';
 import AssetLotoCard from '../components/AssetLotoCard';
+import SpareInventoryPanel from '../components/SpareInventoryPanel';
 import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import NameplateCard from '../components/NameplateCard';
 import IncidentLogCard from '../components/IncidentLogCard';
@@ -1271,6 +1272,10 @@ export default function AssetDetail() {
             Active procedure shown prominently; drafts editable; archived
             collapsed. OSHA 29 CFR 1910.147 compliance anchor. */}
         <AssetLotoCard asset={asset} canWrite={canWrite} />
+
+        {/* Spare parts stocked for this asset: qty on hand, min levels, bin location. */}
+        <SpareInventoryPanel assetId={asset.id} canEdit={canWrite} />
+
 
         {/* ── Documents & Procedures ────────────────────────────────────────── */}
         {/* OEM manuals, wiring diagrams, test reports, warranty docs, and
