@@ -351,6 +351,9 @@ model Account {
   ssoLoginStates   SsoLoginState[]
   ssoHandoffs      SsoHandoff[]
 
+  parts          Part[]
+  spareInventory SpareInventory[]
+
   @@index([enterpriseGroupId])
   @@map("accounts")
 }
@@ -680,6 +683,8 @@ model Site {
   complianceSnapshots ComplianceSnapshot[]
   auditVisits         AuditVisit[]
 
+  spareInventory SpareInventory[]
+
   @@unique([accountId, name])
   @@index([accountId])
   @@index([accountId, archivedAt])
@@ -879,6 +884,7 @@ model Asset {
   telemetryChannels      TelemetryChannel[]
   telemetryReadings      TelemetryReading[]
   telemetryNotifications TelemetryNotification[]
+  spareInventory         SpareInventory[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -3229,4 +3235,56 @@ model ArcFlashIncident {
   @@index([assetId])
   @@index([accountId, status])
   @@map("arc_flash_incidents")
+}
+
+// â”€â”€ Parts / Spare Inventory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Part: catalog entry for a spare part or consumable tracked per account.
+// SpareInventory: links a Part to a specific Asset (or Site for site-level stock)
+// with quantity on hand, minimum stocking level, and bin/shelf location.
+// Drives the Parts page and the per-asset Spares panel on AssetDetail.
+model Part {
+  id           String   @id @default(uuid())
+  accountId    String
+  partNumber   String
+  description  String
+  manufacturer String?
+  category     String?  // BREAKER | TRANSFORMER | RELAY | CABLE | FUSE | CONSUMABLE | OTHER
+  unitCost     Decimal? @db.Decimal(14, 2)
+  leadTimeWeeks Int?    // typical delivery time; informs risk if min stock hit
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  inventory SpareInventory[]
+
+  @@index([accountId])
+  @@index([accountId, category])
+  @@index([accountId, partNumber])
+  @@map("parts")
+}
+
+model SpareInventory {
+  id        String   @id @default(uuid())
+  accountId String
+  partId    String
+  assetId   String?  // null = site-level stock
+  siteId    String?  // null = account-wide float
+  qtyOnHand Int      @default(0)
+  qtyMin    Int?     // alert threshold; null = unmanaged
+  location  String?  // bin / shelf / cage location
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  part    Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+  asset   Asset?  @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  site    Site?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([partId])
+  @@index([assetId])
+  @@index([siteId])
+  @@map("spare_inventory")
 }

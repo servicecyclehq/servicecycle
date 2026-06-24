@@ -160,6 +160,7 @@ const EquipmentTemplates             = lazyWithReload(() => import('./pages/Equi
 const OutagePlannerPage              = lazyWithReload(() => import('./pages/OutagePlannerPage')); // account-wide outage consolidation planner
 const CmmsImport                     = lazyWithReload(() => import('./pages/CmmsImport'));         // CMMS bulk import hub
 const FleetDashboard                 = lazyWithReload(() => import('./pages/FleetDashboard'));     // OEM fleet dashboard (oem_admin)
+const PartsPage                      = lazyWithReload(() => import('./pages/Parts'));               // Parts / spare inventory catalog
 
 // Field Mode — phone-first technician surface. Own chrome (FieldLayout, no
 // sidebar), mounted behind ProtectedRoute but OUTSIDE the desktop Layout.
@@ -475,6 +476,13 @@ function AppRoutes() {
             <Route path="fleet" element={
               <RequireRole roles={['oem_admin']}>
                 <FleetDashboard />
+              </RequireRole>
+            } />
+
+            {/* Parts / spare inventory catalog — manager+ */}
+            <Route path="parts" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <PartsPage />
               </RequireRole>
             } />
 

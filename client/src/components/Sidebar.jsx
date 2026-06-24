@@ -15,7 +15,7 @@ import ThemeToggle from './ThemeToggle';
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
-  Smartphone, QrCode, ShieldAlert, Layers, Bolt, UploadCloud,
+  Smartphone, QrCode, ShieldAlert, Layers, Bolt, UploadCloud, Package,
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
@@ -48,6 +48,7 @@ const Icons = {
   outagePlan:  <Bolt          {...ICON_PROPS} />,
   cmmsImport:  <UploadCloud   {...ICON_PROPS} />,
   fleetView:   <LayoutGrid    {...ICON_PROPS} />,
+  parts:       <Package       {...ICON_PROPS} />,
 };
 
 function GlobalSearch() {
@@ -739,6 +740,17 @@ export default function Sidebar() {
             {Icons.outagePlan}
             Outage Planner
           </NavLink>
+
+          {/* Parts catalog â€” manager+ only (role-gated in App.jsx). */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <NavLink
+              to="/parts"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.parts}
+              Parts
+            </NavLink>
+          )}
         </NavGroup>
 
         {/* ── Compliance ────────────────────────────────────────────────── */}

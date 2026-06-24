@@ -1471,6 +1471,9 @@ app.use('/api/inspections/:id/leave-behind-pdf', authenticateToken, leaveBehindL
 // ── Disaster Response Mode — weather alerts + emergency declarations ──────────
 app.use('/api/disaster-events', authenticateToken, disasterEventRoutes);
 
+// ── Parts / Spare Inventory ────────────────────────────────────────────────────
+app.use('/api/parts', authenticateToken, require('./routes/parts'));
+
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, error: 'Route not found' });
