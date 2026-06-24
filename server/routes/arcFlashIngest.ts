@@ -35,7 +35,7 @@ const QRCode = require('qrcode');
 const crypto = require('crypto');
 const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
 const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
-const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
+const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut, rollupIncidentsBySite } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
 const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
@@ -857,7 +857,7 @@ router.get('/fleet', async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const soon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    const [rows, devices, driftTests] = await Promise.all([
+    const [rows, devices, driftTests, incidents] = await Promise.all([
       prisma.systemStudyAsset.findMany({
         where: { accountId, study: { supersededById: null } },
         include: {
@@ -868,11 +868,14 @@ router.get('/fleet', async (req: any, res: any) => {
       }),
       prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { not: null } }, select: { assetId: true, source: true }, take: 5000 }),
       prisma.deviceTestRecord.findMany({ where: { accountId, driftFlagged: true, assetId: { not: null } }, select: { assetId: true }, take: 5000 }),
+      prisma.arcFlashIncident.findMany({ where: { accountId }, select: { siteId: true, occurredAt: true, createdAt: true, status: true, injury: true }, take: 5000 }),
     ]);
 
     const devByAsset = new Map<string, any[]>();
     for (const d of devices) { if (!d.assetId) continue; const arr = devByAsset.get(d.assetId) || []; arr.push(d); devByAsset.set(d.assetId, arr); }
     const driftAssets = new Set(driftTests.map((t: any) => t.assetId));
+    // Recent incidents per site (last 365 days) — the strongest attention signal.
+    const incidentsBySite = rollupIncidentsBySite(incidents, Date.now(), 365);
 
     const sites = new Map<string, any>();
     for (const r of rows) {
@@ -904,21 +907,28 @@ router.get('/fleet', async (req: any, res: any) => {
       }
     }
 
-    const siteList = Array.from(sites.values()).map((s: any) => ({
-      siteId: s.siteId, siteName: s.siteName, busCount: s.busCount, dangerCount: s.dangerCount,
-      dangerPct: s.busCount ? Math.round((s.dangerCount / s.busCount) * 100) : 0,
-      blockedCount: s.blockedCount, lowConfidenceCount: s.lowConfidenceCount,
-      avgConfidence: s.busCount ? Math.round(s.confidenceSum / s.busCount) : null,
-      contradictionErrors: s.errorCount, contradictionWarnings: s.warningCount,
-      studyCount: s.studyIds.size, expiringStudies: s.expiringStudyIds.size,
-    })).sort((a, b) => (b.dangerCount - a.dangerCount) || (a.avgConfidence ?? 100) - (b.avgConfidence ?? 100));
+    const siteList = Array.from(sites.values()).map((s: any) => {
+      const inc = incidentsBySite.get(s.siteId) || { recent: 0, open: 0, injury: 0, lastOccurredAt: null };
+      return {
+        siteId: s.siteId, siteName: s.siteName, busCount: s.busCount, dangerCount: s.dangerCount,
+        dangerPct: s.busCount ? Math.round((s.dangerCount / s.busCount) * 100) : 0,
+        blockedCount: s.blockedCount, lowConfidenceCount: s.lowConfidenceCount,
+        avgConfidence: s.busCount ? Math.round(s.confidenceSum / s.busCount) : null,
+        contradictionErrors: s.errorCount, contradictionWarnings: s.warningCount,
+        studyCount: s.studyIds.size, expiringStudies: s.expiringStudyIds.size,
+        recentIncidents: inc.recent, openIncidents: inc.open, incidentInjuries: inc.injury,
+        lastIncidentAt: inc.lastOccurredAt ? new Date(inc.lastOccurredAt).toISOString() : null,
+      };
+      // a recent real-world incident outranks DANGER% for attention
+    }).sort((a, b) => (b.recentIncidents - a.recentIncidents) || (b.dangerCount - a.dangerCount) || (a.avgConfidence ?? 100) - (b.avgConfidence ?? 100));
 
     const totals = siteList.reduce((acc: any, s: any) => ({
       sites: acc.sites + 1, busCount: acc.busCount + s.busCount, dangerCount: acc.dangerCount + s.dangerCount,
       blockedCount: acc.blockedCount + s.blockedCount, lowConfidenceCount: acc.lowConfidenceCount + s.lowConfidenceCount,
       contradictionErrors: acc.contradictionErrors + s.contradictionErrors, contradictionWarnings: acc.contradictionWarnings + s.contradictionWarnings,
-      expiringStudies: acc.expiringStudies + s.expiringStudies, confWeighted: acc.confWeighted + (s.avgConfidence ?? 0) * s.busCount,
-    }), { sites: 0, busCount: 0, dangerCount: 0, blockedCount: 0, lowConfidenceCount: 0, contradictionErrors: 0, contradictionWarnings: 0, expiringStudies: 0, confWeighted: 0 });
+      expiringStudies: acc.expiringStudies + s.expiringStudies, recentIncidents: acc.recentIncidents + s.recentIncidents,
+      openIncidents: acc.openIncidents + s.openIncidents, confWeighted: acc.confWeighted + (s.avgConfidence ?? 0) * s.busCount,
+    }), { sites: 0, busCount: 0, dangerCount: 0, blockedCount: 0, lowConfidenceCount: 0, contradictionErrors: 0, contradictionWarnings: 0, expiringStudies: 0, recentIncidents: 0, openIncidents: 0, confWeighted: 0 });
     const avgConfidence = totals.busCount ? Math.round(totals.confWeighted / totals.busCount) : null;
 
     res.json({ success: true, data: { sites: siteList, totals: { ...totals, confWeighted: undefined, avgConfidence } } });

@@ -76,6 +76,31 @@ function incidentOut(r: any): any {
   };
 }
 
-module.exports = { INCIDENT_TYPES, WORK_TYPES, STATUSES, normEnum, buildStudyStateSnapshot, incidentOut };
+/**
+ * Roll up incidents per site for the fleet attention view. Pure.
+ * A logged incident/near-miss is the strongest real-world signal that a site
+ * needs eyes — so the fleet surfaces it alongside DANGER%. SC counts the
+ * customer's records; it makes no preventability or fault judgment.
+ * @returns Map siteId -> { recent, open, injury, lastOccurredAt }
+ *   recent = occurred within windowDays (by occurredAt, else createdAt)
+ */
+function rollupIncidentsBySite(incidents: any[], nowMs: number, windowDays: number): Map<string, any> {
+  const out = new Map<string, any>();
+  const cutoff = nowMs - windowDays * 24 * 60 * 60 * 1000;
+  for (const inc of (incidents || [])) {
+    const siteId = inc.siteId || 'unassigned';
+    let s = out.get(siteId);
+    if (!s) { s = { recent: 0, open: 0, injury: 0, lastOccurredAt: null }; out.set(siteId, s); }
+    const when = inc.occurredAt || inc.createdAt;
+    const t = when ? new Date(when).getTime() : null;
+    if (t != null && t >= cutoff) s.recent++;
+    if (inc.status !== 'closed') s.open++;
+    if (inc.injury) s.injury++;
+    if (t != null && (s.lastOccurredAt == null || t > s.lastOccurredAt)) s.lastOccurredAt = t;
+  }
+  return out;
+}
+
+module.exports = { INCIDENT_TYPES, WORK_TYPES, STATUSES, normEnum, buildStudyStateSnapshot, incidentOut, rollupIncidentsBySite };
 
 export {};

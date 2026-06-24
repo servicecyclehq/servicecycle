@@ -80,6 +80,7 @@ export default function ArcFlashFleet() {
               <Tile label="Blocked buses" value={t.blockedCount} />
               <Tile label="Sanity errors" value={t.contradictionErrors} color={t.contradictionErrors > 0 ? 'var(--color-danger)' : undefined} />
               <Tile label="Studies expiring (90d)" value={t.expiringStudies} />
+              <Tile label="Incidents (12mo)" value={t.recentIncidents} color={t.recentIncidents > 0 ? 'var(--color-danger)' : undefined} />
             </div>
           )}
 
@@ -93,7 +94,7 @@ export default function ArcFlashFleet() {
                 <tr>
                   <th>Site</th><th>Buses</th><th>DANGER</th><th>Blocked</th>
                   <th>Avg confidence</th><th>Low confidence</th><th>Sanity (err / chk)</th>
-                  <th>Studies</th><th>Expiring</th>
+                  <th>Studies</th><th>Expiring</th><th>Incidents (12mo)</th>
                 </tr>
               </thead>
               <tbody>
@@ -113,6 +114,10 @@ export default function ArcFlashFleet() {
                     </td>
                     <td>{s.studyCount}</td>
                     <td style={{ color: s.expiringStudies > 0 ? 'var(--color-danger)' : 'inherit' }}>{s.expiringStudies}</td>
+                    <td style={{ fontWeight: s.recentIncidents > 0 ? 700 : 400, color: s.recentIncidents > 0 ? 'var(--color-danger)' : 'inherit' }}
+                      title={s.recentIncidents > 0 ? `${s.openIncidents} open · ${s.incidentInjuries} with injury${s.lastIncidentAt ? ` · last ${new Date(s.lastIncidentAt).toLocaleDateString()}` : ''}` : 'No incidents logged in the last 12 months'}>
+                      {s.recentIncidents}{s.incidentInjuries > 0 ? <span style={{ color: 'var(--color-danger)' }}> ⚠</span> : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
