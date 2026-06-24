@@ -20,6 +20,7 @@
 const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 // WorkOrderStatus values that count as "open" for the list-view badge.
 const OPEN_WO_STATUSES = ['SCHEDULED', 'IN_PROGRESS'];
@@ -266,6 +267,7 @@ router.post('/', requireManager, async (req, res) => {
       },
     });
 
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'contractor_created', details: { id: contractor.id, name: contractor.name } });
     res.status(201).json({ success: true, data: { contractor } });
   } catch (err) {
     // (accountId, name) unique — the duplicate-create race lands here.
@@ -320,6 +322,7 @@ router.put('/:id', requireManager, async (req, res) => {
       data: updateData,
     });
 
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'contractor_updated', details: { id: contractor.id, name: contractor.name } });
     res.json({ success: true, data: { contractor } });
   } catch (err) {
     if (err && err.code === 'P2002') {
@@ -378,6 +381,7 @@ router.post('/:id/techs', requireManager, async (req, res) => {
       },
     });
 
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'contractor_tech_created', details: { id: tech.id, contractorId: tech.contractorId } });
     res.status(201).json({ success: true, data: { tech } });
   } catch (err) {
     console.error('Create tech error:', err);
@@ -451,6 +455,7 @@ router.delete('/techs/:techId', requireManager, async (req, res) => {
     if (!tech) return res.status(404).json({ success: false, error: 'Tech not found' });
 
     await prisma.contractorTech.delete({ where: { id: tech.id } });
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'contractor_tech_deleted', details: { id: tech.id } });
     res.json({ success: true });
   } catch (err) {
     if (err && err.code === 'P2003') {

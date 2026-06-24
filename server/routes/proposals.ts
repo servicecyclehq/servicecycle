@@ -28,6 +28,7 @@ const { renderProposalPdf } = require('../lib/proposalPdf');
 const { getAccountBranding } = require('../lib/partnerBranding');
 const { sendEmail } = require('../lib/email');
 const { emitPartnerEvent } = require('../lib/partnerEvents');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 // Resolve the target account: own account by default; a customer account in the
 // caller's partner org when an oem_admin passes ?accountId=. Throws coded errors.
@@ -140,6 +141,7 @@ router.post('/request-contact', requireManagerOrOem, async (req: any, res: any) 
       }
     }
 
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'proposal_contact_requested', details: { mode, notified } });
     return res.json({ success: true, data: { notified, logged: true } });
   } catch (err: any) {
     console.error('[proposals request-contact]', err.message);

@@ -26,6 +26,7 @@
 const router = require('express').Router({ mergeParams: true });
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const VALID_STATUSES  = ['draft', 'active', 'archived'];
 const VALID_ENERGY    = ['electrical','pneumatic','hydraulic','mechanical','thermal','chemical','gravity'];
@@ -176,6 +177,7 @@ router.post('/', requireManager, async (req, res) => {
       },
     });
 
+    writeActivityLog({ accountId, userId: req.user.id, assetId, action: 'loto_procedure_created', details: { id: proc.id, title: proc.title, version: proc.version } });
     return res.status(201).json({ success: true, data: proc });
   } catch (err) {
     console.error('[loto POST /]', err);
@@ -247,6 +249,7 @@ router.put('/:id', requireManager, async (req, res) => {
       });
     });
 
+    writeActivityLog({ accountId, userId: req.user.id, assetId, action: 'loto_procedure_updated', details: { id: proc.id, title: proc.title, version: proc.version } });
     return res.json({ success: true, data: proc });
   } catch (err) {
     console.error('[loto PUT /:id]', err);
@@ -300,6 +303,7 @@ router.patch('/:id/status', requireManager, async (req, res) => {
       });
     });
 
+    writeActivityLog({ accountId, userId: req.user.id, assetId, action: 'loto_procedure_status_changed', details: { id: proc.id, status: proc.status, version: proc.version } });
     return res.json({ success: true, data: proc });
   } catch (err) {
     console.error('[loto PATCH /:id/status]', err);
@@ -324,6 +328,7 @@ router.delete('/:id', requireManager, async (req, res) => {
     }
 
     await prisma.lotoProc.delete({ where: { id: req.params.id } });
+    writeActivityLog({ accountId, userId: req.user.id, assetId, action: 'loto_procedure_deleted', details: { id: req.params.id } });
     return res.json({ success: true });
   } catch (err) {
     console.error('[loto DELETE /:id]', err);

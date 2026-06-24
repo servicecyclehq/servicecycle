@@ -25,6 +25,7 @@ const {
   verifyCode, verifyCodeWithStep, generateBackupCodes, consumeBackupCode, decryptSecret,
 } = require('../lib/totp');
 const { encryptIfNeeded } = require('../lib/crypto');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const router = express.Router();
 
@@ -269,6 +270,7 @@ router.post('/enable', authenticateToken, async (req, res) => {
       data:  { twoFactorEnabled: true, twoFactorLastUsedStep: totpResult.step },
     });
 
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: '2fa_enabled', details: null });
     return res.json({ success: true, message: '2FA has been enabled on your account.' });
   } catch (err) {
     console.error('2FA enable error:', err);
@@ -316,6 +318,7 @@ router.delete('/disable', authenticateToken, async (req, res) => {
       },
     });
 
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: '2fa_disabled', details: null });
     return res.json({ success: true, message: '2FA has been disabled.' });
   } catch (err) {
     console.error('2FA disable error:', err);
@@ -350,6 +353,7 @@ router.post('/backup-codes/regenerate', authenticateToken, async (req, res) => {
       data:  { twoFactorBackupCodes: JSON.stringify(hashedCodes) },
     });
 
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: '2fa_backup_codes_regenerated', details: null });
     return res.json({
       success: true,
       data: { backupCodes: plainCodes },

@@ -15,6 +15,7 @@ import prisma from '../lib/prisma';
 const { requireManager } = require('../middleware/roles');
 const { buildComplianceGap } = require('../lib/complianceReport');
 const { buildUnderwritingPackage } = require('../lib/underwritingPackage');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const DEFAULT_DAYS = 14;
 const MAX_DAYS = 90;
@@ -75,6 +76,7 @@ router.post('/', requireManager, async (req: any, res: any) => {
       },
       select: { id: true, token: true, label: true, kind: true, expiresAt: true, createdAt: true },
     });
+    writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'share_link_created', details: { id: link.id, kind, expiresAt } });
     return res.status(201).json({ success: true, data: { ...link, path: `/share/${link.token}` } });
   } catch (err: any) {
     console.error('[shareLinks:create]', err?.message || err);
@@ -113,6 +115,7 @@ router.post('/:id/revoke', requireManager, async (req: any, res: any) => {
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
     if (!existing.revokedAt) {
       await prisma.shareLink.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
+      writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'share_link_revoked', details: { id: existing.id } });
     }
     return res.json({ success: true });
   } catch (err: any) {
