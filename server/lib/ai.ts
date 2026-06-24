@@ -631,16 +631,19 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s }) {
 }
 
 // ── Groq vision (cross-provider fallback) ─────────────────────────────────────
-// Groq's OpenAI-compatible chat endpoint with a multimodal Llama-4 model. Used
+// Groq's OpenAI-compatible chat endpoint with a multimodal vision model. Used
 // as the second free tier behind Gemini for image reads (nameplate OCR). The
 // existing aiProviders/groq.js is text-only and refuses task=extract, so the
 // image path lives here. Model is env-configurable; default verified present on
 // the account via ListModels.
+// NOTE: llama-4-scout-17b-16e-instruct deprecated 2026-06-24, decommissioned
+// 2026-07-17. Replacement: qwen/qwen3.6-27b (vision-capable, 20 MB file limit,
+// same speed tier). Set GROQ_VISION_MODEL env var to override.
 async function _groqImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTokens = 1024, s }) {
   const axios = require('axios');
   const apiKey = process.env.GROQ_API_KEY || (s && s.apiKey);
   if (!apiKey) throw new Error('[ai][groq] GROQ_API_KEY is not set — cannot use Groq vision fallback');
-  const model = process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+  const model = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
   const dataUrl = `data:${mediaType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}`;
   const res = await axios.post(
     `${process.env.GROQ_API_BASE || 'https://api.groq.com/openai/v1'}/chat/completions`,

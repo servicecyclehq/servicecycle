@@ -23,9 +23,9 @@ Neither address receives mail until two things are in place: Cloudflare Email Ro
    > an MX for `servicecycle.app`. If Resend's MX is on a subdomain
    > (`in.servicecycle.app`), there is no conflict.
 3. Under **Routing rules → Custom addresses**, add two forwarding rules:
-   - `support@servicecycle.app` → **Forward to** `claudedussy@gmail.com`
-   - `sales@servicecycle.app` → **Forward to** `claudedussy@gmail.com`
-4. Cloudflare will send a verification email to `claudedussy@gmail.com` — confirm it.
+   - `support@servicecycle.app` → **Forward to** `servicecyclehq@gmail.com`
+   - `sales@servicecycle.app` → **Forward to** `servicecyclehq@gmail.com`
+4. Cloudflare will send a verification email to `servicecyclehq@gmail.com` — confirm it.
 5. That's it. Emails sent to either alias will arrive in your Gmail inbox with the
    original `from:` preserved, so you can reply directly.
 
