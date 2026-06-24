@@ -213,6 +213,14 @@ function AfxPanel() {
             title={`Download a ${label}-shaped CSV mapped from AFX`}>{label}</button>
         ))}
       </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>Multi-table export (related Bus/Cable/Transformer/Device tabs):</span>
+        {[['afx', 'AFX'], ['easypower', 'EasyPower'], ['etap', 'ETAP (draft)']].map(([tool, label]) => (
+          <button key={tool} type="button" className="btn btn-secondary btn-sm"
+            onClick={() => downloadAuthedFile(`/api/arc-flash/afx/export-multi?tool=${tool}`, `afx-multitable-${tool}.xlsx`).catch(() => {})}
+            title={`Export your model as a ${label} multi-tab workbook (ID-keyed topology)`}>{label}</button>
+        ))}
+      </div>
 
       {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
 

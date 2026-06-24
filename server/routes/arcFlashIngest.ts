@@ -38,6 +38,8 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
+const { buildMultiTable, renderForTool, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const ExcelJS = require('exceljs');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const PDFDocument = require('pdfkit');
 const { buildLabelModel, drawArcFlashLabel, LABEL_W, LABEL_H } = require('../lib/arcFlashLabelDoc');
@@ -1765,6 +1767,71 @@ router.get('/afx/template', (req: any, res: any) => {
   } catch (e) {
     console.error('afx template error:', e);
     res.status(500).json({ success: false, error: 'Failed to build template' });
+  }
+});
+
+// ── GET /afx/export-multi?tool=afx|etap|easypower&format=xlsx|json ──────────────
+// Emit SC's collected model as RELATED tables (Bus / Cable / Transformer /
+// Device) — the shape ETAP DataX / EasyPower / SKM actually ingest, with exact
+// string-ID From/To keying. AFX columns are exact; ETAP headers are a DRAFT
+// (verify against a real File>Export>ETAP DataX CSV). manager+.
+router.get('/afx/export-multi', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const tool = String(req.query.tool || 'afx').toLowerCase();
+    if (!MT_TOOLS.includes(tool)) return res.status(400).json({ success: false, error: `Unknown tool. Use one of: ${MT_TOOLS.join(', ')}.` });
+
+    const where: any = { accountId, study: { supersededById: null } };
+    if (req.query.siteId) where.asset = { siteId: String(req.query.siteId) };
+    const rows = await prisma.systemStudyAsset.findMany({
+      where,
+      include: {
+        study: { select: { sourceModel: true } },
+        asset: { select: { id: true, equipmentType: true, fedFromAssetId: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5000,
+    });
+    const assetIds = Array.from(new Set(rows.map((r: any) => r.assetId).filter(Boolean)));
+    const devs = assetIds.length
+      ? await prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { in: assetIds as string[] } }, select: { assetId: true, label: true, deviceType: true, manufacturer: true, model: true, frameRatingA: true, sensorRatingA: true, settings: true } })
+      : [];
+    const devByAsset = new Map<string, any[]>();
+    for (const d of devs) { const a = devByAsset.get(d.assetId) || []; a.push(d); devByAsset.set(d.assetId, a); }
+
+    const norm = rows.map((r: any) => ({
+      busName: r.busName, assetId: r.assetId, fedFromAssetId: r.asset?.fedFromAssetId || null,
+      nominalVoltage: r.nominalVoltage, equipmentType: r.asset?.equipmentType || null,
+      incidentEnergyCalCm2: r.incidentEnergyCalCm2, labelSeverity: r.labelSeverity,
+      cableLengthFt: r.cableLengthFt, cableSize: r.cableSize, cableMaterial: r.cableMaterial, conductorsPerPhase: r.conductorsPerPhase,
+      sourceModel: r.study?.sourceModel || {},
+      devices: devByAsset.get(r.assetId) || [],
+    }));
+    const tables = buildMultiTable(norm);
+    const sheets = renderForTool(tables, tool);
+
+    if (String(req.query.format || 'xlsx').toLowerCase() === 'json') {
+      return res.json({ success: true, data: { tool, sheets } });
+    }
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'ServiceCycle';
+    const note = wb.addWorksheet('README');
+    note.addRow(['AFX multi-table export', tool.toUpperCase()]);
+    note.addRow(['Related tables keyed by exact string IDs (From/To). Match casing/whitespace exactly on import.']);
+    if (tool === 'etap') note.addRow(['ETAP headers are a DRAFT - verify against a real File > Export > ETAP DataX CSV before relying on them.']);
+    for (const s of sheets) {
+      const ws = wb.addWorksheet(s.sheet);
+      ws.addRow(s.headers);
+      for (const row of s.rows) ws.addRow(row.map((v: any) => (v == null ? '' : v)));
+    }
+    const buf = await wb.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="afx-multitable-${tool}-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    console.error('afx export-multi error:', e);
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to build multi-table export' });
   }
 });
 
