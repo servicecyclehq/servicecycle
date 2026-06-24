@@ -24,14 +24,16 @@
  * Account-scoped throughout.
  */
 
-const EXPORT_VERSION = '1';
+const EXPORT_VERSION = '2';
 
 const OFFBOARDING = [
   'This file is a complete, portable export of your ServiceCycle account data in open formats (JSON / XLSX).',
   'It is yours to keep and re-import elsewhere -- there is no lock-in.',
-  'Structured records (sites, assets, schedules, work orders, deficiencies, quote requests) are included in full.',
+  'Structured records (sites, assets, schedules, work orders, deficiencies, quote requests, arc-flash studies + labels, LOTO procedures) are included in full.',
   'Uploaded documents and immutable compliance snapshot PDFs are listed with their filename, type, and (for snapshots) SHA-256 integrity hash plus an authenticated download path; sign in and GET each downloadPath to retrieve the binary file.',
   'Compliance snapshots are tamper-evident: each PDF hashes to the sha256 recorded here, anchored in the activity-log hash chain at generation time.',
+  'Arc-flash studies include per-bus label data (incident energy, PPE, boundaries, expiry) as of the study date. The source inputs (IEEE 1584 utility/transformer params) are in studySourceModels.',
+  'LOTO procedures (OSHA 29 CFR 1910.147) are exported at the metadata level; energy sources and steps are retrievable per-procedure via GET /api/assets/:assetId/loto/:id.',
   'To offboard completely: download this export (JSON for a lossless copy), pull each document/snapshot via its downloadPath, then contact ServiceCycle to close the account.',
 ];
 
@@ -42,7 +44,7 @@ function num(v: any): number | null {
 async function buildAccountExport(prisma: any, accountId: string) {
   const now = new Date();
 
-  const [account, sites, assets, schedules, workOrders, deficiencies, quotes, documents, snapshots] = await Promise.all([
+  const [account, sites, assets, schedules, workOrders, deficiencies, quotes, documents, snapshots, studies, studyAssets, lotoProcs] = await Promise.all([
     prisma.account.findUnique({
       where: { id: accountId },
       select: { id: true, companyName: true, planType: true, status: true, createdAt: true },
@@ -100,6 +102,26 @@ async function buildAccountExport(prisma: any, accountId: string) {
         sizeBytes: true, sha256: true, stats: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     }),
+    prisma.systemStudy.findMany({
+      where: { accountId },
+      select: { id: true, siteId: true, studyType: true, performedDate: true, expiresAt: true,
+        performedBy: true, method: true, peName: true, peLicense: true, trigger: true, createdAt: true },
+      orderBy: { performedDate: 'desc' },
+    }),
+    prisma.systemStudyAsset.findMany({
+      where: { accountId },
+      select: { id: true, studyId: true, assetId: true, busName: true, nominalVoltageV: true,
+        hazardLevel: true, incidentEnergyCalCm2: true, arcFlashBoundaryIn: true, limitedApproachIn: true,
+        restrictedApproachIn: true, ppeCategory: true, ppeMethod: true, workingDistanceIn: true,
+        expiresAt: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.lotoProc.findMany({
+      where: { accountId },
+      select: { id: true, assetId: true, title: true, status: true, version: true,
+        notes: true, approvedAt: true, createdAt: true, updatedAt: true },
+      orderBy: { createdAt: 'asc' },
+    }),
   ]);
 
   const documentsOut = documents.map((d: any) => ({
@@ -122,6 +144,9 @@ async function buildAccountExport(prisma: any, accountId: string) {
     quoteRequests: quotes.length,
     documents: documents.length,
     snapshots: snapshots.length,
+    arcFlashStudies: studies.length,
+    arcFlashLabels: studyAssets.length,
+    lotoProcs: lotoProcs.length,
   };
 
   return {
@@ -143,6 +168,9 @@ async function buildAccountExport(prisma: any, accountId: string) {
     quoteRequests: quotes,
     documents: documentsOut,
     snapshots: snapshotsOut,
+    arcFlashStudies: studies,
+    arcFlashLabels: studyAssets,
+    lotoProcs,
     offboarding: OFFBOARDING,
   };
 }
@@ -200,6 +228,27 @@ const EXPORT_SHEETS = [
     { id: 'id', header: 'ID' }, { id: 'kind', header: 'Kind' }, { id: 'standardCode', header: 'Standard' },
     { id: 'siteId', header: 'Site ID' }, { id: 'filename', header: 'Filename' }, { id: 'sizeBytes', header: 'Size (bytes)', type: 'number' },
     { id: 'sha256', header: 'SHA-256' }, { id: 'createdAt', header: 'Created', type: 'date' }, { id: 'downloadPath', header: 'Download Path' },
+  ] },
+  { key: 'arcFlashStudies', sheet: 'Arc Flash Studies', columns: [
+    { id: 'id', header: 'ID' }, { id: 'siteId', header: 'Site ID' }, { id: 'studyType', header: 'Study Type' },
+    { id: 'performedDate', header: 'Performed', type: 'date' }, { id: 'expiresAt', header: 'Expires', type: 'date' },
+    { id: 'performedBy', header: 'Firm' }, { id: 'method', header: 'Method' },
+    { id: 'peName', header: 'PE Name' }, { id: 'peLicense', header: 'PE License' },
+    { id: 'trigger', header: 'Trigger' }, { id: 'createdAt', header: 'Created', type: 'date' },
+  ] },
+  { key: 'arcFlashLabels', sheet: 'Arc Flash Labels', columns: [
+    { id: 'id', header: 'ID' }, { id: 'studyId', header: 'Study ID' }, { id: 'assetId', header: 'Asset ID' },
+    { id: 'busName', header: 'Bus Name' }, { id: 'nominalVoltageV', header: 'Voltage (V)', type: 'number' },
+    { id: 'hazardLevel', header: 'Hazard Level' },
+    { id: 'incidentEnergyCalCm2', header: 'IE (cal/cm2)', type: 'number' },
+    { id: 'arcFlashBoundaryIn', header: 'AFB (in)', type: 'number' },
+    { id: 'ppeCategory', header: 'PPE Cat' }, { id: 'ppeMethod', header: 'PPE Method' },
+    { id: 'expiresAt', header: 'Expires', type: 'date' }, { id: 'createdAt', header: 'Created', type: 'date' },
+  ] },
+  { key: 'lotoProcs', sheet: 'LOTO Procedures', columns: [
+    { id: 'id', header: 'ID' }, { id: 'assetId', header: 'Asset ID' }, { id: 'title', header: 'Title' },
+    { id: 'status', header: 'Status' }, { id: 'version', header: 'Version', type: 'number' },
+    { id: 'approvedAt', header: 'Approved', type: 'date' }, { id: 'createdAt', header: 'Created', type: 'date' },
   ] },
 ];
 
