@@ -15,7 +15,7 @@ import ThemeToggle from './ThemeToggle';
 import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
-  Smartphone, QrCode, ShieldAlert, Layers, Bolt, UploadCloud, Package,
+  Smartphone, QrCode, ShieldAlert, Layers, Bolt, UploadCloud, Package, FileText,
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
@@ -49,6 +49,7 @@ const Icons = {
   cmmsImport:  <UploadCloud   {...ICON_PROPS} />,
   fleetView:   <LayoutGrid    {...ICON_PROPS} />,
   parts:       <Package       {...ICON_PROPS} />,
+  quotes:      <FileText      {...ICON_PROPS} />,
 };
 
 function GlobalSearch() {
@@ -749,6 +750,18 @@ export default function Sidebar() {
             >
               {Icons.parts}
               Parts
+            </NavLink>
+          )}
+
+          {/* Quote requests inbox â€” manager+ only. Shows TELEMETRY_CRIT auto-generated
+              quotes alongside manual requests so reps have a single action queue. */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <NavLink
+              to="/quote-requests"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.quotes}
+              Quote Requests
             </NavLink>
           )}
         </NavGroup>
