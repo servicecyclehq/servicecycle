@@ -198,6 +198,9 @@ async function _resetDemoAccount() {
   await prisma.systemStudy.deleteMany({ where: filter }).catch(() => {});
   await prisma.blackoutWindow.deleteMany({ where: filter }).catch(() => {});
   await prisma.quoteRequest.deleteMany({ where: filter }).catch(() => {});
+  await prisma.incidentLog.deleteMany({ where: filter }).catch(() => {});
+  await prisma.spareInventory.deleteMany({ where: { accountId: filter.accountId } }).catch(() => {});
+  await prisma.part.deleteMany({ where: filter }).catch(() => {});
   await prisma.site.deleteMany({ where: filter });
 
   // ── Contractors ───────────────────────────────────────────────────────────
@@ -1679,6 +1682,195 @@ async function _seedAccount() {
     createdAt: addDays(now, -95),
   } });
 
+  // -- Parts catalog + spare inventory ----------------------------------------
+  // 7 parts; mix of below-min and healthy stock. Demonstrates the Parts page
+  // and the per-asset SpareInventoryPanel on AssetDetail.
+
+  const partBreaker15kv = await prisma.part.create({ data: {
+    accountId:    account.id,
+    partNumber:   'SWGR-CB-15KV-1200A',
+    description:  'Main Switchgear Circuit Breaker, 15kV 1200A vacuum interrupt',
+    manufacturer: 'GE Grid Solutions',
+    category:     'BREAKER',
+    unitCost:     8500,
+    leadTimeWeeks: 16,
+    notes:        'OEM-preferred replacement for SWGR-1A lineup (1996 vintage). Long lead — order pre-emptively.',
+  }});
+
+  const partBushing = await prisma.part.create({ data: {
+    accountId:    account.id,
+    partNumber:   'XFMR-BUSHING-13KV-HV',
+    description:  'Transformer HV Bushing, 15kV class, for Eaton VFI series',
+    manufacturer: 'Eaton Cooper Power',
+    category:     'TRANSFORMER',
+    unitCost:     2200,
+    leadTimeWeeks: 8,
+    notes:        'Fits T-1 and T-2. Last bushing failure was a dielectric breakdown — keep minimum 1 on hand.',
+  }});
+
+  const partGenBattery = await prisma.part.create({ data: {
+    accountId:    account.id,
+    partNumber:   'GEN-BATT-12V-1000CCA',
+    description:  'Generator Starting Battery, 12V 1000 CCA AGM',
+    manufacturer: 'Interstate',
+    category:     'OTHER',
+    unitCost:     280,
+    leadTimeWeeks: 1,
+    notes:        'NFPA 110 §8.4 requires annual battery replacement on Level 1 EPS. Stock 2 minimum.',
+  }});
+
+  const partRelay = await prisma.part.create({ data: {
+    accountId:    account.id,
+    partNumber:   'SEL-751-R301',
+    description:  'SEL-751 Feeder Protection Relay',
+    manufacturer: 'Schweitzer Engineering',
+    category:     'RELAY',
+    unitCost:     3400,
+    leadTimeWeeks: 12,
+    notes:        'Current model on SWGR-1A-1. Firmware update to R301 resolves CID-2021-0017.',
+  }});
+
+  const partFuse = await prisma.part.create({ data: {
+    accountId:    account.id,
+    partNumber:   'FUSE-15KV-65E-SMD',
+    description:  '15kV Current-Limiting Fuse, 65E SMD',
+    manufacturer: 'S&C Electric',
+    category:     'FUSE',
+    unitCost:     85,
+    leadTimeWeeks: 3,
+    notes:        'Expulsion fuses on T-E1 and feeder taps. Keep 6+ on hand.',
+  }});
+
+  const partStarter = await prisma.part.create({ data: {
+    accountId:    account.id,
+    partNumber:   'MCC-STARTER-NEMA3-480V',
+    description:  'NEMA Size 3 Combination Motor Starter, 480V, 45A',
+    manufacturer: 'Eaton',
+    category:     'OTHER',
+    unitCost:     950,
+    leadTimeWeeks: 4,
+    notes:        'Common bucket type in MCC-1 stamping lineup.',
+  }});
+
+  const partOil = await prisma.part.create({ data: {
+    accountId:    account.id,
+    partNumber:   'OIL-XFMR-MINERAL-55GAL',
+    description:  'Inhibited Mineral Transformer Oil, 55-gal drum (Type II)',
+    manufacturer: 'Petro-Canada',
+    category:     'TRANSFORMER',
+    unitCost:     340,
+    leadTimeWeeks: 2,
+    notes:        'Top-up and dielectric test fluid for T-1 and T-2. Keep 2 drums minimum.',
+  }});
+
+  // Spare inventory — mix of healthy, at-minimum, and below-minimum stock
+  await prisma.spareInventory.createMany({ data: [
+    // SWGR-1A-1: 1 main breaker on hand (at minimum) — flags in the panel
+    { accountId: account.id, partId: partBreaker15kv.id, assetId: assets['SWGR-1A-1'].id,
+      qtyOnHand: 1, qtyMin: 1, location: 'Substation A cage shelf B-3',
+      notes: 'At minimum. Long lead — reorder before any maintenance outage.' },
+    // T-1: 0 HV bushings on hand (below minimum) — drives the alert story
+    { accountId: account.id, partId: partBushing.id, assetId: assets['T-1'].id,
+      qtyOnHand: 0, qtyMin: 1, location: 'Substation A cage shelf B-1',
+      notes: 'Below minimum. Last unit consumed in the 2024 dielectric failure repair.' },
+    // Site-level: 4 gen batteries (healthy stock)
+    { accountId: account.id, partId: partGenBattery.id, siteId: riverside.id,
+      qtyOnHand: 4, qtyMin: 2, location: 'Maintenance shop bin G-7',
+      notes: 'NFPA 110 annual replacement. 2 used per generator per year.' },
+    // SWGR-1A-1: 1 protection relay on hand
+    { accountId: account.id, partId: partRelay.id, assetId: assets['SWGR-1A-1'].id,
+      qtyOnHand: 1, qtyMin: 0, location: 'Substation A control cabinet 2-C',
+      notes: 'Pre-staged for hot swap. Firmware pre-loaded to R301.' },
+    // Site-level: 12 fuses (healthy)
+    { accountId: account.id, partId: partFuse.id, siteId: riverside.id,
+      qtyOnHand: 12, qtyMin: 6, location: 'Maintenance shop bin F-2',
+      notes: 'Check after any fault operation — expulsion fuses are single-use.' },
+    // MCC-1: 3 motor starters on hand (healthy)
+    { accountId: account.id, partId: partStarter.id, assetId: assets['MCC-1'].id,
+      qtyOnHand: 3, qtyMin: 2, location: 'MCC room spare bucket rack',
+      notes: 'Standard bucket swap. 2 minimum to cover priority loads.' },
+    // T-1: 1 drum transformer oil (below minimum of 2) — alert story
+    { accountId: account.id, partId: partOil.id, assetId: assets['T-1'].id,
+      qtyOnHand: 1, qtyMin: 2, location: 'Substation A hazmat pad H-1',
+      notes: 'Below minimum. Used partial drum for T-2 oil top-up 3 months ago.' },
+  ]});
+
+  console.log('  seeded 7 parts + 7 spare inventory records');
+
+  // -- Incident logs -----------------------------------------------------------
+  // 6 incidents demonstrating the incident register: 5 resolved, 1 open.
+  // Types: PROTECTIVE_TRIP, RELAY_OPERATION, ALARM, ARC_FLASH_EVENT, OTHER.
+  // An open incident on SWGR-2M (45d ago) feeds the risk-score upgrade story.
+
+  await prisma.incidentLog.createMany({ data: [
+    // 1. ARC_FLASH_EVENT — resolved, 18 months ago on SWGR-1A-1
+    {
+      accountId:   account.id,
+      assetId:     assets['SWGR-1A-1'].id,
+      type:        'ARC_FLASH_EVENT',
+      occurredAt:  addDays(now, -548),
+      note:        'Low-energy arc event during racking operation on section 1A-1. No injuries; PPE (Cat 4) properly worn. Caused by debris on draw-out rails. Area decontaminated; study rescoped to include updated incident-energy values on this bus. PPE labels replaced.',
+      resolvedAt:  addDays(now, -545),
+      resolvedById: admin.id,
+      createdById:  manager.id,
+    },
+    // 2. PROTECTIVE_TRIP — resolved, 2.5 years ago on SWGR-1A-1
+    {
+      accountId:   account.id,
+      assetId:     assets['SWGR-1A-1'].id,
+      type:        'PROTECTIVE_TRIP',
+      occurredAt:  addDays(now, -912),
+      note:        'CB-1A tripped on overcurrent during load restoration after utility outage. Downstream fault on MCC-1 feeder cleared by branch breaker. SWGR-1A-1 inspected; no damage found. Breaker mechanism checked, reclosed under supervision.',
+      resolvedAt:  addDays(now, -910),
+      resolvedById: manager.id,
+      createdById:  manager.id,
+    },
+    // 3. RELAY_OPERATION — resolved, 14 months ago on SWGR-2M
+    {
+      accountId:   account.id,
+      assetId:     assets['SWGR-2M'].id,
+      type:        'RELAY_OPERATION',
+      occurredAt:  addDays(now, -425),
+      note:        'SEL-751 relay operated on B-phase overcurrent in the mezzanine lineup. Coincided with confirmed thermal overload on the B-phase bus connection (see open deficiency). Connection retorqued and thermal compound applied. Relay event log exported and reviewed by relay engineer.',
+      resolvedAt:  addDays(now, -420),
+      resolvedById: manager.id,
+      createdById:  admin.id,
+    },
+    // 4. ALARM — resolved, 8 months ago on T-2 (Buchholz)
+    {
+      accountId:   account.id,
+      assetId:     assets['T-2'].id,
+      type:        'ALARM',
+      occurredAt:  addDays(now, -243),
+      note:        "Buchholz relay gas alarm triggered during load restoration after planned outage. Gas-in-oil analysis returned normal; attributed to air pocket introduced during oil sampling procedure. No evidence of internal fault. Alarm reset; oil level adjusted and verified.",
+      resolvedAt:  addDays(now, -241),
+      resolvedById: admin.id,
+      createdById:  manager.id,
+    },
+    // 5. PROTECTIVE_TRIP — resolved, 3 months ago on GEN-1
+    {
+      accountId:   account.id,
+      assetId:     assets['GEN-1'].id,
+      type:        'PROTECTIVE_TRIP',
+      occurredAt:  addDays(now, -91),
+      note:        'Overspeed relay tripped GEN-1 during monthly NFPA 110 transfer test. Engine governor system found drifted out of calibration. Governor adjusted by Caterpillar-certified technician. Unit passed load test post-repair. NFPA 110 log updated.',
+      resolvedAt:  addDays(now, -88),
+      resolvedById: manager.id,
+      createdById:  manager.id,
+    },
+    // 6. ALARM — UNRESOLVED, 45 days ago on SWGR-2M (open incident feeds risk score)
+    {
+      accountId:   account.id,
+      assetId:     assets['SWGR-2M'].id,
+      type:        'ALARM',
+      occurredAt:  addDays(now, -45),
+      note:        'Thermal imaging alarm from permanent IR monitoring window on SWGR-2M B-phase bus connection. Spot temperature 74°C ambient-corrected (delta-T 38°C above ambient); threshold 60°C for Category III. Open investigation. Interim: load reduced on affected feeder. Outage window requested for re-torque and cleaning.',
+      createdById: admin.id,
+    },
+  ]});
+
+  console.log('  seeded 6 incident log entries (5 resolved, 1 open)');
+
   // -- LOTO Procedures -------------------------------------------------------
   // One active procedure on T-1 (most critical asset), one draft on GEN-1.
 
@@ -2000,7 +2192,7 @@ async function _seedAccount() {
       deficiencies: 9, labSamples: 4, systemStudies: 3,
       auditVisits: 4, auditRecommendations: 6,
       alerts: alertCount,
-      assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4,
+      assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4, parts: 7, incidentLogs: 6,
       activityLogs: 9,
       lotoProcs: 2, documents: 3,
       assetTemplates: templateCount, newsItems: newsCount,
