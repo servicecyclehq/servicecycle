@@ -183,6 +183,93 @@ function renderForTool(tables: any, tool: string): any[] {
   });
 }
 
-module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool };
+// ── Validation (conformance checker for an AFX multi-table set) ─────────────────
+// A spec is only a standard if you can check conformance. This catches the exact
+// failures that silently break a tool import: orphan From/To references, duplicate
+// IDs, and whitespace/casing drift (an ID that *looks* matched but isn't byte-equal).
+
+// AFX header -> field key, per table (reverse of the renderForTool 'afx' map).
+function afxHeaderToKey(tableKey: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of TABLES[tableKey].fields) if (f.afx) out[f.afx] = f.key;
+  return out;
+}
+
+// Map a parsed sheet (headers[] + rows[][]) to objects keyed by AFX field key.
+function parseSheetRows(tableKey: string, headers: any[], rows: any[][]): any[] {
+  const h2k = afxHeaderToKey(tableKey);
+  const idx = headers.map((h) => h2k[String(h).trim()] || null);
+  return rows.map((r) => {
+    const o: any = {};
+    idx.forEach((key, i) => { if (key) o[key] = r[i]; });
+    return o;
+  });
+}
+
+const ID_FIELD: Record<string, string> = { buses: 'busId', cables: 'cableId', transformers: 'xfmrId', devices: 'deviceId' };
+// (table, field) pairs that must resolve to a bus ID.
+const REFS: Array<[string, string]> = [
+  ['cables', 'fromBusId'], ['cables', 'toBusId'],
+  ['transformers', 'fromBusId'], ['transformers', 'toBusId'],
+  ['devices', 'protectsBusId'],
+];
+
+/**
+ * Validate an AFX multi-table set. Pure. Returns { ok, errors, warnings, stats }.
+ * errors = will-break-import; warnings = drift/empties worth a human look.
+ */
+function validateMultiTable(tables: any): any {
+  const t = tables || {};
+  const errors: any[] = [];
+  const warnings: any[] = [];
+
+  // Bus ID set (exact) + normalized lookup for drift detection.
+  const busIds = new Set<string>();
+  const normToBus = new Map<string, string>(); // sanitized -> first exact ID seen
+  for (const b of (t.buses || [])) {
+    const id = b.busId == null ? '' : String(b.busId);
+    if (id.trim() === '') { errors.push({ table: 'buses', issue: 'empty BusID' }); continue; }
+    if (busIds.has(id)) errors.push({ table: 'buses', id, issue: 'duplicate BusID' });
+    if (id !== id.trim()) warnings.push({ table: 'buses', id, issue: 'BusID has leading/trailing whitespace (silently breaks exact-match imports)' });
+    busIds.add(id);
+    const norm = sanitizeId(id, '').toUpperCase();
+    if (norm && normToBus.has(norm) && normToBus.get(norm) !== id) {
+      warnings.push({ table: 'buses', id, issue: `BusID may collide with "${normToBus.get(norm)}" after whitespace/case normalization` });
+    } else if (norm && !normToBus.has(norm)) normToBus.set(norm, id);
+  }
+
+  // Per-table duplicate IDs.
+  for (const tk of ['cables', 'transformers', 'devices']) {
+    const seen = new Set<string>();
+    for (const row of (t[tk] || [])) {
+      const id = row[ID_FIELD[tk]] == null ? '' : String(row[ID_FIELD[tk]]);
+      if (id.trim() === '') { warnings.push({ table: tk, issue: `empty ${ID_FIELD[tk]}` }); continue; }
+      if (seen.has(id)) errors.push({ table: tk, id, issue: `duplicate ${ID_FIELD[tk]}` });
+      seen.add(id);
+    }
+  }
+
+  // Referential integrity: every From/To/protects must resolve to a bus.
+  for (const [tk, field] of REFS) {
+    for (const row of (t[tk] || [])) {
+      const raw = row[field];
+      if (raw == null || String(raw).trim() === '') continue; // blank ref = unknown topology, not an error
+      const val = String(raw);
+      if (busIds.has(val)) continue; // exact match — good
+      const norm = sanitizeId(val, '').toUpperCase();
+      const near = norm && normToBus.get(norm);
+      if (near) warnings.push({ table: tk, id: row[ID_FIELD[tk]], field, value: val, issue: `references "${val}" — no exact bus, but matches "${near}" after normalization (likely whitespace/case drift)` });
+      else errors.push({ table: tk, id: row[ID_FIELD[tk]], field, value: val, issue: `references bus "${val}" which does not exist (orphan reference)` });
+    }
+  }
+
+  const stats = {
+    buses: (t.buses || []).length, cables: (t.cables || []).length,
+    transformers: (t.transformers || []).length, devices: (t.devices || []).length,
+  };
+  return { ok: errors.length === 0, errors, warnings, stats };
+}
+
+module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable };
 
 export {};

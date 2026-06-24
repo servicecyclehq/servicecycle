@@ -1,5 +1,5 @@
 // AFX v1.2 — multi-table builder (related Bus/Cable/Transformer/Device tables).
-const { sanitizeId, buildMultiTable, renderForTool } = require('../lib/arcFlashAfxMultiTable');
+const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable } = require('../lib/arcFlashAfxMultiTable');
 
 describe('sanitizeId (exact-match-safe)', () => {
   test('trims, collapses whitespace, strips junk', () => {
@@ -75,5 +75,49 @@ describe('renderForTool', () => {
     const buses = sheets.find(s => s.sheet === 'Buses');
     expect(buses.headers).not.toContain('Incident Energy (cal/cm2)');
     expect(buses.headers).toContain('SystemNominalVoltage');
+  });
+});
+
+describe('validateMultiTable', () => {
+  const good = {
+    buses: [{ busId: 'MAIN' }, { busId: 'MCC_1' }],
+    cables: [{ cableId: 'C1', fromBusId: 'MAIN', toBusId: 'MCC_1' }],
+    transformers: [], devices: [{ deviceId: 'D1', protectsBusId: 'MCC_1' }],
+  };
+
+  test('clean set passes with no errors', () => {
+    const r = validateMultiTable(good);
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+    expect(r.stats).toEqual({ buses: 2, cables: 1, transformers: 0, devices: 1 });
+  });
+
+  test('orphan From/To reference is an error', () => {
+    const r = validateMultiTable({ ...good, cables: [{ cableId: 'C1', fromBusId: 'MAIN', toBusId: 'GHOST' }] });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some(e => /orphan/.test(e.issue) && e.value === 'GHOST')).toBe(true);
+  });
+
+  test('whitespace/case drift on a reference is a WARNING, not an error', () => {
+    const r = validateMultiTable({ ...good, cables: [{ cableId: 'C1', fromBusId: 'MAIN', toBusId: ' mcc 1 ' }] });
+    expect(r.ok).toBe(true); // not a hard error...
+    expect(r.warnings.some(w => /drift/.test(w.issue))).toBe(true); // ...but flagged
+  });
+
+  test('duplicate bus ID is an error', () => {
+    const r = validateMultiTable({ ...good, buses: [{ busId: 'MAIN' }, { busId: 'MAIN' }] });
+    expect(r.errors.some(e => /duplicate/.test(e.issue))).toBe(true);
+  });
+
+  test('blank reference is allowed (unknown topology, not an error)', () => {
+    const r = validateMultiTable({ ...good, cables: [{ cableId: 'C1', fromBusId: '', toBusId: 'MCC_1' }] });
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('parseSheetRows (reverse header map)', () => {
+  test('maps AFX headers back to field keys, ignores unknown columns', () => {
+    const rows = parseSheetRows('cables', ['CableID', 'From Bus', 'To Bus', 'Junk'], [['C1', 'A', 'B', 'x']]);
+    expect(rows[0]).toEqual({ cableId: 'C1', fromBusId: 'A', toBusId: 'B' });
   });
 });

@@ -38,7 +38,7 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
-const { buildMultiTable, renderForTool, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
 const ExcelJS = require('exceljs');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const PDFDocument = require('pdfkit');
@@ -1833,6 +1833,54 @@ router.get('/afx/export-multi', requireManager, async (req: any, res: any) => {
     console.error('afx export-multi error:', e);
     if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to build multi-table export' });
   }
+});
+
+// ── POST /afx/validate-multi ── referential-integrity check of an AFX multi-table
+// set. Accepts the exact .xlsx this endpoint's sibling exports (multipart 'file',
+// tabs Buses/Cables/Transformers/Devices) OR a JSON body { buses, cables,
+// transformers, devices }. Catches orphan From/To refs, duplicate IDs, and the
+// whitespace/case drift that silently breaks tool imports. manager+.
+const SHEET_TO_TABLE: Record<string, string> = { Buses: 'buses', Cables: 'cables', Transformers: 'transformers', Devices: 'devices' };
+async function tablesFromWorkbook(buf: Buffer): Promise<any> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  const out: any = { buses: [], cables: [], transformers: [], devices: [] };
+  for (const [sheetName, tableKey] of Object.entries(SHEET_TO_TABLE)) {
+    const ws = wb.getWorksheet(sheetName);
+    if (!ws) continue;
+    const headers: any[] = [];
+    const rows: any[][] = [];
+    ws.eachRow((row: any, n: number) => {
+      const vals = (row.values || []).slice(1).map((v: any) => (v == null ? '' : (typeof v === 'object' && v.text != null ? v.text : v)));
+      if (n === 1) headers.push(...vals); else rows.push(vals);
+    });
+    out[tableKey] = parseSheetRows(tableKey, headers, rows);
+  }
+  return out;
+}
+
+router.post('/afx/validate-multi', requireManager, (req: any, res: any) => {
+  upload.single('file')(req, res, async (err: any) => {
+    try {
+      if (err) return res.status(400).json({ success: false, error: String(err.message || err) });
+      let tables: any;
+      if (req.file && req.file.buffer) {
+        tables = await tablesFromWorkbook(req.file.buffer);
+      } else if (req.body && (req.body.buses || req.body.cables || req.body.transformers || req.body.devices)) {
+        tables = {
+          buses: req.body.buses || [], cables: req.body.cables || [],
+          transformers: req.body.transformers || [], devices: req.body.devices || [],
+        };
+      } else {
+        return res.status(400).json({ success: false, error: 'Provide a multi-table .xlsx (field "file") or a JSON body with buses/cables/transformers/devices arrays.' });
+      }
+      const report = validateMultiTable(tables);
+      res.json({ success: true, data: report });
+    } catch (e) {
+      console.error('afx validate-multi error:', e);
+      if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to validate multi-table set' });
+    }
+  });
 });
 
 // ── POST /afx/validate ── conformance-check a CSV against AFX (manager+) ────────

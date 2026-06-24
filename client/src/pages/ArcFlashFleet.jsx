@@ -166,6 +166,9 @@ function AfxPanel() {
   const [report, setReport] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [mtFile, setMtFile] = useState(null);
+  const [mtReport, setMtReport] = useState(null);
+  const [mtBusy, setMtBusy] = useState(false);
 
   async function loadSpec() {
     if (spec) return spec;
@@ -192,6 +195,16 @@ function AfxPanel() {
       setReport(r.data?.data || null);
     } catch (e) { setErr(e?.response?.data?.error || 'Validation failed.'); }
     finally { setBusy(false); }
+  }
+  async function validateMulti() {
+    if (!mtFile) { setErr('Choose a multi-table .xlsx to validate.'); return; }
+    setMtBusy(true); setErr(''); setMtReport(null);
+    try {
+      const fd = new FormData(); fd.append('file', mtFile);
+      const r = await api.post('/api/arc-flash/afx/validate-multi', fd);
+      setMtReport(r.data?.data || null);
+    } catch (e) { setErr(e?.response?.data?.error || 'Multi-table validation failed.'); }
+    finally { setMtBusy(false); }
   }
 
   return (
@@ -221,8 +234,37 @@ function AfxPanel() {
             title={`Export your model as a ${label} multi-tab workbook (ID-keyed topology)`}>{label}</button>
         ))}
       </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>Validate a multi-table set (referential integrity):</span>
+        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e => { setMtFile(e.target.files?.[0] || null); setMtReport(null); setErr(''); }} aria-label="Multi-table xlsx to validate" />
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!mtFile || mtBusy} onClick={validateMulti}>{mtBusy ? 'Checking…' : 'Check integrity'}</button>
+      </div>
 
       {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
+
+      {mtReport && (
+        <div style={{ marginTop: 12, fontSize: '0.82rem' }}>
+          <div style={{ fontWeight: 700, color: mtReport.ok ? 'var(--chip-green-fg, #16a34a)' : 'var(--color-danger)' }}>
+            {mtReport.ok ? '✓ Referential integrity OK' : `${mtReport.errors.length} error(s) — will break import`}
+            {' '}({mtReport.stats.buses} buses, {mtReport.stats.cables} cables, {mtReport.stats.transformers} transformers, {mtReport.stats.devices} devices)
+            {mtReport.warnings.length > 0 ? ` · ${mtReport.warnings.length} warning(s)` : ''}
+          </div>
+          {mtReport.errors?.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: 'var(--color-danger)' }}>
+              {mtReport.errors.slice(0, 12).map((it, i) => (
+                <li key={i}><strong>{it.table}</strong>{it.id ? ` [${it.id}]` : ''}: {it.issue}</li>
+              ))}
+            </ul>
+          )}
+          {mtReport.warnings?.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: 'var(--chip-amber-fg, #d97706)' }}>
+              {mtReport.warnings.slice(0, 12).map((it, i) => (
+                <li key={i}><strong>{it.table}</strong>{it.id ? ` [${it.id}]` : ''}: {it.issue}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {report && (
         <div style={{ marginTop: 12, fontSize: '0.82rem' }}>
