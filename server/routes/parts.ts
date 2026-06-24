@@ -236,7 +236,10 @@ router.post('/:id/inventory', requireManager, async (req: any, res: any) => {
       const s = await prisma.site.findFirst({ where: { id: siteId, accountId }, select: { id: true } });
       if (!s) return res.status(400).json({ success: false, error: 'Site not found in this account.' });
     }
-    const qtyOnHand = posInt(req.body?.qtyOnHand) ?? 0;
+    // Reject clearly-invalid quantities (negative / non-integer / > INT max)
+    // with a 400 instead of silently clamping to 0, which masked client bugs.
+    const qtyOnHand = req.body?.qtyOnHand != null ? posInt(req.body.qtyOnHand) : 0;
+    if (qtyOnHand === undefined) return res.status(400).json({ success: false, error: 'qtyOnHand must be a non-negative integer.' });
     const qtyMin = posInt(req.body?.qtyMin);
 
     const entry = await prisma.spareInventory.create({
@@ -273,7 +276,13 @@ router.patch('/:id/inventory/:entryId', requireManager, async (req: any, res: an
     if (!entry) return res.status(404).json({ success: false, error: 'Inventory entry not found.' });
 
     const updates: any = {};
-    if (req.body?.qtyOnHand != null) updates.qtyOnHand = posInt(req.body.qtyOnHand) ?? entry.qtyOnHand;
+    if (req.body?.qtyOnHand != null) {
+      // Reject clearly-invalid quantities with a 400 rather than silently
+      // keeping the prior value (which masked client bugs).
+      const q = posInt(req.body.qtyOnHand);
+      if (q === undefined) return res.status(400).json({ success: false, error: 'qtyOnHand must be a non-negative integer.' });
+      updates.qtyOnHand = q;
+    }
     if (req.body?.qtyMin != null) updates.qtyMin = posInt(req.body.qtyMin) ?? null;
     if (req.body?.location != null) updates.location = str(req.body.location, 200) ?? null;
     if (req.body?.notes != null) updates.notes = str(req.body.notes, 1000) ?? null;

@@ -104,6 +104,29 @@ function requireViewer(req, res, next) {
 }
 
 /**
+ * Factory: gate a route to an explicit allowlist of roles.
+ *
+ * Use when a route is open to more than the manager tier but must still EXCLUDE
+ * specific roles — most importantly the read-only `consultant` (external
+ * maintenance-vendor login, write paths must 403 per the in-app "Vendor Access
+ * — Changes are logged" banner) and the cross-account read-only roles
+ * (oem_admin / group_admin / super_admin) which have no business writing inside
+ * a customer's account. Example: requireRole(['admin','manager','viewer']) lets
+ * an internal facility viewer submit a service quote while keeping a consultant
+ * (and any cross-account role) on the same 403 a write path always gives them.
+ */
+function requireRole(roles) {
+  const allowed = new Set(roles);
+  return function (req, res, next) {
+    if (!req.user || !allowed.has(req.user.role)) {
+      _logDenied(req, roles.join('|'));
+      return res.status(403).json({ success: false, error: 'You do not have permission to perform this action' });
+    }
+    next();
+  };
+}
+
+/**
  * Requires oem_admin role.
  * Use for: fleet dashboard, cross-account OEM reporting routes.
  * Logs permission_denied to the activity log on failure (matches requireAdmin pattern).
@@ -142,6 +165,6 @@ function requireSuperAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAdmin, requireManager, requireViewer, requireOemAdmin, requireGroupAdmin, requireSuperAdmin };
+module.exports = { requireAdmin, requireManager, requireViewer, requireRole, requireOemAdmin, requireGroupAdmin, requireSuperAdmin };
 
 export {};

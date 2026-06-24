@@ -28,8 +28,16 @@
  */
 
 const router = require('express').Router();
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireRole } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+
+// Internal account users (incl. read-only viewers who legitimately raise a
+// service request from an asset) may create/send a quote. EXCLUDES the external
+// read-only `consultant` (the "Vendor Access — Changes are logged" banner
+// promises read-only) and the cross-account roles (oem_admin/group_admin/
+// super_admin), which have no write business inside a customer account.
+// field_tech is already denied upstream at the auth chokepoint (fieldRoleScope).
+const requireQuoteWriter = requireRole(['admin', 'manager', 'viewer']);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -291,7 +299,8 @@ router.get('/asset/:assetId', async (req, res) => {
 // PENDING BROTHER VALIDATION: question set, driver labels, timeline labels,
 // and emergency-mode copy are our best guess for the workflow.
 // Flag for brother review before first real customer demo using this feature.
-router.post('/', async (req, res) => {
+// Write gate: internal users incl. viewer; consultant + cross-account roles 403.
+router.post('/', requireQuoteWriter, async (req, res) => {
   try {
     const {
       assetId,
@@ -471,9 +480,9 @@ router.patch('/:id/status', requireManager, async (req, res) => {
 
 // ── POST /api/quote-requests/:id/send ────────────────────────────────────────
 // Promote a saved DRAFT to a real (sent) request: status draft → requested,
-// then fire the contractor-facing partner event. Open to any account user
-// (same as create — read-only-vs-write is a product call left open here).
-router.post('/:id/send', async (req, res) => {
+// then fire the contractor-facing partner event. Same write gate as create:
+// internal users incl. viewer; the external consultant + cross-account roles 403.
+router.post('/:id/send', requireQuoteWriter, async (req, res) => {
   try {
     const existing = await prisma.quoteRequest.findFirst({
       where:  { id: req.params.id, accountId: req.user.accountId },

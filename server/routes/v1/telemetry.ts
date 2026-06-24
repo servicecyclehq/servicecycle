@@ -22,7 +22,7 @@ const { z } = require('zod');
 import prisma from '../../lib/prisma';
 const { requireScope } = require('../../middleware/apiKeyAuth');
 const { normalizeKey, findStored, store } = require('../../lib/apiIdempotency');
-const { ingestReading, applyMonitoringState } = require('../../lib/telemetryMonitoring');
+const { ingestReading, applyMonitoringState, createAutoQuoteIfNeeded } = require('../../lib/telemetryMonitoring');
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const KEY_RE = /^[A-Za-z0-9_.:-]{1,120}$/;
@@ -147,6 +147,14 @@ router.post('/readings', requireScope('write'), async (req: any, res: any) => {
         const channel = await tx.telemetryChannel.findUnique({ where: { id: channelId }, select: CHANNEL_SELECT });
         return ingestReading(tx, { accountId, asset: { id: r.assetId }, channel, value: r.value, unit: r.unit, recordedAt, source: r.source, externalId: r.externalId });
       });
+      // After the per-reading tx COMMITS, fire the TELEMETRY_CRIT auto-quote
+      // outside the transaction (M1/M3). Doing this inside the tx would let a
+      // quoteRequest.create failure poison the tx and roll back the just-committed
+      // reading; out here the helper's try/catch is genuinely non-fatal. Fires
+      // only on the false->true autoConditionMonitoring transition (changed).
+      if (out.changed && out.autoConditionMonitoring === true) {
+        await createAutoQuoteIfNeeded(prisma, accountId, r.assetId, out.governingCondition);
+      }
       accepted++;
       if (out.duplicate) duplicates++;
       if (out.notificationOpened) breaches++;
