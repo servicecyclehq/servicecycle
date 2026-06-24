@@ -40,6 +40,17 @@ const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
 const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
 const normBusKey = (s: any) => String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '');
+const MAX_AFX_MULTI_ROWS = 5000; // DoS guard: cap total rows an import request may carry
+const afxRowCount = (t: any) => (t?.buses?.length || 0) + (t?.cables?.length || 0) + (t?.transformers?.length || 0) + (t?.devices?.length || 0);
+// Bound a device-settings cell: must be a plain object and not huge, else dropped.
+function safeDeviceSettings(raw: any): any {
+  if (raw == null || raw === '') return undefined;
+  let s: any;
+  try { s = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return undefined; }
+  if (typeof s !== 'object' || Array.isArray(s)) return undefined;
+  try { if (JSON.stringify(s).length > 8192) return undefined; } catch { return undefined; }
+  return s;
+}
 const ExcelJS = require('exceljs');
 const { isLoadChannel, assessLoadGrowth } = require('../lib/telemetryLoadGrowth');
 const PDFDocument = require('pdfkit');
@@ -1902,6 +1913,7 @@ router.post('/afx/validate-multi', requireManager, (req: any, res: any) => {
       } else {
         return res.status(400).json({ success: false, error: 'Provide a multi-table .xlsx (field "file") or a JSON body with buses/cables/transformers/devices arrays.' });
       }
+      if (afxRowCount(tables) > MAX_AFX_MULTI_ROWS) return res.status(413).json({ success: false, error: `Too large: ${afxRowCount(tables)} rows exceeds the ${MAX_AFX_MULTI_ROWS}-row limit.` });
       const report = validateMultiTable(tables);
       res.json({ success: true, data: report });
     } catch (e) {
@@ -1925,6 +1937,7 @@ router.post('/afx/import-multi/preview', requireManager, (req: any, res: any) =>
         tables = { buses: req.body.buses || [], cables: req.body.cables || [], transformers: req.body.transformers || [], devices: req.body.devices || [] };
       } else return res.status(400).json({ success: false, error: 'Provide a multi-table .xlsx (field "file") or a JSON tables body.' });
 
+      if (afxRowCount(tables) > MAX_AFX_MULTI_ROWS) return res.status(413).json({ success: false, error: `Too large: ${afxRowCount(tables)} rows exceeds the ${MAX_AFX_MULTI_ROWS}-row limit.` });
       const validation = validateMultiTable(tables);
       const existing = await prisma.systemStudyAsset.findMany({ where: { accountId, study: { supersededById: null } }, select: { busName: true }, take: 5000 });
       const plan = planMultiTableImport(tables, existing.map((r: any) => r.busName));
@@ -1954,6 +1967,8 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
         tables = { buses: req.body.buses || [], cables: req.body.cables || [], transformers: req.body.transformers || [], devices: req.body.devices || [] };
       } else return res.status(400).json({ success: false, error: 'Provide a multi-table .xlsx (field "file") or a JSON tables body.' });
 
+      if (afxRowCount(tables) > MAX_AFX_MULTI_ROWS) return res.status(413).json({ success: false, error: `Import too large: ${afxRowCount(tables)} rows exceeds the ${MAX_AFX_MULTI_ROWS}-row limit. Split the file and import in batches.` });
+
       const validation = validateMultiTable(tables);
       if (!validation.ok) return res.status(422).json({ success: false, error: `Import has ${validation.errors.length} integrity error(s). Fix them before applying.`, data: { validation } });
 
@@ -1965,95 +1980,92 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
       const overwrite = req.body && (req.body.mode === 'overwrite' || req.body.overwrite === true || req.body.overwrite === 'true');
       const { updates, summary } = buildFillUpdates(tables, existing, { overwrite });
 
-      let applied = 0;
-      if (updates.length) {
-        await prisma.$transaction(updates.map((u: any) => prisma.systemStudyAsset.update({ where: { id: u.id }, data: u.set })));
-        applied = updates.length;
+      // Resolve + validate the create-target site BEFORE opening the transaction so
+      // we can return a clean 4xx (can't res.json from inside the tx callback).
+      const wantCreate = req.body && (req.body.createNew === true || req.body.createNew === 'true');
+      const wantDevices = req.body && (req.body.importDevices === true || req.body.importDevices === 'true');
+      let createSiteId: string | null = null;
+      if (wantCreate) {
+        createSiteId = req.body.siteId ? String(req.body.siteId) : null;
+        if (!createSiteId) return res.status(400).json({ success: false, error: 'createNew requires siteId (which site the new equipment belongs to).' });
+        const site = await prisma.site.findFirst({ where: { id: createSiteId, accountId }, select: { id: true } });
+        if (!site) return res.status(404).json({ success: false, error: 'Site not found.' });
       }
 
-      // ── createNew: stand up assets for buses that don't match anything ────────
-      // Requires an explicit siteId (where the new equipment lives). Creates one
-      // import study, an Asset + bound SystemStudyAsset per new bus, and wires
-      // fedFrom topology for the NEW assets from the Cables/Transformers tables.
-      let created = 0, feedsWired = 0, devicesCreated = 0;
-      let createdStudyId: string | null = null;
-      // assetId-by-bus-key maps shared by createNew + device import.
       const existingAssetByKey = new Map<string, string>();
       for (const r of existing) { const k = normBusKey(r.busName); if (r.assetId && !existingAssetByKey.has(k)) existingAssetByKey.set(k, r.assetId); }
-      const newAssetByKey = new Map<string, string>();
-      const wantCreate = req.body && (req.body.createNew === true || req.body.createNew === 'true');
-      if (wantCreate) {
-        const siteId = req.body.siteId ? String(req.body.siteId) : null;
-        if (!siteId) return res.status(400).json({ success: false, error: 'createNew requires siteId (which site the new equipment belongs to).' });
-        const site = await prisma.site.findFirst({ where: { id: siteId, accountId }, select: { id: true } });
-        if (!site) return res.status(404).json({ success: false, error: 'Site not found.' });
 
-        const plan = planMultiTableImport(tables, existing.map((r: any) => r.busName));
-        const busByKey = new Map<string, any>();
-        for (const b of (tables.buses || [])) { const k = normBusKey(b.busId); if (!busByKey.has(k)) busByKey.set(k, b); }
-        const cableByTo = new Map<string, any>();
-        for (const c of (tables.cables || [])) { const k = normBusKey(c.toBusId); if (k && !cableByTo.has(k)) cableByTo.set(k, c); }
+      // ── All writes run in ONE interactive transaction: a mid-import failure
+      // rolls back cleanly (no orphan study/assets/devices). Every update is
+      // accountId-scoped via updateMany so tenant isolation is enforced at the query.
+      const out = await prisma.$transaction(async (tx: any) => {
+        let applied = 0, created = 0, feedsWired = 0, devicesCreated = 0;
+        let createdStudyId: string | null = null;
+        const newAssetByKey = new Map<string, string>();
 
-        if (plan.createBuses.length) {
-          const performed = new Date();
-          const study = await prisma.systemStudy.create({
-            data: { accountId, siteId, studyType: 'one_line_review', performedDate: performed, expiresAt: new Date(performed.getFullYear() + 5, performed.getMonth(), performed.getDate()), method: 'AFX import', trigger: 'system_change', notes: 'Created from AFX multi-table import.' },
-            select: { id: true },
-          });
-          createdStudyId = study.id;
-          for (const busId of plan.createBuses) {
-            const k = normBusKey(busId); const b = busByKey.get(k) || {}; const cable = cableByTo.get(k) || {};
-            const voltStr = b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : undefined;
-            const asset = await prisma.asset.create({
-              data: { accountId, siteId, equipmentType: mapEquipmentType(b.equipmentType) as any, nameplateData: { busName: busId, nominalVoltage: voltStr || null, importedFrom: 'afx_import' }, notes: `Created from AFX multi-table import (bus ${busId}).` },
+        for (const u of updates) { await tx.systemStudyAsset.updateMany({ where: { id: u.id, accountId }, data: u.set }); }
+        applied = updates.length;
+
+        if (wantCreate) {
+          const plan = planMultiTableImport(tables, existing.map((r: any) => r.busName));
+          const busByKey = new Map<string, any>();
+          for (const b of (tables.buses || [])) { const k = normBusKey(b.busId); if (!busByKey.has(k)) busByKey.set(k, b); }
+          const cableByTo = new Map<string, any>();
+          for (const c of (tables.cables || [])) { const k = normBusKey(c.toBusId); if (k && !cableByTo.has(k)) cableByTo.set(k, c); }
+
+          if (plan.createBuses.length) {
+            const performed = new Date();
+            const study = await tx.systemStudy.create({
+              data: { accountId, siteId: createSiteId, studyType: 'one_line_review', performedDate: performed, expiresAt: new Date(performed.getFullYear() + 5, performed.getMonth(), performed.getDate()), method: 'AFX import', trigger: 'system_change', notes: 'Created from AFX multi-table import.' },
               select: { id: true },
             });
-            await prisma.systemStudyAsset.create({
-              data: { accountId, studyId: study.id, assetId: asset.id, busName: busId, nominalVoltage: voltStr, cableLengthFt: numOrNull(cable.cableLengthFt) ?? undefined, cableSize: cable.cableSize || undefined, cableMaterial: cable.cableMaterial || undefined, conductorsPerPhase: intOrNull(cable.conductorsPerPhase) ?? undefined },
-            });
-            newAssetByKey.set(k, asset.id); created++;
-          }
-          // Wire fedFrom for NEW assets only (To = newly created). From may be existing or new.
-          for (const link of [...(tables.cables || []), ...(tables.transformers || [])]) {
-            const toId = newAssetByKey.get(normBusKey(link.toBusId));
-            const fromId = newAssetByKey.get(normBusKey(link.fromBusId)) || existingAssetByKey.get(normBusKey(link.fromBusId));
-            if (toId && fromId && toId !== fromId) { await prisma.asset.update({ where: { id: toId }, data: { fedFromAssetId: fromId } }); feedsWired++; }
-          }
-        }
-      }
-
-      // ── importDevices: create ProtectiveDevice rows from the Devices tab ──────
-      // Attaches each device to the asset its "Protects Bus" resolves to (existing
-      // or just-created). Idempotent: skips when an active device with the same
-      // asset + label already exists. Transformers are not created as devices —
-      // they inform feed topology above; standalone transformer-asset creation is
-      // a separate design decision.
-      const wantDevices = req.body && (req.body.importDevices === true || req.body.importDevices === 'true');
-      if (wantDevices && (tables.devices || []).length) {
-        const resolve = (busRef: any) => { const k = normBusKey(busRef); return newAssetByKey.get(k) || existingAssetByKey.get(k) || null; };
-        const targetIds = new Set<string>();
-        for (const d of tables.devices) { const id = resolve(d.protectsBusId); if (id) targetIds.add(id); }
-        if (targetIds.size) {
-          const assetsMeta = await prisma.asset.findMany({ where: { id: { in: Array.from(targetIds) }, accountId }, select: { id: true, siteId: true } });
-          const siteByAsset = new Map(assetsMeta.map((a: any) => [a.id, a.siteId]));
-          const dupRows = await prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { in: Array.from(targetIds) } }, select: { assetId: true, label: true } });
-          const dup = new Set(dupRows.map((r: any) => `${r.assetId}|${String(r.label).trim().toUpperCase()}`));
-          for (const d of tables.devices) {
-            const assetId = resolve(d.protectsBusId);
-            const siteId = assetId ? siteByAsset.get(assetId) : null;
-            const label = d.deviceId == null ? '' : String(d.deviceId).trim();
-            if (!assetId || !siteId || !label) continue;
-            if (dup.has(`${assetId}|${label.toUpperCase()}`)) continue;
-            let settings: any = undefined;
-            if (d.deviceSettings) { try { settings = typeof d.deviceSettings === 'string' ? JSON.parse(d.deviceSettings) : d.deviceSettings; } catch { settings = undefined; } }
-            await prisma.protectiveDevice.create({
-              data: { accountId, siteId, assetId, label, deviceType: d.deviceType || undefined, manufacturer: d.deviceManufacturer || undefined, model: d.deviceModel || undefined, sensorRatingA: numOrNull(d.deviceRatingA) ?? undefined, settings: settings ?? undefined, source: 'import', collectedById: req.user.id },
-            });
-            dup.add(`${assetId}|${label.toUpperCase()}`); devicesCreated++;
+            createdStudyId = study.id;
+            for (const busId of plan.createBuses) {
+              const k = normBusKey(busId); const b = busByKey.get(k) || {}; const cable = cableByTo.get(k) || {};
+              const voltStr = b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : undefined;
+              const asset = await tx.asset.create({
+                data: { accountId, siteId: createSiteId, equipmentType: mapEquipmentType(b.equipmentType) as any, nameplateData: { busName: busId, nominalVoltage: voltStr || null, importedFrom: 'afx_import' }, notes: `Created from AFX multi-table import (bus ${busId}).` },
+                select: { id: true },
+              });
+              await tx.systemStudyAsset.create({
+                data: { accountId, studyId: study.id, assetId: asset.id, busName: busId, nominalVoltage: voltStr, cableLengthFt: numOrNull(cable.cableLengthFt) ?? undefined, cableSize: cable.cableSize || undefined, cableMaterial: cable.cableMaterial || undefined, conductorsPerPhase: intOrNull(cable.conductorsPerPhase) ?? undefined },
+              });
+              newAssetByKey.set(k, asset.id); created++;
+            }
+            for (const link of [...(tables.cables || []), ...(tables.transformers || [])]) {
+              const toId = newAssetByKey.get(normBusKey(link.toBusId));
+              const fromId = newAssetByKey.get(normBusKey(link.fromBusId)) || existingAssetByKey.get(normBusKey(link.fromBusId));
+              if (toId && fromId && toId !== fromId) { await tx.asset.updateMany({ where: { id: toId, accountId }, data: { fedFromAssetId: fromId } }); feedsWired++; }
+            }
           }
         }
-      }
 
+        if (wantDevices && (tables.devices || []).length) {
+          const resolve = (busRef: any) => { const k = normBusKey(busRef); return newAssetByKey.get(k) || existingAssetByKey.get(k) || null; };
+          const targetIds = new Set<string>();
+          for (const d of tables.devices) { const id = resolve(d.protectsBusId); if (id) targetIds.add(id); }
+          if (targetIds.size) {
+            const assetsMeta = await tx.asset.findMany({ where: { id: { in: Array.from(targetIds) }, accountId }, select: { id: true, siteId: true } });
+            const siteByAsset = new Map(assetsMeta.map((a: any) => [a.id, a.siteId]));
+            const dupRows = await tx.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { in: Array.from(targetIds) } }, select: { assetId: true, label: true } });
+            const dup = new Set(dupRows.map((r: any) => `${r.assetId}|${String(r.label).trim().toUpperCase()}`));
+            for (const d of tables.devices) {
+              const assetId = resolve(d.protectsBusId);
+              const siteId = assetId ? siteByAsset.get(assetId) : null;
+              const label = d.deviceId == null ? '' : String(d.deviceId).trim();
+              if (!assetId || !siteId || !label) continue;
+              if (dup.has(`${assetId}|${label.toUpperCase()}`)) continue;
+              await tx.protectiveDevice.create({
+                data: { accountId, siteId, assetId, label, deviceType: d.deviceType || undefined, manufacturer: d.deviceManufacturer || undefined, model: d.deviceModel || undefined, sensorRatingA: numOrNull(d.deviceRatingA) ?? undefined, settings: safeDeviceSettings(d.deviceSettings) ?? undefined, source: 'import', collectedById: req.user.id },
+              });
+              dup.add(`${assetId}|${label.toUpperCase()}`); devicesCreated++;
+            }
+          }
+        }
+        return { applied, created, feedsWired, devicesCreated, createdStudyId };
+      }, { timeout: 30000 });
+
+      const { applied, created, feedsWired, devicesCreated, createdStudyId } = out;
       await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten, busesCreated: created, feedsWired, devicesCreated, createdStudyId, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode });
       const parts = [`updated ${applied} existing bus(es)`];
       if (created) parts.push(`created ${created} new`);
