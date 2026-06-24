@@ -59,6 +59,7 @@ export default function ArcFlashFleet() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={exportModel} disabled={exporting} title="Export the collected model as CSV for SKM / ETAP / EasyPower">{exporting ? 'Exporting…' : 'Export model (CSV)'}</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => downloadAuthedFile('/api/arc-flash/fleet?format=csv', 'arc-flash-fleet.csv').catch(() => {})} title="Export the per-site attention rollup (DANGER, confidence, incidents) as CSV">Export rollup (CSV)</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => downloadAuthedFile('/api/arc-flash/labels.pdf', 'arc-flash-labels.pdf').catch(() => {})} title="Print-ready NFPA 70E labels for every bus (4x6, one per page)">Labels (PDF)</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
         </div>

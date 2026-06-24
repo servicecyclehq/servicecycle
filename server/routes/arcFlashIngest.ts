@@ -931,6 +931,23 @@ router.get('/fleet', async (req: any, res: any) => {
     }), { sites: 0, busCount: 0, dangerCount: 0, blockedCount: 0, lowConfidenceCount: 0, contradictionErrors: 0, contradictionWarnings: 0, expiringStudies: 0, recentIncidents: 0, openIncidents: 0, confWeighted: 0 });
     const avgConfidence = totals.busCount ? Math.round(totals.confWeighted / totals.busCount) : null;
 
+    if (String(req.query.format || '').toLowerCase() === 'csv') {
+      const cols: Array<[string, string]> = [
+        ['Site', 'siteName'], ['Buses', 'busCount'], ['DANGER', 'dangerCount'], ['DANGER %', 'dangerPct'],
+        ['Blocked', 'blockedCount'], ['Avg confidence', 'avgConfidence'], ['Low confidence', 'lowConfidenceCount'],
+        ['Sanity errors', 'contradictionErrors'], ['Sanity warnings', 'contradictionWarnings'],
+        ['Studies', 'studyCount'], ['Expiring (90d)', 'expiringStudies'],
+        ['Incidents (12mo)', 'recentIncidents'], ['Open incidents', 'openIncidents'],
+        ['Incident injuries', 'incidentInjuries'], ['Last incident', 'lastIncidentAt'],
+      ];
+      const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const lines = [cols.map((c) => c[0]).join(',')];
+      for (const s of siteList) lines.push(cols.map((c) => esc((s as any)[c[1]])).join(','));
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="arc-flash-fleet-${new Date().toISOString().slice(0, 10)}.csv"`);
+      return res.send(lines.join('\r\n'));
+    }
+
     res.json({ success: true, data: { sites: siteList, totals: { ...totals, confWeighted: undefined, avgConfidence } } });
   } catch (e) {
     console.error('arc-flash fleet error:', e);
