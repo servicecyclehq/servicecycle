@@ -1648,8 +1648,23 @@ router.get('/risk-score', requireManager, async (req: any, res: any) => {
       prisma.systemStudy.count({ where: { accountId, supersededById: null, studyType: 'arc_flash' } }),
       prisma.systemStudy.count({ where: { accountId, supersededById: null, studyType: 'arc_flash', expiresAt: { lt: now } } }),
     ]);
+    // Fetch open incident counts to fold into the risk score.
+    // Only open/reviewed incidents penalize - closing after corrective action clears it.
+    const openIncidents = await prisma.arcFlashIncident.findMany({
+      where: { accountId, status: { not: 'closed' } },
+      select: { injury: true },
+      take: 500,
+    });
+    const openWithInjury = openIncidents.filter((i: any) => i.injury).length;
+    const openNoInjury   = openIncidents.filter((i: any) => !i.injury).length;
+    // Recent count (last 365 days) - informational, shown in metrics panel.
+    const cutoff365 = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const recent365 = await prisma.arcFlashIncident.count({
+      where: { accountId, createdAt: { gte: cutoff365 } },
+    });
+
     const metrics = { labelledBuses, dangerBuses, totalStudies, expiredStudies };
-    const risk = computeRiskScore(metrics);
+    const risk = computeRiskScore({ ...metrics, incidents: { openWithInjury, openNoInjury, recent365 } });
 
     // Anonymized network benchmark: per-account DANGER ratio across all accounts,
     // ids discarded before aggregation. k-anon enforced in buildBenchmark.
@@ -1664,7 +1679,7 @@ router.get('/risk-score', requireManager, async (req: any, res: any) => {
     const yourRatio = labelledBuses > 0 ? dangerBuses / labelledBuses : 0;
     const benchmark = buildBenchmark(ratios, yourRatio);
 
-    res.json({ success: true, data: { score: risk.score, band: risk.band, factors: risk.factors, metrics, benchmark } });
+    res.json({ success: true, data: { score: risk.score, band: risk.band, factors: risk.factors, metrics: { ...metrics, openWithInjury, openNoInjury, recent365 }, benchmark } });
   } catch (e) {
     console.error('arc-flash risk-score error:', e);
     res.status(500).json({ success: false, error: 'Failed to compute the risk score' });

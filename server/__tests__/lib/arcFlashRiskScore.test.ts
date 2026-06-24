@@ -1,7 +1,7 @@
 /**
  * Unit tests for the Slice 10 risk-score + anonymized benchmark.
  */
-import { computeRiskScore, buildBenchmark, BENCHMARK_MIN_ACCOUNTS } from '../../lib/arcFlashRiskScore';
+import { computeRiskScore, buildBenchmark, BENCHMARK_MIN_ACCOUNTS, INCIDENT_MAX_PENALTY } from '../../lib/arcFlashRiskScore';
 
 describe('computeRiskScore', () => {
   test('fully labelled, no DANGER, no expired -> low risk ~100', () => {
@@ -21,6 +21,75 @@ describe('computeRiskScore', () => {
     const r = computeRiskScore({ labelledBuses: 0, dangerBuses: 0, totalStudies: 0, expiredStudies: 0 });
     expect(r.score).toBe(80); // 100 - 20 coverage penalty
     expect(r.factors.find(f => f.key === 'coverage')?.penalty).toBe(20);
+  });
+
+  test('incidents factor absent when incidents omitted', () => {
+    const r = computeRiskScore({ labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0 });
+    const incFactor = r.factors.find(f => f.key === 'incidents')!;
+    expect(incFactor).toBeDefined();
+    expect(incFactor.penalty).toBe(0);
+    expect(incFactor.detail).toBe('No open incidents');
+  });
+
+  test('injury incident subtracts 6 pts per injury', () => {
+    const base = computeRiskScore({ labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0 });
+    const with1Injury = computeRiskScore({
+      labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0,
+      incidents: { openWithInjury: 1, openNoInjury: 0 },
+    });
+    expect(base.score - with1Injury.score).toBe(6);
+    expect(with1Injury.factors.find(f => f.key === 'incidents')!.penalty).toBe(6);
+  });
+
+  test('non-injury incident subtracts 2 pts each', () => {
+    const r = computeRiskScore({
+      labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0,
+      incidents: { openWithInjury: 0, openNoInjury: 3 },
+    });
+    expect(r.factors.find(f => f.key === 'incidents')!.penalty).toBe(6); // 3 * 2
+  });
+
+  test('incident penalty capped at INCIDENT_MAX_PENALTY (15)', () => {
+    const r = computeRiskScore({
+      labelledBuses: 20, dangerBuses: 0, totalStudies: 3, expiredStudies: 0,
+      incidents: { openWithInjury: 10, openNoInjury: 20 }, // would be 10*6+20*2=100 without cap
+    });
+    const incFactor = r.factors.find(f => f.key === 'incidents')!;
+    expect(incFactor.penalty).toBe(INCIDENT_MAX_PENALTY);
+    expect(incFactor.penalty).toBe(15);
+  });
+
+  test('already-high-risk account is not pushed below 0', () => {
+    const r = computeRiskScore({
+      labelledBuses: 10, dangerBuses: 10, totalStudies: 4, expiredStudies: 4,
+      incidents: { openWithInjury: 5, openNoInjury: 5 },
+    });
+    expect(r.score).toBeGreaterThanOrEqual(0);
+  });
+
+  test('incident detail string describes open counts', () => {
+    const r = computeRiskScore({
+      labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0,
+      incidents: { openWithInjury: 1, openNoInjury: 2 },
+    });
+    const detail = r.factors.find(f => f.key === 'incidents')!.detail as string;
+    expect(detail).toContain('3 open incident');
+    expect(detail).toContain('1 with injury');
+    expect(detail).toContain('2 without injury');
+  });
+
+  test('closing all incidents restores score to no-incident baseline', () => {
+    const base = computeRiskScore({ labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0 });
+    const withIncidents = computeRiskScore({
+      labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0,
+      incidents: { openWithInjury: 2, openNoInjury: 1 },
+    });
+    const allClosed = computeRiskScore({
+      labelledBuses: 10, dangerBuses: 0, totalStudies: 2, expiredStudies: 0,
+      incidents: { openWithInjury: 0, openNoInjury: 0 }, // incidents present but all closed
+    });
+    expect(withIncidents.score).toBeLessThan(base.score);
+    expect(allClosed.score).toBe(base.score); // penalty clears when all closed
   });
 });
 

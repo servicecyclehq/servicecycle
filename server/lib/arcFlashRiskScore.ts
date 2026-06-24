@@ -4,8 +4,9 @@
  *
  * The score (0-100, higher = SAFER, like a credit score) summarizes an account's
  * arc-flash posture for an insurer / executive: how much equipment carries a
- * current label (coverage), how much of it is in the DANGER class, and how much
- * of the study base has expired. Deterministic + explainable (factors returned).
+ * current label (coverage), how much of it is in the DANGER class, how much
+ * of the study base has expired, and whether open incidents have gone uncorrected.
+ * Deterministic + explainable (factors returned).
  *
  * The benchmark side is AGGREGATE-ONLY and k-anonymized: the network distribution
  * is computed from per-account ratios but never exposes any single account's data,
@@ -19,7 +20,30 @@ export const BENCHMARK_MIN_ACCOUNTS = 5; // k-anonymity floor
 
 function clamp(n: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, n)); }
 
-export interface RiskInput { labelledBuses: number; dangerBuses: number; totalStudies: number; expiredStudies: number; }
+export interface RiskInput {
+  labelledBuses: number;
+  dangerBuses: number;
+  totalStudies: number;
+  expiredStudies: number;
+  /** Optional — open (not closed) incident counts. Omit to skip the incident factor. */
+  incidents?: IncidentInput;
+}
+
+/**
+ * Open incident counts by severity tier. Only incidents with status != 'closed'
+ * penalize the score — closing after corrective action clears the penalty.
+ *   openWithInjury  — injury=true, any type (most serious tier, 6 pts each)
+ *   openNoInjury    — injury=false, any type (2 pts each)
+ */
+export interface IncidentInput {
+  openWithInjury: number;
+  openNoInjury: number;
+  /** Informational only — total incidents in the last 365 days (not used in score). */
+  recent365?: number;
+}
+
+/** Maximum penalty the incident factor can contribute (keeps the existing factors dominant). */
+export const INCIDENT_MAX_PENALTY = 15;
 
 /**
  * Deterministic 0-100 safety score (higher = lower risk). Pure.
@@ -27,6 +51,8 @@ export interface RiskInput { labelledBuses: number; dangerBuses: number; totalSt
  *  - Expired-study ratio (up to -35): share of the study base past expiry.
  *  - Coverage floor (up to -20): no labelled equipment at all is itself a risk
  *    (unknown hazard), so a zero-coverage account is penalized, not rewarded.
+ *  - Open incidents (up to -15): uncorrected incidents signal real-world events
+ *    that have not been formally resolved. Penalty clears when incidents are closed.
  */
 export function computeRiskScore(input: RiskInput): { score: number; band: 'low' | 'moderate' | 'high'; factors: any[]; dangerRatio: number } {
   const labelled = Math.max(0, Number(input.labelledBuses) || 0);
@@ -41,13 +67,31 @@ export function computeRiskScore(input: RiskInput): { score: number; band: 'low'
   const expiredPenalty = Math.round(expiredRatio * 35);
   const coveragePenalty = labelled === 0 ? 20 : 0;
 
-  const score = clamp(100 - dangerPenalty - expiredPenalty - coveragePenalty, 0, 100);
+  // Incident penalty: open (not closed) incidents signal unresolved real-world events.
+  // Injury incidents are weighted 3x heavier (6 pts vs 2 pts). Capped at 15.
+  let incidentPenalty = 0;
+  let incidentDetail = 'No open incidents';
+  if (input.incidents) {
+    const inj = Math.max(0, Number(input.incidents.openWithInjury) || 0);
+    const noInj = Math.max(0, Number(input.incidents.openNoInjury) || 0);
+    incidentPenalty = clamp(inj * 6 + noInj * 2, 0, INCIDENT_MAX_PENALTY);
+    const total = inj + noInj;
+    if (total > 0) {
+      const parts: string[] = [];
+      if (inj > 0) parts.push(`${inj} with injury`);
+      if (noInj > 0) parts.push(`${noInj} without injury`);
+      incidentDetail = `${total} open incident${total !== 1 ? 's' : ''} (${parts.join(', ')})`;
+    }
+  }
+
+  const score = clamp(100 - dangerPenalty - expiredPenalty - coveragePenalty - incidentPenalty, 0, 100);
   const band: 'low' | 'moderate' | 'high' = score >= 80 ? 'low' : score >= 55 ? 'moderate' : 'high';
 
   const factors = [
     { key: 'danger', label: 'DANGER exposure', penalty: dangerPenalty, detail: labelled > 0 ? `${Math.round(dangerRatio * 100)}% of ${labelled} labelled buses are DANGER` : 'No labelled buses' },
     { key: 'expired', label: 'Expired studies', penalty: expiredPenalty, detail: studies > 0 ? `${expired} of ${studies} studies expired` : 'No studies on record' },
     { key: 'coverage', label: 'Label coverage', penalty: coveragePenalty, detail: labelled === 0 ? 'No arc-flash labels — unknown hazard' : `${labelled} labelled buses` },
+    { key: 'incidents', label: 'Open incidents', penalty: incidentPenalty, detail: incidentDetail },
   ];
 
   return { score, band, factors, dangerRatio };
