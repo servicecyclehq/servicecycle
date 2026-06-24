@@ -183,6 +183,7 @@ function AfxPanel() {
   const [impOverwrite, setImpOverwrite] = useState(false);
   const [impSites, setImpSites] = useState([]);
   const [impCreateSiteId, setImpCreateSiteId] = useState('');
+  const [impDevices, setImpDevices] = useState(false);
 
   async function loadSpec() {
     if (spec) return spec;
@@ -241,11 +242,13 @@ function AfxPanel() {
       const fd = new FormData(); fd.append('file', impFile); fd.append('confirm', 'true');
       if (impOverwrite) fd.append('mode', 'overwrite');
       if (createNew) { fd.append('createNew', 'true'); fd.append('siteId', impCreateSiteId); }
+      if (impDevices) fd.append('importDevices', 'true');
       const r = await api.post('/api/arc-flash/afx/import-multi/apply', fd);
       const d = r.data?.data || {};
       const ov = d.summary?.overwritten ? `, ${d.summary.overwritten} value(s) replaced` : '';
       const cr = d.created ? `, ${d.created} new bus(es) created${d.feedsWired ? ` (${d.feedsWired} feed link(s))` : ''}` : '';
-      setImpApplyMsg(`Applied: ${d.applied} bus(es) updated${ov}${cr}. (mode: ${d.summary?.mode || 'fill_only'})`);
+      const dv = d.devicesCreated ? `, ${d.devicesCreated} device(s) added` : '';
+      setImpApplyMsg(`Applied: ${d.applied} bus(es) updated${ov}${cr}${dv}. (mode: ${d.summary?.mode || 'fill_only'})`);
       setImpPreview(null);
     } catch (e) { setErr(e?.response?.data?.error || 'Import apply failed.'); }
     finally { setImpApplyBusy(false); }
@@ -317,6 +320,12 @@ function AfxPanel() {
                 Overwrite differing values (default: fill blanks only)
               </label>
             </div>
+          )}
+          {impPreview.validation.ok && impPreview.plan.summary.incomingDevices > 0 && (impPreview.plan.summary.matchedBuses > 0 || impPreview.plan.summary.newBuses > 0) && (
+            <label style={{ display: 'block', marginTop: 8, fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+              <input type="checkbox" checked={impDevices} onChange={e => setImpDevices(e.target.checked)} style={{ marginRight: 4 }} />
+              Also import {impPreview.plan.summary.incomingDevices} protective device(s) onto their protected buses (skips duplicates)
+            </label>
           )}
           {impPreview.validation.ok && impPreview.plan.summary.newBuses > 0 && (
             <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>

@@ -1975,8 +1975,12 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
       // Requires an explicit siteId (where the new equipment lives). Creates one
       // import study, an Asset + bound SystemStudyAsset per new bus, and wires
       // fedFrom topology for the NEW assets from the Cables/Transformers tables.
-      let created = 0, feedsWired = 0;
+      let created = 0, feedsWired = 0, devicesCreated = 0;
       let createdStudyId: string | null = null;
+      // assetId-by-bus-key maps shared by createNew + device import.
+      const existingAssetByKey = new Map<string, string>();
+      for (const r of existing) { const k = normBusKey(r.busName); if (r.assetId && !existingAssetByKey.has(k)) existingAssetByKey.set(k, r.assetId); }
+      const newAssetByKey = new Map<string, string>();
       const wantCreate = req.body && (req.body.createNew === true || req.body.createNew === 'true');
       if (wantCreate) {
         const siteId = req.body.siteId ? String(req.body.siteId) : null;
@@ -1989,8 +1993,6 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
         for (const b of (tables.buses || [])) { const k = normBusKey(b.busId); if (!busByKey.has(k)) busByKey.set(k, b); }
         const cableByTo = new Map<string, any>();
         for (const c of (tables.cables || [])) { const k = normBusKey(c.toBusId); if (k && !cableByTo.has(k)) cableByTo.set(k, c); }
-        const existingAssetByKey = new Map<string, string>();
-        for (const r of existing) { const k = normBusKey(r.busName); if (r.assetId && !existingAssetByKey.has(k)) existingAssetByKey.set(k, r.assetId); }
 
         if (plan.createBuses.length) {
           const performed = new Date();
@@ -1999,7 +2001,6 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
             select: { id: true },
           });
           createdStudyId = study.id;
-          const newAssetByKey = new Map<string, string>();
           for (const busId of plan.createBuses) {
             const k = normBusKey(busId); const b = busByKey.get(k) || {}; const cable = cableByTo.get(k) || {};
             const voltStr = b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : undefined;
@@ -2021,13 +2022,44 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
         }
       }
 
-      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten, busesCreated: created, feedsWired, createdStudyId, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode });
-      const note = wantCreate
-        ? `Created ${created} new bus(es) and updated ${applied} existing. New equipment was added under the chosen site; SC stores collected data and a licensed PE owns the arc-flash calculation.`
-        : (overwrite
-          ? 'Overwrite mode: blank fields filled and differing values replaced (existing values never erased with blanks). SC stores collected data; a licensed PE owns the arc-flash calculation.'
-          : 'Fill-only: blank fields populated; existing values untouched. SC stores collected data; a licensed PE owns the arc-flash calculation.');
-      res.json({ success: true, data: { applied, created, feedsWired, createdStudyId, summary, note } });
+      // ── importDevices: create ProtectiveDevice rows from the Devices tab ──────
+      // Attaches each device to the asset its "Protects Bus" resolves to (existing
+      // or just-created). Idempotent: skips when an active device with the same
+      // asset + label already exists. Transformers are not created as devices —
+      // they inform feed topology above; standalone transformer-asset creation is
+      // a separate design decision.
+      const wantDevices = req.body && (req.body.importDevices === true || req.body.importDevices === 'true');
+      if (wantDevices && (tables.devices || []).length) {
+        const resolve = (busRef: any) => { const k = normBusKey(busRef); return newAssetByKey.get(k) || existingAssetByKey.get(k) || null; };
+        const targetIds = new Set<string>();
+        for (const d of tables.devices) { const id = resolve(d.protectsBusId); if (id) targetIds.add(id); }
+        if (targetIds.size) {
+          const assetsMeta = await prisma.asset.findMany({ where: { id: { in: Array.from(targetIds) }, accountId }, select: { id: true, siteId: true } });
+          const siteByAsset = new Map(assetsMeta.map((a: any) => [a.id, a.siteId]));
+          const dupRows = await prisma.protectiveDevice.findMany({ where: { accountId, status: 'active', assetId: { in: Array.from(targetIds) } }, select: { assetId: true, label: true } });
+          const dup = new Set(dupRows.map((r: any) => `${r.assetId}|${String(r.label).trim().toUpperCase()}`));
+          for (const d of tables.devices) {
+            const assetId = resolve(d.protectsBusId);
+            const siteId = assetId ? siteByAsset.get(assetId) : null;
+            const label = d.deviceId == null ? '' : String(d.deviceId).trim();
+            if (!assetId || !siteId || !label) continue;
+            if (dup.has(`${assetId}|${label.toUpperCase()}`)) continue;
+            let settings: any = undefined;
+            if (d.deviceSettings) { try { settings = typeof d.deviceSettings === 'string' ? JSON.parse(d.deviceSettings) : d.deviceSettings; } catch { settings = undefined; } }
+            await prisma.protectiveDevice.create({
+              data: { accountId, siteId, assetId, label, deviceType: d.deviceType || undefined, manufacturer: d.deviceManufacturer || undefined, model: d.deviceModel || undefined, sensorRatingA: numOrNull(d.deviceRatingA) ?? undefined, settings: settings ?? undefined, source: 'import', collectedById: req.user.id },
+            });
+            dup.add(`${assetId}|${label.toUpperCase()}`); devicesCreated++;
+          }
+        }
+      }
+
+      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten, busesCreated: created, feedsWired, devicesCreated, createdStudyId, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode });
+      const parts = [`updated ${applied} existing bus(es)`];
+      if (created) parts.push(`created ${created} new`);
+      if (devicesCreated) parts.push(`added ${devicesCreated} device(s)`);
+      const note = `Import applied: ${parts.join(', ')}. SC stores collected data and a licensed PE owns the arc-flash calculation; existing values are never erased.`;
+      res.json({ success: true, data: { applied, created, feedsWired, devicesCreated, createdStudyId, summary, note } });
     } catch (e) {
       console.error('afx import-multi apply error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to apply multi-table import' });
