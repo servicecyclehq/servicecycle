@@ -145,7 +145,7 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
           <>
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: overallColor }}>{data.overallRate}%</span>
+                <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', color: overallColor }}>{data.overallRate}%</span>
                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{Math.max(0, 100 - data.overallRate)}% to fully compliant</span>
               </div>
               <div className="sc-progress"><i style={{ width: `${overallPct}%`, background: overallColor }} /></div>
