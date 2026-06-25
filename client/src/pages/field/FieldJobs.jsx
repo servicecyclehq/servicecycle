@@ -126,7 +126,7 @@ export default function FieldJobs() {
       )}
 
       {error && (
-        <div role="alert" style={{ padding: '12px 14px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 14 }}>{error}</div>
+        <div role="alert" style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)', fontSize: 14 }}>{error}</div>
       )}
 
       {jobs === null && !error && (

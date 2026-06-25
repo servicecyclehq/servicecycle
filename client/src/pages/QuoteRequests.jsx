@@ -14,11 +14,11 @@ import api from '../api/client';
 // ── Label helpers ────────────────────────────────────────────────────────────
 
 const DRIVER_LABELS = {
-  down_now:            { label: 'Down now',          color: '#dc2626' },
-  suspected_failing:   { label: 'Suspected failing', color: '#d97706' },
-  failed_inspection:   { label: 'Failed inspection', color: '#d97706' },
-  planned_replacement: { label: 'Planned replacement', color: '#0ea5e9' },
-  budgetary:           { label: 'Budgetary estimate', color: '#64748b' },
+  down_now:            { label: 'Down now',          color: 'var(--chip-red-fg)' },
+  suspected_failing:   { label: 'Suspected failing', color: 'var(--chip-amber-fg)' },
+  failed_inspection:   { label: 'Failed inspection', color: 'var(--chip-amber-fg)' },
+  planned_replacement: { label: 'Planned replacement', color: 'var(--chip-blue-fg)' },
+  budgetary:           { label: 'Budgetary estimate', color: 'var(--chip-slate-fg)' },
 };
 
 const TIMELINE_LABELS = {
@@ -246,7 +246,7 @@ export default function QuoteRequests() {
             </thead>
             <tbody>
               {items.map(qr => {
-                const driverMeta = DRIVER_LABELS[qr.driver] ?? { label: qr.driver, color: '#64748b' };
+                const driverMeta = DRIVER_LABELS[qr.driver] ?? { label: qr.driver, color: 'var(--chip-slate-fg)' };
                 const isAuto = qr.triggerType === 'TELEMETRY_CRIT';
                 const isEmergency = qr.emergencyMode || qr.driver === 'down_now';
                 return (
