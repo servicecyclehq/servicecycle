@@ -57,7 +57,7 @@ export default function MaintenanceDebtCard({ compact = false }) {
   }
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Loading maintenance debt…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const t = data.totals;

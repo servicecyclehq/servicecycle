@@ -67,7 +67,7 @@ function DimensionBar({ dim }) {
         <span style={{ marginLeft: 'auto', fontSize: 'var(--font-size-sm)', fontWeight: 700, color: barColor }}>
           {has ? `${dim.subScore}` : '—'}
           {dim.pointsLost > 0 && (
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#b91c1c', marginLeft: 6 }}>−{dim.pointsLost} pts</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--chip-red-fg)', marginLeft: 6 }}>−{dim.pointsLost} pts</span>
           )}
         </span>
       </div>
@@ -96,7 +96,7 @@ export default function MaturityScoreCard({ siteId = null, compact = false }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Loading program maturity…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const lvlColor = LEVEL_COLOR[data.level] || 'var(--color-text)';

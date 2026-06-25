@@ -23,9 +23,9 @@ function money(n) {
 const range = (r) => (r ? `${money(r.min)} – ${money(r.max)}` : '—');
 
 const REC_META = {
-  replace: { color: '#b91c1c', label: 'Replace' },
-  repair:  { color: '#b45309', label: 'Repair' },
-  defer:   { color: '#5b6373', label: 'Defer' },
+  replace: { color: 'var(--chip-red-fg)',   label: 'Replace' },
+  repair:  { color: 'var(--chip-amber-fg)', label: 'Repair' },
+  defer:   { color: 'var(--chip-slate-fg)', label: 'Defer' },
 };
 
 export default function ProposalCard({ accountId = null }) {
@@ -67,7 +67,7 @@ export default function ProposalCard({ accountId = null }) {
   }
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Building proposal…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const s = data.summary;

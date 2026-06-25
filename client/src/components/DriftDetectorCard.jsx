@@ -14,9 +14,9 @@ import { Activity } from 'lucide-react';
 import api from '../api/client';
 
 const TYPE_META = {
-  worsening_trend:     { color: '#b91c1c', label: 'Worsening trend' },
-  unclosed_corrective: { color: '#b45309', label: 'Unclosed corrective' },
-  repeat_failure:      { color: '#6d28d9', label: 'Repeat failure' },
+  worsening_trend:     { color: 'var(--chip-red-fg)',   label: 'Worsening trend' },
+  unclosed_corrective: { color: 'var(--chip-amber-fg)', label: 'Unclosed corrective' },
+  repeat_failure:      { color: 'var(--chip-slate-fg)', label: 'Repeat failure' },
 };
 
 export default function DriftDetectorCard({ siteId = null }) {
@@ -37,7 +37,7 @@ export default function DriftDetectorCard({ siteId = null }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Loading drift detector…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const s = data.summary;
@@ -51,7 +51,7 @@ export default function DriftDetectorCard({ siteId = null }) {
       </div>
       <div className="card-body">
         {s.flagged === 0 ? (
-          <div style={{ color: '#15803d', fontSize: 'var(--font-size-sm)' }}>No drift or repeat-failure patterns detected over the last {Math.round(data.windowDays / 30)} months.</div>
+          <div style={{ color: 'var(--chip-green-fg)', fontSize: 'var(--font-size-sm)' }}>No drift or repeat-failure patterns detected over the last {Math.round(data.windowDays / 30)} months.</div>
         ) : (
           <>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
