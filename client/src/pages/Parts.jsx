@@ -11,14 +11,21 @@ import api from '../api/client';
 const CATEGORIES = ['BREAKER', 'TRANSFORMER', 'RELAY', 'CABLE', 'FUSE', 'CONSUMABLE', 'OTHER'];
 
 function Badge({ category }) {
-  const colours = {
-    BREAKER: '#3b82f6', TRANSFORMER: '#8b5cf6', RELAY: '#06b6d4',
-    CABLE: '#d97706', FUSE: '#ef4444', CONSUMABLE: '#6b7280', OTHER: '#6b7280',
+  // Use shared chip token system so colors work in both light + dark mode.
+  // Tokens available in :root + [data-theme=dark]: red, orange, amber, green, blue, slate, slate-soft.
+  const tokenMap = {
+    BREAKER:     { bg: 'var(--chip-blue-bg)',       fg: 'var(--chip-blue-fg)' },
+    TRANSFORMER: { bg: 'var(--chip-slate-bg)',      fg: 'var(--chip-slate-fg)' },
+    RELAY:       { bg: 'var(--chip-green-bg)',      fg: 'var(--chip-green-fg)' },
+    CABLE:       { bg: 'var(--chip-amber-bg)',      fg: 'var(--chip-amber-fg)' },
+    FUSE:        { bg: 'var(--chip-red-bg)',        fg: 'var(--chip-red-fg)' },
+    CONSUMABLE:  { bg: 'var(--chip-slate-soft-bg)', fg: 'var(--chip-slate-soft-fg)' },
+    OTHER:       { bg: 'var(--chip-slate-soft-bg)', fg: 'var(--chip-slate-soft-fg)' },
   };
-  const bg = colours[category] || '#6b7280';
+  const t = tokenMap[category] || tokenMap.OTHER;
   return (
     <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-      background: bg + '22', color: bg, whiteSpace: 'nowrap' }}>
+      background: t.bg, color: t.fg, whiteSpace: 'nowrap' }}>
       {category || 'UNCATEGORISED'}
     </span>
   );
@@ -581,22 +588,4 @@ export default function Parts() {
               <table>
                 <thead>
                   <tr>
-                    {['Part number', 'Description', 'Manufacturer', 'Category', 'Unit cost', 'Locations', ''].map(h => (
-                      <th key={h} style={{ textAlign: h === 'Unit cost' ? 'right' : h === 'Locations' ? 'center' : 'left' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {parts.map(p => <PartRow key={p.id} part={p} onRefresh={loadParts} />)}
-                </tbody>
-              </table>
-            </div>
-            <div style={{ padding: '8px 16px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' }}>
-              {parts.length} part{parts.length !== 1 ? 's' : ''}
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
+                    {['Part number', 'Descrip
