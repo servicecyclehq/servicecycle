@@ -41,6 +41,7 @@ import ConditionIntervalCard from '../components/ConditionIntervalCard';
 import QuoteRequestButton from '../components/QuoteRequestButton';
 import AssetLotoCard from '../components/AssetLotoCard';
 import SpareInventoryPanel from '../components/SpareInventoryPanel';
+import RequiredPartsPanel from '../components/RequiredPartsPanel';
 import AssetDocumentsCard from '../components/AssetDocumentsCard';
 import NameplateCard from '../components/NameplateCard';
 import IncidentLogCard from '../components/IncidentLogCard';
@@ -1279,6 +1280,13 @@ export default function AssetDetail() {
           <SpareInventoryPanel assetId={asset.id} canEdit={canWrite} />
         )}
 
+        {/* Required spare parts: which parts must be on hand for this asset.
+            Stock status (OK/LOW/OOS) computed from all SpareInventory entries.
+            Hidden when parts_module feature flag is disabled for this account. */}
+        {accountFeatures.parts_module !== false && (
+          <RequiredPartsPanel assetId={asset.id} canEdit={canWrite} />
+        )}
+
 
         {/* ── Documents & Procedures ────────────────────────────────────────── */}
         {/* OEM manuals, wiring diagrams, test reports, warranty docs, and
@@ -1406,10 +1414,4 @@ export default function AssetDetail() {
           schedule={completingSchedule}
           busy={busy}
           onClose={() => setCompletingSchedule(null)}
-          onConfirm={(performedByName, completedDate) => handleCompleteSchedule(completingSchedule, performedByName, completedDate)}
-        />
-      )}
-      <Toast toast={toast} onClose={() => setToast(null)} />
-    </>
-  );
-}
+          onConfirm={(performedByName, completedDate) => handleCompleteSchedule(complet

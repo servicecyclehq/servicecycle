@@ -351,8 +351,9 @@ model Account {
   ssoLoginStates   SsoLoginState[]
   ssoHandoffs      SsoHandoff[]
 
-  parts          Part[]
-  spareInventory SpareInventory[]
+  parts                Part[]
+  spareInventory       SpareInventory[]
+  assetPartRequirements AssetPartRequirement[]
 
   @@index([enterpriseGroupId])
   @@map("accounts")
@@ -885,6 +886,7 @@ model Asset {
   telemetryReadings      TelemetryReading[]
   telemetryNotifications TelemetryNotification[]
   spareInventory         SpareInventory[]
+  assetRequirements      AssetPartRequirement[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -3255,8 +3257,9 @@ model Part {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  account   Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  inventory SpareInventory[]
+  account           Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  inventory         SpareInventory[]
+  assetRequirements AssetPartRequirement[]
 
   @@index([accountId])
   @@index([accountId, category])
@@ -3287,4 +3290,30 @@ model SpareInventory {
   @@index([assetId])
   @@index([siteId])
   @@map("spare_inventory")
+}
+
+// ── Asset → Part Requirements ──────────────────────────────────────────────────
+// Links a specific Part to a specific Asset as a "required spare" — i.e. the
+// asset needs this part on hand to avoid downtime. qtyRequired is how many units
+// should be stocked to service one maintenance event on this asset.
+// Drives the Required Parts panel on AssetDetail and the Parts Alerts dashboard card.
+model AssetPartRequirement {
+  id          String   @id @default(uuid())
+  accountId   String
+  assetId     String
+  partId      String
+  qtyRequired Int      @default(1)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  part    Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, partId])
+  @@index([accountId])
+  @@index([assetId])
+  @@index([partId])
+  @@map("asset_part_requirements")
 }

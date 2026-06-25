@@ -5,7 +5,7 @@
  * Route: /parts
  * Gate: manager+  (the API already enforces this; client hides the link for viewers)
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 
 const CATEGORIES = ['BREAKER', 'TRANSFORMER', 'RELAY', 'CABLE', 'FUSE', 'CONSUMABLE', 'OTHER'];
@@ -280,14 +280,147 @@ function PartRow({ part, onRefresh }) {
   );
 }
 
+// ── CSV import modal ──────────────────────────────────────────────────────────
+
+const STATUS_COLORS = { new: '#22c55e', update: '#f59e0b', error: '#dc2626' };
+
+function CsvImportModal({ onClose, onImported }) {
+  const fileRef = useRef(null);
+  const [preview, setPreview] = useState(null); // array of rows with .status
+  const [parseErrors, setParseErrors] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [err, setErr] = useState('');
+
+  async function handleFile(file) {
+    if (!file) return;
+    setLoading(true); setErr(''); setPreview(null); setImportResult(null);
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const r = await api.post('/api/parts/import?preview=true', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setPreview(r.data?.data?.preview || []);
+      setParseErrors(r.data?.data?.parseErrors || []);
+    } catch (e) {
+      setErr(e?.response?.data?.error || 'Failed to parse CSV.');
+    } finally { setLoading(false); }
+  }
+
+  async function confirmImport() {
+    if (!fileRef.current?.files?.[0]) return;
+    setLoading(true); setErr('');
+    const form = new FormData();
+    form.append('file', fileRef.current.files[0]);
+    try {
+      const r = await api.post('/api/parts/import', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setImportResult(r.data?.data);
+      onImported();
+    } catch (e) {
+      setErr(e?.response?.data?.error || 'Import failed.');
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.35)' }}>
+      <div className="card" style={{ width: '100%', maxWidth: 680, maxHeight: '85vh', overflow: 'auto', padding: 24, position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, margin: 0 }}>Import parts from CSV</h2>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕ Close</button>
+        </div>
+
+        {!importResult ? (
+          <>
+            <div style={{ marginBottom: 14, fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+              Upload a CSV with columns: <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-sm)' }}>partNumber, description, manufacturer, category, unitCost, leadTimeWeeks, notes, qtyOnHand, qtyMin, location</span>.
+              Existing parts are matched by part number and updated; new part numbers are created.
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+              <a href="/api/parts/import/template" download className="btn btn-secondary btn-sm">⬇ Download template</a>
+              <input
+                ref={fileRef}
+                type="file" accept=".csv,text/csv"
+                style={{ flex: 1, minWidth: 200 }}
+                onChange={e => handleFile(e.target.files?.[0])}
+              />
+            </div>
+
+            {loading && <div style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }}>Parsing…</div>}
+            {err && <div className="alert alert-error" style={{ marginBottom: 12 }}>{err}</div>}
+            {parseErrors.length > 0 && (
+              <div style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)', color: 'var(--chip-amber-fg, #d97706)' }}>
+                {parseErrors.length} row warning{parseErrors.length !== 1 ? 's' : ''}: {parseErrors.slice(0, 3).join(' · ')}
+                {parseErrors.length > 3 ? ` (+${parseErrors.length - 3} more)` : ''}
+              </div>
+            )}
+
+            {preview && preview.length > 0 && (
+              <>
+                <div style={{ marginBottom: 8, fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>
+                  Preview — {preview.filter(r => r.status === 'new').length} new · {preview.filter(r => r.status === 'update').length} updates
+                </div>
+                <div className="table-wrap" style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 14 }}>
+                  <table>
+                    <thead><tr>
+                      <th>Part number</th><th>Description</th><th>Category</th><th style={{ textAlign: 'right' }}>Unit cost</th><th style={{ textAlign: 'center' }}>Qty OH</th><th style={{ textAlign: 'center' }}>Min</th><th style={{ textAlign: 'center' }}>Status</th>
+                    </tr></thead>
+                    <tbody>
+                      {preview.map((r, i) => (
+                        <tr key={i}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-sm)' }}>{r.partNumber}</td>
+                          <td>{r.description}</td>
+                          <td>{r.category || <span style={{ color: 'var(--color-text-secondary)' }}>—</span>}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.unitCost != null ? `$${Number(r.unitCost).toFixed(2)}` : '—'}</td>
+                          <td style={{ textAlign: 'center' }}>{r.qtyOnHand ?? 0}</td>
+                          <td style={{ textAlign: 'center' }}>{r.qtyMin ?? '—'}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                              background: (STATUS_COLORS[r.status] || '#6b7280') + '22',
+                              color: STATUS_COLORS[r.status] || '#6b7280' }}>
+                              {r.status?.toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary" onClick={confirmImport} disabled={loading}>
+                    {loading ? 'Importing…' : `Import ${preview.length} part${preview.length !== 1 ? 's' : ''}`}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => { setPreview(null); if (fileRef.current) fileRef.current.value = ''; }}>Reset</button>
+                </div>
+              </>
+            )}
+            {preview && preview.length === 0 && (
+              <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-ui)' }}>No valid rows found in the CSV.</div>
+            )}
+          </>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+            <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, marginBottom: 8 }}>Import complete</div>
+            <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', marginBottom: 20 }}>
+              {importResult.created} created · {importResult.updated} updated
+            </div>
+            <button className="btn btn-primary" onClick={onClose}>Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Parts() {
   const [parts, setParts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [filter, setFilter] = useState(''); // 'low' = show only low-stock parts
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   async function loadParts() {
     setLoading(true); setErr('');
@@ -301,7 +434,25 @@ export default function Parts() {
     finally { setLoading(false); }
   }
 
+  // Read ?filter=low from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('filter') === 'low') setFilter('low');
+  }, []);
+
   useEffect(() => { loadParts(); }, [search, category]);
+
+  // Low-stock view data
+  const [lowItems, setLowItems] = useState(null);
+  const [lowLoading, setLowLoading] = useState(false);
+  useEffect(() => {
+    if (filter !== 'low') { setLowItems(null); return; }
+    setLowLoading(true);
+    api.get('/api/parts/low-stock')
+      .then(r => setLowItems(r.data?.data?.items || []))
+      .catch(() => setLowItems([]))
+      .finally(() => setLowLoading(false));
+  }, [filter]);
 
   async function createPart(form) {
     setSaving(true); setErr('');
@@ -313,16 +464,24 @@ export default function Parts() {
     finally { setSaving(false); }
   }
 
-  const lowStockCount = parts.filter(p => p._count?.inventory > 0).length; // rough proxy
-
   return (
     <>
+      {importing && (
+        <CsvImportModal
+          onClose={() => setImporting(false)}
+          onImported={() => { loadParts(); }}
+        />
+      )}
+
       <div className="page-header">
         <div>
           <h1 className="page-title">Parts catalog</h1>
           <p className="page-subtitle">Manage spare parts and consumables · track stock levels by asset or site</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setAdding(a => !a)}>{adding ? 'Cancel' : '+ Add part'}</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={() => setImporting(true)}>⬆ Import CSV</button>
+          <button className="btn btn-primary" onClick={() => setAdding(a => !a)}>{adding ? 'Cancel' : '+ Add part'}</button>
+        </div>
       </div>
 
       <div className="page-body">
@@ -335,7 +494,7 @@ export default function Parts() {
 
         {err && <div className="alert alert-error mb-16">{err}</div>}
 
-        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <input className="input search-input" style={{ flex: '2 1 260px' }}
             placeholder="Search part number, description, manufacturer…" value={search}
             onChange={e => setSearch(e.target.value)} />
@@ -343,7 +502,61 @@ export default function Parts() {
             <option value="">All categories</option>
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={filter === 'low' ? { background: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' } : {}}
+            onClick={() => setFilter(f => f === 'low' ? '' : 'low')}
+          >
+            {filter === 'low' ? '✕ Low stock filter' : '⚠ Low stock'}
+          </button>
         </div>
+
+        {/* Low-stock view */}
+        {filter === 'low' && (
+          <div className="card mb-16" style={{ padding: 0 }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-ui)', fontWeight: 600, color: '#92400e', background: '#fef3c7', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
+              ⚠ Parts below minimum stock level
+            </div>
+            {lowLoading ? (
+              <div style={{ padding: 20, color: 'var(--color-text-secondary)' }}>Loading…</div>
+            ) : !lowItems || lowItems.length === 0 ? (
+              <div style={{ padding: 20, color: 'var(--color-text-secondary)' }}>All managed parts are at or above their minimum stock levels.</div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr>
+                    <th>Part number</th>
+                    <th>Description</th>
+                    <th>Category</th>
+                    <th>Scope</th>
+                    <th style={{ textAlign: 'center' }}>On hand</th>
+                    <th style={{ textAlign: 'center' }}>Min</th>
+                  </tr></thead>
+                  <tbody>
+                    {lowItems.map((entry, i) => {
+                      const scope = entry.asset
+                        ? `${entry.asset.equipmentType?.replace(/_/g, ' ')} ${entry.asset.manufacturer || ''} ${entry.asset.model || ''}`.trim()
+                        : entry.site?.name || 'Account-wide';
+                      return (
+                        <tr key={i}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>{entry.part.partNumber}</td>
+                          <td>{entry.part.description}</td>
+                          <td>{entry.part.category || <span style={{ color: 'var(--color-text-secondary)' }}>—</span>}</td>
+                          <td style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{scope}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 700, color: entry.qtyOnHand === 0 ? 'var(--color-danger, #dc2626)' : 'var(--chip-amber-fg, #d97706)' }}>
+                            {entry.qtyOnHand}
+                            {entry.qtyOnHand === 0 && <span style={{ marginLeft: 4, fontSize: 'var(--font-size-xs)', fontWeight: 700 }}>OOS</span>}
+                          </td>
+                          <td style={{ textAlign: 'center', color: 'var(--color-text-secondary)' }}>{entry.qtyMin}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <div style={{ color: 'var(--color-text-secondary)', padding: 24 }}>Loading parts…</div>

@@ -18,6 +18,13 @@
  *   PATCH  /api/parts/:id/inventory/:entryId   update entry (qty / location)
  *   DELETE /api/parts/:id/inventory/:entryId   remove entry
  *   GET    /api/parts/by-asset/:assetId        all spares for an asset (with part info)
+ *   GET    /api/parts/low-stock               count + list of below-min inventory entries
+ *   GET    /api/parts/import/template         download blank CSV import template
+ *   POST   /api/parts/import?preview=true     parse CSV, return row statuses (no writes)
+ *   POST   /api/parts/import                  upsert parts + inventory from CSV
+ *   GET    /api/parts/required-by/:assetId    required parts for an asset (with stock status)
+ *   POST   /api/parts/required-by/:assetId    add/update a required-part link
+ *   DELETE /api/parts/required-by/:assetId/:partId  remove a required-part link
  */
 
 const router = require('express').Router();
@@ -59,6 +66,280 @@ function posDec(v: any): number | undefined {
 }
 
 const VALID_CATEGORIES = ['BREAKER', 'TRANSFORMER', 'RELAY', 'CABLE', 'FUSE', 'CONSUMABLE', 'OTHER'];
+
+// ── Low-stock summary (dashboard card) ─────────────────────────────────────────
+
+// GET /api/parts/low-stock
+// Returns count of SpareInventory entries where qtyOnHand < qtyMin (qtyMin not null).
+// Used by the dashboard Parts Alerts tile.
+router.get('/low-stock', requireManager, async (req: any, res: any) => {
+  try {
+    const { accountId } = req.user;
+    const entries = await prisma.spareInventory.findMany({
+      where: { accountId, qtyMin: { not: null } },
+      select: {
+        qtyOnHand: true,
+        qtyMin: true,
+        part: { select: { id: true, partNumber: true, description: true, category: true } },
+        asset: { select: { id: true, equipmentType: true, manufacturer: true, model: true } },
+        site: { select: { id: true, name: true } },
+      },
+    });
+    const low = entries.filter((e: any) => e.qtyMin != null && e.qtyOnHand < e.qtyMin);
+    return res.json({ success: true, data: { count: low.length, items: low } });
+  } catch (err: any) {
+    console.error('[parts GET /low-stock]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to fetch low-stock summary.' });
+  }
+});
+
+// ── CSV import ─────────────────────────────────────────────────────────────────
+
+// GET /api/parts/import/template  — download a blank CSV template
+router.get('/import/template', requireManager, (_req: any, res: any) => {
+  const header = 'partNumber,description,manufacturer,category,unitCost,leadTimeWeeks,notes,qtyOnHand,qtyMin,location';
+  const example = 'CH-QO130L,30A 1-pole QO breaker,Square D,BREAKER,24.99,2,,10,3,Warehouse A Bin 4';
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="parts-import-template.csv"');
+  return res.send(header + '\n' + example + '\n');
+});
+
+// POST /api/parts/import?preview=true|false
+// Body: multipart form-data with field "file" (CSV), OR raw text/csv body.
+// preview=true → parse and return rows with status (new/update/error); no DB writes.
+// preview=false (or absent) → upsert all valid rows; returns summary.
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+
+function parsePartsCSV(text: string): { rows: any[]; errors: string[] } {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(Boolean);
+  if (lines.length < 2) return { rows: [], errors: ['CSV has no data rows.'] };
+  // Strip BOM
+  const headerLine = lines[0].replace(/^﻿/, '');
+  const cols = headerLine.split(',').map((c: string) => c.trim().toLowerCase());
+  const required = ['partnumber', 'description'];
+  for (const r of required) {
+    if (!cols.includes(r)) return { rows: [], errors: [`Missing required column: ${r}`] };
+  }
+  const idx = (name: string) => cols.indexOf(name);
+  const rows: any[] = [];
+  const errors: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',');
+    const get = (name: string) => (vals[idx(name)] || '').trim();
+    const partNumber = get('partnumber');
+    const description = get('description');
+    if (!partNumber || !description) { errors.push(`Row ${i + 1}: partNumber and description are required.`); continue; }
+    const rawCat = get('category').toUpperCase();
+    const category = VALID_CATEGORIES.includes(rawCat) ? rawCat : undefined;
+    const unitCost = parseFloat(get('unitcost'));
+    const leadTimeWeeks = parseInt(get('leadtimeweeks'), 10);
+    const qtyOnHand = parseInt(get('qtyonhand'), 10);
+    const qtyMin = parseInt(get('qtymin'), 10);
+    rows.push({
+      partNumber,
+      description,
+      manufacturer: get('manufacturer') || undefined,
+      category,
+      unitCost: Number.isFinite(unitCost) && unitCost >= 0 ? unitCost : undefined,
+      leadTimeWeeks: Number.isFinite(leadTimeWeeks) && leadTimeWeeks >= 0 ? leadTimeWeeks : undefined,
+      notes: get('notes') || undefined,
+      qtyOnHand: Number.isFinite(qtyOnHand) && qtyOnHand >= 0 ? qtyOnHand : 0,
+      qtyMin: Number.isFinite(qtyMin) && qtyMin >= 0 ? qtyMin : undefined,
+      location: get('location') || undefined,
+    });
+  }
+  return { rows, errors };
+}
+
+router.post('/import', requireManager, upload.single('file'), async (req: any, res: any) => {
+  try {
+    const { accountId, id: userId } = req.user;
+    const isPreview = String(req.query.preview) === 'true';
+
+    let csvText: string;
+    if (req.file) {
+      csvText = req.file.buffer.toString('utf8');
+    } else if (typeof req.body === 'string') {
+      csvText = req.body;
+    } else {
+      return res.status(400).json({ success: false, error: 'Upload a CSV file.' });
+    }
+
+    const { rows, errors } = parsePartsCSV(csvText);
+    if (errors.length && !rows.length) {
+      return res.status(400).json({ success: false, error: errors[0], parseErrors: errors });
+    }
+
+    if (isPreview) {
+      // Check which rows are new vs. updates
+      const existingParts = await prisma.part.findMany({
+        where: { accountId },
+        select: { partNumber: true },
+      });
+      const existingSet = new Set(existingParts.map((p: any) => p.partNumber.toLowerCase()));
+      const preview = rows.map((r: any) => ({
+        ...r,
+        status: existingSet.has(r.partNumber.toLowerCase()) ? 'update' : 'new',
+      }));
+      return res.json({ success: true, data: { preview, parseErrors: errors, total: rows.length } });
+    }
+
+    // Confirm import: upsert parts + create account-wide inventory entries
+    let created = 0, updated = 0;
+    for (const r of rows) {
+      const existing = await prisma.part.findFirst({
+        where: { accountId, partNumber: { equals: r.partNumber, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.part.update({
+          where: { id: existing.id },
+          data: {
+            description: r.description,
+            manufacturer: r.manufacturer ?? undefined,
+            category: r.category ?? undefined,
+            unitCost: r.unitCost ?? undefined,
+            leadTimeWeeks: r.leadTimeWeeks ?? undefined,
+            notes: r.notes ?? undefined,
+          },
+        });
+        // Update or create the account-wide inventory entry
+        if (r.qtyOnHand != null || r.qtyMin != null) {
+          const inv = await prisma.spareInventory.findFirst({
+            where: { accountId, partId: existing.id, assetId: null, siteId: null },
+            select: { id: true },
+          });
+          if (inv) {
+            await prisma.spareInventory.update({
+              where: { id: inv.id },
+              data: { qtyOnHand: r.qtyOnHand ?? 0, qtyMin: r.qtyMin ?? null, location: r.location ?? null },
+            });
+          } else if (r.qtyOnHand > 0 || r.qtyMin != null) {
+            await prisma.spareInventory.create({
+              data: { accountId, partId: existing.id, qtyOnHand: r.qtyOnHand ?? 0, qtyMin: r.qtyMin ?? null, location: r.location ?? null },
+            });
+          }
+        }
+        updated++;
+      } else {
+        const part = await prisma.part.create({
+          data: {
+            accountId,
+            partNumber: r.partNumber,
+            description: r.description,
+            manufacturer: r.manufacturer ?? null,
+            category: r.category ?? null,
+            unitCost: r.unitCost ?? null,
+            leadTimeWeeks: r.leadTimeWeeks ?? null,
+            notes: r.notes ?? null,
+          },
+        });
+        if (r.qtyOnHand > 0 || r.qtyMin != null) {
+          await prisma.spareInventory.create({
+            data: { accountId, partId: part.id, qtyOnHand: r.qtyOnHand ?? 0, qtyMin: r.qtyMin ?? null, location: r.location ?? null },
+          });
+        }
+        created++;
+      }
+    }
+    writeLog({ accountId, userId, assetId: null, action: 'parts_imported', details: { created, updated, total: rows.length } });
+    return res.json({ success: true, data: { created, updated, total: rows.length, parseErrors: errors } });
+  } catch (err: any) {
+    console.error('[parts POST /import]', err.message);
+    return res.status(500).json({ success: false, error: 'Import failed.' });
+  }
+});
+
+// ── Asset Part Requirements ─────────────────────────────────────────────────────
+// Separate concept from SpareInventory (where/how many stocked) —
+// this is "which parts does this asset need to have on hand".
+
+// GET /api/parts/required-by/:assetId
+router.get('/required-by/:assetId', requireManager, async (req: any, res: any) => {
+  try {
+    const { accountId } = req.user;
+    const assetId = String(req.params.assetId);
+    const asset = await prisma.asset.findFirst({ where: { id: assetId, accountId }, select: { id: true } });
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found.' });
+
+    const requirements = await prisma.assetPartRequirement.findMany({
+      where: { assetId, accountId },
+      include: {
+        part: {
+          include: {
+            inventory: {
+              where: { accountId },
+              select: { qtyOnHand: true, qtyMin: true, location: true, assetId: true, siteId: true },
+            },
+          },
+        },
+      },
+      orderBy: [{ part: { category: 'asc' } }, { part: { partNumber: 'asc' } }],
+    });
+
+    // Annotate each requirement with total stock across all inventory entries
+    const enriched = requirements.map((r: any) => {
+      const totalOnHand = r.part.inventory.reduce((sum: number, e: any) => sum + e.qtyOnHand, 0);
+      const stockStatus = totalOnHand === 0 ? 'OOS' : totalOnHand < r.qtyRequired ? 'LOW' : 'OK';
+      return { ...r, totalOnHand, stockStatus };
+    });
+    return res.json({ success: true, data: enriched });
+  } catch (err: any) {
+    console.error('[parts GET /required-by]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to load required parts.' });
+  }
+});
+
+// POST /api/parts/required-by/:assetId  body: { partId, qtyRequired?, notes? }
+router.post('/required-by/:assetId', requireManager, async (req: any, res: any) => {
+  try {
+    const { accountId, id: userId } = req.user;
+    const assetId = String(req.params.assetId);
+    const partId = str(req.body?.partId, 50);
+    if (!partId) return res.status(400).json({ success: false, error: 'partId is required.' });
+
+    const [asset, part] = await Promise.all([
+      prisma.asset.findFirst({ where: { id: assetId, accountId }, select: { id: true } }),
+      prisma.part.findFirst({ where: { id: partId, accountId }, select: { id: true, partNumber: true } }),
+    ]);
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found.' });
+    if (!part) return res.status(404).json({ success: false, error: 'Part not found.' });
+
+    const qtyRequired = posInt(req.body?.qtyRequired) ?? 1;
+    const req_ = await prisma.assetPartRequirement.upsert({
+      where: { assetId_partId: { assetId, partId } },
+      create: { id: require('crypto').randomUUID(), accountId, assetId, partId, qtyRequired, notes: str(req.body?.notes, 500) ?? null },
+      update: { qtyRequired, notes: str(req.body?.notes, 500) ?? null },
+    });
+    writeLog({ accountId, userId, assetId, action: 'asset_part_requirement_added', details: { partId, partNumber: part.partNumber, qtyRequired } });
+    return res.status(201).json({ success: true, data: req_ });
+  } catch (err: any) {
+    if (err.code === 'P2002') return res.status(409).json({ success: false, error: 'This part is already linked to this asset.' });
+    console.error('[parts POST /required-by]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to add requirement.' });
+  }
+});
+
+// DELETE /api/parts/required-by/:assetId/:partId
+router.delete('/required-by/:assetId/:partId', requireManager, async (req: any, res: any) => {
+  try {
+    const { accountId, id: userId } = req.user;
+    const assetId = String(req.params.assetId);
+    const partId = String(req.params.partId);
+    const existing = await prisma.assetPartRequirement.findFirst({
+      where: { assetId, partId, accountId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Requirement not found.' });
+    await prisma.assetPartRequirement.delete({ where: { id: existing.id } });
+    writeLog({ accountId, userId, assetId, action: 'asset_part_requirement_removed', details: { partId } });
+    return res.json({ success: true, data: { deleted: true } });
+  } catch (err: any) {
+    console.error('[parts DELETE /required-by]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to remove requirement.' });
+  }
+});
 
 // ── Part catalog ───────────────────────────────────────────────────────────────
 

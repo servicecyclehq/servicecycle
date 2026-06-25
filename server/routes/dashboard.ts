@@ -53,6 +53,7 @@ router.get('/', async (req, res) => {
       recentWorkOrders,
       assetCount,
       upcoming,
+      partsAlertsCount,
     ] = await Promise.all([
       // Widget 1: due-in-N counts (cumulative forward windows; overdue is
       // its own tile so the two never double-count).
@@ -107,6 +108,13 @@ router.get('/', async (req, res) => {
           asset: { select: { id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true, governingCondition: true, site: { select: { id: true, name: true } } } },
         },
       }),
+
+      // Parts Alerts: count of SpareInventory entries where qtyOnHand < qtyMin.
+      // Prisma lacks field-to-field comparison so we pull managed entries and filter in JS.
+      prisma.spareInventory.findMany({
+        where: { accountId, qtyMin: { not: null } },
+        select: { qtyOnHand: true, qtyMin: true },
+      }).then((managed: any[]) => managed.filter(e => e.qtyOnHand < e.qtyMin).length),
     ]);
 
     // Compliance rate per site: % of active schedules NOT overdue.
@@ -162,6 +170,7 @@ router.get('/', async (req, res) => {
         upcoming,
         assetCount,
         scheduleCount: overallTotal,
+        partsAlerts: partsAlertsCount,
       },
     });
   } catch (err) {
