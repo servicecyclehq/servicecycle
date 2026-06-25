@@ -575,7 +575,7 @@ function NavGroup({ id, label, openState, onToggle, children }) {
 }
 
 export default function Sidebar() {
-  const { user, logout, features, demoMode } = useAuth();
+  const { user, logout, features, demoMode, accountFeatures } = useAuth();
   const navigate = useNavigate();
   const sidebarLocation = useLocation();
   const [openGroups, toggleGroup] = useNavGroupState(user?.id);
