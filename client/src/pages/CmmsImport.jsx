@@ -515,16 +515,16 @@ export default function CmmsImport() {
                   padding: '10px 16px',
                   borderRadius: 8,
                   border: `2px solid ${platform === p.id ? 'var(--color-primary)' : 'var(--color-border, #e2e8f0)'}`,
-                  background: platform === p.id ? 'var(--color-primary-bg, #eff6ff)' : 'transparent',
+                  background: platform === p.id ? 'var(--color-primary-bg, #eff6ff)' : 'var(--color-bg-secondary, #f1f5f9)',
                   cursor: 'pointer',
                   textAlign: 'left',
                   minWidth: 160,
                 }}
               >
-                <div style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: platform === p.id ? 'var(--color-primary)' : 'var(--color-text)' }}>
+                <div style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', color: platform === p.id ? 'var(--color-primary)' : '#1e293b' }}>
                   {p.label}
                 </div>
-                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: '#64748b', marginTop: 2 }}>
                   {p.description}
                 </div>
               </button>

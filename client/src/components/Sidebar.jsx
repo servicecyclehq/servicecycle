@@ -929,30 +929,6 @@ export default function Sidebar() {
 
         {/* ── Pinned bottom: primary destinations, not a collapsible group ── */}
         <div className="nav-pinned" style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid var(--color-border)' }}>
-          {/* Reports hub — manager/admin only. Stands on its own as a primary
-              destination rather than nesting inside a group. */}
-          {(user?.role === 'admin' || user?.role === 'manager') && (
-            <NavLink
-              to="/reports"
-              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            >
-              {Icons.reports}
-              Reports
-            </NavLink>
-          )}
-
-          {/* Sales roll-up — operator staff (cross-account). admin/manager see it
-              only in the demo sandbox; the server is authoritative. */}
-          {(['oem_admin', 'group_admin', 'super_admin'].includes(user?.role) || (demoMode && (user?.role === 'admin' || user?.role === 'manager'))) && (
-            <NavLink
-              to="/sales"
-              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            >
-              <Users {...ICON_PROPS} />
-              Sales
-            </NavLink>
-          )}
-
           {/* Field Mode — phone-first technician surface (/field/*), plus an
               inline "Print QR labels" action (GET /api/assets/labels PDF). */}
           <div className="nav-item-row" style={{ display: 'flex', alignItems: 'center' }}>
@@ -981,6 +957,30 @@ export default function Sidebar() {
               <QrCode size={14} strokeWidth={1.75} />
             </button>
           </div>
+
+          {/* Reports hub — manager/admin only. Stands on its own as a primary
+              destination rather than nesting inside a group. */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <NavLink
+              to="/reports"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              {Icons.reports}
+              Reports
+            </NavLink>
+          )}
+
+          {/* Sales roll-up — operator staff (cross-account). admin/manager see it
+              only in the demo sandbox; the server is authoritative. */}
+          {(['oem_admin', 'group_admin', 'super_admin'].includes(user?.role) || (demoMode && (user?.role === 'admin' || user?.role === 'manager'))) && (
+            <NavLink
+              to="/sales"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              <Users {...ICON_PROPS} />
+              Sales
+            </NavLink>
+          )}
 
           <button
             type="button"
