@@ -47,10 +47,10 @@ const GASES = [
 // NETA ATS/MTS repair-priority classes for individual test results.
 // 1 red, 2 amber, 3 slate-amber, 4 slate.
 const SEVERITY_PRIORITY_META = {
-  1: { label: '1 — Repair immediately',     short: 'P1', color: '#dc2626', bg: '#fef2f2' },
-  2: { label: '2 — Monitor',                short: 'P2', color: '#d97706', bg: '#fffbeb' },
-  3: { label: '3 — Repair as time permits', short: 'P3', color: '#a16207', bg: '#f1f5f9' },
-  4: { label: '4 — Possible deficiency',    short: 'P4', color: '#64748b', bg: '#f1f5f9' },
+  1: { label: '1 — Repair immediately',     short: 'P1', color: 'var(--chip-red-fg)',    bg: 'var(--chip-red-bg)' },
+  2: { label: '2 — Monitor',                short: 'P2', color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)' },
+  3: { label: '3 — Repair as time permits', short: 'P3', color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' },
+  4: { label: '4 — Possible deficiency',    short: 'P4', color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' },
 };
 
 const EMPTY_INSTRUMENT = { make: '', model: '', serial: '', calDate: '' };
