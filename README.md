@@ -77,6 +77,7 @@ Tests require a running Postgres + server on `:3001` (or the Docker stack). Each
 | `docs/SELF_HOST.md` | Air-gapped / no-egress self-host guide |
 | `docs/OFFBOARDING.md` | Data export and portability guide (no lock-in) |
 | `docs/SOC2_CONTROLS.md` | SOC 2 Type I Trust Service Criteria mapping |
+| `docs/CODE_OF_CONDUCT.md` | Ethics and conduct policy (integrity, confidentiality, least-privilege) |
 | `docs/SECURITY_TRUST_PACK.md` | Customer-facing security posture |
 | `docs/RISK_REGISTER.md` | Operational risk register (10 risks, L×I, mitigations, quarterly cadence) |
 | `docs/INCIDENT_RESPONSE.md` | Incident response plan |

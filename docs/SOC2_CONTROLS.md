@@ -23,7 +23,7 @@ is deferred or manual.
 
 | Criterion | Description | Control | Evidence | Gap |
 |---|---|---|---|---|
-| CC1.1 | Demonstrates commitment to integrity and ethical values | Defined role expectations; no financial incentive to alter audit records | `docs/OFFBOARDING.md` §4 (access removal); hash-chain architecture (see CC7.1) | Formal code-of-conduct policy not yet written |
+| CC1.1 | Demonstrates commitment to integrity and ethical values | Code of conduct policy: data integrity, confidentiality, least-privilege access, security-first reporting; hash-chain audit log makes record tampering detectable | `docs/CODE_OF_CONDUCT.md`; `docs/OFFBOARDING.md` §4 (access removal); hash-chain architecture (see CC7.1) | — |
 | CC1.2 | Board oversees internal controls | Founder oversees all controls (pre-board stage) | — | Accepted risk at current stage |
 | CC1.3 | Competent individuals are hired and retained | All development done by named individuals with accountability | Git blame / commit history | Background-check policy not yet formalized |
 | CC1.4 | Accountability for internal controls | Owner accountable; RBAC limits what any one role can do | `server/middleware/roles.ts`; `multiTenantIsolation.test.ts` | — |
@@ -34,7 +34,7 @@ is deferred or manual.
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
 | CC2.1 | Security-relevant information flows to responsible parties via audit log + alerts | `server/lib/activityLog.ts`; `server/lib/aiBudgetGuard.ts`; SIEM export at `GET /api/activity/export` | — |
-| CC2.2 | External communication of security commitments | `docs/SECURITY_TRUST_PACK.md`; `/.well-known/security.txt` (`contact: security@servicecycle.app`) | Privacy policy not yet published as standalone URL |
+| CC2.2 | External communication of security commitments | `docs/SECURITY_TRUST_PACK.md`; `/.well-known/security.txt` (`contact: security@servicecycle.app`); privacy policy publicly served at `/privacy` + `/legal/privacy` (attorney review pending before formal publication) | — |
 | CC2.3 | Relevant information is communicated to third parties | `docs/OFFBOARDING.md` §6 (sub-processor list); vendor list in CC9.2 below | — |
 
 ### CC3 — Risk Assessment
@@ -142,4 +142,6 @@ Ordered by impact on an acquirer or enterprise customer's security review:
 7. ~~**Vulnerability remediation SLA**~~ — ✅ CLOSED. Critical ≤24h / High ≤7d / Medium ≤30d / Low next sprint; documented in CC4.2 row above. Closes CC4.2 gap.
 8. ~~**Customer breach notification template**~~ — ✅ CLOSED. Thresholds + email template in `docs/INCIDENT_RESPONSE.md` §5. Closes CC7.5 gap.
 9. ~~**RTO/RPO targets**~~ — ✅ CLOSED. RTO ~2h / RPO ~24h documented in `docs/DEPLOY_RUNBOOK.md` and CC9.1 row above. Closes CC9.1 gap.
-10. **SOC 2 Type II evidence collection** — begin 6-month clock once Type I readiness is confirmed.
+10. ~~**Code of conduct / ethics policy**~~ — ✅ CLOSED. `docs/CODE_OF_CONDUCT.md` covers data integrity, confidentiality, least-privilege, and breach reporting obligations. Closes CC1.1 gap.
+11. ~~**Privacy policy URL**~~ — ✅ CLOSED. Publicly accessible at `/privacy` + `/legal/privacy`; attorney review pending before formal publication. Closes CC2.2 gap.
+12. **SOC 2 Type II evidence collection** — begin 6-month clock once Type I readiness is confirmed.
