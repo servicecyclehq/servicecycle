@@ -915,8 +915,8 @@ export default function AssetsList() {
                           )}
                           {colVis.serial      && <td className="td-muted">{a.serialNumber || '—'}</td>}
                           {colVis.nameplate   && <td style={{ textAlign: 'center' }}>{a.nameplateData && a.nameplateData._scan
-                            ? <span title="Nameplate captured" style={{ color: '#16a34a', fontWeight: 700 }}>✓</span>
-                            : <span title="No nameplate captured yet" style={{ color: '#d1d5db' }}>—</span>}</td>}
+                            ? <span title="Nameplate captured" style={{ color: 'var(--chip-green-fg)', fontWeight: 700 }}>✓</span>
+                            : <span title="No nameplate captured yet" style={{ color: 'var(--color-text-secondary)' }}>—</span>}</td>}
                           {colVis.address     && (
                             <td title={hasAddress
                               ? `${[a.site?.address, a.site?.city, a.site?.state, a.site?.postalCode].filter(Boolean).join(', ')}`
