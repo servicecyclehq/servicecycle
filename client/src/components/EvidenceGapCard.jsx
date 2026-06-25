@@ -37,7 +37,7 @@ export default function EvidenceGapCard({ siteId = null }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Loading evidence gaps…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const t = data.totals;
@@ -59,12 +59,12 @@ export default function EvidenceGapCard({ siteId = null }) {
           <>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', marginBottom: 12 }}>
               {t.gapTotal === 0
-                ? <span style={{ color: '#15803d', fontWeight: 700 }}>Every requirement has documented evidence on file.</span>
+                ? <span style={{ color: 'var(--chip-green-fg)', fontWeight: 700 }}>Every requirement has documented evidence on file.</span>
                 : <>
                     <strong>{t.gapTotal}</strong> of {t.requirements} requirements lack documented evidence:
-                    {' '}<strong style={{ color: '#b91c1c' }}>{t.missing}</strong> missing,
-                    {' '}<strong style={{ color: '#92400e' }}>{t.undocumented}</strong> undocumented (claimed, no test on file),
-                    {' '}<strong style={{ color: '#b45309' }}>{t.stale}</strong> stale (overdue).
+                    {' '}<strong style={{ color: 'var(--chip-red-fg)' }}>{t.missing}</strong> missing,
+                    {' '}<strong style={{ color: 'var(--chip-amber-fg)' }}>{t.undocumented}</strong> undocumented (claimed, no test on file),
+                    {' '}<strong style={{ color: 'var(--chip-amber-fg)' }}>{t.stale}</strong> stale (overdue).
                   </>}
             </div>
 
@@ -74,7 +74,7 @@ export default function EvidenceGapCard({ siteId = null }) {
                 {data.byRequirementType.slice(0, 6).map((r) => (
                   <div key={r.taskCode} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-sm)', padding: '3px 0' }}>
                     <span>{r.taskName}</span>
-                    <span style={{ color: '#b91c1c', fontWeight: 600 }}>{r.gaps} gap{r.gaps === 1 ? '' : 's'}</span>
+                    <span style={{ color: 'var(--chip-red-fg)', fontWeight: 600 }}>{r.gaps} gap{r.gaps === 1 ? '' : 's'}</span>
                   </div>
                 ))}
               </div>
@@ -88,7 +88,7 @@ export default function EvidenceGapCard({ siteId = null }) {
                     <Link to={`/assets/${a.assetId}`} style={{ color: 'var(--color-text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {a.assetLabel}{a.siteName ? <span style={{ color: 'var(--color-text-secondary)' }}> · {a.siteName}</span> : ''}
                     </Link>
-                    <span style={{ color: '#b91c1c', fontWeight: 600, whiteSpace: 'nowrap' }}>{a.gaps}/{a.requirements}</span>
+                    <span style={{ color: 'var(--chip-red-fg)', fontWeight: 600, whiteSpace: 'nowrap' }}>{a.gaps}/{a.requirements}</span>
                   </div>
                 ))}
               </div>

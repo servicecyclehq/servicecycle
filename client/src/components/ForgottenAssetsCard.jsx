@@ -57,7 +57,7 @@ export default function ForgottenAssetsCard({ siteId = null }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Loading forgotten-assets lens…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const s = data.summary || {};
@@ -80,11 +80,11 @@ export default function ForgottenAssetsCard({ siteId = null }) {
           <option value={5}>Not serviced 5+ yrs</option>
           <option value={10}>Not serviced 10+ yrs</option>
         </select>
-        {s.flagged > 0 && <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: '#b91c1c' }}>{s.flagged} flagged</span>}
+        {s.flagged > 0 && <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--chip-red-fg)' }}>{s.flagged} flagged</span>}
       </div>
       <div className="card-body">
         {s.clean ? (
-          <div style={{ color: '#15803d', fontSize: 'var(--font-size-sm)' }}>
+          <div style={{ color: 'var(--chip-green-fg)', fontSize: 'var(--font-size-sm)' }}>
             Every in-service asset is on a maintenance program and has been serviced within {data.thresholdYears} years.
           </div>
         ) : (
@@ -95,7 +95,7 @@ export default function ForgottenAssetsCard({ siteId = null }) {
 
             {untracked.length > 0 && (
               <div style={{ marginBottom: forgotten.length > 0 ? 14 : 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#b91c1c', marginBottom: 2 }}>No maintenance program ({untracked.length})</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--chip-red-fg)', marginBottom: 2 }}>No maintenance program ({untracked.length})</div>
                 {untracked.slice(0, 12).map((a) => <AssetRow key={a.assetId} a={a} kind="untracked" />)}
                 {untracked.length > 12 && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', paddingTop: 6 }}>+{untracked.length - 12} more</div>}
               </div>
@@ -103,7 +103,7 @@ export default function ForgottenAssetsCard({ siteId = null }) {
 
             {forgotten.length > 0 && (
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309', marginBottom: 2 }}>On a program but not serviced ({forgotten.length})</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--chip-amber-fg)', marginBottom: 2 }}>On a program but not serviced ({forgotten.length})</div>
                 {forgotten.slice(0, 12).map((a) => <AssetRow key={a.assetId} a={a} kind="forgotten" />)}
                 {forgotten.length > 12 && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', paddingTop: 6 }}>+{forgotten.length - 12} more</div>}
               </div>
