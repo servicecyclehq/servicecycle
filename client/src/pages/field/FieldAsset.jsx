@@ -232,7 +232,7 @@ function FieldLotoSection({ assetId }) {
                     Rev {p.version || 1} · {sources.length} energy source{sources.length !== 1 ? 's' : ''} · {steps.length} step{steps.length !== 1 ? 's' : ''}
                   </div>
                 </div>
-                <Chip label="Active ✓" color="#15803d" bg="#f0fdf4" />
+                <Chip label="Active ✓" color="var(--chip-green-fg)" bg="var(--chip-green-bg)" />
                 <span aria-hidden="true" style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>{open ? '▾' : '▸'}</span>
               </button>
               {open && (
@@ -273,8 +273,8 @@ function FieldLotoSection({ assetId }) {
                       <div style={{ lineHeight: 1.5, minWidth: 0 }}>
                         <span style={{ color: 'var(--color-text)' }}>{st.instruction}</span>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
-                          {st.category && <Chip label={LOTO_CAT_LABELS[st.category] || st.category} color="#475569" bg="#f1f5f9" />}
-                          {st.requiresVerification && <Chip label="Verify & record" color="#92400e" bg="#fef3c7" />}
+                          {st.category && <Chip label={LOTO_CAT_LABELS[st.category] || st.category} color="var(--chip-slate-fg)" bg="var(--chip-slate-bg)" />}
+                          {st.requiresVerification && <Chip label="Verify & record" color="var(--chip-amber-fg)" bg="var(--chip-amber-bg)" />}
                         </div>
                       </div>
                     </div>
@@ -653,14 +653,14 @@ export default function FieldAsset() {
           <Chip
             big
             label={asset.inService === false ? 'Out of service' : 'In service'}
-            color={asset.inService === false ? '#64748b' : '#16a34a'}
-            bg={asset.inService === false ? '#f1f5f9' : '#f0fdf4'}
+            color={asset.inService === false ? 'var(--chip-slate-fg)' : 'var(--chip-green-fg)'}
+            bg={asset.inService === false ? 'var(--chip-slate-bg)' : 'var(--chip-green-bg)'}
           />
           <Chip
             big
             label={asset.isEnergized === false ? 'De-energized' : '⚡ Energized'}
-            color={asset.isEnergized === false ? '#64748b' : '#d97706'}
-            bg={asset.isEnergized === false ? '#f1f5f9' : '#fffbeb'}
+            color={asset.isEnergized === false ? 'var(--chip-slate-fg)' : 'var(--chip-amber-fg)'}
+            bg={asset.isEnergized === false ? 'var(--chip-slate-bg)' : 'var(--chip-amber-bg)'}
           />
         </div>
 
@@ -882,7 +882,7 @@ export default function FieldAsset() {
       )}
 
       {/* ── (c) Report deficiency ──────────────────────────────────────────── */}
-      <SectionCard title="Report deficiency" accent="#dc2626">
+      <SectionCard title="Report deficiency" accent="var(--chip-red-fg)">
         <div style={{ padding: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
             {['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'].map(sev => {
@@ -1072,7 +1072,7 @@ export default function FieldAsset() {
                       flex: 1, padding: '10px 0', borderRadius: 10, fontWeight: 700,
                       fontSize: 15, border: 'none', cursor: 'pointer',
                       background: measPassFail === v
-                        ? (v === 'pass' ? '#16a34a' : '#dc2626')
+                        ? (v === 'pass' ? 'var(--chip-green-fg)' : 'var(--chip-red-fg)')
                         : 'var(--color-border)',
                       color: measPassFail === v ? '#fff' : 'var(--color-text-secondary)',
                       transition: 'background 0.15s',
