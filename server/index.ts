@@ -1404,6 +1404,32 @@ app.use('/api/v1/deficiencies', v1VersionTag, requestId, v1IpLimiter, authentica
 app.use('/api/v1/telemetry',    v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1TelemetryRoutes);
 app.use('/api/v1/arc-flash',    v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, v1ArcFlashRoutes);
 
+// ── GET /api/v1/me — key identity check ──────────────────────────────────────
+// Standard "test your credentials" endpoint. Returns the API key's metadata
+// so integrators can confirm the key is valid, check scopes, and see account
+// info without needing to query a resource endpoint first.
+app.get('/api/v1/me', v1VersionTag, requestId, v1IpLimiter, authenticateApiKey, apiKeyLimiter, async (req: any, res: any) => {
+  try {
+    const account = await prisma.account.findUnique({
+      where:  { id: req.apiKeyAccountId },
+      select: { id: true, companyName: true },
+    });
+    return res.json({
+      success: true,
+      data: {
+        keyId:     req.apiKey.id,
+        keyName:   req.apiKey.name,
+        scopes:    req.apiKey.scopes,
+        accountId: req.apiKeyAccountId,
+        companyName: account?.companyName ?? null,
+      },
+    });
+  } catch (err: any) {
+    console.error('[v1/me] error:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 // ── v0.20.0: API key management — admin only, uses JWT auth ──────────────────
 // Mounted under /api/settings so it inherits the settings-page UX convention.
 // authenticateToken is already set on /api/settings above; requireAdmin is

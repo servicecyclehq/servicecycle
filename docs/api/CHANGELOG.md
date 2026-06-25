@@ -8,6 +8,9 @@ Breaking changes are flagged with ⚠️.
 ## v1.4.0 — 2026-06-25
 
 ### Added
+- **`GET /api/v1/me`** — Returns the authenticated key's ID, name, scopes,
+  accountId, and company name. Use as a credential health check or to confirm
+  which account a key is scoped to before making resource calls.
 - **Audit logging for all API calls.** Every authenticated `/api/v1` request is
   now written to the tamper-evident activity log (`action = api_v1_call`) with
   method, path, HTTP status, latency, key name/ID, and client IP. Supports

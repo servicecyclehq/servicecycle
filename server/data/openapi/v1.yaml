@@ -319,6 +319,64 @@ security:
 paths:
 
   # ──────────────────────────────────────────────────────────────
+  # IDENTITY
+  # ──────────────────────────────────────────────────────────────
+
+  /me:
+    get:
+      operationId: getApiKeyIdentity
+      summary: Get API key identity
+      description: >
+        Returns the authenticated API key's metadata — key ID, name, scopes,
+        and the account it belongs to. Use this as a credential health check
+        or to confirm which account a key is scoped to before making resource
+        calls.
+      tags: [Identity]
+      security:
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Key identity and account metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    required: [keyId, keyName, scopes, accountId]
+                    properties:
+                      keyId:
+                        type: string
+                        format: uuid
+                        description: Unique identifier of this API key.
+                      keyName:
+                        type: string
+                        description: Human-readable label assigned when the key was created.
+                      scopes:
+                        type: array
+                        items:
+                          type: string
+                          enum: [read, write]
+                        description: Scopes granted to this key.
+                      accountId:
+                        type: string
+                        format: uuid
+                        description: Account this key is scoped to.
+                      companyName:
+                        type: string
+                        nullable: true
+                        description: Company name of the owning account.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────────────────────
   # ASSETS
   # ──────────────────────────────────────────────────────────────
 
@@ -1042,6 +1100,8 @@ paths:
         '404': { description: Notification not found }
 
 tags:
+  - name: Identity
+    description: Credential health check — verify your API key and inspect its scopes
   - name: Assets
     description: Electrical equipment records — 25 equipment types, NFPA 70B condition ratings
   - name: Contractors
