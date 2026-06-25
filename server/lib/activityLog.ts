@@ -9,10 +9,12 @@
  *   schedule_updated, brief_generated, document_uploaded, user_created
  *
  * Added by Sprint 5 audit pass:
- *   login_failed       — failed login attempt with IP and reason
- *   permission_denied  — 403 from a role gate (user authenticated but
- *                        lacked required role for the requested action)
- *   document_accessed  — document download or signed-URL fetch
+ *   login_failed              — failed login attempt with IP and reason
+ *   login_lockout_triggered   — Nth failure triggered per-email lockout (CEF sev 7)
+ *   permission_denied         — 403 from a role gate (user authenticated but
+ *                               lacked required role for the requested action)
+ *   document_accessed         — document download or signed-URL fetch
+ *   api_v1_call               — v1 public API request (CC6.8 audit log)
  *
  * NOTE: ActivityLog.userId is nullable as of B4 (migration
  * 20260502160000_activity_log_user_optional). Anonymous events such as
