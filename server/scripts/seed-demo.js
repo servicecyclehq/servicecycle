@@ -2290,6 +2290,16 @@ async function seedAccountForUser(userId) {
       create: { accountId, key: 'ONBOARDING_COMPLETE', value: 'true' },
     });
   } catch (e) { console.warn('[seed-demo] onboarding flag failed:', e.message); }
+  // DEMO_FIXES 2.6 — mark the instance as set up so a freshly seeded DB is
+  // immediately usable without a manual SQL UPDATE or running the setup wizard.
+  // Idempotent upsert; leaves demoLastResetAt/demoMode alone.
+  try {
+    await prisma.instanceConfig.upsert({
+      where:  { id: 'singleton' },
+      update: { setupCompletedAt: new Date() },
+      create: { id: 'singleton', setupCompletedAt: new Date() },
+    });
+  } catch (e) { console.warn('[seed-demo] setupCompletedAt failed:', e.message); }
   // Pre-record AI consent so AI features work immediately without the modal
   // (demo data is fabricated; the sandbox banner warns not to enter real data).
   try {

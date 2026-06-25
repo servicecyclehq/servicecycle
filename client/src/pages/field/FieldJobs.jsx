@@ -90,76 +90,18 @@ export default function FieldJobs() {
             placeholder="Search jobs…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{ boxSizing: ‘border-box’, width: ‘100%’, padding: ‘10px 14px’, borderRadius: 10,
-              border: ‘1px solid var(--color-border-strong)’, background: ‘var(--color-surface)’,
-              fontSize: 15, marginBottom: 10, color: ‘var(--color-text)’, outline: ‘none’ }}
+            style={{ boxSizing: 'border-box', width: '100%', padding: '10px 14px', borderRadius: 10,
+              border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)',
+              fontSize: 15, marginBottom: 10, color: 'var(--color-text)', outline: 'none' }}
           />
-          <div role="group" aria-label="Filter by status" style={{ display: ‘flex’, gap: 6, flexWrap: ‘wrap’, marginBottom: 12 }}>
+          <div role="group" aria-label="Filter by status" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             {STATUS_FILTERS.map(f => {
               const active = statusFilter === f.key;
               const m = f.key ? WO_STATUS_META[f.key] : null;
               return (
                 <button key={f.key} type="button" onClick={() => setStatusFilter(f.key)}
-                  style={{ padding: ‘5px 12px’, borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 500,
-                    border: active ? ‘none’ : ‘1px solid var(--color-border-strong)’,
-                    background: active ? (m?.bg || ‘var(--color-primary)’) : ‘var(--color-surface)’,
-                    color: active ? (m?.color || ‘#fff’) : ‘var(--color-text-secondary)’,
-                    cursor: ‘pointer’, WebkitTapHighlightColor: ‘transparent’ }}>
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {error && (
-        <div role="alert" style={{ padding: ‘12px 14px’, borderRadius: 12, background: ‘#fef2f2’, border: ‘1px solid #fecaca’, color: ‘#991b1b’, fontSize: 14 }}>{error}</div>
-      )}
-
-      {jobs === null && !error && (
-        <div role="status" style={{ padding: 24, textAlign: ‘center’, color: ‘var(--color-text-secondary)’ }}>Loading your jobs…</div>
-      )}
-
-      {jobs && jobs.length === 0 && (
-        <div style={{ padding: 20, textAlign: ‘center’, color: ‘var(--color-text-secondary)’, fontSize: 14, background: ‘var(--color-surface)’, border: ‘1px solid var(--color-border)’, borderRadius: 12 }}>
-          No jobs assigned to you right now. Scan a QR label to open an asset you&apos;re working on.
-        </div>
-      )}
-
-      {jobs && visibleJobs.length === 0 && jobs.length > 0 && (
-        <div style={{ padding: 20, textAlign: ‘center’, color: ‘var(--color-text-secondary)’, fontSize: 14 }}>
-          No jobs match your filters.
-        </div>
-      )}
-
-      {visibleJobs.map((j) => {
-        const meta = WO_STATUS_META[j.status];
-        return (
-          <button
-            key={j.id}
-            type="button"
-            onClick={() => navigate(`/field/asset/${j.asset?.id}`)}
-            style={{
-              all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex',
-              alignItems: 'center', gap: 10, width: '100%', minHeight: 64, padding: '12px 14px',
-              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-              borderRadius: 12, marginBottom: 10, WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {j.asset ? assetLabel(j.asset) : 'Work order'}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {[j.taskName, j.asset?.site?.name, EQUIPMENT_TYPE_LABELS[j.asset?.equipmentType] || j.asset?.equipmentType].filter(Boolean).join(' · ')}
-              </div>
-            </div>
-            {meta && <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, color: meta.color, background: meta.bg }}>{meta.label}</span>}
-            <span aria-hidden="true" style={{ color: 'var(--color-text-secondary)', fontSize: 18 }}>›</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+                  style={{ padding: '5px 12px', borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 500,
+                    border: active ? 'none' : '1px solid var(--color-border-strong)',
+                    background: active ? (m?.bg || 'var(--color-primary)') : 'var(--color-surface)',
+                    color: active ? (m?.color || '#fff') : 'var(--color-text-secondary)',
+                    cursor: 'pointer', WebkitTapHighlightColor: 'transp
