@@ -7,15 +7,24 @@
 // that; the server default-denies it and this screen never offers it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/client';
 import { assetLabel, EQUIPMENT_TYPE_LABELS, WO_STATUS_META } from '../../lib/equipment';
+
+const STATUS_FILTERS = [
+  { key: '',            label: 'All' },
+  { key: 'IN_PROGRESS', label: 'In Progress' },
+  { key: 'SCHEDULED',  label: 'Scheduled' },
+  { key: 'COMPLETE',   label: 'Done' },
+];
 
 export default function FieldJobs() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const fetchJobs = useCallback(() => {
     setError(null);
@@ -25,6 +34,24 @@ export default function FieldJobs() {
   }, []);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
+
+  const visibleJobs = useMemo(() => {
+    if (!jobs) return [];
+    const q = search.trim().toLowerCase();
+    return jobs.filter(j => {
+      if (statusFilter && j.status !== statusFilter) return false;
+      if (q) {
+        const haystack = [
+          j.asset ? assetLabel(j.asset) : '',
+          j.taskName,
+          j.asset?.site?.name,
+          EQUIPMENT_TYPE_LABELS[j.asset?.equipmentType],
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [jobs, search, statusFilter]);
 
   return (
     <div>
@@ -55,21 +82,58 @@ export default function FieldJobs() {
           style={{ minWidth: 44, minHeight: 40, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 18 }}>⟳</button>
       </div>
 
+      {/* Quick filters — shown once jobs have loaded */}
+      {jobs && jobs.length > 0 && (
+        <>
+          <input
+            type="search"
+            placeholder="Search jobs…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ boxSizing: ‘border-box’, width: ‘100%’, padding: ‘10px 14px’, borderRadius: 10,
+              border: ‘1px solid var(--color-border-strong)’, background: ‘var(--color-surface)’,
+              fontSize: 15, marginBottom: 10, color: ‘var(--color-text)’, outline: ‘none’ }}
+          />
+          <div role="group" aria-label="Filter by status" style={{ display: ‘flex’, gap: 6, flexWrap: ‘wrap’, marginBottom: 12 }}>
+            {STATUS_FILTERS.map(f => {
+              const active = statusFilter === f.key;
+              const m = f.key ? WO_STATUS_META[f.key] : null;
+              return (
+                <button key={f.key} type="button" onClick={() => setStatusFilter(f.key)}
+                  style={{ padding: ‘5px 12px’, borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 500,
+                    border: active ? ‘none’ : ‘1px solid var(--color-border-strong)’,
+                    background: active ? (m?.bg || ‘var(--color-primary)’) : ‘var(--color-surface)’,
+                    color: active ? (m?.color || ‘#fff’) : ‘var(--color-text-secondary)’,
+                    cursor: ‘pointer’, WebkitTapHighlightColor: ‘transparent’ }}>
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
       {error && (
-        <div role="alert" style={{ padding: '12px 14px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 14 }}>{error}</div>
+        <div role="alert" style={{ padding: ‘12px 14px’, borderRadius: 12, background: ‘#fef2f2’, border: ‘1px solid #fecaca’, color: ‘#991b1b’, fontSize: 14 }}>{error}</div>
       )}
 
       {jobs === null && !error && (
-        <div role="status" style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading your jobs…</div>
+        <div role="status" style={{ padding: 24, textAlign: ‘center’, color: ‘var(--color-text-secondary)’ }}>Loading your jobs…</div>
       )}
 
       {jobs && jobs.length === 0 && (
-        <div style={{ padding: 20, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 14, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
-          No jobs assigned to you right now. Scan a QR label to open an asset you’re working on.
+        <div style={{ padding: 20, textAlign: ‘center’, color: ‘var(--color-text-secondary)’, fontSize: 14, background: ‘var(--color-surface)’, border: ‘1px solid var(--color-border)’, borderRadius: 12 }}>
+          No jobs assigned to you right now. Scan a QR label to open an asset you&apos;re working on.
         </div>
       )}
 
-      {jobs && jobs.map((j) => {
+      {jobs && visibleJobs.length === 0 && jobs.length > 0 && (
+        <div style={{ padding: 20, textAlign: ‘center’, color: ‘var(--color-text-secondary)’, fontSize: 14 }}>
+          No jobs match your filters.
+        </div>
+      )}
+
+      {visibleJobs.map((j) => {
         const meta = WO_STATUS_META[j.status];
         return (
           <button
