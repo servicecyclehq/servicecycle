@@ -26,7 +26,7 @@ export const REPORTS = [
   {
     id: 'export-everything',
     name: 'Export Everything (Account Backup)',
-    description: 'Download a complete, portable copy of your account in open formats — every site, asset, schedule, work order, deficiency, and quote request, plus document and compliance-snapshot metadata with integrity hashes and retrieval paths. No lock-in: lossless JSON, theirs to keep or re-import anywhere.',
+    description: 'Download a complete, portable copy of your account in open formats — every site, asset, schedule, work order, deficiency, quote request, arc-flash study and label, LOTO procedure, parts catalog, spare inventory record, and asset part requirement, plus document and compliance-snapshot metadata with integrity hashes and retrieval paths. No lock-in: lossless JSON or multi-sheet XLSX, yours to keep or re-import anywhere.',
     icon: Archive,
     planned: false,
     accountExport: true,

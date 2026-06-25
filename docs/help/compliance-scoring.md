@@ -27,6 +27,15 @@ flags it C3 on its own (NFPA 70B 9.3.1) and tightens the schedule, so a lapsed
 asset can never silently keep a relaxed interval. Clearing the backlog and
 recording a completed cycle restores the rating.
 
+**Telemetry-triggered C2.** When a connected condition-monitoring gateway pushes
+a reading that breaches the critical threshold — winding temperature over limit,
+vibration outside normal range, partial-discharge spike — ServiceCycle
+automatically escalates the asset to C2 (NFPA 70B §C2 worst-of logic). The
+condition badge changes, the maintenance interval compresses, and an alert fires.
+The C2 is reversible: it clears when the reading returns to normal or a reviewer
+acknowledges the notification. This is the continuous-monitoring complement to
+the point-in-time test results you record in work orders.
+
 ## Remaining useful life (RUL) & modernization risk
 
 The modernization risk score estimates how far through its life an asset is, so
