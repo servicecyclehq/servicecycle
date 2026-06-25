@@ -31,6 +31,7 @@ unless noted.
 |---|---|---|
 | Acquisition brief | `docs/ACQUISITION_BRIEF.md` | Market thesis, product, moat, acquisition angles, upside narrative, asking price considerations |
 | Competitive analysis | `docs/COMPETITIVE_ANALYSIS.md` | Competitive landscape, why we win, incumbent gap |
+| Pricing architecture | `docs/PRICING.md` | SaaS pricing model design — location-based tiers, Stripe activation path, OEM licensing model, unit economics |
 | Demo script | `docs/DEMO_SCRIPT.md` | Structured 20-min PE/OEM demo walkthrough with objection handling |
 
 ---
