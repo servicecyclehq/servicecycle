@@ -60,7 +60,7 @@ For air-gapped / self-hosted installs, see **`docs/SELF_HOST.md`**.
 
 ```bash
 cd server
-npm test                   # full integration suite (~500 tests)
+npm test                   # full integration suite (~450 tests)
 npm test -- --grep parts   # run a subset by name
 ```
 

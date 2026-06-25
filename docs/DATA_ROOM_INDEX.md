@@ -120,6 +120,6 @@ Full source code is available for review under NDA. The repository is hosted
 at GitHub (`servicecyclehq/servicecycle`). Contact the founder to arrange
 read-only access under a signed non-disclosure agreement.
 
-The test suite (`npm test` in `server/`) has ~500 integration tests covering
+The test suite (`npm test` in `server/`) has ~450 integration tests covering
 auth, tenant isolation, arc-flash logic, the v1 public API, and IDOR
 protections. CI runs on every PR via GitHub Actions.
