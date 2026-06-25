@@ -1,11 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// FieldJobs.jsx — the field-labor (field_tech / subcontractor) home: "My Jobs".
+// FieldJobs.jsx -- the field-labor (field_tech / subcontractor) home: "My Jobs".
 //
 // A sub sees ONLY their assigned work (GET /api/field/assignments). Big scan
-// button up top (QR → the job card), then a tappable list of assigned work
-// orders. No site picker, no add-equipment, no "full site" — a sub has none of
+// button up top (QR -> the job card), then a tappable list of assigned work
+// orders. No site picker, no add-equipment, no "full site" -- a sub has none of
 // that; the server default-denies it and this screen never offers it.
-// ─────────────────────────────────────────────────────────────────────────────
+// DEMO_FIXES 4.4: added search + status filter chips so a field tech can find
+// their job quickly even when the list is long.
+// -----------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -13,10 +15,10 @@ import api from '../../api/client';
 import { assetLabel, EQUIPMENT_TYPE_LABELS, WO_STATUS_META } from '../../lib/equipment';
 
 const STATUS_FILTERS = [
-  { key: '',            label: 'All' },
-  { key: 'IN_PROGRESS', label: 'In Progress' },
-  { key: 'SCHEDULED',  label: 'Scheduled' },
-  { key: 'COMPLETE',   label: 'Done' },
+  { key: '',             label: 'All' },
+  { key: 'IN_PROGRESS',  label: 'In Progress' },
+  { key: 'SCHEDULED',   label: 'Scheduled' },
+  { key: 'COMPLETE',    label: 'Done' },
 ];
 
 export default function FieldJobs() {
@@ -55,7 +57,7 @@ export default function FieldJobs() {
 
   return (
     <div>
-      {/* Scan — the primary field action */}
+      {/* Scan -- the primary field action */}
       <button
         type="button"
         onClick={() => navigate('/field/scan')}
@@ -79,20 +81,22 @@ export default function FieldJobs() {
         <h1 style={{ fontSize: 17, fontWeight: 800, color: 'var(--color-text)', margin: 0 }}>My jobs</h1>
         <span style={{ flex: 1 }} />
         <button type="button" onClick={fetchJobs} aria-label="Refresh"
-          style={{ minWidth: 44, minHeight: 40, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 18 }}>⟳</button>
+          style={{ minWidth: 44, minHeight: 40, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 18 }}>&#x27F3;</button>
       </div>
 
-      {/* Quick filters — shown once jobs have loaded */}
+      {/* Search + status filter -- shown once jobs have loaded */}
       {jobs && jobs.length > 0 && (
         <>
           <input
             type="search"
-            placeholder="Search jobs…"
+            placeholder="Search jobs..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{ boxSizing: 'border-box', width: '100%', padding: '10px 14px', borderRadius: 10,
+            style={{
+              boxSizing: 'border-box', width: '100%', padding: '10px 14px', borderRadius: 10,
               border: '1px solid var(--color-border-strong)', background: 'var(--color-surface)',
-              fontSize: 15, marginBottom: 10, color: 'var(--color-text)', outline: 'none' }}
+              fontSize: 15, marginBottom: 10, color: 'var(--color-text)', outline: 'none',
+            }}
           />
           <div role="group" aria-label="Filter by status" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             {STATUS_FILTERS.map(f => {
@@ -100,8 +104,68 @@ export default function FieldJobs() {
               const m = f.key ? WO_STATUS_META[f.key] : null;
               return (
                 <button key={f.key} type="button" onClick={() => setStatusFilter(f.key)}
-                  style={{ padding: '5px 12px', borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 500,
+                  style={{
+                    padding: '5px 12px', borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 500,
                     border: active ? 'none' : '1px solid var(--color-border-strong)',
                     background: active ? (m?.bg || 'var(--color-primary)') : 'var(--color-surface)',
                     color: active ? (m?.color || '#fff') : 'var(--color-text-secondary)',
-                    cursor: 'pointer', WebkitTapHighlightColor: 'transp
+                    cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                  }}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+          {visibleJobs.length === 0 && (
+            <div style={{ color: 'var(--color-text-secondary)', fontSize: 14, padding: '8px 0' }}>
+              No jobs match your filters.
+            </div>
+          )}
+        </>
+      )}
+
+      {error && (
+        <div role="alert" style={{ padding: '12px 14px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 14 }}>{error}</div>
+      )}
+
+      {jobs === null && !error && (
+        <div role="status" style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading your jobs...</div>
+      )}
+
+      {jobs && jobs.length === 0 && (
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 14, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
+          No jobs assigned to you right now. Scan a QR label to open an asset you&apos;re working on.
+        </div>
+      )}
+
+      {visibleJobs.map((j) => {
+        const meta = WO_STATUS_META[j.status];
+        return (
+          <button
+            key={j.id}
+            type="button"
+            onClick={() => navigate(`/field/asset/${j.asset?.id}`)}
+            style={{
+              all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex',
+              alignItems: 'center', gap: 10, width: '100%', minHeight: 64, padding: '12px 14px',
+              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+              borderRadius: 12, marginBottom: 10, WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {j.asset ? assetLabel(j.asset) : 'Work order'}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {[j.taskName, j.asset?.site?.name, EQUIPMENT_TYPE_LABELS[j.asset?.equipmentType] || j.asset?.equipmentType].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            {meta && <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, color: meta.color, background: meta.bg }}>{meta.label}</span>}
+            <span aria-hidden="true" style={{ color: 'var(--color-text-secondary)', fontSize: 18 }}>&#x203A;</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

@@ -1702,6 +1702,7 @@ async function _seedAccount() {
     budgeted: true,
     emergencyMode: false, dossierSnapshot: dossierSnapshotT1,
     quotedAt: addDays(now, -60), respondedAt: addDays(now, -55),
+    resolvedAt: addDays(now, -55),
     quoteNotes: 'Infrared thermography + partial discharge survey: $1,800.',
     createdAt: addDays(now, -65),
   } });
@@ -1722,6 +1723,7 @@ async function _seedAccount() {
     emergencyMode: false,
     dossierSnapshot: { assetId: assets['SWGR-2M'].id, name: 'SWGR-2M Mezzanine Switchgear', snapshotAt: now.toISOString() },
     quotedAt: addDays(now, -90), respondedAt: addDays(now, -85),
+    resolvedAt: addDays(now, -85),
     quoteNotes: 'Quote sent for switchgear replacement: $180,000.',
     declineReason: 'Capital project deferred to FY2027. Will re-request closer to budget approval.',
     createdAt: addDays(now, -95),
@@ -2480,18 +2482,4 @@ if (require.main === module) {
     .then((s) => {
       console.log('Demo seed complete:');
       console.log(JSON.stringify(s, null, 2));
-      console.log('\nLogin credentials:');
-      console.log('  admin@demo.local      / Admin1234!');
-      console.log('  manager@demo.local    / Manager1234!');
-      console.log('  viewer@demo.local     / Viewer1234!');
-      console.log('  consultant@demo.local / Consultant1234!');
-      return prisma.$disconnect();
-    })
-    .catch(async (err) => {
-      console.error('Seed failed:', err);
-      await prisma.$disconnect();
-      process.exit(1);
-    });
-}
-
-module.exports = { resetAndSeedDemo, seedAccountForUser };
+      console.lo
