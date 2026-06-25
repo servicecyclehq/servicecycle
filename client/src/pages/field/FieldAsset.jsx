@@ -38,16 +38,16 @@ const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 // Schedule status chips — same traffic-light convention as the desktop pages.
 const SCHEDULE_STATUS_META = {
-  current:     { label: 'Current',        color: '#16a34a', bg: '#f0fdf4' },
-  overdue:     { label: 'Overdue',        color: '#dc2626', bg: '#fef2f2' },
-  unbaselined: { label: 'Not baselined',  color: '#64748b', bg: '#f1f5f9' },
+  current:     { label: 'Current',        color: 'var(--chip-green-fg)', bg: 'var(--chip-green-bg)' },
+  overdue:     { label: 'Overdue',        color: 'var(--chip-red-fg)',   bg: 'var(--chip-red-bg)' },
+  unbaselined: { label: 'Not baselined',  color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' },
 };
 
 // Photo-observation severity chips — mirrors PhotoInspectCard's palette.
 const OBS_SEVERITY_CHIPS = {
-  normal:  { label: 'Normal',  color: '#334155', bg: '#e2e8f0' },
-  monitor: { label: 'Monitor', color: '#92400e', bg: '#fef3c7' },
-  concern: { label: 'Concern', color: '#991b1b', bg: '#fee2e2' },
+  normal:  { label: 'Normal',  color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' },
+  monitor: { label: 'Monitor', color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)' },
+  concern: { label: 'Concern', color: 'var(--chip-red-fg)',   bg: 'var(--chip-red-bg)' },
 };
 
 function Chip({ label, color, bg, big }) {
@@ -195,7 +195,7 @@ function FieldLotoSection({ assetId }) {
         {err && (
           <div role="alert" style={{
             padding: '10px 12px', borderRadius: 10, fontSize: 13.5,
-            background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b',
+            background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)',
           }}>
             {err}
           </div>
@@ -203,7 +203,7 @@ function FieldLotoSection({ assetId }) {
         {procs !== null && !err && active.length === 0 && (
           <div style={{
             padding: '10px 12px', borderRadius: 10, fontSize: 13.5, lineHeight: 1.5,
-            background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e',
+            background: 'var(--chip-amber-bg)', border: '1px solid var(--chip-amber-fg)', color: 'var(--chip-amber-fg)',
           }}>
             <strong>No approved LOTO procedure on file for this asset.</strong>{' '}
             Do not rely on memory — OSHA 1910.147 requires a written procedure.
@@ -615,8 +615,8 @@ export default function FieldAsset() {
     return (
       <div>
         <div role="alert" style={{
-          padding: '14px', borderRadius: 12, background: '#fef2f2',
-          border: '1px solid #fecaca', color: '#991b1b', fontSize: 14, marginBottom: 14,
+          padding: '14px', borderRadius: 12, background: 'var(--chip-red-bg)',
+          border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)', fontSize: 14, marginBottom: 14,
         }}>
           {error}
         </div>
@@ -671,7 +671,7 @@ export default function FieldAsset() {
             )}
             {asset.fedFrom && asset.downstreamCount > 0 && ' · '}
             {asset.downstreamCount > 0 && (
-              <span style={{ color: '#d97706', fontWeight: 700 }}>
+              <span style={{ color: 'var(--chip-amber-fg)', fontWeight: 700 }}>
                 affects {asset.downstreamCount} downstream
               </span>
             )}
@@ -708,7 +708,7 @@ export default function FieldAsset() {
                 <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span>Due {fmtDate(s.nextDueDate)}</span>
                   {s.taskDefinition?.requiresOutage && (
-                    <span style={{ color: '#dc2626', fontWeight: 700 }}>⚠ outage required</span>
+                    <span style={{ color: 'var(--chip-red-fg)', fontWeight: 700 }}>⚠ outage required</span>
                   )}
                   {s.taskDefinition?.standardRef && <span>{s.taskDefinition.standardRef}</span>}
                 </div>
@@ -735,7 +735,7 @@ export default function FieldAsset() {
             {!online ? (
               <div style={{
                 padding: '10px 12px', borderRadius: 10, fontSize: 13.5, lineHeight: 1.5,
-                background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e',
+                background: 'var(--chip-amber-bg)', border: '1px solid var(--chip-amber-fg)', color: 'var(--chip-amber-fg)',
               }}>
                 Photo inspect needs a connection — it&rsquo;ll be back when you&rsquo;re online.
               </div>
@@ -774,7 +774,7 @@ export default function FieldAsset() {
                 {photoError && !photoBusy && (
                   <div role="alert" style={{
                     marginTop: 10, padding: '10px 12px', borderRadius: 10,
-                    background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 13.5,
+                    background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)', fontSize: 13.5,
                   }}>
                     {photoError}
                   </div>
@@ -1150,10 +1150,10 @@ export default function FieldAsset() {
         )}
 
         {ocrError && !ocrBusy && (
-          <div role="alert" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 13.5 }}>
+          <div role="alert" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)', fontSize: 13.5 }}>
             {ocrError}
             <button type="button" onClick={() => { setOcrError(null); ocrInputRef.current?.click(); }}
-              style={{ marginLeft: 10, fontSize: 12, color: '#991b1b', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
+              style={{ marginLeft: 10, fontSize: 12, color: 'var(--chip-red-fg)', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
               Try again
             </button>
           </div>
@@ -1197,7 +1197,7 @@ export default function FieldAsset() {
                 </button>
               )}
               {ocrApplied && (
-                <div style={{ padding: '10px 14px', borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: 13.5, fontWeight: 600, flex: '1 1 auto', textAlign: 'center' }}>
+                <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--chip-green-bg)', border: '1px solid var(--chip-green-fg)', color: 'var(--chip-green-fg)', fontSize: 13.5, fontWeight: 600, flex: '1 1 auto', textAlign: 'center' }}>
                   ✓ Asset updated
                 </div>
               )}

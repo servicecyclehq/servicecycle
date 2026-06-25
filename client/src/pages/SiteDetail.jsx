@@ -55,7 +55,7 @@ function studyExpiryStyle(d) {
   if (Number.isNaN(dt.getTime())) return null;
   const days = (dt - new Date()) / 86400000;
   if (days < 0)   return { color: 'var(--color-danger, #dc2626)', fontWeight: 700 };
-  if (days < 183) return { color: '#d97706', fontWeight: 600 };
+  if (days < 183) return { color: 'var(--chip-amber-fg)', fontWeight: 600 };
   return null;
 }
 
