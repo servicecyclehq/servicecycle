@@ -72,7 +72,7 @@ is deferred or manual.
 | CC6.5 | Physical access | Hosted on DigitalOcean (SOC 2 certified DC) | DigitalOcean compliance: digitalocean.com/trust | Physical access at DC level; no ServiceCycle hardware |
 | CC6.6 | Implements boundary protection | CSP headers; CORS allowlist; rate limiting stack; Cloudflare proxy | `server/index.ts` CSP + CORS + limiters | — |
 | CC6.7 | Manages transmission confidentiality | HTTPS/TLS (nginx termination); HSTS header | `server/index.ts` HSTS; nginx config | — |
-| CC6.8 | Manages encryption keys and access monitoring | AES-256-GCM for per-account secrets; `ENCRYPTED_KEYS` env var; backup crypto; every authenticated `/api/v1` call logged to the tamper-evident activity log (`action=api_v1_call`) with key name/ID, method, path, HTTP status, latency, and client IP | `server/lib/docCrypto.ts`; `server/lib/backupCrypto.ts`; `server/middleware/apiKeyAuth.ts` | Key rotation process not yet formalized |
+| CC6.8 | Manages encryption keys and access monitoring | AES-256-GCM for per-account secrets; `ENCRYPTED_KEYS` env var; backup crypto; every authenticated `/api/v1` call logged to the tamper-evident activity log (`action=api_v1_call`) with key name/ID, method, path, HTTP status, latency, and client IP; key rotation runbook in `docs/KEY_ROTATION.md` (zero-downtime JWT dual-verify, `MASTER_KEY` re-encrypt, `BACKUP_ENCRYPTION_KEY` rotation) | `server/lib/docCrypto.ts`; `server/lib/backupCrypto.ts`; `server/middleware/apiKeyAuth.ts`; `docs/KEY_ROTATION.md` | — |
 
 ### CC7 — System Operations
 
@@ -138,5 +138,5 @@ Ordered by impact on an acquirer or enterprise customer's security review:
 3. **CI pipeline** — GitHub Actions: `tsc --noEmit + jest` on every PR. Closes CC5.3 gap.
 4. **Data retention enforcement** — add a scheduled job to prune records older than the configured retention window. Closes C1.2 gap.
 5. **Formal risk register** — one-page living document listing top 10 risks, likelihood, impact, owner, mitigation. Closes CC3.2 gap.
-6. **Key rotation runbook** — document how to rotate `JWT_SECRET`, `ENCRYPTED_KEYS`, `BACKUP_ENCRYPTION_KEY`. Closes CC6.8 gap.
+6. ~~**Key rotation runbook**~~ — ✅ CLOSED. `docs/KEY_ROTATION.md` documents zero-downtime rotation for `JWT_SECRET` (dual-verify window), `MASTER_KEY`/`ENCRYPTED_KEYS`, and `BACKUP_ENCRYPTION_KEY`. Closes CC6.8 gap.
 7. **SOC 2 Type II evidence collection** — begin 6-month clock once Type I readiness is confirmed.

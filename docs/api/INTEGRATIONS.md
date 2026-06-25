@@ -141,6 +141,68 @@ and batch-ingestion reference: `docs/api/TELEMETRY.md`.
 
 ---
 
+## Outbound webhooks — event reference
+
+ServiceCycle delivers signed HTTP POST callbacks to any HTTPS endpoint registered
+under **Settings → Webhooks**. The nightly alert engine dispatches one POST per
+alert item per registered endpoint.
+
+### Authentication (signature verification)
+
+Every delivery carries three headers:
+
+| Header | Value |
+|---|---|
+| `X-ServiceCycle-Signature` | `sha256=<hex-HMAC-SHA256>` of `"<timestamp>.<body>"` |
+| `X-ServiceCycle-Timestamp` | Unix seconds (sender clock) |
+| `X-ServiceCycle-Delivery-Id` | UUID unique to this delivery attempt |
+
+The HMAC key is the endpoint's `hmacSecret` (returned once at creation). Reject
+deliveries whose `X-ServiceCycle-Timestamp` differs from your server clock by
+more than 5 minutes to prevent replay attacks.
+
+### Event types
+
+| `event` field | Trigger |
+|---|---|
+| `maintenance.due` | Asset schedule is due within the configured lead-time window |
+| `maintenance.overdue` | Asset schedule is past its `nextDueDate` |
+| `maintenance.escalation` | Overdue schedule has escalated beyond the first tier |
+| `maintenance.regulatory_breach` | Schedule breach has reached the regulatory threshold |
+
+### Payload shape (stable contract)
+
+```json
+{
+  "event":         "maintenance.due",
+  "alertType":     "maintenance_due",
+  "daysUntil":     14,
+  "leadDays":      30,
+  "scheduleId":    "uuid",
+  "assetId":       "uuid",
+  "asset":         "Square D NF430L S/N 8834991A",
+  "equipmentType": "PANELBOARD",
+  "siteName":      "Building A",
+  "taskName":      "Annual Infrared Thermography",
+  "nextDueDate":   "2026-07-09T00:00:00.000Z",
+  "appUrl":        "https://servicecycle.app/assets/<uuid>",
+  "sentAt":        "2026-06-25T06:00:00.000Z"
+}
+```
+
+`daysUntil` is negative when the schedule is overdue. `leadDays` is null for
+non-`maintenance.due` events. The payload shape is stable within v1; new
+optional fields may be added without a version bump.
+
+### Retry and DLQ
+
+Failed deliveries (non-2xx response or network timeout) are retried up to 3
+times with exponential backoff. Persistent failures land in the Dead Letter
+Queue, visible under **Settings → Webhooks → Failed Deliveries**. You can
+replay or purge DLQ rows from the UI or via the admin API.
+
+---
+
 ## Notes
 
 - Use **separate keys per integration** with the least scope needed (read-only for
