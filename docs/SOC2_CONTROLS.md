@@ -58,8 +58,8 @@ is deferred or manual.
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
 | CC5.1 | Selects and develops control activities over technology | RBAC, account-scoping, audit log, rate limiting | `server/middleware/roles.ts`; `server/index.ts` (limiter stack) | — |
-| CC5.2 | Selects and develops general controls over technology | Dependency audit; CSP headers; HTTPS/TLS | `docs/DEPENDENCY_AUDIT_2026-06-18.md`; `server/index.ts` CSP block | Automated SCA (Snyk / Dependabot) not yet wired to CI |
-| CC5.3 | Deploys through policies and procedures | Git-gated deploys via documented runbook | `docs/DEPLOY_RUNBOOK.md` | CI pipeline (automated tests on PR) not yet wired to GitHub Actions |
+| CC5.2 | Selects and develops general controls over technology | Dependency audit; CSP headers; HTTPS/TLS; `npm audit --audit-level=high` in CI; Dependabot enabled for server + client + GitHub Actions | `docs/DEPENDENCY_AUDIT_2026-06-18.md`; `.github/dependabot.yml`; `.github/workflows/ci.yml` | — |
+| CC5.3 | Deploys through policies and procedures | Git-gated deploys via documented runbook; GitHub Actions CI runs `tsc --noEmit + jest` on every PR; `npm audit` in CI | `docs/DEPLOY_RUNBOOK.md`; `.github/workflows/ci.yml` | — |
 
 ### CC6 — Logical and Physical Access Controls
 
@@ -134,8 +134,8 @@ is deferred or manual.
 Ordered by impact on an acquirer or enterprise customer's security review:
 
 1. **Automated uptime alerting** — configure Better Stack alert thresholds (30-minute task; no code needed). Closes A1.2 gap.
-2. **Automated SCA / CVE scanning** — wire `npm audit` to CI or enable Dependabot on GitHub. Closes CC5.2 gap.
-3. **CI pipeline** — GitHub Actions: `tsc --noEmit + jest` on every PR. Closes CC5.3 gap.
+2. ~~**Automated SCA / CVE scanning**~~ — ✅ CLOSED. `npm audit --audit-level=high` in CI; `.github/dependabot.yml` monitors server, client, and GitHub Actions weekly. Closes CC5.2 gap.
+3. ~~**CI pipeline**~~ — ✅ CLOSED. `.github/workflows/ci.yml` runs `tsc --noEmit + jest` (unit + integration) + `npm audit` on every PR. Closes CC5.3 gap.
 4. **Data retention enforcement** — add a scheduled job to prune records older than the configured retention window. Closes C1.2 gap.
 5. ~~**Formal risk register**~~ — ✅ CLOSED. `docs/RISK_REGISTER.md` documents 10 risks with L×I scoring, mitigations, residual scores, owners, and quarterly review cadence. Closes CC3.2 gap.
 6. ~~**Key rotation runbook**~~ — ✅ CLOSED. `docs/KEY_ROTATION.md` documents zero-downtime rotation for `JWT_SECRET` (dual-verify window), `MASTER_KEY`/`ENCRYPTED_KEYS`, and `BACKUP_ENCRYPTION_KEY`. Closes CC6.8 gap.
