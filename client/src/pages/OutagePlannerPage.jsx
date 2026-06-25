@@ -10,12 +10,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { Bolt, ChevronDown, ChevronRight, Download, Sliders } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { fmtDate } from '../lib/equipment';
 import Toast from '../components/Toast';
+import { useFromState } from '../components/BackLink';
 
 const REASON_META = {
   overdue:        { bg: '#fff1f1', color: '#b91c1c', label: 'Overdue' },
@@ -38,12 +40,18 @@ function plusDays(n) {
 }
 
 // ── Device row (with include checkbox) ─────────────────────────────────────────
-function DeviceBlock({ device, checked, onToggle }) {
+function DeviceBlock({ device, checked, onToggle, fromState }) {
   return (
     <div style={{ padding: '8px 0', borderTop: '1px solid var(--color-border)' }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1 }}>
         <input type="checkbox" checked={checked} onChange={() => onToggle(device.assetId)} />
-        <span style={{ fontWeight: 600, fontSize: 'var(--font-size-data)' }}>{device.assetName}</span>
+        <Link
+          to={`/assets/${device.assetId}`}
+          state={fromState}
+          style={{ fontWeight: 600, fontSize: 'var(--font-size-data)', color: 'var(--color-primary)', textDecoration: 'none' }}
+          onClick={e => e.stopPropagation()}
+        >{device.assetName}</Link>
         <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--color-bg-subtle, #f1f5f9)', color: 'var(--color-text-secondary)' }}>
           {device.condition}
         </span>
@@ -56,6 +64,7 @@ function DeviceBlock({ device, checked, onToggle }) {
           <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#eff6ff', color: '#1d4ed8' }}>WO open</span>
         )}
       </label>
+      </div>{/* /flex row */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4, paddingLeft: 24 }}>
         {device.tasks.map((t, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 'var(--font-size-sm)' }}>
@@ -71,7 +80,7 @@ function DeviceBlock({ device, checked, onToggle }) {
 }
 
 // ── Location (site) section ────────────────────────────────────────────────────
-function LocationSection({ loc, selected, onToggleDevice }) {
+function LocationSection({ loc, selected, onToggleDevice, fromState }) {
   const [expanded, setExpanded] = useState(true);
   return (
     <div className="card mb-16" style={{ overflow: 'hidden' }}>
@@ -96,7 +105,7 @@ function LocationSection({ loc, selected, onToggleDevice }) {
                 {!eq.isFeeder && <span style={{ fontWeight: 400, fontSize: 11 }}>(standalone)</span>}
               </div>
               {eq.devices.map(d => (
-                <DeviceBlock key={d.assetId} device={d} checked={selected.has(d.assetId)} onToggle={onToggleDevice} />
+                <DeviceBlock key={d.assetId} device={d} checked={selected.has(d.assetId)} onToggle={onToggleDevice} fromState={fromState} />
               ))}
             </div>
           ))}
@@ -111,6 +120,9 @@ export default function OutagePlannerPage() {
   useDocumentTitle('Outage Planner');
   const { role } = useAuth();
   const canWrite = ['admin', 'manager'].includes(role);
+  // fromState passed into LocationSection → DeviceBlock so asset-name links
+  // return here via BackLink instead of falling back to /assets.
+  const fromState = useFromState();
 
   // controls
   const [date, setDate]   = useState(plusDays(90));
@@ -334,7 +346,7 @@ export default function OutagePlannerPage() {
       )}
 
       {!loading && !error && data && data.locations.map(loc => (
-        <LocationSection key={loc.siteId} loc={loc} selected={selected} onToggleDevice={toggleDevice} />
+        <LocationSection key={loc.siteId} loc={loc} selected={selected} onToggleDevice={toggleDevice} fromState={fromState} />
       ))}
     </div>
   );

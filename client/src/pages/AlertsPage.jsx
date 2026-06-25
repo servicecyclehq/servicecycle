@@ -28,6 +28,7 @@ import ColumnDateRangeButton from '../components/ColumnDateRangeButton';
 import SavedViewsMenu from '../components/SavedViewsMenu';
 import { useUserPreference } from '../hooks/useUserPreference';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFromState } from '../components/BackLink';
 import {
   ALERTS_COLUMNS,
   ALERTS_VISIBILITY_KEY,
@@ -53,6 +54,7 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const navigate = useNavigate();
+  const fromState = useFromState();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
 
@@ -439,9 +441,9 @@ export default function AlertsPage() {
                           <tr
                             key={r.id}
                             style={{ cursor: assetId ? 'pointer' : 'default' }}
-                            onClick={() => { if (assetId) navigate(`/assets/${assetId}`); }}
+                            onClick={() => { if (assetId) navigate(`/assets/${assetId}`, { state: fromState }); }}
                             tabIndex={assetId ? 0 : -1}
-                            onKeyDown={kbdActivate(assetId ? () => navigate(`/assets/${assetId}`) : null)}
+                            onKeyDown={kbdActivate(assetId ? () => navigate(`/assets/${assetId}`, { state: fromState }) : null)}
                           >
                             {row.getVisibleCells().map(cell => {
                               const meta = cell.column.columnDef.meta || {};
