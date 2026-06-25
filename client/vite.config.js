@@ -121,9 +121,8 @@ function buildIdMetaPlugin() {
 //   - navigateFallback serves index.html for SPA deep links offline, but /api
 //     is excluded so API requests never get swallowed by the shell.
 //
-// ICONS ARE PLACEHOLDERS (dark slate square + lightning bolt) pending real
-// logo selection — regenerate via `node scripts/generate-pwa-icons.mjs`
-// after replacing public/icons/icon.svg.
+// PWA icons are generated from public/icons/icon.svg via
+// `node scripts/generate-pwa-icons.mjs`. Replace icon.svg to regen them.
 function pwaPlugin() {
   return VitePWA({
     registerType: 'autoUpdate',
@@ -139,7 +138,6 @@ function pwaPlugin() {
       theme_color: '#0f172a',
       background_color: '#0f172a',
       icons: [
-        // PLACEHOLDER icons pending logo selection (see comment above).
         { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
         { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
       ],

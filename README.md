@@ -81,5 +81,6 @@ Tests require a running Postgres + server on `:3001` (or the Docker stack). Each
 | `docs/INCIDENT_RESPONSE.md` | Incident response plan |
 | `docs/KEY_ROTATION.md` | Secret key rotation procedures |
 | `docs/api/INTEGRATIONS.md` | CMMS/CRM integration guide (MaintainX, Salesforce) |
+| `docs/api/CHANGELOG.md` | Public API version history and breaking-change policy |
 | `docs/api/TELEMETRY.md` | Edge-gateway telemetry push API reference |
 | `docs/api/AFX_SPEC.md` | Arc Flash Data Exchange (AFX v1) field catalog |

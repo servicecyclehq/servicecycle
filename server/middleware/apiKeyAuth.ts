@@ -10,6 +10,11 @@
  * never stores or compares the plaintext key. Separate from the user-session
  * apiLimiter so API traffic doesn't eat human-user budgets.
  *
+ * Audit log: every authenticated v1 request is written to activityLog
+ * (action='api_v1_call') via a fire-and-forget res.on('finish') hook.
+ * Supports SOC 2 CC6.8 (logical access monitoring). 401/429 responses
+ * are NOT logged — only requests that reach a route handler are captured.
+ *
  * On success: calls next().
  * On failure: returns 401/429 JSON with { success: false, error: '...' }.
  */
@@ -102,6 +107,15 @@ async function authenticateApiKey(req, res, next) {
   // per minute per key is the realistic worst case.
   _touchLastUsed(apiKey.id, apiKey.lastUsedAt);
 
+  // ── Audit log hook (SOC 2 CC6.8) ─────────────────────────────────────────
+  // Record after the route handler has finished (status + latency are known).
+  const _startMs = Date.now();
+  const _keySnap = { id: apiKey.id, name: apiKey.name };
+  const _accountId = apiKey.accountId;
+  res.on('finish', () => {
+    _logApiCall(req, res, _keySnap, _accountId, _startMs);
+  });
+
   next();
 }
 
@@ -129,6 +143,32 @@ function _touchLastUsed(keyId, currentLastUsedAt) {
   }).catch((e) => {
     _lastUsedCache.delete(keyId); // allow retry on next request
     console.error('[apiKeyAuth] lastUsedAt update failed:', e.message);
+  });
+}
+
+// ── API call audit logger ─────────────────────────────────────────────────────
+// Fire-and-forget — errors are swallowed so a logging failure never surfaces
+// to the caller. Capped path to 200 chars to avoid bloating the JSON column.
+function _logApiCall(req, res, key: { id: string; name: string }, accountId: string, startMs: number) {
+  const latencyMs = Date.now() - startMs;
+  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || '';
+  const path = (req.originalUrl || req.url || '').slice(0, 200);
+  prisma.activityLog.create({
+    data: {
+      accountId,
+      action: 'api_v1_call',
+      details: {
+        method:    req.method,
+        path,
+        status:    res.statusCode,
+        latencyMs,
+        keyId:     key.id,
+        keyName:   key.name,
+        ip,
+      },
+    },
+  }).catch((e) => {
+    console.error('[apiKeyAuth] audit log write failed:', e.message);
   });
 }
 
