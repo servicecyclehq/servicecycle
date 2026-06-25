@@ -51,7 +51,7 @@ is deferred or manual.
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
 | CC4.1 | Selects, develops, and performs ongoing evaluations | Nightly audit-chain verifier; health check endpoint | `GET /api/admin/audit-chain/verify`; `GET /api/health`; `server/scripts/verify-audit-chain.js` | Automated uptime monitoring (Better Stack) wired but not activated for alerting |
-| CC4.2 | Evaluates and communicates deficiencies | Security findings documented and fixed within same sprint | `docs/security/SECURITY_AUDIT_2026-06-20.md` → all findings resolved same day | Formal SLA for vulnerability remediation not yet defined |
+| CC4.2 | Evaluates and communicates deficiencies | Security findings documented and fixed within same sprint; vulnerability SLA: Critical (≤24 h patch/workaround), High (≤7 days), Medium (≤30 days), Low (next sprint) | `docs/security/SECURITY_AUDIT_2026-06-20.md` → all findings resolved same day; `docs/INCIDENT_RESPONSE.md` §2 priority matrix | — |
 
 ### CC5 — Control Activities
 
@@ -78,11 +78,11 @@ is deferred or manual.
 
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
-| CC7.1 | Detects and monitors for new vulnerabilities | Dependency audit; manual code review before each major release | `docs/DEPENDENCY_AUDIT_2026-06-18.md` | Automated CVE scanning not yet wired |
+| CC7.1 | Detects and monitors for new vulnerabilities | Dependency audit; `npm audit --audit-level=high` in CI (blocks high/critical CVEs); Dependabot opens PRs weekly for server, client, and GitHub Actions | `docs/DEPENDENCY_AUDIT_2026-06-18.md`; `.github/workflows/ci.yml`; `.github/dependabot.yml` | — |
 | CC7.2 | Monitors system components | Activity log for all security events (login, permission denied, admin ops); hash chain ensures tamper evidence | `server/lib/activityLog.ts`; `server/lib/activityLogChain.ts`; SIEM export | — |
 | CC7.3 | Evaluates security events to determine if they are security incidents | Failed login tracking (per-email lockout + per-IP rate limit); logged to activity chain | `server/routes/auth.ts` `credentialLimiter`, `EMAIL_LOCKOUT_*`; `login_failed` events | No automated alerting on anomalous login patterns |
 | CC7.4 | Responds to identified security incidents | Documented incident response procedure | `docs/INCIDENT_RESPONSE.md` | — |
-| CC7.5 | Identifies and discloses disclosure requirements for security incidents | `/.well-known/security.txt`; `security@servicecycle.app` | `server/index.ts` :1209 | Formal customer notification template not yet written |
+| CC7.5 | Identifies and discloses disclosure requirements for security incidents | `/.well-known/security.txt`; `security@servicecycle.app`; customer breach notification thresholds and email template in `INCIDENT_RESPONSE.md`; GDPR Art. 33/34 + state breach-notification timelines documented | `server/index.ts`; `docs/INCIDENT_RESPONSE.md` §5 | — |
 
 ### CC8 — Change Management
 
@@ -94,7 +94,7 @@ is deferred or manual.
 
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
-| CC9.1 | Identifies and assesses risks from business disruption | Backup + restore test; nightly backup with S3 off-host | `server/lib/backup.ts`; `server/lib/restoreTest.ts` | RTO/RPO targets not formally documented |
+| CC9.1 | Identifies and assesses risks from business disruption | Backup + restore test; nightly backup with S3 off-host; **RTO target: ~2 hours** (rebuild droplet + restore latest dump); **RPO target: ~24 hours** (nightly `pg_dump` at 02:00 UTC, 30-day retention) | `server/lib/backup.ts`; `server/lib/restoreTest.ts`; `docs/DEPLOY_RUNBOOK.md` §Disaster Recovery | — |
 | CC9.2 | Assesses and manages risks of vendors and business partners | Sub-processor list maintained | See vendor list below | No formal vendor security questionnaires |
 
 **Sub-processors / vendors:**
@@ -134,9 +134,12 @@ is deferred or manual.
 Ordered by impact on an acquirer or enterprise customer's security review:
 
 1. **Automated uptime alerting** — configure Better Stack alert thresholds (30-minute task; no code needed). Closes A1.2 gap.
-2. ~~**Automated SCA / CVE scanning**~~ — ✅ CLOSED. `npm audit --audit-level=high` in CI; `.github/dependabot.yml` monitors server, client, and GitHub Actions weekly. Closes CC5.2 gap.
+2. ~~**Automated SCA / CVE scanning**~~ — ✅ CLOSED. `npm audit --audit-level=high` in CI; `.github/dependabot.yml` monitors server, client, and GitHub Actions weekly. Closes CC5.2 + CC7.1 gap.
 3. ~~**CI pipeline**~~ — ✅ CLOSED. `.github/workflows/ci.yml` runs `tsc --noEmit + jest` (unit + integration) + `npm audit` on every PR. Closes CC5.3 gap.
 4. **Data retention enforcement** — add a scheduled job to prune records older than the configured retention window. Closes C1.2 gap.
 5. ~~**Formal risk register**~~ — ✅ CLOSED. `docs/RISK_REGISTER.md` documents 10 risks with L×I scoring, mitigations, residual scores, owners, and quarterly review cadence. Closes CC3.2 gap.
 6. ~~**Key rotation runbook**~~ — ✅ CLOSED. `docs/KEY_ROTATION.md` documents zero-downtime rotation for `JWT_SECRET` (dual-verify window), `MASTER_KEY`/`ENCRYPTED_KEYS`, and `BACKUP_ENCRYPTION_KEY`. Closes CC6.8 gap.
-7. **SOC 2 Type II evidence collection** — begin 6-month clock once Type I readiness is confirmed.
+7. ~~**Vulnerability remediation SLA**~~ — ✅ CLOSED. Critical ≤24h / High ≤7d / Medium ≤30d / Low next sprint; documented in CC4.2 row above. Closes CC4.2 gap.
+8. ~~**Customer breach notification template**~~ — ✅ CLOSED. Thresholds + email template in `docs/INCIDENT_RESPONSE.md` §5. Closes CC7.5 gap.
+9. ~~**RTO/RPO targets**~~ — ✅ CLOSED. RTO ~2h / RPO ~24h documented in `docs/DEPLOY_RUNBOOK.md` and CC9.1 row above. Closes CC9.1 gap.
+10. **SOC 2 Type II evidence collection** — begin 6-month clock once Type I readiness is confirmed.
