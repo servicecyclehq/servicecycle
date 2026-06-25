@@ -497,6 +497,32 @@ function reportNeedsReviewHtml({ companyName, appUrl, committedCount, reviewCoun
 </div>`;
 }
 
+// ── Login lockout admin alert ──────────────────────────────────────────────
+// Sent to all active account admins when a known user's login is locked out
+// after EMAIL_LOCKOUT_MAX_FAILS failed attempts in a 15-minute window.
+// Only fires for known-user lockouts (bad password or inactive user) — for
+// unknown-email brute-force attempts there is no account to notify.
+function loginLockoutAlertHtml({ targetEmail, ip, appUrl }) {
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
+  <div style="margin-bottom:24px;">
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
+  </div>
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Login account locked out</h2>
+  <p style="margin:0 0 16px;font-size:14px;color:#94a3b8;">
+    5 failed login attempts in 15 minutes locked the following account. The lockout expires automatically in 15 minutes.
+  </p>
+  <div style="background:#1e2330;border-radius:6px;padding:14px 18px;margin-bottom:20px;border-left:3px solid #f87171;">
+    <p style="margin:0;font-size:14px;color:#fca5a5;font-weight:600;">${esc(targetEmail)}</p>
+    <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Source IP: <code style="color:#e2e8f0;">${esc(ip)}</code></p>
+  </div>
+  <a href="${esc(appUrl)}/settings?tab=activity" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+    View activity log
+  </a>
+  <p style="margin:28px 0 0;font-size:12px;color:#475569;">If this was a legitimate user who forgot their password, they can use the password-reset flow. If you don't recognize this activity, review the activity log for other suspicious events.</p>
+</div>`;
+}
+
 module.exports = { setRuntimeBrevoKey,
   sendEmail,
   assetDisplayName,
@@ -510,6 +536,7 @@ module.exports = { setRuntimeBrevoKey,
   reportReceivedHtml,
   reportProcessedHtml,
   reportNeedsReviewHtml,
+  loginLockoutAlertHtml,
 };
 
 export {};

@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod'); // (B6) schema validation
 const { authenticateToken } = require('../middleware/auth');
 const { countryGate }       = require('../middleware/countryGate'); // (Pass-6 W3 MT-026) US-only registration gate
-const { sendEmail, passwordResetHtml, inviteHtml, newViewerActivationHtml, welcomeHtml } = require('../lib/email');
+const { sendEmail, passwordResetHtml, inviteHtml, newViewerActivationHtml, welcomeHtml, loginLockoutAlertHtml } = require('../lib/email');
 const { defaultFlagsForRole } = require('../lib/featureFlags');
 const { validate: validatePassword, validateStrength, loadAccountPolicy, buildPolicy } = require('../lib/passwordPolicy');
 const { issuePending2faToken } = require('./twoFactor');
@@ -571,6 +571,22 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
           action:    'login_lockout_triggered',
           details:   { ip: req.ip, windowMs: EMAIL_LOCKOUT_WINDOW_MS, durationMs: EMAIL_LOCKOUT_DURATION_MS },
         });
+        // Notify active account admins — fire-and-forget, never delays the 401 response.
+        const _appUrl = process.env.APP_URL || 'https://servicecycle.app';
+        const _ip = req.ip;
+        const _email = user.email;
+        prisma.user.findMany({
+          where: { accountId: user.accountId, role: 'admin', isActive: true },
+          select: { email: true },
+        }).then(async (admins) => {
+          for (const admin of admins) {
+            await sendEmail({
+              to: admin.email,
+              subject: `[ServiceCycle] Login locked — ${_email}`,
+              html: loginLockoutAlertHtml({ targetEmail: _email, ip: _ip, appUrl: _appUrl }),
+            }).catch(() => {});
+          }
+        }).catch(() => {});
       }
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
@@ -590,6 +606,22 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
           action:    'login_lockout_triggered',
           details:   { ip: req.ip, windowMs: EMAIL_LOCKOUT_WINDOW_MS, durationMs: EMAIL_LOCKOUT_DURATION_MS },
         });
+        // Notify active account admins — fire-and-forget, never delays the 401 response.
+        const _appUrl2 = process.env.APP_URL || 'https://servicecycle.app';
+        const _ip2 = req.ip;
+        const _email2 = user.email;
+        prisma.user.findMany({
+          where: { accountId: user.accountId, role: 'admin', isActive: true },
+          select: { email: true },
+        }).then(async (admins) => {
+          for (const admin of admins) {
+            await sendEmail({
+              to: admin.email,
+              subject: `[ServiceCycle] Login locked — ${_email2}`,
+              html: loginLockoutAlertHtml({ targetEmail: _email2, ip: _ip2, appUrl: _appUrl2 }),
+            }).catch(() => {});
+          }
+        }).catch(() => {});
       }
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }

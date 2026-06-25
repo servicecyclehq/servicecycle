@@ -2064,6 +2064,68 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     }), { timezone: 'UTC' });
     console.log('[Cron] EarlyAccessRequest prune scheduled — runs daily at 03:35 (Pass-4 L2-10)');
 
+    // ── TelemetryReading retention prune — runs at 03:50 AM UTC ──────────
+    // Deletes telemetry_readings rows where recordedAt < NOW - retention window.
+    // Uses recordedAt (device timestamp) rather than createdAt — consistent
+    // with how dashboards and monitoring thresholds reason about data age.
+    // Override: TELEMETRY_READING_RETENTION_DAYS (default 365).
+    cron.schedule('50 3 * * *', () => runOnce('telemetryReadingPrune', async () => {
+      try {
+        const retentionDays = parseInt(process.env.TELEMETRY_READING_RETENTION_DAYS || '365', 10);
+        const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+        const { count } = await prisma.telemetryReading.deleteMany({
+          where: { recordedAt: { lt: cutoff } },
+        });
+        if (count > 0) {
+          console.log(`[Cron] TelemetryReading prune: deleted ${count} rows with recordedAt < ${cutoff.toISOString()} (${retentionDays}d retention)`);
+        }
+      } catch (e) {
+        console.error('[Cron] TelemetryReading prune crashed:', e.message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] TelemetryReading prune scheduled — runs daily at 03:50 (365d retention)');
+
+    // ── ExtractionEvent retention prune — runs at 03:51 AM UTC ───────────
+    // Deletes extraction_events rows older than 180 days. These are engine
+    // telemetry signals (pdfplumber, pdfjs, ai performance/accuracy metrics),
+    // not customer data. 180d covers trend analysis; beyond that it's noise.
+    // Override: EXTRACTION_EVENT_RETENTION_DAYS (default 180).
+    cron.schedule('51 3 * * *', () => runOnce('extractionEventPrune', async () => {
+      try {
+        const retentionDays = parseInt(process.env.EXTRACTION_EVENT_RETENTION_DAYS || '180', 10);
+        const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+        const { count } = await prisma.extractionEvent.deleteMany({
+          where: { createdAt: { lt: cutoff } },
+        });
+        if (count > 0) {
+          console.log(`[Cron] ExtractionEvent prune: deleted ${count} rows older than ${retentionDays}d`);
+        }
+      } catch (e) {
+        console.error('[Cron] ExtractionEvent prune crashed:', e.message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] ExtractionEvent prune scheduled — runs daily at 03:51 (180d retention)');
+
+    // ── RenderError retention prune — runs at 03:52 AM UTC ───────────────
+    // Deletes render_errors rows older than 30 days. Client-side crash
+    // reports are only actionable when recent — 30d covers any deploy window;
+    // beyond that they're stale noise. Override: RENDER_ERROR_RETENTION_DAYS.
+    cron.schedule('52 3 * * *', () => runOnce('renderErrorPrune', async () => {
+      try {
+        const retentionDays = parseInt(process.env.RENDER_ERROR_RETENTION_DAYS || '30', 10);
+        const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+        const { count } = await prisma.renderError.deleteMany({
+          where: { createdAt: { lt: cutoff } },
+        });
+        if (count > 0) {
+          console.log(`[Cron] RenderError prune: deleted ${count} rows older than ${retentionDays}d`);
+        }
+      } catch (e) {
+        console.error('[Cron] RenderError prune crashed:', e.message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] RenderError prune scheduled — runs daily at 03:52 (30d retention)');
+
     // ── Demo mode crons (S9 + L3) — only when DEMO_MODE=true ──────────────
     // Two daily passes, sequenced so the inactivity prune runs before the
     // legacy seed reset to keep both jobs cheap and deterministic:
