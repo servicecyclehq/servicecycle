@@ -42,7 +42,7 @@ is deferred or manual.
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
 | CC3.1 | Specifies objectives clearly enough to identify risks | Architecture documented | `docs/ARCHITECTURE.md` | — |
-| CC3.2 | Identifies and analyzes risks to achievement of objectives | Periodic security audits documented | `docs/security/SECURITY_AUDIT_2026-06-20.md`; `docs/CODE_REVIEW_2026-06-18.md`; `docs/REVIEW_2026-06-24.md` | Formal risk register not yet maintained |
+| CC3.2 | Identifies and analyzes risks to achievement of objectives | Periodic security audits + formal risk register with 10 risks, L×I scoring, mitigations, owners, and quarterly review cadence | `docs/security/SECURITY_AUDIT_2026-06-20.md`; `docs/RISK_REGISTER.md` | — |
 | CC3.3 | Considers potential for fraud | Role-separation design; consultant read-only; no single role can forge + approve a compliance record | `server/middleware/roles.ts`; `requireManager` guards on all write routes | — |
 | CC3.4 | Identifies and assesses changes that could impact controls | Security review triggered on each major feature | `docs/sessions/` session notes | Formal change-impact review checklist not written |
 
@@ -137,6 +137,6 @@ Ordered by impact on an acquirer or enterprise customer's security review:
 2. **Automated SCA / CVE scanning** — wire `npm audit` to CI or enable Dependabot on GitHub. Closes CC5.2 gap.
 3. **CI pipeline** — GitHub Actions: `tsc --noEmit + jest` on every PR. Closes CC5.3 gap.
 4. **Data retention enforcement** — add a scheduled job to prune records older than the configured retention window. Closes C1.2 gap.
-5. **Formal risk register** — one-page living document listing top 10 risks, likelihood, impact, owner, mitigation. Closes CC3.2 gap.
+5. ~~**Formal risk register**~~ — ✅ CLOSED. `docs/RISK_REGISTER.md` documents 10 risks with L×I scoring, mitigations, residual scores, owners, and quarterly review cadence. Closes CC3.2 gap.
 6. ~~**Key rotation runbook**~~ — ✅ CLOSED. `docs/KEY_ROTATION.md` documents zero-downtime rotation for `JWT_SECRET` (dual-verify window), `MASTER_KEY`/`ENCRYPTED_KEYS`, and `BACKUP_ENCRYPTION_KEY`. Closes CC6.8 gap.
 7. **SOC 2 Type II evidence collection** — begin 6-month clock once Type I readiness is confirmed.

@@ -78,6 +78,7 @@ Tests require a running Postgres + server on `:3001` (or the Docker stack). Each
 | `docs/OFFBOARDING.md` | Data export and portability guide (no lock-in) |
 | `docs/SOC2_CONTROLS.md` | SOC 2 Type I Trust Service Criteria mapping |
 | `docs/SECURITY_TRUST_PACK.md` | Customer-facing security posture |
+| `docs/RISK_REGISTER.md` | Operational risk register (10 risks, L×I, mitigations, quarterly cadence) |
 | `docs/INCIDENT_RESPONSE.md` | Incident response plan |
 | `docs/KEY_ROTATION.md` | Secret key rotation procedures |
 | `docs/api/INTEGRATIONS.md` | CMMS/CRM integration guide (MaintainX, Salesforce) |
