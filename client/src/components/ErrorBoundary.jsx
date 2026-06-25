@@ -147,7 +147,7 @@ export default class ErrorBoundary extends Component {
             marginTop: 28, padding: '12px 16px', maxWidth: 640,
             textAlign: 'left', fontSize: 'var(--font-size-xs)', lineHeight: 1.5,
             background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)',
-            borderRadius: 6, overflow: 'auto', color: '#b91c1c',
+            borderRadius: 6, overflow: 'auto', color: 'var(--chip-red-fg)',
             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}>
             {error.toString()}

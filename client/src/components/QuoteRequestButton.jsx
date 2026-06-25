@@ -69,9 +69,9 @@ const TIMELINE_VALUE_LABELS = {
 
 const STATUS_META = {
   draft:     { label: 'Draft',      color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)' },
-  requested: { label: 'Requested',  color: '#3b82f6', bg: 'var(--chip-blue-bg)' },
+  requested: { label: 'Requested',  color: 'var(--chip-blue-fg)', bg: 'var(--chip-blue-bg)' },
   quoted:    { label: 'Quote sent', color: '#7c3aed', bg: 'var(--chip-purple-bg)' },
-  accepted:  { label: 'Accepted',   color: '#059669', bg: 'var(--chip-green-bg)' },
+  accepted:  { label: 'Accepted',   color: 'var(--chip-green-fg)', bg: 'var(--chip-green-bg)' },
   declined:  { label: 'Declined',   color: 'var(--chip-red-fg)', bg: 'var(--chip-red-bg)' },
 };
 
@@ -213,7 +213,7 @@ export default function QuoteRequestButton({ asset }) {
           {/* ── EMERGENCY banner (PENDING BROTHER VALIDATION — copy TBD) ──────── */}
           {isEmergency && serviceRep && (serviceRep.serviceRepPhone || serviceRep.serviceRepName) && (
             <div style={{
-              background: '#fef2f2', border: '2px solid #dc2626', borderRadius: 10,
+              background: 'var(--chip-red-bg)', border: '2px solid var(--chip-red-fg)', borderRadius: 10,
               padding: '18px 20px', marginBottom: 20, textAlign: 'center',
             }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--chip-red-fg)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
@@ -233,7 +233,7 @@ export default function QuoteRequestButton({ asset }) {
               <div style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)' }}>
                 CALL NOW{serviceRep.serviceRepName ? ` — ${serviceRep.serviceRepName}` : ''}
               </div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: '#7f1d1d', marginTop: 4 }}>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--chip-red-fg)', marginTop: 4 }}>
                 Submit this form too — it creates an email paper trail marked [EMERGENCY].
               </div>
             </div>
@@ -472,7 +472,7 @@ export default function QuoteRequestButton({ asset }) {
 
       {/* ── History load error ──────────────────────────────────────────────── */}
       {!open && histError && (
-        <div className="card-body" role="alert" style={{ color: '#991b1b', fontSize: 'var(--font-size-sm)' }}>
+        <div className="card-body" role="alert" style={{ color: 'var(--chip-red-fg)', fontSize: 'var(--font-size-sm)' }}>
           {histError}{' '}
           <button
             type="button"
