@@ -1,3 +1,85 @@
-﻿# ServiceCycle
+# ServiceCycle
 
-Equipment maintenance compliance platform.
+**Electrical-infrastructure maintenance compliance platform.**
+
+ServiceCycle is a self-hostable, data-layer SaaS for electrical maintenance programs at utilities, industrials, and facilities teams. It ingests inspection reports, arc-flash studies, and real-time telemetry; surfaces NFPA 70B compliance gaps, audit evidence, and arc-flash label currency; and exports all data in open formats with no lock-in.
+
+**Live demo:** [servicecycle.app](https://servicecycle.app) (basic-auth gated for diligence access — contact for credentials)
+
+---
+
+## What it does
+
+- **Compliance calendar** — NFPA 70B condition-based maintenance intervals (C1/C2/C3) with automatic schedule advancement on work-order completion.
+- **Arc-flash management** — IEEE 1584 study ingestion (AI-assisted gap-fill), NFPA 70E 130.5(H) label generation, AFX v1 export, per-asset energized-work permits, 5-year review tracking.
+- **Document ingest** — deterministic PDF/test-report parser (runs in-container, no third party) with AI draft-fill for thin or scanned reports.
+- **Continuous condition monitoring** — real-time telemetry from OT edge gateways via the v1 telemetry API; CRIT breach auto-escalates asset to NFPA 70B C2.
+- **Parts & spare inventory** — parts catalog, site/asset inventory, low-stock procurement-risk flags, required-parts panel per asset.
+- **Full data portability** — `GET /api/export/account` produces a complete portable snapshot (JSON + XLSX): all assets, work orders, arc-flash data, parts, and documents. See `docs/OFFBOARDING.md`.
+- **Public REST API** — versioned (`/api/v1`), API-key-scoped, OpenAPI 3.1 spec at `/docs/api`.
+- **SSO** — Ory Polis OIDC/SAML/SCIM; ships dark by default (`SSO_ENABLED` env flag).
+- **Multi-tenant** — HoldCo/OpCo rollup (EnterpriseGroup) + OEM fleet view (PartnerOrganization).
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| API server | Node 20 + Express 4 (TypeScript via tsc) |
+| ORM | Prisma 5 (PostgreSQL 16) |
+| Client SPA | React 18 + Vite 5 |
+| Auth | JWT + bcrypt + optional TOTP; Ory Polis for SSO |
+| PDF / labels | pdfkit, pdfjs-dist, pyextract (pdfplumber + tesseract) |
+| AI | Anthropic Claude (primary), Google Gemini, Groq — cascade fallback |
+| Email | Resend (transactional + inbound) |
+| Deploy | Docker Compose, nginx (static SPA), DigitalOcean |
+
+---
+
+## Running locally
+
+```bash
+# Prerequisites: Node 20, PostgreSQL 16, Docker (for the full stack)
+
+# Full Docker Compose stack (recommended)
+cp server/.env.example .env   # fill in POSTGRES_PASSWORD, JWT_SECRET, MASTER_KEY
+docker compose up -d
+
+# Dev (server watches TypeScript, Vite HMR for client)
+cd server && npm install && npm run dev   # :3001
+cd client && npm install && npm run dev   # :5173
+```
+
+For a production deployment, see **`docs/DEPLOY_RUNBOOK.md`**.
+For air-gapped / self-hosted installs, see **`docs/SELF_HOST.md`**.
+
+---
+
+## Test suite
+
+```bash
+cd server
+npm test                   # full integration suite (~500 tests)
+npm test -- --grep parts   # run a subset by name
+```
+
+Tests require a running Postgres + server on `:3001` (or the Docker stack). Each test file uses `setupTenants()` to provision isolated test accounts — no shared state between files.
+
+---
+
+## Key docs
+
+| Document | Purpose |
+|---|---|
+| `docs/ARCHITECTURE.md` | Engineering due-diligence / acquirer read — stack, data model, security architecture |
+| `docs/DEPLOY_RUNBOOK.md` | Operator install + deploy runbook |
+| `docs/SELF_HOST.md` | Air-gapped / no-egress self-host guide |
+| `docs/OFFBOARDING.md` | Data export and portability guide (no lock-in) |
+| `docs/SOC2_CONTROLS.md` | SOC 2 Type I Trust Service Criteria mapping |
+| `docs/SECURITY_TRUST_PACK.md` | Customer-facing security posture |
+| `docs/INCIDENT_RESPONSE.md` | Incident response plan |
+| `docs/KEY_ROTATION.md` | Secret key rotation procedures |
+| `docs/api/INTEGRATIONS.md` | CMMS/CRM integration guide (MaintainX, Salesforce) |
+| `docs/api/TELEMETRY.md` | Edge-gateway telemetry push API reference |
+| `docs/api/AFX_SPEC.md` | Arc Flash Data Exchange (AFX v1) field catalog |
