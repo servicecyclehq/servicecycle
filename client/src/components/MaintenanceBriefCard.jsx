@@ -36,15 +36,15 @@ import AiDisclaimer from './AiDisclaimer';
 const URGENCY_CHIPS = {
   immediate: {
     label: 'Immediate',
-    color: '#991b1b', background: '#fee2e2', border: '1px solid #fecaca',
+    color: 'var(--chip-red-fg)',   background: 'var(--chip-red-bg)',   border: '1px solid var(--chip-red-fg)',
   },
   next_outage: {
     label: 'Next outage',
-    color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a',
+    color: 'var(--chip-amber-fg)', background: 'var(--chip-amber-bg)', border: '1px solid var(--chip-amber-fg)',
   },
   next_cycle: {
     label: 'Next cycle',
-    color: '#334155', background: '#e2e8f0', border: '1px solid #cbd5e1',
+    color: 'var(--chip-slate-fg)', background: 'var(--chip-slate-bg)', border: '1px solid var(--chip-slate-fg)',
   },
 };
 
@@ -201,9 +201,9 @@ export default function MaintenanceBriefCard({ asset }) {
               marginTop: sections ? 12 : 12,
               padding: '8px 12px',
               borderRadius: 8,
-              background: '#fee2e2',
-              border: '1px solid #fecaca',
-              color: '#991b1b',
+              background: 'var(--chip-red-bg)',
+              border: '1px solid var(--chip-red-fg)',
+              color: 'var(--chip-red-fg)',
               fontSize: 'var(--font-size-ui)',
             }}
           >

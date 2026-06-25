@@ -358,7 +358,7 @@ export default function PowerPathCard({ asset, canWrite, onChanged }) {
                 marginTop: 10, padding: '7px 10px', borderRadius: 8,
                 fontSize: 'var(--font-size-ui)',
                 ...(totalDownstream > 0
-                  ? { background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontWeight: 600 }
+                  ? { background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)', fontWeight: 600 }
                   : { color: 'var(--color-text-secondary)' }),
               }}
             >
