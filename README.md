@@ -72,19 +72,33 @@ Tests require a running Postgres + server on `:3001` (or the Docker stack). Each
 
 | Document | Purpose |
 |---|---|
-| `docs/ARCHITECTURE.md` | Engineering due-diligence / acquirer read — stack, data model, security architecture |
+**Acquisition / diligence**
+| `docs/DATA_ROOM_INDEX.md` | **Start here** — maps every diligence workstream to the relevant document |
+| `docs/ACQUISITION_BRIEF.md` | Market thesis, product moat, acquisition angles, upside, asking-price considerations |
+| `docs/COMPETITIVE_ANALYSIS.md` | Competitive landscape — vs CMMS, OEM software, NETA tools |
+| `docs/DEMO_SCRIPT.md` | Structured 20-min PE/OEM demo walkthrough with objection handling |
+| `docs/IP_OWNERSHIP.md` | IP ownership statement — authorship, third-party licenses, AI-assisted code |
+
+**Engineering**
+| `docs/ARCHITECTURE.md` | Stack, data model, security architecture, scaling path |
+| `docs/ENGINEERING_HANDOFF.md` | Day-1 guide for an incoming engineering lead post-acquisition |
 | `docs/DEPLOY_RUNBOOK.md` | Operator install + deploy runbook |
 | `docs/SELF_HOST.md` | Air-gapped / no-egress self-host guide |
+| `docs/CHANGE_REVIEW_CHECKLIST.md` | Mandatory change-impact review for schema/auth/API PRs |
 | `docs/OFFBOARDING.md` | Data export and portability guide (no lock-in) |
-| `docs/SOC2_CONTROLS.md` | SOC 2 Type I Trust Service Criteria mapping |
-| `docs/CODE_OF_CONDUCT.md` | Ethics and conduct policy (integrity, confidentiality, least-privilege) |
-| `docs/ACQUISITION_BRIEF.md` | Acquisition narrative — market thesis, product, upside, asking-price considerations |
-| `docs/ENGINEERING_HANDOFF.md` | Day-1 guide for an incoming engineering lead post-acquisition |
-| `docs/SECURITY_TRUST_PACK.md` | Customer-facing security posture |
+
+**Security / compliance**
+| `docs/SOC2_CONTROLS.md` | SOC 2 Type I Trust Service Criteria mapping (13 gaps closed) |
+| `docs/SECURITY_TRUST_PACK.md` | Customer-facing security posture summary |
 | `docs/RISK_REGISTER.md` | Operational risk register (10 risks, L×I, mitigations, quarterly cadence) |
-| `docs/INCIDENT_RESPONSE.md` | Incident response plan |
+| `docs/INCIDENT_RESPONSE.md` | Incident response plan + customer breach notification template |
 | `docs/KEY_ROTATION.md` | Secret key rotation procedures |
-| `docs/api/INTEGRATIONS.md` | CMMS/CRM integration guide (MaintainX, Salesforce) |
-| `docs/api/CHANGELOG.md` | Public API version history and breaking-change policy |
+| `docs/VENDOR_SECURITY_REVIEW.md` | Vendor questionnaire + approval record (all current sub-processors) |
+| `docs/PERSONNEL_SECURITY.md` | Onboarding/offboarding checklist, access log |
+| `docs/CODE_OF_CONDUCT.md` | Ethics and conduct policy |
+
+**API**
+| `docs/api/INTEGRATIONS.md` | CMMS/CRM integration guide (MaintainX, Salesforce) + webhook event reference |
+| `docs/api/CHANGELOG.md` | Public API version history (v1.0–v1.4) and breaking-change policy |
 | `docs/api/TELEMETRY.md` | Edge-gateway telemetry push API reference |
 | `docs/api/AFX_SPEC.md` | Arc Flash Data Exchange (AFX v1) field catalog |
