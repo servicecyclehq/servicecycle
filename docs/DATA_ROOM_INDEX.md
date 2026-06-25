@@ -72,6 +72,7 @@ unless noted.
 | Document | Location | Contents |
 |---|---|---|
 | SOC 2 Type I controls | `docs/SOC2_CONTROLS.md` | 13+ Trust Service Criteria mapped; remediation status for each gap |
+| Audit log architecture | `docs/AUDIT_LOG_ARCHITECTURE.md` | SHA-256 hash-chained tamper-evident audit log — how it works, threat model, GDPR compatibility |
 | Security trust pack | `docs/SECURITY_TRUST_PACK.md` | Customer-facing security posture summary |
 | Risk register | `docs/RISK_REGISTER.md` | 10 risks, L×I scoring, mitigations, residual scores, quarterly cadence |
 | Incident response | `docs/INCIDENT_RESPONSE.md` | P0–P3 playbooks, customer notification thresholds, GDPR timelines |
