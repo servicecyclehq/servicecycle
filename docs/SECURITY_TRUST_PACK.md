@@ -29,7 +29,7 @@ Every security- and compliance-relevant event is written to a **per-account hash
 
 ## 3. Authentication & access control
 
-- **Role-based access control:** admin / manager / viewer / consultant / oem_admin / super_admin, enforced at the route layer; every tenant query is account-scoped.
+- **Role-based access control:** admin / manager / viewer / consultant / field_tech / oem_admin / group_admin / super_admin, enforced at the route layer; every tenant query is account-scoped. `field_tech` is a **default-deny** role: access is clamped to an explicit allowlist (`lib/fieldRoleScope.ts`), so all future routes are automatically denied — opt-in, not opt-out.
 - **Two-factor authentication (TOTP):** supported per user; admins can require TOTP enrolment for all admin-role users on an account (`mfaRequiredForAdmins`). TOTP secrets are AES-256-GCM encrypted; replay is prevented by tracking the last used step; hashed one-time backup codes are supported.
 - **Instant token revocation:** access tokens embed a monotonic `tokenEpoch`; password change/reset bumps the epoch and kills every outstanding token immediately.
 - **Multi-tenant isolation:** enforced by account-scoped predicates on every query and FK constraints; covered by an integration test suite (`multiTenantIsolation`, `roleEnforcement`, `tokenEpochRevocation`).
@@ -56,7 +56,7 @@ A licensed-instance seam exists (`planType=licensed`) for customers who require 
 The per-account activity log is a SHA-256 hash chain: each row stores
 `rowHash = sha256(prevHash | canonical(row))` over its stable fields (id,
 accountId, assetId, action, details, createdAt). The design is intentionally
-**hash-only â€” there is no secret signing key**, so there is no key to leak or to
+**hash-only — there is no secret signing key**, so there is no key to leak or to
 store separately; tamper evidence comes from chain continuity, not from a
 secret. (An insider with BOTH database and app-server access who rewrites the
 whole chain is out of scope, as documented in lib/activityLogChain.)
@@ -81,7 +81,7 @@ link is recorded as a `share_link_viewed` event in this same chain (with a
 hashed IP + user-agent), so a customer can prove who accessed shared compliance
 data, and the access ride the same tamper-evident log and SIEM export.
 
-**Future enhancement â€” external time anchoring.** Periodically anchoring a chain
+**Future enhancement — external time anchoring.** Periodically anchoring a chain
 head hash to an external RFC-3161 timestamp authority (or a public ledger) would
 let an auditor prove the chain existed at a point in time without trusting our
 clock. Not yet enabled (it requires outbound egress + a TSA endpoint decision on
