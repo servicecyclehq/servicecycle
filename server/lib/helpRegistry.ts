@@ -115,6 +115,13 @@ const MODULE_INDEX = Object.freeze([
     title:        'Reports',
     description:  'Compliance posture, path-to-100, per-standard evidence packs, the written EMP, snapshots, CFO summaries, and share links.',
   },
+  // Arc Flash sits after Reports: its primary surface is /reports/arc-flash
+  // and the site-level Arc Flash tab.
+  {
+    slug:         'arc-flash',
+    title:        'Arc Flash',
+    description:  'Uploading IEEE 1584 studies, AI-assisted data extraction, per-asset PPE and incident-energy labels, AFX export, and the incident register.',
+  },
   {
     slug:         'settings',
     title:        'Settings',

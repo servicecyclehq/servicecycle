@@ -67,7 +67,7 @@ is deferred or manual.
 |---|---|---|---|
 | CC6.1 | Implements logical access controls | RBAC (8 roles); all routes require `authenticateToken`; `requireManager` / `requireRole` guards | `server/middleware/roles.ts`; `server/middleware/auth.ts` | — |
 | CC6.2 | User authentication | bcrypt password hashing; TOTP/MFA per user; admin-enforced MFA (`mfaRequiredForAdmins`) | `server/routes/auth.ts` (TOTP blocks); `server/lib/totp.ts` | — |
-| CC6.3 | Restricts access based on least privilege | Viewer cannot write; consultant is read-only; field_tech limited to assigned jobs; group/oem admins cannot cross-account | `server/middleware/roles.ts` `requireQuoteWriter`, `requireManager`, field role scope | — |
+| CC6.3 | Restricts access based on least privilege | Viewer cannot write; consultant is read-only; field_tech limited to assigned jobs; group/oem admins cannot cross-account; parts catalog and spare inventory writes require manager+ | `server/middleware/roles.ts` `requireQuoteWriter`, `requireManager`, field role scope; `server/routes/parts.ts` requireManager guards | — |
 | CC6.4 | Manages changes to access | User activation/deactivation; instant token revocation on password reset; SCIM provisioning via SSO | `server/routes/auth.ts` `tokenEpoch`; `server/routes/sso.ts` SCIM | — |
 | CC6.5 | Physical access | Hosted on DigitalOcean (SOC 2 certified DC) | DigitalOcean compliance: digitalocean.com/trust | Physical access at DC level; no ServiceCycle hardware |
 | CC6.6 | Implements boundary protection | CSP headers; CORS allowlist; rate limiting stack; Cloudflare proxy | `server/index.ts` CSP + CORS + limiters | — |
@@ -125,7 +125,7 @@ is deferred or manual.
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
 | C1.1 | Identifies and maintains confidential information | Customer data scoped to account; secrets encrypted; AI identifiers scrubbed | `server/lib/docCrypto.ts`; `server/lib/redact.ts` `redactEmail` | Data classification policy not yet written as standalone doc |
-| C1.2 | Disposes of confidential information | Account export + deletion path; GDPR deletion-on-request via `support@servicecycle.app` | `GET /api/export/account`; `docs/OFFBOARDING.md` §3 | Automated data-retention enforcement (e.g. prune records older than N years) not yet implemented |
+| C1.2 | Disposes of confidential information | Account export + deletion path; GDPR deletion-on-request via `support@servicecycle.app`. Export includes all structured data: assets, work orders, deficiencies, quote requests, arc-flash studies + labels, LOTO procedures, parts catalog, spare inventory, and asset part requirements | `GET /api/export/account`; `docs/OFFBOARDING.md` | Automated data-retention enforcement (e.g. prune records older than N years) not yet implemented |
 
 ---
 

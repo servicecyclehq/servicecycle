@@ -19,6 +19,7 @@
  *
  *   buildAccountExport(prisma, accountId) -> { meta, account, counts, sites,
  *     assets, maintenanceSchedules, workOrders, deficiencies, quoteRequests,
+ *     parts, spareInventory, assetPartRequirements,
  *     documents, snapshots, offboarding }
  *
  * Account-scoped throughout.
@@ -29,7 +30,7 @@ const EXPORT_VERSION = '2';
 const OFFBOARDING = [
   'This file is a complete, portable export of your ServiceCycle account data in open formats (JSON / XLSX).',
   'It is yours to keep and re-import elsewhere -- there is no lock-in.',
-  'Structured records (sites, assets, schedules, work orders, deficiencies, quote requests, arc-flash studies + labels, LOTO procedures) are included in full.',
+  'Structured records (sites, assets, schedules, work orders, deficiencies, quote requests, arc-flash studies + labels, LOTO procedures, parts catalog, spare inventory, asset part requirements) are included in full.',
   'Uploaded documents and immutable compliance snapshot PDFs are listed with their filename, type, and (for snapshots) SHA-256 integrity hash plus an authenticated download path; sign in and GET each downloadPath to retrieve the binary file.',
   'Compliance snapshots are tamper-evident: each PDF hashes to the sha256 recorded here, anchored in the activity-log hash chain at generation time.',
   'Arc-flash studies include per-bus label data (incident energy, PPE, boundaries, expiry) as of the study date. The source inputs (IEEE 1584 utility/transformer params) are in studySourceModels.',
@@ -44,7 +45,7 @@ function num(v: any): number | null {
 async function buildAccountExport(prisma: any, accountId: string) {
   const now = new Date();
 
-  const [account, sites, assets, schedules, workOrders, deficiencies, quotes, documents, snapshots, studies, studyAssets, lotoProcs] = await Promise.all([
+  const [account, sites, assets, schedules, workOrders, deficiencies, quotes, documents, snapshots, studies, studyAssets, lotoProcs, parts, spareInventory, assetPartReqs] = await Promise.all([
     prisma.account.findUnique({
       where: { id: accountId },
       select: { id: true, companyName: true, planType: true, status: true, createdAt: true },
@@ -122,6 +123,23 @@ async function buildAccountExport(prisma: any, accountId: string) {
         notes: true, approvedAt: true, createdAt: true, updatedAt: true },
       orderBy: { createdAt: 'asc' },
     }),
+    prisma.part.findMany({
+      where: { accountId },
+      select: { id: true, partNumber: true, description: true, manufacturer: true, category: true,
+        unitCost: true, leadTimeWeeks: true, notes: true, createdAt: true },
+      orderBy: [{ category: 'asc' }, { partNumber: 'asc' }],
+    }),
+    prisma.spareInventory.findMany({
+      where: { accountId },
+      select: { id: true, partId: true, assetId: true, siteId: true, qtyOnHand: true, qtyMin: true,
+        location: true, notes: true, createdAt: true },
+      orderBy: [{ partId: 'asc' }],
+    }),
+    prisma.assetPartRequirement.findMany({
+      where: { accountId },
+      select: { id: true, assetId: true, partId: true, qtyRequired: true, notes: true, createdAt: true },
+      orderBy: [{ assetId: 'asc' }, { partId: 'asc' }],
+    }),
   ]);
 
   const documentsOut = documents.map((d: any) => ({
@@ -134,6 +152,8 @@ async function buildAccountExport(prisma: any, accountId: string) {
     downloadPath: `/api/compliance/snapshots/${s.id}/download`,
   }));
   const assetsOut = assets.map((a: any) => ({ ...a, repairCostEstimate: num(a.repairCostEstimate) }));
+  // unitCost is Prisma Decimal — coerce to number for JSON/XLSX portability.
+  const partsOut = parts.map((p: any) => ({ ...p, unitCost: num(p.unitCost) }));
 
   const counts = {
     sites: sites.length,
@@ -147,6 +167,9 @@ async function buildAccountExport(prisma: any, accountId: string) {
     arcFlashStudies: studies.length,
     arcFlashLabels: studyAssets.length,
     lotoProcs: lotoProcs.length,
+    parts: parts.length,
+    spareInventory: spareInventory.length,
+    assetPartRequirements: assetPartReqs.length,
   };
 
   return {
@@ -171,6 +194,9 @@ async function buildAccountExport(prisma: any, accountId: string) {
     arcFlashStudies: studies,
     arcFlashLabels: studyAssets,
     lotoProcs,
+    parts: partsOut,
+    spareInventory,
+    assetPartRequirements: assetPartReqs,
     offboarding: OFFBOARDING,
   };
 }
@@ -249,6 +275,24 @@ const EXPORT_SHEETS = [
     { id: 'id', header: 'ID' }, { id: 'assetId', header: 'Asset ID' }, { id: 'title', header: 'Title' },
     { id: 'status', header: 'Status' }, { id: 'version', header: 'Version', type: 'number' },
     { id: 'approvedAt', header: 'Approved', type: 'date' }, { id: 'createdAt', header: 'Created', type: 'date' },
+  ] },
+  { key: 'parts', sheet: 'Parts Catalog', columns: [
+    { id: 'id', header: 'ID' }, { id: 'partNumber', header: 'Part Number' },
+    { id: 'description', header: 'Description' }, { id: 'manufacturer', header: 'Manufacturer' },
+    { id: 'category', header: 'Category' }, { id: 'unitCost', header: 'Unit Cost ($)', type: 'currency' },
+    { id: 'leadTimeWeeks', header: 'Lead Time (wks)', type: 'number' },
+    { id: 'notes', header: 'Notes' }, { id: 'createdAt', header: 'Created', type: 'date' },
+  ] },
+  { key: 'spareInventory', sheet: 'Spare Inventory', columns: [
+    { id: 'id', header: 'ID' }, { id: 'partId', header: 'Part ID' }, { id: 'assetId', header: 'Asset ID' },
+    { id: 'siteId', header: 'Site ID' }, { id: 'qtyOnHand', header: 'Qty On Hand', type: 'number' },
+    { id: 'qtyMin', header: 'Qty Min', type: 'number' }, { id: 'location', header: 'Location' },
+    { id: 'notes', header: 'Notes' }, { id: 'createdAt', header: 'Created', type: 'date' },
+  ] },
+  { key: 'assetPartRequirements', sheet: 'Asset Part Requirements', columns: [
+    { id: 'id', header: 'ID' }, { id: 'assetId', header: 'Asset ID' }, { id: 'partId', header: 'Part ID' },
+    { id: 'qtyRequired', header: 'Qty Required', type: 'number' },
+    { id: 'notes', header: 'Notes' }, { id: 'createdAt', header: 'Created', type: 'date' },
   ] },
 ];
 

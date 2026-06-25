@@ -89,6 +89,10 @@ const ROUTE_MODULE_MAP = {
   '/contractors':        'contractors',
   '/alerts':             'alerts',
   '/reports':            'reports',
+  '/reports/arc-flash':         'arc-flash',
+  '/reports/arc-flash-fleet':   'arc-flash',
+  '/reports/arc-flash-heatmap': 'arc-flash',
+  '/reports/arc-flash-search':  'arc-flash',
   // All the data-in surfaces share the 'imports' module.
   '/add-data':           'imports',
   '/test-reports/import': 'imports',

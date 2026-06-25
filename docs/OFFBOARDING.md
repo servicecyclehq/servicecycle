@@ -29,6 +29,11 @@ Fully-structured rows (every field) for:
   boundaries, hazard level, and expiry; all NFPA 70E 130.5(H) fields
 - **LOTO procedures** (OSHA 29 CFR 1910.147) -- title, status, version, approval
   date; energy sources and steps are retrievable per-procedure via the API
+- **Parts catalog** -- part number, description, manufacturer, category, unit cost,
+  lead time; your complete spare-parts master list
+- **Spare inventory** -- quantity on hand, minimum threshold, location, and asset/
+  site scoping for each stocked part
+- **Asset part requirements** -- which parts each asset needs and in what quantity
 
 Listed as metadata + retrieval path (binary files are not inlined):
 
