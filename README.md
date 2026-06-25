@@ -16,7 +16,7 @@ ServiceCycle is a self-hostable, data-layer SaaS for electrical maintenance prog
 - **Continuous condition monitoring** — real-time telemetry from OT edge gateways via the v1 telemetry API; CRIT breach auto-escalates asset to NFPA 70B C2.
 - **Parts & spare inventory** — parts catalog, site/asset inventory, low-stock procurement-risk flags, required-parts panel per asset.
 - **Full data portability** — `GET /api/export/account` produces a complete portable snapshot (JSON + XLSX): all assets, work orders, arc-flash data, parts, and documents. See `docs/OFFBOARDING.md`.
-- **Public REST API** — versioned (`/api/v1`), API-key-scoped, OpenAPI 3.1 spec at `/docs/api`.
+- **Public REST API** — versioned (`/api/v1`), API-key-scoped (`liq_<key>` format), OpenAPI 3.1 spec at `/docs/api`.
 - **SSO** — Ory Polis OIDC/SAML/SCIM; ships dark by default (`SSO_ENABLED` env flag).
 - **Multi-tenant** — HoldCo/OpCo rollup (EnterpriseGroup) + OEM fleet view (PartnerOrganization).
 
