@@ -1082,6 +1082,10 @@ router.post('/encryption/enable', requireAdmin, async (req, res) => {
     ]);
 
     console.log(`[encryption] Enabled for account ${req.user.accountId} by user ${req.user.id} at ${now}`);
+    try {
+      const { writeLog: writeActivityLog } = require('../lib/activityLog');
+      writeActivityLog({ userId: req.user.id, accountId: req.user.accountId, action: 'encryption_enabled', details: { acknowledgedAt: now } });
+    } catch (_e) { /* non-fatal */ }
 
     return res.json({
       success: true,
@@ -1106,6 +1110,10 @@ router.post('/encryption/disable', requireAdmin, async (req, res) => {
     });
 
     console.log(`[encryption] Disabled for account ${req.user.accountId} by user ${req.user.id}`);
+    try {
+      const { writeLog: writeActivityLog } = require('../lib/activityLog');
+      writeActivityLog({ userId: req.user.id, accountId: req.user.accountId, action: 'encryption_disabled', details: {} });
+    } catch (_e) { /* non-fatal */ }
 
     return res.json({ success: true, data: { enabled: false } });
   } catch (err) {

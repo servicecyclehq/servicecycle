@@ -48,6 +48,7 @@ function cefEscapeExt(s: any): string {
 // Higher CEF severity for security-relevant events; default 3 (informational).
 const CEF_SEVERITY: any = {
   login_failed: 6, login_lockout_triggered: 7, permission_denied: 6, admin_password_reset: 7,
+  encryption_enabled: 7, encryption_disabled: 7,
   compliance_snapshot_integrity_failure: 9,
 };
 
@@ -81,6 +82,9 @@ const ACTION_LABELS: any = {
   custom_field_updated:  'Custom field updated',
   custom_field_archived: 'Custom field archived',
   custom_field_restored: 'Custom field restored',
+  // Security-critical settings changes
+  encryption_enabled:  'Field encryption enabled',
+  encryption_disabled: 'Field encryption disabled',
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
