@@ -1,0 +1,64 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the job-to-be-done or pain point. Who runs into this and how often?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      placeholder: What would you like to see built?
+    validations:
+      required: true
+
+  - type: textarea
+    id: business_context
+    attributes:
+      label: Business context
+      description: Who needs this? What's the impact if we don't build it? Is a customer blocked?
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: What workarounds exist? Why aren't they sufficient?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Product area
+      options:
+        - Assets & Equipment
+        - Work Orders
+        - Arc Flash
+        - Telemetry / Condition Monitoring
+        - Deficiencies
+        - Reporting & Exports
+        - API / Integrations
+        - Admin & Settings
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested priority
+      options:
+        - "Critical — blocking a customer"
+        - "High — significant user value"
+        - "Medium — nice to have"
+        - "Low — future consideration"
+    validations:
+      required: true
