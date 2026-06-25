@@ -202,23 +202,23 @@ function PartRow({ part, onRefresh }) {
 
   return (
     <>
-      <tr style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}>
-        <td style={{ padding: '8px 10px' }} onClick={toggleOpen}>
-          <span style={{ marginRight: 6, fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{open ? '▼' : '▶'}</span>
-          <strong style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{part.partNumber}</strong>
+      <tr style={{ cursor: 'pointer' }}>
+        <td onClick={toggleOpen}>
+          <span style={{ marginRight: 6, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{open ? '▼' : '▶'}</span>
+          <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-data)' }}>{part.partNumber}</strong>
         </td>
-        <td style={{ padding: '8px 10px' }} onClick={toggleOpen}>{part.description}</td>
-        <td style={{ padding: '8px 10px' }} onClick={toggleOpen}>{part.manufacturer || <span style={{ color: 'var(--color-text-secondary)' }}>—</span>}</td>
-        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }} onClick={toggleOpen}>
+        <td onClick={toggleOpen}>{part.description}</td>
+        <td onClick={toggleOpen}>{part.manufacturer || <span style={{ color: 'var(--color-text-secondary)' }}>—</span>}</td>
+        <td style={{ whiteSpace: 'nowrap' }} onClick={toggleOpen}>
           {part.category ? <Badge category={part.category} /> : <span style={{ color: 'var(--color-text-secondary)' }}>—</span>}
         </td>
-        <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }} onClick={toggleOpen}>
+        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }} onClick={toggleOpen}>
           {part.unitCost != null ? `$${Number(part.unitCost).toFixed(2)}` : <span style={{ color: 'var(--color-text-secondary)' }}>—</span>}
         </td>
-        <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--color-text-secondary)' }} onClick={toggleOpen}>
+        <td style={{ textAlign: 'center' }} onClick={toggleOpen}>
           {part._count?.inventory || 0}
         </td>
-        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+        <td style={{ whiteSpace: 'nowrap' }}>
           <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={e => { e.stopPropagation(); setEditing(e2 => !e2); }}>Edit</button>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); deletePart(); }}
             disabled={part._count?.inventory > 0}
@@ -316,60 +316,63 @@ export default function Parts() {
   const lowStockCount = parts.filter(p => p._count?.inventory > 0).length; // rough proxy
 
   return (
-    <div className="page-container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+    <>
+      <div className="page-header">
         <div>
           <h1 className="page-title">Parts catalog</h1>
-          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: 2 }}>
-            Manage spare parts and consumables · track stock levels by asset or site
-          </p>
+          <p className="page-subtitle">Manage spare parts and consumables · track stock levels by asset or site</p>
         </div>
         <button className="btn btn-primary" onClick={() => setAdding(a => !a)}>{adding ? 'Cancel' : '+ Add part'}</button>
       </div>
 
-      {adding && (
-        <div className="card mb-16" style={{ padding: 16 }}>
-          <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem' }}>New part</h3>
-          <PartForm onSave={createPart} onCancel={() => setAdding(false)} saving={saving} />
-        </div>
-      )}
-
-      {err && <div className="alert alert-error mb-16">{err}</div>}
-
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input className="input" placeholder="Search part number, description, manufacturer…" value={search}
-          onChange={e => setSearch(e.target.value)} style={{ flex: '2 1 260px' }} />
-        <select className="input" value={category} onChange={e => setCategory(e.target.value)} style={{ flex: '0 0 160px' }}>
-          <option value="">All categories</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-
-      {loading ? (
-        <div style={{ color: 'var(--color-text-secondary)', padding: 24 }}>Loading parts…</div>
-      ) : parts.length === 0 ? (
-        <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-          {search || category ? 'No parts match your filters.' : 'No parts yet. Add your first spare part to start tracking inventory.'}
-        </div>
-      ) : (
-        <div className="card" style={{ padding: 0, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-            <thead>
-              <tr style={{ background: 'var(--color-surface-2)' }}>
-                {['Part number', 'Description', 'Manufacturer', 'Category', 'Unit cost', 'Locations', ''].map(h => (
-                  <th key={h} style={{ textAlign: h === 'Unit cost' ? 'right' : h === 'Locations' ? 'center' : 'left', padding: '8px 10px', borderBottom: '1px solid var(--color-border)', fontWeight: 600, fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {parts.map(p => <PartRow key={p.id} part={p} onRefresh={loadParts} />)}
-            </tbody>
-          </table>
-          <div style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' }}>
-            {parts.length} part{parts.length !== 1 ? 's' : ''}
+      <div className="page-body">
+        {adding && (
+          <div className="card mb-16" style={{ padding: 16 }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 'var(--font-size-ui)', fontWeight: 600 }}>New part</h3>
+            <PartForm onSave={createPart} onCancel={() => setAdding(false)} saving={saving} />
           </div>
+        )}
+
+        {err && <div className="alert alert-error mb-16">{err}</div>}
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          <input className="input search-input" style={{ flex: '2 1 260px' }}
+            placeholder="Search part number, description, manufacturer…" value={search}
+            onChange={e => setSearch(e.target.value)} />
+          <select className="input filter-select" value={category} onChange={e => setCategory(e.target.value)} style={{ flex: '0 0 160px' }}>
+            <option value="">All categories</option>
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
-      )}
-    </div>
+
+        {loading ? (
+          <div style={{ color: 'var(--color-text-secondary)', padding: 24 }}>Loading parts…</div>
+        ) : parts.length === 0 ? (
+          <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+            {search || category ? 'No parts match your filters.' : 'No parts yet. Add your first spare part to start tracking inventory.'}
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 0 }}>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    {['Part number', 'Description', 'Manufacturer', 'Category', 'Unit cost', 'Locations', ''].map(h => (
+                      <th key={h} style={{ textAlign: h === 'Unit cost' ? 'right' : h === 'Locations' ? 'center' : 'left' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parts.map(p => <PartRow key={p.id} part={p} onRefresh={loadParts} />)}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '8px 16px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' }}>
+              {parts.length} part{parts.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
