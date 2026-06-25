@@ -511,7 +511,7 @@ export default function Parts() {
           </select>
           <button
             className="btn btn-secondary btn-sm"
-            style={filter === 'low' ? { background: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' } : {}}
+            style={filter === 'low' ? { background: 'var(--chip-amber-bg)', borderColor: 'var(--chip-amber-fg)', color: 'var(--chip-amber-fg)' } : {}}
             onClick={() => setFilter(f => f === 'low' ? '' : 'low')}
           >
             {filter === 'low' ? '✕ Low stock filter' : '⚠ Low stock'}
@@ -521,7 +521,7 @@ export default function Parts() {
         {/* Low-stock view */}
         {filter === 'low' && (
           <div className="card mb-16" style={{ padding: 0 }}>
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-ui)', fontWeight: 600, color: '#92400e', background: '#fef3c7', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-ui)', fontWeight: 600, color: 'var(--chip-amber-fg)', background: 'var(--chip-amber-bg)', borderRadius: 'var(--radius) var(--radius) 0 0' }}>
               ⚠ Parts below minimum stock level
             </div>
             {lowLoading ? (
@@ -553,7 +553,7 @@ export default function Parts() {
                               <span title={`Lead time: ${entry.part.leadTimeWeeks} wks — order soon`}
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px',
                                   borderRadius: 999, fontSize: '0.65rem', fontWeight: 800, marginTop: 3,
-                                  background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                                  background: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)', border: '1px solid var(--chip-red-fg)',
                                   whiteSpace: 'nowrap' }}>
                                 ⚠ PROCUREMENT RISK · {entry.part.leadTimeWeeks}wk lead
                               </span>
