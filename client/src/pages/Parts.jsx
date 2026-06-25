@@ -11,8 +11,6 @@ import api from '../api/client';
 const CATEGORIES = ['BREAKER', 'TRANSFORMER', 'RELAY', 'CABLE', 'FUSE', 'CONSUMABLE', 'OTHER'];
 
 function Badge({ category }) {
-  // Use shared chip token system so colors work in both light + dark mode.
-  // Tokens available in :root + [data-theme=dark]: red, orange, amber, green, blue, slate, slate-soft.
   const tokenMap = {
     BREAKER:     { bg: 'var(--chip-blue-bg)',       fg: 'var(--chip-blue-fg)' },
     TRANSFORMER: { bg: 'var(--chip-slate-bg)',      fg: 'var(--chip-slate-fg)' },
@@ -22,10 +20,10 @@ function Badge({ category }) {
     CONSUMABLE:  { bg: 'var(--chip-slate-soft-bg)', fg: 'var(--chip-slate-soft-fg)' },
     OTHER:       { bg: 'var(--chip-slate-soft-bg)', fg: 'var(--chip-slate-soft-fg)' },
   };
-  const t = tokenMap[category] || tokenMap.OTHER;
+  const tok = tokenMap[category] || tokenMap.OTHER;
   return (
     <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-      background: t.bg, color: t.fg, whiteSpace: 'nowrap' }}>
+      background: tok.bg, color: tok.fg, whiteSpace: 'nowrap' }}>
       {category || 'UNCATEGORISED'}
     </span>
   );
@@ -550,12 +548,12 @@ export default function Parts() {
                           <td>
                             <div>{entry.part.description}</div>
                             {entry.procurementRisk && (
-                              <span title={`Lead time: ${entry.part.leadTimeWeeks} wks — order soon`}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px',
-                                  borderRadius: 999, fontSize: '0.65rem', fontWeight: 800, marginTop: 3,
-                                  background: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)', border: '1px solid var(--chip-red-fg)',
-                                  whiteSpace: 'nowrap' }}>
-                                ⚠ PROCUREMENT RISK · {entry.part.leadTimeWeeks}wk lead
+                              <span title={`Lead time: ${entry.part.leadTimeWeeks} wks â€” order soon`}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px",
+                                  borderRadius: 999, fontSize: "0.65rem", fontWeight: 800, marginTop: 3,
+                                  background: "var(--chip-red-bg)", color: "var(--chip-red-fg)", border: "1px solid var(--chip-red-fg)",
+                                  whiteSpace: "nowrap" }}>
+                                âš  PROCUREMENT RISK Â· {entry.part.leadTimeWeeks}wk lead
                               </span>
                             )}
                           </td>
@@ -588,4 +586,22 @@ export default function Parts() {
               <table>
                 <thead>
                   <tr>
-                    {['Part number', 'Descrip
+                    {['Part number', 'Description', 'Manufacturer', 'Category', 'Unit cost', 'Locations', ''].map(h => (
+                      <th key={h} style={{ textAlign: h === 'Unit cost' ? 'right' : h === 'Locations' ? 'center' : 'left' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parts.map(p => <PartRow key={p.id} part={p} onRefresh={loadParts} />)}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '8px 16px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' }}>
+              {parts.length} part{parts.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
