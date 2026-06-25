@@ -287,7 +287,7 @@ ServiceCycle/
       schema.prisma      -- Single source of truth for DB schema
       migrations/        -- Additive SQL migrations (append-only history)
     tests/               -- Live-server integration test suite (45 files, ~500 tests);
-                         --   requires running Postgres + server on :3002
+                         --   requires running Postgres + server on :3001 (or TEST_BASE_URL env)
   client/
     src/
       App.jsx            -- Router + auth context
@@ -309,7 +309,7 @@ ServiceCycle/
 
 ## 9. v1 Public API
 
-Base path: `/api/v1/`  Auth: `Authorization: ApiKey <key>` (read or write scope).
+Base path: `/api/v1/`  Auth: `Authorization: Bearer liq_<key>` (read or write scope).
 
 Key endpoints:
 - `GET /work-orders` -- paginated work-order list (CMMS/EAM sync).
