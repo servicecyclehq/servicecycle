@@ -19,7 +19,7 @@ const FIELDS = [
   ['phases', 'Phases'], ['frequency', 'Frequency'], ['year', 'Year'],
   ['enclosureRating', 'Enclosure'],
 ];
-const DOT = { high: '#16a34a', medium: '#d97706', low: '#dc2626' };
+const DOT = { high: 'var(--chip-green-fg)', medium: 'var(--chip-amber-fg)', low: 'var(--chip-red-fg)' };
 
 export default function NameplateCard({ asset, canEdit, onChanged }) {
   const [modal, setModal] = useState(false);

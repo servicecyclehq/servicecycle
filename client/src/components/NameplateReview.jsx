@@ -25,7 +25,7 @@ const FIELDS = [
   ['enclosureRating', 'Enclosure'],
 ];
 
-const DOT = { high: '#16a34a', medium: '#d97706', low: '#dc2626' };
+const DOT = { high: 'var(--chip-green-fg)', medium: 'var(--chip-amber-fg)', low: 'var(--chip-red-fg)' };
 const LABEL = { high: 'AI confident', medium: 'double-check', low: 'verify / enter' };
 
 export default function NameplateReview({ assetId, assetLabel, onClose, onSaved }) {
@@ -116,7 +116,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
   return (
     <div style={ov} onClick={onClose}>
       <div style={modal} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
           <div style={{ fontSize: 17, fontWeight: 700 }}>Scan nameplate</div>
           <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 2 }}>
             Saving to <strong style={{ color: 'var(--color-text)' }}>{assetLabel || 'this asset'}</strong>
@@ -143,7 +143,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
                 {busy ? 'Reading nameplate…' : preview ? 'Choose a different photo' : '📷 Take / upload photo'}
               </button>
               {remaining != null && (
-                <div style={{ marginTop: 10, fontSize: 12, color: remaining <= 1 ? '#b45309' : '#6b7280' }}>
+                <div style={{ marginTop: 10, fontSize: 12, color: remaining <= 1 ? 'var(--chip-amber-fg)' : 'var(--color-text-secondary)' }}>
                   {remaining} preview scan{remaining === 1 ? '' : 's'} left today
                 </div>
               )}
@@ -176,8 +176,8 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
                         value={values[k] ?? ''} onChange={e => setField(k, e.target.value)}
                         placeholder={c === 'low' ? 'not found — enter manually' : ''}
                         style={{ flex: 1, padding: '7px 10px', borderRadius: 6, fontSize: 14,
-                          border: `1px solid ${c === 'low' ? '#fca5a5' : c === 'medium' ? '#fcd34d' : '#d1d5db'}`,
-                          background: c === 'low' ? '#fef2f2' : '#fff' }} />
+                          border: `1px solid ${c === 'low' ? 'var(--chip-red-fg)' : c === 'medium' ? 'var(--chip-amber-fg)' : 'var(--color-border)'}`,
+                          background: c === 'low' ? 'var(--chip-red-bg)' : 'var(--color-surface)' }} />
                     </div>
                   );
                 })}
@@ -188,7 +188,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
           {error && <div style={{ marginTop: 12, color: 'var(--chip-red-fg)', fontSize: 13, background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', borderRadius: 8, padding: '8px 12px' }}>{error}</div>}
         </div>
 
-        <div style={{ padding: '14px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button onClick={onClose} disabled={busy} style={btnGhost}>Cancel</button>
           {values && <button onClick={() => { setValues(null); setPreview(p => { if (p) URL.revokeObjectURL(p); return null; }); setFile(null); }} disabled={busy} style={btnGhost}>Rescan</button>}
           {values && <button onClick={save} disabled={busy} style={btnPrimary}>{busy ? 'Saving…' : 'Confirm & save to asset'}</button>}

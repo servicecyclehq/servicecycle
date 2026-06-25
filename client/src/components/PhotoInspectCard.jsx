@@ -488,7 +488,7 @@ export default function PhotoInspectCard({ asset, onApplied }) {
                 <span style={{ color: 'var(--color-text-secondary)', minWidth: 110 }}>Type guess</span>
                 <span style={typeMismatch ? {
                   fontWeight: 700, color: 'var(--chip-amber-fg)', background: 'var(--chip-amber-bg)',
-                  border: '1px solid #fde68a', borderRadius: 6, padding: '0 6px',
+                  border: '1px solid var(--chip-amber-fg)', borderRadius: 6, padding: '0 6px',
                 } : { fontWeight: 600 }}>
                   {typeGuessKey ? EQUIPMENT_TYPE_LABELS[typeGuessKey] : (ident.equipmentTypeGuess || '—')}
                 </span>
