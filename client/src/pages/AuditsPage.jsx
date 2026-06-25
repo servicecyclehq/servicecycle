@@ -40,25 +40,25 @@ import { kbdActivate } from '../lib/a11y';
 // lib/equipment.js — these are traffic-light domain colors, not theme accents.
 
 const AUDIT_TYPE_META = {
-  insurance:         { label: 'Insurance',         color: '#2563eb', bg: '#eff6ff' },
-  osha:              { label: 'OSHA',              color: '#dc2626', bg: '#fef2f2' },
-  internal_preaudit: { label: 'Internal Pre-audit', color: '#64748b', bg: '#f1f5f9' },
+  insurance:         { label: 'Insurance',         color: 'var(--chip-blue-fg)',   bg: 'var(--chip-blue-bg)' },
+  osha:              { label: 'OSHA',              color: 'var(--chip-red-fg)',    bg: 'var(--chip-red-bg)' },
+  internal_preaudit: { label: 'Internal Pre-audit', color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' },
   customer:          { label: 'Customer' },
   ahj:               { label: 'AHJ' },
 };
 
 const OUTCOME_META = {
-  passed:               { label: 'Passed',               color: '#16a34a', bg: '#f0fdf4' },
-  passed_with_findings: { label: 'Passed w/ findings',   color: '#d97706', bg: '#fffbeb' },
-  failed:               { label: 'Failed',               color: '#dc2626', bg: '#fef2f2' },
-  pending:              { label: 'Pending',              color: '#64748b', bg: '#f1f5f9' },
+  passed:               { label: 'Passed',               color: 'var(--chip-green-fg)', bg: 'var(--chip-green-bg)' },
+  passed_with_findings: { label: 'Passed w/ findings',   color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)' },
+  failed:               { label: 'Failed',               color: 'var(--chip-red-fg)',   bg: 'var(--chip-red-bg)' },
+  pending:              { label: 'Pending',              color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' },
 };
 
 const REC_STATUS_META = {
-  open:      { label: 'Open',      color: '#2563eb', bg: '#eff6ff' },
-  responded: { label: 'Responded', color: '#d97706', bg: '#fffbeb' },
-  completed: { label: 'Completed', color: '#16a34a', bg: '#f0fdf4' },
-  declined:  { label: 'Declined',  color: '#64748b', bg: '#f1f5f9' },
+  open:      { label: 'Open',      color: 'var(--chip-blue-fg)',  bg: 'var(--chip-blue-bg)' },
+  responded: { label: 'Responded', color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)' },
+  completed: { label: 'Completed', color: 'var(--chip-green-fg)', bg: 'var(--chip-green-bg)' },
+  declined:  { label: 'Declined',  color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' },
 };
 
 const AUDIT_TYPES = ['insurance', 'osha', 'internal_preaudit', 'customer', 'ahj'];
@@ -85,7 +85,7 @@ function SeverityChip({ severity }) {
   return (
     <Chip
       meta={isMandatory
-        ? { label: 'Mandatory', color: '#dc2626', bg: 'transparent' }
+        ? { label: 'Mandatory', color: 'var(--chip-red-fg)', bg: 'transparent' }
         : { label: severity.charAt(0).toUpperCase() + severity.slice(1) }}
     />
   );
@@ -587,7 +587,7 @@ function AuditDetailPanel({ auditId, members, standards, canWrite, onAuditChange
         <div key={snap.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', flexWrap: 'wrap' }}>
           <ShieldCheck size={15} color="var(--color-primary)" strokeWidth={1.75} style={{ flexShrink: 0 }} />
           <span style={{ fontSize: 'var(--font-size-sm)' }}>{snap.filename || 'snapshot.pdf'}</span>
-          {snap.kind === 'emp' && <Chip meta={{ label: 'EMP document', color: '#2563eb', bg: '#eff6ff' }} />}
+          {snap.kind === 'emp' && <Chip meta={{ label: 'EMP document', color: 'var(--chip-blue-fg)', bg: 'var(--chip-blue-bg)' }} />}
           <span className="text-muted" style={{ fontSize: 'var(--font-size-xs)' }}>{fmtDate(snap.createdAt)}</span>
           {snap.sha256 && (
             <code title={snap.sha256} style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: 'var(--color-text-secondary)' }}>
@@ -681,9 +681,9 @@ function AllRecommendations({ setToast }) {
                 style={{
                   padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
                   fontSize: 'var(--font-size-xs)', fontWeight: 600,
-                  background: active ? (isOverdueChip ? '#fef2f2' : 'var(--color-primary-light, #eff6ff)') : 'var(--color-surface)',
-                  color: active ? (isOverdueChip ? '#dc2626' : 'var(--color-primary)') : 'var(--color-text-secondary)',
-                  border: `1px solid ${active ? (isOverdueChip ? '#dc2626' : 'var(--color-primary)') : 'var(--color-border)'}`,
+                  background: active ? (isOverdueChip ? 'var(--chip-red-bg)' : 'var(--color-primary-light, #eff6ff)') : 'var(--color-surface)',
+                  color: active ? (isOverdueChip ? 'var(--chip-red-fg)' : 'var(--color-primary)') : 'var(--color-text-secondary)',
+                  border: `1px solid ${active ? (isOverdueChip ? 'var(--chip-red-fg)' : 'var(--color-primary)') : 'var(--color-border)'}`,
                 }}
               >
                 {f.label}
@@ -934,7 +934,7 @@ export default function AuditsPage() {
                                   <span style={{
                                     display: 'inline-block', minWidth: 18, padding: '1px 7px', borderRadius: 999,
                                     fontSize: 'var(--font-size-xs)', fontWeight: 700,
-                                    background: '#fef2f2', color: '#dc2626', border: '1px solid rgba(220,38,38,0.35)',
+                                    background: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)', border: '1px solid rgba(220,38,38,0.35)',
                                   }}>
                                     {openRecs}
                                   </span>
