@@ -227,7 +227,7 @@ export default function FieldHome() {
         style={{
           boxSizing: 'border-box', width: '100%', minHeight: 56,
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-          background: '#fff', color: 'var(--color-primary)',
+          background: 'var(--color-surface)', color: 'var(--color-primary)',
           border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-lg, 12px)', cursor: 'pointer',
           fontSize: 16, fontWeight: 700, marginBottom: 12,
           WebkitTapHighlightColor: 'transparent',
@@ -243,7 +243,7 @@ export default function FieldHome() {
         style={{
           boxSizing: 'border-box', width: '100%', minHeight: 56,
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-          background: '#fff', color: '#7c3aed',
+          background: 'var(--color-surface)', color: '#7c3aed',
           border: '2px solid #c4b5fd', borderRadius: 'var(--radius-lg, 12px)', cursor: 'pointer',
           fontSize: 16, fontWeight: 700, marginBottom: 12,
           WebkitTapHighlightColor: 'transparent',
@@ -261,7 +261,7 @@ export default function FieldHome() {
           style={{
             boxSizing: 'border-box', width: '100%', minHeight: 48, marginBottom: 12,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a',
+            background: 'var(--chip-amber-bg)', color: 'var(--chip-amber-fg)', border: '1px solid var(--chip-amber-fg)',
             borderRadius: 'var(--radius-lg, 12px)', cursor: flushing ? 'default' : 'pointer',
             fontSize: 14, fontWeight: 700, opacity: flushing ? 0.7 : 1,
             WebkitTapHighlightColor: 'transparent',
@@ -357,7 +357,7 @@ export default function FieldHome() {
       {error && (
         <div role="alert" style={{
           padding: '12px 14px', marginBottom: 12, borderRadius: 'var(--radius)',
-          background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 14,
+          background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)', fontSize: 14,
         }}>
           {error}
         </div>
