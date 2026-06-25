@@ -64,6 +64,34 @@ except against an acceptance/commissioning test, which is treated as the baselin
 site/position matches an existing one, the app warns you and offers to open the
 existing device instead.
 
+## Incident log
+
+The incident log on an asset is a timestamped record of safety and operational
+events: arc-flash exposures, LOTO near-misses, fire or flood events, unexpected
+shutdowns, or anything else that happened at or because of this device. Each entry
+carries an event type, an occurred-at timestamp, an optional note, and a resolved
+flag once the issue has been addressed.
+
+Unresolved incidents feed directly into the asset's risk score. An open arc-flash
+or fire/flood incident is treated as evidence that the asset is operating in an
+elevated-risk state, which tightens its condition rating and appears in the audit
+trail an insurer or PE reviewer will see.
+
+**Logging an incident:** Open the asset → Incident Log tab → Log incident. Pick
+the event type, set the date, add a note, then save. The log entry appears
+immediately in the asset's history and in the account-wide incident register
+(accessible via the Compliance section of Reports).
+
+**Resolving an incident:** Once the condition has been corrected — the root cause
+fixed, the study updated, or the risk controlled — open the log entry and mark it
+resolved. This stamps the resolution date and removes the entry from the
+unresolved count.
+
+**Who should log incidents:** any user with write access to the asset. Field
+technicians using Field Mode can log incidents directly from their device at the
+time of discovery — this is the recommended workflow, since the log entry
+preserves the as-found timestamp rather than being back-filled.
+
 ## When something looks wrong
 
 **An asset is C3 and I didn't set it that way.** It most likely auto-promoted from

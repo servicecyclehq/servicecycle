@@ -85,6 +85,18 @@ const MODULE_INDEX = Object.freeze([
     title:        'Imports',
     description:  'Test-report PDF ingest, email-in, bulk backfill, and spreadsheet / CMMS import — the frictionless data-in paths.',
   },
+  // Parts & procurement
+  {
+    slug:         'parts',
+    title:        'Parts & Spare Inventory',
+    description:  'Spare parts catalog, inventory tracking by site and asset, low-stock alerts, and procurement risk for required parts.',
+  },
+  // Quote requests
+  {
+    slug:         'quote-requests',
+    title:        'Quote Requests',
+    description:  'How to request a repair or replacement quote, the emergency-mode flow, and the contractor sales inbox.',
+  },
   // Monitoring group
   {
     slug:         'alerts',

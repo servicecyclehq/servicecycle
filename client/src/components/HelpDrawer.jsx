@@ -102,6 +102,8 @@ const ROUTE_MODULE_MAP = {
   '/settings':           'settings',
   '/users':              'settings',
   '/activity':           'settings',
+  '/parts':              'parts',
+  '/quote-requests':     'quote-requests',
 };
 function slugForPath(p) {
   if (!p) return null;

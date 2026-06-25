@@ -64,16 +64,15 @@ except against an acceptance/commissioning test, which is treated as the baselin
 site/position matches an existing one, the app warns you and offers to open the
 existing device instead.
 
-## When something looks wrong
+## Incident log
 
-**An asset is C3 and I didn't set it that way.** It most likely auto-promoted from
-two or more missed cycles (NFPA 70B 9.3.1). Catch up the maintenance and record a
-completed cycle to clear it.
+The incident log on an asset is a timestamped record of safety and operational
+events: arc-flash exposures, LOTO near-misses, fire or flood events, unexpected
+shutdowns, or anything else that happened at or because of this device. Each entry
+carries an event type, an occurred-at timestamp, an optional note, and a resolved
+flag once the issue has been addressed.
 
-**Nameplate scan came back mostly blank or low-confidence.** The photo may be
-glare-washed or angled. Re-shoot square-on with even light, or type the fields in
-manually — the scan is a convenience, never a requirement.
-
-**A report didn't attach to the asset I expected.** The serial on the report
-probably didn't match. Confirm the asset on the import preview screen, or correct
-the serial on the asset so the next report matches cleanly.
+Unresolved incidents feed directly into the asset's risk score. An open arc-flash
+or fire/flood incident is treated as evidence that the asset is operating in an
+elevated-risk state, which tightens its condition rating and appears in the audit
+trail an insurer or PE reviewer will see.
