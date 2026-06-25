@@ -15,7 +15,7 @@ const GASES = [
   ['h2', 'H2'], ['ch4', 'CH4'], ['c2h2', 'C2H2'], ['c2h4', 'C2H4'],
   ['c2h6', 'C2H6'], ['co', 'CO'], ['co2', 'CO2'], ['o2', 'O2'], ['n2', 'N2'],
 ];
-const RATING = { GREEN: { c: '#15803d', t: 'Condition 1 — normal' }, YELLOW: { c: '#92400e', t: 'Condition 2 — caution' }, RED: { c: '#b91c1c', t: 'Condition 3/4 — action' } };
+const RATING = { GREEN: { c: 'var(--chip-green-fg)', t: 'Condition 1 — normal' }, YELLOW: { c: 'var(--chip-amber-fg)', t: 'Condition 2 — caution' }, RED: { c: 'var(--chip-red-fg)', t: 'Condition 3/4 — action' } };
 
 export default function DgaImportCard({ assetId, canWrite, onChanged }) {
   const [open, setOpen] = useState(false);
@@ -83,19 +83,19 @@ export default function DgaImportCard({ assetId, canWrite, onChanged }) {
             </div>
           </div>
           {evalResult && (
-            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid var(--color-border)', fontSize: 13.5 }}>
+            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: 13.5 }}>
               <strong style={{ color: RATING[evalResult.resultRating]?.c }}>{RATING[evalResult.resultRating]?.t || `Condition ${evalResult.overallCondition}`}</strong>
               {' '}· TDCG {Math.round(evalResult.tdcg)} ppm{evalResult.faultLabel ? ` · ${evalResult.faultLabel} (${evalResult.faultCode})` : ''}
             </div>
           )}
-          {msg && <div style={{ marginBottom: 10, fontSize: 13, color: '#0a0d12' }}>{msg}</div>}
+          {msg && <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--color-text)' }}>{msg}</div>}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-secondary btn-sm" disabled={busy} onClick={preview}>{busy ? '…' : 'Preview condition'}</button>
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save result'}</button>
           </div>
         </div>
       )}
-      {!open && msg && <div className="card-body" style={{ fontSize: 13, color: '#15803d' }}>{msg}</div>}
+      {!open && msg && <div className="card-body" style={{ fontSize: 13, color: 'var(--chip-green-fg)' }}>{msg}</div>}
     </div>
   );
 }

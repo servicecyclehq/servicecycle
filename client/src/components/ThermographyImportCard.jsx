@@ -11,7 +11,7 @@
 import { useState } from 'react';
 import api from '../api/client';
 
-const SEV_COLOR = { IMMEDIATE: '#b91c1c', RECOMMENDED: '#92400e', ADVISORY: '#64748b' };
+const SEV_COLOR = { IMMEDIATE: 'var(--chip-red-fg)', RECOMMENDED: 'var(--chip-amber-fg)', ADVISORY: 'var(--chip-slate-fg)' };
 
 export default function ThermographyImportCard({ assetId, canWrite, onChanged }) {
   const [open, setOpen] = useState(false);
@@ -96,7 +96,7 @@ export default function ThermographyImportCard({ assetId, canWrite, onChanged })
           </div>
         </div>
       )}
-      {!open && msg && <div className="card-body" style={{ fontSize: 13, color: '#15803d' }}>{msg}</div>}
+      {!open && msg && <div className="card-body" style={{ fontSize: 13, color: 'var(--chip-green-fg)' }}>{msg}</div>}
     </div>
   );
 }

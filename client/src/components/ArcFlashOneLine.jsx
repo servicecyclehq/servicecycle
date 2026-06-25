@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 
-function sevFill(s) { return s === 'danger' ? '#b91c1c' : s === 'warning' ? '#c2410c' : '#475569'; }
+function sevFill(s) { return s === 'danger' ? 'var(--chip-red-fg)' : s === 'warning' ? 'var(--chip-amber-fg)' : 'var(--chip-slate-fg)'; }
 
 const NODE_W = 150, NODE_H = 46, ROW_H = 96, PAD_X = 20, PAD_Y = 16;
 
