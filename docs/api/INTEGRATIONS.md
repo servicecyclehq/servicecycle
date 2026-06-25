@@ -33,6 +33,9 @@ flows back to advance the NFPA 70B schedule.
 | `GET /arc-flash/one-line?siteId=` (power-path graph) | yes | -- |
 | `GET /arc-flash/work-order-precheck?assetId=` | yes | -- |
 | `POST /arc-flash/devices` (push verified device) | -- | **yes (write scope)** |
+| `GET /telemetry/channels`, `/telemetry/readings` | yes | -- |
+| `POST /telemetry/channels` (configure a channel) | -- | **yes (write scope)** |
+| `POST /telemetry/readings` (ingest readings, batch ≤1000) | -- | **yes (write scope)** |
 
 ### The closed loop
 
@@ -126,15 +129,26 @@ or map to Work Orders if Field Service is enabled.
 
 ---
 
+## Condition monitoring (edge gateways)
+
+The v1 telemetry surface is for OT edge gateways and condition-monitoring platforms
+(HiveMQ Edge, Ignition, Node-RED, AWS IoT, Azure IoT Operations), not for CMMS/CRM
+systems. The pattern is: configure channels once via `POST /telemetry/channels`,
+then push batched periodic readings via `POST /telemetry/readings`. ServiceCycle
+grades each reading against warn/critical thresholds; a critical breach raises a
+notification and escalates the asset to NFPA 70B C2 automatically. Full channel
+and batch-ingestion reference: `docs/api/TELEMETRY.md`.
+
+---
+
 ## Notes
 
 - Use **separate keys per integration** with the least scope needed (read-only for
   a pure CRM mirror; write only where completions flow back), and rotate via
   Settings -> API Keys (revocation is immediate).
 - All endpoints are strictly account-scoped to the key's account.
-- The public API performs two mutations today: the work-order write-back
-  (`POST /work-orders`) and the arc-flash device write-back
-  (`POST /arc-flash/devices`); both require the `write` scope. Everything else --
-  assets, deficiencies, sites, schedules, and arc-flash labels -- is managed in
-  ServiceCycle and surfaced read-only here. More write endpoints will land in
-  later `/api/v1` increments (the version contract will not break within v1).
+- Write endpoints require the `write` scope: work-order write-back
+  (`POST /work-orders`), arc-flash device write-back (`POST /arc-flash/devices`),
+  and telemetry channel configuration + reading ingestion (`POST /telemetry/channels`,
+  `POST /telemetry/readings`). Everything else is read-only. The version contract
+  will not break within v1; additive fields may be added to responses.
