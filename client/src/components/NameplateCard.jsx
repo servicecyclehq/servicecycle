@@ -73,7 +73,7 @@ export default function NameplateCard({ asset, canEdit, onChanged }) {
 
         {!hasScan && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 13, color: '#6b7280' }}>
+            <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
               No nameplate captured yet. {canEdit && 'Scan the plate to auto-fill the make, model, serial and ratings — you’ll review before it saves.'}
             </div>
             {canEdit && <button onClick={() => setModal(true)} style={btnPrimary}>📷 Scan nameplate</button>}
@@ -84,7 +84,7 @@ export default function NameplateCard({ asset, canEdit, onChanged }) {
           <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
             {photoUrl
               ? <img src={photoUrl} alt="nameplate" style={{ width: 200, height: 150, objectFit: 'cover', borderRadius: 8, border: '1px solid #e5e7eb', flex: '0 0 auto' }} />
-              : <div style={{ width: 200, height: 150, borderRadius: 8, background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 12 }}>photo</div>}
+              : <div style={{ width: 200, height: 150, borderRadius: 8, background: 'var(--color-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: 12 }}>photo</div>}
             <div style={{ flex: '1 1 280px', minWidth: 0 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <tbody>
@@ -92,7 +92,7 @@ export default function NameplateCard({ asset, canEdit, onChanged }) {
                     const c = scan.confidence?.[k] || 'medium';
                     return (
                       <tr key={k}>
-                        <td style={{ padding: '3px 8px 3px 0', fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.03em', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{label}</td>
+                        <td style={{ padding: '3px 8px 3px 0', fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '.03em', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{label}</td>
                         <td style={{ padding: '3px 0', fontSize: 13.5, fontWeight: 500 }}>
                           <span title={c} style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 999, background: DOT[c], marginRight: 7, verticalAlign: 'middle' }} />
                           {String(values[k])}
@@ -102,7 +102,7 @@ export default function NameplateCard({ asset, canEdit, onChanged }) {
                   })}
                 </tbody>
               </table>
-              {scannedAt && <div style={{ marginTop: 10, fontSize: 11, color: '#9ca3af' }}>Reviewed &amp; saved {scannedAt} · dots show the AI’s confidence at capture (green = verified)</div>}
+              {scannedAt && <div style={{ marginTop: 10, fontSize: 11, color: 'var(--color-text-secondary)' }}>Reviewed &amp; saved {scannedAt} · dots show the AI’s confidence at capture (green = verified)</div>}
             </div>
           </div>
         )}
@@ -120,6 +120,6 @@ export default function NameplateCard({ asset, canEdit, onChanged }) {
   );
 }
 
-const btnPrimary = { padding: '8px 14px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' };
-const btnSm = { padding: '5px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
-const btnSmDanger = { padding: '5px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', color: '#b91c1c', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
+const btnPrimary = { padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--color-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer' };
+const btnSm = { padding: '5px 10px', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
+const btnSmDanger = { padding: '5px 10px', borderRadius: 6, border: '1px solid var(--chip-red-fg)', background: 'var(--color-surface)', color: 'var(--chip-red-fg)', fontWeight: 600, fontSize: 12, cursor: 'pointer' };

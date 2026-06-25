@@ -45,15 +45,15 @@ const ACCEPT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const SEVERITY_CHIPS = {
   normal: {
     label: 'Normal',
-    color: '#334155', background: '#e2e8f0', border: '1px solid #cbd5e1',
+    color: 'var(--chip-slate-fg)', background: 'var(--chip-slate-bg)', border: '1px solid var(--chip-slate-fg)',
   },
   monitor: {
     label: 'Monitor',
-    color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a',
+    color: 'var(--chip-amber-fg)', background: 'var(--chip-amber-bg)', border: '1px solid var(--chip-amber-fg)',
   },
   concern: {
     label: 'Concern',
-    color: '#991b1b', background: '#fee2e2', border: '1px solid #fecaca',
+    color: 'var(--chip-red-fg)', background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)',
   },
 };
 
@@ -93,7 +93,7 @@ function DiffersBadge() {
     <span style={{
       display: 'inline-block', padding: '1px 7px', borderRadius: 999,
       fontSize: 10.5, fontWeight: 600, whiteSpace: 'nowrap',
-      color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a',
+      color: 'var(--chip-amber-fg)', background: 'var(--chip-amber-bg)', border: '1px solid var(--chip-amber-fg)',
     }}>
       differs from record
     </span>
@@ -113,9 +113,9 @@ function ConfidenceChip({ confidence }) {
     tone = c === 'high' ? 'good' : (c === 'medium' || c === 'moderate') ? 'mid' : 'low';
   }
   const palettes = {
-    good: { color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0' },
-    mid:  { color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a' },
-    low:  { color: '#991b1b', background: '#fee2e2', border: '1px solid #fecaca' },
+    good: { color: 'var(--chip-green-fg)', background: 'var(--chip-green-bg)', border: '1px solid var(--chip-green-fg)' },
+    mid:  { color: 'var(--chip-amber-fg)', background: 'var(--chip-amber-bg)', border: '1px solid var(--chip-amber-fg)' },
+    low:  { color: 'var(--chip-red-fg)', background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)' },
   };
   const p = palettes[tone];
   return (
@@ -471,7 +471,7 @@ export default function PhotoInspectCard({ asset, onApplied }) {
             role="alert"
             style={{
               marginTop: 4, padding: '8px 12px', borderRadius: 8,
-              background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b',
+              background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)',
               fontSize: 'var(--font-size-ui)',
             }}
           >
@@ -487,7 +487,7 @@ export default function PhotoInspectCard({ asset, onApplied }) {
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                 <span style={{ color: 'var(--color-text-secondary)', minWidth: 110 }}>Type guess</span>
                 <span style={typeMismatch ? {
-                  fontWeight: 700, color: '#92400e', background: '#fef3c7',
+                  fontWeight: 700, color: 'var(--chip-amber-fg)', background: 'var(--chip-amber-bg)',
                   border: '1px solid #fde68a', borderRadius: 6, padding: '0 6px',
                 } : { fontWeight: 600 }}>
                   {typeGuessKey ? EQUIPMENT_TYPE_LABELS[typeGuessKey] : (ident.equipmentTypeGuess || '—')}

@@ -118,8 +118,8 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
       <div style={modal} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: 17, fontWeight: 700 }}>Scan nameplate</div>
-          <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
-            Saving to <strong style={{ color: '#111827' }}>{assetLabel || 'this asset'}</strong>
+          <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 2 }}>
+            Saving to <strong style={{ color: 'var(--color-text)' }}>{assetLabel || 'this asset'}</strong>
           </div>
         </div>
 
@@ -134,7 +134,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
           )}
           {!values && !capped && (
             <div style={{ textAlign: 'center', padding: '10px 0 4px' }}>
-              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16, textAlign: 'left' }}>
+              <div style={{ background: 'var(--chip-blue-bg)', border: '1px solid var(--chip-blue-fg)', color: 'var(--chip-blue-fg)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16, textAlign: 'left' }}>
                 Take or upload a photo of the equipment nameplate. <strong>AI will read it and ask you to review the fields before anything is saved</strong> — so a bad read never silently lands on the asset.
               </div>
               {preview && <img src={preview} alt="" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 14, border: '1px solid #e5e7eb' }} />}
@@ -154,12 +154,12 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
             <>
               <div style={{ display: 'flex', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
                 {preview && <img src={preview} alt="" style={{ width: 150, height: 112, objectFit: 'cover', borderRadius: 8, border: '1px solid #e5e7eb' }} />}
-                <div style={{ flex: '1 1 220px', fontSize: 13, color: '#374151' }}>
+                <div style={{ flex: '1 1 220px', fontSize: 13, color: 'var(--color-text)' }}>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>Review before saving</div>
                   {flagged > 0
-                    ? <span><span style={{ color: '#d97706', fontWeight: 600 }}>{flagged} field{flagged === 1 ? '' : 's'}</span> the AI wasn’t fully sure about — confirm or fix them, then save. Editing a field marks it verified (green).</span>
+                    ? <span><span style={{ color: 'var(--chip-amber-fg)', fontWeight: 600 }}>{flagged} field{flagged === 1 ? '' : 's'}</span> the AI wasn’t fully sure about — confirm or fix them, then save. Editing a field marks it verified (green).</span>
                     : <span>The AI was confident on every field. Give them a glance and save.</span>}
-                  <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 11, color: '#6b7280' }}>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 11, color: 'var(--color-text-secondary)' }}>
                     <Legend c="high" /> <Legend c="medium" /> <Legend c="low" />
                   </div>
                 </div>
@@ -171,7 +171,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
                   return (
                     <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                       <span title={LABEL[c]} style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: 999, background: DOT[c] }} />
-                      <label style={{ flex: '0 0 96px', fontSize: 12, color: '#6b7280', fontWeight: 600 }}>{label}</label>
+                      <label style={{ flex: '0 0 96px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</label>
                       <input
                         value={values[k] ?? ''} onChange={e => setField(k, e.target.value)}
                         placeholder={c === 'low' ? 'not found — enter manually' : ''}
@@ -185,7 +185,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
             </>
           )}
 
-          {error && <div style={{ marginTop: 12, color: '#b91c1c', fontSize: 13, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px' }}>{error}</div>}
+          {error && <div style={{ marginTop: 12, color: 'var(--chip-red-fg)', fontSize: 13, background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', borderRadius: 8, padding: '8px 12px' }}>{error}</div>}
         </div>
 
         <div style={{ padding: '14px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -205,6 +205,6 @@ function Legend({ c }) {
 }
 
 const ov = { position: 'fixed', inset: 0, background: 'rgba(17,24,39,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 };
-const modal = { background: '#fff', borderRadius: 14, width: 'min(560px, 100%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' };
-const btnPrimary = { padding: '9px 16px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer' };
-const btnGhost = { padding: '9px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontWeight: 600, fontSize: 14, cursor: 'pointer' };
+const modal = { background: 'var(--color-surface)', borderRadius: 14, width: 'min(560px, 100%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' };
+const btnPrimary = { padding: '9px 16px', borderRadius: 8, border: 'none', background: 'var(--color-primary)', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer' };
+const btnGhost = { padding: '9px 16px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontWeight: 600, fontSize: 14, cursor: 'pointer' };
