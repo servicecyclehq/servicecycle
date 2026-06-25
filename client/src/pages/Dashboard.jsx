@@ -754,6 +754,7 @@ export default function Dashboard() {
   const due = data?.dueCounts || { due30: 0, due60: 0, due90: 0, overdue: 0 };
   const defs = data?.deficiencies || { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
   const partsAlerts = data?.partsAlerts ?? 0;
+  const partsProcurementRisk = data?.partsProcurementRisk ?? 0;
   const bySite = data?.complianceBySite || [];
   const upcoming = data?.upcoming || [];
   const recentWOs = data?.recentWorkOrders || [];
@@ -854,7 +855,7 @@ export default function Dashboard() {
               {partsAlerts > 0 && (
                 <KpiTile
                   label="Parts alerts" value={partsAlerts}
-                  sub={partsAlerts === 1 ? 'Part below min stock' : 'Parts below min stock'}
+                  sub={`${partsAlerts === 1 ? 'Part' : 'Parts'} below min stock${partsProcurementRisk > 0 ? ' · ' + partsProcurementRisk + ' procurement risk' : ''}`}
                   accent="var(--color-warning, #f59e0b)"
                   onClick={() => navigate('/parts?filter=low')}
                 />

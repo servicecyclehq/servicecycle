@@ -26,7 +26,8 @@ const inviteLimiter = rateLimit({
 // ── B6 zod schemas ──────────────────────────────────────────────────────────
 // These run BEFORE the existing manual validation (last-admin checks etc.)
 // so the existing business rules continue to apply unchanged.
-const ROLES = ['admin', 'manager', 'viewer', 'consultant'];
+const ROLES = ['admin', 'manager', 'viewer', 'consultant', 'field_tech'];
+// field_tech = phone-only field-labor login; scoped to assigned work orders only.
 
 const CreateUserSchema = z.object({
   name:     z.string().trim().min(1).max(200),

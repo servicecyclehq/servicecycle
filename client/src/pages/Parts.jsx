@@ -540,7 +540,18 @@ export default function Parts() {
                       return (
                         <tr key={i}>
                           <td style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>{entry.part.partNumber}</td>
-                          <td>{entry.part.description}</td>
+                          <td>
+                            <div>{entry.part.description}</div>
+                            {entry.procurementRisk && (
+                              <span title={`Lead time: ${entry.part.leadTimeWeeks} wks — order soon`}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px',
+                                  borderRadius: 999, fontSize: '0.65rem', fontWeight: 800, marginTop: 3,
+                                  background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                                  whiteSpace: 'nowrap' }}>
+                                ⚠ PROCUREMENT RISK · {entry.part.leadTimeWeeks}wk lead
+                              </span>
+                            )}
+                          </td>
                           <td>{entry.part.category || <span style={{ color: 'var(--color-text-secondary)' }}>—</span>}</td>
                           <td style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{scope}</td>
                           <td style={{ textAlign: 'center', fontWeight: 700, color: entry.qtyOnHand === 0 ? 'var(--color-danger, #dc2626)' : 'var(--chip-amber-fg, #d97706)' }}>

@@ -80,13 +80,20 @@ router.get('/low-stock', requireManager, async (req: any, res: any) => {
       select: {
         qtyOnHand: true,
         qtyMin: true,
-        part: { select: { id: true, partNumber: true, description: true, category: true } },
+        part: { select: { id: true, partNumber: true, description: true, category: true, leadTimeWeeks: true } },
         asset: { select: { id: true, equipmentType: true, manufacturer: true, model: true } },
         site: { select: { id: true, name: true } },
       },
     });
-    const low = entries.filter((e: any) => e.qtyMin != null && e.qtyOnHand < e.qtyMin);
-    return res.json({ success: true, data: { count: low.length, items: low } });
+    const LONG_LEAD_WEEKS = 8; // flag as procurement risk when lead time >= this
+    const low = entries
+      .filter((e: any) => e.qtyMin != null && e.qtyOnHand < e.qtyMin)
+      .map((e: any) => ({
+        ...e,
+        procurementRisk: e.part?.leadTimeWeeks != null && e.part.leadTimeWeeks >= LONG_LEAD_WEEKS,
+      }));
+    const procurementRiskCount = low.filter((e: any) => e.procurementRisk).length;
+    return res.json({ success: true, data: { count: low.length, items: low, procurementRiskCount } });
   } catch (err: any) {
     console.error('[parts GET /low-stock]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to fetch low-stock summary.' });

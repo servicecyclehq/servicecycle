@@ -46,8 +46,10 @@ const VALID_TIMELINES = ['immediately','within_1_week','within_30_days','next_bu
 // Rep lifecycle transition targets (PATCH /:id/status). 'draft' is NOT here — a
 // draft is created via POST {draft:true} and promoted via POST /:id/send only.
 const VALID_STATUSES  = ['requested','quoted','accepted','declined'];
-// Statuses a caller may FILTER the list by (GET ?status=) — includes 'draft'.
-const VALID_FILTER_STATUSES = [...VALID_STATUSES, 'draft'];
+// Statuses a caller may FILTER the list by (GET ?status=) — includes 'draft',
+// plus two virtual views: 'active' (requested+quoted+draft) and 'resolved'
+// (accepted+declined).
+const VALID_FILTER_STATUSES = [...VALID_STATUSES, 'draft', 'active', 'resolved'];
 
 /**
  * Fire the contractor-facing QUOTE_REQUEST_CREATED partner event (inbox/webhook,
@@ -223,22 +225,37 @@ router.get('/', async (req, res) => {
     const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
 
     const where: any = { accountId: req.user.accountId };
-    if (status)    { if (!VALID_FILTER_STATUSES.includes(String(status))) return res.status(400).json({ success: false, error: 'invalid status' }); where.status = status; }
+    if (status) {
+      const s = String(status);
+      if (!VALID_FILTER_STATUSES.includes(s)) return res.status(400).json({ success: false, error: 'invalid status' });
+      if (s === 'active')        where.status = { in: ['requested', 'quoted', 'draft'] };
+      else if (s === 'resolved') where.status = { in: ['accepted', 'declined'] };
+      else                       where.status = s;
+    }
     if (assetId)   where.assetId = String(assetId);
     if (emergency === 'true') where.emergencyMode = true;
 
-    const [items, total] = await Promise.all([
+    // Count resolved-this-month regardless of the current filter — used by the
+    // Resolved tab label in the manager inbox without a separate request.
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+
+    const [items, total, resolvedThisMonth] = await Promise.all([
       prisma.quoteRequest.findMany({
         where,
         include: {
           asset:       { select: { id: true, manufacturer: true, model: true, serialNumber: true,
-                                   equipmentType: true, criticalityScore: true } },
+                                   equipmentType: true, criticalityScore: true,
+                                   site: { select: { id: true, name: true } } } },
           requestedBy: { select: { id: true, name: true } },
         },
         orderBy: [{ emergencyMode: 'desc' }, { createdAt: 'desc' }],
         skip, take,
       }),
       prisma.quoteRequest.count({ where }),
+      prisma.quoteRequest.count({
+        where: { accountId: req.user.accountId, resolvedAt: { not: null, gte: monthStart } },
+      }),
     ]);
 
     // Match the canonical paginated-list shape used by assets/work-orders/
@@ -249,6 +266,7 @@ router.get('/', async (req, res) => {
       data: {
         quoteRequests: items,
         pagination: { page: parseInt(page as string) || 1, limit: take, total, pages: Math.ceil(total / take) },
+        resolvedThisMonth,
       },
     });
   } catch (err) {

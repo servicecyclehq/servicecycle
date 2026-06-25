@@ -105,6 +105,8 @@ const listInclude = {
   },
   contractor:   { select: { id: true, name: true, netaAccredited: true } },
   assignedTech: { select: { id: true, name: true, netaCertLevel: true } },
+  // field_tech User login assigned to this job (separate from ContractorTech)
+  assignedUser: { select: { id: true, name: true, role: true } },
   schedule: {
     select: {
       id: true,

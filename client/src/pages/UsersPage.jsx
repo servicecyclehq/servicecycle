@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import PasswordInput from '../components/PasswordInput';
 
-const ROLE_LABELS = { admin: 'Admin', manager: 'Manager', viewer: 'Viewer', consultant: 'Consultant' };
+const ROLE_LABELS = { admin: 'Admin', manager: 'Manager', viewer: 'Viewer', consultant: 'Consultant', field_tech: 'Field Technician' };
 const ROLE_COLORS = { admin: 'badge-cancelled', manager: 'badge-active', viewer: 'badge-under_review', consultant: 'badge-expired' };
 
 function fmt(d) {
@@ -130,6 +130,7 @@ function EditUserModal({ user, onClose, onSaved }) {
                 <option value="manager">Manager — create/edit assets, schedules, and contractors</option>
                 <option value="viewer">Viewer — read-only access</option>
                 <option value="consultant">Consultant — external read access, logged and revocable</option>
+                <option value="field_tech">Field Technician — phone-only, assigned jobs only, no pricing</option>
               </select>
             </div>
             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 16, padding: '8px 10px', background: 'var(--color-surface)', borderRadius: 'var(--radius)', border: '1px solid var(--color-border)' }}>
@@ -374,12 +375,14 @@ export default function UsersPage() {
                       <option value="manager">Manager</option>
                       <option value="viewer">Viewer</option>
                       <option value="consultant">Consultant</option>
+                      <option value="field_tech">Field Technician</option>
                     </select>
                     <div className="form-hint" style={{ marginTop: 6 }}>
                       {form.role === 'admin' && <><strong>Admin</strong> — full access: manages users, resets passwords, and edits account settings.</>}
                       {form.role === 'manager' && <><strong>Manager</strong> — creates and edits assets, maintenance schedules, and contractors.</>}
                       {form.role === 'viewer' && <><strong>Viewer</strong> — read-only access. Cannot create or edit any records. New viewers start with restricted access to their assigned sites (site-level scoping ships in a later release). An admin can expand this from the Users page.</>}
                       {form.role === 'consultant' && <><strong>Consultant</strong> — external read access. Must be explicitly granted and can be revoked by an admin at any time from Settings. A consultant access record is automatically created when they accept the invite.</>}
+                      {form.role === 'field_tech' && <><strong>Field Technician</strong> — phone-only, assignment-scoped access. Can see and complete only work orders assigned to them. No access to pricing, customer lists, or the desktop interface.</>}
                     </div>
                   </div>
                 </div>

@@ -219,6 +219,11 @@ export default function WorkOrderDetail() {
   const [completeError, setCompleteError] = useState('');
   const [transitioning, setTransitioning] = useState(false);
 
+  // Field-tech (User) assignment — separate from ContractorTech
+  const [fieldUsers, setFieldUsers] = useState([]);
+  const [assignUserId, setAssignUserId] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
+
   // Details editing
   const [editing, setEditing] = useState(false);
   const [detailForm, setDetailForm] = useState(null);
@@ -283,6 +288,19 @@ export default function WorkOrderDetail() {
       .catch(() => {});
   }, [editing]);
 
+  // Populate the field-tech assignment dropdown from the account user list.
+  // Runs whenever `wo` loads so the picker reflects the current assignedUserId.
+  useEffect(() => {
+    if (!wo) return;
+    api.get('/api/users')
+      .then(r => {
+        const all = r.data?.data?.users || [];
+        setFieldUsers(all.filter(u => u.isActive !== false));
+        setAssignUserId(wo.assignedUserId || '');
+      })
+      .catch(() => {});
+  }, [wo]);
+
   // Tech roster follows the contractor chosen in the editor.
   useEffect(() => {
     if (!editing || !detailForm?.contractorId) { setTechs([]); return; }
@@ -293,6 +311,18 @@ export default function WorkOrderDetail() {
 
   function apiError(err, fallback) {
     setToast({ message: err.response?.data?.error || fallback, variant: 'error' });
+  }
+
+  // ── Field-tech assignment ──────────────────────────────────────────────────
+  async function assignFieldUser() {
+    setAssignBusy(true);
+    try {
+      await api.put(`/api/work-orders/${id}/assignment`, { userId: assignUserId || null });
+      await fetchWo();
+      setToast({ message: assignUserId ? 'Field technician assigned.' : 'Assignment cleared.', variant: 'success' });
+    } catch (err) {
+      apiError(err, 'Failed to update assignment.');
+    } finally { setAssignBusy(false); }
   }
 
   // ── Lifecycle actions ──────────────────────────────────────────────────────
@@ -649,6 +679,9 @@ export default function WorkOrderDetail() {
                 {wo.assignedTech
                   ? <>{wo.assignedTech.name}{wo.assignedTech.netaCertLevel ? ` (NETA ${CERT_LABELS[wo.assignedTech.netaCertLevel] || wo.assignedTech.netaCertLevel})` : ''}</>
                   : <span className="text-muted">—</span>}
+              </DetailItem>
+              <DetailItem label="Field user">
+                {wo.assignedUser ? wo.assignedUser.name : <span className="text-muted">—</span>}
               </DetailItem>
               <DetailItem label="Required cert level">
                 {wo.netaCertLevel ? `NETA ${CERT_LABELS[wo.netaCertLevel] || wo.netaCertLevel}` : <span className="text-muted">—</span>}
@@ -1228,6 +1261,50 @@ export default function WorkOrderDetail() {
             </form>
           )}
         </div>
+
+        {/* ── Field Technician Assignment ────────────────────────────────── */}
+        {canWrite && wo && !['COMPLETE', 'CANCELLED'].includes(wo.status) && (
+          <div className="card" style={{ marginBottom: 20, order: 4 }}>
+            <div className="card-header">
+              <div className="card-title">Field Technician</div>
+            </div>
+            <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <select
+                className="form-control"
+                style={{ flex: '1 1 220px', maxWidth: 320 }}
+                value={assignUserId}
+                onChange={e => setAssignUserId(e.target.value)}
+                disabled={assignBusy}
+              >
+                <option value="">— Unassigned —</option>
+                {fieldUsers.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}{u.role === 'field_tech' ? '' : ` (${u.role})`}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={assignFieldUser}
+                disabled={assignBusy || assignUserId === (wo.assignedUserId || '')}
+              >
+                {assignBusy ? 'Saving…' : 'Assign'}
+              </button>
+              {wo.assignedUserId && (
+                <button type="button" className="btn btn-secondary btn-sm"
+                  onClick={() => { setAssignUserId(''); }}
+                  disabled={assignBusy}
+                  title="Clear assignment">
+                  Clear
+                </button>
+              )}
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', flex: '1 1 100%' }}>
+                Field technicians see only their assigned work orders in the mobile field view.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* ── Documents ──────────────────────────────────────────────────── */}
         {documents.length > 0 && (
