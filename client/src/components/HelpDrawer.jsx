@@ -464,8 +464,8 @@ export default function HelpDrawer({ currentPath = '' }) {
             <div style={{
               padding: '12px 14px',
               borderRadius: 6,
-              background: '#fef2f2',
-              color: '#b91c1c',
+              background: 'var(--chip-red-bg)',
+              color: 'var(--chip-red-fg)',
               fontSize: 'var(--font-size-ui)',
             }}>
               {error}
