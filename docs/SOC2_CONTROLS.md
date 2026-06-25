@@ -25,7 +25,7 @@ is deferred or manual.
 |---|---|---|---|---|
 | CC1.1 | Demonstrates commitment to integrity and ethical values | Code of conduct policy: data integrity, confidentiality, least-privilege access, security-first reporting; hash-chain audit log makes record tampering detectable | `docs/CODE_OF_CONDUCT.md`; `docs/OFFBOARDING.md` §4 (access removal); hash-chain architecture (see CC7.1) | — |
 | CC1.2 | Board oversees internal controls | Founder oversees all controls (pre-board stage) | — | Accepted risk at current stage |
-| CC1.3 | Competent individuals are hired and retained | All development done by named individuals with accountability | Git blame / commit history | Background-check policy not yet formalized |
+| CC1.3 | Competent individuals are hired and retained | Personnel security policy: identity verification + reference check before production access; documented solo-founder compensating controls (Git audit trail, VPS logs, hash-chain activity log); onboarding/offboarding checklists; access log | `docs/PERSONNEL_SECURITY.md`; Git commit history | — |
 | CC1.4 | Accountability for internal controls | Owner accountable; RBAC limits what any one role can do | `server/middleware/roles.ts`; `multiTenantIsolation.test.ts` | — |
 | CC1.5 | Enforces accountability via performance review | Founder-led review cycle at current stage | — | Accepted risk at current stage |
 
