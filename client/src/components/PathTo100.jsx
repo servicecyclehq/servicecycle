@@ -138,14 +138,14 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
       </div>
       <div className="card-body">
         {fully ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#15803d', padding: '8px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--color-success, #15803d)', padding: '8px 0' }}>
             <CheckCircle2 size={20} /> <span style={{ fontWeight: 700 }}>Fully compliant — nothing to fix.</span>
           </div>
         ) : (
           <>
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', color: overallColor }}>{data.overallRate}%</span>
+                <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: overallColor }}>{data.overallRate}%</span>
                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{Math.max(0, 100 - data.overallRate)}% to fully compliant</span>
               </div>
               <div className="sc-progress"><i style={{ width: `${overallPct}%`, background: overallColor }} /></div>
@@ -168,7 +168,7 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
                       {row.title}
                     </Link>
                     {row.siteName && <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{row.siteName}</span>}
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap' }}>+{row.pointsRecovered}%</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-success, #15803d)', whiteSpace: 'nowrap' }}>+{row.pointsRecovered}%</span>
                     {canWrite && <ActionButton row={row} busy={busyId === key} onRun={runAction} />}
                   </div>
                 );
