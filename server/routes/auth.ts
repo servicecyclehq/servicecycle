@@ -211,7 +211,10 @@ const EMAIL_LOCKOUT_MAX_SIZE    = 1000;            // cap map to prevent DoS gro
 
 const loginFailMap = new Map();
 
-function _recordLoginFail(email) {
+// Returns true when this call is the one that sets the lockedUntil (i.e. the
+// Nth failure that triggers the lockout), so callers can write a distinct
+// login_lockout_triggered activityLog event without an extra DB round-trip.
+function _recordLoginFail(email): boolean {
   const key = email.toLowerCase();
   const now = Date.now();
   let entry = loginFailMap.get(key) || { count: 0, windowStart: now, lockedUntil: 0 };
@@ -220,7 +223,8 @@ function _recordLoginFail(email) {
     entry = { count: 0, windowStart: now, lockedUntil: 0 };
   }
   entry.count += 1;
-  if (entry.count >= EMAIL_LOCKOUT_MAX_FAILS) {
+  const justLocked = entry.count === EMAIL_LOCKOUT_MAX_FAILS;
+  if (justLocked) {
     entry.lockedUntil = now + EMAIL_LOCKOUT_DURATION_MS;
   }
   // LRU eviction: delete + re-insert moves entry to tail of insertion order
@@ -230,6 +234,7 @@ function _recordLoginFail(email) {
   if (loginFailMap.size > EMAIL_LOCKOUT_MAX_SIZE) {
     loginFailMap.delete(loginFailMap.keys().next().value);
   }
+  return justLocked;
 }
 
 function _isEmailLockedOut(email) {
@@ -527,7 +532,7 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
       await new Promise((r) => setTimeout(r, 200)); // prevent timing enumeration
       // Record fail even for unknown emails to prevent account-existence enumeration
       // via differing lockout behaviour between known and unknown addresses. (M1)
-      _recordLoginFail(normEmail);
+      const locked1 = _recordLoginFail(normEmail);
       // B4: anonymous-email failures now persist to ActivityLog (userId is
       // nullable as of migration 20260502160000_activity_log_user_optional).
       // Admins can spot brute-force against made-up addresses by querying
@@ -537,12 +542,21 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
         action:  'login_failed',
         details: { ip: req.ip, reason: 'unknown_email', attemptedEmail: normEmail },
       });
+      // CC7.3: log a distinct event when the Nth failure triggers the lockout so
+      // admins can query action='login_lockout_triggered' without counting failures.
+      if (locked1) {
+        writeActivityLog({
+          userId:  null,
+          action:  'login_lockout_triggered',
+          details: { ip: req.ip, attemptedEmail: normEmail, windowMs: EMAIL_LOCKOUT_WINDOW_MS, durationMs: EMAIL_LOCKOUT_DURATION_MS },
+        });
+      }
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      _recordLoginFail(normEmail); // (M1)
+      const locked2 = _recordLoginFail(normEmail); // (M1)
       // C1: known-user failure — write an audit row pinned to the targeted
       // userId so admins can spot brute-force against a specific account.
       writeActivityLog({
@@ -550,17 +564,33 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
         action:  'login_failed',
         details: { ip: req.ip, reason: 'bad_password' },
       });
+      if (locked2) {
+        writeActivityLog({
+          userId:    user.id,
+          accountId: user.accountId,
+          action:    'login_lockout_triggered',
+          details:   { ip: req.ip, windowMs: EMAIL_LOCKOUT_WINDOW_MS, durationMs: EMAIL_LOCKOUT_DURATION_MS },
+        });
+      }
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
 
     // M2: reject deactivated users at login — same error message, don't leak account existence
     if (!user.isActive) {
-      _recordLoginFail(normEmail); // (M1) count inactive-user failures too
+      const locked3 = _recordLoginFail(normEmail); // (M1) count inactive-user failures too
       writeActivityLog({
         userId:  user.id,
         action:  'login_failed',
         details: { ip: req.ip, reason: 'inactive_user' },
       });
+      if (locked3) {
+        writeActivityLog({
+          userId:    user.id,
+          accountId: user.accountId,
+          action:    'login_lockout_triggered',
+          details:   { ip: req.ip, windowMs: EMAIL_LOCKOUT_WINDOW_MS, durationMs: EMAIL_LOCKOUT_DURATION_MS },
+        });
+      }
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
 

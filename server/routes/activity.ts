@@ -47,7 +47,7 @@ function cefEscapeExt(s: any): string {
 }
 // Higher CEF severity for security-relevant events; default 3 (informational).
 const CEF_SEVERITY: any = {
-  login_failed: 6, permission_denied: 6, admin_password_reset: 7,
+  login_failed: 6, login_lockout_triggered: 7, permission_denied: 6, admin_password_reset: 7,
   compliance_snapshot_integrity_failure: 9,
 };
 
@@ -66,8 +66,9 @@ const ACTION_LABELS: any = {
   document_uploaded:    'Document uploaded',
   user_created:         'User added',
   // Sprint 5 (C1) — audit visibility additions
-  login_failed:       'Failed login attempt',
-  permission_denied:  'Permission denied',
+  login_failed:             'Failed login attempt',
+  login_lockout_triggered:  'Account locked out (too many failures)',
+  permission_denied:        'Permission denied',
   document_accessed:  'Document accessed',
   // 2026-05-03 audit (F010) — admin-initiated user-impersonation primitive
   admin_password_reset: 'Admin password reset (target user)',
