@@ -46,9 +46,7 @@ const VALID_TIMELINES = ['immediately','within_1_week','within_30_days','next_bu
 // Rep lifecycle transition targets (PATCH /:id/status). 'draft' is NOT here — a
 // draft is created via POST {draft:true} and promoted via POST /:id/send only.
 const VALID_STATUSES  = ['requested','quoted','accepted','declined'];
-// Statuses a caller may FILTER the list by (GET ?status=) — includes 'draft',
-// plus two virtual views: 'active' (requested+quoted+draft) and 'resolved'
-// (accepted+declined).
+// Statuses a caller may FILTER the list by (GET ?status=) — includes 'draft'.
 const VALID_FILTER_STATUSES = [...VALID_STATUSES, 'draft', 'active', 'resolved'];
 
 /**
@@ -235,8 +233,6 @@ router.get('/', async (req, res) => {
     if (assetId)   where.assetId = String(assetId);
     if (emergency === 'true') where.emergencyMode = true;
 
-    // Count resolved-this-month regardless of the current filter — used by the
-    // Resolved tab label in the manager inbox without a separate request.
     const monthStart = new Date();
     monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
 
@@ -254,7 +250,7 @@ router.get('/', async (req, res) => {
       }),
       prisma.quoteRequest.count({ where }),
       prisma.quoteRequest.count({
-        where: { accountId: req.user.accountId, resolvedAt: { not: null, gte: monthStart } },
+        where: { accountId: req.user.accountId, status: { in: ['accepted', 'declined'] }, resolvedAt: { gte: monthStart } },
       }),
     ]);
 

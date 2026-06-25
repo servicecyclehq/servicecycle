@@ -85,13 +85,10 @@ router.get('/low-stock', requireManager, async (req: any, res: any) => {
         site: { select: { id: true, name: true } },
       },
     });
-    const LONG_LEAD_WEEKS = 8; // flag as procurement risk when lead time >= this
+    const LONG_LEAD_WEEKS = 8;
     const low = entries
       .filter((e: any) => e.qtyMin != null && e.qtyOnHand < e.qtyMin)
-      .map((e: any) => ({
-        ...e,
-        procurementRisk: e.part?.leadTimeWeeks != null && e.part.leadTimeWeeks >= LONG_LEAD_WEEKS,
-      }));
+      .map((e: any) => ({ ...e, procurementRisk: e.part?.leadTimeWeeks != null && e.part.leadTimeWeeks >= LONG_LEAD_WEEKS }));
     const procurementRiskCount = low.filter((e: any) => e.procurementRisk).length;
     return res.json({ success: true, data: { count: low.length, items: low, procurementRiskCount } });
   } catch (err: any) {
@@ -621,7 +618,7 @@ router.delete('/:id/inventory/:entryId', requireManager, async (req: any, res: a
     const entry = await prisma.spareInventory.findFirst({
       where: { id: String(req.params.entryId), accountId, partId: String(req.params.id) },
     });
-    if (!entry) return res.status(404).json({     success: false, error: 'Inventory entry not found.' });
+    if (!entry) return res.status(404).json({ success: false, error: 'Inventory entry not found.' });
 
     await prisma.spareInventory.delete({ where: { id: entry.id } });
     writeLog({

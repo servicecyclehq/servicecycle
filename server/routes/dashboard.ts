@@ -111,12 +111,12 @@ router.get('/', async (req, res) => {
 
       // Parts Alerts: count of SpareInventory entries where qtyOnHand < qtyMin.
       // Prisma lacks field-to-field comparison so we pull managed entries and filter in JS.
-      // leadTimeWeeks surfaces procurement-risk items (lead time >= 8 wks).
+      // Also computes procurementRiskCount: low-stock parts with leadTimeWeeks >= 8.
       prisma.spareInventory.findMany({
         where: { accountId, qtyMin: { not: null } },
         select: { qtyOnHand: true, qtyMin: true, part: { select: { leadTimeWeeks: true } } },
       }).then((managed: any[]) => {
-        const low = managed.filter((e: any) => e.qtyOnHand < e.qtyMin);
+        const low = managed.filter(e => e.qtyOnHand < e.qtyMin);
         return {
           count: low.length,
           procurementRiskCount: low.filter((e: any) => e.part?.leadTimeWeeks != null && e.part.leadTimeWeeks >= 8).length,
