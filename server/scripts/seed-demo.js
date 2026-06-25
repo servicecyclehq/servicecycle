@@ -1,5 +1,11 @@
 'use strict';
 
+// tsx/cjs registers TypeScript-aware require() resolution so this CommonJS
+// script can load TypeScript library files (e.g. lib/newsScanner.ts) when
+// invoked via plain `node` inside the Docker container (which uses tsx for
+// runtime compilation but does not pre-compile to a dist/ directory).
+try { require('tsx/cjs'); } catch (_) { /* running under tsx already -- no-op */ }
+
 /**
  * scripts/seed-demo.js
  * --------------------
@@ -1328,6 +1334,45 @@ async function _seedAccount() {
     resultRating: 'YELLOW',
     notes: 'Moisture 28 ppm (IEEE C57.106 Action Level 1); dielectric strength 28 kV (below 30 kV recommended minimum). Oil dehydration filtration recommended. Acid number and color within limits.',
   } });
+
+  // ── Demo disaster events (DEMO_FIXES 2.4) ───────────────────────────────
+  // Seed one active and one resolved DisasterEvent so the Disaster Response
+  // page shows content rather than 'no active events'. affectedSiteIds uses
+  // the real site UUIDs so GET /api/disaster-events filters them in.
+  // nwsAlertId guards are stable IDs so re-running the seed is idempotent.
+  const _deExisting1 = await prisma.disasterEvent.findFirst(
+    { where: { nwsAlertId: 'demo-seed-severe-thunderstorm-watch' } }
+  ).catch(() => null);
+  if (!_deExisting1) {
+    await prisma.disasterEvent.create({ data: {
+      eventType:        'severe_thunderstorm',
+      severity:         'watch',
+      title:            'Severe Thunderstorm Watch -- Milwaukee/Waukesha County',
+      region:           'Southeastern Wisconsin -- Milwaukee, Waukesha, Ozaukee Counties',
+      affectedStates:   ['WI'],
+      affectedSiteIds:  [riverside.id, eastgate.id],
+      nwsAlertId:       'demo-seed-severe-thunderstorm-watch',
+      source:           'nws',
+      declaredAt:       addDays(now, -2),
+    } });
+  }
+  const _deExisting2 = await prisma.disasterEvent.findFirst(
+    { where: { nwsAlertId: 'demo-seed-blizzard-warning-jan' } }
+  ).catch(() => null);
+  if (!_deExisting2) {
+    await prisma.disasterEvent.create({ data: {
+      eventType:        'blizzard',
+      severity:         'warning',
+      title:            'Blizzard Warning -- 18-24 inches of snowfall expected',
+      region:           'Northern and Central Wisconsin',
+      affectedStates:   ['WI'],
+      affectedSiteIds:  [riverside.id, eastgate.id],
+      nwsAlertId:       'demo-seed-blizzard-warning-jan',
+      source:           'nws',
+      declaredAt:       addDays(now, -175),
+      resolvedAt:       addDays(now, -173),
+    } });
+  }
 
   // ── System studies — the documents loss-control auditors ask for by name ──
   // Arc flash study approaching the NFPA 70E 5-year clock.
