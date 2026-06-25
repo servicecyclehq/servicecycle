@@ -128,7 +128,7 @@ export default function BackfillImport() {
       </p>
 
       {err && (
-        <div role="alert" style={{ padding: '12px 16px', background: '#fff1f1', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', marginBottom: 16, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <div role="alert" style={{ padding: '12px 16px', background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', borderRadius: 8, color: 'var(--chip-red-fg)', marginBottom: 16, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" /> <span>{err}</span>
         </div>
       )}

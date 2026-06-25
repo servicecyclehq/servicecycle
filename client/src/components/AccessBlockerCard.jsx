@@ -72,7 +72,7 @@ export default function AccessBlockerCard({ assetId = null }) {
   }
 
   if (loading) return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--color-text-secondary)' }}>Loading blockers…</div></div>;
-  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
+  if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: 'var(--chip-red-fg)' }}>{error}</div></div>;
   if (!data)   return null;
 
   const blockers = data.blockers || [];
@@ -116,7 +116,7 @@ export default function AccessBlockerCard({ assetId = null }) {
                   {b.description || (!b.assetLabel ? '(no detail)' : '')}
                   {b.siteName && <span style={{ color: 'var(--color-text-secondary)' }}> · {b.siteName}</span>}
                   {b.blockedSchedules > 0 && (
-                    <span style={{ color: '#b45309', fontSize: 11 }}> · blocks {b.blockedSchedules} task{b.blockedSchedules === 1 ? '' : 's'}</span>
+                    <span style={{ color: 'var(--chip-amber-fg)', fontSize: 11 }}> · blocks {b.blockedSchedules} task{b.blockedSchedules === 1 ? '' : 's'}</span>
                   )}
                 </div>
                 {b.status === 'open'

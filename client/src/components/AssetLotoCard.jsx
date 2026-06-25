@@ -61,8 +61,8 @@ export default function AssetLotoCard({ asset, canWrite }) {
         <div className="card-title">
           🔒 LOTO Procedures
           {active.length > 0 && (
-            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: '#15803d',
-              background: '#f0fdf4', padding: '2px 8px', borderRadius: 10 }}>
+            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: 'var(--chip-green-fg)',
+              background: 'var(--chip-green-bg)', padding: '2px 8px', borderRadius: 10 }}>
               Active ✓
             </span>
           )}

@@ -43,7 +43,7 @@ export default function AddData() {
         spreadsheet, a CMMS export. No need to know which importer it belongs to.
       </p>
 
-      {err && <div style={{ padding: '12px 16px', background: '#fff1f1', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', marginBottom: 16 }}>{err}</div>}
+      {err && <div style={{ padding: '12px 16px', background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', borderRadius: 8, color: 'var(--chip-red-fg)', marginBottom: 16 }}>{err}</div>}
 
       <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}>
         <UploadCloud size={40} strokeWidth={1.25} style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }} />
