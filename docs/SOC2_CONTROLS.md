@@ -44,7 +44,7 @@ is deferred or manual.
 | CC3.1 | Specifies objectives clearly enough to identify risks | Architecture documented | `docs/ARCHITECTURE.md` | — |
 | CC3.2 | Identifies and analyzes risks to achievement of objectives | Periodic security audits + formal risk register with 10 risks, L×I scoring, mitigations, owners, and quarterly review cadence | `docs/security/SECURITY_AUDIT_2026-06-20.md`; `docs/RISK_REGISTER.md` | — |
 | CC3.3 | Considers potential for fraud | Role-separation design; consultant read-only; no single role can forge + approve a compliance record | `server/middleware/roles.ts`; `requireManager` guards on all write routes | — |
-| CC3.4 | Identifies and assesses changes that could impact controls | Security review triggered on each major feature | `docs/sessions/` session notes | Formal change-impact review checklist not written |
+| CC3.4 | Identifies and assesses changes that could impact controls | Mandatory change-impact review checklist for schema, auth, public API, and external-integration PRs; covers scope, tenant isolation, rollback, and test coverage | `docs/CHANGE_REVIEW_CHECKLIST.md` | — |
 
 ### CC4 — Monitoring Activities
 
@@ -95,7 +95,7 @@ is deferred or manual.
 | Criterion | Control | Evidence | Gap |
 |---|---|---|---|
 | CC9.1 | Identifies and assesses risks from business disruption | Backup + restore test; nightly backup with S3 off-host; **RTO target: ~2 hours** (rebuild droplet + restore latest dump); **RPO target: ~24 hours** (nightly `pg_dump` at 02:00 UTC, 30-day retention) | `server/lib/backup.ts`; `server/lib/restoreTest.ts`; `docs/DEPLOY_RUNBOOK.md` §Disaster Recovery | — |
-| CC9.2 | Assesses and manages risks of vendors and business partners | Sub-processor list maintained | See vendor list below | No formal vendor security questionnaires |
+| CC9.2 | Assesses and manages risks of vendors and business partners | Vendor security review template + approval record covering all current vendors (Anthropic, Resend, DigitalOcean, Google Gemini, Groq); DPA, SOC2, data-region, PII scope, and incident-notification SLA captured per vendor | `docs/VENDOR_SECURITY_REVIEW.md`; `docs/OFFBOARDING.md` §6 | — |
 
 **Sub-processors / vendors:**
 
