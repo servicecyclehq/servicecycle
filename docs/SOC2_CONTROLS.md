@@ -72,7 +72,7 @@ is deferred or manual.
 | CC6.5 | Physical access | Hosted on DigitalOcean (SOC 2 certified DC) | DigitalOcean compliance: digitalocean.com/trust | Physical access at DC level; no ServiceCycle hardware |
 | CC6.6 | Implements boundary protection | CSP headers; CORS allowlist; rate limiting stack; Cloudflare proxy | `server/index.ts` CSP + CORS + limiters | — |
 | CC6.7 | Manages transmission confidentiality | HTTPS/TLS (nginx termination); HSTS header | `server/index.ts` HSTS; nginx config | — |
-| CC6.8 | Manages encryption keys | AES-256-GCM for per-account secrets; `ENCRYPTED_KEYS` env var; backup crypto | `server/lib/docCrypto.ts`; `server/lib/backupCrypto.ts` | Key rotation process not yet formalized |
+| CC6.8 | Manages encryption keys and access monitoring | AES-256-GCM for per-account secrets; `ENCRYPTED_KEYS` env var; backup crypto; every authenticated `/api/v1` call logged to the tamper-evident activity log (`action=api_v1_call`) with key name/ID, method, path, HTTP status, latency, and client IP | `server/lib/docCrypto.ts`; `server/lib/backupCrypto.ts`; `server/middleware/apiKeyAuth.ts` | Key rotation process not yet formalized |
 
 ### CC7 — System Operations
 
