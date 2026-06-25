@@ -211,9 +211,12 @@ export default function OutagePlannerPage() {
           <Bolt size={22} strokeWidth={1.75} /> Outage Planner
         </h1>
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 0', maxWidth: 760, lineHeight: 1.6 }}>
-          Tell the planner your outage date and what you&rsquo;re de-energizing. It pulls everything coming
-          due by then, everything deferred since your last outage, and&mdash;since the gear is already
-          dark&mdash;every device in scope, so you do the work once instead of buying another shutdown later.
+          Tell the planner your outage date and what you&rsquo;re de-energizing. It builds a task list from
+          three rules: everything <strong>due by that date</strong>, any tasks <strong>deferred from prior shutdowns</strong>,
+          and&mdash;since the gear is already dark&mdash;<strong>every other device in scope</strong>, so you capture
+          opportunistic work and avoid buying a separate shutdown later. Review the list, uncheck anything
+          you won&rsquo;t do, then hit <em>Create plan</em> to write the work orders and lock a blackout window
+          in your compliance calendar.
         </p>
       </div>
 
@@ -247,7 +250,7 @@ export default function OutagePlannerPage() {
           <div className="card-body" style={{ borderTop: '1px solid var(--color-border)', display: 'flex', flexWrap: 'wrap', gap: 20 }}>
             <div>
               <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, marginBottom: 6 }}>Include rules</div>
-              {[['dueByDate', 'Due by the outage date'], ['carryOver', 'Carry-over from last outage'], ['opportunistic', 'Everything de-energized (recommended)']].map(([k, lbl]) => (
+              {[['dueByDate', 'Tasks due by the outage date (always include)'], ['carryOver', 'Carry-over — tasks deferred from prior shutdowns'], ['opportunistic', 'Everything de-energized — full opportunistic sweep (recommended)']].map(([k, lbl]) => (
                 <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--font-size-sm)', marginBottom: 4 }}>
                   <input type="checkbox" checked={rules[k]} onChange={() => setRules(r => ({ ...r, [k]: !r[k] }))} /> {lbl}
                 </label>
@@ -306,7 +309,27 @@ export default function OutagePlannerPage() {
         <div style={{ textAlign: 'center', padding: '60px 24px', color: 'var(--color-text-secondary)' }}>
           <Bolt size={40} strokeWidth={1} style={{ marginBottom: 12 }} />
           <div style={{ fontWeight: 600, marginBottom: 4 }}>Nothing to do in this scope for that date</div>
-          <div style={{ fontSize: 'var(--font-size-sm)' }}>Try a later date, a broader scope, or enable the &ldquo;everything de-energized&rdquo; rule under Advanced.</div>
+          <div style={{ fontSize: 'var(--font-size-sm)' }}>
+            Try a later date, a broader scope, or enable &ldquo;Everything de-energized&rdquo; under Advanced
+            to also capture opportunistic tasks on gear that happens to be dark.
+          </div>
+        </div>
+      )}
+
+      {/* How-to-read legend — shown once when results are visible */}
+      {!loading && !error && data && data.locations.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12,
+          padding: '8px 14px', borderRadius: 6, background: 'var(--color-bg-secondary, #f8fafc)',
+          border: '1px solid var(--color-border)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+          <span style={{ fontWeight: 700, color: 'var(--color-text)', marginRight: 4 }}>Reading this list:</span>
+          <span>Grouped by <strong>Location &rarr; Panel &rarr; Device</strong>. Each row shows the tasks and why they&rsquo;re included:</span>
+          {Object.entries(REASON_META).map(([key, m]) => (
+            <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: m.bg, color: m.color }}>{m.label}</span>
+              <span>{key === 'overdue' ? '— past its due date' : key === 'carry-over' ? '— deferred from last outage' : key === 'due' ? '— due by your chosen date' : '— in scope, opportunistic'}</span>
+            </span>
+          ))}
+          <span style={{ marginLeft: 'auto' }}>Uncheck any device to exclude it from the created plan.</span>
         </div>
       )}
 
