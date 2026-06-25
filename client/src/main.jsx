@@ -53,6 +53,18 @@ installGlobalErrorHandlers();
 // deploy reaches an already-open tab without a manual reload/unregister. With
 // registerType 'autoUpdate' (skipWaiting+clientsClaim) a found update activates
 // and reloads on its own — ending the "did it update?" dance.
+// When a new SW takes control (skipWaiting + clientsClaim), reload once so
+// the user gets the fresh JS/CSS instead of running stale bundles in memory.
+// The `refreshing` guard prevents a reload loop (controllerchange fires once).
+if ('serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+}
+
 registerSW({
   immediate: true,
   onRegisteredSW(_swUrl, registration) {
