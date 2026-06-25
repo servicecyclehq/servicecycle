@@ -14,9 +14,9 @@ import { ClipboardCheck } from 'lucide-react';
 import api from '../api/client';
 
 function pctColor(p) {
-  if (p >= 90) return '#15803d';
-  if (p >= 70) return '#92400e';
-  return '#b91c1c';
+  if (p >= 90) return 'var(--chip-green-fg)';
+  if (p >= 70) return 'var(--chip-amber-fg)';
+  return 'var(--chip-red-fg)';
 }
 
 export default function EvidenceGapCard({ siteId = null }) {

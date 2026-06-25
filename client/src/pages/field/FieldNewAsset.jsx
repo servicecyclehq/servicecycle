@@ -148,7 +148,7 @@ export default function FieldNewAsset() {
         <option value="">— Select a site —</option>
         {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
-      {siteId && <div style={{ fontSize: 12, color: '#15803d', marginTop: 4 }}>Remembered for your next add this session.</div>}
+      {siteId && <div style={{ fontSize: 12, color: 'var(--chip-green-fg)', marginTop: 4 }}>Remembered for your next add this session.</div>}
 
       {aiIdentifyAvailable && (
         <>
@@ -176,14 +176,14 @@ export default function FieldNewAsset() {
               {' '}· {CONF_META[typeGuess.confidence].label}. Confirm or change below.
             </div>
           )}
-          {identifyError && <div style={{ fontSize: 12.5, marginTop: 6, color: '#b91c1c' }}>{identifyError}</div>}
+          {identifyError && <div style={{ fontSize: 12.5, marginTop: 6, color: 'var(--chip-red-fg)' }}>{identifyError}</div>}
         </>
       )}
 
       {dupWarn && (
-        <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 10, border: '1px solid #fbbf24', background: '#fffbeb' }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#92400e' }}>You may already have this device</div>
-          <div style={{ fontSize: 12.5, color: '#92400e', marginTop: 4 }}>
+        <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--chip-amber-fg)', background: 'var(--chip-amber-bg)' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--chip-amber-fg)' }}>You may already have this device</div>
+          <div style={{ fontSize: 12.5, color: 'var(--chip-amber-fg)', marginTop: 4 }}>
             That serial matches <strong>{dupWarn.label}</strong>
             {dupWarn.siteName ? ` at ${dupWarn.siteName}` : ''}
             {dupWarn.lastTestedAt ? ` (last tested ${new Date(dupWarn.lastTestedAt).toLocaleDateString()})` : ''}.

@@ -208,7 +208,7 @@ export default function FieldScan() {
         {camError === 'unavailable' && (
           <div role="alert" style={{
             padding: '12px 14px', marginBottom: 14, borderRadius: 12,
-            background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b',
+            background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)',
             fontSize: 14, lineHeight: 1.5,
           }}>
             <strong>No camera available.</strong> Find the equipment by search instead.

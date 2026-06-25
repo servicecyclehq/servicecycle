@@ -24,7 +24,7 @@ function AssetRow({ a, kind }) {
         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{a.reason}</div>
       </div>
       {kind === 'forgotten' && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: a.neverServiced ? '#b91c1c' : '#b45309', flexShrink: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: a.neverServiced ? 'var(--chip-red-fg)' : 'var(--chip-amber-fg)', flexShrink: 0 }}>
           {a.neverServiced ? 'never serviced' : `${a.daysSinceService}d ago`}
         </span>
       )}

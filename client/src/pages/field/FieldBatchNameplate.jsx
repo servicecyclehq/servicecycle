@@ -105,7 +105,7 @@ export default function FieldBatchNameplate() {
         Change the type any time — each scan uses whatever is selected now.
       </div>
 
-      {error && <div style={{ color: '#b91c1c', fontSize: 13.5, marginTop: 12 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--chip-red-fg)', fontSize: 13.5, marginTop: 12 }}>{error}</div>}
 
       <button
         type="button"
