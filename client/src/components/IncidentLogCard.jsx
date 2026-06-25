@@ -83,7 +83,7 @@ export default function IncidentLogCard({ assetId, compact = false }) {
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div className="card-title" style={{ flex: 1 }}>Incidents &amp; protective-device operations</div>
         {openCount > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: '#fff1f1', color: '#b91c1c' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)' }}>
             {openCount} open
           </span>
         )}
@@ -127,7 +127,7 @@ export default function IncidentLogCard({ assetId, compact = false }) {
             {(compact ? incidents.slice(0, 5) : incidents).map((inc) => (
               <div key={inc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--color-border)' }}>
                 <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap',
-                  background: inc.resolvedAt ? '#f1f5f9' : '#fff1f1', color: inc.resolvedAt ? '#64748b' : '#b91c1c' }}>
+                  background: inc.resolvedAt ? 'var(--chip-slate-bg)' : 'var(--chip-red-bg)', color: inc.resolvedAt ? 'var(--chip-slate-fg)' : 'var(--chip-red-fg)' }}>
                   {inc.resolvedAt ? 'Resolved' : 'Open'}
                 </span>
                 <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>{TYPE_LABELS[inc.type] || inc.type}</span>
