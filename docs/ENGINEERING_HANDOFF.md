@@ -59,7 +59,7 @@ The chain is per-account. If you're doing a data migration that touches Activity
 
 **Sidebar.jsx is ~1034 lines.** Same concern. Same advice.
 
-**No anomalous login alerting.** Failed authentication attempts are not currently tracked in the activity log beyond the Express rate limiter. A sustained credential-stuffing attack would be rate-limited but not alerted on. Adding failed-auth tracking to activityLog + a threshold alert is the next security hardening item.
+**Login lockout events are logged but not actively alerted.** Every failed login writes a `login_failed` (CEF severity 6) event to activityLog. When the 5th failure in a 15-minute window triggers a lockout, a `login_lockout_triggered` (CEF severity 7) event is also written — queryable from the admin Activity Log. There is no proactive email/alert to an admin when a lockout fires. Adding an email notification or SIEM webhook on `login_lockout_triggered` events is the next alerting improvement.
 
 ### Medium priority
 
