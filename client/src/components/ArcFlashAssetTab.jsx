@@ -48,7 +48,7 @@ function Field({ label, value }) {
 function sevColor(s) { return s === 'danger' ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)'; }
 
 // Slice 2.8a — per-bus confidence/trust band color (green/yellow/red).
-function bandColor(b) { return b === 'green' ? '#15803d' : b === 'yellow' ? '#b45309' : '#b91c1c'; }
+function bandColor(b) { return b === 'green' ? 'var(--chip-green-fg)' : b === 'yellow' ? 'var(--chip-amber-fg)' : 'var(--chip-red-fg)'; }
 
 // Compact trust meter: "Trust 78%" pill, band-colored, hover shows the factor
 // breakdown. Deterministic score from the API (study age, completeness, field
@@ -460,7 +460,7 @@ function IncidentsCard({ assetId, incidents, canWrite, onChange }) {
 
 // Slice 11 — time-machine: the bus's arc-flash history as one chronological
 // stream. Self-loads; hides entirely when there's nothing to show.
-const TL_DOT = { study: '#2563eb', label_printed: '#15803d', device_test: '#b45309', device_collected: '#6b7280' };
+const TL_DOT = { study: 'var(--chip-blue-fg)', label_printed: 'var(--chip-green-fg)', device_test: 'var(--chip-amber-fg)', device_collected: 'var(--chip-slate-fg)' };
 function ArcFlashTimelineCard({ assetId }) {
   const [events, setEvents] = useState(null);
   useEffect(() => {
@@ -478,7 +478,7 @@ function ArcFlashTimelineCard({ assetId }) {
       <div style={{ position: 'relative', paddingLeft: 18 }}>
         {events.map((e, i) => (
           <div key={i} style={{ position: 'relative', paddingBottom: 12 }}>
-            <span style={{ position: 'absolute', left: -18, top: 3, width: 9, height: 9, borderRadius: '50%', background: TL_DOT[e.type] || '#9ca3af', boxShadow: '0 0 0 2px var(--color-surface)' }} />
+            <span style={{ position: 'absolute', left: -18, top: 3, width: 9, height: 9, borderRadius: '50%', background: TL_DOT[e.type] || 'var(--chip-slate-fg)', boxShadow: '0 0 0 2px var(--color-surface)' }} />
             {i < events.length - 1 && <span style={{ position: 'absolute', left: -14, top: 12, bottom: 0, width: 1, background: 'var(--color-border)' }} />}
             <div style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary)' }}>{fmtDate(e.date)}</div>
             <div style={{ fontSize: '0.84rem', fontWeight: 600, color: e.severity === 'danger' ? 'var(--color-danger, #b91c1c)' : 'inherit' }}>{e.title}</div>
