@@ -1414,4 +1414,10 @@ export default function AssetDetail() {
           schedule={completingSchedule}
           busy={busy}
           onClose={() => setCompletingSchedule(null)}
-          onConfirm={(performedByName, completedDate) => handleCompleteSchedule(complet
+          onConfirm={(performedByName, completedDate) => handleCompleteSchedule(completingSchedule, performedByName, completedDate)}
+        />
+      )}
+      <Toast toast={toast} onClose={() => setToast(null)} />
+    </>
+  );
+}
