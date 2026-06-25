@@ -395,7 +395,7 @@ router.patch('/:id/status', requireManager, async (req, res) => {
     // Verify ownership
     const existing = await prisma.quoteRequest.findFirst({
       where:  { id: req.params.id, accountId: req.user.accountId },
-      select: { id: true, status: true, assetId: true },
+      select: { id: true, status: true, assetId: true, resolvedAt: true },
     });
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
 
@@ -404,6 +404,8 @@ router.patch('/:id/status', requireManager, async (req, res) => {
     if (status === 'quoted')   { updateData.quotedAt = now; if (quoteNotes) updateData.quoteNotes = quoteNotes; }
     if (status === 'accepted' || status === 'declined') {
       updateData.respondedAt = now;
+      // resolvedAt: terminal state reached — stamp once, never overwrite.
+      if (!existing.resolvedAt) updateData.resolvedAt = now;
       if (status === 'declined' && declineReason) updateData.declineReason = declineReason;
     }
 

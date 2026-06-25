@@ -109,7 +109,17 @@ router.get('/import/template', requireManager, (_req: any, res: any) => {
 // preview=true → parse and return rows with status (new/update/error); no DB writes.
 // preview=false (or absent) → upsert all valid rows; returns summary.
 const multer = require('multer');
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+// fileFilter: accept CSV and plain-text MIME types. Some browsers (notably
+// Excel on Windows) send application/vnd.ms-excel for .csv files; text/plain
+// is also common. We reject clearly-binary types (images, PDFs, ZIPs, etc.)
+// as defence-in-depth even though the buffer is only ever text-parsed.
+const _csvFilter = (_req: any, file: any, cb: any) => {
+  const ok = /^(text\/(csv|plain)|application\/(csv|vnd\.ms-excel))$/i.test(file.mimetype)
+             || file.originalname.toLowerCase().endsWith('.csv');
+  if (ok) return cb(null, true);
+  cb(Object.assign(new Error('Only CSV files are accepted.'), { status: 400 }));
+};
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 }, fileFilter: _csvFilter });
 
 function parsePartsCSV(text: string): { rows: any[]; errors: string[] } {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(Boolean);

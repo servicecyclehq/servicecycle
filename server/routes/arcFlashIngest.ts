@@ -1286,11 +1286,13 @@ router.get('/asset/:assetId/incidents', requireManager, async (req: any, res: an
 router.patch('/incidents/:id', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
-    const found = await prisma.arcFlashIncident.findFirst({ where: { id: req.params.id, accountId }, select: { id: true } });
+    const found = await prisma.arcFlashIncident.findFirst({ where: { id: req.params.id, accountId }, select: { id: true, resolvedAt: true } });
     if (!found) return res.status(404).json({ success: false, error: 'Incident not found' });
     const b = req.body || {};
     const data: any = {};
     if (typeof b.status === 'string' && ['open', 'reviewed', 'closed'].includes(b.status)) data.status = b.status;
+    // resolvedAt: stamp once when the incident reaches the terminal 'closed' state.
+    if (data.status === 'closed' && !found.resolvedAt) data.resolvedAt = new Date();
     if (typeof b.correctiveAction === 'string') data.correctiveAction = b.correctiveAction.slice(0, 5000);
     if (!Object.keys(data).length) return res.status(400).json({ success: false, error: 'Nothing to update.' });
     const updated = await prisma.arcFlashIncident.update({ where: { id: found.id }, data });

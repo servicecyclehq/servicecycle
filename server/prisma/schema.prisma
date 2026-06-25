@@ -2312,6 +2312,7 @@ model QuoteRequest {
   quoteNotes      String?
   respondedAt     DateTime?
   declineReason   String?
+  resolvedAt      DateTime?                        // stamped when status -> accepted or declined
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
@@ -3228,6 +3229,7 @@ model ArcFlashIncident {
   studyStateSnapshot Json? // auto: label/study state at log time
   reportUrl          String?
   status             String    @default("open") // open | reviewed | closed
+  resolvedAt         DateTime?                        // stamped when status -> closed
   reportedById       String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
