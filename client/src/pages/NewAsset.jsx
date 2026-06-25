@@ -439,17 +439,17 @@ export default function NewAsset() {
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
               padding: '10px 14px', borderRadius: 8,
-              background: '#eff6ff', border: '1px solid #bfdbfe',
+              background: 'var(--chip-blue-bg)', border: '1px solid var(--chip-blue-fg)',
             }}>
-              <Layers size={16} color="#1d4ed8" />
-              <span style={{ fontSize: 'var(--font-size-sm)', color: '#1e40af' }}>
+              <Layers size={16} color="var(--chip-blue-fg)" />
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--chip-blue-fg)' }}>
                 <strong>Template applied:</strong> {templateApplied.name} — fields and nameplate pre-filled.{' '}
                 {templateTaskIds.length > 0 && `${templateTaskIds.length} tasks will be scheduled after creation.`}
               </span>
               <button
                 type="button"
                 style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#1d4ed8', fontSize: 12, padding: 4 }}
+                  color: 'var(--chip-blue-fg)', fontSize: 12, padding: 4 }}
                 onClick={() => { setTemplateApplied(null); setTemplateTaskIds([]); }}
               >
                 Clear
@@ -567,7 +567,7 @@ export default function NewAsset() {
                         role="alert"
                         style={{
                           marginTop: 10, padding: '8px 12px', borderRadius: 8,
-                          background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b',
+                          background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', color: 'var(--chip-red-fg)',
                           fontSize: 'var(--font-size-ui)',
                         }}
                       >
