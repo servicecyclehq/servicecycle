@@ -8,6 +8,8 @@
 
 pdfplumber==0.11.4
 pypdf==4.3.1
-pypdfium2==4.30.0
+# pypdfium2 and Pillow need pre-built wheels; use ranges so pip can pick
+# the latest compatible musl/Alpine wheel rather than failing on a missing exact version
+pypdfium2>=4.0,<5.0
 pytesseract==0.3.13
-Pillow==10.4.0
+Pillow>=10.4.0,<12.0
