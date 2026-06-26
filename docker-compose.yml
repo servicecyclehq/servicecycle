@@ -64,7 +64,7 @@ services:
     # permitted") under cap_drop:ALL + a read-only rootfs and crash-loops the
     # DB. docker-compose.ghcr.yml already did this rollback; main now matches.
     security_opt:
-      - "no-new-privileges:true"
+      - no-new-privileges:true
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
       - /var/run/postgresql:size=20m
@@ -175,7 +175,7 @@ services:
     # v5 scan: cap_drop:ALL restored for server (Node process does not need
     # Linux capabilities; safe to drop all).
     security_opt:
-      - “no-new-privileges:true”
+      - no-new-privileges:true
     cap_drop:
       - ALL
     tmpfs:
@@ -388,7 +388,7 @@ services:
     # blocks privilege escalation. Production clients (compose.prod /
     # compose.ghcr) run nginx on a read-only rootfs.
     security_opt:
-      - "no-new-privileges:true"
+      - no-new-privileges:true
     cap_drop:
       - ALL
     deploy:
