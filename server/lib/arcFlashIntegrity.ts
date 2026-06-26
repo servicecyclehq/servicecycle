@@ -40,7 +40,12 @@ function buildArcFlashHtml(
   reason: string,
   accountName: string,
   detail: string,
+  ppeCategory: number | null = null,
+  incidentEnergy: number | null = null,
 ): string {
+  const hazardLine = (ppeCategory !== null || incidentEnergy !== null)
+    ? `<p style="font-size:13px;color:#374151;margin:8px 0 16px;padding:8px 12px;background:#fef3c7;border-left:3px solid #b45309;border-radius:0 4px 4px 0;">Hazard level: ${ppeCategory !== null ? `PPE Category ${ppeCategory}` : 'N/A'} | Incident energy: ${incidentEnergy !== null ? `${incidentEnergy} cal/cm²` : 'N/A'}</p>`
+    : '';
   return `<!DOCTYPE html>
 <html>
 <body style="font-family:system-ui,sans-serif;color:#111827;background:#f9fafb;margin:0;padding:20px;">
@@ -52,7 +57,7 @@ function buildArcFlashHtml(
     <div style="padding:20px 24px;">
       <p style="font-size:14px;color:#374151;margin:0 0 4px;"><strong>${escHtml(reason)}</strong></p>
       <p style="font-size:13px;color:#374151;margin:8px 0 16px;">${escHtml(detail)}</p>
-      <p style="font-size:13px;color:#374151;margin:0 0 8px;">
+      ${hazardLine}<p style="font-size:13px;color:#374151;margin:0 0 8px;">
         An outdated or invalidated study exposes personnel to unquantified arc flash hazard per NFPA 70E §130.5(G) and Annex D.
       </p>
       <p style="font-size:12px;color:#9ca3af;margin:20px 0 0;">
@@ -156,7 +161,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
     },
     select: {
       id: true, accountId: true, siteId: true, performedDate: true, expiresAt: true,
-      coveredAssets: { select: { assetId: true }, take: 1 },
+      coveredAssets: { select: { assetId: true, incidentEnergyCalCm2: true, ppeCategory: true }, take: 1 },
     },
   });
 
@@ -224,8 +229,8 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
         ? 'Arc flash study 5-year re-evaluation (NFPA 70E Annex D best practice)'
         : `Arc flash study approaching 5-year re-evaluation (${crossedDay} days remaining)`;
       const detail = expired
-        ? `Study performed ${new Date(study.performedDate).toLocaleDateString()} expired ${expiresAt.toLocaleDateString()}. NFPA 70E Annex D recommends re-evaluation every 5 years as best practice; §130.5(G) mandates re-study only when system changes may affect arc flash results.`
-        : `Study performed ${new Date(study.performedDate).toLocaleDateString()} expires ${expiresAt.toLocaleDateString()} (within ${crossedDay} days). Plan the re-study now to avoid a compliance gap.`;
+        ? `Study performed ${new Date(study.performedDate).toISOString().slice(0, 10)} expired ${expiresAt.toISOString().slice(0, 10)}. NFPA 70E Annex D recommends re-evaluation every 5 years as best practice; §130.5(G) mandates re-study only when system changes may affect arc flash results.`
+        : `Study performed ${new Date(study.performedDate).toISOString().slice(0, 10)} expires ${expiresAt.toISOString().slice(0, 10)} (within ${crossedDay} days). Plan the re-study now to avoid a compliance gap.`;
 
       if (targetAssetId) {
         await maybeCreateArcFlashQuote(
@@ -239,7 +244,11 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       const account = await prisma.account.findUnique({
         where: { id: study.accountId }, select: { companyName: true },
       });
-      const html    = buildArcFlashHtml(reason, account?.companyName ?? study.accountId, detail);
+      const coveredAsset = study.coveredAssets[0] ?? null;
+      const studyPpeCategory = coveredAsset?.ppeCategory ?? null;
+      const studyIncidentEnergy = coveredAsset?.incidentEnergyCalCm2 != null
+        ? Number(coveredAsset.incidentEnergyCalCm2) : null;
+      const html    = buildArcFlashHtml(reason, account?.companyName ?? study.accountId, detail, studyPpeCategory, studyIncidentEnergy);
       const subject = `[Arc Flash Alert] ${reason} — ${account?.companyName ?? study.accountId}`;
       let pathEmailsSent = 0;
       for (const admin of admins) {
@@ -285,8 +294,8 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       : 'Arc flash study approaching 5-year re-evaluation — 6 months remaining';
 
     const detail = expired5yr
-      ? `Study date: ${studyDate.toLocaleDateString()} — now ${(ageYears).toFixed(1)} years old. NFPA 70E Annex D recommends re-evaluation every 5 years as best practice; §130.5(G) mandates re-study only when system changes may affect arc flash results.`
-      : `Study date: ${studyDate.toLocaleDateString()} — expires in approximately 6 months. Plan re-study now to avoid a compliance gap.`;
+      ? `Study date: ${studyDate.toISOString().slice(0, 10)} — now ${(ageYears).toFixed(1)} years old. NFPA 70E Annex D recommends re-evaluation every 5 years as best practice; §130.5(G) mandates re-study only when system changes may affect arc flash results.`
+      : `Study date: ${studyDate.toISOString().slice(0, 10)} — expires in approximately 6 months. Plan re-study now to avoid a compliance gap.`;
 
     // Dedup: skip if notified in the last 30 days for the same reason
     const template = expired5yr ? 'arc_flash_expired' : 'arc_flash_expiring_warning';

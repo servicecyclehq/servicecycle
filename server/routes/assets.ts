@@ -278,9 +278,9 @@ async function resolveCustomFields(accountId, customFields) {
 // definitionId) unique; a null canonical value DELETES the row so cleared
 // fields don't linger as empty strings in exports. Returns the display names
 // of fields whose stored value actually changed (feeds fields_updated).
-async function writeCustomFieldValues(assetId, entries) {
+async function writeCustomFieldValues(assetId, entries, db = prisma) {
   if (entries.length === 0) return [];
-  const existing = await prisma.customFieldValue.findMany({
+  const existing = await db.customFieldValue.findMany({
     where: { assetId, definitionId: { in: entries.map(e => e.definition.id) } },
   });
   const prevByDef = new Map(existing.map(v => [v.definitionId, v.value]));
@@ -289,13 +289,13 @@ async function writeCustomFieldValues(assetId, entries) {
   for (const { definition, value } of entries) {
     if (value === null) {
       if (prevByDef.has(definition.id)) {
-        await prisma.customFieldValue.delete({
+        await db.customFieldValue.delete({
           where: { assetId_definitionId: { assetId, definitionId: definition.id } },
         });
         changedNames.push(definition.name);
       }
     } else {
-      await prisma.customFieldValue.upsert({
+      await db.customFieldValue.upsert({
         where:  { assetId_definitionId: { assetId, definitionId: definition.id } },
         create: { assetId, definitionId: definition.id, value },
         update: { value },
@@ -826,47 +826,49 @@ router.post('/', requireManager, async (req, res) => {
     const criticality = conditionCriticality || 'C2';
     const environment = conditionEnvironment || 'C2';
 
-    const asset = await prisma.asset.create({
-      data: {
-        accountId: req.user.accountId,
-        siteId,
-        buildingId: buildingId || null,
-        areaId:     areaId || null,
-        positionId: positionId || null,
-        ownerId:    effOwnerId,
-        equipmentType,
-        manufacturer:  manufacturer || null,
-        model:         model || null,
-        serialNumber:  serialNumber || null,
-        nameplateData: nameplateData ?? undefined,
-        installDate:          installDate ? new Date(installDate) : null,
-        lastCommissionedDate: lastCommissionedDate ? new Date(lastCommissionedDate) : null,
-        conditionPhysical:    physical,
-        conditionCriticality: criticality,
-        conditionEnvironment: environment,
-        governingCondition:   worstCondition(physical, criticality, environment) as any,
-        inService:   inService !== undefined ? (inService === true || inService === 'true') : true,
-        isEnergized: isEnergized !== undefined ? (isEnergized === true || isEnergized === 'true') : true,
-        notes: notes || null,
-        fedFromAssetId: effFedFromId,
-        // Risk dimensions — zod already validated shape; coerce string forms.
-        criticalityScore:              toIntOrNull(criticalityScore),
-        conditionScore:                toIntOrNull(parsed.conditionScore),
-        // DPS = conditionScore × criticalityScore (null if either unset).
-        priorityScore: (parsed.conditionScore != null && criticalityScore != null)
-          ? toIntOrNull(parsed.conditionScore)! * toIntOrNull(criticalityScore)!
-          : null,
-        repairCostEstimate:            toMoneyOrNull(repairCostEstimate),
-        spareLeadTimeWeeks:            toIntOrNull(spareLeadTimeWeeks),
-        redundancyStatus:              redundancyStatus ?? null,
-        requiresPredictiveMaintenance: requiresPredictiveMaintenance !== undefined
-          ? toBool(requiresPredictiveMaintenance) : false,
-      },
-      include: ASSET_INCLUDE,
-    });
-
-    // Values were pre-validated above; on a fresh asset nulls are no-ops.
-    await writeCustomFieldValues(asset.id, cf.entries);
+    const asset = await prisma.$transaction(async (tx) => {
+      const created = await tx.asset.create({
+        data: {
+          accountId: req.user.accountId,
+          siteId,
+          buildingId: buildingId || null,
+          areaId:     areaId || null,
+          positionId: positionId || null,
+          ownerId:    effOwnerId,
+          equipmentType,
+          manufacturer:  manufacturer || null,
+          model:         model || null,
+          serialNumber:  serialNumber || null,
+          nameplateData: nameplateData ?? undefined,
+          installDate:          installDate ? new Date(installDate) : null,
+          lastCommissionedDate: lastCommissionedDate ? new Date(lastCommissionedDate) : null,
+          conditionPhysical:    physical,
+          conditionCriticality: criticality,
+          conditionEnvironment: environment,
+          governingCondition:   worstCondition(physical, criticality, environment) as any,
+          inService:   inService !== undefined ? (inService === true || inService === 'true') : true,
+          isEnergized: isEnergized !== undefined ? (isEnergized === true || isEnergized === 'true') : true,
+          notes: notes || null,
+          fedFromAssetId: effFedFromId,
+          // Risk dimensions — zod already validated shape; coerce string forms.
+          criticalityScore:              toIntOrNull(criticalityScore),
+          conditionScore:                toIntOrNull(parsed.conditionScore),
+          // DPS = conditionScore × criticalityScore (null if either unset).
+          priorityScore: (parsed.conditionScore != null && criticalityScore != null)
+            ? toIntOrNull(parsed.conditionScore)! * toIntOrNull(criticalityScore)!
+            : null,
+          repairCostEstimate:            toMoneyOrNull(repairCostEstimate),
+          spareLeadTimeWeeks:            toIntOrNull(spareLeadTimeWeeks),
+          redundancyStatus:              redundancyStatus ?? null,
+          requiresPredictiveMaintenance: requiresPredictiveMaintenance !== undefined
+            ? toBool(requiresPredictiveMaintenance) : false,
+        },
+        include: ASSET_INCLUDE,
+      }); // tx.asset.create
+      // Values were pre-validated above; on a fresh asset nulls are no-ops.
+      await writeCustomFieldValues(created.id, cf.entries, tx);
+      return created;
+    }); // prisma.$transaction
 
     await logActivity(asset.id, req.user.id, req.user.accountId, 'asset_created', {
       equipmentType: asset.equipmentType,
@@ -1049,18 +1051,50 @@ router.put('/:id', requireManager, async (req, res) => {
       }
     }
 
-    const asset = await prisma.asset.update({
-      where: { id: req.params.id },
-      data: updateData,
-      include: ASSET_INCLUDE,
-    });
+    const { asset, changedCustomFields, schedulesRecomputed } = await prisma.$transaction(async (tx) => {
+      const updated = await tx.asset.update({
+        where: { id: req.params.id },
+        data: updateData,
+        include: ASSET_INCLUDE,
+      }); // tx.asset.update
 
-    // Custom field upserts/deletes — names of fields whose stored value
-    // actually moved join the fields_updated log entry below.
-    const changedCustomFields = await writeCustomFieldValues(req.params.id, cf.entries);
+      // Custom field upserts/deletes - names of fields whose stored value
+      // actually moved join the fields_updated log entry below.
+      const changedCf = await writeCustomFieldValues(req.params.id, cf.entries, tx);
+
+      // R3: close the loop - recompute schedule due dates on condition change
+      // Previously a condition change updated governingCondition but left every
+      // schedule's nextDueDate anchored to the OLD interval until the next
+      // completion. Now a C2->C3 change tightens intervals immediately.
+      // Schedules with a per-schedule conditionOverride are left alone.
+      let schedulesRecomputed = 0;
+      if (governingTo) {
+        const scheds = await tx.maintenanceSchedule.findMany({
+          where: { assetId: req.params.id, accountId: req.user.accountId, isActive: true, conditionOverride: null },
+          select: {
+            id: true, lastCompletedDate: true, nextDueDate: true,
+            taskDefinition: { select: { intervalC1Months: true, intervalC2Months: true, intervalC3Months: true } },
+          },
+        });
+        const nowTs = new Date();
+        for (const s of scheds) {
+          let nd;
+          if (s.lastCompletedDate)      nd = computeNextDueDate(s.lastCompletedDate, s.taskDefinition, governingTo);
+          else if (s.nextDueDate)       nd = computeNextDueDate(nowTs, s.taskDefinition, governingTo);
+          else                          nd = null;
+          if (s.nextDueDate || s.lastCompletedDate) {
+            await tx.maintenanceSchedule.update({ where: { id: s.id }, data: { nextDueDate: nd } });
+            schedulesRecomputed++;
+          }
+        }
+      }
+
+      return { asset: updated, changedCustomFields: changedCf, schedulesRecomputed };
+    }); // prisma.$transaction
+
     changedFields.push(...changedCustomFields);
 
-    // ── Log activity (non-fatal, after successful update) ────────────────────
+    // Log activity (non-fatal, after successful update)
     if (changedFields.length > 0) {
       await logActivity(req.params.id, req.user.id, req.user.accountId, 'fields_updated', {
         fields: changedFields,
@@ -1080,34 +1114,6 @@ router.put('/:id', requireManager, async (req, res) => {
         newCondition: governingTo,
         triggeredBy: req.user.name || req.user.email || 'manual',
       }).catch(() => {});
-    }
-
-    // ── R3: close the loop — recompute schedule due dates on condition change ──
-    // Previously a condition change updated governingCondition but left every
-    // schedule's nextDueDate anchored to the OLD interval until the next
-    // completion. Now a C2→C3 change tightens intervals (×0.25) immediately.
-    // Schedules with a per-schedule conditionOverride are left alone (their
-    // override wins over the asset's governing condition).
-    let schedulesRecomputed = 0;
-    if (governingTo) {
-      const scheds = await prisma.maintenanceSchedule.findMany({
-        where: { assetId: req.params.id, accountId: req.user.accountId, isActive: true, conditionOverride: null },
-        select: {
-          id: true, lastCompletedDate: true, nextDueDate: true,
-          taskDefinition: { select: { intervalC1Months: true, intervalC2Months: true, intervalC3Months: true } },
-        },
-      });
-      const nowTs = new Date();
-      for (const s of scheds) {
-        let nd;
-        if (s.lastCompletedDate)      nd = computeNextDueDate(s.lastCompletedDate, s.taskDefinition, governingTo);
-        else if (s.nextDueDate)       nd = computeNextDueDate(nowTs, s.taskDefinition, governingTo); // re-project a baselined (uncompleted) schedule
-        else                          nd = null;
-        if (s.nextDueDate || s.lastCompletedDate) {
-          await prisma.maintenanceSchedule.update({ where: { id: s.id }, data: { nextDueDate: nd } });
-          schedulesRecomputed++;
-        }
-      }
     }
 
     // Decommission alert: fire when inService just changed to false

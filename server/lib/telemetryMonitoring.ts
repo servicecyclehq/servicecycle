@@ -61,7 +61,7 @@ function governingFor(asset: any): 'C1' | 'C2' | 'C3' {
  */
 async function applyMonitoringState(db: any, accountId: string, assetId: string, now: Date = new Date()) {
   const asset = await db.asset.findFirst({
-    where: { id: assetId, accountId },
+    where: { id: assetId, accountId, archivedAt: null },
     select: {
       id: true, conditionPhysical: true, conditionCriticality: true, conditionEnvironment: true,
       governingCondition: true, autoConditionC3: true, autoConditionMonitoring: true,

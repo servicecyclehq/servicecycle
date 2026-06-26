@@ -130,7 +130,8 @@ export function estimateMitigationRoi(opts: { currentIeCalCm2: any; estReduction
 
   const ieAfter = Math.round(ie * (1 - pct / 100) * 100) / 100;
   const calReduced = Math.round((ie - ieAfter) * 100) / 100;
-  const removesDanger = ie > 40 && ieAfter <= 40;
+  const FLOAT_TOLERANCE = 0.005; // 0.5% of the smallest significant digit
+  const removesDanger = ie > 40 && ieAfter <= 40 + FLOAT_TOLERANCE;
   const ppeBefore = ppeCategoryFor(ie);
   const ppeAfter = ppeCategoryFor(ieAfter);
   const costPerCalReduced = cost != null && calReduced > 0 ? Math.round((cost / calReduced) * 100) / 100 : null;

@@ -123,7 +123,7 @@ async function buildBriefContext(prisma, accountId, assetId) {
   }
 
   const asset = await prisma.asset.findFirst({
-    where: { id: assetId, accountId },
+    where: { id: assetId, accountId, archivedAt: null },
     include: {
       site:     { select: { id: true, name: true, city: true, state: true } },
       building: { select: { name: true } },
@@ -417,7 +417,14 @@ function extractJsonBlock(text) {
   if (first === -1 || last <= first) {
     throw new Error(`maintenanceBrief: no JSON object found in model output (starts: ${t.slice(0, 120)})`);
   }
-  return JSON.parse(t.slice(first, last + 1)); // throws with a useful message on malformed JSON
+  let parsed: any;
+  try {
+    parsed = JSON.parse(t.slice(first, last + 1));
+  } catch (parseErr) {
+    const preview = typeof t === 'string' ? t.slice(0, 500) : String(t);
+    throw new Error(`AI output was not valid JSON. Provider response preview: ${preview}`);
+  }
+  return parsed;
 }
 
 const URGENCY_VALUES = new Set(['immediate', 'next_outage', 'next_cycle']);

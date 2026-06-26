@@ -113,7 +113,7 @@ async function buildInspectContext(prisma, accountId, { assetId = null, siteId =
 
   if (assetId) {
     const row = await prisma.asset.findFirst({
-      where: { id: assetId, accountId },
+      where: { id: assetId, accountId, archivedAt: null },
       select: {
         id: true, equipmentType: true,
         manufacturer: true, model: true, serialNumber: true,

@@ -87,7 +87,7 @@ function evidenceShape(wo: any) {
 async function buildAssetEvidenceTrace(prisma: any, accountId: string, assetId: string) {
   const now = new Date();
   const asset = await prisma.asset.findFirst({
-    where: { id: assetId, accountId },
+    where: { id: assetId, accountId, archivedAt: null },
     select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true, site: { select: { name: true } } },
   });
   if (!asset) { const e: any = new Error('Asset not found.'); e.code = 'ASSET_NOT_FOUND'; throw e; }

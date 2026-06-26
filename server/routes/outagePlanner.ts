@@ -503,8 +503,9 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
     const blackouts: any[] = [];
     if (createBlackout) {
       const siteIds = [...new Set(assets.map((a: any) => a.siteId))];
-      const startsAt = new Date(when); startsAt.setHours(0, 0, 0, 0);
-      const endsAt   = new Date(when); endsAt.setHours(23, 59, 59, 999);
+      const whenDate = new Date(when);
+      const startsAt = new Date(Date.UTC(whenDate.getUTCFullYear(), whenDate.getUTCMonth(), whenDate.getUTCDate()));
+      const endsAt   = new Date(Date.UTC(whenDate.getUTCFullYear(), whenDate.getUTCMonth(), whenDate.getUTCDate(), 23, 59, 59, 999));
       for (const siteId of siteIds) {
         const bw = await prisma.blackoutWindow.create({
           data: { accountId, siteId, startsAt, endsAt, isOutageWindow: true,
