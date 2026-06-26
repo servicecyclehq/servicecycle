@@ -60,21 +60,11 @@ FROM node:20-alpine AS runtime
 RUN apk add --no-cache openssl postgresql-client wget \
  && rm -rf /var/cache/apk/*
 
-# Python + pdfplumber + tesseract for the optional PDF extractor (pyextract/).
-# The ENTIRE block is wrapped in ( ... || warn ) so ANY failure — apk mirror
-# outage, missing musl wheel, import error — degrades gracefully to the pdfjs
-# parser that is always available. The running app is never affected.
-# pypdfium2 ships only manylinux glibc wheels; on Alpine musl the import fails
-# silently (pdfminer.six still handles machine-readable PDFs).
-COPY pyextract/requirements.txt /app/pyextract/requirements.txt
-RUN ( apk add --no-cache python3 py3-pip tesseract-ocr tesseract-ocr-data-eng \
-   && ( pip install --no-cache-dir --break-system-packages --only-binary=:all: \
-          -r /app/pyextract/requirements.txt \
-      && python3 -c "import pdfplumber, pytesseract; print('pyextract OK', pdfplumber.__version__)" \
-      || echo "WARNING: pip/import failed - PDF text extraction via pdfminer.six still works" ) \
-   && ( tesseract --version || echo "WARNING: tesseract version check failed" ) \
-   || echo "WARNING: Python/tesseract unavailable on this platform - PDF extraction falls back to pdfjs" ) \
- && rm -rf /root/.cache /var/cache/apk/*
+# Python extractor is DISABLED on Alpine (pypdfium2 has no musl wheel).
+# Ingest falls back to the pdfjs parser automatically. Re-enable by switching
+# to node:20-slim (Debian) and restoring the pyextract RUN block.
+# COPY pyextract/requirements.txt /app/pyextract/requirements.txt
+# RUN apk add python3 py3-pip tesseract-ocr && pip install -r /app/pyextract/requirements.txt
 
 # Run as the unprivileged `node` user shipped in the base image.
 # /app is owned by node so the process can write to ./uploads and ./backups
