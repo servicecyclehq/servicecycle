@@ -135,6 +135,7 @@ export default function ArcFlashFleet() {
         </>
       )}
     </div>
+  </>
   );
 }
 
