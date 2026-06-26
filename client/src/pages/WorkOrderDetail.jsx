@@ -1122,9 +1122,8 @@ export default function WorkOrderDetail() {
                   {canWrite && !d.resolvedAt && (
                     <>
                       {d.severity === 'IMMEDIATE' && (
-                        <div className="bg-amber-50 border border-amber-400 rounded p-3 text-sm text-amber-800 mb-3">
-                          ⚠ NETA MTS requires corrective action AND re-testing for IMMEDIATE deficiencies.
-                          Document corrective work in a linked work order before resolving.
+                        <div style={{ background: '#fffbeb', border: '1px solid #d97706', borderRadius: 4, padding: '10px 14px', marginBottom: 12, color: '#92400e', fontSize: 13 }}>
+                          ⚠️ NETA MTS requires corrective action AND re-testing for IMMEDIATE deficiencies before this work order can be closed.
                         </div>
                       )}
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => resolveDeficiency(d)}>

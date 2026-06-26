@@ -51,8 +51,7 @@ export default function StubReport() {
               fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)',
               lineHeight: 1.6, maxWidth: 480, margin: '0 auto',
             }}>
-              This report is on the v0.58 roadmap. The IA chassis is live now; the
-              data aggregation and visualization ship in an upcoming release.
+              This report is not yet available.
             </p>
           </div>
           <button

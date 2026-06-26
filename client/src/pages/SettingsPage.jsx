@@ -245,7 +245,7 @@ export default function SettingsPage() {
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        alert(d.error || 'Export failed. Please try again.');
+        setError(d.error || 'Export failed. Please try again.');
         return;
       }
       const blob = await r.blob();
@@ -259,7 +259,7 @@ export default function SettingsPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      alert('Export failed. Please check your connection and try again.');
+      setError('Export failed. Please check your connection and try again.');
     } finally {
       setExporting(false);
     }
@@ -1222,7 +1222,7 @@ function ProviderInfo({ provider }) {
     gemini: {
       color: 'var(--color-renewal-text)', bg: 'var(--color-renewal-bg)', border: 'var(--color-renewal-border)',
       title: 'Google Gemini',
-      body: 'Google\'s Gemini models via AI Studio or Vertex AI. Get your API key at aistudio.google.com. Default model: gemini-1.5-flash.',
+      body: 'Google\'s Gemini models via AI Studio or Vertex AI. Get your API key at aistudio.google.com. Default model: gemini-2.5-flash.',
     },
   };
 

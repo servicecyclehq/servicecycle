@@ -444,7 +444,7 @@ function AfxPanel() {
           {impOverwrite && (impPreview.mergePreview?.totalConflicts || 0) > 0 && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 4, color: 'var(--chip-amber-fg, #d97706)' }}>
-                Overwrite preview â€” {impPreview.mergePreview.totalConflicts} field(s) on {impPreview.mergePreview.conflicts.length} bus(es) would change:
+                Overwrite preview — {impPreview.mergePreview.totalConflicts} field(s) on {impPreview.mergePreview.conflicts.length} bus(es) would change:
               </div>
               <table style={{ width: '100%', fontSize: '0.73rem', borderCollapse: 'collapse', marginBottom: 4 }}>
                 <thead>
@@ -469,7 +469,7 @@ function AfxPanel() {
               </table>
               {impPreview.mergePreview.totalConflicts > 25 && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>
-                  â€¦ and more; apply to see the full diff in the activity log.
+                  … and more; apply to see the full diff in the activity log.
                 </div>
               )}
             </div>

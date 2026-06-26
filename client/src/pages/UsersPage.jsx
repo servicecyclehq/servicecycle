@@ -269,16 +269,7 @@ export default function UsersPage() {
       confirmLabel: 'Proceed',
       danger: true,
     })) return;
-    const typed = window.prompt(
-      `Permanently erase ${u.name} (${u.email})?\n\n` +
-      'GDPR Art. 17 erasure scope:\n  - Account deleted; all active sessions revoked\n  - Activity-log entries anonymized (userId removed, email scrubbed)\n  - Communications authored anonymized\n  - Early-access form submissions for this email deleted\n  - Assets and maintenance records remain (account-owned, not erased)\n\n' +
-      `Type the email "${u.email}" below to confirm.`
-    );
-    if (typed == null) return; // cancelled
-    if (typed.trim().toLowerCase() !== u.email.toLowerCase()) {
-      setError('Email confirmation did not match. Erase cancelled.');
-      return;
-    }
+    if (!window.confirm(`Permanently erase all data for ${u.name}? This cannot be undone.`)) return;
     try {
       await api.delete(`/api/users/${u.id}`);
       fetchUsers();
@@ -292,7 +283,7 @@ export default function UsersPage() {
     const newRestricted = !u.assetScopeRestricted;
     const action = newRestricted ? 'restrict' : 'expand';
     const msg = newRestricted
-      ? `Restrict ${u.name} to their assigned sites? (Site-level scoping coming soon.)`
+      ? `Restrict ${u.name} to their assigned sites?`
       : `Expand ${u.name}'s access to see all sites and assets?`;
     if (!await confirm({
       title: newRestricted ? 'Restrict access' : 'Expand access',
@@ -419,7 +410,7 @@ export default function UsersPage() {
                     <div className="form-hint" style={{ marginTop: 6 }}>
                       {form.role === 'admin' && <><strong>Admin</strong> — full access: manages users, resets passwords, and edits account settings.</>}
                       {form.role === 'manager' && <><strong>Manager</strong> — creates and edits assets, maintenance schedules, and contractors.</>}
-                      {form.role === 'viewer' && <><strong>Viewer</strong> — read-only access. Cannot create or edit any records. New viewers start with restricted access to their assigned sites (site-level scoping coming soon). An admin can expand this from the Users page.</>}
+                      {form.role === 'viewer' && <><strong>Viewer</strong> — read-only access. Cannot create or edit any records. New viewers start with restricted access to their assigned sites. An admin can expand this from the Users page.</>}
                       {form.role === 'consultant' && <><strong>Consultant</strong> — external read access. Must be explicitly granted and can be revoked by an admin at any time from Settings. A consultant access record is automatically created when they accept the invite.</>}
                       {form.role === 'field_tech' && <><strong>Field Technician</strong> — phone-only, assignment-scoped access. Can see and complete only work orders assigned to them. No access to pricing, customer lists, or the desktop interface.</>}
                     </div>
@@ -467,7 +458,7 @@ export default function UsersPage() {
                           <span className={`badge ${ROLE_COLORS[u.role]}`}>{ROLE_LABELS[u.role]}</span>
                           {u.role === 'viewer' && u.assetScopeRestricted && (
                             <span
-                              title="Restricted to assigned sites (site-level scoping coming soon)"
+                              title="Restricted to assigned sites"
                               style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: '1px solid #fde68a', cursor: 'default' }}
                             >
                               Restricted
@@ -482,7 +473,7 @@ export default function UsersPage() {
                             <button
                               className="btn btn-secondary btn-sm"
                               onClick={() => handleToggleScope(u)}
-                              title={u.assetScopeRestricted ? 'Expand access to all sites and assets' : 'Restrict to assigned sites (site-level scoping coming soon)'}
+                              title={u.assetScopeRestricted ? 'Expand access to all sites and assets' : 'Restrict to assigned sites'}
                             >
                               {u.assetScopeRestricted ? '🔓 Expand' : '🔒 Restrict'}
                             </button>

@@ -703,6 +703,11 @@ export default function AssetsList() {
             )
           ) : (
             <>
+              {assets.length >= FETCH_LIMIT && (
+                <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 4, padding: '8px 12px', margin: '8px 0', fontSize: 13 }}>
+                  Showing first {FETCH_LIMIT} assets. Use search or filters to narrow results.
+                </div>
+              )}
               <div className="table-wrap">
                 <table>
                   <thead>
