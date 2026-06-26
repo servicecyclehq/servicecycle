@@ -1299,5 +1299,90 @@ router.post('/partner-revoke', requireAdmin, async (req: any, res: any) => {
   }
 });
 
+// ── GET /api/settings/alert-settings — read configurable alert keys ─────────
+// Any admin can read alert settings. Returns all 8 alert-related AccountSetting
+// keys with their current values (or defaults when not yet set in the DB).
+router.get('/alert-settings', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { accountId } = req.user;
+    const ALERT_KEYS = [
+      'COND_DEGRADE_ALERT_ENABLED',
+      'COND_DEGRADE_NOTIFY_ROLES',
+      'DEFICIENCY_ALERT_ENABLED',
+      'DEFICIENCY_ALERT_MIN_SEVERITY',
+      'DEFICIENCY_ALERT_NOTIFY_ROLES',
+      'ARC_FLASH_EXPIRY_WARNING_DAYS',
+      'ASSET_DECOMMISSION_ALERT_ENABLED',
+      'ASSET_DECOMMISSION_NOTIFY_ROLES',
+      'OVERDUE_NOTIFY_ROLES',
+    ];
+    const ALERT_DEFAULTS: Record<string, string> = {
+      COND_DEGRADE_ALERT_ENABLED:       'true',
+      COND_DEGRADE_NOTIFY_ROLES:        'admin,manager,consultant',
+      DEFICIENCY_ALERT_ENABLED:         'true',
+      DEFICIENCY_ALERT_MIN_SEVERITY:    'IMMEDIATE',
+      DEFICIENCY_ALERT_NOTIFY_ROLES:    'admin,manager',
+      ARC_FLASH_EXPIRY_WARNING_DAYS:    '90,60,30',
+      ASSET_DECOMMISSION_ALERT_ENABLED: 'true',
+      ASSET_DECOMMISSION_NOTIFY_ROLES:  'admin,manager',
+      OVERDUE_NOTIFY_ROLES:             'admin,manager',
+    };
+
+    const rows = await prisma.accountSetting.findMany({
+      where: { accountId, key: { in: ALERT_KEYS } },
+    });
+    const byKey: Record<string, string> = {};
+    for (const row of rows) byKey[row.key] = row.value;
+
+    const result: Record<string, string> = {};
+    for (const key of ALERT_KEYS) {
+      result[key] = byKey[key] ?? ALERT_DEFAULTS[key];
+    }
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    console.error('[settings/alert-settings GET]', err);
+    res.status(500).json({ success: false, error: 'Failed to load alert settings' });
+  }
+});
+
+// ── PUT /api/settings/alert-settings — save configurable alert keys ──────────
+const ALLOWED_ALERT_KEYS = new Set([
+  'COND_DEGRADE_ALERT_ENABLED',
+  'COND_DEGRADE_NOTIFY_ROLES',
+  'DEFICIENCY_ALERT_ENABLED',
+  'DEFICIENCY_ALERT_MIN_SEVERITY',
+  'DEFICIENCY_ALERT_NOTIFY_ROLES',
+  'ARC_FLASH_EXPIRY_WARNING_DAYS',
+  'ASSET_DECOMMISSION_ALERT_ENABLED',
+  'ASSET_DECOMMISSION_NOTIFY_ROLES',
+  'OVERDUE_NOTIFY_ROLES',
+]);
+
+router.put('/alert-settings', requireAdmin, async (req: any, res: any) => {
+  try {
+    const { accountId } = req.user;
+    const updates = Object.entries<any>(req.body || {})
+      .filter(([k, v]) => ALLOWED_ALERT_KEYS.has(k) && typeof v === 'string');
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid alert setting keys provided' });
+    }
+
+    await prisma.$transaction(
+      updates.map(([key, value]) =>
+        prisma.accountSetting.upsert({
+          where:  { accountId_key: { accountId, key } },
+          create: { accountId, key, value },
+          update: { value },
+        })
+      )
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[settings/alert-settings PUT]', err);
+    res.status(500).json({ success: false, error: 'Failed to save alert settings' });
+  }
+});
+
 
 module.exports = router;

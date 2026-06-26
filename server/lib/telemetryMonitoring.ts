@@ -34,6 +34,7 @@
 const { gradeReading } = require('./telemetryEvaluate');
 const { worstCondition, computeNextDueDate } = require('./maintenanceInterval');
 const { writeLog } = require('./activityLog');
+const { notifyConditionDegradation } = require('./assetAlertNotifier');
 
 const RANK: Record<string, number> = { OK: 0, WARN: 1, CRIT: 2 };
 
@@ -100,6 +101,15 @@ async function applyMonitoringState(db: any, accountId: string, assetId: string,
         standardRef: 'NFPA 70B:2023', auto: true, trigger: 'telemetry',
       },
     });
+    // Alert notification — fire-and-forget, only for degradation
+    notifyConditionDegradation({
+      accountId,
+      assetId: asset.id,
+      assetName: asset.name ?? asset.id,
+      oldCondition: asset.governingCondition,
+      newCondition: governing,
+      triggeredBy: 'auto_telemetry',
+    }).catch(() => {});
   }
 
   // NOTE: the TELEMETRY_CRIT auto-quote is intentionally NOT created here.

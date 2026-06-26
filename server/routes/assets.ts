@@ -30,6 +30,7 @@ const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const { validateValueForDefinition } = require('./customFields');
 const { resolveAsset } = require('../lib/assetIdentity'); // #3 fuzzy asset identity resolution
 import prisma from '../lib/prisma';
+import { notifyConditionDegradation, notifyAssetDecommissioned } from '../lib/assetAlertNotifier';
 
 // ─── Condition helpers ────────────────────────────────────────────────────────
 // Governing condition = worst of the three axes. C3 (poor) dominates C2
@@ -1070,6 +1071,15 @@ router.put('/:id', requireManager, async (req, res) => {
         from: governingFrom,
         to:   governingTo,
       });
+      // Alert notification — fire-and-forget, must not delay response
+      notifyConditionDegradation({
+        accountId: req.user.accountId,
+        assetId: req.params.id,
+        assetName: asset.name ?? req.params.id,
+        oldCondition: governingFrom,
+        newCondition: governingTo,
+        triggeredBy: req.user.name || req.user.email || 'manual',
+      }).catch(() => {});
     }
 
     // ── R3: close the loop — recompute schedule due dates on condition change ──
@@ -1098,6 +1108,16 @@ router.put('/:id', requireManager, async (req, res) => {
           schedulesRecomputed++;
         }
       }
+    }
+
+    // Decommission alert: fire when inService just changed to false
+    if (inService !== undefined && updateData.inService === false && existing.inService !== false) {
+      notifyAssetDecommissioned({
+        accountId: req.user.accountId,
+        assetId: req.params.id,
+        assetName: asset.name ?? req.params.id,
+        decommissionedBy: req.user.name || req.user.email,
+      }).catch(() => {});
     }
 
     res.json({ success: true, data: { asset, schedulesRecomputed } });
@@ -1308,6 +1328,13 @@ router.post('/:id/archive', requireManager, async (req, res) => {
     });
 
     await logActivity(req.params.id, req.user.id, req.user.accountId, 'asset_archived', null);
+    // Decommission alert — fire-and-forget
+    notifyAssetDecommissioned({
+      accountId: req.user.accountId,
+      assetId: req.params.id,
+      assetName: existing.name ?? req.params.id,
+      decommissionedBy: req.user.name || req.user.email,
+    }).catch(() => {});
 
     res.json({ success: true, data: { asset } });
   } catch (err) {
@@ -1580,6 +1607,56 @@ router.delete('/:id/nameplate', requireManager, async (req: any, res: any) => {
     return res.status(500).json({ success: false, error: 'Failed to clear nameplate' });
   }
 });
+
+// ─── GET /api/assets/condition-changes ────────────────────────────────────────
+// Returns recent condition_changed activity log entries for the dashboard card.
+// Query params:
+//   ?days=30    — how many days back to look (1–90, default 30)
+//   ?limit=50   — max records (1–200, default 50)
+router.get('/condition-changes', async (req: any, res: any) => {
+  try {
+    const days  = Math.min(Math.max(parseInt(String(req.query.days  || '30'), 10), 1), 90);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10), 1), 200);
+    const since = new Date(Date.now() - days * 86_400_000);
+
+    const logs = await prisma.activityLog.findMany({
+      where: {
+        accountId: req.user.accountId,
+        action: 'condition_changed',
+        createdAt: { gte: since },
+      },
+      orderBy: [
+        // Sort C3 first (by destination condition rank), then newest first
+        { createdAt: 'desc' },
+      ],
+      take: limit,
+      include: {
+        asset: {
+          select: {
+            id: true, name: true, equipmentType: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+        user: { select: { id: true, name: true } },
+      },
+    });
+
+    // Client-side sort: C3 changes first, then C2, then improvements
+    const COND_RANK: Record<string, number> = { C3: 3, C2: 2, C1: 1 };
+    const sorted = logs.sort((a: any, b: any) => {
+      const toA = COND_RANK[(a.details as any)?.to ?? ''] ?? 0;
+      const toB = COND_RANK[(b.details as any)?.to ?? ''] ?? 0;
+      if (toB !== toA) return toB - toA;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    res.json({ success: true, data: { conditionChanges: sorted, days } });
+  } catch (err: any) {
+    console.error('[assets/condition-changes]', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch condition changes' });
+  }
+});
+
 
 module.exports = router;
 

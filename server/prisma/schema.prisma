@@ -157,6 +157,10 @@ enum AlertType {
   overdue
   escalation
   regulatory_breach
+  condition_degradation
+  deficiency_alert
+  arc_flash_expiry
+  asset_decommission
 }
 
 enum AlertStatus {

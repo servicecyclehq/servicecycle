@@ -25,6 +25,7 @@ const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const prisma = require('../lib/prisma').default;
+const { notifyDeficiencyCreated } = require('../lib/assetAlertNotifier');
 
 const SEVERITIES = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
 
@@ -139,6 +140,17 @@ router.post('/', requireManager, async (req, res) => {
         estimatedCapExMax: null,
       }).catch(console.error);
     }
+
+    // Deficiency alert notification — fire-and-forget
+    notifyDeficiencyCreated({
+      accountId: req.user.accountId,
+      assetId: asset.id,
+      assetName: deficiency.asset?.name ?? (`${asset.manufacturer ?? ''} ${asset.model ?? ''}`.trim() || 'Asset'),
+      deficiencyId: deficiency.id,
+      severity,
+      description: deficiency.description || '',
+      reportedBy: req.user.name || req.user.email,
+    }).catch(() => {});
 
     res.status(201).json({ success: true, data: { deficiency } });
   } catch (err) {

@@ -24,6 +24,7 @@ import prisma from './prisma';
 const { differenceInMonths } = require('date-fns');
 const { worstCondition, intervalMonthsFor, computeNextDueDate } = require('./maintenanceInterval');
 const { writeLog } = require('./activityLog');
+const { notifyConditionDegradation } = require('./assetAlertNotifier');
 
 const MISSED_CYCLES_THRESHOLD = 2; // §9.3.1: "the last two successive cycles"
 
@@ -104,6 +105,15 @@ async function applyMissedCyclePolicy(db: any, accountId: string, now: Date = ne
           standardRef: 'NFPA 70B:2023 §9.3.1', auto: true,
         },
       });
+      // Alert notification — fire-and-forget, only for degradation
+      notifyConditionDegradation({
+        accountId,
+        assetId: a.id,
+        assetName: a.name ?? a.id,
+        oldCondition: a.governingCondition,
+        newCondition: governing,
+        triggeredBy: 'auto_missed_cycle',
+      }).catch(() => {});
     }
     if (shouldC3) c3Set++; else c3Cleared++;
   }

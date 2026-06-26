@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arc Flash Format Sources &mdash; ServiceCycle</title>
+<style>
+  :root{
+    --ink:#1a2230; --muted:#5a6675; --line:#e3e8ef; --bg:#ffffff;
+    --brand:#0b5cab; --brand2:#0a7d4f; --chip:#eef3f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;font-size:15px}
+  .wrap{max-width:920px;margin:0 auto;padding:0 22px 80px}
+  header.site{display:flex;align-items:center;gap:12px;padding:26px 0 18px;border-bottom:1px solid var(--line)}
+  .mark{font-weight:800;font-size:22px;letter-spacing:-.02em}
+  .mark .a{color:var(--brand)} .mark .b{color:var(--brand2)}
+  .tag-site{margin-left:auto;color:var(--muted);font-size:12.5px}
+  h1{font-size:25px;margin:30px 0 8px;letter-spacing:-.01em}
+  .lede{color:var(--muted);font-size:14.5px;max-width:760px}
+  .lede b{color:var(--ink)}
+  h2{font-size:18px;margin:42px 0 4px;padding-bottom:8px;border-bottom:2px solid var(--brand);display:inline-block}
+  .tier{color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;margin-top:34px;font-weight:700}
+  ul.links{list-style:none;margin:8px 0 0;padding:0}
+  ul.links li{padding:11px 0;border-bottom:1px solid var(--line)}
+  a.dl{color:var(--brand);text-decoration:none;font-weight:600;word-break:break-word}
+  a.dl:hover{text-decoration:underline}
+  .meta{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+  .chip{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;
+    padding:2px 7px;border-radius:4px;margin-right:6px;vertical-align:1px;text-transform:uppercase}
+  .c-pdf{background:#fbe9e9;color:#a02a2a}
+  .c-xlsx{background:#e6f4ec;color:#0a7d4f}
+  .c-csv{background:#e8f0fa;color:#0b5cab}
+  .c-zip{background:#f3ecfa;color:#6b3fa0}
+  .c-html{background:#eef0f2;color:#5a6675}
+  .val{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:4px;margin-left:4px}
+  .v-hi{background:#0a7d4f;color:#fff}
+  .v-mid{background:#b6791f;color:#fff}
+  .v-lo{background:#e3e8ef;color:#5a6675}
+  .blocked{color:#a02a2a;font-weight:700;font-size:12px}
+  .note-box{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:18px 0;font-size:13.5px;color:var(--muted)}
+  footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="site">
+    <span class="mark"><span class="a">Service</span><span class="b">Cycle</span></span>
+    <span class="tag-site">Arc Flash Data Exchange &mdash; Format Source Index</span>
+  </header>
+
+  <h1>Arc Flash Software Format Sources</h1>
+  <p class="lede">
+    A working index of links where we can <b>download or view the real import/export data formats</b>
+    of the major arc-flash analysis and labeling tools. The goal: pull the actual <b>CSV / Excel
+    templates, documented column lists, and sample report PDFs</b> from each vendor, then map their
+    schemas against the open <b>AFX (Arc Flash Data Exchange)</b> standard we are designing on the
+    IEEE&nbsp;1584 / NFPA&nbsp;70E data model. Grab the files tagged
+    <span class="val v-hi">HIGH</span> first &mdash; those are actual templates, column lists, or
+    real export samples we can reverse-engineer into column mappings. Items tagged
+    <span class="val v-mid">MED</span> are docs that describe the workflow/columns without a file;
+    <span class="val v-lo">LOW</span> is marketing/context only. Feed the downloaded files back in and
+    we will extract a column-by-column crosswalk per tool.
+  </p>
+
+  <div class="note-box">
+    <b>Legend.</b> File-type chips: <span class="chip c-xlsx">XLSX</span>
+    <span class="chip c-csv">CSV</span> <span class="chip c-zip">ZIP</span>
+    <span class="chip c-pdf">PDF</span> <span class="chip c-html">HTML/DOC</span>.
+    Value: <span class="val v-hi">HIGH</span> actual template/column list/sample file &middot;
+    <span class="val v-mid">MED</span> documented workflow/columns &middot;
+    <span class="val v-lo">LOW</span> marketing/context.
+  </div>
+
+  <!-- ============ TIER 1 ============ -->
+  <div class="tier">Tier 1 &mdash; Core arc-flash study engines</div>
+
+  <h2>EasyPower (Bentley)</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="http://download.easypower.com/support/SKMImportMappingTemplates.zip">SKM Import Mapping Templates (download)</a>
+      <span class="meta"><span class="chip c-zip">ZIP</span><span class="val v-hi">HIGH</span>
+      Direct-download ZIP of EasyPower's customizable SKM-import <b>mapping CSV files</b> &mdash; these
+      define the exact attribute-to-field column map EasyPower expects. Single best concrete artifact found.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://help.easypower.com/ezp/24.0/Content/12_Using_EasyPower_w_Other_Programs/SKM/Importing_an_SKM_Format_File.htm">Importing an SKM Format File (help)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Confirms EasyPower ingests an <b>SKM-style equipment CSV</b> via a web-hosted mapping file; links the export-file and custom-mapping docs.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://help.easypower.com/ezp/9.7/Content/12_Using_EasyPower_w_Other_Programs/SKM/Creating%20an%20SKM%20Export%20File.htm">Creating an SKM Data Export CSV File (help)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Describes building the custom CSV export format and which component attributes/columns go in it.</span>
+    </li>
+    <li>
+      <a class="dl" href="http://help.easypower.com/ezp/10.2/Content/12_Using_EasyPower_w_Other_Programs/Using_Customized_Mappings.htm">Using Customized Mappings (help)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Explains the mapping-CSV mechanism and points to the templates ZIP above; column-mapping semantics.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://help.easypower.com/ezp/24.0/Content/03_Making_Oneline_Diagrams/Entering_Data_Using_Tables/Entering_Item_Data_Using_Tables.htm">Entering Item Data Using Tables (help)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      The spreadsheet-style data tables (Tag, Description, Voltage, Frequency, kW, PF, Load Type) used for Load-List import.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://help.easypower.com/ezp/10.3/Content/12_Using_EasyPower_w_Other_Programs/Copying_or_Exporting_Database_Info.htm">Copying or Exporting Database Information (help)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Database-browser export to Excel; useful for the full equipment column set EasyPower can emit.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://help.easypower.com/ezp/25.0/Content/16_Arc_Flash_Hazard_Analysis/Label_Designer/Label_Template_List.htm">Arc Flash Label Template List (help)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      EasyPower label-designer field list &mdash; the label data fields (IE, AFB, PPE, voltage, date) that bind to a study.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://www.easypower.com/data-collection">EasyPower Data Collection (product)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      Marketing for the field data-collection workflow; context on what attributes they capture.</span>
+    </li>
+  </ul>
+
+  <h2>ETAP</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://etap.com/docs/default-source/brochures/fact-sheets/datax-fact-sheet-web.pdf?sfvrsn=56e53e7c_19">DataX Data Exchange Fact Sheet (PDF)</a>
+      <span class="meta"><span class="chip c-pdf">PDF</span><span class="val v-mid">MED</span>
+      Official DataX fact sheet: lists supported exchange targets (Excel, MultiSpeak v3/v4, SKM, EasyPower, PSS&reg;E, CYME, ArcFM CIM XML). Names the interchange formats we must align to.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://etap.com/product/excel-access-interface">Excel &amp; Access Interface (product/doc)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Bi-directional Excel data exchange with <b>customizable element mapping</b> + consistency checks &mdash; the closest thing to an ETAP column map.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://etap.com/product/Built-in-DataX-and-Conversion-Tools">Built-in DataX &amp; Conversion Tools (product/doc)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Overview of import/export/sync between external sources and ETAP element data.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://etap.com/docs/default-source/faqs-tutorials/arc-flash-analysis.pdf?sfvrsn=b218b67f_22">ETAP Arc Flash Analysis tutorial (PDF)</a>
+      <span class="meta"><span class="chip c-pdf">PDF</span><span class="val v-mid">MED</span>
+      Walks the arc-flash result fields ETAP computes &mdash; the output columns a label/report carries.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://etap.com/arc-flash/arc-flash-hazard-safety-labels">eLabel Maker (product)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      Label-maker feature page; QR + two-IE labels, ANSI Z535 / NFPA 70E / CSA Z462. Context for label field set, no template file.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://etap.com/services/data-exchange-services">Data Exchange Services (contact)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      Services page; Datax@etap.com is the contact to request actual mapping specs/templates.</span>
+    </li>
+  </ul>
+
+  <h2>SKM Power*Tools (PTW)</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://support.skm.com/KB/View/171515-export-import-in-excel">Export/Import in Excel (KB, with screenshots)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-hi">HIGH</span>
+      Step-by-step <b>Tab-Delimited project export/import</b> with screenshots of the actual generated file rows &mdash; shows the real column layout PTW round-trips.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://support.skm.com/KB/Category/42-backup-import-export">Backup &amp; Import/Export KB category</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      The full SKM KB category on import/export/datablock files (compedit.fmt, Draw.fmt, ImpExp.fmt) &mdash; mine for datablock attribute lists.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://support.skm.com/KB/View/3645-how-do-i-transfer-my-datablock-formats-queries-tcc-formats-and-arc-flash-label-designs--which-ptw-files-do-i-need-to-copy">Transferring Datablock / Query / TCC / Arc-Flash Label formats (KB)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Identifies the PTW format files that hold datablock + arc-flash label field definitions.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://support.skm.com/KB/View/10007-how-to-transfer-arc-flash-custom-labels">How to transfer Arc Flash custom Labels (KB)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Arc-flash label design fields and where they live &mdash; helps enumerate SKM label columns.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://www.skm.com/faq_arcFlash5.html">SKM Arc Flash FAQ (label data)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      Arc-flash label/PPE-table context; supporting reference for field meanings.</span>
+    </li>
+  </ul>
+
+  <!-- ============ TIER 2 ============ -->
+  <div class="tier">Tier 2 &mdash; Labeling &amp; specialty calculators</div>
+
+  <h2>Arc Flash Analytic / ARCAD Inc.</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://arcadvisor.com/faq/arc-flash-data-collection-form">Arc Flash Data Collection Form (ARCAD)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-hi">HIGH</span>
+      ARCAD's published <b>field-by-field data-collection form</b> &mdash; the canonical input attribute list for an IEEE-1584 calc. Excellent for a baseline input schema.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://arcadvisor.com/arc-flash-software">Arc Flash Analytic (AFA) software + apps</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      AFA v6 (IEEE 1584-2018 / NFPA 70E) output fields: arcing current, IE, AFB, shock boundaries, PPE category, clothing &mdash; the result column set.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://store.arcadvisor.com/index.php?route=product%2Fproduct&product_id=189">ARCAD Arc Flash Analysis Software (store)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      Product/spec page; reports include equipment data + results + warning labels (PDF/graphic). No template file.</span>
+    </li>
+  </ul>
+
+  <h2>Brady Workstation &mdash; Arc Flash app</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://support.bradyid.com/s/article/How-to-import-from-Excel-into-the-Arc-Flash-app">How to import from Excel into the Arc Flash app (KB)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-hi">HIGH</span>
+      <span class="blocked">JS-rendered (web fetch returned blank).</span> Open in a real browser &mdash; this is the article that names the <b>exact Excel columns</b> the Arc Flash app expects.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://support.bradyid.com/s/article/How-to-format-Excel-files-for-importing-into-Brady-software">Format Excel files to Import into the Software (KB)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-hi">HIGH</span>
+      General Brady Excel-import formatting rules (header row, one row per label). Pairs with the Arc Flash article above.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://support.bradyid.com/s/article/Brady-Workstation-Arc-Flash-Label-Sample">Brady Workstation Arc Flash Label Sample (KB)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      A worked sample label &mdash; lets us read off the field set Brady prints from imported data.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://support.bradyid.com/s/article/External-Data-Import-in-Brady-Workstation">External Data Import in Brady Workstation (KB)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Advanced import: TXT/CSV/MDB/SQL sources, column-to-field binding mechanics.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://workstation.bradyid.com/en-US/App?productId=1036">Arc Flash app listing (Brady Workstation)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      App marketing page; confirms Excel-import + NFPA 70E templates feature.</span>
+    </li>
+  </ul>
+
+  <h2>LabelQC &mdash; Arc Flash Data Manager</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://labelqc.com/">LabelQC.com (Arc Flash Data Manager)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      CSV-upload model: equipment labels added/updated by <b>uploading a CSV</b>, QR per item. Check site for the downloadable CSV template &mdash; column headers live there. No public template URL found yet; likely behind sign-in/support.</span>
+    </li>
+  </ul>
+
+  <!-- ============ OTHER ============ -->
+  <div class="tier">Other &mdash; data-collection bridges, standards &amp; sample reports</div>
+
+  <h2>Facility Results &mdash; FlashTrack</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://facilityresults.com/flashtrack-interface/">FlashTrack Interface (product)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-hi">HIGH</span>
+      Confirms FlashTrack <b>exports completed files to Excel (.xls) or CSV</b> and is built to feed SKM, EasyPower, ETAP, ARCAD. This is the cross-tool bridge whose export columns matter most for AFX.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://facilityresults.com/arc-flash-data-collection-software-download/">FlashTrack Software Download</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Download gateway for the actual tool &mdash; install + export a sample to capture the real column headers.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://facilityresults.com/arc-flash-data-collection-software-video-tutorials/">FlashTrack Video Tutorials</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      Tutorials may show the export dialog/columns on screen.</span>
+    </li>
+  </ul>
+
+  <h2>NFPA 70E label CSV / data-merge templates</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://www.expresselectrical.co.uk/files//d39f1298-779c-47da-90ee-ad9600e62acb/LabelForge-PRO-Software-User-Guide.pdf">DuraLabel LabelForge PRO User Guide (PDF)</a>
+      <span class="meta"><span class="chip c-pdf">PDF</span><span class="val v-mid">MED</span>
+      Vendor user guide covering arc-flash label creation + data import; shows the label field set / import flow.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://kb.duralabel.com/create-arc-flash-labels-in-labelforge-pro">Create Arc Flash Labels in LabelForge PRO (KB)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      Full label walkthrough &mdash; enumerates the NFPA 70E label fields LabelForge expects.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://industrialmonitordirect.com/blogs/knowledgebase/skm-powertools-lv-transformer-arc-flash-labeling-workaround">SKM label CSV/XLSX &rarr; Word Mail-Merge workaround (article)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-lo">LOW</span>
+      Documents the common practice of exporting calc data to CSV/XLSX and mail-merging labels &mdash; hints at the de-facto label column set.</span>
+    </li>
+  </ul>
+
+  <h2>Sample study reports &amp; the standard</h2>
+  <ul class="links">
+    <li>
+      <a class="dl" href="https://e-hazard.com/wp-content/uploads/2021/04/Arc-Flash-Study-Report-Example.pdf">e-Hazard &mdash; Arc Flash Study Report Example (PDF)</a>
+      <span class="meta"><span class="chip c-pdf">PDF</span><span class="val v-hi">HIGH</span>
+      A complete real-world IEEE 1584-2018 study report &mdash; the result table columns here are a clean reference for AFX output fields.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://www.cooperative.com/programs-services/bts/Documents/Reports/ArcFlashCalculationCaseStudies.pdf">NRECA &mdash; Distribution Arc-Flash Calculation Case Studies (PDF)</a>
+      <span class="meta"><span class="chip c-pdf">PDF</span><span class="val v-mid">MED</span>
+      Case studies with full input/output tables &mdash; useful secondary schema reference.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://arxiv.org/pdf/2105.09927">Short Circuit &amp; Arc Flash Study on a Microgrid (PDF)</a>
+      <span class="meta"><span class="chip c-pdf">PDF</span><span class="val v-lo">LOW</span>
+      Academic study; tabulated arc-flash results as a sanity-check on field naming.</span>
+    </li>
+    <li>
+      <a class="dl" href="https://standards.ieee.org/ieee/1584/5802/">IEEE 1584-2018 Guide (standard landing)</a>
+      <span class="meta"><span class="chip c-html">HTML</span><span class="val v-mid">MED</span>
+      The data-model anchor for AFX (paywalled doc). Defines arcing current, AFB, IE, working distance &mdash; our canonical field semantics.</span>
+    </li>
+  </ul>
+
+  <footer>
+    Compiled for the ServiceCycle <b>AFX (Arc Flash Data Exchange)</b> standard &mdash; IEEE 1584 / NFPA 70E data layer.
+    Generated 2026-06-23 from public web sources. Items are leads to download, not endorsements; verify each template against a real exported file before mapping. ServiceCycle is a data layer, not a safety authority.
+  </footer>
+
+</div>
+</body>
+</html>

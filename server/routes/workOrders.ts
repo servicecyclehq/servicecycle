@@ -37,6 +37,7 @@ const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { recomputeScheduleDates, worstCondition } = require('../lib/maintenanceInterval');
 const prisma = require('../lib/prisma').default;
+const { notifyConditionDegradation } = require('../lib/assetAlertNotifier');
 // Prisma.DbNull — clearing a nullable Json column (testEquipment) requires the
 // sentinel; a plain JS null is rejected by the client for Json fields.
 const { Prisma } = require('@prisma/client');
@@ -655,6 +656,15 @@ router.put('/:id', requireManager, async (req, res) => {
             source:      'work_order_as_left',
           },
         });
+        // Alert notification — fire-and-forget
+        notifyConditionDegradation({
+          accountId: req.user.accountId,
+          assetId: existing.assetId,
+          assetName: existing.asset?.name ?? existing.assetId,
+          oldCondition: existing.asset.governingCondition,
+          newCondition: newGoverning,
+          triggeredBy: 'work_order_completion',
+        }).catch(() => {});
       }
 
       // Partner Flywheel: emit INSPECTION_COMPLETED (fire-and-forget)

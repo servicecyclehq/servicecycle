@@ -87,6 +87,10 @@ client/dist-verify/
 New Text Document.txt
 
 
+# Scratch files created by Claude Code / session agents (analysis outputs, test dumps,
+# raw API responses). Naming convention: underscore-prefix in server/ root.
+server/_*
+
 # Sandbox debug leftovers — created accidentally during the 2026-05-16 audit
 # fix session; can't be deleted from the Linux sandbox (Windows mount blocks
 # unlink). Delete from Windows side; .gitignore keeps them out of commits.

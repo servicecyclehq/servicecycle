@@ -699,6 +699,97 @@ function CapExForecastPanel() {
   );
 }
 
+// ── Recent Condition Changes Card ────────────────────────────────────────────
+// Shows C2/C3 degradation events from the last 30 days. C3 first, then C2.
+// Wired to GET /api/assets/condition-changes?days=30.
+function ConditionChangesCard() {
+  const [changes, setChanges] = useState(null);
+  const [error, setError]     = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    api.get('/api/assets/condition-changes?days=30')
+      .then(r => {
+        // Only show degradations (C2 or C3 as destination)
+        const all = r.data.data?.conditionChanges ?? [];
+        setChanges(all.filter(c => {
+          const to = c.details?.to;
+          return to === 'C2' || to === 'C3';
+        }));
+      })
+      .catch(() => setError('Could not load condition changes'));
+  }, []);
+
+  const conditionBadgeStyle = (condition) => ({
+    display: 'inline-block', padding: '1px 8px', borderRadius: 4, fontSize: '0.75rem',
+    fontWeight: 700, color: '#fff',
+    background: condition === 'C3' ? '#dc2626' : condition === 'C2' ? '#d97706' : '#16a34a',
+  });
+
+  const condLabel = (c) =>
+    c === 'C1' ? 'C1' : c === 'C2' ? 'C2' : c === 'C3' ? 'C3' : c;
+
+  if (error) return null; // don't show card if endpoint fails
+  if (!changes || changes.length === 0) return null;
+
+  return (
+    <div style={{
+      background: 'var(--color-surface)',
+      border: '1px solid var(--color-border)',
+      borderRadius: 8, padding: '1rem 1.25rem', marginBottom: '1.25rem',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+        <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text)' }}>
+          Recent Condition Changes <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 400 }}>(last 30 days)</span>
+        </h3>
+        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          {changes.length} event{changes.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {changes.slice(0, 8).map(ch => {
+          const from = ch.details?.from;
+          const to   = ch.details?.to;
+          const name = ch.asset?.name || ch.assetId;
+          const site = ch.asset?.site?.name;
+          const when = ch.createdAt ? new Date(ch.createdAt).toLocaleDateString() : '';
+          return (
+            <div
+              key={ch.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate(`/assets/${ch.assetId}`, { state: FROM_DASHBOARD })}
+              onKeyDown={kbdActivate(() => navigate(`/assets/${ch.assetId}`, { state: FROM_DASHBOARD }))}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px',
+                borderRadius: 6, cursor: 'pointer', fontSize: '0.85rem',
+                background: to === 'C3' ? 'rgba(220,38,38,0.07)' : 'rgba(217,119,6,0.06)',
+                border: `1px solid ${to === 'C3' ? 'rgba(220,38,38,0.2)' : 'rgba(217,119,6,0.15)'}`,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontWeight: 500, color: 'var(--color-text)' }}>{name}</span>
+                {site && <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.78rem', marginLeft: 6 }}>{site}</span>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                <span style={conditionBadgeStyle(from)}>{condLabel(from)}</span>
+                <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>→</span>
+                <span style={conditionBadgeStyle(to)}>{condLabel(to)}</span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', flexShrink: 0 }}>{when}</span>
+            </div>
+          );
+        })}
+      </div>
+      {changes.length > 8 && (
+        <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', margin: '8px 0 0', textAlign: 'center' }}>
+          + {changes.length - 8} more — view in Assets list
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   useDocumentTitle('Dashboard');
   useEffect(() => { window.scrollTo(0, 0); }, []);
@@ -811,6 +902,7 @@ export default function Dashboard() {
                 list — verbs before counts, both above the KPI tiles. */}
             <AuditReadyBanner />
             <ArcFlashDashboardCard />
+            <ConditionChangesCard />
             <MaturityScoreCard compact />
             <PathTo100 compact />
             <ComplianceDocsCard />

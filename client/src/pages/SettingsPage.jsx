@@ -11,6 +11,7 @@ import ImportWebhookSection from '../components/settings/ImportWebhookSection.js
 import SlackIntegrationSection from '../components/settings/SlackIntegrationSection.jsx'; // v0.91 Phase 1b cont'd
 import TeamsIntegrationSection from '../components/settings/TeamsIntegrationSection.jsx'; // v0.91 Phase 1b cont'd
 import AlertPreferencesSection from '../components/settings/AlertPreferencesSection.jsx'; // v0.91 Phase 1b cont'd
+import AlertSettingsPanel from '../components/settings/AlertSettingsPanel.jsx';
 import DigestCadenceSection from '../components/settings/DigestCadenceSection.jsx'; // monthly digest cadence
 import ServiceRateCardSection from '../components/settings/ServiceRateCardSection.jsx'; // service rate card editor
 import ConsultantAccessSection from '../components/settings/ConsultantAccessSection.jsx'; // v0.91 Phase 1b cont'd
@@ -1114,6 +1115,7 @@ export default function SettingsPage() {
       {activeTab === 'alerts' && (
         <>
           <AlertPreferencesSection />
+          {isAdmin && <AlertSettingsPanel />}
           {isAdmin && <DigestCadenceSection />}
           {isAdmin && <ServiceRateCardSection />}
           {isAdmin && <SlackIntegrationSection />}

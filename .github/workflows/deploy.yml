@@ -1,0 +1,83 @@
+name: Deploy to ServiceCycle droplet
+
+# Push to main -> auto-deploy server + client to the live demo (servicecycle.app).
+# Add "[skip deploy]" to a commit message to push without deploying.
+# Or trigger manually from the Actions tab (Run workflow).
+#
+# Required repo secrets (Settings > Secrets and variables > Actions):
+#   SC_SSH_KEY   - private deploy key (no passphrase) authorized on the droplet
+#   SC_SSH_HOST  - 198.211.99.45
+#   SC_SSH_USER  - root
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: sc-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ !contains(github.event.head_commit.message, '[skip deploy]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Build client SPA
+        working-directory: client
+        env:
+          VITE_API_URL: ''
+        run: |
+          npm ci
+          npm run build
+          test -f dist/index.html || { echo "client build produced no dist/index.html"; exit 1; }
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SC_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "${{ secrets.SC_SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config <<EOF
+          Host sc
+            HostName ${{ secrets.SC_SSH_HOST }}
+            User ${{ secrets.SC_SSH_USER }}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+          EOF
+
+      - name: Pre-deploy DB backup
+        run: |
+          ssh sc "docker exec servicecycle-db pg_dump -U servicecycle -d servicecycle | gzip > /root/predeploy-ci-$(date +%Y%m%d-%H%M%S).sql.gz" || echo "WARN: backup step failed (continuing)"
+
+      - name: Deploy server (rsync source + rebuild container)
+        run: |
+          rsync -az --delete \
+            --exclude node_modules --exclude .env --exclude uploads --exclude backups \
+            --exclude 'pyextract/__pycache__' \
+            server/ sc:/root/ServiceCycle/server/
+          ssh sc "cd /root/ServiceCycle && docker compose up -d --build server"
+
+      - name: Deploy client (backup web root + sync dist)
+        run: |
+          ssh sc "cp -a /var/www/servicecycle/html /root/html-backup-ci-$(date +%Y%m%d-%H%M%S)"
+          rsync -az --delete --exclude '.well-known' client/dist/ sc:/var/www/servicecycle/html/
+
+      - name: Health check
+        run: |
+          sleep 15
+          code=$(ssh sc "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3002/api/health")
+          echo "api/health -> HTTP $code"
+          test "$code" = "200" || { echo "Health check failed"; exit 1; }
+          ssh sc "docker ps --filter name=servicecycle-server --format '{{.Names}} {{.Status}}'"

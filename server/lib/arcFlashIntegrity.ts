@@ -162,77 +162,100 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
     },
   });
 
+  // Group studies by accountId so we only fetch AccountSetting once per account
+  const studiesByAccount = new Map<string, typeof arcStudies>();
   for (const study of arcStudies) {
-    const expiresAt = study.expiresAt ? new Date(study.expiresAt) : null;
-    if (!expiresAt || isNaN(expiresAt.getTime())) continue;
+    if (!studiesByAccount.has(study.accountId)) studiesByAccount.set(study.accountId, []);
+    studiesByAccount.get(study.accountId)!.push(study);
+  }
 
-    const msToExpiry = expiresAt.getTime() - now.getTime();
-    const expired    = msToExpiry <= 0;
-    const warn6mo    = !expired && msToExpiry <= 182 * MS_PER_DAY;
-    if (!expired && !warn6mo) continue;
-    perStudyExpired++;
-
-    const template = expired
-      ? `arc_flash_study_expired:${study.id}`
-      : `arc_flash_study_expiring:${study.id}`;
-    const alreadySent = await prisma.notificationLog.findFirst({
-      where: {
-        accountId: study.accountId, template,
-        sentAt: { gte: new Date(now.getTime() - 30 * MS_PER_DAY) },
-        status: 'sent',
-      },
+  for (const [accountId, accountStudies] of studiesByAccount) {
+    // Read configurable warning thresholds for this account.
+    // Default "90,60,30" means send notifications at 90, 60, and 30 days before expiry.
+    const warnSetting = await prisma.accountSetting.findUnique({
+      where: { accountId_key: { accountId, key: 'ARC_FLASH_EXPIRY_WARNING_DAYS' } },
     });
-    if (alreadySent) continue;
+    const warnDays: number[] = (warnSetting?.value || '90,60,30')
+      .split(',')
+      .map((d: string) => parseInt(d.trim(), 10))
+      .filter((d: number) => !isNaN(d) && d > 0)
+      .sort((a: number, b: number) => b - a); // largest first so we check from widest window
 
-    const admins = await getAdmins(study.accountId);
-    if (admins.length === 0) continue;
+    for (const study of accountStudies) {
+      const expiresAt = study.expiresAt ? new Date(study.expiresAt) : null;
+      if (!expiresAt || isNaN(expiresAt.getTime())) continue;
 
-    // Prefer a covered asset; otherwise a representative distribution asset.
-    let targetAssetId = study.coveredAssets[0]?.assetId ?? null;
-    if (!targetAssetId) {
-      const rep = await prisma.asset.findFirst({
+      const msToExpiry = expiresAt.getTime() - now.getTime();
+      const expired    = msToExpiry <= 0;
+
+      // Determine which warning threshold this study has crossed, if any
+      const crossedDay = warnDays.find((d: number) => msToExpiry <= d * MS_PER_DAY);
+      if (!expired && crossedDay === undefined) continue;
+      perStudyExpired++;
+
+      const template = expired
+        ? `arc_flash_study_expired:${study.id}`
+        : `arc_flash_expiring_${crossedDay}d:${study.id}`;
+
+      const alreadySent = await prisma.notificationLog.findFirst({
         where: {
-          accountId: study.accountId, archivedAt: null,
-          equipmentType: { in: ['SWITCHGEAR', 'PANELBOARD', 'SWITCHBOARD', 'ARC_FLASH_PANEL'] },
+          accountId: study.accountId, template,
+          sentAt: { gte: new Date(now.getTime() - 30 * MS_PER_DAY) },
+          status: 'sent',
         },
-        select: { id: true },
       });
-      targetAssetId = rep?.id ?? null;
-    }
+      if (alreadySent) continue;
 
-    const reason = expired
-      ? 'Arc flash study 5-year expiration (NFPA 70E §130.5)'
-      : 'Arc flash study approaching 5-year expiration';
-    const detail = expired
-      ? `Study performed ${new Date(study.performedDate).toLocaleDateString()} expired ${expiresAt.toLocaleDateString()}. NFPA 70E §130.5 requires review every 5 years or on system change.`
-      : `Study performed ${new Date(study.performedDate).toLocaleDateString()} expires ${expiresAt.toLocaleDateString()} (within 6 months). Plan the re-study now to avoid a compliance gap.`;
+      const admins = await getAdmins(study.accountId);
+      if (admins.length === 0) continue;
 
-    if (targetAssetId) {
-      await maybeCreateArcFlashQuote(
-        study.accountId, targetAssetId, admins[0].id,
-        `${reason}\n${detail}`,
-        `study:${study.id}`,
-        quotedSet, studyCounter,
-      );
-    }
+      // Prefer a covered asset; otherwise a representative distribution asset.
+      let targetAssetId = study.coveredAssets[0]?.assetId ?? null;
+      if (!targetAssetId) {
+        const rep = await prisma.asset.findFirst({
+          where: {
+            accountId: study.accountId, archivedAt: null,
+            equipmentType: { in: ['SWITCHGEAR', 'PANELBOARD', 'SWITCHBOARD', 'ARC_FLASH_PANEL'] },
+          },
+          select: { id: true },
+        });
+        targetAssetId = rep?.id ?? null;
+      }
 
-    const account = await prisma.account.findUnique({
-      where: { id: study.accountId }, select: { companyName: true },
-    });
-    const html    = buildArcFlashHtml(reason, account?.companyName ?? study.accountId, detail);
-    const subject = `[Arc Flash Alert] ${reason} — ${account?.companyName ?? study.accountId}`;
-    for (const admin of admins) {
-      try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; }
-      catch (e: any) { console.error(`[arcFlashIntegrity] email failed for ${redactEmail(admin.email)}:`, e.message); }
+      const reason = expired
+        ? 'Arc flash study 5-year expiration (NFPA 70E §130.5)'
+        : `Arc flash study approaching 5-year expiration (${crossedDay} days remaining)`;
+      const detail = expired
+        ? `Study performed ${new Date(study.performedDate).toLocaleDateString()} expired ${expiresAt.toLocaleDateString()}. NFPA 70E §130.5 requires review every 5 years or on system change.`
+        : `Study performed ${new Date(study.performedDate).toLocaleDateString()} expires ${expiresAt.toLocaleDateString()} (within ${crossedDay} days). Plan the re-study now to avoid a compliance gap.`;
+
+      if (targetAssetId) {
+        await maybeCreateArcFlashQuote(
+          study.accountId, targetAssetId, admins[0].id,
+          `${reason}\n${detail}`,
+          `study:${study.id}`,
+          quotedSet, studyCounter,
+        );
+      }
+
+      const account = await prisma.account.findUnique({
+        where: { id: study.accountId }, select: { companyName: true },
+      });
+      const html    = buildArcFlashHtml(reason, account?.companyName ?? study.accountId, detail);
+      const subject = `[Arc Flash Alert] ${reason} — ${account?.companyName ?? study.accountId}`;
+      for (const admin of admins) {
+        try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; }
+        catch (e: any) { console.error(`[arcFlashIntegrity] email failed for ${redactEmail(admin.email)}:`, e.message); }
+      }
+      await prisma.notificationLog.create({
+        data: {
+          accountId: study.accountId, channel: 'email', template,
+          recipient: admins.map((a: any) => a.email).join(', '),
+          status: 'sent', alertCount: 1,
+        },
+      }).catch(() => {});
+      accountsChecked++;
     }
-    await prisma.notificationLog.create({
-      data: {
-        accountId: study.accountId, channel: 'email', template,
-        recipient: admins.map((a) => a.email).join(', '),
-        status: 'sent', alertCount: 1,
-      },
-    }).catch(() => {});
-    accountsChecked++;
   }
   quoteRequests += studyCounter.count;
 
