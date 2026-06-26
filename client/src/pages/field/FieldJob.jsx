@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api from '../../api/client';
+import { fieldMutate } from '../../lib/fieldApi';
 import Toast from '../../components/Toast';
 import VoiceCaptureButton from '../../components/field/VoiceCaptureButton';
 import { EQUIPMENT_TYPE_LABELS, CONDITION_META, SEVERITY_META, assetLabel } from '../../lib/equipment';
@@ -110,14 +111,23 @@ export default function FieldJob() {
     if (mBusy || !woId || !mValue.trim()) return;
     setMBusy(true);
     try {
-      await api.post(`/api/field/work-orders/${woId}/measurements`, {
-        measurementType: mType,
-        asFoundValue: mValue.trim(),
-        asFoundUnit: mUnit,
-        passFail: mPass, // 'pass'/'fail' → server maps to GREEN/RED
+      const res = await fieldMutate({
+        method: 'POST',
+        url: `/api/field/work-orders/${woId}/measurements`,
+        body: {
+          measurementType: mType,
+          asFoundValue: mValue.trim(),
+          asFoundUnit: mUnit,
+          passFail: mPass, // 'pass'/'fail' → server maps to GREEN/RED
+        },
+        meta: { label: `Measurement (${mType})`, assetId: id },
       });
       setMValue(''); setMPass(null);
-      setToast({ message: 'Measurement recorded.', variant: 'success' });
+      if (res?.queued) {
+        setToast({ message: 'Saved offline — will sync when you\'re back online.', variant: 'warn' });
+      } else {
+        setToast({ message: 'Measurement recorded.', variant: 'success' });
+      }
     } catch (err) {
       setToast({ message: err.response?.data?.error || 'Failed to save measurement.', variant: 'error' });
     } finally { setMBusy(false); }
@@ -127,10 +137,19 @@ export default function FieldJob() {
     if (defBusy || !defSev || !defDesc.trim()) return;
     setDefBusy(true);
     try {
-      await api.post('/api/field/deficiencies', { assetId: id, severity: defSev, description: defDesc.trim() });
+      const res = await fieldMutate({
+        method: 'POST',
+        url: '/api/field/deficiencies',
+        body: { assetId: id, severity: defSev, description: defDesc.trim() },
+        meta: { label: `Deficiency (${defSev})`, assetId: id },
+      });
       setDefSev(null); setDefDesc('');
-      setToast({ message: 'Deficiency reported.', variant: 'success' });
-      fetchAll();
+      if (res?.queued) {
+        setToast({ message: 'Saved offline — will sync when you\'re back online.', variant: 'warn' });
+      } else {
+        setToast({ message: 'Deficiency reported.', variant: 'success' });
+        fetchAll();
+      }
     } catch (err) {
       setToast({ message: err.response?.data?.error || 'Failed to report deficiency.', variant: 'error' });
     } finally { setDefBusy(false); }
@@ -138,9 +157,18 @@ export default function FieldJob() {
 
   async function completeJob(jobId) {
     try {
-      await api.post(`/api/field/work-orders/${jobId}/complete`, {});
-      setToast({ message: 'Work order completed.', variant: 'success' });
-      fetchAll();
+      const res = await fieldMutate({
+        method: 'POST',
+        url: `/api/field/work-orders/${jobId}/complete`,
+        body: {},
+        meta: { label: 'Complete work order', assetId: id },
+      });
+      if (res?.queued) {
+        setToast({ message: 'Saved offline — will sync when you\'re back online.', variant: 'warn' });
+      } else {
+        setToast({ message: 'Work order completed.', variant: 'success' });
+        fetchAll();
+      }
     } catch (err) {
       setToast({ message: err.response?.data?.error || 'Failed to complete.', variant: 'error' });
     }

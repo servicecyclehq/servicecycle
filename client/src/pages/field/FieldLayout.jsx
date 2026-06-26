@@ -64,7 +64,7 @@ export default function FieldLayout() {
             onClick={logout}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              minHeight: 40, padding: '0 12px', cursor: 'pointer',
+              minHeight: 44, padding: '0 12px', cursor: 'pointer',
               fontSize: 'var(--font-size-ui)', fontWeight: 600,
               color: 'var(--color-primary)', background: 'var(--color-bg)',
               border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
@@ -73,11 +73,13 @@ export default function FieldLayout() {
             Sign out
           </button>
         ) : (
-          <Link
-            to="/dashboard"
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              minHeight: 40, padding: '0 12px',
+              minHeight: 44, padding: '0 12px',
               fontSize: 'var(--font-size-ui)', fontWeight: 600,
               color: 'var(--color-primary)', textDecoration: 'none',
               border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
@@ -85,7 +87,7 @@ export default function FieldLayout() {
             }}
           >
             Full site →
-          </Link>
+          </a>
         )}
 
         <div

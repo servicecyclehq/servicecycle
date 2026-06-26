@@ -49,9 +49,30 @@ export function validatePermitIssuance(bus: any, study: any, asOf: Date = new Da
 /**
  * Build the pre-filled energized-work permit (the data half — the crew fills the
  * task / justification / approvals). Pure.
+ *
+ * [AFX-8] energizedWorkJustification: caller-supplied, recorded in the permit as
+ * a required attestation (why de-energizing is infeasible) rather than a future
+ * fill-in item, per NFPA 70E §130.2(B)(1).
+ * [AFX-10] riskAssessmentCompleted and safeWorkProcedureAvailable are required
+ * pre-issuance attestations per NFPA 70E §130.2(B)(2) and §130.2(B)(3).
  */
-export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: any; asOf?: Date; userId?: any; accountId?: any }): any {
+export function buildEnergizedWorkPermit(ctx: {
+  bus: any;
+  study: any;
+  asset?: any;
+  asOf?: Date;
+  userId?: any;
+  accountId?: any;
+  // [AFX-8] Required: statement of why energized work is necessary.
+  energizedWorkJustification?: string;
+  // [AFX-10] Required attestations per NFPA 70E §130.2(B).
+  riskAssessmentCompleted?: boolean;
+  safeWorkProcedureAvailable?: boolean;
+}): any {
   const { bus, study, asset } = ctx;
+  const justification = ctx.energizedWorkJustification || null;
+  const riskAssessmentCompleted    = ctx.riskAssessmentCompleted    ?? null;
+  const safeWorkProcedureAvailable = ctx.safeWorkProcedureAvailable ?? null;
   const asOf = ctx.asOf || new Date();
   const ie = num(bus && bus.incidentEnergyCalCm2);
   const volts = parseVolts(bus && bus.nominalVoltage);
@@ -84,12 +105,18 @@ export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: an
       method: study?.method || null,
       superseded: !!(study && study.supersededById),
     },
+    // [AFX-8] Recorded input: justification for energized work (NFPA 70E §130.2(B)(1)).
+    // Supplied by the requestor at permit generation; must not be blank before issuance.
+    energizedWorkJustification: justification,
+    // [AFX-10] Recorded attestations per NFPA 70E §130.2(B)(2) and §130.2(B)(3).
+    // These are confirmed by the qualified person before permit issuance.
+    attestations: {
+      riskAssessmentCompleted:    riskAssessmentCompleted,
+      safeWorkProcedureAvailable: safeWorkProcedureAvailable,
+    },
     // The crew/manager completes these per the site program — listed so the
     // printed permit is ready to fill + sign.
     toComplete: [
-      'Description of the energized work and justification (why de-energizing is infeasible)',
-      'Safe work practices and job-specific procedures',
-      'Results of the shock and arc-flash risk assessment review',
       'Required PPE confirmed available and rated for the incident energy above',
       'Means to restrict access to the arc-flash and shock boundaries',
       'Qualified person(s) and evidence of job briefing',
@@ -113,7 +140,7 @@ export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: an
         incidentEnergyAtTime: ie,
         ppeCategoryAtTime: bus?.ppeCategory ?? null,
       },
-    }).catch(() => {});
+    }).catch((bsErr: unknown) => { console.error('[arc-flash-permit] audit log failed:', bsErr); });
   }
 
   return permit;

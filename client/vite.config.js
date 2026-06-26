@@ -135,6 +135,7 @@ function pwaPlugin() {
       description: 'Electrical maintenance compliance',
       display: 'standalone',
       start_url: '/field',
+      scope: '/field/',
       theme_color: '#0f172a',
       background_color: '#0f172a',
       icons: [
@@ -162,7 +163,8 @@ function pwaPlugin() {
             url.origin === self.location.origin &&
             (url.pathname.startsWith('/api/field/') ||
               url.pathname === '/api/bootstrap' ||
-              url.pathname.startsWith('/api/assets')),
+              url.pathname.startsWith('/api/assets') ||
+              url.pathname.startsWith('/api/sites')),
           handler: 'NetworkFirst',
           method: 'GET', // belt + braces: never cache non-GET
           options: {

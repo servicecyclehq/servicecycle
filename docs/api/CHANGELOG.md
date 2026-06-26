@@ -40,10 +40,10 @@ Breaking changes are flagged with ⚠️.
 - **Telemetry resources** (`GET|POST /api/v1/telemetry/*`):
   - `GET /api/v1/telemetry/channels` — list monitoring channels
   - `POST /api/v1/telemetry/channels` — create/upsert channel
-  - `GET /api/v1/telemetry/channels/:id/readings` — paginated readings
+  - `GET /api/v1/telemetry/readings?assetId={assetId}` — paginated readings
   - `POST /api/v1/telemetry/readings` — batch ingest readings (≤1000/call)
   - `GET /api/v1/telemetry/notifications` — list threshold breach events
-  - `POST /api/v1/telemetry/notifications` — create/clear notification
+  - `POST /api/v1/telemetry/notifications/{id}/acknowledge` — acknowledge a notification
 
 ---
 

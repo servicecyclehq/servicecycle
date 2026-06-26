@@ -843,6 +843,11 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       // Raw SQL is intentional: avoids a Prisma findMany-then-update loop over
       // potentially thousands of log rows and executes atomically inside the transaction.
       await tx.$executeRaw`UPDATE "activity_logs" SET details = details - 'attemptedEmail' WHERE details->>'attemptedEmail' = ${target.email}`;
+      // Null user references in safety records (GDPR Article 17 — NFPA 70E safety records retained)
+      await tx.incidentLog.updateMany({
+        where: { OR: [{ resolvedById: targetId }, { createdById: targetId }] },
+        data: { resolvedById: null, createdById: null },
+      });
       // Per-user preference rows — these have onDelete: Cascade so the
       // user.delete below removes them. Listed here for code-grep
       // discoverability: alertPreference, aiUsage, userPreference,

@@ -4,20 +4,24 @@ import type {
   ListArcFlashLabelsParams,
   CreateArcFlashDeviceParams,
   PaginatedResponse,
-  SingleResponse,
+  SingleResponse, // used by createDevice
 } from '../types.js';
 import { paginate } from '../paginator.js';
 
 export interface ArcFlashOneLine {
+  site: { id: string; name: string };
   svg: string;
   nodes: unknown[];
   edges: unknown[];
 }
 
 export interface WorkOrderPrecheck {
+  assetId: string;
   canIssue: boolean;
-  reason: string | null;
-  label: ArcFlashLabel | null;
+  reasons: string[];
+  hazard: ArcFlashLabel | null;
+  study: object | null;
+  disclaimer?: string;
 }
 
 export class ArcFlashResource {
@@ -33,8 +37,7 @@ export class ArcFlashResource {
 
   /** Returns the power-path topology for a site as SVG + node/edge graph. */
   async getOneLine(siteId: string): Promise<ArcFlashOneLine> {
-    const response = await this.http.get<SingleResponse<ArcFlashOneLine>>('/arc-flash/one-line', { siteId });
-    return response.data;
+    return this.http.get<ArcFlashOneLine>('/arc-flash/one-line', { siteId });
   }
 
   /**
@@ -46,7 +49,7 @@ export class ArcFlashResource {
       '/arc-flash/work-order-precheck',
       { assetId }
     );
-    return { canIssue: response.canIssue, reason: response.reason, label: response.label };
+    return { assetId: response.assetId, canIssue: response.canIssue, reasons: response.reasons, hazard: response.hazard, study: response.study, disclaimer: response.disclaimer };
   }
 
   /** Write verified protective-device settings back. Requires write scope. */

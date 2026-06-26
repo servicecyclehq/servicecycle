@@ -48,7 +48,7 @@ const ListQuery = z.object({
 // ── GET /api/v1/arc-flash/labels ──────────────────────────────────────────────
 router.get('/labels', async (req: any, res: any) => {
   const parsed = ListQuery.safeParse(req.query);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+  if (!parsed.success) return res.status(400).json({ success: false, error: 'Invalid query', details: parsed.error.flatten() });
   const { page, limit, siteId, severity } = parsed.data;
   const accountId = req.apiKeyAccountId;
 
@@ -91,9 +91,9 @@ router.get('/labels', async (req: any, res: any) => {
 router.get('/one-line', async (req: any, res: any) => {
   const accountId = req.apiKeyAccountId;
   const siteId = req.query.siteId ? String(req.query.siteId) : null;
-  if (!siteId || !/^[0-9a-f-]{36}$/i.test(siteId)) return res.status(400).json({ error: 'siteId (uuid) is required' });
+  if (!siteId || !/^[0-9a-f-]{36}$/i.test(siteId)) return res.status(400).json({ success: false, error: 'siteId (uuid) is required' });
   const site = await prisma.site.findFirst({ where: { id: siteId, accountId }, select: { id: true, name: true } });
-  if (!site) return res.status(404).json({ error: 'Site not found' });
+  if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
 
   const assets = await prisma.asset.findMany({
     where: { accountId, siteId: site.id },
@@ -119,7 +119,7 @@ router.get('/one-line', async (req: any, res: any) => {
     };
   });
 
-  res.json({ site: { id: site.id, name: site.name }, ...buildOneLine(merged) });
+  res.json({ success: true, data: { site: { id: site.id, name: site.name }, ...buildOneLine(merged) } });
 });
 
 // ── GET /api/v1/arc-flash/work-order-precheck?assetId= ── Slice 8 (CMMS loop) ──
@@ -129,9 +129,9 @@ router.get('/one-line', async (req: any, res: any) => {
 router.get('/work-order-precheck', async (req: any, res: any) => {
   const accountId = req.apiKeyAccountId;
   const assetId = req.query.assetId ? String(req.query.assetId) : null;
-  if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) return res.status(400).json({ error: 'assetId (uuid) is required' });
+  if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) return res.status(400).json({ success: false, error: 'assetId (uuid) is required' });
   const asset = await prisma.asset.findFirst({ where: { id: assetId, accountId }, select: { id: true, equipmentType: true, site: { select: { name: true } } } });
-  if (!asset) return res.status(404).json({ error: 'Asset not found' });
+  if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
   const rows = await prisma.systemStudyAsset.findMany({
     where: { assetId: asset.id, accountId },
     include: { study: { select: { performedDate: true, expiresAt: true, peName: true, method: true, supersededById: true } } },
@@ -161,7 +161,7 @@ router.post('/devices', requireScope('write'), async (req: any, res: any) => {
   if (!parsed.success) return res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
   const b = parsed.data;
   const asset = await prisma.asset.findFirst({ where: { id: b.assetId, accountId }, select: { id: true, siteId: true } });
-  if (!asset) return res.status(404).json({ error: 'Asset not found' });
+  if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
   const device = await prisma.protectiveDevice.create({
     data: {

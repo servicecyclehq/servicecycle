@@ -96,9 +96,15 @@ export function recommendMitigations(bus: any): { danger: boolean; options: any[
     .filter((m) => m.applies(ctx))
     .map((m) => ({ key: m.key, label: m.label, category: m.category, mechanism: m.mechanism, caveat: m.caveat }));
 
+  const ppeNow = ppeCategoryFor(ie);
+  // [AFX-6] NFPA 70E §130.7(C)(14): arc rating of layered clothing is NOT additive.
+  // Cat 3/4 requires system arc-rated combinations verified by test.
+  const highCatNote = ppeNow != null && ppeNow >= 3
+    ? ' Note: NFPA 70E §130.7(C)(14) — Cat 3/4 PPE requires arc-rated clothing with a system arc rating verified by test. Individual layer ratings are not additive.'
+    : '';
   const note = danger
-    ? 'This bus is in the DANGER class. Consider the energy-reduction options below, then request a quote. ServiceCycle is the data layer; a PE confirms the reduced value by re-study.'
-    : 'Options to reduce incident energy or improve worker protection. A PE confirms any reduction by re-study.';
+    ? 'This bus is in the DANGER class. Consider the energy-reduction options below, then request a quote. ServiceCycle is the data layer; a PE confirms the reduced value by re-study.' + highCatNote
+    : 'Options to reduce incident energy or improve worker protection. A PE confirms any reduction by re-study.' + highCatNote;
   return { danger, options, note };
 }
 

@@ -228,8 +228,9 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       const reason = expired
         ? 'Arc flash study 5-year re-evaluation (NFPA 70E Annex D best practice)'
         : `Arc flash study approaching 5-year re-evaluation (${crossedDay} days remaining)`;
+      // [AFX-11] Lead with the mandatory NFPA 70E §130.5(C) requirement; Annex D is supplementary.
       const detail = expired
-        ? `Study performed ${new Date(study.performedDate).toISOString().slice(0, 10)} expired ${expiresAt.toISOString().slice(0, 10)}. NFPA 70E Annex D recommends re-evaluation every 5 years as best practice; §130.5(G) mandates re-study only when system changes may affect arc flash results.`
+        ? `Study performed ${new Date(study.performedDate).toISOString().slice(0, 10)} expired ${expiresAt.toISOString().slice(0, 10)}. NFPA 70E §130.5(C) requires re-evaluation when changes to the electrical distribution system may affect arc flash results. Per Annex D, a 5-year review is the recommended minimum interval.`
         : `Study performed ${new Date(study.performedDate).toISOString().slice(0, 10)} expires ${expiresAt.toISOString().slice(0, 10)} (within ${crossedDay} days). Plan the re-study now to avoid a compliance gap.`;
 
       if (targetAssetId) {
@@ -293,8 +294,9 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       ? 'Arc flash study 5-year re-evaluation (NFPA 70E Annex D best practice)'
       : 'Arc flash study approaching 5-year re-evaluation — 6 months remaining';
 
+    // [AFX-11] Lead with the mandatory NFPA 70E §130.5(C) requirement; Annex D is supplementary.
     const detail = expired5yr
-      ? `Study date: ${studyDate.toISOString().slice(0, 10)} — now ${(ageYears).toFixed(1)} years old. NFPA 70E Annex D recommends re-evaluation every 5 years as best practice; §130.5(G) mandates re-study only when system changes may affect arc flash results.`
+      ? `Study date: ${studyDate.toISOString().slice(0, 10)} — now ${(ageYears).toFixed(1)} years old. NFPA 70E §130.5(C) requires re-evaluation when changes to the electrical distribution system may affect arc flash results. Per Annex D, a 5-year review is the recommended minimum interval.`
       : `Study date: ${studyDate.toISOString().slice(0, 10)} — expires in approximately 6 months. Plan re-study now to avoid a compliance gap.`;
 
     // Dedup: skip if notified in the last 30 days for the same reason

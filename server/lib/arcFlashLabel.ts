@@ -11,15 +11,20 @@
 'use strict';
 
 // The fields a physical arc-flash label carries (NFPA 70E 130.5(H)).
+// [AFX-2] arcFlashBoundaryIn already present — confirmed.
+// [AFX-3] Added shockLimitedApproachIn and shockRestrictedApproachIn so the
+// mismatch detector flags reprints when shock approach boundaries change.
 export const LABEL_FIELDS = [
   'nominalVoltage', 'incidentEnergyCalCm2', 'arcFlashBoundaryIn', 'workingDistanceIn',
   'ppeCategory', 'requiredArcRatingCalCm2', 'labelSeverity',
+  'shockLimitedApproachIn', 'shockRestrictedApproachIn',
 ] as const;
 
 const LABEL_FIELD_LABEL: Record<string, string> = {
-  nominalVoltage: 'Nominal voltage', incidentEnergyCalCm2: 'Incident energy', arcFlashBoundaryIn: 'Arc-flash boundary',
+  nominalVoltage: 'Nominal voltage', incidentEnergyCalCm2: 'Incident energy', arcFlashBoundaryIn: 'Arc Flash Protection Boundary (AFPB)',
   workingDistanceIn: 'Working distance', ppeCategory: 'PPE category', requiredArcRatingCalCm2: 'Required arc rating',
   labelSeverity: 'Severity',
+  shockLimitedApproachIn: 'Shock limited approach boundary', shockRestrictedApproachIn: 'Shock restricted approach boundary',
 };
 
 function num(v: any): number | null {
@@ -39,6 +44,10 @@ export function labelSnapshot(row: any): any {
     ppeCategory: row.ppeCategory ?? null,
     requiredArcRatingCalCm2: num(row.requiredArcRatingCalCm2),
     labelSeverity: row.labelSeverity ?? null,
+    // [AFX-3] Shock approach boundaries are mandatory per NFPA 70E §130.5(H); track
+    // them in the snapshot so changes trigger a reprint flag.
+    shockLimitedApproachIn: num(row.shockLimitedApproachIn),
+    shockRestrictedApproachIn: num(row.shockRestrictedApproachIn),
   };
 }
 

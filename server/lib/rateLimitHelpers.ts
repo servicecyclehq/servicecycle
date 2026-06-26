@@ -27,6 +27,10 @@ function rateLimitHandler(req, res, _next, options) {
 // anonymous traffic falls back to the normalized-IP key. Dependencies are
 // injected so this stays pure/testable.
 function buildRateLimitKey(req, deps) {
+  // API key requests carry a non-JWT Bearer token; rate-limit by account, not IP
+  if ((req as any).apiKeyAccountId) {
+    return `apikey:${(req as any).apiKeyAccountId}`;
+  }
   const verifyToken = deps && deps.verifyToken;
   const clientIpKey = deps && deps.clientIpKey;
   const auth = req && req.headers && req.headers['authorization'];
@@ -34,6 +38,7 @@ function buildRateLimitKey(req, deps) {
     try {
       const decoded = verifyToken(auth.slice(7).trim());
       if (decoded && decoded.userId) return `user:${decoded.userId}`;
+  
     } catch (_) { /* forged/expired/malformed - fall through to IP key */ }
   }
   return clientIpKey(req);

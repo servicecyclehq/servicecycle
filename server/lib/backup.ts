@@ -150,7 +150,7 @@ async function runPgDump() {
   const PG_DUMP_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
   await new Promise<void>((resolve, reject) => {
-    const args = ['--no-owner', '--no-acl', '--format=custom', '--compress=6', '--encoding=UTF8', '-f', tmpFile, pgEnv.PGDATABASE];
+    const args = ['--no-owner', '--no-acl', '--format=custom', '--compress=6', '--encoding=UTF8', '--schema=public', '-f', tmpFile, pgEnv.PGDATABASE];
     const proc = spawn('pg_dump', args, {
       env: { ...process.env, ...pgEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -389,9 +389,11 @@ async function runBackup(accountId, triggeredBy = 'cron') {
     const dumpBuf = await runPgDump();
     console.log(`${pfx} pg_dump — ${(dumpBuf.length / 1024 / 1024).toFixed(1)} MB raw`);
 
-    // ── 2. Compress ──────────────────────────────────────────────────────────
-    gzBuf = await gzipBuffer(dumpBuf);
-    console.log(`${pfx} Compressed → ${(gzBuf.length / 1024 / 1024).toFixed(1)} MB`);
+    // ── 2. pg_dump --format=custom already applies internal compression
+    // (--compress=6 above). A second gzip pass would double-compress and
+    // inflate the file size. Assign directly without re-compressing.
+    gzBuf = dumpBuf;
+    console.log(`${pfx} Dump size → ${(gzBuf.length / 1024 / 1024).toFixed(1)} MB`);
 
     // ── 2b. Encrypt (default ON when MASTER_KEY is set, which is required
     // for the server to boot anyway). The on-disk format is:

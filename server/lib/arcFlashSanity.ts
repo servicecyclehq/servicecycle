@@ -80,11 +80,14 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
     add('arc_rating_below_ie', 'error', 'Required arc rating is below the incident energy — PPE would be under-protective.', `${arcRating} cal/cm^2 rating < ${ie} cal/cm^2 incident energy`);
   }
   // 4. PPE category must cover incident energy.
+  // [AFX-1] Use <= (not <) so the boundary case (ie === PPE_CATEGORY_CAL[ppe]) is
+  // flagged as under-protective. E.g. Cat 0 covers IE < 1.2; at exactly 1.2 the PPE
+  // is insufficient and the worker needs Cat 1 per NFPA 70E Table 130.7(C)(15)(a).
   if (ie != null && ppe != null && ppe >= 0 && ppe <= 4) {
     if (ie > 40) {
       add('ppe_above_cat4', 'error', 'Incident energy exceeds 40 cal/cm^2 — no PPE category applies; the equipment should be de-energized.', `${ie} cal/cm^2 with PPE Cat ${ppe} assigned`);
-    } else if (PPE_CATEGORY_CAL[ppe] != null && PPE_CATEGORY_CAL[ppe] < ie) {
-      add('ppe_under_ie', 'error', 'Assigned PPE category does not cover the incident energy.', `Cat ${ppe} (${PPE_CATEGORY_CAL[ppe]} cal/cm^2) < ${ie} cal/cm^2`);
+    } else if (PPE_CATEGORY_CAL[ppe] != null && PPE_CATEGORY_CAL[ppe] <= ie) {
+      add('ppe_under_ie', 'error', 'Assigned PPE category does not cover the incident energy.', `Cat ${ppe} (${PPE_CATEGORY_CAL[ppe]} cal/cm^2) <= ${ie} cal/cm^2`);
     }
   }
   // 5. Trip settings recorded for a device that has no adjustable trip unit.
@@ -107,6 +110,50 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
   const uMax = num(ctx.utilityMaxFaultKA);
   if (bolted != null && uMax != null && bolted > uMax) {
     add('bus_fault_gt_source', 'warning', 'Bus available fault current exceeds the utility source maximum — check the model.', `${bolted} kA bus > ${uMax} kA utility max`);
+  }
+
+  // [AFX-5] PPE Category Method is not applicable above 15 kV per NFPA 70E 2024
+  // Table 130.7(C)(15)(b). At this voltage the Incident Energy Analysis Method is required.
+  const nomV = num(bus.nominalVoltage != null ? String(bus.nominalVoltage).replace(/[^0-9.]/g, '') : null);
+  const nomVKv = bus.nominalVoltage != null && /kv/i.test(String(bus.nominalVoltage)) ? (nomV != null ? nomV * 1000 : null) : nomV;
+  if (bus.ppeMethod === 'ppe_category' && nomVKv != null && nomVKv > 15000) {
+    add('ppe_category_exceeds_voltage_limit', 'error',
+      'PPE Category Method (Table 130.7(C)(15)(b)) is not applicable for voltages above 15 kV per NFPA 70E 2024. Use the Incident Energy Analysis Method at this voltage.',
+      `nominalVoltage=${bus.nominalVoltage}, ppeMethod=ppe_category`);
+  }
+
+  // [AFX-9] IEEE 1584-2018 input range validation.
+  const arcingKA = num(bus.arcingCurrentKA);
+  const boltedKA = num(bus.boltedFaultCurrentKA);
+  const gapMm    = num(bus.conductorGapMm);
+  const wdIn     = num(bus.workingDistanceIn);
+  if (arcingKA != null && arcingKA < 0.5) {
+    add('arcing_below_ieee1584_min', 'error',
+      'Arcing current below IEEE 1584-2018 minimum of 0.5 kA — results are outside model validity.',
+      `arcingCurrentKA=${arcingKA}`);
+  }
+  if (boltedKA != null && boltedKA > 106) {
+    add('fault_exceeds_ieee1584_max', 'error',
+      'Bolted fault current exceeds IEEE 1584-2018 maximum of 106 kA — results are outside model validity.',
+      `boltedFaultCurrentKA=${boltedKA}`);
+  }
+  if (gapMm != null && (gapMm < 6.35 || gapMm > 152.4)) {
+    add('gap_outside_ieee1584_range', 'error',
+      `Conductor gap ${gapMm}mm is outside IEEE 1584-2018 valid range of 6.35–152.4 mm.`,
+      `conductorGapMm=${gapMm}`);
+  }
+  if (wdIn != null && wdIn < 12) {
+    add('working_distance_below_ieee1584_min', 'error',
+      'Working distance below IEEE 1584-2018 minimum of 12 in (305 mm) — results are outside model validity.',
+      `workingDistanceIn=${wdIn}`);
+  }
+
+  // [AFX-12] NFPA 70E 2024 Table 130.7(C)(15)(a) Note 3: no AFPB required at Cat 0.
+  const ppeCategory = num(bus.ppeCategory);
+  const afbIn = num(bus.arcFlashBoundaryIn);
+  if (ppeCategory === 0 && afbIn != null) {
+    out.push({ busName: name, code: 'cat0_boundary_present', severity: 'warning',
+      message: 'Category 0 equipment (IE < 1.2 cal/cm²) does not require an Arc Flash Protection Boundary per NFPA 70E 2024 Table 130.7(C)(15)(a) Note 3. Verify this value.' });
   }
 
   return out;

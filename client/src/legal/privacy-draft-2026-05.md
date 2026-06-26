@@ -42,6 +42,8 @@ This policy does **not** apply to ServiceCycle instances you install on your own
 - **Demo sandbox registration (servicecycle.app):** the company name, full name, email address, and password you supply at registration. The password is stored as a salted bcrypt hash; we never see the cleartext.
 - **Demo sandbox activity:** any contracts, vendors, documents, and notes you create in the sandbox while exploring. Subject to the deletion schedule in Section 5.
 - **Support requests:** the contents of any email or message you send to support@servicecycle.app or via the in-product feedback form.
+- **Public test-report parser:** If you use our public equipment-report parser at servicecycle.app, we collect the email address you provide to receive your analysis results, along with anonymized usage metadata. See Section 5 for retention.
+- **Contractor and field technician records:** Names, contact details, and professional certification credentials for third-party contractor technicians entered by organization administrators. These individuals may not have registered for the service directly — they are data subjects whose information is entered by the organization using ServiceCycle.
 
 ### 2.2 Information we collect automatically
 
@@ -70,6 +72,8 @@ We use the information described in Section 2 to:
 We do not sell or share personal information, as those terms are defined under the California Consumer Privacy Act / California Privacy Rights Act (CCPA/CPRA). We do not share personal information with third parties for their own marketing purposes, do not engage in cross-context behavioral advertising, and do not run a marketing-email program. The transfers to sub-processors described in Section 4 are made only for the operational purposes described in this policy and are governed by service-provider / processor terms.
 
 For users in the EEA / UK, the legal bases on which we process personal information are: (i) **consent** for early-access form submissions and for processing demo-sandbox content you upload; (ii) **performance of a contract** (or steps prior to entering one) for responding to support requests and providing access to the demo sandbox; and (iii) **legitimate interests** for operating, securing, and preventing abuse of our marketing site and demo sandbox (Article 6(1)(f) GDPR), where the processing is limited to what is necessary for those interests and does not override your rights and freedoms.
+
+**Processing purpose and legal basis mapping:** Marketing site IP logging: legitimate interests (fraud/abuse prevention). Early-access form (including IP address and user agent automatically recorded): legitimate interests (fraud prevention) + consent (form submission). Retained anonymized audit records post-erasure: legitimate interests (audit-trail integrity per NFPA 70E record-keeping obligations, Article 17(3)(b)).
 
 ---
 
@@ -114,6 +118,7 @@ For self-hosted installations, the equivalent table is in your Terms of Service 
 
 - **Early-access form submissions:** retained until you ask us to delete them, or until 36 months elapse, whichever is sooner.
 - **Demo sandbox accounts and data:** automatically deleted within 24 hours after the 5th calendar day of account inactivity (the "Inactivity TTL"). Deletion cascades to all owned data: vendors, contracts, documents, notes, audit log rows, and the encrypted user record. The shared `admin@demo.local` / `manager@demo.local` / `viewer@demo.local` / `consultant@demo.local` accounts are reset to documented defaults each night at approximately 03:30 UTC; any changes you make to those accounts during a session do not persist past the next reset.
+- **Production tenant data retention:** User and contractor personnel records (names, emails, phone numbers, certification credentials) are retained for the duration of the account's active service agreement. Upon account termination, data is available for export for 30 days then deleted within 90 days, unless a longer retention period is required by applicable law or configured by the account administrator. Standard retention tier: 7 years, consistent with NETA MTS maintenance record-keeping requirements.
 - **Server logs:** 30 days.
 - **Support correspondence:** retained until you ask us to delete it, or until 36 months elapse after your last contact, whichever is sooner.
 

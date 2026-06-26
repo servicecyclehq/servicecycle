@@ -81,7 +81,7 @@ export default function FieldJobs() {
         <h1 style={{ fontSize: 17, fontWeight: 800, color: 'var(--color-text)', margin: 0 }}>My jobs</h1>
         <span style={{ flex: 1 }} />
         <button type="button" onClick={fetchJobs} aria-label="Refresh"
-          style={{ minWidth: 44, minHeight: 40, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 18 }}>&#x27F3;</button>
+          style={{ minWidth: 44, minHeight: 44, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 18 }}>&#x27F3;</button>
       </div>
 
       {/* Search + status filter -- shown once jobs have loaded */}

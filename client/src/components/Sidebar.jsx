@@ -112,7 +112,7 @@ function GlobalSearch() {
             onKeyDown={e => e.key === 'Escape' && (setOpen(false), setQuery(''))}
             placeholder="Search assets…"
             aria-label="Search assets"
-            style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 26, paddingRight: 8, paddingTop: 5, paddingBottom: 5, fontSize: 'var(--font-size-sm)', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius)', background: 'var(--color-surface)', color: 'var(--color-text)', outline: 'none' }}
+            style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 26, paddingRight: 8, paddingTop: 5, paddingBottom: 5, fontSize: 'var(--font-size-sm)', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
           />
         </div>
       </form>
@@ -245,7 +245,7 @@ function ViewerBanner() {
       border: '1px solid rgba(100, 116, 139, 0.35)',
       borderRadius: 6,
       fontSize: 'var(--font-size-xs)',
-      color: 'rgb(148, 163, 184)',
+      color: 'rgb(203, 213, 225)',
       lineHeight: 1.4,
     }}>
       <strong>View-Only Access</strong><br />
@@ -670,6 +670,7 @@ export default function Sidebar() {
               <button
                 onClick={() => navigate('/assets/new')}
                 title="Add asset"
+                aria-label="Add asset"
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   padding: '4px 8px 4px 2px', color: 'var(--color-text-secondary)',
@@ -680,7 +681,7 @@ export default function Sidebar() {
                 onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
               >
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-                  style={{ width: 14, height: 14 }}>
+                  aria-hidden="true" style={{ width: 14, height: 14 }}>
                   <line x1="8" y1="2" x2="8" y2="14"/>
                   <line x1="2" y1="8" x2="14" y2="8"/>
                 </svg>

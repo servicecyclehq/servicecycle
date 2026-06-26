@@ -128,7 +128,8 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
     cy += big ? 30 : 26;
   }
 
-  if (m.arcFlashBoundaryIn != null) row('Arc flash boundary', `${m.arcFlashBoundaryIn} in`);
+  // [AFX-2] Updated label to use NFPA 70E 2024 §130.5(H) terminology "Arc Flash Protection Boundary (AFPB)".
+  if (m.arcFlashBoundaryIn != null) row('Arc Flash Protection Boundary (AFPB)', `${m.arcFlashBoundaryIn} in`);
   if (m.showIE) {
     row('Incident energy', `${m.incidentEnergyCalCm2} cal/cm2${m.workingDistanceIn != null ? ` @ ${m.workingDistanceIn} in` : ''}`, true);
     if (m.requiredArcRatingCalCm2 != null) row('Min. arc rating of PPE', `${m.requiredArcRatingCalCm2} cal/cm2`);
@@ -136,11 +137,14 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
     row('PPE category', `${m.ppeCategory}`, true);
   }
   if (m.nominalVoltage) row('Nominal system voltage', String(m.nominalVoltage));
-  if (m.shockLimitedApproachIn != null || m.shockRestrictedApproachIn != null) {
-    const parts = [];
-    if (m.shockLimitedApproachIn != null) parts.push(`Limited ${m.shockLimitedApproachIn} in`);
-    if (m.shockRestrictedApproachIn != null) parts.push(`Restricted ${m.shockRestrictedApproachIn} in`);
-    row('Shock approach boundary', parts.join('  /  '));
+  // [AFX-3] NFPA 70E §130.5(H): shock approach boundaries are mandatory on the label.
+  // Render a "Required — not on file" placeholder rather than silently omitting them
+  // so the reviewer knows data is missing before printing.
+  // TODO NFPA 70E §130.5(H): shock approach boundaries are mandatory — warn when absent
+  {
+    const limitedVal  = m.shockLimitedApproachIn     != null ? `Limited ${m.shockLimitedApproachIn} in`     : 'Limited: [Required — not on file]';
+    const restrictVal = m.shockRestrictedApproachIn  != null ? `Restricted ${m.shockRestrictedApproachIn} in` : 'Restricted: [Required — not on file]';
+    row('Shock approach boundary', `${limitedVal}  /  ${restrictVal}`);
   }
 
   // Footer: equipment identity leads, facility name, study date, minimal brand.

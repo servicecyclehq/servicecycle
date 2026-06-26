@@ -449,6 +449,21 @@ router.get('/metrics/overview', requireSuperAdmin, async (req: any, res) => {
        ORDER BY count DESC
        LIMIT 15`;
 
+    // REV-8: plan tier distribution -- counts of accounts by planTier + stripeSubscriptionStatus
+    const planTierDistribution = await prisma.account.groupBy({
+      by: ['planTier', 'stripeSubscriptionStatus'],
+      _count: { id: true },
+    });
+
+    // REV-11: feature adoption -- per-feature count of accounts with that feature enabled
+    const featureKeys = ['arc_flash_studies', 'loto', 'qemw_wallet', 'parts_module', 'public_api'];
+    const featureAdoption: Record<string, number> = {};
+    for (const key of featureKeys) {
+      featureAdoption[key] = await prisma.accountSetting.count({
+        where: { key: `feature.${key}`, value: 'true' },
+      });
+    }
+
     return res.json({
       success: true,
       data: {
@@ -470,6 +485,8 @@ router.get('/metrics/overview', requireSuperAdmin, async (req: any, res) => {
           d7: { count: Number(ret.d7 || 0), pct: pct(ret.d7) },
         },
         topActions7d: ((topActionsRows as any[]) || []).map(r => ({ action: r.action, count: Number(r.count) })),
+        planTierDistribution,
+        featureAdoption,
       },
     });
   } catch (err) {

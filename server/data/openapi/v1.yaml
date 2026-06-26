@@ -224,14 +224,18 @@ components:
     Contractor:
       type: object
       properties:
-        id:               { type: string, format: uuid }
-        name:             { type: string }
-        nataLevel:        { type: string, nullable: true, description: "NETA ETT certification level (1–4)" }
-        companyName:      { type: string, nullable: true }
-        email:            { type: string, format: email, nullable: true }
-        phone:            { type: string, nullable: true }
-        neta70eQualified: { type: boolean, description: "NFPA 70E qualified-person status" }
-        createdAt:        { type: string, format: date-time }
+        id:                { type: string, format: uuid }
+        name:              { type: string }
+        netaAccredited:    { type: boolean, description: "Whether contractor holds NETA accreditation" }
+        notes:             { type: string, nullable: true }
+        supportEmail:      { type: string, format: email, nullable: true }
+        supportPhone:      { type: string, nullable: true }
+        supportPortalUrl:  { type: string, format: uri, nullable: true }
+        portalUrl:         { type: string, format: uri, nullable: true }
+        scoreSupport:      { type: number, nullable: true, description: "Support quality score (0–10)" }
+        scoreSatisfaction: { type: number, nullable: true, description: "Customer satisfaction score (0–10)" }
+        createdAt:         { type: string, format: date-time }
+        updatedAt:         { type: string, format: date-time }
 
     ArcFlashLabel:
       type: object
@@ -256,11 +260,11 @@ components:
           type: integer
           nullable: true
           description: "NFPA 70E PPE category 0–4"
-        minArcRatingCalCm2:  { type: number, nullable: true }
+        requiredArcRatingCalCm2:  { type: number, nullable: true }
         labelSeverity:       { type: string, enum: [danger, warning], nullable: true }
         studyPerformedDate:  { type: string, format: date-time, nullable: true }
         studyExpiresAt:      { type: string, format: date-time, nullable: true }
-        studyExpired:        { type: boolean }
+        studyExpired:        { type: boolean, nullable: true }
         disclaimer:
           type: string
           description: "NFPA data-layer disclaimer — display on any energized-work surface"
@@ -768,6 +772,11 @@ paths:
                   data:
                     type: object
                     properties:
+                      site:
+                        type: object
+                        properties:
+                          id:   { type: string, format: uuid }
+                          name: { type: string }
                       svg:   { type: string, description: SVG markup }
                       nodes: { type: array, items: { type: object } }
                       edges: { type: array, items: { type: object } }
@@ -797,12 +806,20 @@ paths:
               schema:
                 type: object
                 properties:
-                  success:  { type: boolean }
-                  canIssue: { type: boolean }
-                  reason:   { type: string, nullable: true }
-                  label:
+                  success:   { type: boolean }
+                  assetId:   { type: string, format: uuid }
+                  canIssue:  { type: boolean }
+                  reasons:
+                    type: array
+                    items: { type: string }
+                    description: "Reasons why the work order cannot be issued (empty when canIssue is true)"
+                  hazard:
                     nullable: true
                     allOf: [{ $ref: '#/components/schemas/ArcFlashLabel' }]
+                  study:
+                    type: object
+                    nullable: true
+                  disclaimer: { type: string }
         '400': { description: assetId is required }
         '401': { description: Missing or invalid API key }
 
@@ -1114,3 +1131,4 @@ tags:
     description: IEEE 1584 study data, NFPA 70E 130.5(H) labels, and energized-work precheck
   - name: Telemetry
     description: Continuous condition monitoring — ingest readings from edge gateways, configure thresholds, read breach notifications
+ 

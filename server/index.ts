@@ -561,7 +561,7 @@ app.use(helmet({
   xssFilter:            true,                                      // X-XSS-Protection: 0 (modern guidance)
   referrerPolicy:       { policy: 'strict-origin-when-cross-origin' }, // (S3) per spec
   strictTransportSecurity: process.env.NODE_ENV === 'production'
-    ? { maxAge: 60 * 60 * 24 * 365, includeSubDomains: true, preload: false } // 1y, prod only (S3)
+    ? { maxAge: 60 * 60 * 24 * 365, includeSubDomains: true, preload: true } // 1y, prod only (S3)
     : false,
   // N2: CORP policy is env-driven so operators with split-domain hosting
   // (frontend and API on different eTLD+1) can set CORP_POLICY=cross-origin.
@@ -1973,7 +1973,12 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
       try {
         const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const { count } = await prisma.refreshToken.deleteMany({
-          where: { expiresAt: { lt: cutoff } },
+          where: {
+            OR: [
+              { expiresAt: { lt: cutoff } },
+              { revokedAt: { not: null, lt: cutoff } },
+            ],
+          },
         });
         if (count > 0) console.log(`[Cron] Expired refresh token prune: deleted ${count} rows`);
       } catch (e) {
@@ -2157,6 +2162,20 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
       }
     }), { timezone: 'UTC' });
     console.log('[Cron] RenderError prune scheduled — runs daily at 03:52 (30d retention)');
+
+    // ── AiUsage retention prune — runs at 03:55 AM UTC ───────────────────
+    // Deletes ai_usage rows with day < NOW - 90 days. The day column is a
+    // DATE string (YYYY-MM-DD). 90 days covers quota dashboards and trend
+    // analysis; older rows are dead weight.
+    cron.schedule('55 3 * * *', () => runOnceQuiet('prune-ai-usage', async () => {
+      const cutoffDay = new Date();
+      cutoffDay.setDate(cutoffDay.getDate() - 90);
+      const cutoffStr = cutoffDay.toISOString().slice(0, 10);
+      await prisma.aiUsage.deleteMany({
+        where: { day: { lt: cutoffStr } },
+      });
+    }), { timezone: 'UTC' });
+    console.log('[Cron] AiUsage prune scheduled — runs daily at 03:55 (90d retention)');
 
     // ── Demo mode crons (S9 + L3) — only when DEMO_MODE=true ──────────────
     // Two daily passes, sequenced so the inactivity prune runs before the
@@ -2486,70 +2505,4 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     console.warn('[Cron] node-cron not available — run npm install to enable scheduled alerts');
   }
 }); // end app.listen callback
-} // end if NODE_ENV !== 'test'
-
-// ── Graceful shutdown ─────────────────────────────────────────────────────────
-// Docker `compose down`, Kubernetes rolling deploys, and most orchestrators
-// send SIGTERM and wait a grace period (default 10s for Docker) before
-// SIGKILL. Without a handler, Node defaults to terminating immediately —
-// any in-flight DB write is dropped mid-transaction, and the next boot may
-// see partial state. This block:
-//   1. Stops accepting new connections (httpServer.close)
-//   2. Waits for in-flight requests to drain (with a hard timeout)
-//   3. Closes the Prisma pool so PG connections are released cleanly
-//   4. Exits 0
-const SHUTDOWN_TIMEOUT_MS = 25_000;
-
-let _shuttingDown = false;
-async function shutdown(signal) {
-  if (_shuttingDown) return;
-  _shuttingDown = true;
-  console.log(`[shutdown] Received ${signal}. Draining...`);
-
-  // Hard-timeout failsafe — if close() never resolves, kill the process
-  // before the orchestrator does it for us (cleaner exit code in logs).
-  const killTimer = setTimeout(() => {
-    console.error('[shutdown] Drain timeout exceeded — forcing exit');
-    process.exit(1);
-  }, SHUTDOWN_TIMEOUT_MS);
-  killTimer.unref(); // don't keep the loop alive just for this timer
-
-  // Stop accepting new connections; existing keep-alive sockets get closed
-  // when their current request completes.
-  httpServer.close(async (err) => {
-    if (err) {
-      console.error('[shutdown] httpServer.close error:', err.message);
-    }
-    try {
-      // CR-2 (audit-2): flush AI budget counters before pool close so the
-      // 30/70/90 alertsFired state + monthly usdCost survive the restart.
-      try {
-        await require('./lib/aiBudgetGuard').persistMonthlyCounters();
-        console.log('[shutdown] aiBudgetGuard counters persisted.');
-      } catch (e) {
-        console.warn('[shutdown] aiBudgetGuard persist error (non-fatal):', e.message);
-      }
-      await prisma.$disconnect();
-      console.log('[shutdown] Prisma pool closed.');
-    } catch (e) {
-      console.error('[shutdown] Prisma disconnect error:', e.message);
-    }
-    console.log('[shutdown] Goodbye.');
-    process.exit(0);
-  });
-}
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
-
-
-// v0.36.7 (Pass-6 W2 promoted-P0): process-level safety net for
-// orphaned stream errors (typically pdfkit writing into a closed
-// ServerResponse after a HEAD or client abort).
-//
-// Pre-v0.36.7 a single ERR_STREAM_WRITE_AFTER_END from pdfkit was
-// emitted as an UNHANDLED 'error' event on ServerResponse, which Node
-// re-raises as an uncaughtException and terminates the process. A
-// single bad PDF request from a HEAD-issuing scanner was sufficient
-// to DoS the demo server (it would crash + restart every 30-60s for
-// the duration of the scan). The route-level fix in li
+} // end if NODE_ENV !

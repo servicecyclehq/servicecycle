@@ -18,7 +18,7 @@
 // and reschedules its maintenance server-side.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Pencil, FileText } from 'lucide-react';
 import api from '../api/client';
@@ -27,6 +27,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   CONDITION_META, WO_STATUS_META, SEVERITY_META, DECAL_META, IEEE_STATUS_META,
   assetLabel, fmtDate,
@@ -86,8 +87,11 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
   const [form, setForm] = useState({
     completedDate: todayStr(), asFoundCondition: '', asLeftCondition: '', netaDecal: '',
   });
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose });
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label="Complete work order"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
@@ -114,8 +118,9 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
         {error && <div role="alert" className="alert alert-error" style={{ marginBottom: 12 }}>{error}</div>}
 
         <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Completed date</label>
+          <label style={labelStyle} htmlFor="complete-modal-date">Completed date</label>
           <input
+            id="complete-modal-date"
             type="date" className="form-control form-control-wide" required
             value={form.completedDate}
             onChange={e => setForm(f => ({ ...f, completedDate: e.target.value }))}
@@ -129,8 +134,9 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
-            <label style={labelStyle}>As-found condition</label>
+            <label style={labelStyle} htmlFor="complete-modal-as-found">As-found condition</label>
             <select
+              id="complete-modal-as-found"
               className="form-control form-control-wide"
               value={form.asFoundCondition}
               onChange={e => setForm(f => ({ ...f, asFoundCondition: e.target.value }))}
@@ -140,8 +146,9 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
             </select>
           </div>
           <div>
-            <label style={labelStyle}>As-left condition</label>
+            <label style={labelStyle} htmlFor="complete-modal-as-left">As-left condition</label>
             <select
+              id="complete-modal-as-left"
               className="form-control form-control-wide"
               value={form.asLeftCondition}
               onChange={e => setForm(f => ({ ...f, asLeftCondition: e.target.value }))}
@@ -152,8 +159,9 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
           </div>
         </div>
         <div style={{ marginBottom: 16 }}>
-          <label style={labelStyle}>NETA decal</label>
+          <label style={labelStyle} htmlFor="complete-modal-decal">NETA decal</label>
           <select
+            id="complete-modal-decal"
             className="form-control form-control-wide"
             value={form.netaDecal}
             onChange={e => setForm(f => ({ ...f, netaDecal: e.target.value }))}

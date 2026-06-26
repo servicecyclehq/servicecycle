@@ -110,6 +110,8 @@ node server/scripts/verify-audit-chain.js <path-to-exported-ndjson>
 - Is the attacker still active?
 - What is the timeline of events?
 
+**Regulatory triage:** Run account audit query to determine which accounts had data exposure: `SELECT a.id, a.company_name FROM accounts a JOIN users u ON u.account_id = a.id WHERE u.last_login > [breach_start]`. Cross-reference against customer list to identify any EU/EEA or UK-resident accounts (check Account.companyName or billing records). Document approximate number of affected data subjects and categories of personal data involved for GDPR Article 33(3) notification.
+
 ---
 
 ### Phase 4 — Eradicate
@@ -165,6 +167,20 @@ node server/scripts/verify-audit-chain.js <path-to-exported-ndjson>
   becoming aware of a breach involving EU resident data.
 - State breach notification laws (US): Varies by state; consult counsel for
   incidents involving PII of residents in notification-statute states.
+
+### Regulatory Contact Quick Reference
+
+**EU/EEA -- GDPR Article 33 (72-hour notification):**
+- Irish DPC (lead SA for many US-based controllers): https://www.dataprotection.ie/en/individuals/data-breaches
+- French CNIL: https://www.cnil.fr/en/report-a-personal-data-breach
+- German BSI/LfDI: varies by state; see https://www.bfdi.bund.de
+
+**UK -- UK GDPR Article 33 (72-hour notification):**
+- ICO: https://ico.org.uk/for-organisations/report-a-breach/
+
+**US -- State breach notification (without unreasonable delay):**
+- NCSL tracker: https://www.ncsl.org/technology-and-communication/security-breach-notification-laws
+- California AG: https://oag.ca.gov/privacy/databreach/reporting
 
 ---
 

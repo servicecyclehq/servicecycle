@@ -52,12 +52,13 @@ export interface Asset {
 
 export interface AssetSchedule {
   id: string;
-  taskName: string;
-  taskCode: string;
-  standardRef: string;
-  nextDueDate: string | null;
   lastCompletedDate: string | null;
-  intervalDays: number | null;
+  nextDueDate: string | null;
+  taskDefinition: {
+    taskName: string;
+    taskCode: string;
+    standardRef: string;
+  };
 }
 
 export interface AssetDetail extends Asset {
@@ -116,12 +117,16 @@ export interface Deficiency {
 export interface Contractor {
   id: string;
   name: string;
-  nataLevel: string | null;
-  companyName: string | null;
-  email: string | null;
-  phone: string | null;
-  neta70eQualified: boolean;
+  netaAccredited: boolean;
+  notes: string | null;
+  supportEmail: string | null;
+  supportPhone: string | null;
+  supportPortalUrl: string | null;
+  portalUrl: string | null;
+  scoreSupport: number | null;
+  scoreSatisfaction: number | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface ArcFlashLabel {
@@ -139,7 +144,7 @@ export interface ArcFlashLabel {
   labelSeverity: ArcFlashSeverity | null;
   studyPerformedDate: string | null;
   studyExpiresAt: string | null;
-  studyExpired: boolean;
+  studyExpired?: boolean;
   disclaimer: string;
 }
 

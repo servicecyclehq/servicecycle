@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+﻿import { useState, useId } from 'react';
 
 /**
  * InfoTip — tap/hover/focus accessible tooltip.
@@ -10,6 +10,7 @@
  */
 export function InfoTip({ content }) {
   const [open, setOpen] = useState(false);
+  const tooltipId = useId();
 
   return (
     <span className="infotip" style={{ position: 'relative', display: 'inline-block' }}>
@@ -17,7 +18,8 @@ export function InfoTip({ content }) {
         className="infotip-trigger"
         tabIndex={0}
         role="button"
-        aria-label={content}
+        aria-label="More information"
+        aria-describedby={open ? tooltipId : undefined}
         aria-expanded={open}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
@@ -29,6 +31,7 @@ export function InfoTip({ content }) {
       >(?)</span>
       {open && (
         <span
+          id={tooltipId}
           role="tooltip"
           style={{
             position: 'absolute',
@@ -46,7 +49,6 @@ export function InfoTip({ content }) {
             boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
             zIndex: 9999,
             color: 'var(--color-text, #222)',
-            pointerEvents: 'none',
           }}
         >
           {content}

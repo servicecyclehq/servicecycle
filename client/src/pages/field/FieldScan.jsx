@@ -73,7 +73,7 @@ function ManualSearch({ onPick }) {
         style={{
           boxSizing: 'border-box', width: '100%', minHeight: 52, padding: '0 14px',
           fontSize: 16, color: 'var(--color-text)', background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)', borderRadius: 12, outline: 'none',
+          border: '1px solid var(--color-border)', borderRadius: 12,
         }}
       />
       <div style={{ marginTop: 10 }}>
@@ -253,6 +253,7 @@ export default function FieldScan() {
         ref={videoRef}
         muted
         playsInline
+        aria-label="Live camera feed for QR code scanning"
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
       />
 

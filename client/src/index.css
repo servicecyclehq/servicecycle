@@ -166,7 +166,7 @@ main[id='main-content']:focus { outline: none; }
   border-radius: 3px;
 }
 /* The default browser focus ring on form controls is good - don't double up. */
-.form-control:focus-visible { outline: none; }
+.form-control:focus-visible { outline: 2px solid transparent; }
 
 /* WCAG (prefers-reduced-motion) - global safety net so any future
    animation/transition added without a specific reduced-motion fallback

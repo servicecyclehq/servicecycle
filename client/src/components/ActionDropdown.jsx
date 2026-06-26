@@ -161,19 +161,14 @@ export default function ActionDropdown({
           {visibleItems.map((item, idx) => {
             const ItemIcon = item.icon;
             return (
-              <div
+              <button
                 key={item.label || idx}
+                type="button"
                 role="menuitem"
                 tabIndex={item.disabled ? -1 : 0}
                 onClick={() => handleItemClick(item)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleItemClick(item);
-                  }
-                }}
                 title={item.title}
-                aria-disabled={item.disabled || undefined}
+                disabled={item.disabled || undefined}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -184,7 +179,10 @@ export default function ActionDropdown({
                   color: item.disabled ? 'var(--color-text-muted)' : 'var(--color-text)',
                   opacity: item.disabled ? 0.55 : 1,
                   transition: 'background 0.1s',
-                  outline: 'none',
+                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  textAlign: 'left',
                 }}
                 onMouseEnter={(e) => {
                   if (!item.disabled) e.currentTarget.style.background = 'var(--color-bg)';
@@ -197,7 +195,7 @@ export default function ActionDropdown({
               >
                 {ItemIcon ? <ItemIcon {...ITEM_ICON} /> : null}
                 <span style={{ flex: 1 }}>{item.label}</span>
-              </div>
+              </button>
             );
           })}
         </div>
