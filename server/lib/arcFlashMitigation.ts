@@ -88,7 +88,7 @@ const MITIGATIONS: MitigationDef[] = [
 export function recommendMitigations(bus: any): { danger: boolean; options: any[]; note: string } {
   const volts = parseVolts(bus.nominalVoltage);
   const ie = num(bus.incidentEnergyCalCm2);
-  const danger = (ie != null && ie > 40) || (volts != null && volts > 600);
+  const danger = ie != null && ie > 40;
   const ctx = { volts, deviceType: String(bus.deviceType || '').toLowerCase(), tripUnit: String(bus.tripUnitType || '').toLowerCase(), danger };
 
   const options = MITIGATIONS
@@ -103,11 +103,12 @@ export function recommendMitigations(bus: any): { danger: boolean; options: any[
 }
 
 // NFPA 70E PPE-category arc ratings (cal/cm^2) — for the what-if PPE-band change.
-const PPE_BANDS: Array<[number, number]> = [[4, 1], [8, 2], [25, 3], [40, 4]];
+// Cat 0 applies when IE < 1.2 cal/cm² (no arc flash boundary; minimal PPE).
+const PPE_BANDS: Array<[number, number]> = [[1.2, 0], [4, 1], [8, 2], [25, 3], [40, 4]];
 function ppeCategoryFor(ie: number | null): number | null {
   if (ie == null) return null;
-  // NFPA 70E: below 1.2 cal/cm² no arc flash boundary exists — no PPE category applies.
-  if (ie < 1.2) return null;
+  // NFPA 70E: below 1.2 cal/cm² no arc flash boundary exists — Cat 0 applies.
+  if (ie < 1.2) return 0;
   // > 40 cal -> DANGER, no category (de-energize; do not work energized).
   if (ie > 40) return null;
   for (const [cal, cat] of PPE_BANDS) if (ie <= cal) return cat;

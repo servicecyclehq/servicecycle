@@ -1,13 +1,13 @@
 name: CI
 
-# Runs on every PR and on pushes to non-main branches.
+# Runs on every PR and on ALL branch pushes, including main.
 # Checks: security audit + TypeScript compile + unit tests + live-server smoke tests.
 # Required repo secrets: none (all env vars are test-safe defaults).
 
 on:
   pull_request:
   push:
-    branches-ignore: [main]
+    branches: ['**']
 
 concurrency:
   group: ci-${{ github.ref }}

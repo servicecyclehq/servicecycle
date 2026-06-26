@@ -31,10 +31,15 @@ const FONT_REG = 'Helvetica', FONT_BOLD = 'Helvetica-Bold', FONT_OBL = 'Helvetic
 const PAGE = { margin: 54, width: 612, height: 792, contentW: 504 };
 const BOTTOM = PAGE.height - PAGE.margin;
 
+// Locale helpers — default to en-US/USD; override via env vars for non-US customers.
+// TODO: source from account settings once multi-locale customers are onboarded.
+const DEFAULT_LOCALE   = process.env.DEFAULT_LOCALE   || 'en-US';
+const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || 'USD';
+
 function fmtDate(d: any) { if (!d) return '—'; try { return new Date(d).toISOString().slice(0, 10); } catch { return '—'; } }
 function fmtMoney(n: any) {
   if (n == null || !Number.isFinite(Number(n))) return '—';
-  return '$' + Math.round(Number(n)).toLocaleString('en-US');
+  return new Intl.NumberFormat(DEFAULT_LOCALE, { style: 'currency', currency: DEFAULT_CURRENCY, maximumFractionDigits: 0 }).format(Math.round(Number(n)));
 }
 
 // ── data builder ────────────────────────────────────────────────────────────────

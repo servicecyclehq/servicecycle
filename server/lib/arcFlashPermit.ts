@@ -54,7 +54,7 @@ export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: an
   const asOf = ctx.asOf || new Date();
   const ie = num(bus && bus.incidentEnergyCalCm2);
   const volts = parseVolts(bus && bus.nominalVoltage);
-  const danger = (ie != null && ie > 40) || (volts != null && volts > 600);
+  const danger = ie != null && ie > 40;
   const validation = validatePermitIssuance(bus, study, asOf);
 
   return {

@@ -77,7 +77,7 @@ export default function AcceptInvite() {
       <div className="login-box">
         <div className="login-logo">
           <div className="login-logo-name">ServiceCycle</div>
-          <div className="login-logo-tagline">Software Renewal Management</div>
+          <div className="login-logo-tagline">Electrical Asset Management</div>
         </div>
 
         {loading && (

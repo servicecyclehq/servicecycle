@@ -606,7 +606,7 @@ async function _seedAccount() {
       installDate: new Date('1997-06-12'),
       // Risk profile: single main transformer, no spare, 26-week replacement
       // lead — the worst financial-exposure asset on the books.
-      criticalityScore: 5, repairCostEstimate: 850000, spareLeadTimeWeeks: 26,
+      criticalityScore: 5, conditionScore: 3, repairCostEstimate: 850000, spareLeadTimeWeeks: 26,
       redundancyStatus: 'N', requiresPredictiveMaintenance: true,
       nameplateData: { kVA: 2500, primaryVoltage: '13.8 kV delta', secondaryVoltage: '480Y/277 V', impedancePercent: 5.75, oilType: 'mineral', gallons: 690 },
       notes: 'Main plant transformer. Gasket weeping noted at NW radiator flange (open deficiency).' },
@@ -615,7 +615,7 @@ async function _seedAccount() {
       ownerId: manager.id,
       manufacturer: 'Kestrel Power Apparatus', model: 'KPA-1500S', serialNumber: 'KPA-14-90417',
       installDate: new Date('2014-03-28'),
-      criticalityScore: 3, // modest — refurbished, partial backup via T-1
+      criticalityScore: 3, conditionScore: 1, // modest — refurbished, partial backup via T-1
       conditionPhysical: 'C1', // refurbished 2024 — physical axis upgraded; governing stays worst-of
       nameplateData: { kVA: 1500, primaryVoltage: '13.8 kV delta', secondaryVoltage: '480Y/277 V', impedancePercent: 5.5, oilType: 'mineral', gallons: 480 },
       notes: 'Re-gasketed and oil-processed during 2024 outage; physical condition assessed C1.' },
@@ -625,7 +625,7 @@ async function _seedAccount() {
       manufacturer: 'NorthStar Switchgear Co.', model: 'NS-MV15', serialNumber: 'NS-96-3311-1',
       installDate: new Date('1996-09-04'),
       // Lead section of the SWGR-1A lineup — 1996 vintage, parts scarce.
-      criticalityScore: 4, repairCostEstimate: 250000, spareLeadTimeWeeks: 16,
+      criticalityScore: 4, conditionScore: 4, repairCostEstimate: 250000, spareLeadTimeWeeks: 16,
       requiresPredictiveMaintenance: true,
       nameplateData: { voltageClass: '15 kV', busRating: '1200 A', aic: '25 kA' } },
     { key: 'SWGR-1A-2', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
@@ -645,7 +645,7 @@ async function _seedAccount() {
       manufacturer: 'NorthStar Switchgear Co.', model: 'NS-LV600', serialNumber: 'NS-99-7702',
       installDate: new Date('1999-11-19'),
       conditionEnvironment: 'C3', // dusty mezzanine — governing condition C3
-      criticalityScore: 3, repairCostEstimate: 90000, // modest exposure
+      criticalityScore: 3, conditionScore: 4, repairCostEstimate: 90000, // modest exposure
       nameplateData: { voltageClass: '600 V', busRating: '2000 A', aic: '65 kA' },
       notes: 'Mezzanine dust loading drives the C3 environment rating; IR scan compressed to 6-month interval. B-phase hot joint flagged IMMEDIATE.' },
     { key: 'MCC-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: mezzanine.id,
@@ -661,7 +661,7 @@ async function _seedAccount() {
       manufacturer: 'Calder Engine & Generator', model: 'CG-750D', serialNumber: 'CG-05-2210',
       installDate: new Date('2005-08-23'),
       // Life-safety source — top criticality, sole standby unit.
-      criticalityScore: 5, repairCostEstimate: 120000, spareLeadTimeWeeks: 12,
+      criticalityScore: 5, conditionScore: 2, repairCostEstimate: 120000, spareLeadTimeWeeks: 12,
       redundancyStatus: 'N',
       nameplateData: { kw: 750, voltage: '480Y/277 V', rpm: 1800, fuelType: 'diesel', tankGallons: 1100 },
       notes: 'Emergency/standby unit for life safety + process ride-through. NFPA 110 monthly exercise mandate.' },
@@ -674,7 +674,7 @@ async function _seedAccount() {
       equipmentType: 'UPS_BATTERY',
       manufacturer: 'Stonebridge Power Systems', model: 'SB-80U', serialNumber: 'SB-18-0954',
       installDate: new Date('2018-10-30'),
-      criticalityScore: 4, repairCostEstimate: 60000, spareLeadTimeWeeks: 8,
+      criticalityScore: 4, conditionScore: 2, repairCostEstimate: 60000, spareLeadTimeWeeks: 8,
       redundancyStatus: 'N_PLUS_1', // second module carries the PLC load during service
       nameplateData: { kVA: 80, voltage: '480 V', batteryType: 'VRLA', strings: 2, cellsPerString: 40 },
       notes: 'Controls UPS for the stamping line PLCs.' },
@@ -685,7 +685,7 @@ async function _seedAccount() {
       fedFromKey: 'GEN-1', // power path: ATS sits downstream of the standby generator
       manufacturer: 'Sentry Transfer Systems', model: 'STS-800A', serialNumber: 'STS-05-1187',
       installDate: new Date('2005-08-23'),
-      criticalityScore: 5, repairCostEstimate: 45000, spareLeadTimeWeeks: 10,
+      criticalityScore: 5, conditionScore: 2, repairCostEstimate: 45000, spareLeadTimeWeeks: 10,
       redundancyStatus: 'N',
       nameplateData: { amps: 800, voltage: '480Y/277 V', poles: 4, transitionType: 'open' },
       notes: 'Life-safety ATS between GEN-1 and the emergency distribution. NFPA 110 monthly transfer-test mandate.' },
@@ -707,7 +707,7 @@ async function _seedAccount() {
       equipmentType: 'BATTERY_SYSTEM',
       manufacturer: 'Stonebridge Power Systems', model: 'SB-125DC', serialNumber: 'SB-10-2241',
       installDate: new Date('2010-09-08'),
-      criticalityScore: 4, repairCostEstimate: 28000, spareLeadTimeWeeks: 6,
+      criticalityScore: 4, conditionScore: 3, repairCostEstimate: 28000, spareLeadTimeWeeks: 6,
       nameplateData: { voltage: '125 V DC', batteryType: 'flooded lead-acid', cells: 60, chargerAmps: 25 },
       notes: 'Switchgear control battery for Substation A breaker tripping — IEEE 450 quarterly ohmic program.' },
     // — Eastgate (flat hierarchy) —
@@ -1182,7 +1182,7 @@ async function _seedAccount() {
     netaDecal: 'YELLOW',
     ambientTempC: 15.5, humidityPct: 70.0,
     testEquipment: testEquipmentProvenance,
-    notes: 'Annual oil quality screen per ASTM D877; moisture content 28 ppm (IEEE C57.106 Action Level 1 for 138 kV class). Dielectric strength 28 kV (low). Dehydration filtration recommended; deficiency logged as ADVISORY.',
+    notes: 'Annual oil quality screen per ASTM D877; moisture content 28 ppm (IEEE C57.106 Action Level 1 for 15 kV class; threshold <=35 ppm). Dielectric strength 28 kV (low). Dehydration filtration recommended; deficiency logged as ADVISORY.',
   } });
 
   // WO #22 -- COMPLETE: ATS-1 monthly transfer test ~12 days ago (Apex, C1 GREEN).
@@ -1247,7 +1247,7 @@ async function _seedAccount() {
   // Additional deficiencies: fuller severity breakdown for the Overdue
   // Maintenance by Severity report and the EMP Section 6 open-deficiency table.
   const def5 = await prisma.deficiency.create({ data: {
-    accountId: account.id, assetId: assets['SWGR-1A-1'].id, workOrderId: wo17.id,
+    accountId: account.id, assetId: assets['SWGR-1A-1'].id, workOrderId: wo5.id,
     severity: 'RECOMMENDED',
     description: 'C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient at 62% load (NETA MTS Table 100.18 Category 2 -- repair at earliest convenience)',
     correctiveAction: 'Clean and re-torque C-phase bus connection at next outage window; re-image under load to confirm resolution.',
@@ -1399,7 +1399,7 @@ async function _seedAccount() {
     performedDate: afPriorPerformed,
     expiresAt: addMonths(afPriorPerformed, 60),
     performedBy: 'Hawthorne Power Engineering, PLLC',
-    method: 'IEEE 1584-2018',
+    method: 'IEEE 1584-2002',
     peName: 'S. Hawthorne, PE', peLicense: 'IA PE 21487',
     trigger: 'scheduled',
     notes: 'Prior incident-energy study at Substation A; superseded by the current study after the utility transformer upsizing raised available fault current.',
@@ -1407,7 +1407,7 @@ async function _seedAccount() {
   // The current arc_flash study supersedes this prior one.
   await prisma.systemStudy.update({ where: { id: arcFlashPrior.id }, data: { supersededById: arcFlash.id } });
   // Bind the SWGR-1A-1 lead 15 kV switchgear to both studies; incident energy
-  // rises 14.2 -> 19.6 cal/cm2 (DANGER class, 13.8 kV > 600 V) across revisions.
+  // rises 14.2 -> 19.6 cal/cm2 (WARNING class; IE=19.6 cal/cm2 < 40 threshold) across revisions.
   const afTrendBus = assets['SWGR-1A-1'];
   if (afTrendBus) {
     await prisma.systemStudyAsset.create({ data: {
@@ -1421,7 +1421,7 @@ async function _seedAccount() {
       accountId: account.id, studyId: arcFlash.id, assetId: afTrendBus.id,
       busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
       incidentEnergyCalCm2: 19.6, arcFlashBoundaryIn: 88, workingDistanceIn: 36, ppeCategory: 3,
-      requiredArcRatingCalCm2: 25, labelSeverity: 'danger',
+      requiredArcRatingCalCm2: 25, labelSeverity: 'warning',
       boltedFaultCurrentKA: 24.0, arcingCurrentKA: 22.7, electrodeConfig: 'VCB',
       conductorGapMm: 152, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
       deviceType: 'relay', tripUnitType: 'electronic_lsig', deviceRatingA: 1200,
@@ -1464,7 +1464,7 @@ async function _seedAccount() {
       printedSnapshot: { nominalVoltage: '13.8kV', incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 3, requiredArcRatingCalCm2: 25, labelSeverity: 'danger' },
     } }).catch(() => {});
 
-    console.log('  [seed] arc-flash trend on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 DANGER; + source model, device, NETA drift, stale printed label');
+    console.log('  [seed] arc-flash trend on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 WARNING (IE < 40); + source model, device, NETA drift, stale printed label');
   }
 
   // Short-circuit study ~3 years ago — PE license on the report cover.
@@ -1975,7 +1975,7 @@ async function _seedAccount() {
   await prisma.lotoProc.create({ data: {
     accountId: account.id,
     assetId:   assets['GEN-1'].id,
-    title:     '1500kW Emergency Generator GEN-1 Lockout Procedure Draft',
+    title:     '750 kW Emergency Generator GEN-1 Lockout Procedure Draft',
     status:    'draft',
     version:   1,
     createdById: manager.id,

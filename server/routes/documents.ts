@@ -69,11 +69,19 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: 20 * 1024 * 1024 }, // (S7) 20 MB hard cap
   fileFilter: (req, file, cb) => {
-    // #11: storage uploads accept ANY file type. Safety comes from serving
-    // every stored file as a forced download (Content-Disposition: attachment
-    // + X-Content-Type-Options: nosniff) so nothing renders inline in our
-    // origin. The AI-ingest path (routes/ingest.ts) keeps its own strict
-    // PDF/Word/image allowlist. The 20 MB size cap (limits, above) still applies.
+    // SEC4: enforce the MIME allowlist (PDF, Word, images; SVG blocked via
+    // DENIED_IMAGE_MIME + isAllowedUploadMime). Previously called cb(null,true)
+    // unconditionally, allowing arbitrary MIME types through. Now any file
+    // whose MIME fails the allowlist is rejected with HTTP 415 before storage.
+    // The magic-byte gate below (magicBytesRejected) remains a second layer.
+    if (!isAllowedUploadMime(file.mimetype)) {
+      const err: any = new Error(
+        `File type '${file.mimetype}' is not allowed. Accepted types: PDF, Word (.doc/.docx), and common image formats.`
+      );
+      err.status = 415;
+      err.code   = 'UNSUPPORTED_MEDIA_TYPE';
+      return cb(err);
+    }
     return cb(null, true);
   },
 });

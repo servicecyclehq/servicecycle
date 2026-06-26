@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod'); // (B6) schema validation
 const { authenticateToken } = require('../middleware/auth');
 const { countryGate }       = require('../middleware/countryGate'); // (Pass-6 W3 MT-026) US-only registration gate
-const { sendEmail, passwordResetHtml, inviteHtml, newViewerActivationHtml, welcomeHtml, loginLockoutAlertHtml } = require('../lib/email');
+const { sendEmail, passwordResetHtml, inviteHtml, newViewerActivationHtml, welcomeHtml, loginLockoutAlertHtml, alreadyRegisteredHtml } = require('../lib/email');
 const { defaultFlagsForRole } = require('../lib/featureFlags');
 const { validate: validatePassword, validateStrength, loadAccountPolicy, buildPolicy } = require('../lib/passwordPolicy');
 const { issuePending2faToken } = require('./twoFactor');
@@ -163,11 +163,41 @@ async function issueTokenPair(userId, accountId) {
 // firewalled-out can still try to forge both, but the network-layer
 // firewall to Cloudflare IPs is the real defense.
 const _CF_RAY_RE = /^[a-f0-9]{16}-[A-Z]{3}$/;
+
+// SEC2: Cloudflare header forgery guard.
+// CF-Connecting-IP and CF-Ray are client-supplied headers when a request hits
+// the origin directly (bypassing CF). Trusting them without verifying that the
+// socket peer is actually a Cloudflare IP means any attacker who knows the
+// origin IP can forge these headers and rotate the effective key used by the
+// rate limiter, bypassing brute-force protection entirely.
+//
+// Defense: only honour CF headers when TRUST_PROXY_SOURCE=cloudflare is set.
+// Operators MUST set this env var only after also configuring the server to
+// reject connections from non-Cloudflare IPs at the firewall/nginx level.
+// Without that network-layer control, an attacker who probes the bare origin IP
+// can still forge CF-Connecting-IP by setting TRUST_PROXY_SOURCE manually.
+//
+// WARNING: if TRUST_PROXY_SOURCE is not set (default), all CF headers are
+// ignored and req.ip (the real socket IP, resolved by Express trust-proxy) is
+// used. This is safe for direct-origin deployments but means CF edge IPs may
+// appear as the rate-limit key on CF-proxied deployments — set TRUST_PROXY_SOURCE
+// only after firewalling non-CF traffic at the network layer.
+if (!process.env.TRUST_PROXY_SOURCE) {
+  console.warn('[auth] TRUST_PROXY_SOURCE is not set. CF-Connecting-IP headers are NOT trusted. ' +
+    'Rate limiting will key on req.ip (Express trust-proxy resolved). ' +
+    'Set TRUST_PROXY_SOURCE=cloudflare and restrict origin access to CF CIDRs to enable CF-aware rate limiting.');
+}
+
 function _credKey(req) {
   const { ipKeyGenerator } = require('express-rate-limit');
   const cf = req.headers['cf-connecting-ip'];
   const cfRay = req.headers['cf-ray'];
-  if (cf && cfRay && typeof cf === 'string' && cf.length < 64 && _CF_RAY_RE.test(String(cfRay))) {
+  // SEC2: require TRUST_PROXY_SOURCE=cloudflare before trusting any CF header.
+  // The CF-Ray regex check alone is insufficient — both headers are trivially
+  // forgeable by direct-origin clients. Network-layer CF enforcement must be in
+  // place before this env var is set.
+  const cfTrusted = process.env.TRUST_PROXY_SOURCE === 'cloudflare';
+  if (cfTrusted && cf && cfRay && typeof cf === 'string' && cf.length < 64 && _CF_RAY_RE.test(String(cfRay))) {
     return `ip:${ipKeyGenerator(cf)}`;
   }
   return `ip:${ipKeyGenerator(req.ip)}`;
@@ -209,6 +239,11 @@ const EMAIL_LOCKOUT_MAX_FAILS   = 5;               // failures before lockout
 const EMAIL_LOCKOUT_DURATION_MS = 15 * 60 * 1000; // lockout length
 const EMAIL_LOCKOUT_MAX_SIZE    = 1000;            // cap map to prevent DoS growth
 
+// SECURITY: This map is process-scoped and resets on restart/deploy.
+// TODO: Replace with DB-backed FailedLoginAttempt table (see schema.prisma — model to be added in migration 20260626_security).
+// The table should: INSERT on failure, SELECT COUNT where windowStart > now()-15min,
+// UPDATE lockedUntil on 5th failure, SELECT lockedUntil on each login attempt.
+// Until migrated, a PM2 restart (e.g. on deploy) resets all lockout state.
 const loginFailMap = new Map();
 
 // Returns true when this call is the one that sets the lockedUntil (i.e. the
@@ -328,21 +363,25 @@ router.post('/register', registrationLimiter, credentialLimiter, countryGate, as
       return res.status(400).json({ success: false, error: pwErrors[0], errors: pwErrors });
     }
 
-    // Pass-3 audit MED #5: this 409 + "Email already registered" is an
-    // enumeration oracle. The proper fix is email-verification-on-signup
-    // (always return 200, send a "verify or recover" email regardless of
-    // existing state) — a sprint-sized change deferred to a later wave.
-    // For now the credentialLimiter (10 attempts / 15 min / IP, see
-    // /api/auth/register in this file) is the practical defense — an
-    // attacker can enumerate at most 10 addresses per IP per window.
-    // Also softened the message to give legit users a recovery path
-    // instead of a dead end.
+    // SEC1: prevent email enumeration oracle on /register.
+    // Previously returned HTTP 409 with a message that explicitly confirmed
+    // whether an email was registered, letting attackers enumerate accounts.
+    // Fix: always return HTTP 200 with a generic message; for an existing
+    // email, fire an out-of-band notification telling the real owner that
+    // someone tried to register with their address (and directing them to
+    // Forgot Password). The attacker never learns whether the email was known.
     const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (existing) {
-      return res.status(409).json({
-        success: false,
-        error:   'An account with this email already exists. Try signing in or use Forgot password.',
-        action:  'sign_in_or_reset',
+      // Fire-and-forget — never await, never reveal whether this branch ran.
+      const _appUrl = process.env.CLIENT_URL || 'https://servicecycle.app';
+      sendEmail({
+        to:      existing.email,
+        subject: 'Someone tried to register with your ServiceCycle email',
+        html:    alreadyRegisteredHtml({ appUrl: _appUrl }),
+      }).catch(e => console.error('[auth] alreadyRegistered email failed:', e.message));
+      return res.status(200).json({
+        success: true,
+        message: 'If that email is new to us, check your inbox for a verification link.',
       });
     }
 

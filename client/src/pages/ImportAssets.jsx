@@ -214,6 +214,29 @@ export default function ImportAssets() {
                 onChange={e => handleFileChosen(e.target.files?.[0])}
               />
             </div>
+            <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--color-text-secondary)' }}>
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  // Valid equipment type enum values from EQUIPMENT_TYPE_LABELS
+                  const headers = 'Site,Equipment Type,Building,Area,Position,Description,Serial Number,Manufacturer,Model,Install Year,Criticality';
+                  const example = 'Main Plant,TRANSFORMER_LIQUID,Building A,MV Room,Bay 1,13.8kV/480V step-down,SN-12345,Eaton,DST-750,2018,4';
+                  const csv = headers + '\n' + example;
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'servicecycle-asset-import-template.csv';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}
+              >
+                Download template CSV
+              </a>
+              {' '}&mdash; includes all valid Equipment Type values as examples
+            </div>
             <div style={{ marginTop: 16, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
               Expected columns: <strong>Site</strong> and <strong>Equipment Type</strong> (required), plus
               optional Building, Area, Position, Manufacturer, Model, Serial Number, Install Date,
@@ -386,6 +409,18 @@ export default function ImportAssets() {
                       {preview.validationErrors.some(ve => ve.row > 11) && ' (some beyond this preview)'}
                       .
                     </div>
+                  )}
+                  {preview.validationErrors?.length > 10 && (
+                    <details style={{ marginTop: 12 }}>
+                      <summary style={{ cursor: 'pointer', color: 'var(--color-danger)', fontSize: 'var(--font-size-sm)' }}>
+                        Show all {preview.validationErrors.length} validation errors
+                      </summary>
+                      <ul style={{ marginTop: 8, fontSize: 13, paddingLeft: 20 }}>
+                        {preview.validationErrors.map((err, i) => (
+                          <li key={i}>Row {err.row}: {Array.isArray(err.errors) ? err.errors.map(e => e.error).join('; ') : err.message || JSON.stringify(err.errors)}</li>
+                        ))}
+                      </ul>
+                    </details>
                   )}
                   {preview.duplicates?.length > 0 && (
                     <div>

@@ -200,11 +200,33 @@ function signPayload(body, timestampOrSecret, maybeSecret) {
 // work-order completion route (not the alert engine) but lives here so the
 // names stay in one place.
 const EVENT_NAMES = Object.freeze({
+  // ── Maintenance / schedule tier events (legacy) ──────────────────────────
   maintenance_due:     'maintenance.due',
   overdue:             'maintenance.overdue',
   escalation:          'maintenance.escalation',
   regulatory_breach:   'maintenance.regulatory_breach',
+  regulatory_breach_cleared: 'maintenance.regulatory_breach_cleared',
   workorder_completed: 'workorder.completed',
+
+  // ── Deficiency lifecycle events ───────────────────────────────────────────
+  // Fired by the alert engine / deficiency service when a deficiency is
+  // created or its resolvedAt timestamp is set. Payload carries deficiencyId,
+  // assetId, severity, description, triggeredAt (ISO-8601).
+  deficiency_created:  'deficiency.created',
+  deficiency_resolved: 'deficiency.resolved',
+
+  // ── Arc-flash study expiry events ─────────────────────────────────────────
+  // Fired by the arc-flash expiry alert when a study's reviewDueDate crosses
+  // the 90-day warning window (expiring) or passes it (expired). Payload
+  // carries studyId, assetId, reviewDueDate, daysUntilExpiry.
+  arc_flash_expiring:  'arc_flash.expiring',
+  arc_flash_expired:   'arc_flash.expired',
+
+  // ── Asset lifecycle events ────────────────────────────────────────────────
+  // condition_changed: fires when governingCondition transitions (e.g. C2→C3).
+  // decommissioned: fires when inService is set to false on an asset.
+  asset_condition_changed: 'asset.condition_changed',
+  asset_decommissioned:    'asset.decommissioned',
 });
 
 // Human label for an asset: manufacturer + model + serial when available,

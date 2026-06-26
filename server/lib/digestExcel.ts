@@ -12,6 +12,17 @@
 
 const ExcelJS = require('exceljs');
 
+// Locale helpers — default to en-US/USD; override via env vars for non-US customers.
+const DEFAULT_LOCALE   = process.env.DEFAULT_LOCALE   || 'en-US';
+const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || 'USD';
+
+function fmtNumber(n: number): string {
+  return new Intl.NumberFormat(DEFAULT_LOCALE).format(n);
+}
+function fmtCurrency(n: number): string {
+  return new Intl.NumberFormat(DEFAULT_LOCALE, { style: 'currency', currency: DEFAULT_CURRENCY, maximumFractionDigits: 0 }).format(n);
+}
+
 export interface DigestRow {
   rep: string;
   company: string;
@@ -51,8 +62,8 @@ function estValueText(r: DigestRow): string {
   if (r.estMinDollars == null && r.estMaxDollars == null) return '';
   const min = r.estMinDollars ?? r.estMaxDollars ?? 0;
   const max = r.estMaxDollars ?? r.estMinDollars ?? 0;
-  if (min === max) return `$${min.toLocaleString()}`;
-  return `$${min.toLocaleString()}  $${max.toLocaleString()}`;
+  if (min === max) return fmtCurrency(min);
+  return `${fmtCurrency(min)}  ${fmtCurrency(max)}`;
 }
 
 /**

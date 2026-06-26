@@ -66,9 +66,38 @@ function trunc(v, max) {
   return s.length > max ? s.slice(0, max) : s;
 }
 
+// SEC6: strip characters that are log-injection vectors before any field
+// reaches console output or the DB. Newlines allow an attacker to inject
+// fake log lines; ANSI escape sequences can corrupt terminal displays or
+// confuse log-aggregation parsers. We strip both, then truncate.
+function sanitizeField(v: any, max: number): string | null {
+  if (v == null) return null;
+  // Remove ANSI escape sequences (ESC [ ... m and related control codes)
+  // then strip bare CR/LF that would split a single log entry across lines.
+  const s = String(v)
+    .replace(/\x1b\[[0-9;]*[mGKHFABCDsuJi]/g, '')   // ANSI CSI sequences
+    .replace(/[\r\n\x0b\x0c]/g, ' ');                // newlines / vertical tabs
+  return s.length > max ? s.slice(0, max) : s;
+}
+
 // Kinds we'll accept from client-side telemetry. 'server' is reserved for
 // the Express error middleware path (direct prisma insert, not POST).
 const CLIENT_KINDS = new Set(['render', 'uncaught', 'promise']);
+
+// SEC6: This route intentionally uses optionalAuthenticateToken (applied at
+// mount in server/index.js) rather than requireAuth because the crash may
+// happen before authentication resolves — e.g. an unhandled rejection in
+// AuthContext bootstrap fires before any bearer token is available. We
+// accept unauthenticated POSTs and enrich with req.user when present.
+// Defense: per-IP rate limiter (30/min) + 10 KB body cap + log-injection
+// sanitization (sanitizeField) prevent abuse of the open endpoint.
+
+// SEC6: hard cap on individual error report body size. The express.json()
+// body parser that mounts this app already has a global limit, but that
+// limit is typically generous (100KB+). Applying a tighter 10 KB cap here
+// prevents a malicious client from filling the RenderError table with
+// single oversized rows even if the global parser limit is relaxed.
+const MAX_ERROR_BODY_BYTES = 10 * 1024; // 10 KB
 
 // ── POST /api/errors/render ──────────────────────────────────────────────────
 //
@@ -90,6 +119,12 @@ router.post('/render', async (req, res) => {
   res.status(204).end();
 
   try {
+    // SEC6: body size guard. req.body is already parsed by the time we get
+    // here; re-check by serializing and measuring length so oversized
+    // payloads that slipped past a permissive global limit are dropped.
+    const rawLen = Buffer.byteLength(JSON.stringify(req.body || {}), 'utf8');
+    if (rawLen > MAX_ERROR_BODY_BYTES) return;
+
     const ip = ipKey(req);
     if (isRateLimited(ip)) return;
 
@@ -104,18 +139,22 @@ router.post('/render', async (req, res) => {
     const requestedKind = typeof body.kind === 'string' ? body.kind : 'render';
     const kind = CLIENT_KINDS.has(requestedKind) ? requestedKind : 'render';
 
+    // SEC6: use sanitizeField for string fields that reach log output or the
+    // DB. sanitizeField strips ANSI sequences and newlines (log-injection
+    // vectors), then truncates. trunc() is still used for non-string fields
+    // (errorCode, path) where injection risk is lower but size still matters.
     await prisma.renderError.create({
       data: {
         kind:           kind,
         errorCode:      trunc(body.errorCode, 32),
-        name:           trunc(body.name, 100),
-        message:        trunc(body.message, 1000),
-        stack:          trunc(body.stack, 4000),
-        componentStack: trunc(body.componentStack, 4000),
+        name:           sanitizeField(body.name, 100),
+        message:        sanitizeField(body.message, 1000),
+        stack:          sanitizeField(body.stack, 4000),
+        componentStack: sanitizeField(body.componentStack, 4000),
         path:           trunc(body.path, 500),
         userId:         req.user && req.user.id        ? req.user.id        : null,
         accountId:      req.user && req.user.accountId ? req.user.accountId : null,
-        userAgent:      trunc(req.headers['user-agent'], 500),
+        userAgent:      sanitizeField(req.headers['user-agent'], 500),
         // v0.90.0: prefer server-side env over client-claimed version --
         // the server knows the deploy version with certainty; a stale client
         // bundle still reports the deploy that originally served its index.html.

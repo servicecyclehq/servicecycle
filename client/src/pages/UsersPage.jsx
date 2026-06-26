@@ -64,7 +64,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 autoFocus
-                placeholder="At least 8 characters"
+                placeholder={`At least ${minLen} characters`}
               />
             </div>
             <div className="form-group">
@@ -165,6 +165,8 @@ export default function UsersPage() {
   const [resetTarget, setResetTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
   const [toast, setToast] = useState('');
+  const [deactivatePending, setDeactivatePending] = useState(null); // { user } waiting for reason
+  const [deactivateReason, setDeactivateReason] = useState('');
 
   // Invite form state
   const [form, setForm] = useState({ email: '', role: 'manager' });
@@ -217,19 +219,18 @@ export default function UsersPage() {
       confirmLabel: 'Deactivate',
       danger: true,
     })) return;
+    // Audit 6.4.6 — show inline reason field instead of window.prompt
+    setDeactivateReason('');
+    setDeactivatePending(u);
+  }
 
-    // Audit 6.4.6 — capture optional churn reason on deactivate so we
-    // learn why users are leaving.
-    // window.prompt is the right tool for a one-off optional text input.
-    // Cancel returns null which we explicitly accept as "skipped".
-    let reason = window.prompt(
-      `Why is ${u.name} being deactivated? (Optional — helps us understand churn. Leave blank or hit Cancel to skip.)`,
-      ''
-    );
-    if (reason !== null) reason = reason.trim().slice(0, 500);
-
+  async function confirmDeactivate() {
+    const u = deactivatePending;
+    if (!u) return;
+    setDeactivatePending(null);
     try {
       const body = {};
+      const reason = deactivateReason.trim().slice(0, 500);
       if (reason) body.reason = reason;
       await api.put(`/api/users/${u.id}/deactivate`, body);
       fetchUsers();
@@ -334,6 +335,35 @@ export default function UsersPage() {
           onClose={() => setEditTarget(null)}
           onSaved={() => { setEditTarget(null); fetchUsers(); showToast('User updated.'); }}
         />
+      )}
+      {deactivatePending && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card" style={{ width: 440, maxWidth: '90vw' }}>
+            <div className="card-header">
+              <div className="card-title">Deactivate {deactivatePending.name}</div>
+            </div>
+            <div className="card-body">
+              <p style={{ fontSize: 'var(--font-size-ui)', marginBottom: 14 }}>
+                This user will no longer be able to log in. Their records and history are preserved.
+              </p>
+              <div className="form-group">
+                <label className="form-label">Why are they leaving? <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span></label>
+                <textarea
+                  className="form-control"
+                  rows={3}
+                  placeholder="Helps us understand churn — leave blank to skip"
+                  value={deactivateReason}
+                  onChange={e => setDeactivateReason(e.target.value)}
+                  maxLength={500}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button className="btn btn-danger" onClick={confirmDeactivate}>Deactivate</button>
+                <button className="btn btn-secondary" onClick={() => setDeactivatePending(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="page-header">
@@ -507,6 +537,4 @@ export default function UsersPage() {
           </div>
         )}
       </div>
-    </>
-  );
-}
+    <

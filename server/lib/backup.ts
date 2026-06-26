@@ -147,16 +147,27 @@ async function runPgDump() {
   const tmpDir    = await fsp.mkdtemp(path.join(os.tmpdir(), 'servicecycle-pgdump-'));
   const tmpFile   = path.join(tmpDir, 'dump.pgcustom');
 
+  const PG_DUMP_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+
   await new Promise<void>((resolve, reject) => {
     const args = ['--no-owner', '--no-acl', '--format=custom', '--compress=6', '--encoding=UTF8', '-f', tmpFile, pgEnv.PGDATABASE];
     const proc = spawn('pg_dump', args, {
       env: { ...process.env, ...pgEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+
+    // R7: kill pg_dump if it hangs beyond the timeout
+    const killTimer = setTimeout(() => {
+      console.error('[backup] pg_dump exceeded 20-minute timeout — killing process');
+      proc.kill('SIGTERM');
+      setTimeout(() => proc.kill('SIGKILL'), 5000); // force kill after 5s
+    }, PG_DUMP_TIMEOUT_MS);
+
     let stderr = '';
     proc.stderr.on('data', d => { stderr += d.toString('utf8'); });
-    proc.on('error', reject);
+    proc.on('error', (err) => { clearTimeout(killTimer); reject(err); });
     proc.on('close', code => {
+      clearTimeout(killTimer);
       if (code === 0) resolve();
       else reject(new Error(`pg_dump exited with code ${code}: ${stderr.slice(0, 500)}`));
     });
@@ -229,9 +240,21 @@ async function pruneLocalBackups() {
 
 // ── S3 destination ────────────────────────────────────────────────────────────
 
+const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+async function uploadWithTimeout(command): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  try {
+    await getS3().send(command, { abortSignal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function uploadToS3(buf, key) {
   const { PutObjectCommand } = require('@aws-sdk/client-s3');
-  await getS3().send(new PutObjectCommand({
+  await uploadWithTimeout(new PutObjectCommand({
     Bucket:      process.env.BACKUP_S3_BUCKET,
     Key:         key,
     Body:        buf,
@@ -400,6 +423,16 @@ async function runBackup(accountId, triggeredBy = 'cron') {
       console.error(`${pfx} Could not write failure log:`, dbErr.message);
     }
 
+    try {
+      require('./betterStack').logEvent('backup_failed', {
+        accountId,
+        filename,
+        error: msg.slice(0, 500),
+        triggeredBy,
+      });
+    } catch (bsErr) {
+      console.warn(`${pfx} Could not send betterStack backup_failed event:`, bsErr.message);
+    }
     await sendFailureEmail(accountId, msg);
     return { success: false, error: msg, filename };
   }

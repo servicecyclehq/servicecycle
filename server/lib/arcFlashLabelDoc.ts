@@ -44,7 +44,7 @@ function fmtDate(d: any): string { try { return d ? new Date(d).toLocaleDateStri
 function buildLabelModel(row: any, opts: any = {}): any {
   const ie = num(row.incidentEnergyCalCm2);
   const v = voltsOf(row.nominalVoltage);
-  const danger = (ie != null && ie > 40) || (v != null && v > 600);
+  const danger = ie != null && ie > 40;
   // Method: explicit ppeMethod, else infer (IE present → incident-energy).
   let method = row.ppeMethod;
   if (method !== 'incident_energy' && method !== 'ppe_category') {
@@ -67,6 +67,8 @@ function buildLabelModel(row: any, opts: any = {}): any {
     studyDate: fmtDate(row.study?.performedDate),
     facilityName: opts.facilityName || null,
     brandName: opts.brandName || null,
+    peName: row.study?.peName || opts.peName || null,
+    firmName: row.study?.performedBy || opts.firmName || null,
     showIE: method === 'incident_energy' && ie != null,
     showPpeCat: method === 'ppe_category' || (ie == null && row.ppeCategory != null),
   };
@@ -89,11 +91,11 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
 
   // Hazard statement
   let cy = y + headerH + 8;
-  // DANGER (IE > 40 cal/cm2 or V > 600V): NFPA 70E 130.2(B) — energized work is
-  // not permitted without documented justification; the label must say so.
+  // DANGER (IE > 40 cal/cm2): NFPA 70E §130.5 — no PPE category applies above
+  // 40 cal/cm²; the label must direct workers to de-energize.
   if (m.danger) {
     doc.fillColor(SAFETY_RED).font('Helvetica-Bold').fontSize(8.5)
-      .text('DE-ENERGIZE BEFORE WORKING — Energized work not permitted without documented justification (NFPA 70E 130.2(B))',
+      .text('Incident energy exceeds 40 cal/cm² — no PPE category applies. Per NFPA 70E §130.5.',
         x + pad, cy, { width: w - 2 * pad, align: 'center' });
     cy += 30;
   }
@@ -136,6 +138,11 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
   if (m.facilityName) { doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(m.facilityName, x + pad, fy, { width: w - 2 * pad }); fy += 11; }
   doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(`Study date: ${m.studyDate}`, x + pad, fy);
   fy += 11;
+  const studyByLine = (m.firmName || m.peName)
+    ? `Study by: ${[m.firmName, m.peName ? m.peName + ', PE' : null].filter(Boolean).join(' / ')}`
+    : 'Study by: [PE firm name — enter in study record]';
+  doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(studyByLine, x + pad, fy, { width: w - 2 * pad });
+  fy += 10;
   doc.font('Helvetica').fontSize(6).fillColor('#94a3b8')
     .text(`Printed from ${m.brandName || 'ServiceCycle'} — verify against the stamped study. Per NFPA 70E 130.5(H).`, x + pad, fy, { width: w - 2 * pad });
 }

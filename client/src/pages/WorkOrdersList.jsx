@@ -383,7 +383,7 @@ export default function WorkOrdersList() {
                     <tr>
                       <th>Asset</th>
                       <th>Site</th>
-                      <th style={{ textAlign: 'right' }}>DPS</th>
+                      <th style={{ textAlign: 'right' }} title="Deficiency Priority Score: condition score × criticality score. Range 1–25. Higher = more urgent.">DPS</th>
                       <th style={{ textAlign: 'right' }}>Condition</th>
                       <th style={{ textAlign: 'right' }}>Criticality</th>
                       {canWrite && <th />}

@@ -247,7 +247,8 @@ function startIngestWorker() {
       _running = false;
     }
   }, POLL_MS);
-  if (_timer.unref) _timer.unref();
+  // Note: do NOT call _timer.unref() — that would allow Node to exit while jobs are queued.
+  // In tests, call stopIngestWorker() explicitly instead.
   console.log(`[ingestWorker] started — polling every ${POLL_MS}ms`);
 }
 

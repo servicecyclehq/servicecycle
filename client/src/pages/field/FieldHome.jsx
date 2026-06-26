@@ -74,6 +74,7 @@ function AssetRow({ asset, sub, right, onTap, isLast }) {
 
 // Collapsible urgency section: 52px header button with count badge.
 function Section({ title, accent, count, open, onToggle, children }) {
+  const sectionId = `section-${title.toLowerCase().replace(/\s+/g, '-')}-content`;
   return (
     <div style={{
       background: 'var(--color-surface)', border: '1px solid var(--color-border)',
@@ -83,6 +84,7 @@ function Section({ title, accent, count, open, onToggle, children }) {
         type="button"
         onClick={onToggle}
         aria-expanded={open}
+        aria-controls={sectionId}
         style={{
           all: 'unset', boxSizing: 'border-box', cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 10, width: '100%',
@@ -108,7 +110,7 @@ function Section({ title, accent, count, open, onToggle, children }) {
         </span>
       </button>
       {open && (
-        <div style={{ borderTop: '1px solid var(--color-border)' }}>
+        <div id={sectionId} style={{ borderTop: '1px solid var(--color-border)' }}>
           {count === 0
             ? <div style={{ padding: '14px', fontSize: 13, color: 'var(--color-text-secondary)' }}>Nothing here — clear.</div>
             : children}

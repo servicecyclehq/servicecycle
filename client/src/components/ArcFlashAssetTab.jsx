@@ -641,8 +641,8 @@ function MitigationCard({ assetId, mitigations, current, canWrite }) {
             Current incident energy: <strong>{ie} cal/cm²</strong>. Enter your (or your PE's) expected reduction — ServiceCycle does the arithmetic, not the IEEE 1584 calc.
           </div>
           <form onSubmit={runWhatIf} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input style={{ fontSize: '0.8rem', width: 130 }} placeholder="reduction %" value={wf.pct} onChange={e => setWf({ ...wf, pct: e.target.value })} />
-            <input style={{ fontSize: '0.8rem', width: 150 }} placeholder="mitigation $ (optional)" value={wf.cost} onChange={e => setWf({ ...wf, cost: e.target.value })} />
+            <input style={{ fontSize: '0.8rem', width: 130 }} placeholder="reduction %" aria-label="Estimated reduction percentage" value={wf.pct} onChange={e => setWf({ ...wf, pct: e.target.value })} />
+            <input style={{ fontSize: '0.8rem', width: 150 }} placeholder="mitigation $ (optional)" aria-label="Mitigation cost in USD (optional)" value={wf.cost} onChange={e => setWf({ ...wf, cost: e.target.value })} />
             <button type="submit" className="btn btn-secondary btn-sm" disabled={busy || !wf.pct}>{busy ? 'Modeling…' : 'Model'}</button>
           </form>
           {roi?.ok && (
@@ -838,37 +838,37 @@ function DeviceTests({ data, assetId, canWrite, onChange, current }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="e.g. 400"
+                  <input type="number" style={inp} placeholder="e.g. 400" aria-label="As-Found Long-Time Pickup in Amps"
                     value={parseJsonField(form.asFound, 'ltPickupA')}
                     onChange={e => updateJsonField('asFound', 'ltPickupA', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Delay (s)</label>
-                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.4"
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.4" aria-label="As-Found Long-Time Delay in seconds"
                     value={parseJsonField(form.asFound, 'ltDelayS')}
                     onChange={e => updateJsonField('asFound', 'ltDelayS', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="e.g. 2000"
+                  <input type="number" style={inp} placeholder="e.g. 2000" aria-label="As-Found Short-Time Pickup in Amps"
                     value={parseJsonField(form.asFound, 'stPickupA')}
                     onChange={e => updateJsonField('asFound', 'stPickupA', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Delay (s)</label>
-                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.1"
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.1" aria-label="As-Found Short-Time Delay in seconds"
                     value={parseJsonField(form.asFound, 'stDelayS')}
                     onChange={e => updateJsonField('asFound', 'stDelayS', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Instantaneous Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="e.g. 8000"
+                  <input type="number" style={inp} placeholder="e.g. 8000" aria-label="As-Found Instantaneous Pickup in Amps"
                     value={parseJsonField(form.asFound, 'instantPickupA')}
                     onChange={e => updateJsonField('asFound', 'instantPickupA', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Ground Fault Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="optional"
+                  <input type="number" style={inp} placeholder="optional" aria-label="As-Found Ground Fault Pickup in Amps"
                     value={parseJsonField(form.asFound, 'groundFaultA')}
                     onChange={e => updateJsonField('asFound', 'groundFaultA', e.target.value)} />
                 </div>
@@ -879,37 +879,37 @@ function DeviceTests({ data, assetId, canWrite, onChange, current }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="e.g. 400"
+                  <input type="number" style={inp} placeholder="e.g. 400" aria-label="As-Left Long-Time Pickup in Amps"
                     value={parseJsonField(form.asLeft, 'ltPickupA')}
                     onChange={e => updateJsonField('asLeft', 'ltPickupA', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Delay (s)</label>
-                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.4"
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.4" aria-label="As-Left Long-Time Delay in seconds"
                     value={parseJsonField(form.asLeft, 'ltDelayS')}
                     onChange={e => updateJsonField('asLeft', 'ltDelayS', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="e.g. 2000"
+                  <input type="number" style={inp} placeholder="e.g. 2000" aria-label="As-Left Short-Time Pickup in Amps"
                     value={parseJsonField(form.asLeft, 'stPickupA')}
                     onChange={e => updateJsonField('asLeft', 'stPickupA', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Delay (s)</label>
-                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.1"
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.1" aria-label="As-Left Short-Time Delay in seconds"
                     value={parseJsonField(form.asLeft, 'stDelayS')}
                     onChange={e => updateJsonField('asLeft', 'stDelayS', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Instantaneous Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="e.g. 8000"
+                  <input type="number" style={inp} placeholder="e.g. 8000" aria-label="As-Left Instantaneous Pickup in Amps"
                     value={parseJsonField(form.asLeft, 'instantPickupA')}
                     onChange={e => updateJsonField('asLeft', 'instantPickupA', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Ground Fault Pickup (A)</label>
-                  <input type="number" style={inp} placeholder="optional"
+                  <input type="number" style={inp} placeholder="optional" aria-label="As-Left Ground Fault Pickup in Amps"
                     value={parseJsonField(form.asLeft, 'groundFaultA')}
                     onChange={e => updateJsonField('asLeft', 'groundFaultA', e.target.value)} />
                 </div>

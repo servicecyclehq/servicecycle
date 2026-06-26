@@ -184,12 +184,28 @@ async function notifyAffectedAccounts(
   }
 }
 
+// ── Circuit breaker — consecutive-failure backoff ────────────────────────────
+// Prevents hammering the NWS API (or the DB) when external calls fail
+// repeatedly. After MAX_CONSECUTIVE_FAILURES, exponentially backs off by
+// skipping poll ticks. Resets to 0 on any successful scan.
+let _consecutiveFailures = 0;
+const MAX_CONSECUTIVE_FAILURES = 5;
+const BACKOFF_TICKS = [1, 2, 4, 8, 16]; // skip this many ticks after N failures
+let _skipsRemaining = 0;
+
 // ── Core NWS scanner ──────────────────────────────────────────────────────────
 export async function runWeatherScanner(): Promise<{
   checked: number; created: number; resolved: number; errors: number;
 }> {
   if (!SCANNER_ENABLED) {
     console.log('[weatherScanner] Disabled via WEATHER_SCANNER_ENABLED=false — skipping.');
+    return { checked: 0, created: 0, resolved: 0, errors: 0 };
+  }
+
+  // Circuit breaker: skip this tick if we are in a backoff window
+  if (_skipsRemaining > 0) {
+    _skipsRemaining--;
+    console.log(`[weatherScanner] Circuit breaker active — skipping tick (${_skipsRemaining} skips remaining)`);
     return { checked: 0, created: 0, resolved: 0, errors: 0 };
   }
 
@@ -207,6 +223,13 @@ export async function runWeatherScanner(): Promise<{
   } catch (e: any) {
     console.error('[weatherScanner] NWS fetch failed:', e.message);
     errors++;
+    _consecutiveFailures++;
+    if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      const backoff = BACKOFF_TICKS[Math.min(_consecutiveFailures - MAX_CONSECUTIVE_FAILURES, BACKOFF_TICKS.length - 1)];
+      _skipsRemaining = backoff;
+      console.warn(`[weatherScanner] ${_consecutiveFailures} consecutive failures — backing off for ${backoff} ticks`);
+    }
+    return { checked, created, resolved, errors };
   }
 
   // Set of NWS alert IDs currently active — used below to resolve stale events.
@@ -309,6 +332,18 @@ export async function runWeatherScanner(): Promise<{
   } catch (e: any) {
     console.warn('[weatherScanner] Resolve pass error:', e.message);
     errors++;
+  }
+
+  // Circuit breaker: reset on any run that completes without an early-exit error
+  if (errors === 0) {
+    _consecutiveFailures = 0;
+  } else {
+    _consecutiveFailures++;
+    if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      const backoff = BACKOFF_TICKS[Math.min(_consecutiveFailures - MAX_CONSECUTIVE_FAILURES, BACKOFF_TICKS.length - 1)];
+      _skipsRemaining = backoff;
+      console.warn(`[weatherScanner] ${_consecutiveFailures} consecutive failures — backing off for ${backoff} ticks`);
+    }
   }
 
   console.log(`[weatherScanner] Done — checked: ${checked}, created: ${created}, resolved: ${resolved}, errors: ${errors}`);

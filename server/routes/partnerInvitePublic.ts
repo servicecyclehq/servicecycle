@@ -6,13 +6,30 @@
  */
 
 import crypto from 'crypto';
-const router = require('express').Router();
-const prisma = require('../lib/prisma').default;
+const router      = require('express').Router();
+const prisma      = require('../lib/prisma').default;
+const rateLimit   = require('express-rate-limit');
 const { authenticateToken } = require('../middleware/auth');
+
+// SEC3: rate-limit the public token-lookup endpoint to prevent bulk token
+// enumeration. 10 requests per IP per hour is generous for legitimate use
+// (one browser tab opening an invite link) but blocks automated scanning.
+const inviteAcceptLimiter = rateLimit({
+  windowMs:       60 * 60 * 1000, // 1-hour sliding window
+  max:            10,
+  standardHeaders: true,
+  legacyHeaders:  false,
+  message: { error: 'Too many invite lookup attempts. Please try again later.' },
+});
 
 // GET /api/invite/accept?token=...
 // Returns metadata so the frontend can render the accept page before auth.
-router.get('/accept', async (req: any, res: any) => {
+// SEC3: inviteeEmail is NOT returned here — it is revealed only after the
+// user authenticates and completes the POST /accept flow. Returning the
+// full email address in an unauthenticated GET response allows anyone with
+// an invite token (e.g. from a forwarded link) to harvest the invitee's
+// email without ever logging in.
+router.get('/accept', inviteAcceptLimiter, async (req: any, res: any) => {
   try {
     const { token } = req.query;
     if (!token || typeof token !== 'string') {
@@ -42,10 +59,16 @@ router.get('/accept', async (req: any, res: any) => {
       select: { id: true, accountId: true },
     });
 
+    // SEC3: do NOT return inviteeEmail — revealing it in an unauthenticated
+    // GET response allows anyone holding a forwarded/leaked invite token to
+    // harvest the invitee's address without logging in. The email is available
+    // to the authenticated caller after POST /accept succeeds (error message
+    // already references it for the email-mismatch 403 case, which only fires
+    // after authentication). existingAccount is still returned so the frontend
+    // can choose to show "sign in" vs "create account" UI.
     res.json({
       partnerOrgName:  invite.partnerOrg.name,
       partnerOrgLogo:  invite.partnerOrg.logoUrl,
-      inviteeEmail:    invite.inviteeEmail,
       existingAccount: !!existingUser,
       expired,
       alreadyUsed,

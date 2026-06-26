@@ -5,9 +5,10 @@
  * asset, optionally born from a MaintenanceSchedule. The lifecycle is a
  * strict state machine:
  *
- *   SCHEDULED ──→ IN_PROGRESS ──→ COMPLETE
- *        │              │
- *        └──────────────┴───────→ CANCELLED
+ *   SCHEDULED ──→ AWAITING_APPROVAL ──→ IN_PROGRESS ──→ COMPLETE
+ *        │                │                  │
+ *        │                └──────────────────┴──────────→ CANCELLED
+ *        └─────────────────────────────────────────────→ CANCELLED
  *
  * COMPLETE is where the NFPA 70B loop closes:
  *   1. completedDate stamps the job (defaults to now)
@@ -32,7 +33,7 @@
 
 const router = require('express').Router();
 const { z } = require('zod');
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireRole } = require('../middleware/roles');
 const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { recomputeScheduleDates, worstCondition } = require('../lib/maintenanceInterval');
@@ -43,18 +44,22 @@ const { notifyConditionDegradation } = require('../lib/assetAlertNotifier');
 const { Prisma } = require('@prisma/client');
 
 // App-layer enum guards — bad strings 400 instead of throwing Prisma errors.
-const WO_STATUSES      = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETE', 'CANCELLED'];
+const WO_STATUSES      = ['SCHEDULED', 'AWAITING_APPROVAL', 'IN_PROGRESS', 'COMPLETE', 'CANCELLED'];
+const WO_TYPES         = ['PREVENTIVE', 'CORRECTIVE', 'EMERGENCY', 'INSPECTION'];
 const CONDITIONS       = ['C1', 'C2', 'C3'];
 const RESULT_RATINGS   = ['GREEN', 'YELLOW', 'RED'];
 const NETA_CERT_LEVELS = ['LEVEL_I', 'LEVEL_II', 'LEVEL_III', 'LEVEL_IV'];
 const SEVERITIES       = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
 
 // Legal lifecycle transitions. COMPLETE and CANCELLED are terminal.
+// AWAITING_APPROVAL sits between SCHEDULED and IN_PROGRESS when high-cost
+// work requires explicit manager sign-off before work begins.
 const ALLOWED_TRANSITIONS: any = {
-  SCHEDULED:   ['IN_PROGRESS', 'COMPLETE', 'CANCELLED'],
-  IN_PROGRESS: ['COMPLETE', 'CANCELLED'],
-  COMPLETE:    [],
-  CANCELLED:   [],
+  SCHEDULED:          ['AWAITING_APPROVAL', 'IN_PROGRESS', 'COMPLETE', 'CANCELLED'],
+  AWAITING_APPROVAL:  ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS:        ['COMPLETE', 'CANCELLED'],
+  COMPLETE:           [],
+  CANCELLED:          [],
 };
 
 const DateLike = z.preprocess(emptyToUndef, z.union([z.string(), z.date()]).nullable().optional());
@@ -355,6 +360,14 @@ router.post('/', requireManager, async (req, res) => {
       return res.status(400).json({ success: false, error: 'humidityPct must be numeric' });
     }
 
+    // PM-linked WOs default to PREVENTIVE; ad-hoc (no schedule) to CORRECTIVE.
+    // The caller can override via body.workOrderType.
+    const defaultWorkOrderType = scheduleId ? 'PREVENTIVE' : 'CORRECTIVE';
+    const parsedWorkOrderType  = parsed.workOrderType;
+    const workOrderType = (parsedWorkOrderType && WO_TYPES.includes(parsedWorkOrderType))
+      ? parsedWorkOrderType
+      : defaultWorkOrderType;
+
     const workOrder = await prisma.workOrder.create({
       data: {
         accountId:     req.user.accountId,
@@ -368,6 +381,7 @@ router.post('/', requireManager, async (req, res) => {
         humidityPct,
         testEquipment: parsed.testEquipment ?? undefined,
         notes:         notes || null,
+        workOrderType,
         // status defaults to SCHEDULED in the schema
       },
       include: listInclude,
@@ -407,11 +421,15 @@ router.put('/:id', requireManager, async (req, res) => {
       contractorId, assignedTechId, netaCertLevel,
       asFoundCondition, asLeftCondition, netaDecal,
       ambientTempC, humidityPct, testEquipment,
+      workOrderType, laborHours, laborCostCents,
     } = req.body;
 
     // ── Enum guards ───────────────────────────────────────────────────────────
     if (status !== undefined && !WO_STATUSES.includes(status)) {
       return res.status(400).json({ success: false, error: `status must be one of ${WO_STATUSES.join(', ')}` });
+    }
+    if (workOrderType !== undefined && !WO_TYPES.includes(workOrderType)) {
+      return res.status(400).json({ success: false, error: `workOrderType must be one of ${WO_TYPES.join(', ')}` });
     }
     for (const [field, value, allowed] of [
       ['asFoundCondition', asFoundCondition, CONDITIONS],
@@ -453,6 +471,23 @@ router.put('/:id', requireManager, async (req, res) => {
     if (asFoundCondition !== undefined) updateData.asFoundCondition = asFoundCondition || null;
     if (asLeftCondition !== undefined)  updateData.asLeftCondition = asLeftCondition || null;
     if (netaDecal !== undefined)        updateData.netaDecal = netaDecal || null;
+    if (workOrderType !== undefined)    updateData.workOrderType = workOrderType;
+
+    // ── Labor cost tracking ───────────────────────────────────────────────────
+    if (laborHours !== undefined) {
+      const lh = laborHours === null ? null : Number(laborHours);
+      if (lh !== null && (Number.isNaN(lh) || lh < 0)) {
+        return res.status(400).json({ success: false, error: 'laborHours must be a non-negative number' });
+      }
+      updateData.laborHours = lh;
+    }
+    if (laborCostCents !== undefined) {
+      const lc = laborCostCents === null ? null : Number(laborCostCents);
+      if (lc !== null && (!Number.isInteger(lc) || lc < 0)) {
+        return res.status(400).json({ success: false, error: 'laborCostCents must be a non-negative integer' });
+      }
+      updateData.laborCostCents = lc;
+    }
 
     // ── Test-condition + instrument provenance ────────────────────────────────
     if (ambientTempC !== undefined) {
@@ -502,6 +537,14 @@ router.put('/:id', requireManager, async (req, res) => {
       const completedAt = completedDate ? new Date(completedDate) : new Date();
       if (Number.isNaN(completedAt.getTime())) {
         return res.status(400).json({ success: false, error: 'Invalid completedDate' });
+      }
+      // Temporal guard: reject dates far in the future or before WO creation.
+      const now = new Date();
+      if (completedAt > new Date(now.getTime() + 86_400_000)) {
+        return res.status(400).json({ success: false, error: 'Completed date cannot be more than 1 day in the future' });
+      }
+      if (existing.createdAt && completedAt < new Date(existing.createdAt.getTime() - 86_400_000)) {
+        return res.status(400).json({ success: false, error: 'Completed date cannot be before work order was created' });
       }
       updateData.completedDate = completedAt;
       // A job completed without ever being flipped to IN_PROGRESS still gets
@@ -700,6 +743,15 @@ router.put('/:id', requireManager, async (req, res) => {
       const when = completedDate ? new Date(completedDate) : null;
       if (when && Number.isNaN(when.getTime())) {
         return res.status(400).json({ success: false, error: 'Invalid completedDate' });
+      }
+      if (when) {
+        const now = new Date();
+        if (when > new Date(now.getTime() + 86_400_000)) {
+          return res.status(400).json({ success: false, error: 'Completed date cannot be more than 1 day in the future' });
+        }
+        if (existing.createdAt && when < new Date(existing.createdAt.getTime() - 86_400_000)) {
+          return res.status(400).json({ success: false, error: 'Completed date cannot be before work order was created' });
+        }
       }
       updateData.completedDate = when;
     }
@@ -1136,6 +1188,165 @@ router.post('/:id/lab-samples', requireManager, async (req, res) => {
   } catch (err) {
     console.error('Create lab sample error:', err);
     res.status(500).json({ success: false, error: 'Failed to create lab sample' });
+  }
+});
+
+// ─── POST /api/work-orders/:id/approve ───────────────────────────────────────
+// Approves an AWAITING_APPROVAL work order, advancing it to IN_PROGRESS.
+// Restricted to admin and manager roles. Records who approved, when, and an
+// optional approval note. Use the standard PUT /:id to transition a SCHEDULED
+// work order to AWAITING_APPROVAL when high-cost flag is set by the client.
+router.post('/:id/approve', requireRole(['admin', 'manager']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body || {};
+
+    const wo = await prisma.workOrder.findFirst({
+      where: { id, accountId: req.user.accountId, status: 'AWAITING_APPROVAL' },
+      select: { id: true, assetId: true },
+    });
+    if (!wo) {
+      return res.status(404).json({ success: false, error: 'Work order not found or not awaiting approval' });
+    }
+
+    const updated = await prisma.workOrder.update({
+      where: { id },
+      data: {
+        status:      'IN_PROGRESS',
+        startedAt:   new Date(),
+        approvedBy:  req.user.id,
+        approvedAt:  new Date(),
+        approvalNote: note ? String(note).trim() : null,
+      },
+      include: listInclude,
+    });
+
+    writeActivityLog({
+      assetId:   wo.assetId,
+      userId:    req.user.id,
+      accountId: req.user.accountId,
+      action:    'work_order_approved',
+      details:   { workOrderId: id, note: note || null },
+    });
+
+    return res.json({ success: true, data: { workOrder: updated } });
+  } catch (err) {
+    console.error('Approve work order error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to approve work order' });
+  }
+});
+
+// ─── GET /api/work-orders/:id/parts ──────────────────────────────────────────
+// Lists all part usages recorded against this work order.
+router.get('/:id/parts', async (req, res) => {
+  try {
+    const wo = await prisma.workOrder.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const usages = await prisma.workOrderPartUsage.findMany({
+      where:   { workOrderId: req.params.id, accountId: req.user.accountId },
+      include: { part: { select: { id: true, partNumber: true, description: true, unitCost: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return res.json({ success: true, data: { usages } });
+  } catch (err) {
+    console.error('List work order parts error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to list work order parts' });
+  }
+});
+
+// ─── POST /api/work-orders/:id/parts ─────────────────────────────────────────
+// Records a part consumption against this work order AND decrements
+// SpareInventory.qtyOnHand by quantityUsed in a single transaction.
+// Body: { partId, quantityUsed?, unitCostCents?, notes? }
+router.post('/:id/parts', requireManager, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { partId, quantityUsed = 1, unitCostCents, notes } = req.body || {};
+
+    if (!partId || typeof partId !== 'string') {
+      return res.status(400).json({ success: false, error: 'partId is required' });
+    }
+    const qty = Number(quantityUsed);
+    if (!Number.isInteger(qty) || qty < 1) {
+      return res.status(400).json({ success: false, error: 'quantityUsed must be a positive integer' });
+    }
+    if (unitCostCents !== undefined && unitCostCents !== null) {
+      const ucc = Number(unitCostCents);
+      if (!Number.isInteger(ucc) || ucc < 0) {
+        return res.status(400).json({ success: false, error: 'unitCostCents must be a non-negative integer' });
+      }
+    }
+
+    // Verify the work order belongs to this account.
+    const wo = await prisma.workOrder.findFirst({
+      where:  { id, accountId: req.user.accountId },
+      select: { id: true, assetId: true },
+    });
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    // Verify the part belongs to this account.
+    const part = await prisma.part.findFirst({
+      where:  { id: partId, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!part) return res.status(404).json({ success: false, error: 'Part not found' });
+
+    const [usage] = await prisma.$transaction([
+      prisma.workOrderPartUsage.create({
+        data: {
+          workOrderId:  id,
+          partId,
+          quantityUsed: qty,
+          unitCostCents: unitCostCents != null ? Number(unitCostCents) : null,
+          notes:        notes ? String(notes).trim() : null,
+          accountId:    req.user.accountId,
+        },
+      }),
+      // Decrement qtyOnHand across all inventory rows for this part+account.
+      // updateMany avoids a race with a separate SELECT; if no inventory row
+      // exists the update is a no-op (qty never goes negative by this call alone).
+      prisma.spareInventory.updateMany({
+        where: { partId, accountId: req.user.accountId },
+        data:  { qtyOnHand: { decrement: qty } },
+      }),
+    ]);
+
+    return res.status(201).json({ success: true, data: { usage } });
+  } catch (err) {
+    console.error('Add work order part error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to add part usage' });
+  }
+});
+
+// ─── DELETE /api/work-orders/:id/parts/:usageId ───────────────────────────────
+// Removes a part usage record and restores the corresponding SpareInventory
+// quantity — effectively undoing the consumption.
+router.delete('/:id/parts/:usageId', requireManager, async (req, res) => {
+  try {
+    const { id, usageId } = req.params;
+
+    const usage = await prisma.workOrderPartUsage.findFirst({
+      where: { id: usageId, workOrderId: id, accountId: req.user.accountId },
+    });
+    if (!usage) return res.status(404).json({ success: false, error: 'Part usage not found' });
+
+    await prisma.$transaction([
+      prisma.workOrderPartUsage.delete({ where: { id: usageId } }),
+      prisma.spareInventory.updateMany({
+        where: { partId: usage.partId, accountId: req.user.accountId },
+        data:  { qtyOnHand: { increment: usage.quantityUsed } },
+      }),
+    ]);
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Delete work order part error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to remove part usage' });
   }
 });
 

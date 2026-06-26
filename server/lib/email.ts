@@ -523,6 +523,35 @@ function loginLockoutAlertHtml({ targetEmail, ip, appUrl }) {
 </div>`;
 }
 
+// SEC1: out-of-band notification sent when a registration attempt uses an
+// email that already has an account. Fires instead of returning 409 so
+// attackers cannot enumerate which emails are registered (the HTTP response
+// is identical whether or not the email exists). The existing user learns
+// about the attempt and is directed to Forgot Password if they intended to
+// re-register after a lapsed account.
+function alreadyRegisteredHtml({ appUrl }: { appUrl: string }) {
+  const safeUrl = appUrl || 'https://servicecycle.app';
+  return `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
+  <div style="margin-bottom:24px;">
+    <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
+  </div>
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Someone tried to register with your email</h2>
+  <p style="margin:0 0 16px;font-size:14px;color:#94a3b8;line-height:1.6;">
+    Someone just tried to create a new ServiceCycle account using your email address.
+    An account with this address already exists, so no new account was created.
+  </p>
+  <p style="margin:0 0 24px;font-size:14px;color:#94a3b8;line-height:1.6;">
+    If that was you and you've forgotten your password, use the link below to reset it:
+  </p>
+  <a href="${safeUrl}/forgot-password" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+    Reset my password
+  </a>
+  <p style="margin:28px 0 0;font-size:12px;color:#475569;line-height:1.6;">
+    If you did not initiate this, you can safely ignore this email — your account and password were not changed.
+  </p>
+</div>`;
+}
+
 module.exports = { setRuntimeBrevoKey,
   sendEmail,
   assetDisplayName,
@@ -537,6 +566,7 @@ module.exports = { setRuntimeBrevoKey,
   reportProcessedHtml,
   reportNeedsReviewHtml,
   loginLockoutAlertHtml,
+  alreadyRegisteredHtml,
 };
 
 export {};

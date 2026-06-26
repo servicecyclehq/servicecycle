@@ -33,7 +33,8 @@ export interface Finding { busName: string; code: string; severity: Severity; me
 
 // NFPA 70E PPE-category arc ratings (cal/cm^2). The assigned category must have an
 // arc rating >= the incident energy at the working distance.
-const PPE_CATEGORY_CAL: Record<number, number> = { 1: 4, 2: 8, 3: 25, 4: 40 };
+// Cat 0: IE < 1.2 cal/cm² — no arc flash boundary; Cat 0 PPE applies.
+const PPE_CATEGORY_CAL: Record<number, number> = { 0: 1.2, 1: 4, 2: 8, 3: 25, 4: 40 };
 
 function num(v: any): number | null {
   if (v == null || v === '') return null;
@@ -79,10 +80,10 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
     add('arc_rating_below_ie', 'error', 'Required arc rating is below the incident energy — PPE would be under-protective.', `${arcRating} cal/cm^2 rating < ${ie} cal/cm^2 incident energy`);
   }
   // 4. PPE category must cover incident energy.
-  if (ie != null && ppe != null && ppe >= 1 && ppe <= 4) {
+  if (ie != null && ppe != null && ppe >= 0 && ppe <= 4) {
     if (ie > 40) {
       add('ppe_above_cat4', 'error', 'Incident energy exceeds 40 cal/cm^2 — no PPE category applies; the equipment should be de-energized.', `${ie} cal/cm^2 with PPE Cat ${ppe} assigned`);
-    } else if (PPE_CATEGORY_CAL[ppe] < ie) {
+    } else if (PPE_CATEGORY_CAL[ppe] != null && PPE_CATEGORY_CAL[ppe] < ie) {
       add('ppe_under_ie', 'error', 'Assigned PPE category does not cover the incident energy.', `Cat ${ppe} (${PPE_CATEGORY_CAL[ppe]} cal/cm^2) < ${ie} cal/cm^2`);
     }
   }

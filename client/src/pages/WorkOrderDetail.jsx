@@ -121,6 +121,12 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
             onChange={e => setForm(f => ({ ...f, completedDate: e.target.value }))}
           />
         </div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+          <strong>Condition rating guide:</strong>{' '}
+          C1 (Good) — normal wear, no deficiencies.{' '}
+          C2 (Fair) — minor deficiencies, still functional.{' '}
+          C3 (Poor) — significant deficiencies, accelerates next service interval.
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
             <label style={labelStyle}>As-found condition</label>
@@ -175,9 +181,8 @@ function LeaveBehindButton({ woId, label = 'Leave-Behind PDF' }) {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/work-orders/${woId}/leave-behind-pdf`, { method: 'POST' });
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      const blob = await res.blob();
+      const res = await api.post(`/api/work-orders/${woId}/leave-behind-pdf`, {}, { responseType: 'blob' });
+      const blob = res.data;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

@@ -1531,7 +1531,7 @@ async function runOnce(name, fn) {
   try {
     await fn();
     const ms = Date.now() - t0;
-    if (ms > 5_000) console.log(`[Cron] ${name} completed in ${ms}ms`);
+    console.log(`[Cron] ${name} completed in ${ms}ms`);
     await pingHeartbeat(name, 'success', `ok ${ms}ms`);
   } catch (e) {
     console.error(`[Cron] ${name} failed:`, e.message);
@@ -1639,6 +1639,27 @@ if (process.env.NODE_ENV !== 'test') {
 httpServer = app.listen(PORT, '0.0.0.0', async () => {
   console.log(`ServiceCycle API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
 
+  // One-time startup disk space check
+  try {
+    const { statfsSync } = require('fs');
+    const fsStat = statfsSync('/');
+    const freeGB = (fsStat.bfree * fsStat.bsize) / (1024 ** 3);
+    const totalGB = (fsStat.blocks * fsStat.bsize) / (1024 ** 3);
+    const pctFree = (freeGB / totalGB) * 100;
+    if (pctFree < 20) {
+      console.warn(`[startup] LOW DISK SPACE: ${freeGB.toFixed(1)}GB free of ${totalGB.toFixed(1)}GB (${pctFree.toFixed(0)}% free)`);
+    } else {
+      console.log(`[startup] Disk: ${freeGB.toFixed(1)}GB free of ${totalGB.toFixed(1)}GB`);
+    }
+  } catch (e) {
+    // statfsSync not available on Node <19.6 or non-POSIX - fall back to df
+    try {
+      const { execSync } = require('child_process');
+      const dfOut = execSync('df -h /').toString().trim();
+      console.log('[startup] Disk (df -h /):', dfOut.split('\n').slice(-1)[0]);
+    } catch { /* ignore - best-effort */ }
+  }
+
   // ── M1 (2026-06-09 audit): cron single-instance guard ─────────────────────
   // node-cron registrations live in THIS process. `runOnce()` only prevents a
   // job from overlapping *itself within one process* — it does NOT stop two
@@ -1665,12 +1686,12 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     }
     console.log('[Cron] Acquired scheduler advisory lock — this instance owns scheduled jobs.');
   } catch (lockErr: any) {
-    // If the lock probe itself fails (DB momentarily unreachable at boot),
-    // fail OPEN so a single-instance demo box still runs its crons rather than
-    // silently going dark. The trade-off (possible double-fire if the DB blips
-    // during a genuine multi-instance boot race) is acceptable versus a demo
-    // with no backups/alerts running at all.
-    console.error('[Cron] advisory-lock probe failed, proceeding with cron registration (fail-open):', lockErr?.message);
+    // If the lock probe fails (DB momentarily unreachable at boot), fail CLOSED:
+    // do NOT register crons. A failed lock probe likely means the DB is down;
+    // starting crons against a down DB would fail silently or double-fire.
+    // Restart the process to retry once the DB is available.
+    console.error('[CRON] Advisory lock probe failed - skipping cron registration. Restart to retry:', (lockErr as Error).message);
+    cronLeader = false;
   }
 
   // ── Nightly alert cron (runs at 7:00 AM server time) ──────────────────────
@@ -2282,18 +2303,26 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
 
         // Process escalated deficiencies
         for (const def of escalatedDefs) {
-          await maybeCreate(def.accountId, def.assetId, {
-            driver: 'suspected_failing',
-            notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${def.asset ? `${def.asset.manufacturer || ''} ${def.asset.model || def.asset.equipmentType || 'Unknown Equipment'}`.trim() : def.assetId}.`,
-          });
+          try {
+            await maybeCreate(def.accountId, def.assetId, {
+              driver: 'suspected_failing',
+              notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${def.asset ? `${def.asset.manufacturer || ''} ${def.asset.model || def.asset.equipmentType || 'Unknown Equipment'}`.trim() : def.assetId}.`,
+            });
+          } catch (itemErr) {
+            console.error('[serviceOpportunityTrigger] Failed to create quote request for asset', def.assetId, ':', (itemErr as Error).message);
+          }
         }
 
         // Process C3 condition assets
         for (const sched of c3Schedules) {
-          await maybeCreate(sched.accountId, sched.assetId, {
-            driver: 'failed_inspection',
-            notes:  `Auto-triggered: Asset "${sched.asset ? `${sched.asset.manufacturer || ''} ${sched.asset.model || sched.asset.equipmentType || 'Unknown Equipment'}`.trim() : sched.assetId}" in C3 (immediate service required) condition.`,
-          });
+          try {
+            await maybeCreate(sched.accountId, sched.assetId, {
+              driver: 'failed_inspection',
+              notes:  `Auto-triggered: Asset "${sched.asset ? `${sched.asset.manufacturer || ''} ${sched.asset.model || sched.asset.equipmentType || 'Unknown Equipment'}`.trim() : sched.assetId}" in C3 (immediate service required) condition.`,
+            });
+          } catch (itemErr) {
+            console.error('[serviceOpportunityTrigger] Failed to create quote request for asset', sched.assetId, ':', (itemErr as Error).message);
+          }
         }
 
         console.log(`[Cron][serviceOpportunityTrigger] Done — created: ${created}, skipped: ${skipped}`);
@@ -2306,7 +2335,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // ── Deficiency Alerts — daily 08:00 UTC ─────────────────────────────────
     const { runDeficiencyAlerts } = require('./lib/deficiencyAlerts');
     cron.schedule('0 8 * * *', () => runOnce('deficiencyAlerts', async () => {
-      pingHeartbeat('deficiencyAlerts');
       try {
         const { accounts, emails, skipped } = await runDeficiencyAlerts();
         console.log(`[Cron][deficiencyAlerts] Done — accounts: ${accounts}, emails: ${emails}, skipped: ${skipped}`);
@@ -2321,7 +2349,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // QuoteRequests + emails for assets >= 0.70 threshold.
     const { runModernizationAlerts } = require('./lib/modernizationAlerts');
     cron.schedule('0 9 * * *', () => runOnce('modernizationAlerts', async () => {
-      pingHeartbeat('modernizationAlerts');
       try {
         const r = await runModernizationAlerts();
         console.log(`[Cron][modernizationAlerts] Done — scored: ${r.assetsScored}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}, skipped: ${r.skipped}`);
@@ -2335,7 +2362,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // Checks 5-yr expiry, load growth, relay/breaker deficiencies.
     const { runArcFlashIntegrity } = require('./lib/arcFlashIntegrity');
     cron.schedule('30 9 * * *', () => runOnce('arcFlashIntegrity', async () => {
-      pingHeartbeat('arcFlashIntegrity');
       try {
         const r = await runArcFlashIntegrity();
         console.log(`[Cron][arcFlashIntegrity] Done — expired: ${r.expiredStudies}, perStudy: ${r.perStudyExpired}, loadGrowth: ${r.loadGrowthAlerts}, deficiency: ${r.deficiencyAlerts}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}`);
@@ -2366,7 +2392,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // Opt-in per account (AccountSetting customer_quarterly_cfo='true'). Emails
     // the board-grade compliance & budget PDF as an attachment.
     cron.schedule('0 14 1 1,4,7,10 *', () => runOnce('customerCfo', async () => {
-      pingHeartbeat('customerCfo');
       try {
         const r = await runCustomerCfoCron();
         console.log(`[Cron][customerCfo] Done — accounts: ${r.accountsProcessed}, emails: ${r.emailsSent}`);
@@ -2380,7 +2405,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // Fires 60d + 14d expiry alerts; detects compliance gaps for REQUIRE_QEMW accounts.
     const { runQemwAlerts } = require('./lib/qemwAlerts');
     cron.schedule('0 10 * * *', () => runOnce('qemwAlerts', async () => {
-      pingHeartbeat('qemwAlerts');
       try {
         const r = await runQemwAlerts();
         console.log(`[Cron][qemwAlerts] Done — expiry: ${r.expiryAlerts}, gaps: ${r.gapAlerts}, quotes: ${r.quoteRequests}, emails: ${r.emailsSent}, skipped: ${r.skipped}`);
@@ -2394,7 +2418,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // Notifies accounts when ComplianceStandard.supersededAt is set.
     const { runStandardRevisionCron } = require('./lib/standardRevisionCron');
     cron.schedule('30 10 * * *', () => runOnce('standardRevisionCron', async () => {
-      pingHeartbeat('standardRevisionCron');
       try {
         const r = await runStandardRevisionCron();
         console.log(`[Cron][standardRevisionCron] Done — standards: ${r.standardsChecked}, accounts: ${r.accountsAlerted}, emails: ${r.emailsSent}, skipped: ${r.skipped}`);
@@ -2410,7 +2433,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // are excluded (already emailed at event time).
     const { runPartnerDigestCron } = require('./lib/partnerDigest');
     cron.schedule('0 7 * * *', () => runOnce('partnerDigest', async () => {
-      pingHeartbeat('partnerDigest');
       try {
         const result = await runPartnerDigestCron();
         console.log(`[Cron][partnerDigest] Done — orgs: ${result.orgsProcessed}, emails: ${result.emailsSent}, records: ${result.recordsMarked}`);
@@ -2440,7 +2462,6 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // Soft-archives PartnerEventLog records past the account's retention window.
     const { runRetentionArchival } = require('./lib/partnerRetentionArchival');
     cron.schedule('5 2 * * *', () => runOnce('partnerRetentionArchival', async () => {
-      pingHeartbeat('partnerRetentionArchival');
       try {
         const result = await runRetentionArchival();
         console.log(`[Cron][partnerRetentionArchival] Done — archived: ${result.archived}, accounts: ${result.accountsProcessed}`);

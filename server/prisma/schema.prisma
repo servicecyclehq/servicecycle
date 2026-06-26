@@ -111,9 +111,18 @@ enum ConditionRating {
 
 enum WorkOrderStatus {
   SCHEDULED
+  AWAITING_APPROVAL
   IN_PROGRESS
   COMPLETE
   CANCELLED
+}
+
+// Classifies how a work order was initiated (PM-linked vs ad-hoc vs urgent).
+enum WorkOrderType {
+  PREVENTIVE   // scheduled, PM-linked (scheduleId set)
+  CORRECTIVE   // ad-hoc repair (scheduleId null)
+  EMERGENCY    // urgent / unplanned
+  INSPECTION   // standalone inspection (no repair action)
 }
 
 // Shared by NETA decal (work order) and per-measurement pass/fail.
@@ -355,6 +364,7 @@ model Account {
   parts                Part[]
   spareInventory       SpareInventory[]
   assetPartRequirements AssetPartRequirement[]
+  workOrderPartUsages  WorkOrderPartUsage[]
 
   @@index([enterpriseGroupId])
   @@map("accounts")
@@ -1063,6 +1073,19 @@ model WorkOrder {
   isAcceptanceTest Boolean          @default(false)
   reportPdfUrl     String? // contractor-issued test report (also attachable via Document)
   notes            String?
+  // ── Work order classification ─────────────────────────────────────────────
+  // Set at creation: PREVENTIVE when scheduleId is set, CORRECTIVE otherwise.
+  // Editable post-creation to support reclassification (e.g. PM reveals damage
+  // → reclassify to CORRECTIVE for cost-tracking fidelity).
+  workOrderType    WorkOrderType    @default(PREVENTIVE)
+  // ── Labor cost tracking ───────────────────────────────────────────────────
+  laborHours       Decimal?         @db.Decimal(6, 2)  // hours worked, e.g. 2.50
+  laborCostCents   Int?             // total labor cost in cents
+  // ── Approval workflow ─────────────────────────────────────────────────────
+  // Used when high-cost or policy-flagged work routes through AWAITING_APPROVAL.
+  approvedBy       String?          // userId of approver
+  approvedAt       DateTime?
+  approvalNote     String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
@@ -1077,6 +1100,7 @@ model WorkOrder {
   deficiencies Deficiency[]
   labSamples   LabSample[]
   documents    Document[]
+  partsUsed    WorkOrderPartUsage[]
 
   @@index([accountId])
   @@index([accountId, status])
@@ -3261,6 +3285,7 @@ model Part {
   account           Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
   inventory         SpareInventory[]
   assetRequirements AssetPartRequirement[]
+  workOrderUsages   WorkOrderPartUsage[]
 
   @@index([accountId])
   @@index([accountId, category])
@@ -3317,4 +3342,44 @@ model AssetPartRequirement {
   @@index([assetId])
   @@index([partId])
   @@map("asset_part_requirements")
+}
+
+// ── Work Order → Part Consumption ─────────────────────────────────────────────
+// Records which parts were consumed during a work order and at what cost.
+// On create: decrements SpareInventory.qtyOnHand transactionally.
+// On delete: restores SpareInventory.qtyOnHand transactionally.
+model WorkOrderPartUsage {
+  id            String   @id @default(cuid())
+  workOrderId   String
+  partId        String
+  quantityUsed  Int      @default(1)
+  unitCostCents Int?     // cost at time of use (snapshot from Part.unitCost)
+  notes         String?
+  createdAt     DateTime @default(now())
+  accountId     String
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  part      Part      @relation(fields: [partId], references: [id])
+  account   Account   @relation(fields: [accountId], references: [id])
+
+  @@index([workOrderId])
+  @@index([partId])
+  @@index([accountId])
+  @@map("work_order_part_usages")
+}
+
+// ── Failed Login Attempts (SEC5 — DB-backed lockout) ──────────────────────────
+// Replaces in-memory lockout map so lockout state survives restarts and is
+// consistent across multiple server instances. Query by email + window to
+// compute attempt count; prune old rows with a scheduled cleanup job.
+model FailedLoginAttempt {
+  id          String   @id @default(cuid())
+  email       String
+  ipAddress   String?
+  attemptedAt DateTime @default(now())
+  accountId   String?  // null when account cannot be resolved from the email
+
+  @@index([email])
+  @@index([attemptedAt])
+  @@map("failed_login_attempts")
 }

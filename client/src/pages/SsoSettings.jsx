@@ -38,7 +38,21 @@ export default function SsoSettings() {
   useEffect(() => { if (accountFeatures?.sso && user?.role === 'admin') load(); else setLoading(false); }, [accountFeatures, user, load]);
 
   if (user && user.role !== 'admin') return <div className="page"><p>Admin access required.</p></div>;
-  if (!accountFeatures?.sso) return <div className="page"><p>Single sign-on is not enabled for this account. Contact ServiceCycle to enable it.</p></div>;
+  if (!accountFeatures?.sso) return (
+    <div className="page">
+      <h1>Single sign-on (SSO)</h1>
+      <div className="alert alert-info" style={{ maxWidth: 600 }}>
+        <strong>SSO is not enabled on this account.</strong>
+        <p style={{ margin: '8px 0 0' }}>
+          SSO (SAML / OIDC + SCIM directory sync) is available on the Business and Enterprise plans.
+          To enable it, email <a href="mailto:support@servicecycle.app">support@servicecycle.app</a> with
+          your account name, and the team will activate the feature flag and share your Polis tenant ID
+          within one business day. No downtime required — existing password logins are unaffected until
+          you choose to enforce SSO under the Enforcement section.
+        </p>
+      </div>
+    </div>
+  );
   if (loading) return <div className="page"><p>Loading…</p></div>;
 
   const act = async (fn) => {

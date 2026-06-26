@@ -21,8 +21,19 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: MAX_BYTES, files: 1 },
-  fileFilter: (req: any, file: any, cb: any) =>
-    /\.pdf$/i.test(file.originalname || '') ? cb(null, true) : cb(new Error('Upload a .pdf test report')),
+  fileFilter: (req: any, file: any, cb: any) => {
+    // Require both a .pdf extension AND application/pdf MIME type.
+    // Extension-only check is bypassable by renaming any file to .pdf;
+    // the MIME check adds a second gate (still client-declared, but
+    // combined with the magic-byte check in runDeterministic, this is
+    // defense-in-depth against common content-type spoofing).
+    const validExt  = /\.pdf$/i.test(file.originalname || '');
+    const validMime = file.mimetype === 'application/pdf';
+    if (!validExt || !validMime) {
+      return cb(new Error('Upload a valid PDF file'));
+    }
+    cb(null, true);
+  },
 });
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;

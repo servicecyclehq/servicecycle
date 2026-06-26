@@ -39,6 +39,27 @@ const { buildDigestXlsxBuffer, buildCustomerXlsxBuffer } = require('./digestExce
 const LOOK_AHEAD_DAYS = 180;
 const APP_URL = () => process.env.CLIENT_URL || 'https://servicecycle.app';
 
+// ── Locale helpers ────────────────────────────────────────────────────────────
+// Default to en-US/USD. Override via env vars for non-US customers.
+// TODO: source from account settings once multi-locale customers are onboarded.
+const DEFAULT_LOCALE   = process.env.DEFAULT_LOCALE   || 'en-US';
+const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || 'USD';
+
+function fmtDate(d: Date, opts: Intl.DateTimeFormatOptions): string {
+  return d.toLocaleDateString(DEFAULT_LOCALE, opts);
+}
+function fmtMoney(n: number): string {
+  if (!n) return new Intl.NumberFormat(DEFAULT_LOCALE, { style: 'currency', currency: DEFAULT_CURRENCY, maximumFractionDigits: 0 }).format(0);
+  return new Intl.NumberFormat(DEFAULT_LOCALE, { style: 'currency', currency: DEFAULT_CURRENCY, maximumFractionDigits: 0 }).format(n);
+}
+function fmtMoneyCompact(n: number): string {
+  if (!n) return new Intl.NumberFormat(DEFAULT_LOCALE, { style: 'currency', currency: DEFAULT_CURRENCY, maximumFractionDigits: 0 }).format(0);
+  if (n >= 1000) {
+    return new Intl.NumberFormat(DEFAULT_LOCALE, { style: 'currency', currency: DEFAULT_CURRENCY, maximumFractionDigits: 0 }).format(Math.round(n / 1000)) + 'k';
+  }
+  return new Intl.NumberFormat(DEFAULT_LOCALE, { style: 'currency', currency: DEFAULT_CURRENCY, maximumFractionDigits: 0 }).format(Math.round(n));
+}
+
 // ── small helpers ─────────────────────────────────────────────────────────────
 
 function _daysUntil(due: any, now: Date) {
@@ -64,9 +85,7 @@ function _esc(s: any) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function _money(n: number) {
-  if (!n) return '$0';
-  if (n >= 1000) return `$${Math.round(n / 1000).toLocaleString()}k`;
-  return `$${Math.round(n).toLocaleString()}`;
+  return fmtMoneyCompact(n);
 }
 function _rateColor(rate: number | null) {
   if (rate == null) return '#94a3b8';
@@ -230,7 +249,7 @@ function managerRollupHtml(opts: any) {
   const body =
     `<div style="display:flex;align-items:center;gap:14px;margin:0 0 16px;">`
     + `<div style="font-size:40px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
-    + `<div style="font-size:13px;color:#475569;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${customerCount} customer${customerCount === 1 ? '' : 's'} &middot; ${repCount} rep${repCount === 1 ? '' : 's'} &middot; ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span></div></div>`
+    + `<div style="font-size:13px;color:#475569;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${customerCount} customer${customerCount === 1 ? '' : 's'} &middot; ${repCount} rep${repCount === 1 ? '' : 's'} &middot; ${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}</span></div></div>`
     + _totalsStrip(totals.overdueCount, totals.pipelineMin, totals.pipelineMax)
     + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
     + _complianceBars(chartRows);
@@ -256,7 +275,7 @@ function repEmailHtml(opts: any) {
   const body =
     `<div style="display:flex;align-items:center;gap:14px;margin:0 0 16px;">`
     + `<div style="font-size:40px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
-    + `<div style="font-size:13px;color:#475569;">Compliance across your book<br><span style="color:#94a3b8;font-size:12px;">${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span></div></div>`
+    + `<div style="font-size:13px;color:#475569;">Compliance across your book<br><span style="color:#94a3b8;font-size:12px;">${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}</span></div></div>`
     + _totalsStrip(totals.overdueCount, totals.pipelineMin, totals.pipelineMax)
     + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
     + _complianceBars(chartRows)
@@ -362,7 +381,7 @@ function customerDigestHtml(opts: any) {
   const { companyName, overallRate, chartRows, thingsToDo, repName, repPhone, generatedAt } = opts;
   const overallColor = _rateColor(overallRate);
   const totalItems = thingsToDo.reduce((n: number, s: any) => n + s.items.length, 0);
-  const monthLabel = generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthLabel = fmtDate(generatedAt, { month: 'long', year: 'numeric' });
   const introIdx = Number.isInteger(opts.introIndex)
     ? ((opts.introIndex % CUSTOMER_INTROS.length) + CUSTOMER_INTROS.length) % CUSTOMER_INTROS.length
     : (generatedAt.getFullYear() * 12 + generatedAt.getMonth()) % CUSTOMER_INTROS.length;
@@ -388,7 +407,7 @@ function customerDigestHtml(opts: any) {
     + `<div style="background:#0d4f6e;padding:18px 24px;">`
     + `<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:.08em;text-transform:uppercase;">ServiceCycle &middot; Monthly Summary</div>`
     + `<div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">${_esc(companyName)}</div>`
-    + `<div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;">Your maintenance compliance for ${generatedAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.</div></div>`
+    + `<div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;">Your maintenance compliance for ${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}.</div></div>`
     + `<div style="padding:20px 26px;">`
     + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">${intro.g}</div>`
     + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">${intro.b}</div>`

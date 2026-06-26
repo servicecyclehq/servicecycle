@@ -1,0 +1,13 @@
+# ServiceCycle Python extraction dependencies
+# Pin versions to prevent silent regressions on Docker rebuild.
+# To update: test with new version, update this file, rebuild Docker image.
+#
+# All packages must be available as pre-built wheels (--only-binary=:all:)
+# for the alpine linux/amd64 target. If a new version drops wheel support,
+# the Docker build will fail loudly rather than silently compiling from source.
+
+pdfplumber==0.11.4
+pypdf==4.3.1
+pypdfium2==4.30.0
+pytesseract==0.3.13
+Pillow==10.4.0

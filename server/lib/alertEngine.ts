@@ -52,9 +52,10 @@ const {
   sendTeamsMessage,
   buildAlertDigest: buildTeamsAlertDigest,
 } = require('./teams');
-const { deliverWebhook } = require('./webhook');
+const { deliverWebhook, postOnce, validateWebhookUrl, signPayload, EVENT_NAMES } = require('./webhook');
 const { assetDisplayName } = require('./email');
 const { writeLog } = require('./activityLog');
+const { v4: uuidv4 } = require('uuid');
 
 // ── Email transport (inherited Brevo HTTP pattern — see lib/email.ts) ────────
 function createTransport() {
@@ -124,11 +125,22 @@ const FROM_ADDRESS = process.env.EMAIL_FROM || null;
 // Set ALERT_LEGACY_DIGEST=on to restore the old daily email/Slack/Teams digest.
 const LEGACY_DIGEST = process.env.ALERT_LEGACY_DIGEST === 'on';
 
+// ── Locale helpers ────────────────────────────────────────────────────────────
+// Default to en-US/USD for current deployments.
+// Swap via env vars when a non-US customer onboards — one-line change each.
+// TODO: source from account settings once multi-locale customers are onboarded.
+const DEFAULT_LOCALE   = process.env.DEFAULT_LOCALE   || 'en-US';
+
+function fmtDate(d: Date | string | null, opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', year: 'numeric' }): string {
+  if (!d) return 'N/A';
+  return new Date(d).toLocaleDateString(DEFAULT_LOCALE, opts);
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(d) {
   if (!d) return 'N/A';
-  return new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return fmtDate(d, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 // ── Tier definitions ──────────────────────────────────────────────────────────
@@ -228,7 +240,7 @@ function buildDigestHtml(alerts, userName) {
         ${assetCount} asset${assetCount !== 1 ? 's' : ''} need${assetCount === 1 ? 's' : ''} attention
       </div>
       <div style="font-size:13px;color:rgba(255,255,255,0.55);margin-top:4px;">
-        Hi ${userName} — here's your maintenance compliance summary for ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+        Hi ${userName} — here's your maintenance compliance summary for ${fmtDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
         ${alertCount > assetCount ? `<span style="opacity:0.8;">(${alertCount} active alerts across ${assetCount} asset${assetCount !== 1 ? 's' : ''})</span>` : ''}
       </div>
     </div>
@@ -361,6 +373,91 @@ async function deliverWebhooks({ accountId, alertItems }) {
       } catch (err) {
         console.warn(`[AlertEngine] Webhook ${endpoint.id} threw:`, err.message);
       }
+    }
+  }
+}
+
+// ── Event-webhook delivery (new alert types: deficiency, arc-flash, asset) ────
+//
+// deliverEventWebhooks delivers a raw event payload (not the maintenance-tier
+// alertItem shape) to every enabled webhook endpoint for an account.
+//
+// Callers (assetAlertNotifier.ts, arcFlashAlertEngine.ts, etc.) use this to
+// fan-out deficiency.created, arc_flash.expiring, asset.condition_changed, and
+// asset.decommissioned webhooks alongside their existing email sends.
+//
+// Usage (fire-and-forget, caller must .catch()):
+//   await deliverEventWebhooks(accountId, 'deficiency.created', {
+//     deficiencyId, assetId, severity, description, triggeredAt,
+//   });
+//
+// The payload is merged with { event, sentAt } before signing. The signing
+// and SSRF logic (including retry + DLQ) are delegated to postOnce /
+// signPayload / validateWebhookUrl from webhook.ts, matching the existing
+// maintenance-tier delivery path exactly.
+
+const DEFAULT_TIMEOUT_MS_EVENT = 5000;
+const RETRY_BACKOFF_EVENT = [1000, 4000, 16000];
+const MAX_ATTEMPTS_EVENT  = RETRY_BACKOFF_EVENT.length + 1;
+
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+export async function deliverEventWebhooks(
+  accountId: string,
+  eventName: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  let endpoints;
+  try {
+    endpoints = await prisma.webhookEndpoint.findMany({
+      where:  { accountId, enabled: true },
+      select: { id: true, url: true, hmacSecret: true },
+    });
+  } catch (err: any) {
+    console.warn(`[AlertEngine] deliverEventWebhooks: failed to load endpoints for account ${accountId}:`, err.message);
+    return;
+  }
+  if (!endpoints || endpoints.length === 0) return;
+
+  const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const fullPayload = {
+    event:   eventName,
+    ...payload,
+    appUrl,
+    sentAt:  new Date().toISOString(),
+  };
+  const body       = JSON.stringify(fullPayload);
+  const timestamp  = String(Math.floor(Date.now() / 1000));
+  const deliveryId = uuidv4();
+
+  for (const endpoint of endpoints) {
+    const url    = decryptIfEncrypted(endpoint.url);
+    const secret = decryptIfEncrypted(endpoint.hmacSecret);
+    const signature = signPayload(body, timestamp, secret);
+
+    const { valid, reason: ssrfReason, addresses } = await validateWebhookUrl(url);
+    if (!valid) {
+      console.warn(`[AlertEngine] deliverEventWebhooks: blocked delivery to "${url}": ${ssrfReason}`);
+      continue;
+    }
+
+    let lastResult: any = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS_EVENT; attempt++) {
+      if (attempt > 1) await sleep(RETRY_BACKOFF_EVENT[attempt - 2]);
+      try {
+        lastResult = await postOnce({ url, addresses, body, signature, timestamp, deliveryId, timeoutMs: DEFAULT_TIMEOUT_MS_EVENT });
+        if (lastResult.ok) break;
+        const status = lastResult.status;
+        if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) break;
+      } catch (e: any) {
+        lastResult = { ok: false, reason: e?.message || 'threw' };
+      }
+    }
+
+    if (!lastResult?.ok) {
+      console.warn(
+        `[AlertEngine] deliverEventWebhooks: endpoint ${endpoint.id} failed for event "${eventName}": ${lastResult?.reason ?? 'unknown'}`,
+      );
     }
   }
 }
@@ -593,7 +690,7 @@ async function runAlertEngine({ accountId }: any = {}) {
             }
             const assetCount = new Set(userAlerts.map(a => a.asset.id)).size;
             const html    = buildDigestHtml(userAlerts, user.name);
-            const subject = `ServiceCycle: ${assetCount} asset${assetCount !== 1 ? 's' : ''} need${assetCount === 1 ? 's' : ''} maintenance attention — ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+            const subject = `ServiceCycle: ${assetCount} asset${assetCount !== 1 ? 's' : ''} need${assetCount === 1 ? 's' : ''} maintenance attention — ${fmtDate(new Date(), { month: 'short', day: 'numeric' })}`;
 
             const sendResult = await transport.sendMail({ from: FROM_ADDRESS, to: user.email, subject, html });
             emailsSent++;
@@ -662,6 +759,6 @@ async function runAlertEngine({ accountId }: any = {}) {
   }
 }
 
-module.exports = { runAlertEngine, TIERS, deliverSlackDigest, deliverTeamsDigest, deliverWebhooks };
+module.exports = { runAlertEngine, TIERS, deliverSlackDigest, deliverTeamsDigest, deliverWebhooks, deliverEventWebhooks };
 
 export {};

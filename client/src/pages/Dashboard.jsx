@@ -892,6 +892,16 @@ export default function Dashboard() {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <Link to="/sites" className="btn btn-primary">Add your first site</Link>
               <Link to="/assets/new" className="btn btn-secondary">Add an asset</Link>
+              <button
+                onClick={() => navigate('/assets/import')}
+                className="btn btn-secondary"
+                style={{ marginTop: 0, flexDirection: 'column', height: 'auto', padding: '8px 16px' }}
+              >
+                Import from spreadsheet
+                <span style={{ display: 'block', fontSize: 12, fontWeight: 400 }}>
+                  Have assets in Excel or CSV? Import up to 500 at once.
+                </span>
+              </button>
             </div>
           </div>
         )}

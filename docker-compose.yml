@@ -337,6 +337,11 @@ services:
       # The server reads PORT for express.listen. Hard-pinned to 3001 inside
       # the container; the host-side port is configurable via SERVER_PORT.
       PORT: 3001
+    # SHUTDOWN_TIMEOUT_MS = 25_000 in server/index.ts — Docker's default
+    # stop_grace_period is 10s which sends SIGKILL before Node's graceful
+    # shutdown completes. 30s gives Node enough runway to drain in-flight
+    # requests and close the Prisma pool cleanly.
+    stop_grace_period: 30s
     volumes:
       # ./uploads â€” document storage bind mount. Files written here by the
       # server (PDFs, Word docs, images) persist on the HOST so they survive

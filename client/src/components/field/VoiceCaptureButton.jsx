@@ -89,8 +89,12 @@ export default function VoiceCaptureButton({ assetId = null, onParsed, disabled 
         </button>
       )}
 
+      <span className="sr-only" aria-live="assertive" aria-atomic="true">
+        {listening ? 'Recording started' : ''}
+      </span>
+
       {listening && (
-        <div style={{ marginTop: 8, fontSize: 14, color: 'var(--color-text-secondary)', minHeight: 20, textAlign: 'center' }}>
+        <div role="status" aria-live="polite" style={{ marginTop: 8, fontSize: 14, color: 'var(--color-text-secondary)', minHeight: 20, textAlign: 'center' }}>
           {interimTranscript || 'e.g. "Breaker 42, IR normal, 68"'}
         </div>
       )}
