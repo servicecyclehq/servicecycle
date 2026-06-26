@@ -12,6 +12,7 @@
  *   event:       "maintenance.due" | "maintenance.overdue" |
  *                "maintenance.escalation" | "maintenance.regulatory_breach",
  *   alertType:   "maintenance_due" | "overdue" | "escalation" | "regulatory_breach",
+ *   accountId:   string,                   // UUID of the account that owns the asset
  *   daysUntil:   number,                   // days until nextDueDate (negative = overdue)
  *   leadDays:    number | null,            // lead-time tier for maintenance_due rows
  *   scheduleId:  string,
@@ -241,15 +242,16 @@ function assetLabel(asset) {
 }
 
 /**
- * @param {object} alertItem — { schedule, asset, alertType, daysUntil, leadDays? }
+ * @param {object} alertItem — { schedule, asset, alertType, daysUntil, leadDays?, accountId? }
  *   schedule: { id, nextDueDate?, taskDefinition?: { taskName } }
  *   asset:    { id, equipmentType?, manufacturer?, model?, serialNumber?, site?: { name } }
  */
 function buildPayload(alertItem, appUrl) {
-  const { schedule, asset, alertType, daysUntil, leadDays } = alertItem;
+  const { schedule, asset, alertType, daysUntil, leadDays, accountId } = alertItem;
   const payload: any = {
     event:         EVENT_NAMES[alertType] || `maintenance.${alertType}`,
     alertType,
+    accountId:     accountId || null,
     daysUntil,
     leadDays:      leadDays ?? null,
     scheduleId:    schedule?.id || null,

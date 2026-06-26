@@ -198,21 +198,45 @@ async function gzipBuffer(buf) {
 // ── Local filesystem destination ──────────────────────────────────────────────
 
 async function saveToLocal(buf, filename) {
-  const dir = getLocalPath();
-  // Tight permissions on the directory and the dump itself — these gz files
-  // contain the entire database and should never be world-readable on a
-  // multi-user host. 0o700 dir / 0o600 file = owner only. Effectively no-op
-  // on Windows (NTFS DACLs aren't honored by mode), but the right call on
-  // every Linux/Mac deployment.
-  await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
-  const filePath = path.join(dir, filename);
-  await fsp.writeFile(filePath, buf, { mode: 0o600 });
-  // mkdir + writeFile mode are honored ONLY at create time, not when the
-  // path already exists. chmod covers the upgrade case where an operator
-  // already had a permissive backups dir from a previous deploy.
-  try { await fsp.chmod(dir, 0o700); }      catch (_) { /* Windows etc. */ }
-  try { await fsp.chmod(filePath, 0o600); } catch (_) { /* same */ }
-  return filePath;
+  const preferredDir = getLocalPath();
+  const fallbackDir  = path.join(require('os').tmpdir(), 'servicecycle-backups');
+
+  // Try the configured (or default) path first. If we get EACCES — which
+  // happens when the Node process runs as UID 1000 but /root/ServiceCycle is
+  // owned by root (common on the demo droplet) — fall back to /tmp so the
+  // process doesn't crash. Backups in /tmp are NOT persistent across reboots,
+  // so we log a warning. The fix is to set BACKUP_LOCAL_PATH to a directory
+  // the Node user owns, or to use BACKUP_DEST=s3.
+  async function tryWrite(dir: string): Promise<string> {
+    // Tight permissions on the directory and the dump itself — these gz files
+    // contain the entire database and should never be world-readable on a
+    // multi-user host. 0o700 dir / 0o600 file = owner only. Effectively no-op
+    // on Windows (NTFS DACLs aren't honored by mode), but the right call on
+    // every Linux/Mac deployment.
+    await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+    const filePath = path.join(dir, filename);
+    await fsp.writeFile(filePath, buf, { mode: 0o600 });
+    // mkdir + writeFile mode are honored ONLY at create time, not when the
+    // path already exists. chmod covers the upgrade case where an operator
+    // already had a permissive backups dir from a previous deploy.
+    try { await fsp.chmod(dir, 0o700); }      catch (_) { /* Windows etc. */ }
+    try { await fsp.chmod(filePath, 0o600); } catch (_) { /* same */ }
+    return filePath;
+  }
+
+  try {
+    return await tryWrite(preferredDir);
+  } catch (err: any) {
+    if (err.code === 'EACCES') {
+      console.warn(
+        `[backup] EACCES on ${preferredDir} — falling back to ${fallbackDir}. ` +
+        'WARNING: /tmp is NOT persistent across reboots. Set BACKUP_LOCAL_PATH to a ' +
+        'directory owned by the Node process user, or use BACKUP_DEST=s3.'
+      );
+      return await tryWrite(fallbackDir);
+    }
+    throw err; // re-throw non-permission errors
+  }
 }
 
 async function pruneLocalBackups() {
@@ -417,43 +441,4 @@ async function runBackup(accountId, triggeredBy = 'cron') {
 
     try {
       await prisma.backupLog.create({
-        data: { accountId, status: 'failure', filename, error: msg.slice(0, 2000), triggeredBy },
-      });
-    } catch (dbErr) {
-      console.error(`${pfx} Could not write failure log:`, dbErr.message);
-    }
-
-    try {
-      require('./betterStack').logEvent('backup_failed', {
-        accountId,
-        filename,
-        error: msg.slice(0, 500),
-        triggeredBy,
-      });
-    } catch (bsErr) {
-      console.warn(`${pfx} Could not send betterStack backup_failed event:`, bsErr.message);
-    }
-    await sendFailureEmail(accountId, msg);
-    return { success: false, error: msg, filename };
-  }
-}
-
-/**
- * Returns a summary of current backup configuration for the status API.
- */
-function getBackupConfig() {
-  const dest = getDestination();
-  return {
-    dest,
-    localConfigured:   dest === 'local' || dest === 'both',
-    localPath:         (dest === 'local' || dest === 'both') ? getLocalPath() : null,
-    s3Configured:      s3Configured(),
-    retentionDays:     getRetentionDays(),
-  };
-}
-
-module.exports = { runBackup, isConfigured, getBackupConfig,
-  warnIfLocalDest,
-};
-
-export {};
+     

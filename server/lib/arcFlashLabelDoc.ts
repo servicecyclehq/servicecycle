@@ -43,6 +43,19 @@ function fmtDate(d: any): string { try { return d ? new Date(d).toLocaleDateStri
  */
 function buildLabelModel(row: any, opts: any = {}): any {
   const ie = num(row.incidentEnergyCalCm2);
+
+  // INS-14: Block label generation when both IE and PPE category are absent.
+  if (ie == null && (row.ppeCategory == null || row.ppeCategory === '')) {
+    throw new Error('Cannot generate label: no incident energy or PPE category on file. Complete the arc flash study first.');
+  }
+
+  // INS-1: Block label generation when PE attribution is missing.
+  const peName = row.study?.peName || opts.peName || null;
+  const firmName = row.study?.performedBy || opts.firmName || null;
+  if (!peName && !firmName) {
+    throw new Error("PE attribution required before printing — enter the performing engineer's name and firm in the study record.");
+  }
+
   const v = voltsOf(row.nominalVoltage);
   const danger = ie != null && ie > 40;
   // Method: explicit ppeMethod, else infer (IE present → incident-energy).
@@ -65,10 +78,11 @@ function buildLabelModel(row: any, opts: any = {}): any {
     busName: row.busName || row.asset?.name || 'Equipment',
     equipmentType: row.asset?.equipmentType || null,
     studyDate: fmtDate(row.study?.performedDate),
+    studyExpiresAt: row.study?.expiresAt || row.study?.expiryDate || null,
     facilityName: opts.facilityName || null,
     brandName: opts.brandName || null,
-    peName: row.study?.peName || opts.peName || null,
-    firmName: row.study?.performedBy || opts.firmName || null,
+    peName,
+    firmName,
     showIE: method === 'incident_energy' && ie != null,
     showPpeCat: method === 'ppe_category' || (ie == null && row.ppeCategory != null),
   };
@@ -138,12 +152,25 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
   if (m.facilityName) { doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(m.facilityName, x + pad, fy, { width: w - 2 * pad }); fy += 11; }
   doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(`Study date: ${m.studyDate}`, x + pad, fy);
   fy += 11;
+  // INS-7: Render study expiry date; flag as EXPIRED if past.
+  if (m.studyExpiresAt) {
+    const expiryDate = new Date(m.studyExpiresAt);
+    const isExpired = expiryDate.getTime() < Date.now();
+    const expiryLabel = isExpired
+      ? `Study expiry: ${expiryDate.toLocaleDateString()} ⚠ EXPIRED`
+      : `Study expiry: ${expiryDate.toLocaleDateString()}`;
+    doc.font(isExpired ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5)
+      .fillColor(isExpired ? SAFETY_RED : MUTED)
+      .text(expiryLabel, x + pad, fy, { width: w - 2 * pad });
+    fy += 11;
+  }
   const studyByLine = (m.firmName || m.peName)
     ? `Study by: ${[m.firmName, m.peName ? m.peName + ', PE' : null].filter(Boolean).join(' / ')}`
     : 'Study by: [PE firm name — enter in study record]';
   doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(studyByLine, x + pad, fy, { width: w - 2 * pad });
   fy += 10;
-  doc.font('Helvetica').fontSize(6).fillColor('#94a3b8')
+  // INS-8: Disclaimer — increased to 8pt and darkened to #374151 for legibility.
+  doc.font('Helvetica').fontSize(8).fillColor('#374151')
     .text(`Printed from ${m.brandName || 'ServiceCycle'} — verify against the stamped study. Per NFPA 70E 130.5(H).`, x + pad, fy, { width: w - 2 * pad });
 }
 

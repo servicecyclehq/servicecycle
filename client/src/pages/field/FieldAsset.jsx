@@ -116,6 +116,7 @@ const btnBase = {
 // ── Leave-Behind PDF — field-friendly version ─────────────────────────────
 function FieldLeaveBehindButton({ woId }) {
   const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState(null);
   async function generate() {
     if (busy) return;
     setBusy(true);
@@ -130,25 +131,28 @@ function FieldLeaveBehindButton({ woId }) {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
-      alert('Could not generate PDF. Please try again when online.');
+      setToast({ message: 'Could not generate PDF. Please try again when online.', variant: 'error' });
     } finally {
       setBusy(false);
     }
   }
   return (
-    <button
-      type="button"
-      onClick={generate}
-      disabled={busy}
-      style={{
-        ...btnBase,
-        background: 'var(--color-surface)', color: 'var(--color-text)',
-        border: '1px solid var(--color-border)', fontSize: 13, padding: '8px 14px',
-        opacity: busy ? 0.6 : 1,
-      }}
-    >
-      {busy ? 'Generating…' : 'Leave-Behind PDF'}
-    </button>
+    <>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+      <button
+        type="button"
+        onClick={generate}
+        disabled={busy}
+        style={{
+          ...btnBase,
+          background: 'var(--color-surface)', color: 'var(--color-text)',
+          border: '1px solid var(--color-border)', fontSize: 13, padding: '8px 14px',
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        {busy ? 'Generating…' : 'Leave-Behind PDF'}
+      </button>
+    </>
   );
 }
 

@@ -32,6 +32,7 @@ export default function ImportWebhookSection() {
 
   // Delete
   const [delBusy,     setDelBusy]     = React.useState(false);
+  const [confirmDel,  setConfirmDel]  = React.useState(false);
 
   // Delivery history
   const [deliveries,  setDeliveries]  = React.useState(null);
@@ -72,7 +73,6 @@ export default function ImportWebhookSection() {
   }
 
   async function handleDelete() {
-    if (!window.confirm('Remove the import webhook? ServiceCycle will stop POSTing after bulk imports.')) return;
     setDelBusy(true);
     try {
       const { data: j } = await api.delete('/api/settings/import-webhook');
@@ -161,12 +161,30 @@ export default function ImportWebhookSection() {
                       HMAC secret: {config.secretSet ? '✓ set (not shown)' : 'not set'}
                     </div>
                   </div>
-                  <button
-                    disabled={delBusy}
-                    onClick={handleDelete}
-                    style={btn({ background: 'transparent', color: 'var(--color-danger)', border: '1px solid var(--color-danger)', opacity: delBusy ? 0.6 : 1 })}>
-                    {delBusy ? 'Removing…' : 'Remove'}
-                  </button>
+                  {confirmDel ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>Remove webhook?</span>
+                      <button
+                        disabled={delBusy}
+                        onClick={() => { setConfirmDel(false); handleDelete(); }}
+                        style={btn({ background: 'var(--color-danger)', color: '#fff', opacity: delBusy ? 0.6 : 1 })}>
+                        {delBusy ? 'Removing…' : 'Yes, remove'}
+                      </button>
+                      <button
+                        disabled={delBusy}
+                        onClick={() => setConfirmDel(false)}
+                        style={btn({ background: 'var(--color-surface)', border: '1px solid var(--color-border)' })}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      disabled={delBusy}
+                      onClick={() => setConfirmDel(true)}
+                      style={btn({ background: 'transparent', color: 'var(--color-danger)', border: '1px solid var(--color-danger)', opacity: delBusy ? 0.6 : 1 })}>
+                      Remove
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>

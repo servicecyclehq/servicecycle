@@ -15,6 +15,7 @@
 'use strict';
 
 const { SC_DATA_LAYER_DISCLAIMER } = require('./arcFlashCopy');
+const { writeLog: writeActivityLog } = require('./activityLog');
 
 function num(v: any): number | null {
   if (v == null || v === '') return null;
@@ -49,7 +50,7 @@ export function validatePermitIssuance(bus: any, study: any, asOf: Date = new Da
  * Build the pre-filled energized-work permit (the data half — the crew fills the
  * task / justification / approvals). Pure.
  */
-export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: any; asOf?: Date }): any {
+export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: any; asOf?: Date; userId?: any; accountId?: any }): any {
   const { bus, study, asset } = ctx;
   const asOf = ctx.asOf || new Date();
   const ie = num(bus && bus.incidentEnergyCalCm2);
@@ -57,7 +58,7 @@ export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: an
   const danger = ie != null && ie > 40;
   const validation = validatePermitIssuance(bus, study, asOf);
 
-  return {
+  const permit = {
     generatedAt: asOf.toISOString(),
     standard: 'NFPA 70E-2024 §130.2(B) energized electrical work permit',
     equipment: {
@@ -95,6 +96,25 @@ export function buildEnergizedWorkPermit(ctx: { bus: any; study: any; asset?: an
       'Authorizing manager signature and date',
     ],
     validation,
-    disclaimer: 'ServiceCycle pre-filled this permit from the current study and checked the study is valid. ' + SC_DATA_LAYER_DISCLAIMER,
+    disclaimer: 'ServiceCycle verified this study has not been superseded or expired by date. Operational validity — including whether system changes since the study date affect these results — must be confirmed by a qualified person under NFPA 70E §130.5(G). ' + SC_DATA_LAYER_DISCLAIMER,
   };
+
+  // INS-13: Audit log — fire-and-forget; do not block permit delivery on logging failure.
+  if (ctx.userId || ctx.accountId) {
+    writeActivityLog({
+      accountId: ctx.accountId || null,
+      userId: ctx.userId || null,
+      assetId: asset?.id || null,
+      action: 'arc_flash_permit_generated',
+      details: {
+        studyId: study?.id || null,
+        studyVersion: study?.version || null,
+        requestedBy: ctx.userId || null,
+        incidentEnergyAtTime: ie,
+        ppeCategoryAtTime: bus?.ppeCategory ?? null,
+      },
+    }).catch(() => {});
+  }
+
+  return permit;
 }

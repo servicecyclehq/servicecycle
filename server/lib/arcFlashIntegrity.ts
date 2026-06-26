@@ -53,9 +53,7 @@ function buildArcFlashHtml(
       <p style="font-size:14px;color:#374151;margin:0 0 4px;"><strong>${escHtml(reason)}</strong></p>
       <p style="font-size:13px;color:#374151;margin:8px 0 16px;">${escHtml(detail)}</p>
       <p style="font-size:13px;color:#374151;margin:0 0 8px;">
-        NFPA 70E Annex D recommends re-evaluation every 5 years as best practice; §130.5(G) mandates re-study only when system changes may affect arc flash results.
-        An outdated or invalidated study exposes personnel to unquantified arc flash hazard.
-        An outdated or invalidated study exposes personnel to unquantified arc flash hazard.
+        An outdated or invalidated study exposes personnel to unquantified arc flash hazard per NFPA 70E §130.5(G) and Annex D.
       </p>
       <p style="font-size:12px;color:#9ca3af;margin:20px 0 0;">
         A quote request has been automatically opened with your service representative.
@@ -243,15 +241,16 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       });
       const html    = buildArcFlashHtml(reason, account?.companyName ?? study.accountId, detail);
       const subject = `[Arc Flash Alert] ${reason} — ${account?.companyName ?? study.accountId}`;
+      let pathEmailsSent = 0;
       for (const admin of admins) {
-        try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; }
+        try { await sendEmail({ to: admin.email, subject, html }); pathEmailsSent++; emailsSent++; }
         catch (e: any) { console.error(`[arcFlashIntegrity] email failed for ${redactEmail(admin.email)}:`, e.message); }
       }
       await prisma.notificationLog.create({
         data: {
           accountId: study.accountId, channel: 'email', template,
           recipient: admins.map((a: any) => a.email).join(', '),
-          status: 'sent', alertCount: 1,
+          status: pathEmailsSent > 0 ? 'sent' : 'failed', alertCount: 1,
         },
       }).catch(() => {});
       accountsChecked++;
@@ -329,10 +328,12 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
     const html    = buildArcFlashHtml(reason, account?.companyName ?? accountId, detail);
     const subject = `[Arc Flash Alert] ${reason} — ${account?.companyName ?? accountId}`;
 
+    let path1EmailsSent = 0;
     for (const admin of admins) {
       try {
         await sendEmail({ to: admin.email, subject, html });
         emailsSent++;
+        path1EmailsSent++;
       } catch (e: any) {
         console.error(`[arcFlashIntegrity] email failed for ${redactEmail(admin.email)}:`, e.message);
       }
@@ -343,7 +344,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
         channel:   'email',
         template,
         recipient: admins.map((a) => a.email).join(', '),
-        status:    'sent',
+        status:    path1EmailsSent > 0 ? 'sent' : 'failed',
         alertCount: 1,
       },
     }).catch(() => {});
@@ -399,15 +400,16 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
     const html    = buildArcFlashHtml(reason, account?.companyName ?? accountId, detail);
     const subject = `[Arc Flash Alert] Load growth ${pct}% — re-study required — ${account?.companyName ?? accountId}`;
 
+    let path2EmailsSent = 0;
     for (const admin of admins) {
-      try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; }
+      try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; path2EmailsSent++; }
       catch (e: any) { console.error('[arcFlashIntegrity] email failed:', (e as any).message); }
     }
     await prisma.notificationLog.create({
       data: {
         accountId, channel: 'email', template,
         recipient: admins.map((a) => a.email).join(', '),
-        status: 'sent', alertCount: 1,
+        status: path2EmailsSent > 0 ? 'sent' : 'failed', alertCount: 1,
       },
     }).catch(() => {});
 
@@ -478,15 +480,16 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
     const html    = buildArcFlashHtml(reason, account?.companyName ?? def.accountId, detail);
     const subject = `[Arc Flash Alert] Relay/breaker deficiency — re-study required — ${account?.companyName ?? def.accountId}`;
 
+    let path3EmailsSent = 0;
     for (const admin of admins) {
-      try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; }
+      try { await sendEmail({ to: admin.email, subject, html }); emailsSent++; path3EmailsSent++; }
       catch (e: any) { console.error('[arcFlashIntegrity] email failed:', (e as any).message); }
     }
     await prisma.notificationLog.create({
       data: {
         accountId: def.accountId, channel: 'email', template,
         recipient: admins.map((a) => a.email).join(', '),
-        status: 'sent', alertCount: 1,
+        status: path3EmailsSent > 0 ? 'sent' : 'failed', alertCount: 1,
       },
     }).catch(() => {});
   }

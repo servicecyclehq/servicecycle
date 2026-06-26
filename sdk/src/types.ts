@@ -135,7 +135,7 @@ export interface ArcFlashLabel {
   arcFlashBoundaryIn: number | null;
   workingDistanceIn: number | null;
   ppeCategory: number | null;
-  minArcRatingCalCm2: number | null;
+  requiredArcRatingCalCm2: number | null;
   labelSeverity: ArcFlashSeverity | null;
   studyPerformedDate: string | null;
   studyExpiresAt: string | null;

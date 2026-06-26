@@ -1335,6 +1335,17 @@ router.delete('/:id/parts/:usageId', requireManager, async (req, res) => {
     });
     if (!usage) return res.status(404).json({ success: false, error: 'Part usage not found' });
 
+    // Log the deletion before hard-deleting so there is an audit trail even
+    // without a soft-delete column (INS-10).
+    await writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    'work_order_part_usage_deleted',
+      entityType: 'WorkOrder',
+      entityId:  id,
+      details:   { partUsageId: usageId, deletedBy: req.user.id },
+    }).catch(() => {});
+
     await prisma.$transaction([
       prisma.workOrderPartUsage.delete({ where: { id: usageId } }),
       prisma.spareInventory.updateMany({

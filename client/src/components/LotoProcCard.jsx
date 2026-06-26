@@ -74,15 +74,12 @@ function StepCatPill({ category }) {
 
 // ── LotoProcCard ──────────────────────────────────────────────────────────────
 export default function LotoProcCard({ proc, canWrite, onStatusChange, onEdit }) {
-  const [toast,    setToast]    = useState(null);
-  const [patching, setPatching] = useState(false);
+  const [toast,      setToast]      = useState(null);
+  const [patching,   setPatching]   = useState(false);
+  const [confirmStatus, setConfirmStatus] = useState(null); // null | 'active' | 'archived'
 
   async function handleStatus(newStatus) {
-    if (!window.confirm(
-      newStatus === 'active'
-        ? 'Activate this procedure? Any currently active procedure for this asset will be archived.'
-        : `Set this procedure to "${newStatus}"?`
-    )) return;
+    setConfirmStatus(null);
     setPatching(true);
     try {
       await api.patch(`/api/assets/${proc.assetId}/loto/${proc.id}/status`, { status: newStatus });
@@ -129,19 +126,34 @@ export default function LotoProcCard({ proc, canWrite, onStatusChange, onEdit })
 
         {/* Action buttons */}
         {canWrite && (
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-            {proc.status === 'draft' && (
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+            {confirmStatus && (
               <>
-                <button className="btn btn-secondary btn-sm" onClick={onEdit} disabled={patching}>Edit</button>
-                <button className="btn btn-primary btn-sm" onClick={() => handleStatus('active')} disabled={patching}>
-                  {patching ? '…' : 'Activate'}
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                  {confirmStatus === 'active'
+                    ? 'Activate? Any active procedure will be archived.'
+                    : 'Archive this procedure?'}
+                </span>
+                <button className="btn btn-primary btn-sm" onClick={() => handleStatus(confirmStatus)} disabled={patching}>
+                  {patching ? '…' : 'Yes'}
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setConfirmStatus(null)} disabled={patching}>
+                  No
                 </button>
               </>
             )}
-            {proc.status === 'active' && (
+            {!confirmStatus && proc.status === 'draft' && (
+              <>
+                <button className="btn btn-secondary btn-sm" onClick={onEdit} disabled={patching}>Edit</button>
+                <button className="btn btn-primary btn-sm" onClick={() => setConfirmStatus('active')} disabled={patching}>
+                  Activate
+                </button>
+              </>
+            )}
+            {!confirmStatus && proc.status === 'active' && (
               <>
                 <button className="btn btn-secondary btn-sm" onClick={onEdit} disabled={patching}>New Revision</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => handleStatus('archived')} disabled={patching}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setConfirmStatus('archived')} disabled={patching}>
                   Archive
                 </button>
               </>

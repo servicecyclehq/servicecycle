@@ -1105,6 +1105,7 @@ model WorkOrder {
   @@index([accountId])
   @@index([accountId, status])
   @@index([accountId, scheduledDate])
+  @@index([accountId, status, completedDate]) // dashboard trends: WHERE accountId=? AND status='COMPLETE' AND completedDate>=?
   @@index([assetId])
   @@index([scheduleId])
   @@index([contractorId])

@@ -859,7 +859,7 @@ export default function Dashboard() {
             Maintenance compliance at a glance
           </div>
         </div>
-        {canWrite && data && data.assetCount > 0 && (
+        {canWrite && (
           <button className="btn btn-primary" onClick={() => navigate('/assets/new')}>
             + New asset
           </button>

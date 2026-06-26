@@ -826,7 +826,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     writeActivityLog({
       userId:  req.user.id,
       action:  'user_erased',
-      details: { targetUserId: targetId, targetEmail: target.email },
+      details: { targetUserId: targetId },
     }).catch(() => {});
 
     return res.json({ success: true, data: { deletedUserId: targetId } });

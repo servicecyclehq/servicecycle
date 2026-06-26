@@ -246,6 +246,7 @@ const assetTemplateRoutes   = require('./routes/assetTemplates');
 const outagePlannerRoutes   = require('./routes/outagePlanner');
 const lotoRoutes            = require('./routes/loto');
 const disasterEventRoutes   = require('./routes/disasterEvents');
+const arcFlashIncidentRoutes = require('./routes/arcFlashIncidents'); // ESP-5 arc-flash incident register
 const leaveBehindRoutes     = require('./routes/leaveBehind');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
 const { requestId }                      = require('./middleware/requestId'); // v0.37.1 W5 MT-129
@@ -1497,6 +1498,9 @@ app.use('/api/inspections/:id/leave-behind-pdf', authenticateToken, leaveBehindL
 // ── Disaster Response Mode — weather alerts + emergency declarations ──────────
 app.use('/api/disaster-events', authenticateToken, disasterEventRoutes);
 
+// ── Arc-flash incident / near-miss register (ESP-5) ──────────────────────────
+app.use('/api/arc-flash-incidents', authenticateToken, arcFlashIncidentRoutes);
+
 // ── Parts / Spare Inventory ────────────────────────────────────────────────────
 app.use('/api/parts', authenticateToken, require('./routes/parts'));
 
@@ -2541,88 +2545,4 @@ process.on('SIGINT',  () => shutdown('SIGINT'));
 // re-raises as an uncaughtException and terminates the process. A
 // single bad PDF request from a HEAD-issuing scanner was sufficient
 // to DoS the demo server (it would crash + restart every 30-60s for
-// the duration of the scan). The route-level fix in lib/pdfHelpDoc.js
-// closes the specific bug; this safety net catches the entire CLASS
-// of "stream-after-close" failures so a future regression doesn't
-// repeat the production-outage shape.
-//
-// We log and continue for the specific error codes known to be
-// recoverable (ERR_STREAM_WRITE_AFTER_END, ERR_STREAM_DESTROYED,
-// EPIPE, ECONNRESET). Anything else falls through to default Node
-// behavior (which under PM2 / Docker is still a process restart, so
-// no behavior change for genuinely fatal errors).
-const _RECOVERABLE_STREAM_ERRORS = new Set([
-  'ERR_STREAM_WRITE_AFTER_END',
-  'ERR_STREAM_DESTROYED',
-  'ERR_HTTP_HEADERS_SENT',
-  'EPIPE',
-  'ECONNRESET',
-  'ECANCELED',
-]);
-
-process.on('uncaughtException', async (err) => {
-  const code = err && (err as any).code;
-  if (code && _RECOVERABLE_STREAM_ERRORS.has(code)) {
-    try {
-      console.warn(
-        '[uncaughtException] recoverable stream error swallowed: ' +
-        (err && (err as any).code ? (err as any).code : 'unknown') + ' - ' +
-        (err && err.message ? err.message : String(err))
-      );
-    } catch (_) { /* noop */ }
-    return;
-  }
-  // Genuinely fatal: log and let Node terminate so the orchestrator
-  // (Docker / PM2) can restart cleanly. Mirrors pre-v0.36.7 behavior.
-  try {
-    console.error('[uncaughtException] FATAL:', err && err.stack ? err.stack : err);
-  } catch (_) { /* noop */ }
-  // H6 (audit High, 2026-05-22): fire-and-forget Better Stack event so
-  // crashes are visible on the dashboard, not buried in container logs.
-  // Wrapped in try because logEvent is best-effort; we must not double-
-  // fault during a fatal handler.
-  // S5-FN-04 (v0.74.0): await with 2s race so fetch can't be dropped before Node exits.
-  try {
-    await Promise.race([
-      require('./lib/betterStack').logEvent('error', {
-        kind:    'uncaughtException',
-        message: err && err.message ? String(err.message).slice(0, 500) : 'unknown',
-        stack:   err && err.stack   ? String(err.stack).slice(0, 2000)  : undefined,
-      }),
-      new Promise(r => setTimeout(r, 2000)),
-    ]);
-  } catch (_) { /* noop */ }
-  // Allow Node to crash naturally — do NOT call process.exit here
-  // because that would suppress the stack trace from container logs.
-  // Re-throw so the default handler fires.
-  setImmediate(() => { throw err; });
-});
-
-process.on('unhandledRejection', async (reason, promise) => {
-  // Log and continue. Treating every unhandled rejection as fatal would
-  // make a single forgotten .catch() in a background task kill the
-  // server. The pattern this guards is rare-but-real: a fire-and-forget
-  // async call in a route handler throws after the response is closed.
-  try {
-    console.error(
-      '[unhandledRejection]',
-      reason && (reason as any).stack ? (reason as any).stack : String(reason)
-    );
-  } catch (_) { /* noop */ }
-
-  // H6 (audit High, 2026-05-22): fire-and-forget Better Stack event.
-  // S5-FN-04 (v0.74.0): await with 2s race so fetch can't be dropped before continuing.
-  try {
-    const errLike = reason instanceof Error ? reason : new Error(String(reason));
-    await Promise.race([
-      require('./lib/betterStack').logEvent('error', {
-        kind:    'unhandledRejection',
-        message: errLike.message ? String(errLike.message).slice(0, 500) : 'unknown',
-        stack:   errLike.stack   ? String(errLike.stack).slice(0, 2000)  : undefined,
-      }),
-      new Promise(r => setTimeout(r, 2000)),
-    ]);
-  } catch (_) { /* noop */ }
-});
-
-export {};
+// the duration of the scan). The route-level fix in li

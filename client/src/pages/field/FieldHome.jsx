@@ -442,6 +442,16 @@ export default function FieldHome() {
             })}
           </Section>
           )}
+
+          {!dueFilter && overdue.length === 0 && dueSoon.length === 0 && workOrders.length === 0 && deficiencies.length === 0 && (
+            <div style={{
+              textAlign: 'center', padding: '32px 16px',
+              color: 'var(--color-text-secondary)', fontSize: 14, lineHeight: 1.6,
+            }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }} aria-hidden="true">✅</div>
+              Your assignments will appear here once your manager dispatches a job.
+            </div>
+          )}
         </>
       )}
 

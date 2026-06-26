@@ -18,7 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Upload, FileSpreadsheet, CheckCircle2, AlertTriangle } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -33,6 +33,7 @@ function errorMessage(err, fallback) {
 export default function ImportAssets() {
   useDocumentTitle('Import assets');
   const navigate = useNavigate();
+  const location = useLocation();
   const fileInputRef = useRef(null);
 
   const [step, setStep]         = useState(1);           // 1 upload · 2 map · 3 done
@@ -149,7 +150,7 @@ export default function ImportAssets() {
           </div>
         </div>
         <div>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/assets')}>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate(location.state?.from || '/assets')}>
             Back to assets
           </button>
         </div>

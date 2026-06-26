@@ -304,16 +304,19 @@ router.post('/declare', requireManager, async (req: any, res) => {
     });
 
     if (account?.serviceRepEmail) {
-      const { sendAlertEmail } = require('../lib/email');
-      sendAlertEmail({
+      const { sendEmail } = require('../lib/email');
+      const esc = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      sendEmail({
         to:      account.serviceRepEmail,
-        name:    account.serviceRepName || 'Service Rep',
         subject: `[EMERGENCY] ${account.companyName} has declared an emergency — priority service needed`,
-        body:    `${account.companyName} has declared an emergency in ServiceCycle.\n\n` +
-                 `Event: ${title}\n` +
-                 `Sites affected: ${validSiteIds.length}\n` +
-                 `States: ${affectedStates.join(', ')}\n\n` +
-                 `Log in to ServiceCycle to review their assets and triage the response.\n`,
+        html:    `<p>Hi ${esc(account.serviceRepName || 'Service Rep')},</p>` +
+                 `<p><strong>${esc(account.companyName)}</strong> has declared an emergency in ServiceCycle.</p>` +
+                 `<ul>` +
+                 `<li><strong>Event:</strong> ${esc(title)}</li>` +
+                 `<li><strong>Sites affected:</strong> ${validSiteIds.length}</li>` +
+                 `<li><strong>States:</strong> ${esc(affectedStates.join(', '))}</li>` +
+                 `</ul>` +
+                 `<p>Log in to ServiceCycle to review their assets and triage the response.</p>`,
       }).catch((e: any) =>
         console.warn('[disasterEvents] Service rep email failed:', e.message)
       );

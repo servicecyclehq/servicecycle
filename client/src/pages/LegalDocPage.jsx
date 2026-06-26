@@ -51,7 +51,7 @@ import BrandMark from '../components/BrandMark';
 // behaviour switch is a one-line change.
 const OFFLINE_FOR_REVIEW = false;
 
-export default function LegalDocPage({ source, lastUpdated, draftBanner = true }) {
+export default function LegalDocPage({ source, lastUpdated, draftBanner = false }) {
   const navigate = useNavigate();
 
   // ── v0.32.1 takedown branch (preserved for future re-takedown) ───────────

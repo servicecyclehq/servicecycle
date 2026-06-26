@@ -84,7 +84,7 @@ router.get('/labels', async (req: any, res: any) => {
     };
   });
 
-  res.json({ data, page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) });
+  res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
 });
 
 // ── GET /api/v1/arc-flash/one-line?siteId= ────────────────────────────────────
