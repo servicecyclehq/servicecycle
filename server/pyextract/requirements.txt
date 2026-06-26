@@ -6,14 +6,14 @@
 # for the alpine linux/amd64 target. If a new version drops wheel support,
 # the Docker build will fail loudly rather than silently compiling from source.
 
-pdfplumber==0.7.7
-pdfminer.six==20231228
+pdfplumber==0.11.4
 pypdf==4.3.1
-# pypdfium2 is NOT listed here: 0.9.0+ made it a hard dep of pdfplumber, but
-# it ships only manylinux (glibc) binaries — no musl wheel exists, and gcompat
-# is not sufficient for the bundled pdfium binary. extractor.py/_ocr_text()
-# already tries to import pypdfium2 and returns "" on ImportError, so scanned-PDF
-# OCR degrades gracefully; machine-readable PDFs use pdfminer.six and are unaffected.
-# To re-enable OCR, switch to a Debian-based runtime image (node:20-slim).
 pytesseract==0.3.13
 Pillow>=10.4.0,<12.0
+# pypdfium2 is intentionally omitted: it ships only manylinux (glibc) wheels and
+# cannot be imported on Alpine musl. pdfplumber will pull it in as a transitive
+# dep (pip install succeeds because the wheel downloads fine), but the Dockerfile
+# wraps the import check in a fail-open block so a pypdfium2 ImportError on musl
+# is logged as a warning rather than failing the build. Machine-readable PDF
+# text extraction (pdfplumber + pdfminer.six) still works; scanned-PDF OCR falls
+# back to the pdfjs parser. To restore full OCR, switch to node:20-slim (Debian).

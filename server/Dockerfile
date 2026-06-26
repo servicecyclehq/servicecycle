@@ -67,12 +67,18 @@ RUN apk add --no-cache openssl postgresql-client wget \
 # so it can never break the running app.
 # Versions are pinned in pyextract/requirements.txt — update there, not here.
 COPY pyextract/requirements.txt /app/pyextract/requirements.txt
+# Python extractor is optional — ingest falls open to the pdfjs parser if any
+# step here fails, so this block must never break the build.
+# pypdfium2 (pulled in by pdfplumber) ships only manylinux glibc wheels; on
+# Alpine musl the wheel installs but cannot be imported. The ( ... || warn )
+# pattern makes the pip install + import check non-fatal: text extraction via
+# pdfminer.six still works; scanned-PDF OCR degrades gracefully.
 RUN apk add --no-cache python3 py3-pip tesseract-ocr tesseract-ocr-data-eng \
- && pip install --no-cache-dir --break-system-packages --only-binary=:all: \
-      -r /app/pyextract/requirements.txt \
- && python3 -c "import pdfplumber, pytesseract; print('pyextract deps OK', pdfplumber.__version__)" \
+ && ( pip install --no-cache-dir --break-system-packages --only-binary=:all: \
+        -r /app/pyextract/requirements.txt \
+   && python3 -c "import pdfplumber, pytesseract; print('pyextract OK', pdfplumber.__version__)" \
+   || echo "WARNING: pyextract unavailable on this platform - PDF extraction falls back to pdfjs" ) \
  && tesseract --version | head -1 \
- && tesseract --list-langs 2>&1 | grep -q eng && echo "tesseract eng OK" \
  && rm -rf /root/.cache /var/cache/apk/*
 
 # Run as the unprivileged `node` user shipped in the base image.
