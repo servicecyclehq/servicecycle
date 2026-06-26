@@ -438,7 +438,8 @@ router.patch('/ingest/:id/bus/:busId', requireManager, async (req: any, res: any
     }
     if (b.deviceSettings !== undefined) {
       if (b.deviceSettings === null || b.deviceSettings === '') patch.deviceSettings = null;
-      else if (typeof b.deviceSettings === 'object') patch.deviceSettings = b.deviceSettings;
+      // PEN-7-12: apply the same 8 KB size guard used on the create path.
+      else if (typeof b.deviceSettings === 'object' && b.deviceSettings !== null) patch.deviceSettings = safeDeviceSettings(b.deviceSettings);
     }
     for (const f of ['boltedFaultCurrentKA', 'arcingCurrentKA', 'conductorGapMm', 'clearingTimeMs', 'workingDistanceIn', 'incidentEnergyCalCm2', 'arcFlashBoundaryIn', 'deviceRatingA', 'cableLengthFt']) {
       if (b[f] !== undefined) patch[f] = b[f] === null || b[f] === '' ? null : numOrNull(b[f]);
@@ -532,6 +533,12 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     let studyId: string | null = null;
     let boundCount = 0;
     await prisma.$transaction(async (txn: any) => {
+      // PEN-7-7: Re-check status inside the transaction to prevent a concurrent
+      // double-confirm race from creating duplicate assets. The pre-transaction
+      // check (line above) is a fast-path guard; this is the atomic safety net.
+      const fresh = await txn.arcFlashIngest.findUnique({ where: { id: ingest.id }, select: { status: true } });
+      if (fresh?.status === 'confirmed') throw Object.assign(new Error('ALREADY_CONFIRMED'), { _alreadyConfirmed: true });
+
       // Pass 1: create / match assets (no feed links yet).
     for (const b of buses) {
       if (b.resolution === 'create') {
@@ -639,7 +646,9 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     await logActivity(req.user.id, accountId, 'arc_flash_ingest_confirmed', { ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount });
 
     res.json({ success: true, data: { ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount } });
-  } catch (e) {
+  } catch (e: any) {
+    // PEN-7-7: concurrent double-confirm detected inside the transaction.
+    if (e?._alreadyConfirmed) return res.status(409).json({ success: false, error: 'Ingest already confirmed' });
     console.error('arc-flash confirm error:', e);
     res.status(500).json({ success: false, error: 'Failed to confirm ingest' });
   }

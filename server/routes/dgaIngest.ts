@@ -73,7 +73,10 @@ router.post('/:id/dga/preview', requireViewer, async (req: any, res: any) => {
 });
 
 // ── POST /:id/dga/commit — persist a LabSample + auto-deficiency ─────────────
-const SEVERITY_BY_CONDITION: Record<number, string> = { 2: 'ADVISORY', 3: 'RECOMMENDED', 4: 'IMMEDIATE' };
+// INS-7-14: IEEE C57.104 condition-to-severity mapping. Condition 3 = "Action Required"
+// per the standard — corrected to IMMEDIATE. Condition 2 = "Abnormal" = ADVISORY.
+// Condition 4 = well above limits, always IMMEDIATE.
+const SEVERITY_BY_CONDITION: Record<number, string> = { 2: 'ADVISORY', 3: 'IMMEDIATE', 4: 'IMMEDIATE' };
 
 router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
   try {
@@ -106,16 +109,35 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
       let deficiencyCreated = false;
       const sev = SEVERITY_BY_CONDITION[evaluation.overallCondition];
       if (sev) {
-        await tx.deficiency.create({
-          data: {
-            accountId: req.user.accountId, assetId: asset.id, severity: sev as any,
-            description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104 legacy 4-condition screen, estimate) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}.`,
-            correctiveAction: evaluation.overallCondition >= 4
-              ? 'Investigate immediately — schedule retest and electrical/internal inspection.'
-              : 'Increase DGA sampling frequency and trend the key gases.',
-          },
-        });
-        deficiencyCreated = true;
+        // INS-7-14: dedup guard — skip if an open IMMEDIATE DGA deficiency already
+        // exists for this asset (same condition level) to prevent duplicate alerts
+        // on rapid resubmission. A resolved/closed deficiency does not count.
+        const existingImmediate = evaluation.overallCondition >= 3
+          ? await tx.deficiency.findFirst({
+              where: {
+                accountId: req.user.accountId, assetId: asset.id,
+                severity: 'IMMEDIATE',
+                description: { contains: 'DGA Condition' },
+                resolvedAt: null,
+              },
+              select: { id: true },
+            })
+          : null;
+
+        if (!existingImmediate) {
+          await tx.deficiency.create({
+            data: {
+              accountId: req.user.accountId, assetId: asset.id, severity: sev as any,
+              description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104 legacy 4-condition screen, estimate) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}. IEEE C57.104 Status ${evaluation.ieeeStatus} — ${evaluation.overallCondition >= 3 ? 'Action Required: immediate investigation.' : 'Increased monitoring required.'}`,
+              correctiveAction: evaluation.overallCondition >= 3
+                ? 'Action Required per IEEE C57.104 Status 3/4 — schedule immediate retest and electrical/internal inspection.'
+                : 'Increase DGA sampling frequency and trend the key gases.',
+            },
+          });
+          deficiencyCreated = true;
+        } else {
+          console.warn(`[dga/commit] Skipping duplicate IMMEDIATE deficiency for asset ${asset.id} — open deficiency ${existingImmediate.id} already exists`);
+        }
       }
       return { sample, deficiencyCreated };
     });
