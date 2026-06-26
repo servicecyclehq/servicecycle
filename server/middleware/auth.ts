@@ -34,12 +34,17 @@ function touchAccountActivity(accountId) {
   const now  = Date.now();
   const last = accountTouchCache.get(accountId) || 0;
   if (now - last < TOUCH_DEBOUNCE_MS) return;
-  // L1: evict oldest entry if at cap before inserting a new one
-  if (!accountTouchCache.has(accountId) && accountTouchCache.size >= TOUCH_CACHE_MAX) {
-    accountTouchCache.delete(accountTouchCache.keys().next().value);
+  // L1: LRU eviction — delete-and-reinsert on cache hits to maintain recency
+  // order so the oldest-ACCESSED entry (not oldest-inserted) is evicted first.
+  if (accountTouchCache.has(accountId)) {
+    accountTouchCache.delete(accountId);
   }
   // Mark BEFORE the write so two concurrent requests don't both fire.
   accountTouchCache.set(accountId, now);
+  // Evict the oldest-accessed entry when over capacity.
+  if (accountTouchCache.size > TOUCH_CACHE_MAX) {
+    accountTouchCache.delete(accountTouchCache.keys().next().value);
+  }
   prisma.account.update({
     where: { id: accountId },
     data:  { lastActiveAt: new Date() },

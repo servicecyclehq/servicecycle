@@ -233,6 +233,13 @@ async function saveToLocal(buf, filename) {
         'WARNING: /tmp is NOT persistent across reboots. Set BACKUP_LOCAL_PATH to a ' +
         'directory owned by the Node process user, or use BACKUP_DEST=s3.'
       );
+      try {
+        require('./betterStack').logEvent('backup_tmp_fallback', {
+          accountId: 'system',
+          originalPath: preferredDir,
+          tmpPath: fallbackDir,
+        });
+      } catch (_) { /* non-fatal */ }
       return await tryWrite(fallbackDir);
     }
     throw err; // re-throw non-permission errors

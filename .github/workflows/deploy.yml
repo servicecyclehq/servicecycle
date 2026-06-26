@@ -77,7 +77,7 @@ jobs:
       - name: Health check
         run: |
           sleep 15
-          code=$(ssh sc "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3002/api/health")
+          code=$(ssh sc "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/health")
           echo "api/health -> HTTP $code"
           test "$code" = "200" || { echo "Health check failed"; exit 1; }
           ssh sc "docker ps --filter name=servicecycle-server --format '{{.Names}} {{.Status}}'"

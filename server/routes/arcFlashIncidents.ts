@@ -31,7 +31,7 @@
 
 import { Router } from 'express';
 import prisma from '../lib/prisma';
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireRole } = require('../middleware/roles');
 const {
   INCIDENT_TYPES, WORK_TYPES, STATUSES, normEnum, incidentOut,
 } = require('../lib/arcFlashIncident');
@@ -63,7 +63,7 @@ router.get('/', async (req: any, res) => {
 });
 
 // ── POST /api/arc-flash-incidents ─────────────────────────────────────────────
-router.post('/', async (req: any, res) => {
+router.post('/', requireRole(['admin', 'manager', 'viewer']), async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
     const {
@@ -75,6 +75,11 @@ router.post('/', async (req: any, res) => {
 
     if (!description || typeof description !== 'string') {
       return res.status(400).json({ success: false, error: 'description is required' });
+    }
+
+    // APPSEC-2: validate reportUrl if provided
+    if (reportUrl && !/^https?:\/\/.{1,2000}$/.test(reportUrl)) {
+      return res.status(400).json({ error: 'reportUrl must be a valid HTTP/HTTPS URL (max 2000 chars)' });
     }
 
     // Validate siteId belongs to this account if provided
@@ -135,9 +140,8 @@ router.post('/', async (req: any, res) => {
 });
 
 // ── PATCH /api/arc-flash-incidents/:id ───────────────────────────────────────
-// All roles may update non-status fields. Status changes (reviewed/closed)
-// require manager+.
-router.patch('/:id', async (req: any, res) => {
+// Status changes (reviewed/closed) require manager+.
+router.patch('/:id', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
     const { id }    = req.params;
@@ -154,13 +158,9 @@ router.patch('/:id', async (req: any, res) => {
       investigationNotes, // alias for correctiveAction
     } = req.body;
 
-    // Status changes (reviewed | closed) require manager+
-    if (status && status !== existing.status) {
-      const role = req.user.role;
-      const MANAGER_ROLES = ['admin', 'manager'];
-      if (!MANAGER_ROLES.includes(role)) {
-        return res.status(403).json({ success: false, error: 'Manager or admin required to change status' });
-      }
+    // APPSEC-2: validate reportUrl if provided
+    if (reportUrl && !/^https?:\/\/.{1,2000}$/.test(reportUrl)) {
+      return res.status(400).json({ error: 'reportUrl must be a valid HTTP/HTTPS URL (max 2000 chars)' });
     }
 
     const data: any = {};

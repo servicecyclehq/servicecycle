@@ -3,20 +3,19 @@
 // /api/users/permissions could fill ActivityLog at line-rate. 1 min
 // per (userId, path) cooldown.
 const _denyTrack = new Map();
-function _shouldLogDeny(userId, path) {
-  const key = `${userId || 'anon'}|${path}`;
+function _shouldLogDeny(accountId, userId, path) {
+  const key = `${accountId || 'anon'}|${userId || 'anon'}|${path}`;
   const now = Date.now();
   const last = _denyTrack.get(key) || 0;
   if (now - last < 60_000) return false;
+  // LRU eviction — delete-and-reinsert on cache hits to maintain recency order.
+  if (_denyTrack.has(key)) {
+    _denyTrack.delete(key);
+  }
   _denyTrack.set(key, now);
-  // Bound the map so it can't grow unboundedly.
+  // Evict the oldest-accessed entry when over capacity.
   if (_denyTrack.size > 5000) {
-    // Drop the oldest 1000 entries by walking the Map's insertion order.
-    let toDrop = 1000;
-    for (const k of _denyTrack.keys()) {
-      _denyTrack.delete(k);
-      if (--toDrop <= 0) break;
-    }
+    _denyTrack.delete(_denyTrack.keys().next().value);
   }
   return true;
 }
@@ -50,7 +49,7 @@ const { writeLog: writeActivityLog } = require('../lib/activityLog');
  * sit after authenticateToken, so this branch shouldn't fire in practice).
  */
 function _logDenied(req, requiredRole) {
-    if (!_shouldLogDeny(req.user && req.user.id, req.path)) return;
+    if (!_shouldLogDeny(req.user?.accountId, req.user && req.user.id, req.path)) return;
 if (!req.user || !req.user.id) return;
   writeActivityLog({
     userId:  req.user.id,

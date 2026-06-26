@@ -170,7 +170,15 @@ router.post('/domains', async (req: any, res: any) => {
     const updated = await prisma.ssoDomain.update({ where: { domain }, data: { connectionId, isActive: true } });
     return res.json({ success: true, data: { domain: updated } });
   }
-  const dom = await prisma.ssoDomain.create({ data: { domain, accountId, connectionId } });
+  let dom;
+  try {
+    dom = await prisma.ssoDomain.create({ data: { domain, accountId, connectionId } });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      return res.status(409).json({ error: 'This domain is already claimed by another account' });
+    }
+    throw err;
+  }
   writeActivityLog({ userId: req.user.id, accountId, action: 'sso_domain_added', details: { domain } });
   return res.status(201).json({ success: true, data: { domain: dom } });
 });
