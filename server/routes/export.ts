@@ -270,7 +270,7 @@ router.get('/account', requireManager, async (req, res) => {
 
 // ── GET /api/export/xlsx?view=assets|workorders ──────────────────────────────
 
-router.get('/xlsx', async (req, res) => {
+router.get('/xlsx', requireManager, async (req, res) => {
   try {
     const view = String(req.query.view || 'assets').toLowerCase();
     if (view === 'assets')                              return await exportAssets(req, res);
@@ -286,7 +286,7 @@ router.get('/xlsx', async (req, res) => {
 
 // Direct aliases for the two views — same handlers, no ?view= needed. Keeps
 // per-view toolbar links one query-param simpler.
-router.get('/assets', async (req, res) => {
+router.get('/assets', requireManager, async (req, res) => {
   try { await exportAssets(req, res); }
   catch (err) {
     console.error('Export assets error:', err);
@@ -294,7 +294,7 @@ router.get('/assets', async (req, res) => {
   }
 });
 
-router.get('/workorders', async (req, res) => {
+router.get('/workorders', requireManager, async (req, res) => {
   try { await exportWorkOrders(req, res); }
   catch (err) {
     console.error('Export work orders error:', err);

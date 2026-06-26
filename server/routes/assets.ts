@@ -415,8 +415,8 @@ router.get('/', async (req, res) => {
       sort = 'nextDue', sortDir,
     } = req.query;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const take = parseInt(limit);
+    const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * Math.min(Math.max(parseInt(limit as string) || 25, 1), 200);
+    const take = Math.min(Math.max(parseInt(limit as string) || 25, 1), 200);
 
     const where: any = { accountId: req.user.accountId };
 

@@ -186,7 +186,7 @@ router.patch('/:id', requireManager, async (req: any, res) => {
       }
     }
 
-    const updated = await prisma.arcFlashIncident.update({ where: { id }, data });
+    const updated = await prisma.arcFlashIncident.update({ where: { id, accountId }, data });
     return res.json({ success: true, data: incidentOut(updated) });
   } catch (err: any) {
     console.error('[arc-flash-incidents] PATCH /:id error:', err.message);

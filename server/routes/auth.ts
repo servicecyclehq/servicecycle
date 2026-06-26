@@ -990,7 +990,7 @@ router.post('/forgot-password', credentialLimiter, async (req, res) => { // (M1)
 
         await prisma.user.update({
           where: { id: user.id },
-          data:  { passwordResetToken: token, passwordResetExpiresAt: expiresAt },
+          data:  { passwordResetToken: hashToken(token), passwordResetExpiresAt: expiresAt },
         });
 
         const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -1018,7 +1018,7 @@ router.post('/reset-password', credentialLimiter, async (req, res) => { // (M1)
 
   try {
     const user = await prisma.user.findFirst({
-      where: { passwordResetToken: token, passwordResetExpiresAt: { gt: new Date() } },
+      where: { passwordResetToken: hashToken(token), passwordResetExpiresAt: { gt: new Date() } },
     });
 
     if (!user) return res.status(400).json({ success: false, error: 'This reset link is invalid or has expired' });
@@ -1078,7 +1078,7 @@ router.post('/reset-password', credentialLimiter, async (req, res) => { // (M1)
 router.get('/invite/:token', async (req, res) => {
   try {
     const invite = await prisma.userInvite.findUnique({
-      where:   { token: req.params.token },
+      where:   { token: hashToken(req.params.token) },
       include: { account: { select: { companyName: true } } },
     });
 
@@ -1132,7 +1132,7 @@ router.post('/invite/:token/accept', credentialLimiter, async (req, res) => { //
     : 'eula-2026-05-04, tos-2026-05-04, privacy-2026-05-04';
 
   try {
-    const invite = await prisma.userInvite.findUnique({ where: { token: req.params.token } });
+    const invite = await prisma.userInvite.findUnique({ where: { token: hashToken(req.params.token) } });
 
     if (!invite || invite.acceptedAt || invite.expiresAt < new Date()) {
       return res.status(410).json({ success: false, error: 'This invite link is invalid or has expired' });

@@ -399,8 +399,11 @@ router.get('/accounts/:id', async (req, res) => {
     if (fleetFallbackBlocked(req, callerAccount?.partnerOrgId)) {
       return res.status(404).json({ error: 'Account not found' });
     }
-    // Enforce same partnerOrg scope (skip if caller has no partnerOrgId — demo mode)
-    if (callerAccount?.partnerOrgId && targetAccount.partnerOrgId !== callerAccount.partnerOrgId) {
+    // Enforce same partnerOrg scope. Fail closed: a null partnerOrgId on the
+    // caller is NOT a pass — it means the account has no OEM affiliation and
+    // should not be able to drill into any tenant. (super_admin + DEMO_MODE
+    // are exempted by fleetFallbackBlocked above.)
+    if (!callerAccount?.partnerOrgId || targetAccount.partnerOrgId !== callerAccount.partnerOrgId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

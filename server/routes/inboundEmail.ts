@@ -79,7 +79,12 @@ function verifySvix(secret: string, headers: any, rawBody: string): boolean {
 }
 
 function constEq(a: string, b: string): boolean {
-  try { return crypto.timingSafeEqual(Buffer.from(String(a)), Buffer.from(String(b))); } catch { return false; }
+  try {
+    const ba = Buffer.from(String(a));
+    const bb = Buffer.from(String(b));
+    if (ba.length === 0 || bb.length === 0) return false;  // empty string is not a valid secret
+    return crypto.timingSafeEqual(ba, bb);
+  } catch { return false; }
 }
 
 // reports-<slug>@... (or bare <slug>@...) -> account via AccountSetting inbound_slug.

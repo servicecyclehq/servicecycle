@@ -331,7 +331,7 @@ router.delete('/:id', requireManager, async (req, res) => {
       return res.status(409).json({ success: false, error: 'Only draft procedures may be deleted; archive active/approved ones instead.' });
     }
 
-    await prisma.lotoProc.delete({ where: { id: req.params.id } });
+    await prisma.lotoProc.delete({ where: { id: req.params.id, accountId, assetId } });
     writeActivityLog({ accountId, userId: req.user.id, assetId, action: 'loto_procedure_deleted', details: { id: req.params.id } });
     return res.json({ success: true });
   } catch (err) {

@@ -27,7 +27,7 @@
  */
 
 const router = require('express').Router();
-const { requireManager, requireRole } = require('../middleware/roles');
+const { requireManager, requireRole, requireViewer } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
 
 // Internal account users (incl. read-only viewers who legitimately raise a
@@ -215,7 +215,8 @@ async function buildDossier(assetId: string, accountId: string) {
 
 // ── GET /api/quote-requests ────────────────────────────────────────────────
 // Account-wide list; filter by status, assetId, or emergencyMode
-router.get('/', async (req, res) => {
+// PEN-7-4: field_tech excluded — financial dossier data is not their concern.
+router.get('/', requireViewer, async (req, res) => {
   try {
     const { status, assetId, emergency, page = 1, limit = 50 } = req.query;
     const take = Math.min(Math.max(parseInt(limit as string) || 50, 1), 200);
@@ -271,7 +272,7 @@ router.get('/', async (req, res) => {
 });
 
 // ── GET /api/quote-requests/:id ────────────────────────────────────────────
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireViewer, async (req, res) => {
   try {
     const qr = await prisma.quoteRequest.findFirst({
       where: { id: req.params.id, accountId: req.user.accountId },
@@ -292,7 +293,7 @@ router.get('/:id', async (req, res) => {
 
 // ── GET /api/quote-requests/asset/:assetId ─────────────────────────────────
 // Per-asset history; mounted as /api/quote-requests/asset/:assetId
-router.get('/asset/:assetId', async (req, res) => {
+router.get('/asset/:assetId', requireViewer, async (req, res) => {
   try {
     const { assetId } = req.params;
     const qrs = await prisma.quoteRequest.findMany({

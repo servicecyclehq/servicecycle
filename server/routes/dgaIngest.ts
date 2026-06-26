@@ -15,7 +15,7 @@
 
 const router = require('express').Router();
 import prisma from '../lib/prisma';
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireViewer } = require('../middleware/roles');
 const { evaluateDga } = require('../lib/dgaEvaluate');
 const { parseDgaText } = require('../lib/dgaParse');
 
@@ -56,7 +56,7 @@ async function ownAsset(req: any) {
 }
 
 // ── POST /:id/dga/preview — parse + evaluate, no write ───────────────────────
-router.post('/:id/dga/preview', async (req: any, res: any) => {
+router.post('/:id/dga/preview', requireViewer, async (req: any, res: any) => {
   try {
     const asset = await ownAsset(req);
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });

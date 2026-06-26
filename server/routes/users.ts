@@ -11,6 +11,11 @@ const { validate: validatePassword, validateStrength, loadAccountPolicy } = requ
 import prisma from '../lib/prisma';
 
 const router = express.Router();
+// SE-7-13: hash invite tokens before DB storage, same pattern as refresh tokens in auth.ts
+function hashToken(raw) {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
 
 // v0.68.5 (audit Medium): rate limit POST /invite to 5/hour/admin.
 const rateLimit = require('express-rate-limit');
@@ -120,7 +125,7 @@ router.post('/invite', requireAdmin, inviteLimiter, async (req, res) => {
         accountId: req.user.accountId,
         email: normalizedEmail,
         role,
-        token,
+        token: hashToken(token),  // SE-7-13: store hash, not raw token
         expiresAt,
         invitedBy: req.user.id,
       },
