@@ -7,6 +7,10 @@ RUN npm ci
 
 COPY . .
 
+# Ensure the node user owns /app so Vite can write temp files
+# (vite.config.js.timestamp-*.mjs) and the .vite build cache during npm run build
+RUN chown -R node:node /app
+
 EXPOSE 5173
 
 USER node
