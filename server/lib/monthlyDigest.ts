@@ -111,24 +111,42 @@ async function gatherAccountDigest(account: any, now: Date) {
     enterpriseGroupId: account.enterpriseGroupId ?? null,
   });
 
-  const schedules = await prisma.maintenanceSchedule.findMany({
-    where: {
-      accountId: account.id, isActive: true,
-      nextDueDate: { not: null, lte: lookAhead },
-      asset: { archivedAt: null, inService: true },
-    },
-    include: {
-      taskDefinition: { select: { taskName: true } },
-      asset: {
-        select: {
-          id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true,
-          governingCondition: true, priorityScore: true, modernizationRiskScore: true,
-          installDate: true, autoConditionC3: true,
-          site: { select: { id: true, name: true } },
+  // Cursor-paginated fetch — replaces the old take:2000 hard cap that silently
+  // dropped records for accounts with >2000 active schedules. Fetches in
+  // batches of 500 keyed by id (stable cursor); results are sorted by
+  // nextDueDate after collection so display order is unchanged.
+  const schedules: Awaited<ReturnType<typeof prisma.maintenanceSchedule.findMany>>= [];
+  let _cursor: string | undefined;
+  do {
+    const batch = await prisma.maintenanceSchedule.findMany({
+      where: {
+        accountId: account.id, isActive: true,
+        nextDueDate: { not: null, lte: lookAhead },
+        asset: { archivedAt: null, inService: true },
+      },
+      take: 500,
+      ...(_cursor ? { skip: 1, cursor: { id: _cursor } } : {}),
+      orderBy: { id: 'asc' },
+      include: {
+        taskDefinition: { select: { taskName: true } },
+        asset: {
+          select: {
+            id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true,
+            governingCondition: true, priorityScore: true, modernizationRiskScore: true,
+            installDate: true, autoConditionC3: true,
+            site: { select: { id: true, name: true } },
+          },
         },
       },
-    },
-    take: 2000, orderBy: { nextDueDate: 'asc' },
+    });
+    schedules.push(...batch);
+    _cursor = batch.length === 500 ? batch[batch.length - 1].id : undefined;
+  } while (_cursor);
+  // Restore display order (nextDueDate ascending) after cursor-pagination collects all rows.
+  schedules.sort((a: any, b: any) => {
+    const da = a.nextDueDate ? new Date(a.nextDueDate).getTime() : Infinity;
+    const db = b.nextDueDate ? new Date(b.nextDueDate).getTime() : Infinity;
+    return da - db;
   });
 
   if (schedules.length === 0) return null;
