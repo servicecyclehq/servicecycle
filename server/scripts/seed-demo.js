@@ -2481,4 +2481,18 @@ if (require.main === module) {
     .then((s) => {
       console.log('Demo seed complete:');
       console.log(JSON.stringify(s, null, 2));
-      console.lo
+      console.log('\nLogin credentials:');
+      console.log('  admin@demo.local      / Admin1234!');
+      console.log('  manager@demo.local    / Manager1234!');
+      console.log('  viewer@demo.local     / Viewer1234!');
+      console.log('  consultant@demo.local / Consultant1234!');
+      return prisma.$disconnect();
+    })
+    .catch(async (err) => {
+      console.error('Seed failed:', err);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}
+
+module.exports = { resetAndSeedDemo, seedAccountForUser };
