@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 25
     steps:
       # TODO: pin to SHA digest for supply chain security
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node
         # TODO: pin to SHA digest for supply chain security
