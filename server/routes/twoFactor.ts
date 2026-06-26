@@ -468,6 +468,13 @@ router.post('/verify-login', totpLimiter, async (req, res) => {
     // Omit sensitive fields from response
     const { twoFactorSecret: _s, twoFactorBackupCodes: _b, twoFactorLastUsedStep: _step, ...safeUser } = user;
 
+    let parsedBackup: any = null;
+    try {
+      parsedBackup = backupUpdate ? JSON.parse(backupUpdate) : null;
+    } catch {
+      parsedBackup = null; // malformed JSON — treat as no backup codes
+    }
+
     return res.json({
       success: true,
       data: {
@@ -475,8 +482,8 @@ router.post('/verify-login', totpLimiter, async (req, res) => {
         refreshToken,
         user: safeUser,
         aiProvider: process.env.AI_PROVIDER || 'anthropic',
-        ...(backupUpdate !== null && JSON.parse(backupUpdate).length <= 2
-          ? { warning: `Only ${JSON.parse(backupUpdate).length} backup code(s) remaining — consider regenerating.` }
+        ...(parsedBackup !== null && parsedBackup.length <= 2
+          ? { warning: `Only ${parsedBackup.length} backup code(s) remaining — consider regenerating.` }
           : {}),
       },
     });

@@ -38,6 +38,7 @@
  */
 
 import prisma from './prisma';
+const { redactEmail } = require('./redact');
 
 const SCANNER_ENABLED = process.env.WEATHER_SCANNER_ENABLED !== 'false';
 const NWS_AGENT = 'ServiceCycle/1.0 (servicecyclehq@gmail.com)';
@@ -178,7 +179,7 @@ async function notifyAffectedAccounts(
                      : ''),
         });
       } catch (e) {
-        console.warn(`[weatherScanner] Email failed for ${user.email}:`, (e as any).message);
+        console.warn(`[weatherScanner] Email failed for ${redactEmail(user.email)}:`, (e as any).message);
       }
     }
   }

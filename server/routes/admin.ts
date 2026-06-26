@@ -28,6 +28,7 @@ import prisma from '../lib/prisma';
 const { requireAdmin, requireSuperAdmin } = require('../middleware/roles');
 const earlyAccessRouter = require('./earlyAccess');  // (L7)
 const { getDailyCap, getAccountCapOverride, UNLIMITED } = require('../lib/aiQuota');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const router = express.Router();
 
@@ -372,8 +373,15 @@ router.get('/notification-log', requireAdmin, async (req, res) => {
 // tenants. That is operator BI, not tenant data, so it is gated to super_admin
 // (was requireAdmin, which exposed it to every customer admin — and, since the
 // demo auto-grants admin, to anonymous demo visitors).
-router.get('/metrics/overview', requireSuperAdmin, async (req, res) => {
+router.get('/metrics/overview', requireSuperAdmin, async (req: any, res) => {
   try {
+    await writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    'super_admin_metrics_accessed',
+      details:   { ip: req.ip },
+    });
+
     const [totalUsers, totalAccounts, totalActive, totalArchived] = await Promise.all([
       prisma.user.count(),
       prisma.account.count(),

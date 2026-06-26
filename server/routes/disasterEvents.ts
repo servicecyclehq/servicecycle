@@ -65,7 +65,7 @@ router.get('/', async (req: any, res) => {
       // Regional events — filter client-side for site overlap since Prisma
       // doesn't have array-contains-any. We limit to the last 200 so this
       // doesn't become a table scan in catastrophic scenarios.
-      (prisma.disasterEvent as any).findMany({
+      prisma.disasterEvent.findMany({
         where: {
           accountId:  null,
           resolvedAt: null,
@@ -74,7 +74,7 @@ router.get('/', async (req: any, res) => {
         take:    200,
       }),
       // This account's own declarations.
-      (prisma.disasterEvent as any).findMany({
+      prisma.disasterEvent.findMany({
         where:   { accountId, resolvedAt: null },
         orderBy: { declaredAt: 'desc' },
       }),
@@ -130,7 +130,7 @@ router.get('/regional', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
 
-    const systemEvents: any[] = await (prisma.disasterEvent as any).findMany({
+    const systemEvents: any[] = await prisma.disasterEvent.findMany({
       where:   { resolvedAt: null },
       orderBy: { declaredAt: 'desc' },
       take:    100,
@@ -199,7 +199,7 @@ router.get('/queue-position', async (req: any, res) => {
     const accountId = req.user.accountId;
 
     // Find this account's most recent active declaration.
-    const myDeclaration: any = await (prisma.disasterEvent as any).findFirst({
+    const myDeclaration: any = await prisma.disasterEvent.findFirst({
       where:   { accountId, source: 'manual', resolvedAt: null },
       orderBy: { declaredAt: 'desc' },
     });
@@ -209,7 +209,7 @@ router.get('/queue-position', async (req: any, res) => {
     }
 
     // Count declarations by OTHER accounts in overlapping states declared before ours.
-    const earlierDeclarations: any[] = await (prisma.disasterEvent as any).findMany({
+    const earlierDeclarations: any[] = await prisma.disasterEvent.findMany({
       where: {
         source:     'manual',
         resolvedAt: null,
@@ -283,7 +283,7 @@ router.post('/declare', requireManager, async (req: any, res) => {
     }
 
     // Create the declaration.
-    const event: any = await (prisma.disasterEvent as any).create({
+    const event: any = await prisma.disasterEvent.create({
       data: {
         accountId,
         eventType,
@@ -337,7 +337,7 @@ router.post('/:id/resolve', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
 
-    const event: any = await (prisma.disasterEvent as any).findFirst({
+    const event: any = await prisma.disasterEvent.findFirst({
       where: { id: req.params.id },
     });
 
@@ -355,7 +355,7 @@ router.post('/:id/resolve', requireManager, async (req: any, res) => {
       return res.status(400).json({ success: false, error: 'Event is already resolved' });
     }
 
-    const updated: any = await (prisma.disasterEvent as any).update({
+    const updated: any = await prisma.disasterEvent.update({
       where: { id: event.id },
       data:  { resolvedAt: new Date() },
     });

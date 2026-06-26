@@ -544,66 +544,81 @@ async function runAlertEngine({ accountId }: any = {}) {
       if (!accountDigests.has(accId)) accountDigests.set(accId, { users, alertItems: [] });
     }
 
-    // ── Tier crossing detection ───────────────────────────────────────────
-    for (const schedule of schedules) {
-      const daysUntil = Math.ceil(
-        (new Date(schedule.nextDueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      );
+﻿    // â”€â”€ Group schedules by accountId for per-account error isolation â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const byAccount = new Map<string, typeof schedules>();
+    for (const sched of schedules) {
+      const arr = byAccount.get(sched.accountId) ?? [];
+      arr.push(sched);
+      byAccount.set(sched.accountId, arr);
+    }
 
-      for (const tier of TIERS) {
-        // A tier fires once daysUntil has crossed it (daysUntil <= leadDays),
-        // bounded ±5 days so a multi-day cron outage doesn't permanently skip
-        // a tier (inherited H2 widening), except overdue tiers which fire on
-        // any crossing (an asset 40d overdue discovered today must still get
-        // the -30 escalation, not silently skip it).
-        const crossed = tier.leadDays >= 0
-          ? Math.abs(daysUntil - tier.leadDays) <= 5
-          : daysUntil <= tier.leadDays;
-        if (!crossed) continue;
+    // â”€â”€ Tier crossing detection (per-account isolated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    for (const [_acctId, accountSchedules] of byAccount) {
+      try {
+        for (const schedule of accountSchedules) {
+          const daysUntil = Math.ceil(
+            (new Date(schedule.nextDueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+          );
 
-        const key = `${schedule.id}|${tier.alertType}|${tier.leadDays}`;
-        if (fired.has(key)) { skipped++; continue; }
-        fired.add(key);
+          for (const tier of TIERS) {
+            // A tier fires once daysUntil has crossed it (daysUntil <= leadDays),
+            // bounded Â±5 days so a multi-day cron outage doesn't permanently skip
+            // a tier (inherited H2 widening), except overdue tiers which fire on
+            // any crossing (an asset 40d overdue discovered today must still get
+            // the -30 escalation, not silently skip it).
+            const crossed = tier.leadDays >= 0
+              ? Math.abs(daysUntil - tier.leadDays) <= 5
+              : daysUntil <= tier.leadDays;
+            if (!crossed) continue;
 
-        newAlerts.push({
-          scheduleId: schedule.id,
-          assetId:    schedule.asset.id,
-          accountId:  schedule.accountId,
-          alertType:  tier.alertType,
-          leadDays:   tier.leadDays,
-          scheduledAt: now,
-          status:     'sent',
-          sentAt:     now,
-        });
+            const key = `${schedule.id}|${tier.alertType}|${tier.leadDays}`;
+            if (fired.has(key)) { skipped++; continue; }
+            fired.add(key);
 
-        if (tier.alertType === 'regulatory_breach') {
-          breachLogs.push({
-            assetId:   schedule.asset.id,
-            accountId: schedule.accountId,
-            action:    'regulatory_breach_flagged',
-            details:   {
-              scheduleId:  schedule.id,
-              task:        schedule.taskDefinition?.taskName,
-              standardRef: schedule.taskDefinition?.standardRef,
-              daysOverdue: Math.abs(daysUntil),
-              nextDueDate: schedule.nextDueDate,
-            },
-          });
+            newAlerts.push({
+              scheduleId: schedule.id,
+              assetId:    schedule.asset.id,
+              accountId:  schedule.accountId,
+              alertType:  tier.alertType,
+              leadDays:   tier.leadDays,
+              scheduledAt: now,
+              status:     'sent',
+              sentAt:     now,
+            });
+
+            if (tier.alertType === 'regulatory_breach') {
+              breachLogs.push({
+                assetId:   schedule.asset.id,
+                accountId: schedule.accountId,
+                action:    'regulatory_breach_flagged',
+                details:   {
+                  scheduleId:  schedule.id,
+                  task:        schedule.taskDefinition?.taskName,
+                  standardRef: schedule.taskDefinition?.standardRef,
+                  daysOverdue: Math.abs(daysUntil),
+                  nextDueDate: schedule.nextDueDate,
+                },
+              });
+            }
+
+            ensureDigest(schedule.accountId, schedule.account.users);
+            accountDigests.get(schedule.accountId).alertItems.push({
+              schedule: {
+                id: schedule.id,
+                nextDueDate: schedule.nextDueDate,
+                taskDefinition: { taskName: schedule.taskDefinition?.taskName || 'Maintenance task' },
+              },
+              asset:     schedule.asset,
+              alertType: tier.alertType,
+              daysUntil,
+              leadDays:  tier.leadDays,
+              roles:     tier.roles,
+            });
+          }
         }
-
-        ensureDigest(schedule.accountId, schedule.account.users);
-        accountDigests.get(schedule.accountId).alertItems.push({
-          schedule: {
-            id: schedule.id,
-            nextDueDate: schedule.nextDueDate,
-            taskDefinition: { taskName: schedule.taskDefinition?.taskName || 'Maintenance task' },
-          },
-          asset:     schedule.asset,
-          alertType: tier.alertType,
-          daysUntil,
-          leadDays:  tier.leadDays,
-          roles:     tier.roles,
-        });
+      } catch (accountErr: any) {
+        console.error(`[alertEngine] Error processing alerts for account ${_acctId}:`, accountErr);
+        // Continue to next account rather than aborting all
       }
     }
 
