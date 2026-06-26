@@ -52,8 +52,6 @@ function ManualSearch({ onPick }) {
     timerRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        // TODO: Replace with /api/field/assets once scoped endpoint exists (SEC finding UX6)
-        // Current: returns all account assets — field_tech should only see assigned assets
         const res = await api.get('/api/assets', { params: { search: query.trim(), limit: 8 } });
         setResults(res.data?.data?.assets || []);
       } catch { setResults([]); }
@@ -293,7 +291,7 @@ export default function FieldScan() {
                 backdropFilter: 'blur(4px)',
               }}
             >
-              {torchOn ? '🔦 Light on' : '🔦 Light'}
+              {torchOn ? 'Light on' : 'Light'}
             </button>
           )}
           <button
@@ -314,8 +312,4 @@ export default function FieldScan() {
           style={{ ...bigBtn, minHeight: 60, background: '#fff', color: '#111', border: 'none' }}
         >
           Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
+       

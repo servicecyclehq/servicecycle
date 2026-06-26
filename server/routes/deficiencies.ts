@@ -215,6 +215,16 @@ router.post('/:id/resolve', requireManager, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Deficiency is already resolved' });
     }
 
+    // ESO-4: IMMEDIATE deficiency resolution requires a meaningful corrective note.
+    if (existing.severity === 'IMMEDIATE') {
+      const note = (req.body?.resolution ?? '').trim();
+      if (note.length < 20) {
+        return res.status(400).json({
+          success: false,
+          error: 'IMMEDIATE deficiency resolution requires a detailed corrective action description (minimum 20 characters)',
+        });
+      }
+    }
     const { resolution } = req.body || {};
     const updateData: any = {
       resolvedAt:   new Date(),

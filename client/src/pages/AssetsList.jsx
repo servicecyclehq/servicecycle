@@ -50,14 +50,14 @@ const FETCH_LIMIT = 500;
 
 // ─── Columns (ColumnPicker + filter row share these ids) ─────────────────────
 // D2 (2026-06-11): ordered so the "does this need attention?" quartet
-// (Equipment · Condition · Next Due · Open Def.) leads; identity/metadata
+// (Equipment · Condition · Next Due · Open Deficiencies) leads; identity/metadata
 // columns (Serial #, Address, Owner) are hidden by default but stay
 // available in the column picker.
 const COLUMNS = [
   { id: 'equipment',    label: 'Equipment' },
   { id: 'condition',    label: 'Condition' },
   { id: 'nextDue',       label: 'Next Due' },
-  { id: 'openDef',      label: 'Open Def.' },
+  { id: 'openDef',      label: 'Open Deficiencies' },
   { id: 'criticality',  label: 'Criticality' },
   { id: 'location',     label: 'Location' },
   { id: 'mfgModel',     label: 'Manufacturer / Model' },
@@ -710,7 +710,7 @@ export default function AssetsList() {
                       {colVis.equipment   && <th>Equipment</th>}
                       {colVis.condition   && <th><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>Condition<Tip term="conditionRating" /></span></th>}
                       {colVis.nextDue     && <th>Next Due</th>}
-                      {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Def.</th>}
+                      {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Deficiencies</th>}
                       {colVis.criticality && (
                         <th
                           role="button" tabIndex={0}
@@ -779,7 +779,7 @@ export default function AssetsList() {
                       )}
                       {colVis.openDef && (
                         <th style={{ ...FILTER_TH_STYLE, textAlign: 'right' }}>
-                          <HeaderFilter label="Open Def." type="number" align="right"
+                          <HeaderFilter label="Open Deficiencies" type="number" align="right"
                             value={colFilters.openDef} onChange={v => setColFilter('openDef', v)} />
                         </th>
                       )}
@@ -987,18 +987,20 @@ export default function AssetsList() {
                     <button
                       type="button"
                       className="page-btn"
+                      aria-label="Previous page"
                       disabled={pageClamped <= 1}
                       onClick={() => setPage(Math.max(1, pageClamped - 1))}
                     >
-                      ‹ Prev
+                      <span aria-hidden="true">‹</span> Prev
                     </button>
                     <button
                       type="button"
                       className="page-btn"
+                      aria-label="Next page"
                       disabled={pageClamped >= totalPages}
                       onClick={() => setPage(Math.min(totalPages, pageClamped + 1))}
                     >
-                      Next ›
+                      Next <span aria-hidden="true">›</span>
                     </button>
                   </div>
                 </div>

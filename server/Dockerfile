@@ -67,7 +67,7 @@ RUN apk add --no-cache openssl postgresql-client wget \
 # so it can never break the running app.
 # Versions are pinned in pyextract/requirements.txt — update there, not here.
 COPY pyextract/requirements.txt /app/pyextract/requirements.txt
-RUN apk add --no-cache python3 py3-pip tesseract-ocr tesseract-ocr-data-eng \
+RUN apk add --no-cache python3 py3-pip gcompat tesseract-ocr tesseract-ocr-data-eng \
  && pip install --no-cache-dir --break-system-packages --only-binary=:all: \
       -r /app/pyextract/requirements.txt \
  && python3 -c "import pdfplumber, pypdfium2, pytesseract; print('pyextract deps OK', pdfplumber.__version__)" \

@@ -40,10 +40,7 @@ const LOOK_AHEAD_DAYS = 180;
 const APP_URL = () => process.env.CLIENT_URL || 'https://servicecycle.app';
 
 // ── Locale helpers ────────────────────────────────────────────────────────────
-// Default to en-US/USD. Override via env vars for non-US customers.
-// TODO: source from account settings once multi-locale customers are onboarded.
-const DEFAULT_LOCALE   = process.env.DEFAULT_LOCALE   || 'en-US';
-const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || 'USD';
+import { DEFAULT_LOCALE, DEFAULT_CURRENCY } from './locale';
 
 function fmtDate(d: Date, opts: Intl.DateTimeFormatOptions): string {
   return d.toLocaleDateString(DEFAULT_LOCALE, opts);

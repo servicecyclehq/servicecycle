@@ -29,6 +29,18 @@ const inviteLimiter = rateLimit({
 const ROLES = ['admin', 'manager', 'viewer', 'consultant', 'field_tech'];
 // field_tech = phone-only field-labor login; scoped to assigned work orders only.
 
+
+// PEN-2: role privilege ordering for demotion detection.
+// Higher index = lower privilege. A role change is a demotion when
+// newRole has a higher index than oldRole in this array.
+const ROLE_ORDER = ['admin', 'manager', 'consultant', 'viewer', 'field_tech'];
+function isRoleDemotion(oldRole: string, newRole: string): boolean {
+  const oldIdx = ROLE_ORDER.indexOf(oldRole);
+  const newIdx = ROLE_ORDER.indexOf(newRole);
+  if (oldIdx === -1 || newIdx === -1) return false;
+  return newIdx > oldIdx;
+}
+
 const CreateUserSchema = z.object({
   name:     z.string().trim().min(1).max(200),
   email:    z.string().trim().email().max(254),
@@ -287,6 +299,15 @@ router.put('/me/hidden-features', async (req, res) => {
       return res.status(400).json({ success: false, error: 'hiddenFeatures object is required' });
     }
 
+    // PEN-6: server-side allowlist — reject unknown keys rather than silently dropping them.
+    // Keys must match ALL_FEATURES + UI_PREF_KEYS from lib/featureFlags.
+    const ALLOWED_HIDDEN_FEATURES = ['assets_write', 'contractors_write', 'maintenance_brief', 'communications', 'export', 'alerts', 'infoTips'];
+    const incomingKeys = Object.keys(hiddenFeatures);
+    const unknownKeys = incomingKeys.filter(k => !ALLOWED_HIDDEN_FEATURES.includes(k));
+    if (unknownKeys.length > 0) {
+      return res.status(400).json({ success: false, error: `Unknown feature flags: ${unknownKeys.join(', ')}` });
+    }
+
     // Only allow toggling features the admin has actually enabled for this user
     const currentUser = await prisma.user.findUnique({
       where: { id: req.user.id },
@@ -451,6 +472,14 @@ router.put('/:id', requireAdmin, async (req, res) => {
       }
     }
 
+    // PEN-2: expire outstanding invites when user is demoted
+    if (role && isRoleDemotion(target.role, role)) {
+      await prisma.userInvite.updateMany({
+        where: { invitedBy: req.params.id, acceptedAt: null },
+        data:  { expiresAt: new Date() },
+      });
+    }
+
     return res.json({ success: true, data: { user } });
   } catch (err) {
     console.error('Update user error:', err);
@@ -506,6 +535,11 @@ router.put('/:id/deactivate', requireAdmin, async (req, res) => {
       data:  { tokenEpoch: { increment: 1 } },
     });
 
+    // PEN-2: expire outstanding invites when user is deactivated
+    await prisma.userInvite.updateMany({
+      where: { invitedBy: targetId, acceptedAt: null },
+      data:  { expiresAt: new Date() },
+    });
     // Audit 6.4.6 — capture optional churn reason for retention analysis.
     // The admin who triggered the deactivate fills the reason in the UI
     // prompt. Free-text capped at 500 chars; null when admin skips.

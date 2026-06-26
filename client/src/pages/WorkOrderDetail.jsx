@@ -35,6 +35,11 @@ import {
 
 const CONDITIONS = ['C1', 'C2', 'C3'];
 const DECALS = ['GREEN', 'YELLOW', 'RED'];
+const PASS_FAIL_META = {
+  GREEN:  { label: 'Pass',        color: 'var(--chip-green-fg, #16a34a)', bg: 'var(--chip-green-bg, #f0fdf4)' },
+  YELLOW: { label: 'Conditional', color: 'var(--chip-amber-fg, #d97706)', bg: 'var(--chip-amber-bg, #fffbeb)' },
+  RED:    { label: 'Fail',        color: 'var(--chip-red-fg, #dc2626)',   bg: 'var(--chip-red-bg, #fef2f2)' },
+};
 const SEVERITIES = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
 const NETA_CERT_LEVELS = ['LEVEL_I', 'LEVEL_II', 'LEVEL_III', 'LEVEL_IV'];
 const CERT_LABELS = {
@@ -185,6 +190,7 @@ function CompleteModal({ onClose, onComplete, saving, error }) {
 // ── Leave-Behind PDF button — fetches as blob, opens in new tab ────────────
 function LeaveBehindButton({ woId, label = 'Leave-Behind PDF' }) {
   const [busy, setBusy] = useState(false);
+  const [pdfError, setPdfError] = useState('');
   async function generate() {
     if (busy) return;
     setBusy(true);
@@ -198,16 +204,23 @@ function LeaveBehindButton({ woId, label = 'Leave-Behind PDF' }) {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-      alert('Could not generate leave-behind PDF. Please try again.');
+      setPdfError('Could not generate leave-behind PDF. Please try again.');
     } finally {
       setBusy(false);
     }
   }
   return (
-    <button className="btn btn-secondary" onClick={generate} disabled={busy}>
-      <FileText size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 5 }} />
-      {busy ? 'Generating…' : label}
-    </button>
+    <>
+      {pdfError && (
+        <div style={{ color: 'var(--color-danger)', fontSize: 'var(--font-size-xs)', marginTop: 4 }}>
+          {pdfError}
+        </div>
+      )}
+      <button className="btn btn-secondary" onClick={() => { setPdfError(''); generate(); }} disabled={busy}>
+        <FileText size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 5 }} />
+        {busy ? 'Generating…' : label}
+      </button>
+    </>
   );
 }
 
@@ -991,7 +1004,7 @@ export default function WorkOrderDetail() {
                       </td>
                       <td>
                         {m.passFail
-                          ? <Chip meta={metaOf(DECAL_META, m.passFail)} fallback={m.passFail} />
+                          ? <Chip meta={metaOf(PASS_FAIL_META, m.passFail)} fallback={m.passFail} />
                           : <span className="text-muted">—</span>}
                       </td>
                       {canWrite && (
@@ -1058,7 +1071,7 @@ export default function WorkOrderDetail() {
                   <label style={labelStyle}>Pass/fail</label>
                   <select className="form-control" value={measForm.passFail} onChange={e => setMeasForm(f => ({ ...f, passFail: e.target.value }))}>
                     <option value="">—</option>
-                    {DECALS.map(d => <option key={d} value={d}>{metaOf(DECAL_META, d).label || d}</option>)}
+                    {DECALS.map(d => <option key={d} value={d}>{metaOf(PASS_FAIL_META, d).label || d}</option>)}
                   </select>
                 </div>
                 <button type="submit" className="btn btn-primary" disabled={measSaving || !measForm.measurementType.trim()}>
@@ -1107,9 +1120,17 @@ export default function WorkOrderDetail() {
                     )}
                   </div>
                   {canWrite && !d.resolvedAt && (
+                    <>
+                      {d.severity === 'IMMEDIATE' && (
+                        <div className="bg-amber-50 border border-amber-400 rounded p-3 text-sm text-amber-800 mb-3">
+                          ⚠ NETA MTS requires corrective action AND re-testing for IMMEDIATE deficiencies.
+                          Document corrective work in a linked work order before resolving.
+                        </div>
+                      )}
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => resolveDeficiency(d)}>
                       Resolve
                     </button>
+                    </>
                   )}
                 </div>
               ))}
@@ -1142,7 +1163,7 @@ export default function WorkOrderDetail() {
         </div>
 
         {/* ── Lab samples ────────────────────────────────────────────────── */}
-        <div className="card" style={{ marginBottom: 20, order: 4 }}>
+        <div className="card" style={{ marginBottom: 20, order: 5 }}>
           <div className="card-header">
             <div>
               <div className="card-title">Lab samples</div>

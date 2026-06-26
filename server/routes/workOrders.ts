@@ -348,6 +348,22 @@ router.post('/', requireManager, async (req, res) => {
     if (when && Number.isNaN(when.getTime())) {
       return res.status(400).json({ success: false, error: 'Invalid scheduledDate' });
     }
+    // CMMS-11: Reject scheduled dates that fall inside a blackout window.
+    if (when) {
+      const blackout = await prisma.blackoutWindow.findFirst({
+        where: {
+          accountId: req.user.accountId,
+          startsAt: { lte: when },
+          endsAt:   { gte: when },
+        },
+      });
+      if (blackout) {
+        return res.status(400).json({
+          success: false,
+          error: `Scheduled date falls within blackout window${blackout.reason ? `: ${blackout.reason}` : ''}`,
+        });
+      }
+    }
 
     // Test-condition provenance — zod gated the container shapes above;
     // toDecimal rejects non-numeric ambient strings here.
@@ -573,6 +589,33 @@ router.put('/:id', requireManager, async (req, res) => {
         ? { ...existing.asset, conditionPhysical: finalAsLeft, governingCondition: newGoverning }
         : existing.asset;
 
+      // CMMS-6: Block completion when an open IMMEDIATE deficiency exists.
+      const openImmediate = await prisma.deficiency.findFirst({
+        where: { workOrderId: existing.id, severity: 'IMMEDIATE', resolvedAt: null },
+      });
+      if (openImmediate) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot complete: open IMMEDIATE deficiency must be resolved before work order completion',
+        });
+      }
+
+      // ESO-11: Re-validate arc flash study at completion for energized work orders.
+      if (existing.requiresEnergized) {
+        const studyLink = await prisma.systemStudyAsset.findFirst({
+          where: { assetId: existing.assetId, accountId: req.user.accountId, study: { supersededById: null } },
+          include: { study: { select: { performedDate: true, expiresAt: true } } },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (!studyLink?.study?.performedDate) {
+          return res.status(400).json({ success: false, error: 'Cannot complete energized work order: no valid arc flash study on file' });
+        }
+        const ageDays = (Date.now() - new Date(studyLink.study.performedDate).getTime()) / 86400000;
+        if (ageDays > 1826) {
+          return res.status(400).json({ success: false, error: 'Cannot complete energized work order: arc flash study exceeds 5-year NFPA 70E limit' });
+        }
+      }
+
       // ── Pre-compute side-effects (pure reads/calc) BEFORE the transaction ──
       // 2. Primary schedule roll-forward + provenance.
       let rolledPrimary: { lastCompletedDate: any; nextDueDate: any } | null = null;
@@ -754,6 +797,19 @@ router.put('/:id', requireManager, async (req, res) => {
         }
       }
       updateData.completedDate = when;
+      // INS-7: Audit when completedDate is amended on an already-COMPLETE work order.
+      const oldCompDate = existing.completedDate?.toISOString() ?? null;
+      const newCompDate = when ? when.toISOString() : null;
+      if (oldCompDate !== newCompDate) {
+        await writeActivityLog({
+          accountId: req.user.accountId,
+          userId:    req.user.id,
+          action:    'WORK_ORDER_DATE_AMENDED',
+          entityType: 'WorkOrder',
+          entityId:  existing.id,
+          details:   { oldCompletedDate: oldCompDate, newCompletedDate: newCompDate },
+        }).catch(() => {});
+      }
     }
 
     const workOrder = await prisma.workOrder.update({
@@ -1295,6 +1351,19 @@ router.post('/:id/parts', requireManager, async (req, res) => {
       select: { id: true },
     });
     if (!part) return res.status(404).json({ success: false, error: 'Part not found' });
+
+    // CMMS-5: Block negative qtyOnHand — verify available stock before decrement.
+    const inventoryRows = await prisma.spareInventory.findMany({
+      where: { partId, accountId: req.user.accountId },
+      select: { id: true, qtyOnHand: true },
+    });
+    const totalOnHand = inventoryRows.reduce((sum: number, r: any) => sum + Number(r.qtyOnHand), 0);
+    if (totalOnHand < qty) {
+      return res.status(400).json({
+        success: false,
+        error: `Insufficient stock: ${totalOnHand} on hand, ${qty} requested`,
+      });
+    }
 
     const [usage] = await prisma.$transaction([
       prisma.workOrderPartUsage.create({

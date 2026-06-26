@@ -15,6 +15,7 @@ import prisma from '../lib/prisma';
 const { requireOemAdmin } = require('../middleware/roles');
 const { buildComplianceGap } = require('../lib/complianceReport');
 const { buildPortfolioRank } = require('../lib/portfolioRank');
+const { validateWebhookUrl } = require('../lib/webhook');
 
 const DAY_MS = 86_400_000;
 
@@ -1066,15 +1067,18 @@ router.patch('/settings', async (req: any, res: any) => {
     let newSecret: string | null = null;
 
     if (webhookUrl !== undefined) {
-      if (webhookUrl && !String(webhookUrl).startsWith('https://')) {
-        return res.status(400).json({ error: 'webhookUrl must be HTTPS' });
-      }
-      data.webhookUrl = webhookUrl || null;
       if (webhookUrl) {
+        // PEN-1: full SSRF validation — blocks private IPs, metadata endpoints,
+        // credentials in URL, non-HTTPS, and cloud-metadata hostnames.
+        const check = await validateWebhookUrl(webhookUrl);
+        if (!check.valid) {
+          return res.status(400).json({ error: check.reason ?? 'Invalid webhook URL' });
+        }
         // Rotate secret whenever webhookUrl is set or changed
         newSecret = crypto.randomBytes(32).toString('hex');
         data.webhookSecret = newSecret;
       }
+      data.webhookUrl = webhookUrl || null;
     }
     if (digestIntervalDays !== undefined) {
       const d = parseInt(String(digestIntervalDays), 10);

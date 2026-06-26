@@ -106,7 +106,7 @@ async function authenticateToken(req, res, next) {
     // that bump is now invalid. Tokens predating this feature carry no `ep`
     // and are treated as epoch 0 — they remain valid until their short TTL
     // expires, which is the intended backwards-compatible rollout behavior.
-    if ((decoded.ep ?? 0) !== user.tokenEpoch) {
+    if ((decoded.ep ?? 0) < user.tokenEpoch) {
       return res.status(401).json({ success: false, error: 'Token revoked — please sign in again' });
     }
 
@@ -164,7 +164,7 @@ async function optionalAuthenticateToken(req, _res, next) {
     });
     // L2: honor token-epoch revocation here too — a revoked token must not
     // enrich req.user on soft-auth endpoints either.
-    if (user && user.isActive && (decoded.ep ?? 0) === user.tokenEpoch) {
+    if (user && user.isActive && (decoded.ep ?? 0) >= user.tokenEpoch) {
       const { tokenEpoch: _omit, ...safeUser } = user;
       req.user = safeUser;
     } else {

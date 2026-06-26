@@ -70,6 +70,11 @@ import {
   fmtMoney,
 } from '../lib/equipment';
 
+const fmtDateTime = (d) => new Date(d).toLocaleString('en-US', {
+  month: 'short', day: 'numeric', year: 'numeric',
+  hour: 'numeric', minute: '2-digit',
+});
+
 const CONDITION_TIP =
   'NFPA 70B:2023 condition of maintenance: three axes (physical / criticality / ' +
   'environment), each C1 good, C2 fair, or C3 poor. The worst axis governs and ' +
@@ -1366,25 +1371,6 @@ export default function AssetDetail() {
           </div>
         )}
 
-        {/* ── Documents (compact) ───────────────────────────────────────────── */}
-        {documents.length > 0 && (
-          <div className="card mb-16">
-            <div className="card-header"><div className="card-title">Documents ({documents.length})</div></div>
-            <div className="card-body" style={{ padding: 0 }}>
-              {documents.map(doc => (
-                <div key={doc.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '10px 16px', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-ui)' }}>
-                  <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {doc.filename || doc.originalName || 'Document'}
-                  </span>
-                  <span className="text-muted" style={{ fontSize: 'var(--font-size-xs)', whiteSpace: 'nowrap' }}>
-                    {doc.uploader?.name ? `${doc.uploader.name} · ` : ''}{fmtDate(doc.uploadedAt)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* ── Activity feed ─────────────────────────────────────────────────── */}
         <div className="card mb-16">
           <div className="card-header"><div className="card-title">Activity</div></div>
@@ -1399,7 +1385,7 @@ export default function AssetDetail() {
                   <div style={{ flex: 1 }}>
                     <div>{activityText(log)}</div>
                     <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                      {log.user?.name || 'System'} · {fmtDate(log.createdAt)}
+                      {log.user?.name || 'System'} · {fmtDateTime(log.createdAt)}
                     </div>
                   </div>
                 </div>

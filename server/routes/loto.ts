@@ -272,7 +272,7 @@ router.patch('/:id/status', requireManager, async (req, res) => {
 
     const existing = await prisma.lotoProc.findFirst({
       where:  { id: req.params.id, assetId, accountId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, createdById: true },
     });
     if (!existing) return res.status(404).json({ success: false, error: 'Procedure not found' });
 
@@ -280,6 +280,10 @@ router.patch('/:id/status', requireManager, async (req, res) => {
 
     // Activating: record approver + auto-archive any current active procedure
     if (status === 'active') {
+      // ESO-6: prevent self-approval — the procedure author cannot approve their own LOTO procedure
+      if (req.user.id === existing.createdById) {
+        return res.status(403).json({ success: false, error: 'Procedure author cannot approve their own LOTO procedure' });
+      }
       updateData.approvedById = req.user.id;
       updateData.approvedAt   = new Date();
     }

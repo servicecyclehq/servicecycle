@@ -246,16 +246,15 @@ async function saveToLocal(buf, filename) {
   }
 }
 
-async function pruneLocalBackups() {
-  const dir = getLocalPath();
+
+// SRE-10: extracted helper so pruneLocalBackups can apply the same
+// retention logic to both the configured path and the /tmp fallback.
+async function _pruneDir(dir: string): Promise<number> {
   try {
     const files = await fsp.readdir(dir);
     const cutoff = Date.now() - getRetentionDays() * 86_400_000;
     let pruned = 0;
     for (const f of files) {
-      // Prune both encrypted (.sql.gz.enc) and legacy plaintext (.sql.gz)
-      // backups so an operator who flips BACKUP_ENCRYPT on/off across runs
-      // still gets retention applied to both shapes.
       if (!f.endsWith('.sql.gz') && !f.endsWith('.sql.gz.enc')) continue;
       const stat = await fsp.stat(path.join(dir, f));
       if (stat.mtimeMs < cutoff) {
@@ -265,8 +264,20 @@ async function pruneLocalBackups() {
     }
     return pruned;
   } catch {
-    return 0; // dir may not exist yet on first run
+    return 0;
   }
+}
+
+async function pruneLocalBackups() {
+  const localPath = getLocalPath();
+  let pruned = await _pruneDir(localPath);
+
+  // Also prune the fallback tmp path if it exists (SRE-10)
+  const fallbackPath = '/tmp/servicecycle-backups';
+  if (fallbackPath !== localPath && fs.existsSync(fallbackPath)) {
+    pruned += await _pruneDir(fallbackPath);
+  }
+  return pruned;
 }
 
 // ── S3 destination ────────────────────────────────────────────────────────────
@@ -312,9 +323,15 @@ async function pruneS3Backups() {
   } while (token);
 
   if (!toDelete.length) return 0;
-  await getS3().send(new DeleteObjectsCommand({
-    Bucket: bucket, Delete: { Objects: toDelete, Quiet: true },
-  }));
+  // Chunk into batches of 1000 (AWS S3 DeleteObjects limit) (SRE-8)
+  const chunkSize = 1000;
+  for (let i = 0; i < toDelete.length; i += chunkSize) {
+    const chunk = toDelete.slice(i, i + chunkSize);
+    await getS3().send(new DeleteObjectsCommand({
+      Bucket: bucket,
+      Delete: { Objects: chunk, Quiet: true },
+    }));
+  }
   return toDelete.length;
 }
 

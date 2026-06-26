@@ -126,10 +126,7 @@ const FROM_ADDRESS = process.env.EMAIL_FROM || null;
 const LEGACY_DIGEST = process.env.ALERT_LEGACY_DIGEST === 'on';
 
 // ── Locale helpers ────────────────────────────────────────────────────────────
-// Default to en-US/USD for current deployments.
-// Swap via env vars when a non-US customer onboards — one-line change each.
-// TODO: source from account settings once multi-locale customers are onboarded.
-const DEFAULT_LOCALE   = process.env.DEFAULT_LOCALE   || 'en-US';
+import { DEFAULT_LOCALE } from './locale';
 
 function fmtDate(d: Date | string | null, opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', year: 'numeric' }): string {
   if (!d) return 'N/A';
@@ -351,30 +348,33 @@ async function deliverWebhooks({ accountId, alertItems }) {
 
   const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
+  const deliveryPromises: Promise<void>[] = [];
   for (const endpoint of endpoints) {
     const url    = decryptIfEncrypted(endpoint.url);
     const secret = decryptIfEncrypted(endpoint.hmacSecret);
 
     for (const alertItem of alertItems) {
-      try {
-        const result = await deliverWebhook({
+      deliveryPromises.push(
+        deliverWebhook({
           url,
           hmacSecret:        secret,
           alertItem,
           appUrl,
           accountId,
           webhookEndpointId: endpoint.id,
-        });
-        if (!result.ok) {
-          console.warn(
-            `[AlertEngine] Webhook ${endpoint.id} failed for asset ${alertItem.asset.id}: ${result.reason}`
-          );
-        }
-      } catch (err) {
-        console.warn(`[AlertEngine] Webhook ${endpoint.id} threw:`, err.message);
-      }
+        }).then((result: any) => {
+          if (!result.ok) {
+            console.warn(
+              `[AlertEngine] Webhook ${endpoint.id} failed for asset ${alertItem.asset.id}: ${result.reason}`
+            );
+          }
+        }).catch((err: any) => {
+          console.error('[alertEngine] webhook delivery failed:', err?.message);
+        })
+      );
     }
   }
+  await Promise.allSettled(deliveryPromises);
 }
 
 // ── Event-webhook delivery (new alert types: deficiency, arc-flash, asset) ────
@@ -477,64 +477,6 @@ async function runAlertEngine({ accountId }: any = {}) {
     // unbounded below so deep-overdue schedules keep escalating until fixed.
     const lookAhead = new Date(now.getTime() + 185 * 24 * 60 * 60 * 1000);
 
-    // Defensive take(2000): a single account with tens of thousands of
-    // schedules can't pull the whole platform into one batch.
-    const schedules = await prisma.maintenanceSchedule.findMany({
-      where: {
-        ...(accountId ? { accountId } : {}),
-        isActive:    true,
-        nextDueDate: { not: null, lte: lookAhead },
-        asset: { archivedAt: null, inService: true },
-      },
-      include: {
-        taskDefinition: { select: { id: true, taskName: true, taskCode: true, standardRef: true } },
-        asset: {
-          select: {
-            id: true, equipmentType: true, manufacturer: true, model: true,
-            serialNumber: true, accountId: true,
-            site: { select: { id: true, name: true } },
-            // Responsible person — owner-aware routing adds this user as a
-            // digest recipient for every tier on their assets. isActive rides
-            // along so a deactivated owner is skipped at routing time.
-            owner: { select: { id: true, email: true, name: true, role: true, isActive: true } },
-          },
-        },
-        account: {
-          include: {
-            users: {
-              where:  { isActive: true },
-              select: { id: true, email: true, name: true, role: true },
-            },
-          },
-        },
-      },
-      take: 2000,
-      orderBy: { nextDueDate: 'asc' },
-    });
-
-    // ── Dedup pre-fetch ───────────────────────────────────────────────────
-    // One bulk fetch + in-memory Set (inherited N+1 audit fix). Cycle-aware:
-    // alerts created BEFORE the schedule's lastCompletedDate belong to a
-    // previous maintenance cycle and must not suppress this cycle's tiers.
-    const scheduleIds = schedules.map(s => s.id);
-    const lastCompletedById = new Map(
-      schedules.map(s => [s.id, s.lastCompletedDate ? new Date(s.lastCompletedDate).getTime() : 0])
-    );
-
-    const existing = scheduleIds.length === 0 ? [] : await prisma.alert.findMany({
-      where: {
-        scheduleId: { in: scheduleIds },
-        status:     { in: ['sent', 'acknowledged'] },
-      },
-      select: { scheduleId: true, alertType: true, leadDays: true, createdAt: true },
-    });
-
-    const fired = new Set(
-      existing
-        .filter(a => new Date(a.createdAt).getTime() >= (lastCompletedById.get(a.scheduleId) || 0))
-        .map(a => `${a.scheduleId}|${a.alertType}|${a.leadDays}`)
-    );
-
     const newAlerts = [];
     const breachLogs = []; // -90d tier writes an audit-trail row
 
@@ -544,18 +486,83 @@ async function runAlertEngine({ accountId }: any = {}) {
       if (!accountDigests.has(accId)) accountDigests.set(accId, { users, alertItems: [] });
     }
 
-﻿    // â”€â”€ Group schedules by accountId for per-account error isolation â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const byAccount = new Map<string, typeof schedules>();
-    for (const sched of schedules) {
-      const arr = byAccount.get(sched.accountId) ?? [];
-      arr.push(sched);
-      byAccount.set(sched.accountId, arr);
-    }
+    // fired: global dedup Set across all cursor pages — keyed by
+    // scheduleId|alertType|leadDays. Populated per batch from the DB
+    // (existing sent/acknowledged alerts that belong to the CURRENT cycle).
+    const fired = new Set<string>();
 
-    // â”€â”€ Tier crossing detection (per-account isolated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    for (const [_acctId, accountSchedules] of byAccount) {
-      try {
-        for (const schedule of accountSchedules) {
+    // ── Cursor-paginated schedule sweep — removes the 2000-row hard cap ──────
+    let cursor: string | undefined;
+    while (true) {
+      const batch = await prisma.maintenanceSchedule.findMany({
+        where: {
+          ...(accountId ? { accountId } : {}),
+          isActive:    true,
+          nextDueDate: { not: null, lte: lookAhead },
+          asset: { archivedAt: null, inService: true },
+        },
+        take: 500,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: 'asc' },
+        include: {
+          taskDefinition: { select: { id: true, taskName: true, taskCode: true, standardRef: true } },
+          asset: {
+            select: {
+              id: true, equipmentType: true, manufacturer: true, model: true,
+              serialNumber: true, accountId: true,
+              site: { select: { id: true, name: true } },
+              // Responsible person — owner-aware routing adds this user as a
+              // digest recipient for every tier on their assets. isActive rides
+              // along so a deactivated owner is skipped at routing time.
+              owner: { select: { id: true, email: true, name: true, role: true, isActive: true } },
+            },
+          },
+          account: {
+            include: {
+              users: {
+                where:  { isActive: true },
+                select: { id: true, email: true, name: true, role: true },
+              },
+            },
+          },
+        },
+      });
+      if (batch.length === 0) break;
+      cursor = batch[batch.length - 1].id;
+
+      // ── Dedup pre-fetch (per batch) ────────────────────────────────────
+      // One bulk fetch + in-memory Set (inherited N+1 audit fix). Cycle-aware:
+      // alerts created BEFORE the schedule's lastCompletedDate belong to a
+      // previous maintenance cycle and must not suppress this cycle's tiers.
+      const batchIds = batch.map(s => s.id);
+      const lastCompletedById = new Map(
+        batch.map(s => [s.id, s.lastCompletedDate ? new Date(s.lastCompletedDate).getTime() : 0])
+      );
+      const existing = await prisma.alert.findMany({
+        where: {
+          scheduleId: { in: batchIds },
+          status:     { in: ['sent', 'acknowledged'] },
+        },
+        select: { scheduleId: true, alertType: true, leadDays: true, createdAt: true },
+      });
+      for (const a of existing) {
+        if (new Date(a.createdAt).getTime() >= (lastCompletedById.get(a.scheduleId) || 0)) {
+          fired.add(`${a.scheduleId}|${a.alertType}|${a.leadDays}`);
+        }
+      }
+
+      // ── Group batch by accountId for per-account error isolation ──────────
+      const byAccount = new Map<string, typeof batch>();
+      for (const sched of batch) {
+        const arr = byAccount.get(sched.accountId) ?? [];
+        arr.push(sched);
+        byAccount.set(sched.accountId, arr);
+      }
+
+      // ── Tier crossing detection (per-account isolated) ────────────────────
+      for (const [_acctId, accountSchedules] of byAccount) {
+        try {
+          for (const schedule of accountSchedules) {
           const daysUntil = Math.ceil(
             (new Date(schedule.nextDueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
           );
@@ -616,11 +623,12 @@ async function runAlertEngine({ accountId }: any = {}) {
             });
           }
         }
-      } catch (accountErr: any) {
-        console.error(`[alertEngine] Error processing alerts for account ${_acctId}:`, accountErr);
-        // Continue to next account rather than aborting all
-      }
-    }
+        } catch (accountErr: any) {
+          console.error(`[alertEngine] Error processing alerts for account ${_acctId}:`, accountErr);
+          // Continue to next account rather than aborting all
+        }
+      } // end for byAccount
+    } // end while cursor pagination
 
     // ── Batch-insert alerts + breach audit rows ───────────────────────────
     if (newAlerts.length > 0) {

@@ -1358,17 +1358,14 @@ app.use('/api/documents',         authenticateToken, documentRoutes);
 // guards live inside the route handler.
 app.use('/api/admin',             authenticateToken, adminRoutes);
 app.use('/api/admin/audit-chain', authenticateToken, adminAuditChainRoutes);
-const { requireSuperAdmin } = require('./middleware/roles');
+const { requireAdmin, requireSuperAdmin } = require('./middleware/roles');
 app.use('/api/admin/partner-orgs', authenticateToken, requireSuperAdmin, adminPartnerOrgsRoutes);
 
 // T2-N3 (audit-2 2026-05-22): admin endpoint to trigger deep restore test on demand.
 // POST /api/admin/restore-test/deep -- admin only; no body required.
 // Returns the full comparison result (live vs. restored row counts).
 // Requires PG_TEST_DB_URL env var; returns 503 if not configured.
-app.post('/api/admin/restore-test/deep', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ success: false, error: 'Admin only' });
-  }
+app.post('/api/admin/restore-test/deep', authenticateToken, requireAdmin, async (req, res) => {
   if (!process.env.PG_TEST_DB_URL) {
     return res.status(503).json({
       success: false,
@@ -2506,3 +2503,16 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
   }
 }); // end app.listen callback
 } // end if NODE_ENV !
+// Graceful shutdown -- drain requests, close DB pool (SRE-2)
+const _shutdown = (signal: string) => {
+  console.log(`[shutdown] ${signal} received -- draining in-flight requests...`);
+  httpServer.close(() => {
+    console.log('[shutdown] HTTP server closed');
+    prisma.$disconnect()
+      .then(() => { console.log('[shutdown] DB pool closed'); process.exit(0); })
+      .catch(() => process.exit(1));
+  });
+  setTimeout(() => { console.error('[shutdown] Force-kill after grace period'); process.exit(1); }, 25000).unref();
+};
+process.on('SIGTERM', () => _shutdown('SIGTERM'));
+process.on('SIGINT',  () => _shutdown('SIGINT'));
