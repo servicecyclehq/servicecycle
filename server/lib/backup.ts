@@ -441,4 +441,43 @@ async function runBackup(accountId, triggeredBy = 'cron') {
 
     try {
       await prisma.backupLog.create({
-     
+        data: { accountId, status: 'failure', filename, error: msg.slice(0, 2000), triggeredBy },
+      });
+    } catch (dbErr) {
+      console.error(`${pfx} Could not write failure log:`, dbErr.message);
+    }
+
+    try {
+      require('./betterStack').logEvent('backup_failed', {
+        accountId,
+        filename,
+        error: msg.slice(0, 500),
+        triggeredBy,
+      });
+    } catch (bsErr) {
+      console.warn(`${pfx} Could not send betterStack backup_failed event:`, bsErr.message);
+    }
+    await sendFailureEmail(accountId, msg);
+    return { success: false, error: msg, filename };
+  }
+}
+
+/**
+ * Returns a summary of current backup configuration for the status API.
+ */
+function getBackupConfig() {
+  const dest = getDestination();
+  return {
+    dest,
+    localConfigured:   dest === 'local' || dest === 'both',
+    localPath:         (dest === 'local' || dest === 'both') ? getLocalPath() : null,
+    s3Configured:      s3Configured(),
+    retentionDays:     getRetentionDays(),
+  };
+}
+
+module.exports = { runBackup, isConfigured, getBackupConfig,
+  warnIfLocalDest,
+};
+
+export {};
