@@ -18,7 +18,7 @@ info:
     **Settings → API Keys**. Pass it as a Bearer token:
 
     ```
-    Authorization: Bearer liq_<your-key>
+    Authorization: Bearer sc_<your-key>
     ```
 
     Keys carry a **scope**: `read` (default) or `write`. Read endpoints accept either scope.

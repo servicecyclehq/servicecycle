@@ -7,7 +7,7 @@
  * DELETE /:id             — revoke a key (soft-delete via revokedAt)
  *
  * Key generation:
- *   1. Generate 32 random bytes → hex string (64 chars) prefixed with "liq_"
+ *   1. Generate 32 random bytes → hex string (64 chars) prefixed with "sc_"
  *      so users can recognize ServiceCycle keys at a glance and secret-scanners
  *      (e.g. GitHub push protection) can target this prefix.
  *   2. SHA-256 hash the key → store only the hash.
@@ -68,7 +68,7 @@ router.post('/', async (req, res) => {
 
   // Generate a 32-byte (256-bit) random key with a recognisable prefix.
   const rawBytes   = crypto.randomBytes(32).toString('hex');
-  const plaintext  = `liq_${rawBytes}`;
+  const plaintext  = `sc_${rawBytes}`;
   const keyHash    = hashApiKey(plaintext);
 
   try {

@@ -618,7 +618,7 @@ router.delete('/positions/:id', requireManager, async (req, res) => {
 
 // ═══ System Studies ═══════════════════════════════════════════════════════════
 // Site-level engineering studies (SystemStudy — renamed from ArcFlashStudy):
-//   arc_flash       — NFPA 70E 130.5 incident-energy analysis; review ≤5yr
+//   arc_flash       — NFPA 70E 130.5(G) incident-energy analysis; review ≤5yr
 //   short_circuit   — fault-current study; ≤5yr or after system changes
 //   coordination    — protective device coordination study; same cadence
 //   one_line_review — dated confirmation the one-line reflects the system

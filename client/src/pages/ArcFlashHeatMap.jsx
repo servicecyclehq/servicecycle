@@ -66,21 +66,22 @@ export default function ArcFlashHeatMap() {
   }, [data, onlyDanger]);
 
   return (
-    <div className="page-body">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+    <>
+      <div className="page-header">
         <div>
-          <BackLink fallback="/reports" fallbackLabel="Reports" />
-          <h1 style={{ margin: '6px 0 0', fontSize: '1.3rem' }}>Arc Flash Heat-Map</h1>
-          <p style={{ margin: '4px 0 0', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-            Every labelled bus, shaded by incident energy and outlined by data confidence. ServiceCycle is the data layer; a licensed PE runs and stamps the study.
-          </p>
+          <h1 className="page-title">Arc Flash Heat Map</h1>
+          <div className="page-subtitle">Incident energy distribution across sites and equipment</div>
         </div>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.82rem' }}>
-          <input type="checkbox" checked={onlyDanger} onChange={e => setOnlyDanger(e.target.checked)} />
-          DANGER only
-        </label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.82rem' }}>
+            <input type="checkbox" checked={onlyDanger} onChange={e => setOnlyDanger(e.target.checked)} />
+            DANGER only
+          </label>
+        </div>
       </div>
 
+      <div className="page-body">
       {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
       {loading && <div className="card" style={{ padding: 16 }}>Loading…</div>}
 
@@ -131,6 +132,7 @@ export default function ArcFlashHeatMap() {
           )}
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }

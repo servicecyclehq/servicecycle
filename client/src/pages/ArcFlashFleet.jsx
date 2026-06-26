@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { downloadAuthedFile } from '../api/download';
-import BackLink from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 function bandColor(score) {
@@ -48,22 +47,21 @@ export default function ArcFlashFleet() {
   const t = data?.totals;
 
   return (
-    <div className="page-body">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+    <>
+      <div className="page-header">
         <div>
-          <BackLink fallback="/reports" fallbackLabel="Reports" />
-          <h1 style={{ margin: '6px 0 0', fontSize: '1.3rem' }}>Arc Flash Fleet Dashboard</h1>
-          <p style={{ margin: '4px 0 0', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-            Arc-flash risk across every site: DANGER coverage, data confidence, sanity-check findings, and expiring studies. ServiceCycle is the data layer; a licensed PE runs and stamps the study.
-          </p>
+          <h1 className="page-title">Arc Flash Fleet Dashboard</h1>
+          <div className="page-subtitle">Portfolio-wide incident energy and PPE overview</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: "flex", gap: 8 }}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={exportModel} disabled={exporting} title="Export the collected model as CSV for SKM / ETAP / EasyPower">{exporting ? 'Exporting…' : 'Export model (CSV)'}</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => downloadAuthedFile('/api/arc-flash/fleet?format=csv', 'arc-flash-fleet.csv').catch(() => {})} title="Export the per-site attention rollup (DANGER, confidence, incidents) as CSV">Export rollup (CSV)</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => downloadAuthedFile('/api/arc-flash/labels.pdf', 'arc-flash-labels.pdf').catch(() => {})} title="Print-ready NFPA 70E labels for every bus (4x6, one per page)">Labels (PDF)</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
         </div>
       </div>
+
+      <div className="page-body">
 
       <LoadGrowthBanner />
 
@@ -843,6 +841,7 @@ function AuditBundle() {
           <p style={{ marginTop: 12, fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>{p.exposureNote}</p>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }

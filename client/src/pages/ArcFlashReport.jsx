@@ -48,18 +48,20 @@ export default function ArcFlashReport() {
   const s = data?.summary;
 
   return (
-    <div className="page-body">
+    <>
       <style>{PRINT_CSS}</style>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+      <div className="page-header no-print">
         <div>
-          <span className="no-print"><BackLink fallback="/reports" fallbackLabel="Reports" /></span>
-          <h1 style={{ margin: '6px 0 0', fontSize: '1.3rem' }}>Arc Flash Label Report</h1>
-          <p style={{ margin: '4px 0 0', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-            Current NFPA 70E 130.5(H) labels across all sites. ServiceCycle is the data layer; a licensed PE runs and stamps the study.
-          </p>
+          <h1 className="page-title">Arc Flash Label Report</h1>
+          <div className="page-subtitle">Study results and label status by asset</div>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm no-print" onClick={() => window.print()}>Print</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span className="no-print"><BackLink fallback="/reports" fallbackLabel="Reports" /></span>
+          <button type="button" className="btn btn-secondary btn-sm no-print" onClick={() => window.print()}>Print</button>
+        </div>
       </div>
+
+      <div className="page-body">
 
       {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
       {loading && <div className="card" style={{ padding: 16 }}>Loading…</div>}
@@ -115,6 +117,7 @@ export default function ArcFlashReport() {
         </>
       )}
     </div>
+    </>
   );
 }
 

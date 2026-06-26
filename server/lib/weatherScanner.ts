@@ -157,22 +157,24 @@ async function notifyAffectedAccounts(
   // DisasterBanner component (which polls GET /api/disaster-events on load).
   // We also send an email digest to admin/manager users so they're aware
   // even if they're not actively logged in.
-  const { sendAlertEmail } = require('./email');
+  const { sendEmail } = require('./email');
 
   for (const account of accounts) {
     for (const user of account.users) {
       try {
-        await sendAlertEmail({
+        await sendEmail({
           to:      user.email,
-          name:    user.name,
           subject: `[ServiceCycle] ⚠️ ${event.title} — Your Facility May Be Affected`,
-          body:    `A severe weather event has been detected in your region.\n\n` +
-                   `Event: ${event.title}\n` +
-                   `Region: ${event.region}\n` +
-                   `Severity: ${event.severity.toUpperCase()}\n\n` +
-                   `Log in to ServiceCycle to review your assets and declare an emergency if needed to prioritise your service queue.\n\n` +
+          html:    `<p>Hi ${user.name || 'there'},</p>` +
+                   `<p>A severe weather event has been detected in your region.</p>` +
+                   `<ul>` +
+                   `<li><strong>Event:</strong> ${event.title}</li>` +
+                   `<li><strong>Region:</strong> ${event.region}</li>` +
+                   `<li><strong>Severity:</strong> ${event.severity.toUpperCase()}</li>` +
+                   `</ul>` +
+                   `<p>Log in to ServiceCycle to review your assets and declare an emergency if needed to prioritise your service queue.</p>` +
                    (account.serviceRepPhone
-                     ? `Your service rep (${account.serviceRepName || 'assigned rep'}) can be reached at ${account.serviceRepPhone}.\n`
+                     ? `<p>Your service rep (${account.serviceRepName || 'assigned rep'}) can be reached at ${account.serviceRepPhone}.</p>`
                      : ''),
         });
       } catch (e) {

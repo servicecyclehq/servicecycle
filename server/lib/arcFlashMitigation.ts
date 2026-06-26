@@ -106,8 +106,12 @@ export function recommendMitigations(bus: any): { danger: boolean; options: any[
 const PPE_BANDS: Array<[number, number]> = [[4, 1], [8, 2], [25, 3], [40, 4]];
 function ppeCategoryFor(ie: number | null): number | null {
   if (ie == null) return null;
+  // NFPA 70E: below 1.2 cal/cm² no arc flash boundary exists — no PPE category applies.
+  if (ie < 1.2) return null;
+  // > 40 cal -> DANGER, no category (de-energize; do not work energized).
+  if (ie > 40) return null;
   for (const [cal, cat] of PPE_BANDS) if (ie <= cal) return cat;
-  return null; // > 40 cal -> no category (de-energize)
+  return null; // safety net — unreachable given the >40 guard above
 }
 
 /**

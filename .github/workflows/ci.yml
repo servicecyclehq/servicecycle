@@ -1,8 +1,8 @@
 name: CI
 
 # Runs on every PR and on pushes to non-main branches.
-# Checks: TypeScript compile + unit tests + integration tests (real Postgres).
-# Required repo secret: none (all env vars are test-safe defaults).
+# Checks: security audit + TypeScript compile + unit tests + live-server smoke tests.
+# Required repo secrets: none (all env vars are test-safe defaults).
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test:
-    name: tsc + jest
+    name: tsc + jest + smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -33,6 +33,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://servicecycle:servicecycle@localhost:5432/servicecycle_test
+      JWT_SECRET: test-secret-minimum-32-chars-long-for-ci-!!
+      MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      EMAIL_MOCK: "true"
+      AI_ENABLED: "false"
+      DEMO_MODE: ""
+      NODE_ENV: test
+      PORT: "3001"
+      # auth.test.js gracefully skips when this doesn't match the seeded password.
+      # Set it explicitly so auth tests run (not just skip) in CI.
+      SEED_ADMIN_PASSWORD: "Admin1234!"
 
     defaults:
       run:
@@ -63,19 +76,89 @@ jobs:
         run: npx prisma generate
 
       - name: Run DB migrations
-        env:
-          DATABASE_URL: postgresql://servicecycle:servicecycle@localhost:5432/servicecycle_test
         run: npx prisma migrate deploy
 
-      - name: Unit tests (mocked Prisma — no DB)
-        run: npx jest --selectProjects unit --ci --forceExit
+      - name: Seed database
+        # Creates the demo tenant + admin@acme.com used by auth.test.js.
+        run: node prisma/seed.js
 
-      - name: Integration tests (real Postgres)
+      - name: Unit tests (mocked Prisma — no server needed)
+        # The unit jest project stubs out Prisma via moduleNameMapper.
+        # Excludes the three tests that require a live HTTP server — those
+        # run below after the server starts.
+        run: |
+          npx jest --selectProjects unit --ci --forceExit \
+            --testPathIgnorePatterns="tests/health\\.test\\.js" \
+            --testPathIgnorePatterns="tests/auth\\.test\\.js" \
+            --testPathIgnorePatterns="tests/aiQuota\\.test\\.js"
+
+      - name: Start API server (background — needed for smoke tests)
+        # health.test.js and auth.test.js call http://localhost:3001 via
+        # supertest. helpers.js uses TEST_BASE_URL || http://localhost:PORT.
+        # tsx is already installed in node_modules.
+        run: |
+          nohup node node_modules/tsx/dist/cli.mjs index.ts \
+            > /tmp/server.log 2>&1 &
+          echo $! > /tmp/server.pid
+          echo "Server PID: $(cat /tmp/server.pid)"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              break
+            fi
+            echo "  waiting... (${i}s)"
+            sleep 1
+          done
+          curl -sf http://localhost:3001/api/health \
+            || { echo "--- server log ---"; cat /tmp/server.log; exit 1; }
+
+      - name: Smoke tests (live server + real DB)
+        # health, auth, and aiQuota hit the running server / real Postgres.
+        # aiQuota self-skips if the DB schema doesn't have the expected tables,
+        # but with migrations run above it should pass fully.
+        run: |
+          npx jest --selectProjects unit --ci --forceExit \
+            --testPathPattern="tests/(health|auth|aiQuota)\.test\.js"
+
+      - name: Stop background server
+        if: always()
+        run: |
+          if [ -f /tmp/server.pid ]; then
+            kill "$(cat /tmp/server.pid)" 2>/dev/null || true
+          fi
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/server.log || true
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Client production build — catches broken imports, missing env vars,
+  # and Vite/Rollup bundling errors before they reach the server.
+  # Runs in parallel with the test job to keep wall-clock time low.
+  # ─────────────────────────────────────────────────────────────────────────
+  build-client:
+    name: Client build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      - name: Production build
+        run: npm run build
+        working-directory: client
         env:
-          TEST_DATABASE_URL: postgresql://servicecycle:servicecycle@localhost:5432/servicecycle_test
-          JWT_SECRET: test-secret-minimum-32-chars-long-for-ci-!!
-          MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          EMAIL_MOCK: "true"
-          AI_ENABLED: "false"
-          DEMO_MODE: ""
-        run: npx jest --selectProjects integration --ci --forceExit
+          # The client uses relative /api paths in production (Caddy proxies).
+          # Provide a placeholder so any VITE_API_URL guard in the build config
+          # doesn't error. The actual value is irrelevant for build correctness.
+          VITE_API_URL: https://servicecycle.app

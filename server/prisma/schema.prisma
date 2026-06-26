@@ -10,8 +10,6 @@ datasource db {
 // â”€â”€â”€ Enums â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Quote Request: why the customer is asking for a quote.
-// PENDING BROTHER VALIDATION â€” these 5 options are our best guess for the
-// electrical-maintenance service context; validate with real customer discovery.
 enum QuoteDriver {
   down_now // Asset is down right now â€” triggers EMERGENCY mode
   suspected_failing // Intermittent issues / early warning signs
@@ -21,7 +19,6 @@ enum QuoteDriver {
 }
 
 // Quote Request: customer's target timeline to proceed.
-// PENDING BROTHER VALIDATION â€” adjust wording to match how your reps quote these.
 enum QuoteTimeline {
   immediately // ASAP (pairs with down_now driver)
   within_1_week // Need action within 7 days
@@ -2274,7 +2271,7 @@ model RenderError {
 // EMERGENCY mode: when driver=down_now the frontend renders the rep phone
 // number in large text with "CALL NOW".
 //
-// 5 standard questions (PENDING BROTHER VALIDATION â€” finalised for demo/test):
+// 5 standard questions (finalised for demo/test):
 //   1. driver          â€” what prompted the request
 //   2. timeline        â€” how urgently is service needed
 //   3. outageAvailable â€” can the asset be de-energised + when
@@ -2289,8 +2286,6 @@ model QuoteRequest {
   assetId         String
   requestedById   String
   status          QuoteRequestStatus @default(requested)
-  // PENDING BROTHER VALIDATION â€” question values to be reviewed before
-  // first real customer contact. Current values are live for demo/test.
   driver          QuoteDriver
   timeline        QuoteTimeline
   outageAvailable Boolean? // can the asset be de-energised for service?

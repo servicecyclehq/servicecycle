@@ -11,7 +11,7 @@
  *
  *   completeness (40) — are the IEEE 1584 inputs actually captured (vs defaulted /
  *                       missing)? Reuses analyzeBusGaps so the two stay consistent.
- *   studyAge     (30) — how fresh is the bound study? NFPA 70E 130.5 recommends a
+ *   studyAge     (30) — how fresh is the bound study? NFPA 70E 130.5(G) recommends a
  *                       re-evaluation at least every 5 years; expired / none = 0.
  *   verification (20) — was the upstream device FIELD-verified (door opened + read,
  *                       or photo) vs typed-in / imported / absent?
@@ -28,7 +28,7 @@
 import { analyzeBusGaps } from './arcFlashGap';
 
 export const CONFIDENCE_WEIGHTS = { completeness: 40, studyAge: 30, verification: 20, drift: 10 };
-// NFPA 70E 130.5: arc-flash risk assessment reviewed at least every 5 years.
+// NFPA 70E 130.5(G): arc-flash risk assessment reviewed at least every 5 years.
 export const RE_EVAL_YEARS = 5;
 // Field-verified provenance is worth more than typed-in or imported data.
 const VERIFICATION_POINTS: Record<string, number> = { field: 20, photo: 16, manual: 10, import: 6 };

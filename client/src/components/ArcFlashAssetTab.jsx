@@ -3,6 +3,29 @@ import api from '../api/client';
 import { downloadAuthedFile } from '../api/download';
 import ArcFlashTrend from './ArcFlashTrend';
 
+// Parse a single field from a JSON settings string (used by the structured
+// as-found / as-left trip-setting form; the stored format stays a JSON string).
+function parseJsonField(jsonStr, key) {
+  if (!jsonStr) return '';
+  try {
+    const obj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+    return obj[key] ?? '';
+  } catch { return ''; }
+}
+
+// Update a single field within a JSON settings string. Empty clears the key;
+// numeric-looking values are coerced to numbers so the stored JSON stays typed.
+function updateJsonFieldInStr(jsonStr, key, value) {
+  let obj = {};
+  try { obj = jsonStr ? JSON.parse(jsonStr) : {}; } catch {}
+  if (value === '' || value === null || value === undefined) {
+    delete obj[key];
+  } else {
+    obj[key] = isNaN(Number(value)) ? value : Number(value);
+  }
+  return JSON.stringify(obj);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-asset Arc Flash tab — the surface for the schema-bootstrap data layer.
 // Pulls everything arc-flash about one asset from GET /api/arc-flash/asset/:id:
@@ -759,6 +782,11 @@ function DeviceTests({ data, assetId, canWrite, onChange, current }) {
     try { return JSON.parse(s); } catch { return null; } // null signals invalid
   }
 
+  // Update one trip-setting field on a JSON-string form field (asFound/asLeft).
+  const updateJsonField = (fieldName, key, value) => {
+    setForm(f => ({ ...f, [fieldName]: updateJsonFieldInStr(f[fieldName], key, value) }));
+  };
+
   async function submit(e) {
     e.preventDefault();
     setError('');
@@ -805,12 +833,88 @@ function DeviceTests({ data, assetId, canWrite, onChange, current }) {
             <label style={{ fontSize: '0.78rem' }}>Performed by
               <input style={inp} value={form.performedBy} onChange={e => setForm(f => ({ ...f, performedBy: e.target.value }))} />
             </label>
-            <label style={{ fontSize: '0.78rem' }}>As-found settings (JSON)
-              <input style={inp} placeholder='{"ltPickupA":400}' value={form.asFound} onChange={e => setForm(f => ({ ...f, asFound: e.target.value }))} />
-            </label>
-            <label style={{ fontSize: '0.78rem' }}>As-left settings (JSON)
-              <input style={inp} placeholder='{"ltPickupA":320}' value={form.asLeft} onChange={e => setForm(f => ({ ...f, asLeft: e.target.value }))} />
-            </label>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div style={{ fontSize: '0.78rem', marginBottom: 4 }}>As-Found Trip Settings</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="e.g. 400"
+                    value={parseJsonField(form.asFound, 'ltPickupA')}
+                    onChange={e => updateJsonField('asFound', 'ltPickupA', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Delay (s)</label>
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.4"
+                    value={parseJsonField(form.asFound, 'ltDelayS')}
+                    onChange={e => updateJsonField('asFound', 'ltDelayS', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="e.g. 2000"
+                    value={parseJsonField(form.asFound, 'stPickupA')}
+                    onChange={e => updateJsonField('asFound', 'stPickupA', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Delay (s)</label>
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.1"
+                    value={parseJsonField(form.asFound, 'stDelayS')}
+                    onChange={e => updateJsonField('asFound', 'stDelayS', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Instantaneous Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="e.g. 8000"
+                    value={parseJsonField(form.asFound, 'instantPickupA')}
+                    onChange={e => updateJsonField('asFound', 'instantPickupA', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Ground Fault Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="optional"
+                    value={parseJsonField(form.asFound, 'groundFaultA')}
+                    onChange={e => updateJsonField('asFound', 'groundFaultA', e.target.value)} />
+                </div>
+              </div>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div style={{ fontSize: '0.78rem', marginBottom: 4 }}>As-Left Trip Settings</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="e.g. 400"
+                    value={parseJsonField(form.asLeft, 'ltPickupA')}
+                    onChange={e => updateJsonField('asLeft', 'ltPickupA', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Long-Time Delay (s)</label>
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.4"
+                    value={parseJsonField(form.asLeft, 'ltDelayS')}
+                    onChange={e => updateJsonField('asLeft', 'ltDelayS', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="e.g. 2000"
+                    value={parseJsonField(form.asLeft, 'stPickupA')}
+                    onChange={e => updateJsonField('asLeft', 'stPickupA', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Short-Time Delay (s)</label>
+                  <input type="number" style={inp} step="0.01" placeholder="e.g. 0.1"
+                    value={parseJsonField(form.asLeft, 'stDelayS')}
+                    onChange={e => updateJsonField('asLeft', 'stDelayS', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Instantaneous Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="e.g. 8000"
+                    value={parseJsonField(form.asLeft, 'instantPickupA')}
+                    onChange={e => updateJsonField('asLeft', 'instantPickupA', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Ground Fault Pickup (A)</label>
+                  <input type="number" style={inp} placeholder="optional"
+                    value={parseJsonField(form.asLeft, 'groundFaultA')}
+                    onChange={e => updateJsonField('asLeft', 'groundFaultA', e.target.value)} />
+                </div>
+              </div>
+            </div>
             <label style={{ fontSize: '0.78rem' }}>Matches study?
               <select style={inp} value={form.matchesStudy} onChange={e => setForm(f => ({ ...f, matchesStudy: e.target.value }))}>
                 <option value="">Unknown</option><option value="yes">Yes</option><option value="no">No</option>

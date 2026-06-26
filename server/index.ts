@@ -2202,7 +2202,7 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
           },
           select: {
             id: true, accountId: true, assetId: true, description: true,
-            asset: { select: { name: true } },
+            asset: { select: { equipmentType: true, manufacturer: true, model: true } },
           },
           take: 500,
         });
@@ -2216,7 +2216,7 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
           },
           select: {
             accountId: true, assetId: true,
-            asset: { select: { name: true } },
+            asset: { select: { equipmentType: true, manufacturer: true, model: true } },
           },
           take: 500,
         });
@@ -2284,7 +2284,7 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
         for (const def of escalatedDefs) {
           await maybeCreate(def.accountId, def.assetId, {
             driver: 'suspected_failing',
-            notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${def.asset?.name ?? def.assetId}.`,
+            notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${def.asset ? `${def.asset.manufacturer || ''} ${def.asset.model || def.asset.equipmentType || 'Unknown Equipment'}`.trim() : def.assetId}.`,
           });
         }
 
@@ -2292,7 +2292,7 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
         for (const sched of c3Schedules) {
           await maybeCreate(sched.accountId, sched.assetId, {
             driver: 'failed_inspection',
-            notes:  `Auto-triggered: Asset "${sched.asset?.name ?? sched.assetId}" in C3 (immediate service required) condition.`,
+            notes:  `Auto-triggered: Asset "${sched.asset ? `${sched.asset.manufacturer || ''} ${sched.asset.model || sched.asset.equipmentType || 'Unknown Equipment'}`.trim() : sched.assetId}" in C3 (immediate service required) condition.`,
           });
         }
 

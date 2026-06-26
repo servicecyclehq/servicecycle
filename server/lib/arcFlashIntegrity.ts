@@ -3,7 +3,7 @@
  *
  * Task 25 — three additional scenarios beyond equipment-change triggers:
  *
- *   1. 5-year expiration (NFPA 70E §130.5):
+ *   1. 5-year expiration (NFPA 70E §130.5(G)):
  *      AccountSetting key ARC_FLASH_STUDY_DATE — alert at 4yr 6mo and 5yr.
  *
  *   2. Load growth exceeding 10%:
@@ -53,7 +53,7 @@ function buildArcFlashHtml(
       <p style="font-size:14px;color:#374151;margin:0 0 4px;"><strong>${escHtml(reason)}</strong></p>
       <p style="font-size:13px;color:#374151;margin:8px 0 16px;">${escHtml(detail)}</p>
       <p style="font-size:13px;color:#374151;margin:0 0 8px;">
-        NFPA 70E §130.5 requires arc flash hazard analysis to be reviewed any time
+        NFPA 70E §130.5(G) requires arc flash hazard analysis to be reviewed any time
         changes in the electrical distribution system affect the incident energy levels.
         An outdated or invalidated study exposes personnel to unquantified arc flash hazard.
       </p>
@@ -143,7 +143,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
   const now = new Date();
   const quotedSet = new Set<string>();
 
-  // ── Path 0: per-study 5-year expiration (#25, NFPA 70E §130.5) ─────────────
+  // ── Path 0: per-study 5-year expiration (#25, NFPA 70E §130.5(G)) ──────────
   // First-class SystemStudy arc_flash records each carry their own expiresAt
   // (performedDate + 5yr). The account-level ARC_FLASH_STUDY_DATE setting
   // (Path 1 below) is the legacy single-clock fallback; per-study records win
@@ -223,10 +223,10 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       }
 
       const reason = expired
-        ? 'Arc flash study 5-year expiration (NFPA 70E §130.5)'
+        ? 'Arc flash study 5-year expiration (NFPA 70E §130.5(G))'
         : `Arc flash study approaching 5-year expiration (${crossedDay} days remaining)`;
       const detail = expired
-        ? `Study performed ${new Date(study.performedDate).toLocaleDateString()} expired ${expiresAt.toLocaleDateString()}. NFPA 70E §130.5 requires review every 5 years or on system change.`
+        ? `Study performed ${new Date(study.performedDate).toLocaleDateString()} expired ${expiresAt.toLocaleDateString()}. NFPA 70E §130.5(G) requires review every 5 years or on system change.`
         : `Study performed ${new Date(study.performedDate).toLocaleDateString()} expires ${expiresAt.toLocaleDateString()} (within ${crossedDay} days). Plan the re-study now to avoid a compliance gap.`;
 
       if (targetAssetId) {
@@ -259,7 +259,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
   }
   quoteRequests += studyCounter.count;
 
-  // ── Path 1: 5-year expiration (NFPA 70E §130.5) ───────────────────────────
+  // ── Path 1: 5-year expiration (NFPA 70E §130.5(G)) ────────────────────────
   // Alert at 4yr 6mo (warning) and 5yr (critical).
   const arcSettings = await prisma.accountSetting.findMany({
     where: { key: 'ARC_FLASH_STUDY_DATE' },
@@ -282,11 +282,11 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
     expiredStudies++;
 
     const reason = expired5yr
-      ? 'Arc flash study 5-year expiration (NFPA 70E §130.5)'
+      ? 'Arc flash study 5-year expiration (NFPA 70E §130.5(G))'
       : 'Arc flash study approaching 5-year expiration — 6 months remaining';
 
     const detail = expired5yr
-      ? `Study date: ${studyDate.toLocaleDateString()} — now ${(ageYears).toFixed(1)} years old. NFPA 70E §130.5 requires review every 5 years or when the electrical system changes.`
+      ? `Study date: ${studyDate.toLocaleDateString()} — now ${(ageYears).toFixed(1)} years old. NFPA 70E §130.5(G) requires review every 5 years or when the electrical system changes.`
       : `Study date: ${studyDate.toLocaleDateString()} — expires in approximately 6 months. Plan re-study now to avoid a compliance gap.`;
 
     // Dedup: skip if notified in the last 30 days for the same reason
@@ -386,7 +386,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
 
     await maybeCreateArcFlashQuote(
       accountId, repAsset.id, admins[0].id,
-      `Auto-triggered: Load growth recorded at ${pct}% (threshold >10%). NFPA 70E §130.5 requires arc flash re-study when load changes alter incident energy levels.`,
+      `Auto-triggered: Load growth recorded at ${pct}% (threshold >10%). NFPA 70E §130.5(G) requires arc flash re-study when load changes alter incident energy levels.`,
       `loadgrowth:${accountId}`,
       quotedSet, qrCounter,
     );
@@ -395,7 +395,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       where: { id: accountId }, select: { companyName: true },
     });
     const reason = `Load growth of ${pct}% exceeds 10% threshold — arc flash re-study required`;
-    const detail = `Your facility has recorded ${pct}% load growth. NFPA 70E §130.5 requires that the arc flash hazard analysis be reviewed whenever changes in the electrical distribution system — including load additions — may affect incident energy levels.`;
+    const detail = `Your facility has recorded ${pct}% load growth. NFPA 70E §130.5(G) requires that the arc flash hazard analysis be reviewed whenever changes in the electrical distribution system — including load additions — may affect incident energy levels.`;
     const html    = buildArcFlashHtml(reason, account?.companyName ?? accountId, detail);
     const subject = `[Arc Flash Alert] Load growth ${pct}% — re-study required — ${account?.companyName ?? accountId}`;
 
@@ -454,7 +454,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
 
     await maybeCreateArcFlashQuote(
       def.accountId, def.assetId, admins[0].id,
-      `Auto-triggered: IMMEDIATE deficiency involving relay/breaker calibration detected on ${assetLabel}.\nDeficiency: "${def.description.slice(0, 200)}".\nNFPA 70E §130.5: any change to protective device settings invalidates the arc flash study — a re-study is required.`,
+      `Auto-triggered: IMMEDIATE deficiency involving relay/breaker calibration detected on ${assetLabel}.\nDeficiency: "${def.description.slice(0, 200)}".\nNFPA 70E §130.5(G): any change to protective device settings invalidates the arc flash study — a re-study is required.`,
       `relaybreaker:${def.accountId}:${def.assetId}`,
       quotedSet, qrCounter,
     );
@@ -474,7 +474,7 @@ export async function runArcFlashIntegrity(): Promise<ArcFlashIntegrityResult> {
       where: { id: def.accountId }, select: { companyName: true },
     });
     const reason = `IMMEDIATE relay/breaker calibration deficiency detected — arc flash re-study required`;
-    const detail = `Asset: ${assetLabel}. Deficiency: "${def.description.slice(0, 200)}". Protective device settings and calibration directly affect arc flash incident energy. NFPA 70E §130.5 requires the arc flash hazard analysis to be reviewed when protective device settings change.`;
+    const detail = `Asset: ${assetLabel}. Deficiency: "${def.description.slice(0, 200)}". Protective device settings and calibration directly affect arc flash incident energy. NFPA 70E §130.5(G) requires the arc flash hazard analysis to be reviewed when protective device settings change.`;
     const html    = buildArcFlashHtml(reason, account?.companyName ?? def.accountId, detail);
     const subject = `[Arc Flash Alert] Relay/breaker deficiency — re-study required — ${account?.companyName ?? def.accountId}`;
 

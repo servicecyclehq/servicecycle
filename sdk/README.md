@@ -15,7 +15,7 @@ Requires Node.js 20+. No external runtime dependencies — uses Node's built-in 
 ```typescript
 import { ServiceCycleClient } from 'servicecycle-sdk';
 
-const client = new ServiceCycleClient({ apiKey: 'liq_your_key_here' });
+const client = new ServiceCycleClient({ apiKey: 'sc_your_key_here' });
 
 // Verify your key
 const identity = await client.identity.me();
@@ -32,7 +32,7 @@ const { data: assets } = await client.assets.list({
 
 ## Authentication
 
-API keys start with `liq_` and are issued in **Settings → API Keys**. Every key carries a scope:
+API keys start with `sc_` and are issued in **Settings → API Keys**. Every key carries a scope:
 
 - `read` — list and retrieve resources (default)
 - `write` — create and mutate resources (required for `workOrders.create`, `telemetry.ingestReadings`, etc.)

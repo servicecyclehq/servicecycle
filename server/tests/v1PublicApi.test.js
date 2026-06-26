@@ -28,7 +28,7 @@ beforeAll(async () => {
     .set(bearer(t.tokenAdminA))
     .send({ name: 'v1-test-key', scopes: ['read'] });
   expect(res.status).toBe(201);
-  expect(res.body.data.plaintext).toMatch(/^liq_/);
+  expect(res.body.data.plaintext).toMatch(/^sc_/);
   keyA = {
     id:        res.body.data.id,
     name:      res.body.data.name,
@@ -68,7 +68,7 @@ describe('GET /api/v1/me', () => {
   test('invalid key → 401', async () => {
     const res = await api()
       .get('/api/v1/me')
-      .set({ Authorization: 'Bearer liq_notarealkey00000000000000000000000' });
+      .set({ Authorization: 'Bearer sc_notarealkey00000000000000000000000' });
     expect(res.status).toBe(401);
     expect(res.body.success).toBe(false);
   });

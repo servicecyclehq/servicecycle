@@ -38,14 +38,16 @@ export default function ArcFlashSearch() {
   }
 
   return (
-    <div className="page-body">
-      <div style={{ marginBottom: 12 }}>
+    <>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Arc Flash AI Search</h1>
+          <div className="page-subtitle">Natural language queries across arc flash study data</div>
+        </div>
         <BackLink fallback="/reports" fallbackLabel="Reports" />
-        <h1 style={{ margin: '6px 0 0', fontSize: '1.3rem' }}>Arc Flash Search</h1>
-        <p style={{ margin: '4px 0 0', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-          Ask in plain English — voltage, equipment, incident energy, severity, confidence, study lifecycle, or missing data. The interpretation is shown so results are explainable.
-        </p>
       </div>
+
+      <div className="page-body">
 
       <form onSubmit={e => { e.preventDefault(); run(); }} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <input
@@ -102,6 +104,7 @@ export default function ArcFlashSearch() {
           )}
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }

@@ -361,7 +361,7 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
     {
       key: 'feedback',
       label: 'Send feedback',
-      sub:   'Bugs, ideas, anything — Dustin reads every one',
+      sub:   'Bugs, ideas, anything — we read every one',
       onClick: () => { setOpen(false); onSendFeedback(); },
       showIn: 'all',
     },
@@ -523,13 +523,15 @@ function HelpShareMenu({ demoMode, onSendFeedback }) {
 function useNavGroupState(userId) {
   const KEY = `sc_nav_groups_v2_${userId || 'anon'}`;
   const [openGroups, setOpenGroups] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }
-    catch { return {}; }
+    const DEFAULTS = { equipment: true, work: true };
+    try { const stored = JSON.parse(localStorage.getItem(KEY) || 'null'); return stored && typeof stored === 'object' ? stored : { ...DEFAULTS }; }
+    catch { return { ...DEFAULTS }; }
   });
   // Re-read when the active user changes (login/switch).
   useEffect(() => {
-    try { setOpenGroups(JSON.parse(localStorage.getItem(KEY) || '{}') || {}); }
-    catch { setOpenGroups({}); }
+    const DEFAULTS = { equipment: true, work: true };
+    try { const stored = JSON.parse(localStorage.getItem(KEY) || 'null'); setOpenGroups(stored && typeof stored === 'object' ? stored : { ...DEFAULTS }); }
+    catch { setOpenGroups({ ...DEFAULTS }); }
   }, [KEY]);
   const toggle = useCallback((id) => {
     setOpenGroups(prev => {
@@ -1058,7 +1060,15 @@ export default function Sidebar() {
             <div className="sidebar-user-avatar">{getInitials(user?.name)}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="sidebar-user-name">{user?.name}</div>
-              <div className="sidebar-user-role">{user?.role}</div>
+              <div className="sidebar-user-role">{{
+                admin: 'Administrator',
+                manager: 'Manager',
+                field_tech: 'Field Technician',
+                viewer: 'Viewer',
+                oem_admin: 'OEM Administrator',
+                group_admin: 'Group Administrator',
+                super_admin: 'Super Administrator',
+              }[user?.role] || user?.role}</div>
             </div>
           </button>
           <NotificationBell />

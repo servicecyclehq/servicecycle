@@ -271,35 +271,39 @@ router.post('/ingest', requireManager, (req: any, res: any) => {
       const gapResults = ext.buses.map((b: any) => analyzeBusGaps(busForGap(b)));
       const summary = summarizeIngestBands(gapResults);
 
-      for (let i = 0; i < ext.buses.length; i++) {
-        const b = ext.buses[i];
-        const g = gapResults[i];
-        await prisma.arcFlashIngestBus.create({
+      const finalStatus = ext.buses.length ? 'needs_review' : 'failed';
+      // Atomic: persist every extracted bus + flip the ingest status together, so
+      // a crash mid-loop rolls back rather than leaving a half-written ingest.
+      await prisma.$transaction(async (tx: any) => {
+        for (let i = 0; i < ext.buses.length; i++) {
+          const b = ext.buses[i];
+          const g = gapResults[i];
+          await tx.arcFlashIngestBus.create({
+            data: {
+              accountId: req.user.accountId, ingestId: ingest.id, seq: i,
+              busName: b.busName, equipmentTypeGuess: b.equipmentTypeGuess, fedFromBusName: b.fedFromBusName,
+              nominalVoltage: b.nominalVoltage, boltedFaultCurrentKA: b.boltedFaultCurrentKA, arcingCurrentKA: b.arcingCurrentKA,
+              electrodeConfig: b.electrodeConfig, conductorGapMm: b.conductorGapMm, clearingTimeMs: b.clearingTimeMs,
+              workingDistanceIn: b.workingDistanceIn, upstreamDevice: b.upstreamDevice,
+              deviceType: b.deviceType, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
+              deviceRatingA: b.deviceRatingA, deviceSettings: b.deviceSettings ?? undefined,
+              cableLengthFt: b.cableLengthFt, cableSize: b.cableSize, cableMaterial: b.cableMaterial,
+              incidentEnergyCalCm2: b.incidentEnergyCalCm2, arcFlashBoundaryIn: b.arcFlashBoundaryIn, ppeCategory: b.ppeCategory,
+              gaps: g, readiness: g.readiness, confidence: g.confidence, resolution: b.equipmentTypeGuess ? 'create' : 'pending',
+            },
+          });
+        }
+
+        await tx.arcFlashIngest.update({
+          where: { id: ingest.id },
           data: {
-            accountId: req.user.accountId, ingestId: ingest.id, seq: i,
-            busName: b.busName, equipmentTypeGuess: b.equipmentTypeGuess, fedFromBusName: b.fedFromBusName,
-            nominalVoltage: b.nominalVoltage, boltedFaultCurrentKA: b.boltedFaultCurrentKA, arcingCurrentKA: b.arcingCurrentKA,
-            electrodeConfig: b.electrodeConfig, conductorGapMm: b.conductorGapMm, clearingTimeMs: b.clearingTimeMs,
-            workingDistanceIn: b.workingDistanceIn, upstreamDevice: b.upstreamDevice,
-            deviceType: b.deviceType, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
-            deviceRatingA: b.deviceRatingA, deviceSettings: b.deviceSettings ?? undefined,
-            cableLengthFt: b.cableLengthFt, cableSize: b.cableSize, cableMaterial: b.cableMaterial,
-            incidentEnergyCalCm2: b.incidentEnergyCalCm2, arcFlashBoundaryIn: b.arcFlashBoundaryIn, ppeCategory: b.ppeCategory,
-            gaps: g, readiness: g.readiness, confidence: g.confidence, resolution: b.equipmentTypeGuess ? 'create' : 'pending',
+            status: finalStatus, extractionMethod: ext.method, aiProvider: ext.aiProvider, promptVersion: ext.promptVersion,
+            systemMeta: ext.systemMeta ?? undefined, rawExtraction: ext.rawJsonText ? { text: String(ext.rawJsonText).slice(0, 20000) } : undefined,
+            overallBand: summary.overallBand, readyBusCount: summary.readyBusCount, totalBusCount: summary.totalBusCount,
+            error: ext.buses.length ? null : (ext.warnings[0] || 'No buses extracted'),
           },
         });
-      }
-
-      const finalStatus = ext.buses.length ? 'needs_review' : 'failed';
-      await prisma.arcFlashIngest.update({
-        where: { id: ingest.id },
-        data: {
-          status: finalStatus, extractionMethod: ext.method, aiProvider: ext.aiProvider, promptVersion: ext.promptVersion,
-          systemMeta: ext.systemMeta ?? undefined, rawExtraction: ext.rawJsonText ? { text: String(ext.rawJsonText).slice(0, 20000) } : undefined,
-          overallBand: summary.overallBand, readyBusCount: summary.readyBusCount, totalBusCount: summary.totalBusCount,
-          error: ext.buses.length ? null : (ext.warnings[0] || 'No buses extracted'),
-        },
-      });
+      }, { timeout: 30000 }); // ingest can be slow with many buses
 
       await logActivity(req.user.id, req.user.accountId, 'arc_flash_ingest_uploaded', { ingestId: ingest.id, method: ext.method, buses: ext.buses.length, overallBand: summary.overallBand });
 
@@ -522,10 +526,16 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     let assetsCreated = 0;
     let assetsMatched = 0;
 
-    // Pass 1: create / match assets (no feed links yet).
+    // Atomic: assets, feed links, optional study + bound buses, and the final
+    // ingest status flip all commit together (or roll back as one).
+    let feedsWired = 0;
+    let studyId: string | null = null;
+    let boundCount = 0;
+    await prisma.$transaction(async (txn: any) => {
+      // Pass 1: create / match assets (no feed links yet).
     for (const b of buses) {
       if (b.resolution === 'create') {
-        const asset = await prisma.asset.create({
+        const asset = await txn.asset.create({
           data: {
             accountId, siteId: ingest.siteId, equipmentType: b.equipmentTypeGuess as any,
             nameplateData: { busName: b.busName, nominalVoltage: b.nominalVoltage || null, importedFrom: 'arc_flash_ingest', ingestId: ingest.id },
@@ -536,33 +546,30 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
         nameToAssetId.set(b.busName, asset.id);
         assetsCreated++;
       } else if (b.resolution === 'match' && b.matchedAssetId) {
-        const a = await prisma.asset.findFirst({ where: { id: b.matchedAssetId, accountId }, select: { id: true } });
+        const a = await txn.asset.findFirst({ where: { id: b.matchedAssetId, accountId }, select: { id: true } });
         if (a) { nameToAssetId.set(b.busName, a.id); assetsMatched++; }
       }
     }
 
     // Pass 2: wire feeds-downstream topology (cycle-guarded by name graph).
     const safe = safeFeeds(buses);
-    let feedsWired = 0;
     for (const b of buses) {
       const selfId = nameToAssetId.get(b.busName);
       const upstreamName = safe.get(b.busName);
       if (!selfId || !upstreamName) continue;
       const upstreamId = nameToAssetId.get(upstreamName);
       if (upstreamId && upstreamId !== selfId) {
-        await prisma.asset.update({ where: { id: selfId }, data: { fedFromAssetId: upstreamId } });
+        await txn.asset.update({ where: { id: selfId }, data: { fedFromAssetId: upstreamId } });
         feedsWired++;
       }
     }
 
     // Optional: spin up a SystemStudy from the extracted inputs and bind buses.
-    let studyId: string | null = null;
-    let boundCount = 0;
     if (req.body && req.body.createStudy) {
       const studyType = req.body.studyType === 'one_line_review' ? 'one_line_review' : 'arc_flash';
       const performed = req.body.performedDate ? new Date(req.body.performedDate) : new Date();
       const sm = (ingest.systemMeta || {}) as any;
-      const study = await prisma.systemStudy.create({
+      const study = await txn.systemStudy.create({
         data: {
           accountId, siteId: ingest.siteId, studyType,
           performedDate: performed, expiresAt: new Date(performed.getFullYear() + 5, performed.getMonth(), performed.getDate()),
@@ -580,7 +587,7 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
       const tx = (sm.mainTransformer || {}) as any;
       const hasSource = ['maxFaultKA', 'minFaultKA', 'xr'].some((k) => u[k] != null) || tx.kva != null;
       if (hasSource) {
-        await prisma.studySourceModel.create({
+        await txn.studySourceModel.create({
           data: {
             accountId, siteId: ingest.siteId, studyId: study.id,
             utilityMaxFaultKA: numOrNull(u.maxFaultKA), utilityMinFaultKA: numOrNull(u.minFaultKA), utilityXr: numOrNull(u.xr),
@@ -593,7 +600,7 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
       for (const b of buses) {
         const assetId = nameToAssetId.get(b.busName);
         if (!assetId) continue;
-        await prisma.systemStudyAsset.upsert({
+        await txn.systemStudyAsset.upsert({
           where: { studyId_assetId: { studyId: study.id, assetId } },
           update: {},
           create: {
@@ -627,7 +634,8 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
       }
     }
 
-    await prisma.arcFlashIngest.update({ where: { id: ingest.id }, data: { status: 'confirmed', confirmedById: req.user.id, confirmedAt: new Date(), producedStudyId: studyId } });
+    await txn.arcFlashIngest.update({ where: { id: ingest.id }, data: { status: 'confirmed', confirmedById: req.user.id, confirmedAt: new Date(), producedStudyId: studyId } });
+    }, { timeout: 30000 }); // confirm can create many assets + study-bus rows
     await logActivity(req.user.id, accountId, 'arc_flash_ingest_confirmed', { ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount });
 
     res.json({ success: true, data: { ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount } });
@@ -2256,7 +2264,7 @@ router.get('/labels.pdf', async (req: any, res: any) => {
 // ── GET /load-growth ── telemetry-derived load-growth flag (manager+) ──────────
 // Light arc-flash tie-in: if continuous condition-monitoring telemetry shows a
 // load channel growing past the same >10% threshold the integrity cron uses,
-// raise a flag that the study may need re-evaluating (NFPA 70E §130.5). SC
+// raise a flag that the study may need re-evaluating (NFPA 70E §130.5(G)). SC
 // surfaces the signal only — it never recomputes incident energy, and it does
 // NOT auto-create a re-study quote (that stays a deliberate, Dustin-gated step).
 router.get('/load-growth', requireManager, async (req: any, res: any) => {
@@ -2289,7 +2297,7 @@ router.get('/load-growth', requireManager, async (req: any, res: any) => {
       exceedsThreshold: flagged.length > 0,
       maxGrowthPct: Math.round(maxGrowthPct * 10) / 10,
       channels: flagged,
-      note: flagged.length ? 'NFPA 70E §130.5 recommends reviewing the arc-flash study when load changes may alter incident energy. This is a telemetry-derived flag, not a recalculation — confirm with a re-study.' : null,
+      note: flagged.length ? 'NFPA 70E §130.5(G) recommends reviewing the arc-flash study when load changes may alter incident energy. This is a telemetry-derived flag, not a recalculation — confirm with a re-study.' : null,
     } });
   } catch (e) {
     console.error('arc-flash load-growth error:', e);

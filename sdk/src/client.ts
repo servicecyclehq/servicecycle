@@ -8,7 +8,7 @@ import { ArcFlashResource } from './resources/arcflash.js';
 import { TelemetryResource } from './resources/telemetry.js';
 
 export interface ServiceCycleClientOptions {
-  /** API key starting with liq_. Issued in Settings → API Keys. */
+  /** API key starting with sc_. Issued in Settings → API Keys. */
   apiKey: string;
   /**
    * Base URL of the ServiceCycle API.

@@ -15,8 +15,7 @@
  *
  * Status lifecycle: requested → quoted → accepted | declined
  *
- * 5 standard questions (PENDING BROTHER VALIDATION — copy finalised for
- * demo/test, brother to review before first real customer contact):
+ * 5 standard questions (finalised for demo/test):
  *   1. driver          — what prompted the request
  *   2. timeline        — how urgently is service needed
  *   3. outageAvailable — can the asset be de-energised + when
@@ -310,9 +309,6 @@ router.get('/asset/:assetId', async (req, res) => {
 });
 
 // ── POST /api/quote-requests ───────────────────────────────────────────────
-// PENDING BROTHER VALIDATION: question set, driver labels, timeline labels,
-// and emergency-mode copy are our best guess for the workflow.
-// Flag for brother review before first real customer demo using this feature.
 // Write gate: internal users incl. viewer; consultant + cross-account roles 403.
 router.post('/', requireQuoteWriter, async (req, res) => {
   try {

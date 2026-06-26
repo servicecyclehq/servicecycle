@@ -19,7 +19,7 @@
 
 import {
   BarChart3, AlertTriangle, FileCheck2, Download, BookOpen,
-  ClipboardList, TrendingUp, ShieldCheck, LineChart, Archive, Zap,
+  ShieldCheck, LineChart, Archive, Zap,
 } from 'lucide-react';
 
 export const REPORTS = [
@@ -119,20 +119,6 @@ export const REPORTS = [
     icon: Download,
     planned: false,
     exportView: 'assets',
-  },
-  {
-    id: 'maintenance-activity-summary',
-    name: 'Maintenance Activity Summary',
-    description: 'Completed work orders over a period with on-time percentage, broken down by site and contractor — useful once a few months of completion history has accumulated.',
-    icon: ClipboardList,
-    planned: true,
-  },
-  {
-    id: 'trend-analysis',
-    name: 'Trend Analysis',
-    description: 'Test-value trending across maintenance cycles — insulation resistance (megohm) decline, DGA gas rate-of-change, contact-resistance (ohmic) rise — to catch degradation before it becomes a failure.',
-    icon: TrendingUp,
-    planned: true,
   },
 ];
 

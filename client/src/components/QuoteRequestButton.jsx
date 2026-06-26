@@ -9,14 +9,14 @@
 //     downstream impact, overdue tasks) — assembled server-side and stored with
 //     the request so the rep sees it even when the asset changes.
 //
-// 5 standard questions (PENDING BROTHER VALIDATION):
+// 5 standard questions:
 //   Q1. Driver (why are you requesting this?) — required
 //   Q2. Timeline (how urgently needed?) — required
 //   Q3. Outage availability + when — optional
 //   Q4. Budget status — optional
 //   Q5. Attachments / notes (photos, IR scans, test reports) — optional
 //
-// EMERGENCY mode (PENDING BROTHER VALIDATION):
+// EMERGENCY mode:
 //   When driver = 'down_now', the form switches to EMERGENCY mode:
 //   - Rep phone number displayed large with "CALL NOW — do not wait on email"
 //   - Email still sent as paper trail, flagged [EMERGENCY] in subject
@@ -31,10 +31,7 @@ import api from '../api/client';
 import Toast from './Toast';
 import { fmtDate } from '../lib/equipment';
 
-// ── PENDING BROTHER VALIDATION — driver / timeline option copy ───────────────
-// These labels are our best guess for the service-request workflow.
-// Brother to review all labels, order, and emergency-mode copy before
-// first real customer contact uses this feature.
+// ── Driver / timeline option copy ──────────────────────────────────────────
 const DRIVER_OPTIONS = [
   { value: 'down_now',           label: 'Equipment is down right now',         emergency: true  },
   { value: 'suspected_failing',  label: 'Suspected failing / degraded',        emergency: false },
@@ -210,7 +207,7 @@ export default function QuoteRequestButton({ asset }) {
       {open && (
         <div className="card-body" style={{ borderTop: '1px solid var(--color-border)' }}>
 
-          {/* ── EMERGENCY banner (PENDING BROTHER VALIDATION — copy TBD) ──────── */}
+          {/* ── EMERGENCY banner ─────────────────────────────────────────────── */}
           {isEmergency && serviceRep && (serviceRep.serviceRepPhone || serviceRep.serviceRepName) && (
             <div style={{
               background: 'var(--chip-red-bg)', border: '2px solid var(--chip-red-fg)', borderRadius: 10,
@@ -241,7 +238,7 @@ export default function QuoteRequestButton({ asset }) {
 
           <form onSubmit={handleSubmit}>
 
-            {/* Q1 — Driver (PENDING BROTHER VALIDATION) */}
+            {/* Q1 — Driver */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontWeight: 700, marginBottom: 6, fontSize: 'var(--font-size-sm)' }}>
                 1. What prompted this request? <span style={{ color: 'var(--chip-red-fg)' }}>*</span>
@@ -271,7 +268,7 @@ export default function QuoteRequestButton({ asset }) {
               </div>
             </div>
 
-            {/* Q2 — Timeline (PENDING BROTHER VALIDATION) */}
+            {/* Q2 — Timeline */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontWeight: 700, marginBottom: 6, fontSize: 'var(--font-size-sm)' }}>
                 2. How quickly is service needed? <span style={{ color: 'var(--chip-red-fg)' }}>*</span>
@@ -290,7 +287,7 @@ export default function QuoteRequestButton({ asset }) {
               </select>
             </div>
 
-            {/* Q3 — Outage availability (PENDING BROTHER VALIDATION) */}
+            {/* Q3 — Outage availability */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontWeight: 700, marginBottom: 6, fontSize: 'var(--font-size-sm)' }}>
                 3. Can this equipment be de-energised for service?
@@ -321,7 +318,7 @@ export default function QuoteRequestButton({ asset }) {
               )}
             </div>
 
-            {/* Q4 — Budget (PENDING BROTHER VALIDATION) */}
+            {/* Q4 — Budget */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontWeight: 700, marginBottom: 6, fontSize: 'var(--font-size-sm)' }}>
                 4. Is budget already approved for this work?
@@ -352,7 +349,7 @@ export default function QuoteRequestButton({ asset }) {
               )}
             </div>
 
-            {/* Q5 — Attachments / notes (PENDING BROTHER VALIDATION) */}
+            {/* Q5 — Attachments / notes */}
             <div style={{ marginBottom: 20 }}>
               <label style={{ display: 'block', fontWeight: 700, marginBottom: 6, fontSize: 'var(--font-size-sm)' }}>
                 5. Attachments or additional context

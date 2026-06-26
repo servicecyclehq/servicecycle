@@ -433,10 +433,9 @@ async function _seedAccount() {
       fteCount:     380,
       lastActiveAt: now,
       // Service rep contact — shown in Settings and used by the Quote Request
-      // feature to pre-fill who to call. PENDING BROTHER VALIDATION: replace
-      // with real rep name/contact before first live demo.
+      // feature to pre-fill who to call.
       serviceRepName:  'Jordan Rivera',
-      serviceRepEmail: 'jrivera@example-electrical.com',
+      serviceRepEmail: 'service.rep@example-electrical.com',
       serviceRepPhone: '(555) 400-7890',
     },
   });
@@ -1414,14 +1413,14 @@ async function _seedAccount() {
     await prisma.systemStudyAsset.create({ data: {
       accountId: account.id, studyId: arcFlashPrior.id, assetId: afTrendBus.id,
       busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
-      incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 4,
+      incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 3,
       boltedFaultCurrentKA: 20.0, arcingCurrentKA: 19.1, electrodeConfig: 'VCB',
       conductorGapMm: 152, clearingTimeMs: 240, upstreamDevice: 'Utility 51 relay / CB-101',
     } });
     const afCurrentBind = await prisma.systemStudyAsset.create({ data: {
       accountId: account.id, studyId: arcFlash.id, assetId: afTrendBus.id,
       busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
-      incidentEnergyCalCm2: 19.6, arcFlashBoundaryIn: 88, workingDistanceIn: 36, ppeCategory: 4,
+      incidentEnergyCalCm2: 19.6, arcFlashBoundaryIn: 88, workingDistanceIn: 36, ppeCategory: 3,
       requiredArcRatingCalCm2: 25, labelSeverity: 'danger',
       boltedFaultCurrentKA: 24.0, arcingCurrentKA: 22.7, electrodeConfig: 'VCB',
       conductorGapMm: 152, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
@@ -1462,7 +1461,7 @@ async function _seedAccount() {
     await prisma.systemStudyAsset.update({ where: { id: afCurrentBind.id }, data: {
       publicToken: 'demoswgr1a1' + Math.random().toString(36).slice(2, 12),
       printedAt: addDays(now, -Math.round(3.8 * 365)),
-      printedSnapshot: { nominalVoltage: '13.8kV', incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 4, requiredArcRatingCalCm2: 25, labelSeverity: 'danger' },
+      printedSnapshot: { nominalVoltage: '13.8kV', incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 3, requiredArcRatingCalCm2: 25, labelSeverity: 'danger' },
     } }).catch(() => {});
 
     console.log('  [seed] arc-flash trend on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 DANGER; + source model, device, NETA drift, stale printed label');
@@ -1667,8 +1666,8 @@ async function _seedAccount() {
   // ── Quote Requests — demo data for the Quote Request feature ────────────────
   // Demonstrates the full lifecycle: one requested, one quoted, one accepted,
   // one declined. Driver variety shows both normal and emergency flows.
-  // PENDING BROTHER VALIDATION: dossier snapshots are intentionally minimal
-  // here (real snapshots built live by the server on POST /api/quote-requests).
+  // Dossier snapshots are intentionally minimal here
+  // (real snapshots built live by the server on POST /api/quote-requests).
   const dossierSnapshotT1 = {
     assetId: assets['T-1'].id, name: 'T-1 Main Transformer',
     equipmentType: 'TRANSFORMER_LIQUID', ageYears: 16, criticality: 5,

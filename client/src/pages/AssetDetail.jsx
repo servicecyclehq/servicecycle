@@ -1005,7 +1005,7 @@ export default function AssetDetail() {
         {/* "The dossier is the feature, not the button." Pre-fills full asset
             context so the rep gets everything they need without asking.
             EMERGENCY mode when driver=down_now: rep phone displayed large
-            with CALL NOW copy. PENDING BROTHER VALIDATION on question copy. */}
+            with CALL NOW copy. */}
         <QuoteRequestButton asset={asset} />
 
         {/* ── Maintenance Schedules ─────────────────────────────────────────── */}

@@ -155,13 +155,13 @@ async function main() {
 
   await bind(prior.id, {
     busName: 'SWGR-1A Main Bus', nominalVoltage,
-    incidentEnergyCalCm2: priorIE, arcFlashBoundaryIn: priorAFB, workingDistanceIn: wd, ppeCategory: 4,
+    incidentEnergyCalCm2: priorIE, arcFlashBoundaryIn: priorAFB, workingDistanceIn: wd, ppeCategory: 3,
     boltedFaultCurrentKA: priorBolted, arcingCurrentKA: priorArc, electrodeConfig: 'VCB',
     conductorGapMm: gap, clearingTimeMs: 240, upstreamDevice: 'Utility 51 relay / CB-101',
   });
   await bind(current.id, {
     busName: 'SWGR-1A Main Bus', nominalVoltage,
-    incidentEnergyCalCm2: curIE, arcFlashBoundaryIn: curAFB, workingDistanceIn: wd, ppeCategory: 4,
+    incidentEnergyCalCm2: curIE, arcFlashBoundaryIn: curAFB, workingDistanceIn: wd, ppeCategory: 3,
     boltedFaultCurrentKA: curBolted, arcingCurrentKA: curArc, electrodeConfig: 'VCB',
     conductorGapMm: gap, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
   });

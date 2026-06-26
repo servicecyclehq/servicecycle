@@ -309,7 +309,7 @@ ServiceCycle/
 
 ## 9. v1 Public API
 
-Base path: `/api/v1/`  Auth: `Authorization: Bearer liq_<key>` (read or write scope).
+Base path: `/api/v1/`  Auth: `Authorization: Bearer sc_<key>` (read or write scope).
 
 Key endpoints:
 - `GET /work-orders` -- paginated work-order list (CMMS/EAM sync).

@@ -3,7 +3,7 @@
 /**
  * telemetryLoadGrowth.ts — derive a load-growth signal from continuous
  * condition-monitoring telemetry, to flag when an arc-flash study may need
- * re-evaluating (NFPA 70E §130.5: review when load changes alter incident
+ * re-evaluating (NFPA 70E §130.5(G): review when load changes alter incident
  * energy). LIGHT + in-lane: SC surfaces the signal and raises a flag; it never
  * recomputes incident energy (that's the IEEE 1584 study / a PE). Pure helpers.
  */

@@ -89,6 +89,14 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
 
   // Hazard statement
   let cy = y + headerH + 8;
+  // DANGER (IE > 40 cal/cm2 or V > 600V): NFPA 70E 130.2(B) — energized work is
+  // not permitted without documented justification; the label must say so.
+  if (m.danger) {
+    doc.fillColor(SAFETY_RED).font('Helvetica-Bold').fontSize(8.5)
+      .text('DE-ENERGIZE BEFORE WORKING — Energized work not permitted without documented justification (NFPA 70E 130.2(B))',
+        x + pad, cy, { width: w - 2 * pad, align: 'center' });
+    cy += 30;
+  }
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(10)
     .text('Arc Flash and Shock Hazard', x + pad, cy, { width: w - 2 * pad, align: 'center' });
   cy += 14;
