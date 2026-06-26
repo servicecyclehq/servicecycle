@@ -843,6 +843,5 @@ function AuditBundle() {
         </>
       )}
       </div>
-    </>
   );
 }
