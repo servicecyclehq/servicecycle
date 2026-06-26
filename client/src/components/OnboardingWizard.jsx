@@ -258,6 +258,18 @@ export default function OnboardingWizard() {
           <button style={styles.primary} onClick={handlePrimary}>
             {current.primaryLabel}
           </button>
+          {current.id === 'asset' && (
+            <button
+              onClick={() => { advanceTo(step + 1); navigate('/import'); }}
+              style={{
+                background: 'none', border: 'none', color: 'var(--color-primary)',
+                textDecoration: 'underline', cursor: 'pointer', fontSize: '0.875rem',
+                marginTop: '8px'
+              }}
+            >
+              Have a spreadsheet? Import multiple assets at once →
+            </button>
+          )}
           <button style={styles.skip} onClick={handleSkip}>
             {isLast ? 'Get started →' : current.skipLabel}
           </button>

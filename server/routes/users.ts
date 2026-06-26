@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { z } = require('zod'); // (B6)
@@ -414,7 +414,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
       }
     }
 
-    const validRoles = ['admin', 'manager', 'viewer', 'consultant'];
+    const validRoles = ['admin', 'manager', 'viewer', 'consultant', 'field_tech'];
     const updateData: any = {};
     if (name?.trim()) updateData.name = name.trim();
     if (role && validRoles.includes(role)) {
@@ -435,6 +435,21 @@ router.put('/:id', requireAdmin, async (req, res) => {
         id: true, name: true, email: true, role: true, isActive: true, lastLogin: true, featureFlags: true, createdAt: true,
       },
     });
+
+    // SOC-3: audit log role changes
+    if (role && role !== target.role) {
+      try {
+        await writeActivityLog({
+          accountId: target.accountId,
+          userId:    req.user.id,
+          action:    'user_role_changed',
+          details:   { targetUserId: target.id, oldRole: target.role, newRole: role },
+          ipAddress: req.ip,
+        });
+      } catch (logErr) {
+        console.error('activity log (role change) error:', logErr);
+      }
+    }
 
     return res.json({ success: true, data: { user } });
   } catch (err) {
@@ -474,9 +489,21 @@ router.put('/:id/deactivate', requireAdmin, async (req, res) => {
     // have no per-user owner column. Site-assignment cleanup for scoped
     // viewers lands with the user↔site scoping rewire.
 
+    const targetId = req.params.id;
     await prisma.user.update({
-      where: { id: req.params.id },
+      where: { id: targetId },
       data: { isActive: false },
+    });
+
+    // SOC-1: revoke all active refresh tokens and bump tokenEpoch so existing
+    // JWTs are immediately rejected on next verification.
+    await prisma.refreshToken.updateMany({
+      where: { userId: targetId, revokedAt: null },
+      data:  { revokedAt: new Date() },
+    });
+    await prisma.user.update({
+      where: { id: targetId },
+      data:  { tokenEpoch: { increment: 1 } },
     });
 
     // Audit 6.4.6 — capture optional churn reason for retention analysis.
@@ -1011,11 +1038,24 @@ router.patch('/:id/scope-restriction', requireAdmin, async (req, res) => {
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { assetScopeRestricted: restricted },
-   select: {
+      select: {
         id: true, name: true, email: true, role: true, isActive: true,
         lastLogin: true, featureFlags: true, assetScopeRestricted: true, createdAt: true,
       },
     });
+
+    // SOC-3: audit log scope restriction changes
+    try {
+      await writeActivityLog({
+        accountId: target.accountId,
+        userId:    req.user.id,
+        action:    'user_scope_restriction_changed',
+        details:   { targetUserId: target.id, restricted },
+        ipAddress: req.ip,
+      });
+    } catch (logErr) {
+      console.error('activity log (scope restriction) error:', logErr);
+    }
 
     return res.json({ success: true, data: { user } });
   } catch (err) {

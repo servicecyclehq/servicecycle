@@ -292,7 +292,7 @@ export default function UsersPage() {
     const newRestricted = !u.assetScopeRestricted;
     const action = newRestricted ? 'restrict' : 'expand';
     const msg = newRestricted
-      ? `Restrict ${u.name} to their assigned sites? (Site-level scoping ships in a later release.)`
+      ? `Restrict ${u.name} to their assigned sites? (Site-level scoping coming soon.)`
       : `Expand ${u.name}'s access to see all sites and assets?`;
     if (!await confirm({
       title: newRestricted ? 'Restrict access' : 'Expand access',
@@ -385,6 +385,15 @@ export default function UsersPage() {
               <div className="card-title">Invite a Team Member</div>
             </div>
             <div className="card-body">
+              {/* TODO CS-7: Show a yellow warning banner here when email is in mock mode
+                  (invites logged to console, not delivered). Blocked on exposing a
+                  mockEmail / emailMode flag via AuthContext or /api/settings/admin.
+                  Once the flag is available, render:
+                  {features?.mockEmail && (
+                    <div style={{background:'#fffbeb', border:'1px solid #f59e0b', borderRadius:'6px', padding:'10px 14px', marginBottom:'12px', fontSize:'0.875rem', color:'#92400e'}}>
+                      ⚠ Email is in mock mode — invites are logged to the server console and not delivered. Configure a real email provider in Settings to send live invites.
+                    </div>
+                  )} */}
               {formError && <div role="alert" className="alert alert-error" style={{ marginBottom: 16 }}>{formError}</div>}
               {inviteSent && (
                 <div className="alert alert-success" style={{ marginBottom: 16 }}>
@@ -410,7 +419,7 @@ export default function UsersPage() {
                     <div className="form-hint" style={{ marginTop: 6 }}>
                       {form.role === 'admin' && <><strong>Admin</strong> — full access: manages users, resets passwords, and edits account settings.</>}
                       {form.role === 'manager' && <><strong>Manager</strong> — creates and edits assets, maintenance schedules, and contractors.</>}
-                      {form.role === 'viewer' && <><strong>Viewer</strong> — read-only access. Cannot create or edit any records. New viewers start with restricted access to their assigned sites (site-level scoping ships in a later release). An admin can expand this from the Users page.</>}
+                      {form.role === 'viewer' && <><strong>Viewer</strong> — read-only access. Cannot create or edit any records. New viewers start with restricted access to their assigned sites (site-level scoping coming soon). An admin can expand this from the Users page.</>}
                       {form.role === 'consultant' && <><strong>Consultant</strong> — external read access. Must be explicitly granted and can be revoked by an admin at any time from Settings. A consultant access record is automatically created when they accept the invite.</>}
                       {form.role === 'field_tech' && <><strong>Field Technician</strong> — phone-only, assignment-scoped access. Can see and complete only work orders assigned to them. No access to pricing, customer lists, or the desktop interface.</>}
                     </div>
@@ -458,7 +467,7 @@ export default function UsersPage() {
                           <span className={`badge ${ROLE_COLORS[u.role]}`}>{ROLE_LABELS[u.role]}</span>
                           {u.role === 'viewer' && u.assetScopeRestricted && (
                             <span
-                              title="Restricted to assigned sites (site-level scoping ships in a later release)"
+                              title="Restricted to assigned sites (site-level scoping coming soon)"
                               style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: '1px solid #fde68a', cursor: 'default' }}
                             >
                               Restricted
@@ -473,7 +482,7 @@ export default function UsersPage() {
                             <button
                               className="btn btn-secondary btn-sm"
                               onClick={() => handleToggleScope(u)}
-                              title={u.assetScopeRestricted ? 'Expand access to all sites and assets' : 'Restrict to assigned sites (site-level scoping ships in a later release)'}
+                              title={u.assetScopeRestricted ? 'Expand access to all sites and assets' : 'Restrict to assigned sites (site-level scoping coming soon)'}
                             >
                               {u.assetScopeRestricted ? '🔓 Expand' : '🔒 Restrict'}
                             </button>

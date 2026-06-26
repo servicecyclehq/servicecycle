@@ -106,6 +106,11 @@ const MAX_AGE_MS = 120 * 24 * 60 * 60 * 1000;
 // ── Core scanner ──────────────────────────────────────────────────────────────
 
 /**
+ * PLATFORM-WIDE SIDE EFFECT: NewsItem records are shared across all tenants.
+ * Triggering a refresh updates the news feed visible to all accounts.
+ * This is intentional — news is industry-wide content, not per-tenant.
+ * If per-account news customization is ever added, NewsItem will need accountId.
+ *
  * Fetch all feeds, filter by match terms, insert new items, prune old ones.
  * @returns {{ fetched: number, inserted: number, pruned: number, feedErrors: number }}
  */

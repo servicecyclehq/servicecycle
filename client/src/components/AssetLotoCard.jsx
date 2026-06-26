@@ -16,6 +16,7 @@ import api from '../api/client';
 import Toast from './Toast';
 import LotoProcCard from './LotoProcCard';
 import LotoProcForm from './LotoProcForm';
+import InfoTip from './InfoTip';
 
 export default function AssetLotoCard({ asset, canWrite }) {
   const [procs,         setProcs]        = useState([]);
@@ -60,6 +61,7 @@ export default function AssetLotoCard({ asset, canWrite }) {
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="card-title">
           🔒 LOTO Procedures
+          <InfoTip content="Lockout/Tagout (LOTO) — OSHA 29 CFR 1910.147. A structured procedure to isolate hazardous energy before maintenance. Required for energized electrical work on this asset." />
           {active.length > 0 && (
             <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: 'var(--chip-green-fg)',
               background: 'var(--chip-green-bg)', padding: '2px 8px', borderRadius: 10 }}>

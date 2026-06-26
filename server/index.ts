@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const prisma = require('./lib/prisma').default;
 const { settleAllPending, verifyAllChains } = require('./lib/activityLogChain'); // Pass-6 W4 MT-127
 const { verifyToken } = require('./lib/jwtSecrets');
@@ -53,6 +53,13 @@ const { verifyToken } = require('./lib/jwtSecrets');
       process.exit(1);
     }
     console.warn('[startup] OLD_JWT_SECRET is set — running in JWT rotation window (dual-verify on).');
+  }
+
+  // APPSEC-9: warn when INBOUND_WEBHOOK_SECRET is set but too short (weak secret
+  // allows forged ingest payloads). Not a hard failure — ingest may be unused.
+  const inboundWebhookSecret = process.env.INBOUND_WEBHOOK_SECRET;
+  if (inboundWebhookSecret && inboundWebhookSecret.length < 32) {
+    console.warn('[startup] INBOUND_WEBHOOK_SECRET is less than 32 characters — weak secret allows forged ingest payloads. Set a strong random secret.');
   }
 
   // L2: JWT_EXPIRES_IN sanity — reject values that break the short-lived-token model
@@ -1941,9 +1948,9 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
 
     // S4-FN-04 (v0.74.1): Document orphan prune -- weekly on Sunday at 05:00 UTC.
     // Deletes Document rows whose contractId no longer exists in the Contract table
-    // (FK orphans from hard-deletes that bypassed ORM cascade). Low-frequency so
-    // runOnceQuiet keeps the healthchecks.io dashboard uncluttered.
-    cron.schedule('0 5 * * 0', () => runOnceQuiet('documentOrphanPrune', async () => {
+    // (FK orphans from hard-deletes that bypassed ORM cascade). Uses runOnce so
+    // weekly failures are reported to healthchecks.io rather than swallowed silently.
+    cron.schedule('0 5 * * 0', () => runOnce('documentOrphanPrune', async () => {
       const result = await pruneDocumentOrphans();
       if (result.deleted > 0) {
         console.log(`[Cron] Document orphan prune: deleted ${result.deleted} orphaned document(s).`);
