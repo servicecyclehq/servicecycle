@@ -312,4 +312,8 @@ export default function FieldScan() {
           style={{ ...bigBtn, minHeight: 60, background: '#fff', color: '#111', border: 'none' }}
         >
           Cancel
-       
+        </button>
+      </div>
+    </div>
+  );
+}
