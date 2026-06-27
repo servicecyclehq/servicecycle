@@ -2154,6 +2154,33 @@ async function _seedAccount() {
     externalUrl: 'https://www.cat.com/en_US/support/documentation/c175-generator-set.html',
   }});
 
+  // -- Real downloadable one-line drawing (wiring_diagram) -------------------
+  // Branded as-built one-line PDF stored in object storage so it is genuinely
+  // viewable AND downloadable on the demo (the other demo docs are external
+  // URLs only). Attached to the SWGR-1A-1 hero bus so it sits with the arc-
+  // flash story. Non-fatal: a missing asset file must not break the seed.
+  try {
+    const fs = require('fs');
+    const { uploadFile } = require('../lib/storage');
+    const oneLinePath = require('path').join(__dirname, 'demo-assets', 'riverside-substation-a-oneline.pdf');
+    const oneLineBytes = fs.readFileSync(oneLinePath);
+    const oneLineName = 'Riverside Substation A -- Electrical One-Line (As-Built).pdf';
+    const oneLineUp = await uploadFile(account.id, assets['SWGR-1A-1'].id, oneLineName, oneLineBytes, 'application/pdf');
+    await prisma.document.create({ data: {
+      accountId:  account.id,
+      assetId:    assets['SWGR-1A-1'].id,
+      uploadedBy: admin.id,
+      filename:   oneLineName,
+      fileType:   'application/pdf',
+      filePath:   oneLineUp.storageKey,
+      encrypted:  false,
+      docType:    'wiring_diagram',
+    }});
+    console.log('  seeded downloadable one-line PDF on SWGR-1A-1 (' + oneLineBytes.length + ' bytes)');
+  } catch (e) {
+    console.error('[seed] one-line document seed failed (non-fatal):', (e && e.message) || e);
+  }
+
   // -- EMP account settings --------------------------------------------------
   // Seed the three settings that drive the EMP cover page and footer so the
   // demo document renders with real values instead of placeholder warnings.
