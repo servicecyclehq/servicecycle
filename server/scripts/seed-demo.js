@@ -507,6 +507,7 @@ async function _seedAccount() {
     primaryContactName: 'Marcus Webb', primaryContactEmail: 'manager@demo.local',
     primaryContactPhone: '563-555-0144',
     notes: '24/5 stamping + assembly. Substation A feeds the production floor; mezzanine MCC room is the known dust problem area.',
+    oneLineDiagramOnFile: true, oneLineDiagramDate: new Date('2023-08-15'),
   } });
   const mainProduction = await prisma.building.create({ data: {
     accountId: account.id, siteId: riverside.id, name: 'Main Production',
@@ -2556,9 +2557,35 @@ async function seedAccountForUser(userId) {
  * Ensures the global standards/task matrix exists first (idempotent).
  * @param {{ trigger?: 'cli'|'cron'|'manual' }} opts
  */
+// -- Platform rate sheet (Revenue Intelligence dollar estimates) --------------
+// Single platform-level row (no accountId), so it is NOT wiped by the demo-
+// account reset. Researched US-average rates so /admin/opportunities estimates
+// are accurate and defensible in a demo. lastConfirmedAt = now => 'fresh', so
+// dollar estimates are visible immediately after a reseed.
+async function _seedRateSheet() {
+  await prisma.rateSheet.deleteMany({});
+  await prisma.rateSheet.create({ data: {
+    arcFlashStudyPerPanelCents:  15000,    // $150/panel (per bus) -- small <20-panel studies run $3.5k-$7.5k
+    arcFlashStudyMinimumCents:   350000,   // $3,500 small-facility floor
+    arcFlashStudyMaximumCents:   5000000,  // $50,000 site cap (large studies reach $50k+)
+    pmServiceHourlyRateCents:    16500,    // $165/hr NETA field-service billing rate
+    pmVisitMinimumCents:         75000,    // $750 -- 4-hour field minimum + mobilization
+    oneLineDiagramCreationCents: 150000,   // $1,500 flat (~10-12 hrs design + field verify)
+    equipmentReplacementRanges: {
+      CIRCUIT_BREAKER: { min: 250000,  max: 2500000 },  // $2,500 - $25,000 power/MV breaker, installed
+      TRANSFORMER:     { min: 800000,  max: 7500000 },  // $8,000 - $75,000 dry-type to pad-mount, installed
+      SWITCHGEAR:      { min: 1500000, max: 7500000 },  // $15,000 - $75,000 section / small lineup, installed
+      MCC:             { min: 800000,  max: 3000000 },  // $8,000 - $30,000 section, installed
+    },
+    expiresAfterDays: 180,
+    lastConfirmedAt: new Date(),
+  } });
+}
+
 async function resetAndSeedDemo(opts = {}) {
   await seedStandards(prisma);
   await _resetDemoAccount();
+  await _seedRateSheet();
   const summary = await _seedAccount();
   // Partner-org "contractor with a sales team" book -- separate from the
   // standalone Meridian account above, so the demo shows BOTH the manager
