@@ -109,6 +109,12 @@ async function main() {
 
   const mv = isMediumVoltage(asset.nameplateData);
   const nominalVoltage = mv ? '13.8kV' : '480V';
+  // Stored severity MUST match seed-demo.js's hero-bus binding and the
+  // dashboard/fleet rules (volts>600 => DANGER per NFPA 70E 130.5(H)): MV is
+  // DANGER, LV is WARNING. Stamping it explicitly keeps both seed scripts and
+  // every read surface telling the one same story for this bus.
+  const labelSeverity = mv ? 'danger' : 'warning';
+  const reqArcRating = mv ? 25 : 12;
   const priorIE = mv ? 14.2 : 8.4;
   const curIE = mv ? 19.6 : 12.1;
   const priorAFB = mv ? 68 : 38;
@@ -162,6 +168,7 @@ async function main() {
   await bind(current.id, {
     busName: 'SWGR-1A Main Bus', nominalVoltage,
     incidentEnergyCalCm2: curIE, arcFlashBoundaryIn: curAFB, workingDistanceIn: wd, ppeCategory: 3,
+    requiredArcRatingCalCm2: reqArcRating, labelSeverity,
     boltedFaultCurrentKA: curBolted, arcingCurrentKA: curArc, electrodeConfig: 'VCB',
     conductorGapMm: gap, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
   });

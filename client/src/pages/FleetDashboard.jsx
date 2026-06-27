@@ -171,7 +171,7 @@ function AccountDetailPanel({ accountId, onClose }) {
         </div>
       </div>
 
-      {data.account.serviceRep && (
+      {data.account.serviceRepName ? (
         <div style={styles.repBar}>
           <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Service rep:</span>
           <strong style={{ marginLeft: 6, fontSize: 12 }}>{data.account.serviceRepName}</strong>
@@ -185,6 +185,13 @@ function AccountDetailPanel({ accountId, onClose }) {
               {data.account.serviceRepPhone}
             </a>
           )}
+        </div>
+      ) : (
+        <div style={styles.repBar}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Service rep:</span>
+          <span style={{ marginLeft: 6, fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+            No rep assigned yet
+          </span>
         </div>
       )}
     </div>
@@ -740,7 +747,7 @@ export default function FleetDashboard() {
     setLoading(true);
     api.get('/api/fleet/dashboard')
       .then((r) => setData(r.data))
-      .catch((e) => setError(e.response?.data?.error ?? e.message))
+      .catch((e) => setError(e.response?.data?.error || 'Could not load the fleet dashboard. Please try again.'))
       .finally(() => setLoading(false));
 
     setForecastLoading(true);

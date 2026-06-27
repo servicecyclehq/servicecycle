@@ -8,10 +8,31 @@ const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 // Replay window for the signature timestamp. The dedupe ledger is the primary
 // replay defense; this bounds the window for a replay-after-secret-capture.
-// 0 disables. Default 15 min (Polis delivers/retries promptly).
+// Default 15 min (Polis delivers/retries promptly).
+//
+// DD-8-5: the freshness check (scim.ts isFreshTimestamp) treats any value <= 0
+// as "window disabled". That makes SCIM_WEBHOOK_TOLERANCE_MS=0 a footgun — an
+// operator who reads it as "no limit" silently turns OFF replay protection.
+// We refuse to honor a disabling value here: anything below the floor is
+// clamped up to MIN_TOLERANCE_MS and logged loudly. To genuinely disable the
+// window (not recommended) an operator must set SCIM_WEBHOOK_TOLERANCE_DISABLE=true,
+// which is explicit and self-documenting rather than an easy-to-mistype 0.
+const MIN_TOLERANCE_MS = 60_000; // floor: 60s
+const DEFAULT_TOLERANCE_MS = 900_000; // 15 min
 const TOLERANCE_MS = (() => {
-  const v = parseInt(process.env.SCIM_WEBHOOK_TOLERANCE_MS || '900000', 10);
-  return Number.isFinite(v) ? v : 900000;
+  if (process.env.SCIM_WEBHOOK_TOLERANCE_DISABLE === 'true') {
+    console.warn('[sso-scim] SCIM_WEBHOOK_TOLERANCE_DISABLE=true — signature replay window is DISABLED. Replay protection relies on the dedupe ledger alone.');
+    return 0;
+  }
+  const raw = process.env.SCIM_WEBHOOK_TOLERANCE_MS;
+  if (raw === undefined || raw === '') return DEFAULT_TOLERANCE_MS;
+  const v = parseInt(raw, 10);
+  if (!Number.isFinite(v)) return DEFAULT_TOLERANCE_MS;
+  if (v < MIN_TOLERANCE_MS) {
+    console.warn(`[sso-scim] SCIM_WEBHOOK_TOLERANCE_MS=${raw} is below the ${MIN_TOLERANCE_MS}ms floor — clamping up. Set SCIM_WEBHOOK_TOLERANCE_DISABLE=true to intentionally disable the replay window.`);
+    return MIN_TOLERANCE_MS;
+  }
+  return v;
 })();
 
 const PRIVILEGED = new Set(['admin', 'oem_admin', 'super_admin']);

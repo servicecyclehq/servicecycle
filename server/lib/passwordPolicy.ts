@@ -53,6 +53,16 @@ const HIBP_CHECK_ENABLED = (
   process.env.HIBP_CHECK_ENABLED ?? (_IS_TEST ? 'false' : 'true')
 ) !== 'false';
 const HIBP_TIMEOUT_MS = parseInt(process.env.HIBP_TIMEOUT_MS || '3000', 10);
+// INFOSEC-8-7: what to do when the HIBP breach check itself cannot be
+// completed (network error / timeout / non-200). 'open' (default) accepts the
+// password so an HIBP outage never bricks signup/reset — the conservative
+// posture for availability and the demo. 'closed' rejects new-password
+// acceptance until the check can run, for operators who must guarantee no
+// password is accepted without a breach check. A confirmed hit (the API DID
+// answer and the suffix matched) is ALWAYS rejected regardless of this mode —
+// fail-open only governs the can't-reach-the-service case, never a known
+// breach. Every fail-open event is logged so a silent outage is visible.
+const HIBP_FAIL_MODE = (process.env.HIBP_FAIL_MODE || 'open').toLowerCase() === 'closed' ? 'closed' : 'open';
 
 /**
  * Build a policy object by merging AccountSetting rows (or a plain object)
@@ -100,11 +110,14 @@ function validate(password, policy) {
  * and the API returns ~500-800 candidate suffixes; the password itself
  * never leaves this process.
  *
- * Fail-open: if the API is unreachable or times out, returns false (i.e.
- * "not breached, allow"). This is the conservative posture for a signup
- * path — better to accept a possibly-breached password than to brick
- * registration when HIBP has an outage. The k-anonymity privacy guarantee
- * is unchanged in either case.
+ * Outage handling (INFOSEC-8-7): if the API is unreachable, times out, or
+ * answers non-200, we CANNOT confirm the password is safe. We return
+ * `failedOpen: true` and `breached: false`, and log loudly so the gap is
+ * visible. `validateStrength` then decides accept-vs-reject from
+ * HIBP_FAIL_MODE. A CONFIRMED hit (the API answered and the suffix matched)
+ * always returns `breached: true` and is never affected by fail mode — a
+ * known-compromised password is rejected even mid-outage of everything else.
+ * The k-anonymity privacy guarantee is unchanged in either case.
  *
  * @param {string} password  raw password as the user typed it
  * @returns {Promise<{ breached: boolean, count: number, failedOpen: boolean }>}
@@ -123,7 +136,10 @@ async function checkBreached(password) {
       headers: { 'User-Agent': 'ServiceCycle/audit-7 (password-policy)' },
       signal:  AbortSignal.timeout(HIBP_TIMEOUT_MS),
     });
-    if (!resp.ok) return { breached: false, count: 0, failedOpen: true };
+    if (!resp.ok) {
+      console.warn(`[passwordPolicy] HIBP breach check unavailable (HTTP ${resp.status}) — failing ${HIBP_FAIL_MODE}.`);
+      return { breached: false, count: 0, failedOpen: true };
+    }
 
     const text = await resp.text();
     for (const line of text.split('\n')) {
@@ -133,8 +149,10 @@ async function checkBreached(password) {
       }
     }
     return { breached: false, count: 0, failedOpen: false };
-  } catch {
-    // Network error, timeout, DNS fail — fail open.
+  } catch (err: any) {
+    // Network error, timeout, DNS fail — cannot confirm. Log loudly so the
+    // outage is visible rather than a silently-skipped control.
+    console.warn(`[passwordPolicy] HIBP breach check failed (${err?.message || 'network error'}) — failing ${HIBP_FAIL_MODE}.`);
     return { breached: false, count: 0, failedOpen: true };
   }
 }
@@ -189,11 +207,23 @@ async function validateStrength(password, policy, opts: any = {}) {
   // Step 3: HIBP breach corpus
   const breach = await checkBreached(password);
   if (breach.breached) {
+    // Confirmed hit — always reject, regardless of fail mode.
     return {
       valid:  false,
       errors: [`This password has appeared in known data breaches ${breach.count.toLocaleString()} times. Please choose a different one.`],
       score,
       breachCount: breach.count,
+    };
+  }
+  // INFOSEC-8-7: the check could not be completed. In 'closed' mode we refuse
+  // to accept a password we could not screen; in 'open' mode (default) we
+  // allow it so an HIBP outage never bricks signup/reset. Either way the
+  // outage was already logged in checkBreached().
+  if (breach.failedOpen && HIBP_FAIL_MODE === 'closed') {
+    return {
+      valid:  false,
+      errors: ['We could not verify this password against the breach database right now. Please try again in a moment.'],
+      score,
     };
   }
 

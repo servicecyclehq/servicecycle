@@ -23,29 +23,48 @@ async function ownAsset(req: any) {
   return prisma.asset.findFirst({ where: { id: req.params.id, accountId: req.user.accountId }, select: { id: true } });
 }
 
-/** Merge structured hotspots with any parsed from report text. */
-function resolveHotspots(body: any): { hotspots: Array<{ location: string; deltaT: number; note?: string }>; surveyDate: string | null } {
-  const out: Array<{ location: string; deltaT: number; note?: string }> = [];
+// [NETA-8-1] Normalize a reference-frame token to the two scales the NETA Table
+// 100.18 grader knows: 'ambient' (over-ambient-air) vs 'similar' (between similar
+// components — also used for a baseline/prior comparison). Anything unrecognized
+// falls back to the conservative similar-component scale.
+const REF_LABEL: Record<string, string> = {
+  ambient: 'over ambient', similar: 'vs. similar component', baseline: 'vs. baseline',
+};
+function normRef(r: any): 'ambient' | 'similar' {
+  return r === 'ambient' ? 'ambient' : 'similar';
+}
+
+/** Merge structured hotspots with any parsed from report text. Each hot-spot
+ *  carries its own reference frame (NETA-8-1) so it is graded on the correct
+ *  NETA Table 100.18 scale. Structured rows may set `reference`; a body-level
+ *  `reference` is the default for rows that don't, then 'similar'. */
+function resolveHotspots(body: any): { hotspots: Array<{ location: string; deltaT: number; note?: string; reference?: string }>; surveyDate: string | null } {
+  const out: Array<{ location: string; deltaT: number; note?: string; reference?: string }> = [];
+  const bodyRef: string | undefined = typeof body?.reference === 'string' ? body.reference : undefined;
   if (Array.isArray(body?.hotspots)) {
     for (const h of body.hotspots) {
       const dt = Number(h?.deltaT);
       if (!Number.isFinite(dt)) continue;
-      out.push({ location: String(h?.location || 'Unspecified location').slice(0, 160), deltaT: dt, note: h?.note ? String(h.note).slice(0, 300) : undefined });
+      const ref = (typeof h?.reference === 'string' ? h.reference : bodyRef);
+      out.push({ location: String(h?.location || 'Unspecified location').slice(0, 160), deltaT: dt, note: h?.note ? String(h.note).slice(0, 300) : undefined, reference: ref });
     }
   }
   let surveyDate: string | null = typeof body?.surveyDate === 'string' ? body.surveyDate : null;
   if (typeof body?.reportText === 'string' && body.reportText.trim()) {
     const parsed = parseThermographyText(body.reportText);
-    for (const h of parsed.hotspots) out.push(h);
+    // The parser already inferred a per-hot-spot reference from the line text;
+    // keep it. Only fall back to the body-level reference when absent.
+    for (const h of parsed.hotspots) out.push({ ...h, reference: (h as any).reference ?? bodyRef });
     if (!surveyDate) surveyDate = parsed.surveyDate;
   }
   return { hotspots: out, surveyDate };
 }
 
-function grade(hotspots: any[], reference: string) {
+function grade(hotspots: any[]) {
   return hotspots.map((h) => {
-    const s = severityForDeltaT(h.deltaT, reference === 'ambient' ? 'ambient' : 'similar');
-    return { ...h, priority: s.priority, severity: s.severity, label: s.label };
+    const ref = normRef(h.reference);
+    const s = severityForDeltaT(h.deltaT, ref);
+    return { ...h, reference: ref, priority: s.priority, severity: s.severity, label: s.label };
   });
 }
 
@@ -56,7 +75,7 @@ router.post('/:id/thermography/preview', async (req: any, res: any) => {
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
     const { hotspots, surveyDate } = resolveHotspots(req.body || {});
     if (hotspots.length === 0) return res.status(400).json({ success: false, error: 'No hot-spots found. Provide rows or report text.' });
-    const graded = grade(hotspots, req.body?.reference);
+    const graded = grade(hotspots);
     const deficient = graded.filter((g) => g.severity).length;
     return res.json({ success: true, data: { surveyDate, hotspots: graded, deficienciesToCreate: deficient } });
   } catch (err: any) {
@@ -72,7 +91,7 @@ router.post('/:id/thermography/commit', requireManager, async (req: any, res: an
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
     const { hotspots, surveyDate } = resolveHotspots(req.body || {});
     if (hotspots.length === 0) return res.status(400).json({ success: false, error: 'No hot-spots to record.' });
-    const graded = grade(hotspots, req.body?.reference);
+    const graded = grade(hotspots);
     const dateStr = surveyDate ? new Date(surveyDate) : new Date();
     const stamp = Number.isNaN(dateStr.getTime()) ? '' : ` (${dateStr.toISOString().slice(0, 10)})`;
 
@@ -84,7 +103,9 @@ router.post('/:id/thermography/commit', requireManager, async (req: any, res: an
         return prisma.deficiency.create({
           data: {
             accountId: req.user.accountId, assetId: asset.id, severity: g.severity,
-            description: `IR hot-spot${stamp}: ${g.location} — ΔT ${g.deltaT}°C (${g.label})${g.note ? `. ${g.note}` : ''}`,
+            // [NETA-8-15] Carry the reference frame so a bare ΔT is interpretable
+            // (over-ambient vs. similar-component graded on different NETA scales).
+            description: `IR hot-spot${stamp}: ${g.location} — ΔT ${g.deltaT}°C ${REF_LABEL[g.reference] || REF_LABEL.similar} (${g.label})${g.note ? `. ${g.note}` : ''}`,
             correctiveAction: g.priority === 1
               ? 'Repair immediately — investigate the connection/component and re-scan after correction.'
               : 'Plan corrective work and re-scan to confirm the rise has cleared.',

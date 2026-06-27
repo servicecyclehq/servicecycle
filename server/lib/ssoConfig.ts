@@ -24,6 +24,17 @@ const REQUIRED_WHEN_ENABLED = [
   'SSO_CALLBACK_URL',     // our OAuth redirect_uri (must match Polis registration)
 ];
 
+// INFOSEC-8-14 (KNOWN LIMITATION, deferred — needs schema): SCIM_WEBHOOK_SECRET
+// is a single per-INSTANCE HMAC secret shared by every directory, rather than a
+// per-DIRECTORY secret. A compromise of the one secret would let a forged
+// webhook be accepted for ANY directory on the instance. Scoping the secret
+// per-directory requires a new secret column on the ScimDirectory model (which
+// today has none — see schema.prisma model ScimDirectory), so it is OUT OF
+// SCOPE for an app-logic-only change and is documented here rather than
+// silently shipped. Replay protection IS scoped/hardened separately (see
+// DD-8-5 in routes/ssoScim.ts). When the schema lands, read the per-directory
+// secret in ssoScim.ts after resolving the directory instead of cfg.scimWebhookSecret.
+
 function isSsoEnabled(): boolean {
   return process.env.SSO_ENABLED === 'true';
 }

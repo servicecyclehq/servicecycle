@@ -374,7 +374,7 @@ bash install.sh</pre>
 
   <p style="margin:18px 0 0;color:#94a3b8;font-size:14px;line-height:1.6;">
     Hit reply if you have any questions, want a walkthrough, or want to talk
-    pilot scope — Dustin reads every one of these.
+    pilot scope — a real person reads every one of these.
   </p>
 
   <p style="margin:28px 0 0;font-size:11px;color:#475569;line-height:1.6;">

@@ -1,5 +1,20 @@
 # ============================================================================
 # ServiceCycle SERVER deploy  (run in YOUR PowerShell terminal — SSH works there)
+#
+# ⚠ DEPLOY-PATH NOTE (read before using):
+#   This is the LEGACY "tar the local working tree and scp it" path. It builds
+#   on the box from whatever is on this laptop (no git commit / image digest
+#   tying the deployed bytes to a reviewed commit) and targets /root/ServiceCycle
+#   (capital S), API on :3002. It is NOT the same as the GHCR image path
+#   (manual-ghcr-push.ps1 + docker-compose.ghcr.yml → /root/servicecycle,
+#   lowercase) reconciled by scripts/sync-droplet-compose.sh.
+#
+#   CANONICAL going forward: deploy from a pushed git commit via the VPS ops MCP
+#   (git_pull → build/restart on the droplet → /api/health), so the running bytes
+#   trace to a reviewed commit and the deploy does not depend on this laptop.
+#   Prefer that path; keep this script only as a manual fallback. Pick ONE
+#   droplet directory as canonical and retire the others (tracked as an ops item).
+#
 # Ships: email-in ack, #34 backfill, LapseIQ scrub (server), FAQ help module.
 # NO new migrations this session (server-migrate init will be a no-op).
 # Mirrors the proven 2026-06-14 procedure. Server-only; client is a separate step.

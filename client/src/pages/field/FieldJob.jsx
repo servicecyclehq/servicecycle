@@ -45,7 +45,12 @@ function Card({ title, accent, children }) {
   );
 }
 
-const UNITS = ['MΩ', 'kΩ', 'Ω', 'μΩ', 'A', 'kV', 'V', 'ms', '°C', '%'];
+// [NETA-8-4] Insulation resistance on MV cable / large transformers reads in GΩ–TΩ;
+// without these options a tech is forced to enter a wrong value in MΩ.
+// [NETA-8-12] Micro-ohm uses the MICRO SIGN U+00B5 (µΩ) to match how the test-report
+// parser and the Python field library normalize it — a Greek-mu (U+03BC) here would
+// split the same unit into two distinct strings and break trend matching.
+const UNITS = ['TΩ', 'GΩ', 'MΩ', 'kΩ', 'Ω', 'µΩ', 'A', 'kV', 'V', 'ms', '°C', '%'];
 
 export default function FieldJob() {
   const { id } = useParams(); // assetId (QR labels encode /field/asset/:assetId)

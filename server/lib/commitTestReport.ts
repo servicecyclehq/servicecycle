@@ -39,6 +39,15 @@ function hasUsableReading(measurements: any[]): boolean {
   });
 }
 
+// [NETA-8-11] Name the standard / criterion behind a pass/fail verdict so the
+// auto-created deficiency cites a basis rather than an unexplained flag.
+const IEEE43_FLOOR_TYPES = new Set(['polarization_index', 'dielectric_absorption_ratio']);
+function passFailBasis(x: any, _passFail: string): string {
+  if (x.expectedRange) return `basis: report limit ${x.expectedRange}`;
+  if (IEEE43_FLOOR_TYPES.has(String(x.measurementType))) return 'basis: IEEE 43 acceptance floor';
+  return 'basis: test-report result column';
+}
+
 // Write ONE asset's readings: a COMPLETE WorkOrder parent + TestMeasurement rows
 // + auto Deficiency rows (hard pass/fail + year-over-year trend flag). `db` is a
 // prisma client OR a $transaction client. Returns the per-asset summary.
@@ -113,10 +122,15 @@ async function commitAssetReadings(db: any, p: {
 
     const sev = severityFor(passFail, !!x.critical);
     if (sev) {
+      // [NETA-8-11] State the pass/fail BASIS so an auto-created deficiency is
+      // defensible: the expected range/limit from the report when present, else
+      // the applicable standard floor (IEEE 43 for PI/DAR), else that the verdict
+      // came from the report's own result column. Always name the verdict.
+      const basis = passFailBasis(x, passFail);
       await db.deficiency.create({
         data: {
           accountId, assetId, workOrderId: wo.id, severity: sev,
-          description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${x.asFoundValue ?? '?'}${x.asFoundUnit || ''}${x.expectedRange ? ` -- expected ${x.expectedRange}` : ''}`,
+          description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${x.asFoundValue ?? '?'}${x.asFoundUnit || ''}${x.expectedRange ? ` -- expected ${x.expectedRange}` : ''} [${passFail}; ${basis}]`,
           correctiveAction: 'Flagged from test report ingest -- review reading and schedule corrective work.',
         },
       });

@@ -294,7 +294,16 @@ function mergeExtractions(list: any[]): any {
 function finalize(method: string, aiProvider: any, norm: any, warnings: string[]): any {
   const all = [...warnings, ...(norm.warnings || [])];
   if (!norm.buses || !norm.buses.length) all.push('No buses were extracted — the document may not be a one-line / study, or the scan is too low quality.');
-  return { method, aiProvider: aiProvider ?? null, promptVersion: PROMPT_VERSION, systemMeta: norm.systemMeta ?? null, buses: norm.buses || [], warnings: all, rawJsonText: norm.rawJsonText || '' };
+  // [LEGAL-8-10] Mark the data provenance explicitly. A non-empty AI extract means
+  // every hazard figure (incident energy / boundary / PPE) is an UNVERIFIED machine
+  // read of a scanned document, NOT a PE-entered value — the review UI / disclaimer
+  // and the confirm-time audit rely on this to record that a worker is looking at an
+  // AI-extracted number until a qualified person signs off. text/vision/hybrid parses
+  // are AI-derived; only an empty/unsupported result carries no AI-sourced data.
+  const provenance = ((aiProvider || /vision|text|hybrid/.test(method)) && norm.buses && norm.buses.length)
+    ? 'ai_extracted'
+    : 'none';
+  return { method, aiProvider: aiProvider ?? null, promptVersion: PROMPT_VERSION, provenance, systemMeta: norm.systemMeta ?? null, buses: norm.buses || [], warnings: all, rawJsonText: norm.rawJsonText || '' };
 }
 
 // Extract a structured arc-flash system model from an uploaded document.

@@ -29,7 +29,11 @@ export default function AdminMetrics() {
         setData(resp.data?.data || null);
       } catch (e) {
         if (cancelled) return;
-        setErr(e.response?.data?.error || e.message || 'Failed to load metrics');
+        // Prefer a server-supplied message, but never surface a raw axios
+        // string (e.g. "Network Error" / "Request failed with status code
+        // 500") to the user — fall back to a friendly line instead.
+        const serverMsg = e.response?.data?.error;
+        setErr(serverMsg || 'Could not load metrics right now. Please refresh or try again shortly.');
       } finally {
         if (!cancelled) setLoading(false);
       }

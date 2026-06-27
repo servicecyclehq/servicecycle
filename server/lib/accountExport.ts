@@ -201,6 +201,61 @@ async function buildAccountExport(prisma: any, accountId: string) {
   };
 }
 
+// COMP-8-2b: the JSON account export used to build the whole object, then
+// `JSON.stringify(data, null, 2)` it into a single giant string, then res.send()
+// — the entire account held in memory TWICE (the object graph + the string),
+// which OOMs a single node on a large tenant and is a cheap availability lever.
+// This streams the JSON to the socket incrementally: scalars/metadata are
+// stringified small, and every large array is written element-by-element so we
+// never materialise a second full-size copy of the payload as one string.
+// Backpressure is honoured via the writable stream's drain event.
+//
+// `data` is the object returned by buildAccountExport. We stream keys in a
+// stable order; arrays listed in ARRAY_KEYS stream per-element, everything else
+// is emitted whole (these are small: meta, account, counts, offboarding).
+const ARRAY_KEYS = [
+  'sites', 'assets', 'maintenanceSchedules', 'workOrders', 'deficiencies',
+  'quoteRequests', 'documents', 'snapshots', 'arcFlashStudies', 'arcFlashLabels',
+  'lotoProcs', 'parts', 'spareInventory', 'assetPartRequirements',
+];
+
+function _write(res: any, chunk: string): Promise<void> {
+  // Respect backpressure: if the kernel buffer is full, wait for 'drain'
+  // before resolving so we don't balloon Node's internal write queue.
+  return new Promise((resolve, reject) => {
+    const ok = res.write(chunk, (err: any) => { if (err) reject(err); });
+    if (ok) resolve();
+    else res.once('drain', resolve);
+  });
+}
+
+async function streamAccountExportJson(res: any, data: any): Promise<void> {
+  const arraySet = new Set(ARRAY_KEYS);
+  const keys = Object.keys(data);
+  await _write(res, '{\n');
+  for (let ki = 0; ki < keys.length; ki++) {
+    const key = keys[ki];
+    const keyJson = JSON.stringify(key);
+    const isLast = ki === keys.length - 1;
+    if (arraySet.has(key) && Array.isArray(data[key])) {
+      const arr = data[key];
+      await _write(res, `  ${keyJson}: [`);
+      for (let i = 0; i < arr.length; i++) {
+        // Indent each element body by 4 spaces to keep the file readable;
+        // JSON.stringify per-element bounds peak memory to one row at a time.
+        const body = JSON.stringify(arr[i], null, 2).split('\n').map((l) => '    ' + l).join('\n');
+        await _write(res, (i === 0 ? '\n' : ',\n') + body);
+      }
+      await _write(res, (arr.length ? '\n  ' : '') + ']' + (isLast ? '\n' : ',\n'));
+    } else {
+      // Small scalar / object / metadata value — emit whole.
+      const body = JSON.stringify(data[key], null, 2).split('\n').map((l, idx) => (idx === 0 ? '' : '  ') + l).join('\n');
+      await _write(res, `  ${keyJson}: ${body}${isLast ? '\n' : ',\n'}`);
+    }
+  }
+  await _write(res, '}\n');
+}
+
 // Sheet plan for the multi-sheet XLSX rendering of a full export. Each entry is
 // { key, sheet, columns: [{ id, header, get }] }. Kept here so the route stays
 // thin and the column choices live next to the data assembly.
@@ -296,6 +351,6 @@ const EXPORT_SHEETS = [
   ] },
 ];
 
-module.exports = { buildAccountExport, EXPORT_SHEETS, EXPORT_VERSION };
+module.exports = { buildAccountExport, streamAccountExportJson, EXPORT_SHEETS, EXPORT_VERSION };
 
 export {};

@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api/client';
+import { useConfirm } from '../context/ConfirmContext';
 import Toast from './Toast';
 
 const DOC_TYPE_META = {
@@ -157,6 +158,7 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
 
 // ── Document row ──────────────────────────────────────────────────────────────
 function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
+  const confirm = useConfirm();
   const [opening,  setOpening]  = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editing,  setEditing]  = useState(false);
@@ -175,7 +177,12 @@ function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
   }
 
   async function handleDelete() {
-    if (!window.confirm(`Delete "${doc.filename}"?`)) return;
+    if (!await confirm({
+      title: 'Delete document?',
+      message: `Delete "${doc.filename}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })) return;
     setDeleting(true);
     try {
       await api.delete(`/api/documents/${doc.id}`);

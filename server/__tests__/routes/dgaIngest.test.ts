@@ -63,6 +63,26 @@ describe('#28 evaluateDga (IEEE C57.104)', () => {
     expect(e.tdcg).toBeGreaterThan(0);
     expect(e.overallCondition).toBeGreaterThanOrEqual(1);
   });
+
+  test('[NETA-8-3] low-temp thermal fault (CH4 dominant, low ethylene) reports T1', () => {
+    // CH4 elevated, ethylene below the 50 ppm threshold, no acetylene => <300C thermal.
+    const e = evaluateDga({ h2: 80, ch4: 200, c2h4: 10, c2h6: 30, co2: 1000 });
+    expect(e.faultCode).toBe('T1');
+    expect(e.faultLabel).toBe('Thermal fault <300C');
+  });
+
+  test('[NETA-8-3] mid ethylene still reports T2 (300-700C)', () => {
+    const e = evaluateDga({ ch4: 130, c2h4: 60, c2h2: 0 });
+    expect(e.faultCode).toBe('T2');
+  });
+
+  test('[NETA-8-10] CO2 is informational and never drives the overall condition', () => {
+    // CO2 alone in Condition 4 territory (>10000) must NOT make the unit Condition 4.
+    const e = evaluateDga({ h2: 10, ch4: 5, c2h2: 0, c2h4: 2, c2h6: 3, co: 50, co2: 12000 });
+    expect(e.perGas.co2.condition).toBe(4); // still reported
+    expect(e.overallCondition).toBe(1);     // but not counted
+    expect(e.resultRating).toBe('GREEN');
+  });
 });
 
 describe('#28 parseDgaText', () => {

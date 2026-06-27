@@ -54,7 +54,17 @@ export interface DgaEvaluation {
 }
 
 /** Coarse key-gas fault hint. Deliberately conservative; a full Duval triangle
- *  is future work. Acetylene present => arcing; otherwise thermal by ethylene. */
+ *  is future work. Acetylene present => arcing; otherwise thermal by ethylene.
+ *
+ *  [NETA-8-3] Thermal faults are distinguished by the gas that DOMINATES, per the
+ *  IEEE key-gas method:
+ *    - T3 (>700C): ethylene (C2H4) is the principal gas.
+ *    - T2 (300-700C): ethylene present but not dominant (mid C2H4), with CH4.
+ *    - T1 (<300C): methane (CH4) principal, some H2, ethylene LOW (C2H4 < 50).
+ *  The previous ordering tested `ch4 >= 120` for T2 BEFORE the T1 branch, so a
+ *  low-temperature CH4-dominant fault (the T1 signature) was always captured by
+ *  T2 and T1 was unreachable. T1 is now checked on the low-ethylene path so it
+ *  can fire. */
 function keyGasFault(g: Gases): { code: string; label: string } | null {
   const c2h2 = g.c2h2 ?? 0, c2h4 = g.c2h4 ?? 0, ch4 = g.ch4 ?? 0, h2 = g.h2 ?? 0;
   if (c2h2 >= 2) {
@@ -62,8 +72,13 @@ function keyGasFault(g: Gases): { code: string; label: string } | null {
     return c2h4 >= 100 ? { code: 'D2', label: 'High-energy arcing' } : { code: 'D1', label: 'Low-energy discharge' };
   }
   if (c2h4 >= 100) return { code: 'T3', label: 'Thermal fault >700C' };
-  if (c2h4 >= 50 || ch4 >= 120) return { code: 'T2', label: 'Thermal fault 300-700C' };
-  if (h2 >= 100 && ch4 >= 120) return { code: 'T1', label: 'Thermal fault <300C' };
+  // Mid ethylene => 300-700C overheating (T2). Below the ethylene threshold a
+  // CH4-dominant signature is a sub-300C thermal fault (T1).
+  if (c2h4 >= 50) return { code: 'T2', label: 'Thermal fault 300-700C' };
+  if (ch4 >= 120) {
+    // Low ethylene + elevated methane = low-temperature thermal fault (<300C).
+    return { code: 'T1', label: 'Thermal fault <300C' };
+  }
   if (h2 >= 100) return { code: 'PD', label: 'Partial discharge' };
   return null;
 }
@@ -79,6 +94,11 @@ export function evaluateDga(g: Gases): DgaEvaluation {
     if (v == null) continue;
     const cond = conditionFor(v, LIMITS[k]);
     perGas[k] = { value: v, condition: cond };
+    // [NETA-8-10] CO2 is INFORMATIONAL per IEEE C57.104 (a cellulose-aging
+    // indicator, not a fault gas) and is excluded from TDCG; it must likewise not
+    // drive the transformer's overall condition. Report its band in perGas, but
+    // do not let it raise `worst`.
+    if (k === 'co2') continue;
     if (cond > worst) worst = cond;
   }
   const tdcgCond = conditionFor(tdcg, LIMITS.tdcg);

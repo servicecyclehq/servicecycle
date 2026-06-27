@@ -152,6 +152,13 @@ async function authenticateToken(req, res, next) {
 // endpoints that genuinely make sense for anonymous traffic AND want
 // enrichment when auth happens to be available -- e.g. /api/errors/render
 // (boundary crashes can happen before AuthContext resolves).
+//
+// DD-8-13: this is an auth middleware that NEVER returns 401 — it must never be
+// composed onto a data-reading or data-mutating router. Its only sanctioned
+// mount is the render-crash telemetry sink (/api/errors in server/index.ts).
+// A route that needs req.user to gate access MUST use authenticateToken, not
+// this. If you reach for optionalAuthenticateToken on anything other than the
+// telemetry endpoint, you almost certainly want authenticateToken instead.
 async function optionalAuthenticateToken(req, _res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];

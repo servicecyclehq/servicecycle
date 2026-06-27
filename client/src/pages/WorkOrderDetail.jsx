@@ -351,6 +351,20 @@ export default function WorkOrderDetail() {
     } finally { setAssignBusy(false); }
   }
 
+  // CUST-8-12: Clear must clear immediately — not just reset the dropdown and
+  // wait for a second "Assign" click. Persist userId:null right away.
+  async function clearFieldUser() {
+    setAssignBusy(true);
+    try {
+      await api.put(`/api/work-orders/${id}/assignment`, { userId: null });
+      setAssignUserId('');
+      await fetchWo();
+      setToast({ message: 'Assignment cleared.', variant: 'success' });
+    } catch (err) {
+      apiError(err, 'Failed to clear assignment.');
+    } finally { setAssignBusy(false); }
+  }
+
   // ── Lifecycle actions ──────────────────────────────────────────────────────
   async function startJob() {
     setTransitioning(true);
@@ -609,6 +623,18 @@ export default function WorkOrderDetail() {
   const taskDef = wo.schedule?.taskDefinition;
   const measurements = wo.measurements || [];
   const deficiencies = wo.deficiencies || [];
+  // CUST-8-14: an open IMMEDIATE deficiency blocks completion server-side.
+  // Surface it BEFORE the modal round-trip, with a path straight to it.
+  const blockingImmediate = deficiencies.find(d => d.severity === 'IMMEDIATE' && !d.resolvedAt) || null;
+  const scrollToDeficiencies = () => {
+    const el = document.getElementById('wo-deficiencies');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.style.transition = 'box-shadow 0.3s';
+      el.style.boxShadow = '0 0 0 2px var(--color-danger, #dc2626)';
+      setTimeout(() => { el.style.boxShadow = ''; }, 1600);
+    }
+  };
   const labSamples = wo.labSamples || [];
   const documents = wo.documents || [];
 
@@ -643,9 +669,21 @@ export default function WorkOrderDetail() {
             <button className="btn btn-secondary" onClick={startJob} disabled={transitioning}>Start</button>
           )}
           {canComplete && (
-            <button className="btn btn-primary" onClick={() => { setCompleteError(''); setShowComplete(true); }} disabled={transitioning}>
-              Complete
-            </button>
+            blockingImmediate ? (
+              <button
+                className="btn btn-primary"
+                onClick={scrollToDeficiencies}
+                disabled={transitioning}
+                title="An open IMMEDIATE deficiency must be resolved before this job can be completed"
+                style={{ opacity: 0.85 }}
+              >
+                Resolve blocker to complete
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={() => { setCompleteError(''); setShowComplete(true); }} disabled={transitioning}>
+                Complete
+              </button>
+            )
           )}
           {canCancel && (
             <button className="btn btn-secondary" style={{ color: 'var(--color-danger)' }} onClick={cancelJob} disabled={transitioning}>
@@ -1083,7 +1121,7 @@ export default function WorkOrderDetail() {
         </div>
 
         {/* ── Deficiencies found ─────────────────────────────────────────── */}
-        <div className="card" style={{ marginBottom: 20, order: isTerminal ? 1 : 3 }}>
+        <div id="wo-deficiencies" className="card" style={{ marginBottom: 20, order: isTerminal ? 1 : 3 }}>
           <div className="card-header">
             <div>
               <div className="card-title">Deficiencies found</div>
@@ -1092,6 +1130,14 @@ export default function WorkOrderDetail() {
               </div>
             </div>
           </div>
+
+          {/* CUST-8-14: explain up-front why completion is blocked. */}
+          {blockingImmediate && !isTerminal && (
+            <div style={{ margin: '12px 20px 0', padding: '10px 14px', borderRadius: 'var(--radius)', background: 'var(--color-danger-bg, #fef2f2)', border: '1px solid var(--color-danger, #dc2626)', color: 'var(--color-danger, #b91c1c)', fontSize: 'var(--font-size-sm)', lineHeight: 1.5 }}>
+              This work order can't be completed while an <strong>IMMEDIATE</strong> deficiency is open
+              {canWrite ? ' — resolve it below (with the required corrective note), then Complete.' : ' — a manager must resolve it before completion.'}
+            </div>
+          )}
 
           {deficiencies.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-ui)' }}>
@@ -1326,7 +1372,7 @@ export default function WorkOrderDetail() {
               </button>
               {wo.assignedUserId && (
                 <button type="button" className="btn btn-secondary btn-sm"
-                  onClick={() => { setAssignUserId(''); }}
+                  onClick={clearFieldUser}
                   disabled={assignBusy}
                   title="Clear assignment">
                   Clear

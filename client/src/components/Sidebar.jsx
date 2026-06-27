@@ -177,6 +177,11 @@ function NotificationBell() {
         .catch(() => {});
     }
     fetchCount();
+    // COMP-8-1: this is a PERIODIC poll (every 5 min), NOT real-time. There is
+    // no WebSocket/SSE push anywhere in the client, so a CRIT condition/arc-flash
+    // breach can sit unseen for up to one poll interval. Describe the alert/
+    // condition-monitoring surfaces as "near-real-time / periodic," never
+    // "real-time / continuous," until a push channel exists.
     const id = setInterval(fetchCount, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
@@ -597,6 +602,7 @@ export default function Sidebar() {
       .then(r => { if (active) setReviewCount(r.data?.data?.count || 0); })
       .catch(() => {});
     fetchCount();
+    // COMP-8-1: periodic 60s poll, not a live push (see NotificationBell note).
     const id = setInterval(fetchCount, 60 * 1000);
     return () => { active = false; clearInterval(id); };
   }, [canReview]);

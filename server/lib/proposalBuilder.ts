@@ -135,7 +135,14 @@ async function buildProposal(prisma: any, accountId: string, { siteId = null }: 
   const yr1 = lineItems.filter((i) => i.year === 1);
   const yr3 = lineItems.filter((i) => i.year === 3);
   const yr5 = lineItems.filter((i) => i.year === 5);
-  const nonDefer = lineItems.filter((i) => i.recommendation !== 'defer');
+
+  // CFO-8-7: the "Recommended (phased)" option is the years 1–3 program, so it
+  // must be derived from the SAME year buckets the summary.byYear breakdown
+  // shows — not a separate `recommendation !== 'defer'` filter. That old filter
+  // could diverge from byYear (which keys on year), so a customer couldn't
+  // reconcile "Recommended = $X" against "Year 1 $A + Year 3 $B". Now
+  // Recommended === yr1 ∪ yr3 exactly, and its total === byYear.year1 + byYear.year3.
+  const recommended = [...yr1, ...yr3];
 
   const options = [
     {
@@ -145,8 +152,8 @@ async function buildProposal(prisma: any, accountId: string, { siteId = null }: 
     },
     {
       key: 'recommended', label: 'Recommended (phased)',
-      description: 'All non-deferrable work scheduled across years 1–3 to keep the program compliant.',
-      lineItems: nonDefer.map((i) => i.assetId), count: nonDefer.length, total: sumRange(nonDefer),
+      description: 'The years 1–3 program (Essential plus year-3 work) to keep the program compliant.',
+      lineItems: recommended.map((i) => i.assetId), count: recommended.length, total: sumRange(recommended),
     },
     {
       key: 'comprehensive', label: 'Comprehensive (5-year)',

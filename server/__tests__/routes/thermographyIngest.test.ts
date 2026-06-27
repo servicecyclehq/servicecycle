@@ -70,6 +70,19 @@ describe('#29 parseThermographyText', () => {
     expect(dts).toEqual([2, 8, 25]);
     expect(p.hotspots.find((h: any) => h.deltaT === 25).location).toContain('Phase B');
   });
+
+  test('[NETA-8-1] preserves the reference frame from the line text', () => {
+    const text = `Lug A  30 C over ambient
+      Phase B vs similar  ΔT 18C
+      Bus tap  delta-T 6 degC`;
+    const p = parseThermographyText(text);
+    const byDt = (n: number) => p.hotspots.find((h: any) => h.deltaT === n);
+    expect(byDt(30).reference).toBe('ambient');
+    expect(byDt(18).reference).toBe('similar');
+    expect(byDt(6).reference).toBe('similar'); // no cue -> conservative default
+    // The "over ambient" phrase is stripped from the location.
+    expect(byDt(30).location).not.toMatch(/ambient/i);
+  });
 });
 
 describe('#29 ingest endpoints', () => {
@@ -106,6 +119,27 @@ describe('#29 ingest endpoints', () => {
       .send({ reportText: 'Breaker lug ΔT 30C\nBus tap delta-T 5 degC' });
     expect(res.status).toBe(201);
     expect(res.body.data.deficienciesCreated).toBe(2);
+  });
+
+  test('[NETA-8-1] a 30C OVER-AMBIENT rise grades RECOMMENDED, not a fabricated IMMEDIATE', async () => {
+    // Structured row tagged ambient: 30C over-ambient is "probable deficiency"
+    // (RECOMMENDED) per NETA Table 100.18 — NOT the >15C similar-component IMMEDIATE band.
+    const res = await request(app).post(`/api/assets/${assetId}/thermography/preview`).set('Authorization', auth(manager))
+      .send({ hotspots: [{ location: 'Lug A', deltaT: 30, reference: 'ambient' }] });
+    expect(res.status).toBe(200);
+    const g = res.body.data.hotspots[0];
+    expect(g.reference).toBe('ambient');
+    expect(g.severity).toBe('RECOMMENDED');
+    // Same magnitude with NO ambient frame defaults to similar-component => IMMEDIATE.
+    const res2 = await request(app).post(`/api/assets/${assetId}/thermography/preview`).set('Authorization', auth(manager))
+      .send({ hotspots: [{ location: 'Lug A', deltaT: 30 }] });
+    expect(res2.body.data.hotspots[0].severity).toBe('IMMEDIATE');
+  });
+
+  test('[NETA-8-1] body-level reference applies to structured rows lacking one', async () => {
+    const res = await request(app).post(`/api/assets/${assetId}/thermography/preview`).set('Authorization', auth(manager))
+      .send({ reference: 'ambient', hotspots: [{ location: 'Lug A', deltaT: 25 }] });
+    expect(res.body.data.hotspots[0].severity).toBe('RECOMMENDED'); // 21-40 over-ambient
   });
 
   test('another account cannot ingest to this asset', async () => {

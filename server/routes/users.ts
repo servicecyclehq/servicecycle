@@ -552,12 +552,13 @@ router.put('/:id/deactivate', requireAdmin, async (req, res) => {
     const reason = rawReason ? rawReason.trim().slice(0, 500) : null;
     try {
       writeActivityLog({
-        userId:  req.user.id,
-        action:  'user_deactivated',
-        details: {
+        userId:    req.user.id,
+        action:    'user_deactivated',
+        details:   {
           targetUserId: target.id,
           reason,
         },
+        ipAddress: req.ip,   // INFOSEC-8-4: persist source IP on this privileged event
       });
     } catch (logErr) {
       console.error('activity log (deactivate) error:', logErr);
@@ -579,10 +580,31 @@ router.put('/:id/activate', requireAdmin, async (req, res) => {
     });
     if (!target) return res.status(404).json({ success: false, error: 'User not found' });
 
+    const wasInactive = !target.isActive;
+
     await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: true },
     });
+
+    // INFOSEC-8-5: reactivation is a privileged action (restores a user's
+    // ability to log in) and must leave an audit trail, same as deactivate.
+    // Only log when it was actually a state change, so re-clicking activate on
+    // an already-active user doesn't spam the log. Fire-and-forget; the IP is
+    // folded into details.ip by the activityLog helper (INFOSEC-8-4).
+    if (wasInactive) {
+      try {
+        writeActivityLog({
+          accountId: target.accountId,
+          userId:    req.user.id,
+          action:    'user_reactivated',
+          details:   { targetUserId: target.id, targetUserEmail: target.email },
+          ipAddress: req.ip,
+        });
+      } catch (logErr) {
+        console.error('activity log (activate) error:', logErr);
+      }
+    }
 
     return res.json({ success: true });
   } catch (err) {
@@ -627,14 +649,15 @@ router.post('/:id/revoke-sessions', requireAdmin, async (req, res) => {
       // of re-requiring it inside the handler. Cosmetic; matches the pattern
       // used by the other writeActivityLog call-sites in this file.
       writeActivityLog({
-        userId:  req.user.id,
-        action:  'sessions_revoked',
-        details: {
+        userId:    req.user.id,
+        action:    'sessions_revoked',
+        details:   {
           targetUserId:    target.id,
           targetUserEmail: target.email,
           revokedCount:    result.count,
           selfRevoke:      target.id === req.user.id,
         },
+        ipAddress: req.ip,   // INFOSEC-8-4: persist source IP on this privileged event
       });
     } catch (logErr) {
       console.error('activity log error (revoke-sessions):', logErr);
@@ -655,7 +678,7 @@ function _subProcessorsSnapshot() {
   return {
     asOf: '2026-05-22',
     source: 'legal/sub-processors-2026-05.md',
-    note: 'These are the sub-processors that may have processed your personal data on ForgeRift\'s behalf as of the export date. See Privacy Policy section 4 for the per-activity data category mapping.',
+    note: 'These are the sub-processors that may have processed your personal data on ServiceCycle\'s behalf as of the export date. See Privacy Policy section 4 for the per-activity data category mapping.',
     tier1_infrastructure_and_communications: [
       { name: 'Cloudflare, Inc.',       role: 'Edge TLS, DDoS protection, edge analytics, email routing',           dataCategories: 'Network metadata; inbound email contents in flight' },
       { name: 'DigitalOcean, LLC',      role: 'Origin compute + managed Postgres',                                    dataCategories: 'All application data at rest (encrypted by AES-256 at the volume layer)' },

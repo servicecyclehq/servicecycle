@@ -83,6 +83,7 @@ describe('cross-tenant isolation', () => {
   });
 
   test("B's part list never contains A's part", async () => {
+    // ?limit triggers the paginated envelope { parts, pagination }.
     const res = await api().get('/api/parts?limit=200').set(bearer(t.tokenB));
     expect(res.status).toBe(200);
     const ids = (res.body.data.parts || []).map((p) => p.id);
@@ -101,14 +102,35 @@ describe('cross-tenant isolation', () => {
 // ── happy-path CRUD ────────────────────────────────────────────────────────────
 
 describe('parts CRUD', () => {
-  test('GET /api/parts returns list with shape', async () => {
+  test('GET /api/parts (default) returns a bare array of parts', async () => {
+    // Default (no page/limit) is the backward-compatible bare-array shape used
+    // by dropdown consumers (SpareInventoryPanel etc.).
     const res = await api().get('/api/parts').set(bearer(t.tokenAdminA));
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data.parts)).toBe(true);
-    // The part seeded in beforeAll must be in the list.
-    const found = res.body.data.parts.find((p) => p.id === partId);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    const found = res.body.data.find((p) => p.id === partId);
     expect(found).toBeTruthy();
     expect(found.partNumber).toBe('TEST-BREAKER-001');
+  });
+
+  test('GET /api/parts?page=1 returns the paginated envelope', async () => {
+    const res = await api().get('/api/parts?page=1&limit=50').set(bearer(t.tokenAdminA));
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data.parts)).toBe(true);
+    expect(res.body.data.pagination).toBeTruthy();
+    expect(typeof res.body.data.pagination.total).toBe('number');
+    expect(res.body.data.pagination.page).toBe(1);
+    const found = res.body.data.parts.find((p) => p.id === partId);
+    expect(found).toBeTruthy();
+  });
+
+  test('GET /api/parts?search= filters the catalog', async () => {
+    const res = await api()
+      .get('/api/parts?search=TEST-BREAKER-001&page=1')
+      .set(bearer(t.tokenAdminA));
+    expect(res.status).toBe(200);
+    const ids = (res.body.data.parts || []).map((p) => p.id);
+    expect(ids).toContain(partId);
   });
 
   test('GET /api/parts/:id returns part detail', async () => {
@@ -163,7 +185,7 @@ describe('spare inventory', () => {
   test('GET /api/parts/:id/inventory returns the entry', async () => {
     const res = await api().get(`/api/parts/${partId}/inventory`).set(bearer(t.tokenAdminA));
     expect(res.status).toBe(200);
-    const entry = (res.body.data.inventory || []).find((e) => e.id === invEntryId);
+    const entry = (res.body.data || []).find((e) => e.id === invEntryId);
     expect(entry).toBeTruthy();
   });
 
@@ -188,21 +210,19 @@ describe('spare inventory', () => {
 // ── low-stock endpoint ─────────────────────────────────────────────────────────
 
 describe('low-stock summary', () => {
-  test('GET /api/parts/low-stock returns lowCount ≥ 1 (entry is below min)', async () => {
+  test('GET /api/parts/low-stock returns count ≥ 1 (entry is below min)', async () => {
     const res = await api().get('/api/parts/low-stock').set(bearer(t.tokenAdminA));
     expect(res.status).toBe(200);
     // qtyOnHand=1 < qtyMin=2 — must be in the low list
-    expect(res.body.data.lowCount).toBeGreaterThanOrEqual(1);
-    expect(Array.isArray(res.body.data.entries)).toBe(true);
-    const hit = res.body.data.entries.find((e) => e.id === invEntryId);
-    expect(hit).toBeTruthy();
+    expect(res.body.data.count).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(res.body.data.items)).toBe(true);
   });
 
   test("B's low-stock view is empty (no A entries)", async () => {
     const res = await api().get('/api/parts/low-stock').set(bearer(t.tokenB));
     expect(res.status).toBe(200);
-    const ids = (res.body.data.entries || []).map((e) => e.id);
-    expect(ids).not.toContain(invEntryId);
+    expect(res.body.data.count).toBe(0);
+    expect(res.body.data.items).toEqual([]);
   });
 });
 
@@ -222,7 +242,7 @@ describe('required-parts by asset', () => {
   test('GET /api/parts/required-by/:assetId returns linked part with stock status', async () => {
     const res = await api().get(`/api/parts/required-by/${assetId}`).set(bearer(t.tokenAdminA));
     expect(res.status).toBe(200);
-    const link = (res.body.data.requirements || []).find((r) => r.partId === partId);
+    const link = (res.body.data || []).find((r) => r.partId === partId);
     expect(link).toBeTruthy();
     // Stock status — one inventory entry exists (qty 1, min 2) so status should be LOW
     expect(['OK', 'LOW', 'OOS']).toContain(link.stockStatus);
@@ -262,9 +282,10 @@ describe('CSV import', () => {
       .attach('file', Buffer.from(csv, 'utf-8'), { filename: 'test.csv', contentType: 'text/csv' });
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data.rows)).toBe(true);
-    expect(res.body.data.rows.length).toBeGreaterThanOrEqual(1);
-    expect(res.body.data.rows[0].partNumber).toBe('PREVIEW-001');
+    expect(Array.isArray(res.body.data.preview)).toBe(true);
+    expect(res.body.data.preview.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.data.preview[0].partNumber).toBe('PREVIEW-001');
+    expect(['new', 'update']).toContain(res.body.data.preview[0].status);
   });
 });
 

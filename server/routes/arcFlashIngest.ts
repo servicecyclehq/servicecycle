@@ -473,6 +473,33 @@ router.patch('/ingest/:id/bus/:busId', requireManager, async (req: any, res: any
     patch.gaps = g; patch.readiness = g.readiness; patch.confidence = g.confidence;
     const updated = await prisma.arcFlashIngestBus.update({ where: { id: bus.id }, data: patch });
 
+    // [LEGAL-8-5] Audit reviewer edits to the hazard inputs/outputs on this draft
+    // bus with before/after. These values flow into the durable study + label on
+    // confirm, so a hand-typed PPE category or incident energy must record who
+    // entered it and what it replaced. Derived fields (gaps/readiness/confidence)
+    // are excluded — only the human-entered hazard data is audited. Routed through
+    // ActivityLog so the hash chain (LEGAL-8-6) commits to the values.
+    const AUDITED_BUS_FIELDS = [
+      'busName', 'nominalVoltage', 'incidentEnergyCalCm2', 'arcFlashBoundaryIn', 'ppeCategory',
+      'electrodeConfig', 'clearingTimeMs', 'workingDistanceIn', 'boltedFaultCurrentKA', 'arcingCurrentKA',
+      'conductorGapMm', 'deviceType', 'deviceManufacturer', 'deviceModel', 'deviceRatingA', 'deviceSettings',
+      'tripUnitType', 'fuseClass', 'upstreamDevice', 'resolution', 'matchedAssetId',
+    ];
+    const busChanges: Record<string, { from: any; to: any }> = {};
+    for (const f of AUDITED_BUS_FIELDS) {
+      if (!(f in patch)) continue;
+      const before = (bus as any)[f] ?? null;
+      const after  = (updated as any)[f] ?? null;
+      const bStr = before == null ? null : (typeof before === 'object' ? JSON.stringify(before) : before);
+      const aStr = after  == null ? null : (typeof after  === 'object' ? JSON.stringify(after)  : after);
+      if (bStr !== aStr) busChanges[f] = { from: before, to: after };
+    }
+    if (Object.keys(busChanges).length > 0) {
+      await logActivity(req.user.id, req.user.accountId, 'arc_flash_ingest_bus_edited', {
+        ingestId: ingest.id, busId: bus.id, editedBy: req.user.id, changes: busChanges,
+      });
+    }
+
     // Re-roll the ingest summary.
     const all = await prisma.arcFlashIngestBus.findMany({ where: { ingestId: ingest.id } });
     const summary = summarizeIngestBands(all.map((x: any) => x.gaps).filter(Boolean));
@@ -643,7 +670,28 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
 
     await txn.arcFlashIngest.update({ where: { id: ingest.id }, data: { status: 'confirmed', confirmedById: req.user.id, confirmedAt: new Date(), producedStudyId: studyId } });
     }, { timeout: 30000 }); // confirm can create many assets + study-bus rows
-    await logActivity(req.user.id, accountId, 'arc_flash_ingest_confirmed', { ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount });
+    // [LEGAL-8-10] When this confirm produced a durable study, record the
+    // provenance of the bound hazard values: which were machine-extracted by an AI
+    // (unverified) vs the PE name attached. SC has no schema column to stamp each
+    // bus value's source without a migration, so the attestation lives in the
+    // audit trail (and flows through the hash chain, LEGAL-8-6). studySignedOff is
+    // false unless a PE name was carried onto the produced study.
+    const peOnStudy = (((ingest as any).systemMeta || {}).studyMeta || {}).peName || null;
+    await logActivity(req.user.id, accountId, 'arc_flash_ingest_confirmed', {
+      ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount,
+      confirmedBy: req.user.id,
+      provenance: {
+        // The bus values came from the ingest extraction pipeline.
+        source: ingest.extractionMethod ? 'ai_extracted' : 'manual_entry',
+        extractionMethod: ingest.extractionMethod || null,
+        aiProvider: ingest.aiProvider || null,
+        promptVersion: ingest.promptVersion || null,
+        peName: peOnStudy,
+        // A produced study is NOT PE-signed-off just because it was confirmed —
+        // it carries AI-extracted numbers unless a qualified person re-verifies.
+        peSignedOff: !!peOnStudy,
+      },
+    });
 
     res.json({ success: true, data: { ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount } });
   } catch (e: any) {
@@ -1413,7 +1461,25 @@ router.get('/asset/:assetId/permit', async (req: any, res: any) => {
       shockRestrictedApproachIn: numOrNull(current.shockRestrictedApproachIn), ppeCategory: current.ppeCategory,
       requiredArcRatingCalCm2: numOrNull(current.requiredArcRatingCalCm2),
     };
-    const permit = buildEnergizedWorkPermit({ bus: busShape, study: current.study, asset });
+    // [LEGAL-8-12] Detect an unreviewed system change since the study that
+    // date/supersession can't see: a protective device on this asset whose
+    // settings were collected AFTER the study was performed. Device settings drive
+    // clearing time -> the IEEE 1584 incident energy, so a newer setting means the
+    // posted number may be stale. When found, downgrade canIssue and explain why.
+    let unreviewedDrift = false;
+    let driftReason: string | undefined;
+    const studyPerformed = current.study?.performedDate ? new Date(current.study.performedDate) : null;
+    if (studyPerformed && !Number.isNaN(studyPerformed.getTime())) {
+      const driftedDevice = await prisma.protectiveDevice.findFirst({
+        where: { assetId: asset.id, accountId, status: 'active', settingsCollectedAt: { gt: studyPerformed } },
+        select: { id: true, label: true, settingsCollectedAt: true },
+      });
+      if (driftedDevice) {
+        unreviewedDrift = true;
+        driftReason = `A protective-device setting (${driftedDevice.label || 'device'}) was collected after the study date — clearing time may have changed, so the incident energy needs re-verification by a qualified person before issuing.`;
+      }
+    }
+    const permit = buildEnergizedWorkPermit({ bus: busShape, study: current.study, asset, unreviewedDrift, driftReason });
     res.json({ success: true, data: { permit } });
   } catch (e) {
     console.error('arc-flash permit error:', e);
@@ -1986,10 +2052,15 @@ router.post('/afx/import-multi/preview', requireManager, (req: any, res: any) =>
   });
 });
 
-// ── POST /afx/import-multi/apply ── WRITES. Requires confirm:true. FILL-ONLY:
-// updates matched buses' BLANK fields from the import; never overwrites existing
-// values (can't clobber PE-stamped data), never creates new buses. Refuses if the
-// set has integrity errors. Idempotent. Every change goes to the activity log.
+// ── POST /afx/import-multi/apply ── WRITES. Requires confirm:true. DEFAULT is
+// FILL-ONLY: updates matched buses' BLANK fields from the import (existing,
+// possibly PE-stamped, values are preserved). When the caller opts in with
+// mode:'overwrite' (preview it first via import-multi/preview), it ALSO replaces
+// non-blank existing values that differ — and in that case every overwritten
+// field is recorded to the activity log with its prior value (LEGAL-8-8), so a
+// PE-stamped figure can never be silently clobbered. Imports never erase a value
+// with a blank, and never create new buses unless createNew:true. Refuses if the
+// set has integrity errors. Idempotent.
 router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
   upload.single('file')(req, res, async (err: any) => {
     try {
@@ -2022,6 +2093,26 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
       });
       const overwrite = req.body && (req.body.mode === 'overwrite' || req.body.overwrite === true || req.body.overwrite === 'true');
       const { updates, summary } = buildFillUpdates(tables, existing, { overwrite });
+
+      // [LEGAL-8-8] In overwrite mode, build a per-bus before/after record for every
+      // field whose prior value was non-blank and is being replaced — so a bulk
+      // spreadsheet can't clobber PE-stamped data without a reconstructable trail.
+      // (Fill-only writes touch BLANK fields, which carry no prior value, so they
+      // need no before/after.) `existing` was selected with exactly these fields.
+      const existingById = new Map<string, any>(existing.map((r: any) => [r.id, r]));
+      const overwriteAudit: Array<{ id: string; busName: any; changes: any }> = [];
+      if (overwrite) {
+        const blankish = (v: any) => v == null || v === '';
+        for (const u of updates) {
+          const ex = existingById.get(u.id) || {};
+          const changes: Record<string, { from: any; to: any }> = {};
+          for (const [field, to] of Object.entries(u.set)) {
+            const from = ex[field];
+            if (!blankish(from) && String(from) !== String(to)) changes[field] = { from: from ?? null, to: to as any };
+          }
+          if (Object.keys(changes).length) overwriteAudit.push({ id: u.id, busName: ex.busName ?? null, changes });
+        }
+      }
 
       // Resolve + validate the create-target site BEFORE opening the transaction so
       // we can return a clean 4xx (can't res.json from inside the tx callback).
@@ -2161,11 +2252,19 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
       }, { timeout: 30000 });
 
       const { applied, created, feedsWired, devicesCreated, createdStudyId } = out;
-      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', { busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten, busesCreated: created, feedsWired, devicesCreated, createdStudyId, skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode });
+      await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', {
+        busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten,
+        busesCreated: created, feedsWired, devicesCreated, createdStudyId,
+        skippedNew: summary.skippedNew, skippedNoChange: summary.skippedNoChange, mode: summary.mode,
+        importedBy: req.user.id,
+        // [LEGAL-8-8] Per-bus old->new for every overwritten (previously non-blank)
+        // field, so a bulk import that replaces PE-stamped data is reconstructable.
+        overwrites: overwriteAudit.slice(0, 500),
+      });
       const parts = [`updated ${applied} existing bus(es)`];
       if (created) parts.push(`created ${created} new`);
       if (devicesCreated) parts.push(`added ${devicesCreated} device(s)`);
-      const note = `Import applied: ${parts.join(', ')}. SC stores collected data and a licensed PE owns the arc-flash calculation; existing values are never erased.`;
+      const note = `Import applied: ${parts.join(', ')}. SC stores collected data and a licensed PE owns the arc-flash calculation. In fill-only mode existing values are preserved; in overwrite mode each replaced value is recorded to the audit log with its prior value.`;
       const responseBody = { success: true, data: { applied, created, feedsWired, devicesCreated, createdStudyId, summary, note } };
       idemStore(prisma, { accountId, key: ikey, method: req.method, path: req.path, statusCode: 200, body: responseBody });
       res.json(responseBody);
@@ -2354,15 +2453,26 @@ router.post('/import-results', requireManager, (req: any, res: any) => {
     }
 
     let applied = 0;
+    // [LEGAL-8-2] Build a per-bus, per-field before/after record so a re-import of a
+    // PE results CSV is reconstructable (which bus, which field, prior value, new
+    // value) — not just an aggregate count. Each entry is routed through the
+    // activity log so the tamper-evident hash chain (LEGAL-8-6) commits to the
+    // incident-energy / PPE / boundary values that actually change the label.
+    const perBusChanges: Array<{ busId: string; busName: any; changes: any }> = [];
     for (const u of updates) {
       const data: any = {};
       for (const [field, ch] of Object.entries(u.changes)) data[field] = (ch as any).to;
       // Re-derive the NFPA 70E severity from the new incident energy + voltage.
       data.labelSeverity = deriveLabelSeverity({ incidentEnergyCalCm2: data.incidentEnergyCalCm2 ?? null, nominalVoltage: voltByBus.get(u.busId) }) ?? undefined;
       await prisma.systemStudyAsset.update({ where: { id: u.busId }, data });
+      perBusChanges.push({ busId: u.busId, busName: (u as any).busName ?? null, changes: u.changes });
       applied++;
     }
-    await logActivity(req.user.id, accountId, 'arc_flash_results_imported', { applied, unmatched: unmatched.length, recognized });
+    await logActivity(req.user.id, accountId, 'arc_flash_results_imported', {
+      applied, unmatched: unmatched.length, recognized, importedBy: req.user.id,
+      // Per-bus old->new for every applied change (cap to bound the payload).
+      busChanges: perBusChanges.slice(0, 500),
+    });
     res.json({ success: true, data: { preview: false, recognized, errors, applied, unmatched, unmatchedCount: unmatched.length } });
   } catch (e) {
     console.error('arc-flash import-results error:', e);

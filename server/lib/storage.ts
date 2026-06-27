@@ -41,6 +41,25 @@ const fsp  = require('fs/promises');
 function getDest()      { return (process.env.STORAGE_DEST || 'local').toLowerCase(); }
 function getLocalPath() { return path.resolve(process.env.STORAGE_LOCAL_PATH || path.join(__dirname, '..', 'uploads')); }
 
+// INFOSEC-8-15: default S3 pre-signed URL lifetime. A signed URL is a bearer
+// capability — anyone who obtains it can fetch the object until it expires, and
+// it bypasses our /file auth route entirely. The previous fixed 1-hour window
+// was longer than a document view needs. Default to 15 minutes (enough for a
+// click-through download) and let operators tune via STORAGE_S3_URL_TTL_SECONDS.
+// Callers can also pass a shorter ttl per request (e.g. inline preview). Clamped
+// to [60s, 3600s] so a typo can't mint a multi-day capability.
+const PRESIGN_TTL_MIN = 60;
+const PRESIGN_TTL_MAX = 3600;
+const PRESIGN_TTL_DEFAULT = 900; // 15 min
+function getPresignTtl(override) {
+  const raw = override != null
+    ? override
+    : parseInt(process.env.STORAGE_S3_URL_TTL_SECONDS || String(PRESIGN_TTL_DEFAULT), 10);
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return PRESIGN_TTL_DEFAULT;
+  return Math.min(PRESIGN_TTL_MAX, Math.max(PRESIGN_TTL_MIN, Math.floor(n)));
+}
+
 // L4 (2026-06-09 audit): belt-and-suspenders path-traversal guard. The
 // documents file-serving route already gates `key` via a DB lookup scoped
 // to accountId before reaching here, and buildStorageKey() sanitizes the
@@ -209,12 +228,16 @@ async function deleteFile(storageKey) {
  * Local: returns an authenticated API path (/api/documents/file?key=...).
  *        The documents route handles auth and streaming.
  *
- * S3:    returns a pre-signed URL (1 hour validity).
+ * S3:    returns a short-lived pre-signed URL. INFOSEC-8-15: default 15 min
+ *        (was a fixed 1 hour), tunable via STORAGE_S3_URL_TTL_SECONDS or a
+ *        per-call `ttlSeconds` override, clamped to [60s, 3600s].
  *
  * @param {string} storageKey
+ * @param {string|null} filename
+ * @param {number|null} [ttlSeconds]  optional per-call expiry override (seconds)
  * @returns {{ url: string, type: 'local'|'presigned', expiresIn?: number }}
  */
-async function getFileUrl(storageKey, filename = null) {
+async function getFileUrl(storageKey, filename = null, ttlSeconds = null) {
   const dest = getDest();
 
   if (dest === 's3') {
@@ -224,6 +247,7 @@ async function getFileUrl(storageKey, filename = null) {
     // the bucket (this URL bypasses our /file route), so the attachment
     // disposition + octet-stream type must be signed into the request itself.
     const safeName = (filename || 'download').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+    const expiresIn = getPresignTtl(ttlSeconds);
     const url = await getSignedUrl(
       getS3Client(),
       new GetObjectCommand({
@@ -232,9 +256,9 @@ async function getFileUrl(storageKey, filename = null) {
         ResponseContentDisposition: `attachment; filename="${safeName}"`,
         ResponseContentType: 'application/octet-stream',
       }),
-      { expiresIn: 3600 }
+      { expiresIn }
     );
-    return { url, type: 'presigned', expiresIn: 3600 };
+    return { url, type: 'presigned', expiresIn };
   } else {
     return {
       url:  `/api/documents/file?key=${encodeURIComponent(storageKey)}`,

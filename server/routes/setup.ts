@@ -298,12 +298,11 @@ router.post('/email', credentialLimiter, async (req, res) => {
 // mirror to .env for persistence.
 //
 // Real path: stores in account_settings keyed AI_API_KEY (matches existing
-// settings.js convention; verified at server/routes/settings.js:23). The key
-// is encrypted at rest by the existing settings flow if the operator later
-// edits via Settings UI — for the wizard we store plaintext to keep this
-// endpoint simple, with a note in the response telling the operator to
-// re-save via Settings to trigger encryption. (Future: add a wizard-specific
-// encryption call here.)
+// settings.js convention; verified at server/routes/settings.js:23). DD-8-14:
+// the key is encrypted at rest ON THIS WIZARD PATH via the shared
+// encryptIfNeeded() helper below (same helper settings.js uses) — there is no
+// plaintext-until-re-save window. An earlier version stored plaintext here and
+// deferred encryption to a manual Settings re-save; that gap is closed.
 
 router.post('/ai', credentialLimiter, async (req, res) => {
   if (await _rejectIfConfigured(res)) return;
@@ -353,8 +352,9 @@ router.post('/ai', credentialLimiter, async (req, res) => {
       data: {
         mode: 'enabled',
         provider: providerName,
-        // Tell the SPA to nudge the operator to re-save via Settings for at-rest encryption
-        encryptionNote: 'For at-rest encryption of this key, re-save it via Settings → AI after first login.',
+        // DD-8-14: the key is already encrypted at rest (encryptIfNeeded). This
+        // note reflects reality rather than implying a plaintext-until-re-save gap.
+        encryptionNote: 'This API key is encrypted at rest. You can rotate it any time via Settings → AI.',
       },
     });
   } catch (err) {

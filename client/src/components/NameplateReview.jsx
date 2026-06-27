@@ -137,7 +137,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
               <div style={{ background: 'var(--chip-blue-bg)', border: '1px solid var(--chip-blue-fg)', color: 'var(--chip-blue-fg)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16, textAlign: 'left' }}>
                 Take or upload a photo of the equipment nameplate. <strong>AI will read it and ask you to review the fields before anything is saved</strong> — so a bad read never silently lands on the asset.
               </div>
-              {preview && <img src={preview} alt="" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 14, border: '1px solid #e5e7eb' }} />}
+              {preview && <img src={preview} alt="Nameplate photo to be read" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 14, border: '1px solid var(--color-border)' }} />}
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={pick} style={{ display: 'none' }} />
               <button onClick={() => fileRef.current?.click()} disabled={busy} style={btnPrimary}>
                 {busy ? 'Reading nameplate…' : preview ? 'Choose a different photo' : '📷 Take / upload photo'}
@@ -153,7 +153,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
           {values && (
             <>
               <div style={{ display: 'flex', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
-                {preview && <img src={preview} alt="" style={{ width: 150, height: 112, objectFit: 'cover', borderRadius: 8, border: '1px solid #e5e7eb' }} />}
+                {preview && <img src={preview} alt="Scanned nameplate being reviewed" style={{ width: 150, height: 112, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--color-border)' }} />}
                 <div style={{ flex: '1 1 220px', fontSize: 13, color: 'var(--color-text)' }}>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>Review before saving</div>
                   {flagged > 0

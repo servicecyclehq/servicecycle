@@ -33,8 +33,13 @@ router.get('/', requireManager, async (req: any, res: any) => {
     });
     const rates = resolver.resolvedAll().map((r: any) => ({
       serviceType: r.serviceType,
-      minDollars: Math.round(r.minCents / 100),
-      maxDollars: Math.round(r.maxCents / 100),
+      // CFO-8-9: emit EXACT dollars from cents (no rounding). The old
+      // Math.round(cents/100) silently mutated any non-whole-dollar rate on a
+      // save-without-edit round-trip (e.g. 123450¢ = $1,234.50 → shown $1,235 →
+      // saved 123500¢), and disagreed with the PDF/digest formatters that read
+      // raw cents. minCents/maxCents are CENTS; min/maxDollars are exact USD.
+      minDollars: r.minCents / 100,
+      maxDollars: r.maxCents / 100,
       source: r.source, // 'account' (override) | 'partner' | 'platform'
     }));
     return res.json({ success: true, data: { rates } });

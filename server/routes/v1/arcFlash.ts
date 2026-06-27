@@ -15,6 +15,8 @@ const { buildOneLine } = require('../../lib/arcFlashOneLine');
 const { buildEnergizedWorkPermit } = require('../../lib/arcFlashPermit');
 const { SC_DATA_LAYER_DISCLAIMER } = require('../../lib/arcFlashCopy');
 const { requireScope } = require('../../middleware/apiKeyAuth');
+const { writeLog: writeActivityLog } = require('../../lib/activityLog');
+const crypto = require('crypto');
 
 function currentRowOf(rows: any[]): any {
   return rows.slice().sort((a: any, b: any) => {
@@ -175,6 +177,35 @@ router.post('/devices', requireScope('write'), async (req: any, res: any) => {
     },
     select: { id: true, assetId: true, deviceType: true, manufacturer: true, model: true, frameRatingA: true, sensorRatingA: true, settings: true, source: true, status: true, createdAt: true },
   });
+
+  // [LEGAL-8-13] Protective-device settings drive clearing time -> IEEE 1584
+  // incident energy, so an automated integration writing a device materially
+  // changes the hazard basis. There is no human actor, so attribute the write to
+  // the API key (id + name) and commit a hash of the payload to the audit trail.
+  // Routed through ActivityLog so the tamper-evident hash chain (LEGAL-8-6)
+  // covers it; userId is null (machine actor), accountId scopes the chain.
+  const payloadHash = crypto.createHash('sha256').update(JSON.stringify({
+    assetId: b.assetId, deviceType: b.deviceType ?? null, manufacturer: b.manufacturer ?? null,
+    model: b.model ?? null, partNumber: b.partNumber ?? null,
+    frameRatingA: b.frameRatingA ?? null, sensorRatingA: b.sensorRatingA ?? null,
+    settings: b.settings ?? null,
+  })).digest('hex');
+  writeActivityLog({
+    accountId,
+    userId: null,
+    assetId: asset.id,
+    action: 'api_v1_protective_device_created',
+    details: {
+      deviceId: device.id,
+      apiKeyId: req.apiKey?.id || null,
+      apiKeyName: req.apiKey?.name || null,
+      actor: 'api_key',
+      deviceType: b.deviceType ?? null,
+      hasSettings: !!(b.settings && Object.keys(b.settings).length),
+      payloadHash,
+    },
+  });
+
   res.status(201).json({ device });
 });
 

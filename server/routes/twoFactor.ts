@@ -43,6 +43,15 @@ const totpLimiter = rateLimit({
 // Supplements the IP limiter: rotated-IP attacks are blocked per userId.
 // State is in-process; a restart clears counts — acceptable because the
 // pending_2fa token only lives 5 minutes anyway.
+//
+// INFOSEC-8-9 / DD-8-6 (KNOWN LIMITATION, deferred — needs schema): this counter
+// (and the login lockout map in auth.ts) is process-local, so a deploy/PM2
+// restart resets per-user lockout state mid-attack, and a future multi-replica
+// deploy makes the budget per-replica. A durable cross-process store needs a new
+// table (no suitable one exists — FailedLoginAttempt is login-scoped, not
+// TOTP-scoped), which is OUT OF SCOPE for an app-logic-only change. The 5-minute
+// pending_2fa TTL + IP limiter bound the practical exposure; documented here
+// rather than silently shipped as "enterprise-grade".
 const TOTP_USER_MAX_FAILS   = 5;
 const TOTP_USER_WINDOW_MS   = 5 * 60 * 1000; // 5 min
 const TOTP_USER_MAX_SIZE    = 2000;           // LRU cap
@@ -193,6 +202,17 @@ router.get('/status', authenticateToken, async (req, res) => {
 // Generate a new TOTP secret + QR code. Does NOT enable 2FA yet — that happens
 // in /enable after the user confirms the code. The secret is stored encrypted in
 // the DB at this point so it survives a page refresh before they confirm.
+//
+// INFOSEC-8-8 (residual, documented): the 2FA management routes are gated by
+// authenticateToken but do NOT require a fresh password "step-up" / recent-auth.
+// /disable and /backup-codes/regenerate already require proof-of-possession of a
+// current TOTP or backup code (a meaningful second factor), so a stolen access
+// token alone cannot turn 2FA off or mint new backup codes. /setup and /enable
+// have no such second-factor gate. A true recent-auth step-up needs a primitive
+// the codebase does not yet have (a short-lived "recently re-authenticated"
+// claim); adding a half-baked one risks the login/2FA flow, so it is deferred.
+// Mitigation shipped here: /setup now writes an audit record so enrollment
+// activity is visible to admins.
 
 router.post('/setup', authenticateToken, async (req, res) => {
   try {
@@ -218,6 +238,17 @@ router.post('/setup', authenticateToken, async (req, res) => {
         twoFactorEnabled:     false, // not enabled until /enable is called
         twoFactorBackupCodes: JSON.stringify(hashedCodes),
       },
+    });
+
+    // INFOSEC-8-8: audit enrollment initiation so an admin can see a 2FA
+    // (re)provisioning that wasn't user-initiated. Fire-and-forget; IP folded
+    // into details.ip by the activityLog helper (INFOSEC-8-4).
+    writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    '2fa_setup_initiated',
+      details:   null,
+      ipAddress: req.ip,
     });
 
     return res.json({

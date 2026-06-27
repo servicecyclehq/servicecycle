@@ -16,7 +16,7 @@
  *   cycle and MUST NOT suppress this cycle's tiers.
  */
 
-const { TIERS } = require('../lib/alertEngine');
+const { TIERS, tierCrosses } = require('../lib/alertEngine');
 
 // ── TIERS structure ────────────────────────────────────────────────────────────
 
@@ -89,6 +89,67 @@ describe('TIERS configuration', () => {
     for (const expected of [180, 120, 90, 60, 30, 7, -1, -7, -30, -90]) {
       expect(days).toContain(expected);
     }
+  });
+});
+
+// ── Tier crossing (band ownership) — CUST-8-2 ──────────────────────────────────
+// Positive lead tiers must fire the moment daysUntil drops to/below their
+// threshold (band ownership: exactly the nearest crossed lead tier fires), so a
+// multi-day cron outage or an asset entering a tier mid-band can't skip a tier.
+// Overdue/escalation/breach tiers fire on ANY crossing.
+
+describe('tierCrosses (band-ownership lead-tier firing)', () => {
+  const t = (leadDays) => TIERS.find((x) => x.leadDays === leadDays);
+
+  test('exactly one lead tier fires for a given future daysUntil', () => {
+    // 64 days out: the nearest crossed lead tier is the 90-day one.
+    const firing = TIERS.filter((tier) => tierCrosses(tier, 64));
+    expect(firing).toHaveLength(1);
+    expect(firing[0].leadDays).toBe(90);
+  });
+
+  test('the exact tier day fires that tier', () => {
+    expect(tierCrosses(t(60), 60)).toBe(true);
+    // and not a different lead tier
+    expect(tierCrosses(t(90), 60)).toBe(false);
+    expect(tierCrosses(t(30), 60)).toBe(false);
+  });
+
+  test('a tier still "owed" after the cron missed days fires when it next runs', () => {
+    // Cron was down; schedule is now 55 days out (below the 60-day threshold,
+    // above 30). The 60-day tier must fire even though we never saw day 60.
+    expect(tierCrosses(t(60), 55)).toBe(true);
+    // The 90 tier already passed and is not the nearest crossed one.
+    expect(tierCrosses(t(90), 55)).toBe(false);
+  });
+
+  test('a brand-new schedule due in 5 days fires only the nearest (7-day) lead tier', () => {
+    const firing = TIERS.filter((tier) => tier.leadDays >= 0 && tierCrosses(tier, 5));
+    expect(firing).toHaveLength(1);
+    expect(firing[0].leadDays).toBe(7);
+  });
+
+  test('no lead tier fires once the task is overdue (daysUntil < 0)', () => {
+    for (const tier of TIERS.filter((x) => x.leadDays >= 0)) {
+      expect(tierCrosses(tier, -3)).toBe(false);
+    }
+  });
+
+  test('overdue/escalation/breach tiers fire on any crossing, even deep overdue', () => {
+    // 40 days overdue discovered today: -1, -7, -30 all crossed; -90 not yet.
+    expect(tierCrosses(t(-1), -40)).toBe(true);
+    expect(tierCrosses(t(-7), -40)).toBe(true);
+    expect(tierCrosses(t(-30), -40)).toBe(true);
+    expect(tierCrosses(t(-90), -40)).toBe(false);
+    // 200 days overdue: the -90 regulatory breach tier now fires too.
+    expect(tierCrosses(t(-90), -200)).toBe(true);
+  });
+
+  test('a tier does not fire before its threshold is reached', () => {
+    // 100 days out: the 90-day tier has not been crossed yet.
+    expect(tierCrosses(t(90), 100)).toBe(false);
+    // but the 120-day tier owns it
+    expect(tierCrosses(t(120), 100)).toBe(true);
   });
 });
 

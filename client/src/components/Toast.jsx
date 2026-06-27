@@ -1,16 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Toast.jsx — v0.41 inline transient notification
+// Toast.jsx — v0.41 inline transient notification (v0.95: internal stack)
 //
 // Replaces window.alert() for non-blocking informational messages — the
 // Phase 5 "your file is downloading, click Show in folder…" UX hint
 // shouldn't block the browser thread or disrupt the user's focus.
 //
-// Single-toast model (NOT a stack) — calling setToast(...) again replaces
-// whatever's currently showing. For the email-handoff case this is fine:
-// the user just clicked Email view; they're not going to click again
-// before reading the first message.
+// Stacking model (v0.95, UX-8-14): callers still drive this with a single
+// `toast` prop (backward-compatible). Internally, each time the `toast`
+// prop changes to a new non-null value it is PUSHED onto a short-lived
+// stack and rendered above the previous one, bottom-right, instead of
+// instantly replacing/destroying it. Each entry runs its own auto-dismiss
+// timer. `onClose` fires when the newest toast is dismissed, preserving the
+// existing parent pattern (`onClose={() => setToast(null)}`).
 //
-// Usage:
+// Usage (unchanged):
 //
 //   const [toast, setToast] = useState(null);
 //   // ...
@@ -18,14 +21,14 @@
 //   // ...
 //   <Toast toast={toast} onClose={() => setToast(null)} />
 //
-// Toast shape: { message: string, variant?: 'info' | 'success' | 'warn' | 'error', duration?: ms }
+// Toast shape: { message: string, title?: string, variant?: 'info' | 'success' | 'warn' | 'error', duration?: ms }
 // duration defaults to 8000ms; pass 0 for "sticky until manually dismissed".
 //
 // Positions bottom-right. Slide-in via CSS transform; auto-dismiss via
-// setTimeout. Keyboard: focus the close button on appear so Enter dismisses.
+// setTimeout. role/aria-live announce to assistive tech (no focus stealing).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X as XIcon, Info, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react';
 
 const VARIANT_STYLES = {
@@ -59,37 +62,24 @@ const VARIANT_STYLES = {
   },
 };
 
-export default function Toast({ toast, onClose }) {
-  const closeBtnRef = useRef(null);
-
+// One rendered toast in the stack.
+function ToastItem({ entry, onDismiss }) {
   useEffect(() => {
-    if (!toast) return;
-    const duration = toast.duration ?? 8000;
+    const duration = entry.toast.duration ?? 8000;
     if (duration <= 0) return;
-    const t = setTimeout(() => onClose?.(), duration);
+    const t = setTimeout(() => onDismiss(entry.id), duration);
     return () => clearTimeout(t);
-  }, [toast, onClose]);
+    // entry.id is stable for the lifetime of this item.
+  }, [entry.id, entry.toast.duration, onDismiss]);
 
-  // H7 (audit High, 2026-05-22): the previous useEffect auto-focused the
-  // close button on every toast mount, yanking focus mid-typing for users
-  // who triggered a background "Draft saved" toast while filling out a
-  // form. The role/aria-live pair below handles SR announcement; users
-  // who want to dismiss can Tab to the close button.
-
-  if (!toast) return null;
-
-  const variant = VARIANT_STYLES[toast.variant || 'info'] || VARIANT_STYLES.info;
+  const variant = VARIANT_STYLES[entry.toast.variant || 'info'] || VARIANT_STYLES.info;
   const { Icon } = variant;
 
   return (
     <div
-      role={toast.variant === 'error' ? 'alert' : 'status'}
-      aria-live={toast.variant === 'error' ? 'assertive' : 'polite'}
+      role={entry.toast.variant === 'error' ? 'alert' : 'status'}
+      aria-live={entry.toast.variant === 'error' ? 'assertive' : 'polite'}
       style={{
-        position: 'fixed',
-        right: 20,
-        bottom: 20,
-        zIndex: 1050,
         maxWidth: 380,
         minWidth: 260,
         display: 'flex',
@@ -104,6 +94,7 @@ export default function Toast({ toast, onClose }) {
         boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
         fontSize: 'var(--font-size-ui)',
         lineHeight: 1.45,
+        pointerEvents: 'auto',
         // Slide-up affordance — no Tailwind dependency, just inline.
         animation: 'servicecycle-toast-in 180ms ease-out',
       }}
@@ -115,15 +106,14 @@ export default function Toast({ toast, onClose }) {
         aria-hidden="true"
       />
       <div style={{ flex: 1, minWidth: 0 }}>
-        {toast.title && (
-          <div style={{ fontWeight: 700, marginBottom: 2 }}>{toast.title}</div>
+        {entry.toast.title && (
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>{entry.toast.title}</div>
         )}
-        <div>{toast.message}</div>
+        <div>{entry.toast.message}</div>
       </div>
       <button
-        ref={closeBtnRef}
         type="button"
-        onClick={() => onClose?.()}
+        onClick={() => onDismiss(entry.id)}
         aria-label="Dismiss"
         style={{
           all: 'unset',
@@ -137,6 +127,54 @@ export default function Toast({ toast, onClose }) {
       >
         <XIcon size={14} strokeWidth={2} />
       </button>
+    </div>
+  );
+}
+
+export default function Toast({ toast, onClose }) {
+  // Internal stack of currently-visible toasts. Each gets a stable id so a
+  // second notification stacks above the first instead of replacing it.
+  const [stack, setStack] = useState([]);
+  const seenRef = useRef(null); // identity of the last `toast` object we pushed
+  const idRef = useRef(0);
+  const newestIdRef = useRef(null);
+
+  // Push a new entry whenever the `toast` prop changes to a fresh non-null value.
+  useEffect(() => {
+    if (!toast) { seenRef.current = null; return; }
+    // Guard against re-pushing the same object on unrelated re-renders.
+    if (seenRef.current === toast) return;
+    seenRef.current = toast;
+    const id = ++idRef.current;
+    newestIdRef.current = id;
+    setStack((s) => [...s, { id, toast }]);
+  }, [toast]);
+
+  const dismiss = (id) => {
+    setStack((s) => s.filter((e) => e.id !== id));
+    // Mirror the legacy contract: when the newest toast is dismissed, tell the
+    // parent so it can clear its single `toast` state.
+    if (id === newestIdRef.current) onClose?.();
+  };
+
+  if (stack.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        right: 20,
+        bottom: 20,
+        zIndex: 1050,
+        display: 'flex',
+        flexDirection: 'column-reverse', // newest nearest the bottom edge
+        gap: 10,
+        pointerEvents: 'none', // wrapper transparent to clicks; items re-enable
+      }}
+    >
+      {stack.map((entry) => (
+        <ToastItem key={entry.id} entry={entry} onDismiss={dismiss} />
+      ))}
       {/* Inline keyframes — avoids touching the global stylesheet for one animation. */}
       <style>{`
         @keyframes servicecycle-toast-in {

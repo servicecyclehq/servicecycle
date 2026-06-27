@@ -358,6 +358,13 @@ router.delete('/required-by/:assetId/:partId', requireManager, async (req: any, 
 // ── Part catalog ───────────────────────────────────────────────────────────────
 
 // GET /api/parts
+// CUST-8-10/8-11: server-side search + category filter (already supported) and
+// pagination. Response shape is conditional to stay backward-compatible:
+//   - default (no page/limit/paginate): returns the bare array `data: Part[]`
+//     so existing dropdown-style consumers (SpareInventoryPanel, etc.) are
+//     unaffected. A sane server cap (DEFAULT_LIST_CAP) still bounds the payload.
+//   - when ?page / ?limit / ?paginate=true is sent: returns the paginated
+//     envelope `data: { parts, pagination: { page, limit, total, pages } }`.
 router.get('/', requireManager, async (req: any, res: any) => {
   try {
     const { accountId } = req.user;
@@ -374,13 +381,34 @@ router.get('/', requireManager, async (req: any, res: any) => {
         { manufacturer: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const parts = await prisma.part.findMany({
+
+    const wantsPagination =
+      req.query.page != null || req.query.limit != null || String(req.query.paginate) === 'true';
+    const DEFAULT_LIST_CAP = 500; // bounds the bare-array path for huge catalogs
+    const take    = Math.min(Math.max(parseInt(String(req.query.limit), 10) || (wantsPagination ? 50 : DEFAULT_LIST_CAP), 1), 500);
+    const pageNum = Math.max(parseInt(String(req.query.page), 10) || 1, 1);
+    const skip    = (pageNum - 1) * take;
+
+    const findArgs: any = {
       where,
       orderBy: [{ category: 'asc' }, { partNumber: 'asc' }],
-      include: {
-        _count: { select: { inventory: true } },
-      },
-    });
+      include: { _count: { select: { inventory: true } } },
+      take,
+    };
+    if (wantsPagination) findArgs.skip = skip;
+
+    if (wantsPagination) {
+      const [parts, total] = await Promise.all([
+        prisma.part.findMany(findArgs),
+        prisma.part.count({ where }),
+      ]);
+      return res.json({
+        success: true,
+        data: { parts, pagination: { page: pageNum, limit: take, total, pages: Math.ceil(total / take) } },
+      });
+    }
+
+    const parts = await prisma.part.findMany(findArgs);
     return res.json({ success: true, data: parts });
   } catch (err: any) {
     console.error('[parts GET /]', err.message);

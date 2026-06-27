@@ -13,6 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Layers, Plus, Pencil, Trash2, ChevronRight, Zap } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { EQUIPMENT_TYPE_LABELS } from '../lib/equipment';
 import Toast from '../components/Toast';
@@ -266,6 +267,7 @@ export default function EquipmentTemplates() {
   useDocumentTitle('Equipment Templates');
   const { role } = useAuth();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const canWrite = ['admin','manager'].includes(role);
 
   const [templates,  setTemplates]  = useState([]);
@@ -297,7 +299,12 @@ export default function EquipmentTemplates() {
   useEffect(() => { load(); }, []);
 
   async function handleDelete(t) {
-    if (!window.confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+    if (!await confirm({
+      title: 'Delete template?',
+      message: `Delete template "${t.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })) return;
     try {
       await api.delete(`/api/asset-templates/${t.id}`);
       setToast({ message: `Deleted "${t.name}"`, type: 'success' });

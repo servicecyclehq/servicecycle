@@ -14,8 +14,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../api/client';
+import { fieldMutate } from '../../lib/fieldApi';
 import { EQUIPMENT_TYPE_LABELS, matchEquipmentType } from '../../lib/equipment';
 import NameplateReview from '../../components/NameplateReview';
+import FailedSyncBanner from '../../components/field/FailedSyncBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useAiConsent } from '../../context/AiConsentContext';
 
@@ -119,12 +121,31 @@ export default function FieldNewAsset() {
     if (!equipmentType) { setError('Pick an equipment type.'); return; }
     setBusy(true); setError(null);
     try {
-      const res = await api.post('/api/assets', { siteId, equipmentType });
+      // COMP-8-6: route the create through the offline outbox so a dropped
+      // signal queues it instead of dying on a generic error. The nameplate
+      // scan needs a real asset id, so when the create is QUEUED (offline) we
+      // can't open the scan modal — we head home (the FieldLayout OfflineBanner
+      // shows the queued count) and the asset syncs automatically. Online,
+      // behaviour is unchanged: we get the id back and open the scanner.
+      const res = await fieldMutate({
+        method: 'POST',
+        url: '/api/assets',
+        body: { siteId, equipmentType },
+        meta: { label: `Add ${EQUIPMENT_TYPE_LABELS[equipmentType] || 'equipment'}` },
+      });
+      try { localStorage.setItem(LAST_SITE_KEY, siteId); } catch (_e) { /* storage blocked */ }
+      if (res?.queued) {
+        // Queued offline — no live id yet; the create syncs automatically when
+        // back online, and any server rejection on sync surfaces in the
+        // FailedSyncBanner. We can't open the nameplate scanner without a real
+        // id, so head back home.
+        navigate('/field');
+        return;
+      }
       const asset = res.data?.data?.asset || res.data?.data;
       const aid = asset?.id;
       if (!aid) throw new Error('Create failed');
-      try { localStorage.setItem(LAST_SITE_KEY, siteId); } catch (_e) { /* storage blocked */ }
-      // Apply the NFPA 70B template task matrix for this equipment type (best-effort).
+      // Apply the NFPA 70B template task matrix for this equipment type (best-effort, online only).
       api.post('/api/schedules/bulk-apply', { assetId: aid }).catch(() => {});
       setNewAssetId(aid); // opens the nameplate scan modal
     } catch (err) {
@@ -137,6 +158,7 @@ export default function FieldNewAsset() {
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: '0 auto' }}>
       <Link to="/field" style={{ fontSize: 14, color: 'var(--color-primary, #2563eb)' }}>← Back</Link>
+      <FailedSyncBanner />
       <h1 style={{ fontSize: 20, fontWeight: 700, margin: '12px 0 4px' }}>Add equipment</h1>
       <p style={{ fontSize: 13.5, color: 'var(--color-text-secondary)', marginTop: 0 }}>
         Pick where it lives and what it is, then snap the nameplate — AI fills in the make, model and ratings

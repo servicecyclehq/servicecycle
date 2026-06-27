@@ -218,10 +218,53 @@ export default function ComplianceCalendar() {
   }, [siteId, dueMode]);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError('');
-    // Due-window mode fetches its own range; the endpoint buckets by whole
-    // months, so over-fetch and apply the exact day predicate client-side.
+
+    // ── CUST-8-6: overdue drill-down reaches arbitrarily far back ────────────
+    // The calendar endpoint buckets by month and hard-caps `months` at 36, so a
+    // single request can only look back 36 months — items overdue 3+ years used
+    // to vanish and the count contradicted the dashboard tile. For overdue mode
+    // we walk backward in 36-month windows until a window returns no schedules
+    // (or we hit a 10-year safety bound), then merge — so every overdue item is
+    // reachable and the total reconciles with the tile.
+    if (dueMode === 'overdue') {
+      const WINDOW_MONTHS = 36;
+      const MAX_WINDOWS = 4; // 4 × 36 = 12 years of look-back, plenty
+      (async () => {
+        try {
+          const merged = [];
+          const seen = new Set();
+          // Window 0 ends one month into the future (covers the current month);
+          // each subsequent window steps another 36 months into the past.
+          for (let w = 0; w < MAX_WINDOWS; w++) {
+            const winFrom = shiftYm(ymOf(new Date()), -(WINDOW_MONTHS * (w + 1)) + 1);
+            const params = { from: winFrom, months: WINDOW_MONTHS };
+            if (siteId) params.siteId = siteId;
+            // eslint-disable-next-line no-await-in-loop
+            const r = await api.get('/api/dashboard/calendar', { params });
+            const rows = r.data?.data?.schedules || [];
+            for (const s of rows) {
+              if (seen.has(s.id)) continue;
+              seen.add(s.id);
+              merged.push(s);
+            }
+          }
+          if (cancelled) return;
+          setSchedules(merged);
+          setBlackouts([]); // blackout banners aren't shown in the overdue list
+        } catch {
+          if (!cancelled) setError('Failed to load calendar.');
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
+
+    // Due-window mode + normal mode: single request. The endpoint buckets by
+    // whole months, so over-fetch and apply the exact day predicate client-side.
     let fetchFrom = from;
     let months = MONTHS_SHOWN;
     if (dueMode === 'window') {
@@ -229,22 +272,19 @@ export default function ComplianceCalendar() {
       const end = new Date(now.getTime() + dueDays * DAY_MS);
       fetchFrom = ymOf(now);
       months = (end.getFullYear() - now.getFullYear()) * 12 + (end.getMonth() - now.getMonth()) + 1;
-    } else if (dueMode === 'overdue') {
-      // Server caps months at 36 — look back 35 months plus the current one.
-      // (An item overdue for 3+ years would fall outside this window.)
-      fetchFrom = shiftYm(ymOf(new Date()), -35);
-      months = 36;
     }
     const params = { from: fetchFrom, months };
     if (siteId) params.siteId = siteId;
     api.get('/api/dashboard/calendar', { params })
       .then(r => {
+        if (cancelled) return;
         const d = r.data?.data || {};
         setSchedules(d.schedules || []);
         setBlackouts(d.blackouts || []);
       })
-      .catch(() => setError('Failed to load calendar.'))
-      .finally(() => setLoading(false));
+      .catch(() => { if (!cancelled) setError('Failed to load calendar.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [from, siteId, dueMode, dueDays]);
 
   const now = new Date();

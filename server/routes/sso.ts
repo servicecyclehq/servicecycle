@@ -137,7 +137,18 @@ router.get('/callback', async (req: any, res: any) => {
     // Exchange code -> token (back-channel, PKCE).
     const token = await ssoPolis.exchangeCodeForToken(cfg, { code, codeVerifier: login.codeVerifier });
 
-    // Validate id_token + nonce when present (alg pinned, JWKS sig, iss/exp).
+    // Validate id_token + nonce (alg pinned, JWKS sig, iss/exp).
+    // INFOSEC-8-3 / DD-8-11: the id_token signature is the cryptographic proof
+    // of identity. We FAIL CLOSED when it is absent — a misconfigured or
+    // downgraded Polis (no OIDC signing keys) must not silently drop identity
+    // verification down to an unsigned userinfo fetch and still provision/login
+    // a user. PKCE + single-use state defend the channel against CSRF/replay,
+    // but they do not prove WHO the subject is the way a signed id_token does.
+    //
+    // The historical "proceed on PKCE/state/userinfo alone" behavior is only
+    // available behind an explicit, self-documenting operator opt-in
+    // (SSO_ALLOW_MISSING_ID_TOKEN=true) for a Polis deployment that genuinely
+    // cannot issue signed tokens. Default and recommended posture: reject.
     if (token.id_token) {
       try {
         const disc = await ssoPolis.getOidcDiscovery(cfg);
@@ -150,11 +161,14 @@ router.get('/callback', async (req: any, res: any) => {
       } catch (e: any) {
         return failRedirect(res, `id_token_invalid:${e.code || e.message}`);
       }
+    } else if (process.env.SSO_ALLOW_MISSING_ID_TOKEN === 'true') {
+      // Explicit operator opt-in only. The code exchange is back-channel +
+      // PKCE + single-use state; we still enforce the tenant cross-check below.
+      console.warn('[sso] no id_token returned and SSO_ALLOW_MISSING_ID_TOKEN=true — relying on PKCE/state/userinfo. Configure Polis OIDC signing keys to restore signed-identity validation.');
     } else {
-      // No id_token (Polis without OIDC signing keys). The code exchange is
-      // back-channel + PKCE + single-use state; we still enforce the tenant
-      // cross-check below. Log so operators can configure OIDC keys.
-      console.warn('[sso] no id_token returned — relying on PKCE/state/userinfo. Configure Polis OIDC keys for id_token validation.');
+      // Fail closed: no signed identity proof and no explicit opt-in.
+      console.error('[sso] no id_token returned — rejecting (fail closed). Configure Polis OIDC signing keys, or set SSO_ALLOW_MISSING_ID_TOKEN=true to accept PKCE/state/userinfo-only logins.');
+      return failRedirect(res, 'id_token_missing');
     }
 
     const profile = await ssoPolis.fetchUserInfo(cfg, token.access_token);
@@ -258,8 +272,44 @@ router.post('/exchange', async (req: any, res: any) => {
     const user = await prisma.user.findUnique({ where: { id: handoff.userId }, select: SAFE_USER_SELECT });
     if (!user) return res.status(401).json({ success: false, error: 'Invalid or expired code' });
 
-    const fullUser = await prisma.user.findUnique({ where: { id: handoff.userId }, select: { isActive: true } });
+    const fullUser = await prisma.user.findUnique({ where: { id: handoff.userId }, select: { isActive: true, twoFactorEnabled: true } });
     if (!fullUser || !fullUser.isActive) return res.status(403).json({ success: false, error: 'Account deactivated — contact your administrator' });
+
+    // ── INFOSEC-8-1: admin-MFA policy visibility on the SSO path ──────────────
+    // mfaRequiredForAdmins is enforced on the password-login path (auth.ts), but
+    // the SSO callback mints tokens without a 2FA step. The standard enterprise
+    // model is that the IdP owns MFA when SSO is in use, so we do NOT block the
+    // SSO login (and must never lock out an admin who never enrolled app-TOTP —
+    // their MFA lives at the IdP). What we DO is make the gap auditable: when an
+    // account requires admin MFA and a privileged user signs in via SSO, record
+    // whether app-2FA was enrolled and that enforcement was delegated to the
+    // IdP. A true app-2FA step-up over SSO needs an SPA challenge the SsoCallback
+    // page does not yet support — tracked separately (see DEMO_LANDMINES_v8
+    // INFOSEC-8-1 SKIP note). Fail-open + audited, never fail-closed here.
+    const PRIVILEGED_ROLES = new Set(['admin', 'oem_admin', 'super_admin']);
+    if (PRIVILEGED_ROLES.has(user.role)) {
+      try {
+        const acct = await prisma.account.findUnique({
+          where:  { id: user.accountId },
+          select: { mfaRequiredForAdmins: true },
+        });
+        if (acct?.mfaRequiredForAdmins) {
+          writeActivityLog({
+            userId:    user.id,
+            accountId: user.accountId,
+            action:    'sso_admin_mfa_delegated_to_idp',
+            details:   {
+              role: user.role,
+              appTotpEnrolled: !!fullUser.twoFactorEnabled,
+              note: 'mfaRequiredForAdmins is on; SSO login proceeded with MFA enforced at the IdP (no app-TOTP step on SSO path).',
+            },
+          });
+        }
+      } catch (mfaErr: any) {
+        // Visibility-only; never block the login on an audit lookup hiccup.
+        console.error('[sso] admin-MFA policy audit lookup failed:', mfaErr.message);
+      }
+    }
 
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.accountId);
     return res.json({

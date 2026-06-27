@@ -106,6 +106,26 @@ describe('Phase 3 #5 export everything', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
   });
+
+  // COMP-8-2b: the JSON path now STREAMS the export element-by-element instead
+  // of JSON.stringify-then-send. Verify the streamed bytes are valid JSON and
+  // contain the COMPLETE dataset (no rows dropped vs the in-memory build), so
+  // streaming didn't regress the "complete, portable snapshot" guarantee.
+  test('streamed JSON export is valid and complete (matches in-memory build)', async () => {
+    const built = await buildAccountExport(prisma, manager.accountId);
+    const res = await request(app).get('/api/export/account?format=json').set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    // Valid JSON.
+    const parsed = JSON.parse(res.text);
+    // Same counts and same row-arrays as the direct build — nothing truncated.
+    expect(parsed.counts).toEqual(built.counts);
+    expect(parsed.assets.length).toBe(built.assets.length);
+    expect(parsed.sites.length).toBe(built.sites.length);
+    expect(parsed.workOrders.length).toBe(built.workOrders.length);
+    // Still no secret material leaked through the streamed form.
+    expect(res.text).not.toContain('secret-key-abc');
+    expect(res.text).not.toContain('passwordHash');
+  });
 });
 
 export {};

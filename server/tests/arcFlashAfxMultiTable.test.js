@@ -1,5 +1,5 @@
 // AFX v1.2 — multi-table builder (related Bus/Cable/Transformer/Device tables).
-const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType } = require('../lib/arcFlashAfxMultiTable');
+const { sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, mapEquipmentType, mapEquipmentTypeResult, UNKNOWN_EQUIPMENT_DEFAULT } = require('../lib/arcFlashAfxMultiTable');
 
 describe('sanitizeId (exact-match-safe)', () => {
   test('trims, collapses whitespace, strips junk', () => {
@@ -211,10 +211,18 @@ describe('mapEquipmentType', () => {
     expect(mapEquipmentType('transformer dry')).toBe('TRANSFORMER_DRY');
     expect(mapEquipmentType('cable-lv')).toBe('CABLE_LV');
   });
-  test('unknown or blank falls back to PANELBOARD', () => {
-    expect(mapEquipmentType('weird gizmo')).toBe('PANELBOARD');
-    expect(mapEquipmentType('')).toBe('PANELBOARD');
-    expect(mapEquipmentType(null)).toBe('PANELBOARD');
+  test('[NETA-8-14] unknown or blank falls back to the documented conservative default and is flagged', () => {
+    // No longer silently PANELBOARD (lowest-energy LV class). The unknown default
+    // is the larger-gap SWITCHGEAR class (conservative for a study input) and the
+    // result reports matched=false so the row can be surfaced for confirmation.
+    expect(UNKNOWN_EQUIPMENT_DEFAULT).toBe('SWITCHGEAR');
+    expect(mapEquipmentType('weird gizmo')).toBe('SWITCHGEAR');
+    expect(mapEquipmentType('')).toBe('SWITCHGEAR');
+    expect(mapEquipmentType(null)).toBe('SWITCHGEAR');
+
+    expect(mapEquipmentTypeResult('SWITCHGEAR')).toEqual({ type: 'SWITCHGEAR', matched: true });
+    expect(mapEquipmentTypeResult('weird gizmo')).toEqual({ type: 'SWITCHGEAR', matched: false });
+    expect(mapEquipmentTypeResult('')).toEqual({ type: 'SWITCHGEAR', matched: false });
   });
 });
 

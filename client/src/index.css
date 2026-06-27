@@ -298,6 +298,37 @@ main[id='main-content']:focus { outline: none; }
   --color-error-bg:       var(--color-danger-bg, var(--color-warning-bg));
   --color-error-border:   var(--color-danger, var(--color-warning));
 
+  /* UX-8-5 reconcile: the design-token spec in client/src/styles/tokens.css
+     is NOT imported at runtime (only index.css is). A few system/ components
+     (FormField, RowCheckbox) reference tokens.css-style names that were not
+     declared in this loaded stylesheet, so they fell back to browser defaults.
+     Alias them to the canonical tokens here so index.css is the single source
+     of truth that satisfies BOTH naming systems. Purely additive. */
+  --color-ink:            var(--color-text);
+  --color-text-faint:     var(--color-text-muted);
+  --color-card:           var(--color-surface);
+  --color-petrol-hover:   var(--color-primary-hover);
+  --space-1:              4px;
+  --space-2:              8px;
+  --space-3:              12px;
+  --space-4:              16px;
+  --space-5:              20px;
+  --space-6:              24px;
+  --space-8:              32px;
+  --radius-sm:            4px;
+  --radius-md:            var(--radius);
+  --radius-xl:            14px;
+  --font-size-caption:    var(--font-size-xs, 11px);
+  --font-size-small:      var(--font-size-sm, 12px);
+  --font-size-body:       var(--font-size-base, 15px);
+  --font-size-lead:       var(--font-size-lg, 17px);
+  --font-weight-regular:  400;
+  --font-weight-medium:   500;
+  --font-weight-bold:     700;
+  --leading-tight:        1.1;
+  --leading-snug:         1.3;
+  --leading-normal:       1.55;
+
   /* Sidebar palette - intentionally NOT aliased here. The sidebar is dark
      in both light and dark themes by design (see ThemeToggle.jsx). The
      canonical values (#0a0d12 bg, #9aa3b2 text) are set in the first :root

@@ -328,7 +328,7 @@ async function _createSchedules(db, accountId, assetsByKey, defsByType, story) {
 }
 
 // Create an asset, deriving governingCondition = worst of the three axes.
-async function _createHistoricalWorkOrders(db, accountId, schedulesByKey, contractorId, years = 5) {
+async function _createHistoricalWorkOrders(db, accountId, schedulesByKey, contractorId, techId = null, years = 2) {
   const now = new Date();
   const cutoff = addDays(now, -years * 365);
   const conds = ['C1', 'C1', 'C2', 'C1', 'C2', 'C3'];
@@ -358,11 +358,17 @@ async function _createHistoricalWorkOrders(db, accountId, schedulesByKey, contra
           scheduleId: sched.id,
           assetId: sched.assetId,
           contractorId: contractorId || null,
+          assignedTechId: techId || null,
           status: 'COMPLETE',
           scheduledDate: new Date(due),
           completedDate: completed,
           asFoundCondition: c,
           asLeftCondition: c === 'C3' ? 'C2' : c,
+          notes: 'Routine scheduled maintenance completed on cycle; '
+            + (c === 'C1' ? 'no deficiencies noted.'
+               : c === 'C2' ? 'minor wear within limits, no action required.'
+               : 'corrective action taken, condition restored.')
+            + ' [history-fill]',
           createdAt: completed,
         });
         i++;
@@ -403,6 +409,15 @@ async function _createAsset(db, accountId, spec) {
       // financial exposure, resilience posture. All optional — unscored
       // assets exercise the nulls-last sorting paths.
       criticalityScore:              spec.criticalityScore ?? null,
+      // Degradation axis (1=good .. 5=severe) + stored DPS. The route layer
+      // recomputes priorityScore on every condition write; the seed must set
+      // both here or the Degradation-Priority sort and the WorkOrders/Assets
+      // condition column read null for the very assets built to tell the
+      // degradation story.
+      conditionScore:                spec.conditionScore ?? null,
+      priorityScore: (spec.conditionScore != null && spec.criticalityScore != null)
+        ? spec.conditionScore * spec.criticalityScore
+        : null,
       repairCostEstimate:            spec.repairCostEstimate ?? null,
       spareLeadTimeWeeks:            spec.spareLeadTimeWeeks ?? null,
       redundancyStatus:              spec.redundancyStatus || null,
@@ -793,8 +808,8 @@ async function _seedAccount() {
   const defsByType = await _loadGlobalDefsByType(prisma);
   const { byKey: schedules, count: scheduleCount } =
     await _createSchedules(prisma, account.id, assets, defsByType, story);
-  const _histWO = await _createHistoricalWorkOrders(prisma, account.id, schedules, apex.id, 5);
-  console.log('  seeded ' + _histWO + ' historical work orders (5yr)');
+  const _histWO = await _createHistoricalWorkOrders(prisma, account.id, schedules, apex.id, apexTechs.okafor.id, 2);
+  console.log('  seeded ' + _histWO + ' historical work orders (2yr, attributed)');
 
   // ── Archived assets (G2) ──────────────────────────────────────────────────
   // Retired equipment so the Archived Assets view (?archived=true) isn't
@@ -904,7 +919,7 @@ async function _seedAccount() {
     contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
     status: 'IN_PROGRESS',
     scheduledDate: addDays(now, -1), startedAt: addDays(now, -1),
-    notes: 'Load bank staged in generator yard; 50%/75% kW steps per NFPA 110 §8.4.2.3 running today.',
+    notes: 'Load bank staged in generator yard; 50%/75% kW steps per NFPA 110 §8.4.2.3 running today -- clearing the load-bank task that came due 9 days ago (monthly NFPA 110 exercise remains current, completed ~20 days ago).',
   } });
 
   // WO #4 — SCHEDULED against the 120-day-overdue C3 switchgear IR scan.
@@ -1125,7 +1140,7 @@ async function _seedAccount() {
     scheduledDate: addDays(now, -22), startedAt: addDays(now, -20), completedDate: addDays(now, -20),
     asFoundCondition: 'C1', asLeftCondition: 'C1',
     netaDecal: 'GREEN',
-    notes: 'NFPA 110 monthly exercise at 30-minute rated load. Engine started on first attempt; transfer to utility within spec (< 10 s). Oil, coolant, and battery checks satisfactory.',
+    notes: 'NFPA 110 monthly exercise at 30-minute rated load. Engine started on first attempt; transfer to utility within spec (< 10 s). Oil, coolant, and battery checks satisfactory. Governor calibration (re-adjusted after the prior overspeed-trip finding) confirmed stable -- no faults this cycle.',
   } });
 
   // WO #18 -- COMPLETE: GEN-E1 monthly exercise ~24 days ago (Apex, C1 GREEN).
@@ -1257,9 +1272,9 @@ async function _seedAccount() {
     accountId: account.id, assetId: assets['SWGR-2M'].id,
     severity: 'RECOMMENDED',
     description: 'B-phase bus connection delta-T 12 deg C above ambient at 55% load (NETA MTS Category 2 -- early-stage thermal signature). History: 38 deg C in most recent scan.',
-    correctiveAction: 'Prior scan (12 months ago) showed Category 2; current IMMEDIATE deficiency (38 deg C) spawned from the follow-up catch-up IR. Consolidate corrective actions.',
+    correctiveAction: 'Superseded by the current IMMEDIATE deficiency (38 deg C) on this same B-phase joint -- the early-stage signature progressed; tracking now consolidated under the open IMMEDIATE item.',
     createdAt: addDays(now, -350),
-    resolvedAt: null,
+    resolvedAt: addDays(now, -12), resolvedById: admin.id,
   } });
   await prisma.deficiency.create({ data: {
     accountId: account.id, assetId: assets['T-2'].id,
@@ -1346,9 +1361,9 @@ async function _seedAccount() {
     await prisma.disasterEvent.create({ data: {
       eventType:        'severe_thunderstorm',
       severity:         'watch',
-      title:            'Severe Thunderstorm Watch -- Milwaukee/Waukesha County',
-      region:           'Southeastern Wisconsin -- Milwaukee, Waukesha, Ozaukee Counties',
-      affectedStates:   ['WI'],
+      title:            'Severe Thunderstorm Watch -- Scott County, IA / Rock Island County, IL',
+      region:           'Quad Cities -- Scott County (IA), Rock Island County (IL)',
+      affectedStates:   ['IA', 'IL'],
       affectedSiteIds:  [riverside.id, eastgate.id],
       nwsAlertId:       'demo-seed-severe-thunderstorm-watch',
       source:           'nws',
@@ -1362,9 +1377,9 @@ async function _seedAccount() {
     await prisma.disasterEvent.create({ data: {
       eventType:        'blizzard',
       severity:         'warning',
-      title:            'Blizzard Warning -- 18-24 inches of snowfall expected',
-      region:           'Northern and Central Wisconsin',
-      affectedStates:   ['WI'],
+      title:            'Winter Storm Warning -- 8-12 inches of snowfall expected',
+      region:           'Eastern Iowa / Northwestern Illinois -- Quad Cities metro',
+      affectedStates:   ['IA', 'IL'],
       affectedSiteIds:  [riverside.id, eastgate.id],
       nwsAlertId:       'demo-seed-blizzard-warning-jan',
       source:           'nws',
@@ -1407,7 +1422,9 @@ async function _seedAccount() {
   // The current arc_flash study supersedes this prior one.
   await prisma.systemStudy.update({ where: { id: arcFlashPrior.id }, data: { supersededById: arcFlash.id } });
   // Bind the SWGR-1A-1 lead 15 kV switchgear to both studies; incident energy
-  // rises 14.2 -> 19.6 cal/cm2 (WARNING class; IE=19.6 cal/cm2 < 40 threshold) across revisions.
+  // rises 14.2 -> 19.6 cal/cm2 across revisions. DANGER class: 13.8 kV (> 600 V)
+  // is DANGER per NFPA 70E 130.5(H) regardless of IE, matching the dashboard
+  // (volts>600) and fleet rules so every surface agrees on DANGER.
   const afTrendBus = assets['SWGR-1A-1'];
   if (afTrendBus) {
     await prisma.systemStudyAsset.create({ data: {
@@ -1421,7 +1438,7 @@ async function _seedAccount() {
       accountId: account.id, studyId: arcFlash.id, assetId: afTrendBus.id,
       busName: 'SWGR-1A Main Bus', nominalVoltage: '13.8kV',
       incidentEnergyCalCm2: 19.6, arcFlashBoundaryIn: 88, workingDistanceIn: 36, ppeCategory: 3,
-      requiredArcRatingCalCm2: 25, labelSeverity: 'warning',
+      requiredArcRatingCalCm2: 25, labelSeverity: 'danger',
       boltedFaultCurrentKA: 24.0, arcingCurrentKA: 22.7, electrodeConfig: 'VCB',
       conductorGapMm: 152, clearingTimeMs: 255, upstreamDevice: 'Utility 51 relay / CB-101',
       deviceType: 'relay', tripUnitType: 'electronic_lsig', deviceRatingA: 1200,
@@ -1464,7 +1481,7 @@ async function _seedAccount() {
       printedSnapshot: { nominalVoltage: '13.8kV', incidentEnergyCalCm2: 14.2, arcFlashBoundaryIn: 68, workingDistanceIn: 36, ppeCategory: 3, requiredArcRatingCalCm2: 25, labelSeverity: 'danger' },
     } }).catch(() => {});
 
-    console.log('  [seed] arc-flash trend on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 WARNING (IE < 40); + source model, device, NETA drift, stale printed label');
+    console.log('  [seed] arc-flash trend on SWGR-1A-1 (' + afTrendBus.id + '): 14.2 -> 19.6 cal/cm2 DANGER (13.8 kV); + source model, device, NETA drift, stale printed label');
   }
 
   // Short-circuit study ~3 years ago — PE license on the report cover.
@@ -1535,10 +1552,10 @@ async function _seedAccount() {
   await prisma.auditRecommendation.create({ data: {
     accountId: account.id, auditVisitId: auditVisit2.id,
     source: 'internal', severity: 'finding',
-    description: 'ARC flash PPE kits in Substation A not up to date with current incident-energy study values; two kits contain cal/cm2 ratings from the 2019 study.',
+    description: 'ARC flash PPE kits in Substation A not up to date with current incident-energy study values; two kits contain cal/cm2 ratings from the superseded (prior) study.',
     dueDate: addDays(now, -20),
     status: 'completed',
-    responseNotes: 'All PPE kits inventoried and re-labelled with current 2022 study values; two kits replaced.',
+    responseNotes: 'All PPE kits inventoried and re-labelled with current incident-energy study values; two kits replaced.',
     respondedAt: addDays(now, -58), completedAt: addDays(now, -50),
   } });
   await prisma.auditRecommendation.create({ data: {
@@ -1670,14 +1687,14 @@ async function _seedAccount() {
   // (real snapshots built live by the server on POST /api/quote-requests).
   const dossierSnapshotT1 = {
     assetId: assets['T-1'].id, name: 'T-1 Main Transformer',
-    equipmentType: 'TRANSFORMER_LIQUID', ageYears: 16, criticality: 5,
+    equipmentType: 'TRANSFORMER_LIQUID', ageYears: 29, criticality: 5,
     openDeficiencies: [{ severity: 'RECOMMENDED', description: 'Elevated DGA dissolved-gas levels trending upward' }],
     overdueTaskCount: 2,
     snapshotAt: now.toISOString(),
   };
   const dossierSnapshotGen1 = {
     assetId: assets['GEN-1'].id, name: 'GEN-1 Emergency Generator',
-    equipmentType: 'GENERATOR', ageYears: 8, criticality: 5,
+    equipmentType: 'GENERATOR', ageYears: 21, criticality: 5,
     openDeficiencies: [],
     overdueTaskCount: 0,
     snapshotAt: now.toISOString(),

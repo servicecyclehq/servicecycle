@@ -1,9 +1,17 @@
 /* ============================================================
    ServiceCycle design tokens — v0.91 locked system
    ------------------------------------------------------------
-   Single source of truth for color, type, spacing, radius,
-   and motion. Every component pulls from these variables —
-   never hardcode hex / px / s values in component styles.
+   DESIGN-TOKEN SPEC / REFERENCE. NOTE: this file is the human
+   reference for the locked color/type/spacing/radius/motion
+   scale — it is NOT imported into the app bundle. The runtime
+   single source of truth is client/src/index.css, which is the
+   stylesheet actually loaded (see main.jsx) and which declares
+   both the canonical app variables (--color-primary, etc.) AND
+   aliases for the token names defined here (--color-petrol,
+   --space-N, --font-weight-*, --leading-*, …) so components can
+   use either naming. When you change a value here, mirror it in
+   index.css (and vice-versa) — index.css is what ships. Never
+   hardcode hex / px / s values in component styles.
 
    Brand direction: Quietly Modern
    v0.5.0 locked:    2026-05-12

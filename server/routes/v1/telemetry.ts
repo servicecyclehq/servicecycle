@@ -85,16 +85,27 @@ router.post('/channels', requireScope('write'), async (req: any, res: any) => {
 });
 
 // -- GET /channels -------------------------------------------------------------
+// COMP-8-13: paginated (page/limit, limit max 500) so a plant wiring hundreds of
+// assets x channels doesn't return one ever-growing unbounded response. Matches
+// the readings/notifications cap convention in this file. Defaults are generous
+// (200) so existing single-page callers keep working without sending paging params.
 router.get('/channels', async (req: any, res: any) => {
   const accountId = req.apiKeyAccountId;
+  const Q = z.object({
+    assetId: z.string().regex(UUID).optional(),
+    page:    z.coerce.number().int().positive().default(1),
+    limit:   z.coerce.number().int().min(1).max(500).default(200),
+  }).safeParse(req.query);
+  if (!Q.success) return res.status(400).json({ success: false, error: 'Invalid query parameters', details: Q.error.flatten().fieldErrors });
+  const { assetId, page, limit } = Q.data;
   const where: any = { accountId };
-  if (req.query.assetId) {
-    if (!UUID.test(String(req.query.assetId))) return res.status(400).json({ success: false, error: 'Invalid assetId' });
-    where.assetId = String(req.query.assetId);
-  }
+  if (assetId) where.assetId = assetId;
   try {
-    const channels = await prisma.telemetryChannel.findMany({ where, select: CHANNEL_SELECT, orderBy: [{ assetId: 'asc' }, { key: 'asc' }] });
-    return res.json({ success: true, data: channels });
+    const [total, channels] = await Promise.all([
+      prisma.telemetryChannel.count({ where }),
+      prisma.telemetryChannel.findMany({ where, select: CHANNEL_SELECT, orderBy: [{ assetId: 'asc' }, { key: 'asc' }], skip: (page - 1) * limit, take: limit }),
+    ]);
+    return res.json({ success: true, data: channels, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
   } catch (err: any) {
     console.error('[v1/telemetry] channel list error:', err.message);
     return res.status(500).json({ success: false, error: 'Internal server error' });

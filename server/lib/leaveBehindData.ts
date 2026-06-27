@@ -40,6 +40,8 @@ export async function buildLeaveBehindPdf(accountId: string, workOrderId: string
     where: { id: workOrderId, accountId },
     select: {
       id: true, scheduledDate: true, completedDate: true,
+      // [NETA-8-7] as-left condition + decal for the certification block.
+      asLeftCondition: true, netaDecal: true,
       asset: {
         select: {
           id: true, accountId: true,
@@ -48,7 +50,11 @@ export async function buildLeaveBehindPdf(accountId: string, workOrderId: string
         },
       },
       account: { select: { companyName: true, serviceRepName: true, serviceRepPhone: true } },
-      contractor: { select: { name: true } },
+      // [NETA-8-7] netaAccredited drives the certification line; technician is the
+      // assigned ContractorTech or the assigned login user who did the work.
+      contractor: { select: { name: true, netaAccredited: true } },
+      assignedTech: { select: { name: true } },
+      assignedUser: { select: { name: true } },
       deficiencies: {
         select: { severity: true, description: true, correctiveAction: true, resolvedAt: true },
         orderBy: [{ severity: 'asc' }, { createdAt: 'asc' }],
@@ -56,6 +62,10 @@ export async function buildLeaveBehindPdf(accountId: string, workOrderId: string
     },
   });
   if (!wo) return null;
+
+  // [NETA-8-7] Prefer the named field tech (ContractorTech), then the assigned
+  // login user; null when neither is recorded (the signature line still prints).
+  const technicianName = (wo as any).assignedTech?.name || (wo as any).assignedUser?.name || null;
 
   const severityOrder: Record<string, number> = { IMMEDIATE: 0, RECOMMENDED: 1, ADVISORY: 2 };
   const sortedDefs = [...wo.deficiencies].sort(
@@ -92,7 +102,8 @@ export async function buildLeaveBehindPdf(accountId: string, workOrderId: string
 
   const branding = await getAccountBranding(accountId); // #15 co-brand
   const pdfBuffer = await renderLeaveBehindPdf({
-    workOrder: wo as any,
+    // [NETA-8-7] surface the technician + as-left fields the certification block reads.
+    workOrder: { ...(wo as any), technicianName },
     deficiencies: sortedDefs as any,
     openQuoteRequests: openQuotes as any,
     modernizationAssets,

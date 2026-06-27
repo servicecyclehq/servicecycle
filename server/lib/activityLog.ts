@@ -36,11 +36,30 @@ import prisma from './prisma';
  *                                      to the user-join OR clause in activity.js.
  * @param {string}   p.action         - one of the action strings above
  * @param {object|null} [p.details]   - optional JSON detail payload
+ * @param {string|null} [p.ipAddress] - INFOSEC-8-4: source IP of the actor. The
+ *                                      ActivityLog table has no dedicated ipAddress
+ *                                      column (Json `details` only), so when supplied
+ *                                      it is folded into details.ip. Optional and
+ *                                      backward-compatible: callers that omit it write
+ *                                      exactly as before, and an existing details.ip is
+ *                                      never overwritten by a blank ipAddress. Pass
+ *                                      req.ip from privileged/security routes so admin
+ *                                      audit events carry the source IP.
  */
-async function writeLog({ assetId = null, userId = null, accountId = null, action, details = null }) {
+async function writeLog({ assetId = null, userId = null, accountId = null, action, details = null, ipAddress = null }) {
   if (!action) {
     // Silently skip — action is the only field that's still mandatory.
     return;
+  }
+  // INFOSEC-8-4: persist the source IP inside the details JSON (no schema
+  // column exists for it). Only when provided and not already present, so we
+  // never clobber a caller that already put an `ip` in details.
+  let mergedDetails = details;
+  if (ipAddress) {
+    const base = (details && typeof details === 'object' && !Array.isArray(details)) ? details : {};
+    if (base.ip == null) {
+      mergedDetails = { ...base, ip: ipAddress };
+    }
   }
   try {
     await prisma.activityLog.create({
@@ -49,7 +68,7 @@ async function writeLog({ assetId = null, userId = null, accountId = null, actio
         userId,
         accountId,
         action,
-        details: details ?? undefined,
+        details: mergedDetails ?? undefined,
       },
     });
   } catch (err) {

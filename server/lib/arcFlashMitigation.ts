@@ -137,7 +137,16 @@ export function estimateMitigationRoi(opts: { currentIeCalCm2: any; estReduction
   const ieAfter = Math.round(ie * (1 - pct / 100) * 100) / 100;
   const calReduced = Math.round((ie - ieAfter) * 100) / 100;
   const FLOAT_TOLERANCE = 0.005; // 0.5% of the smallest significant digit
-  const removesDanger = ie > 40 && ieAfter <= 40 + FLOAT_TOLERANCE;
+  // [DEMO-8-9] `ieDrivenDanger` = the CURRENT incident energy is itself in the
+  // >40 cal DANGER band. removesDanger is only a meaningful YES/NO when the bus
+  // is IE-driven DANGER; a bus that is DANGER purely because of system voltage
+  // (>600 V, e.g. a 13.8 kV bus at 19.6 cal) can never have its DANGER class
+  // cleared by reducing incident energy, so reporting a bare "Clears DANGER? No"
+  // there is misleading. The real ROI for such a bus is the PPE-category drop
+  // (ppeImproved), which this engine already computes. Surfacing ieDrivenDanger
+  // lets the UI show the correct headline instead of a perpetual "No".
+  const ieDrivenDanger = ie > 40;
+  const removesDanger = ieDrivenDanger && ieAfter <= 40 + FLOAT_TOLERANCE;
   const ppeBefore = ppeCategoryFor(ie);
   const ppeAfter = ppeCategoryFor(ieAfter);
   const costPerCalReduced = cost != null && calReduced > 0 ? Math.round((cost / calReduced) * 100) / 100 : null;
@@ -146,7 +155,7 @@ export function estimateMitigationRoi(opts: { currentIeCalCm2: any; estReduction
     ok: true,
     currentIeCalCm2: ie, estReductionPct: pct, ieAfterCalCm2: ieAfter, calReduced,
     ppeBefore, ppeAfter, ppeImproved: ppeBefore != null && ppeAfter != null && ppeAfter < ppeBefore,
-    removesDanger, mitigationCostUsd: cost, costPerCalReduced,
+    ieDrivenDanger, removesDanger, mitigationCostUsd: cost, costPerCalReduced,
     caveat: 'The reduction percentage is your (or your PE\'s) estimate — ServiceCycle does not run the IEEE 1584 calculation. Confirm the modeled value with a re-study before relabeling.',
   };
 }

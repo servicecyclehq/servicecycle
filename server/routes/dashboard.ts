@@ -53,7 +53,7 @@ router.get('/', async (req, res) => {
       recentWorkOrders,
       assetCount,
       upcoming,
-      partsAlertsCount,
+      lowStockRollup,
     ] = await Promise.all([
       // Widget 1: due-in-N counts (cumulative forward windows; overdue is
       // its own tile so the two never double-count).
@@ -71,16 +71,27 @@ router.get('/', async (req, res) => {
         _count: { _all: true },
       }),
 
-      // Widget 3: compliance rate by site. Slim projection aggregated in
-      // JS — site counts are bounded (tens, not thousands) and Prisma can't
-      // express the conditional ratio in one groupBy.
-      prisma.maintenanceSchedule.findMany({
-        where: scheduleBase,
-        select: {
-          nextDueDate: true,
-          asset: { select: { siteId: true, site: { select: { name: true } } } },
-        },
-      }),
+      // Widget 3: compliance rate by site. COMP-8-3: aggregate in the DB
+      // (GROUP BY site) instead of streaming one row PER SCHEDULE into the app
+      // tier and bucketing in JS — the old findMany returned a row per schedule
+      // (not per site), so a 100k-schedule account shipped 100k rows on every
+      // dashboard paint. The conditional overdue count rides a FILTER clause.
+      // Parameterized tagged-template (no interpolation of user input beyond the
+      // bound accountId + now) keeps Prisma's injection safety net. Result is
+      // one row per site -> bounded by site count (tens/hundreds).
+      prisma.$queryRaw<any[]>`
+        SELECT s.id AS "siteId",
+               s.name AS "siteName",
+               COUNT(*)::int AS total,
+               COUNT(*) FILTER (WHERE ms."nextDueDate" < ${now})::int AS overdue
+          FROM maintenance_schedules ms
+          JOIN assets a ON a.id = ms."assetId"
+          JOIN sites  s ON s.id = a."siteId"
+         WHERE ms."accountId" = ${accountId}
+           AND ms."isActive" = true
+           AND ms."nextDueDate" IS NOT NULL
+           AND a."archivedAt" IS NULL
+         GROUP BY s.id, s.name`,
 
       // Widget 4: recent work orders. V7: exclude synthetic WOs created by
       // test-report ingest (they're evidence records, not field jobs) so they
@@ -110,35 +121,42 @@ router.get('/', async (req, res) => {
       }),
 
       // Parts Alerts: count of SpareInventory entries where qtyOnHand < qtyMin.
-      // Prisma lacks field-to-field comparison so we pull managed entries and filter in JS.
-      // Also computes procurementRiskCount: low-stock parts with leadTimeWeeks >= 8.
-      prisma.spareInventory.findMany({
-        where: { accountId, qtyMin: { not: null } },
-        select: { qtyOnHand: true, qtyMin: true, part: { select: { leadTimeWeeks: true } } },
-      }).then((managed: any[]) => {
-        const low = managed.filter(e => e.qtyOnHand < e.qtyMin);
-        return {
-          count: low.length,
-          procurementRiskCount: low.filter((e: any) => e.part?.leadTimeWeeks != null && e.part.leadTimeWeeks >= 8).length,
-        };
-      }),
+      // COMP-8-3: Prisma can't compare two columns, but we don't need to stream
+      // every managed inventory row into the app to count them — push the
+      // field-to-field comparison (and the leadTimeWeeks>=8 procurement-risk
+      // sub-count) into the DB as two COUNT(... FILTER ...) aggregates. Returns
+      // a single row regardless of inventory size.
+      prisma.$queryRaw<any[]>`
+        SELECT COUNT(*) FILTER (WHERE si."qtyOnHand" < si."qtyMin")::int AS count,
+               COUNT(*) FILTER (WHERE si."qtyOnHand" < si."qtyMin"
+                                  AND p."leadTimeWeeks" IS NOT NULL
+                                  AND p."leadTimeWeeks" >= 8)::int AS "procurementRiskCount"
+          FROM spare_inventory si
+          JOIN parts p ON p.id = si."partId"
+         WHERE si."accountId" = ${accountId}
+           AND si."qtyMin" IS NOT NULL`,
     ]);
 
-    // Compliance rate per site: % of active schedules NOT overdue.
-    const bySite = new Map();
-    for (const s of siteRollup) {
-      const key = s.asset.siteId;
-      if (!bySite.has(key)) bySite.set(key, { siteId: key, siteName: s.asset.site?.name || '—', total: 0, overdue: 0 });
-      const row = bySite.get(key);
-      row.total++;
-      if (s.nextDueDate && new Date(s.nextDueDate) < now) row.overdue++;
-    }
-    const complianceBySite = [...bySite.values()]
-      .map(r => ({ ...r, complianceRate: r.total === 0 ? 100 : Math.round(((r.total - r.overdue) / r.total) * 100) }))
-      .sort((a, b) => a.complianceRate - b.complianceRate);
+    // Compliance rate per site: % of active schedules NOT overdue. siteRollup
+    // now arrives pre-aggregated from the DB (one row per site, total +
+    // overdue), so we just compute the ratio and sort (COMP-8-3). Numbers come
+    // back as plain ints (the SQL ::int casts), so no BigInt handling needed.
+    const complianceBySite = siteRollup
+      .map((r: any) => {
+        const total = Number(r.total) || 0;
+        const overdue = Number(r.overdue) || 0;
+        return {
+          siteId: r.siteId,
+          siteName: r.siteName || '—',
+          total,
+          overdue,
+          complianceRate: total === 0 ? 100 : Math.round(((total - overdue) / total) * 100),
+        };
+      })
+      .sort((a: any, b: any) => a.complianceRate - b.complianceRate);
 
-    const overallTotal   = siteRollup.length;
-    const overallOverdue = siteRollup.filter(s => s.nextDueDate && new Date(s.nextDueDate) < now).length;
+    const overallTotal   = complianceBySite.reduce((sum: number, r: any) => sum + r.total, 0);
+    const overallOverdue = complianceBySite.reduce((sum: number, r: any) => sum + r.overdue, 0);
 
     const deficiencyBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
     for (const g of openDeficiencies) deficiencyBySeverity[g.severity] = g._count._all;
@@ -177,8 +195,8 @@ router.get('/', async (req, res) => {
         upcoming,
         assetCount,
         scheduleCount: overallTotal,
-        partsAlerts: partsAlertsCount.count,
-        partsProcurementRisk: partsAlertsCount.procurementRiskCount,
+        partsAlerts: Number(lowStockRollup?.[0]?.count) || 0,
+        partsProcurementRisk: Number(lowStockRollup?.[0]?.procurementRiskCount) || 0,
       },
     });
   } catch (err) {

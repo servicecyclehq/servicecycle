@@ -13,7 +13,7 @@ ServiceCycle is a self-hostable, data-layer SaaS for electrical maintenance prog
 - **Compliance calendar** — NFPA 70B condition-based maintenance intervals (C1/C2/C3) with automatic schedule advancement on work-order completion.
 - **Arc-flash management** — IEEE 1584 study ingestion (AI-assisted gap-fill), NFPA 70E 130.5(H) label generation, AFX v1 export, per-asset energized-work permits, 5-year review tracking.
 - **Document ingest** — deterministic PDF/test-report parser (runs in-container, no third party) with AI draft-fill for thin or scanned reports.
-- **Continuous condition monitoring** — real-time telemetry from OT edge gateways via the v1 telemetry API; CRIT breach auto-escalates asset to NFPA 70B C2.
+- **Condition monitoring** — telemetry ingestion from OT edge gateways via the v1 telemetry API; a CRIT breach auto-escalates the asset to NFPA 70B C2. Alert surfaces poll on a short interval (the client has no live push channel today), so detection is near-real-time, not instantaneous.
 - **Parts & spare inventory** — parts catalog, site/asset inventory, low-stock procurement-risk flags, required-parts panel per asset.
 - **Full data portability** — `GET /api/export/account` produces a complete portable snapshot (JSON + XLSX): all assets, work orders, arc-flash data, parts, and documents. See `docs/OFFBOARDING.md`.
 - **Public REST API** — versioned (`/api/v1`), API-key-scoped (`sc_<key>` format), OpenAPI 3.1 spec at `/docs/api`.
@@ -31,8 +31,8 @@ ServiceCycle is a self-hostable, data-layer SaaS for electrical maintenance prog
 | Client SPA | React 18 + Vite 5 |
 | Auth | JWT + bcrypt + optional TOTP; Ory Polis for SSO |
 | PDF / labels | pdfkit, pdfjs-dist, pyextract (pdfplumber + tesseract) |
-| AI | Anthropic Claude (primary), Google Gemini, Groq — cascade fallback |
-| Email | Resend (transactional + inbound) |
+| AI | Provider-configurable (Cloudflare Workers AI default on demo; Anthropic / OpenAI / Azure OpenAI / Gemini selectable) with a Cloudflare → HuggingFace → Groq cascade fallback; BYO-key supported |
+| Email | Brevo (transactional + inbound) |
 | Deploy | Docker Compose, nginx (static SPA), DigitalOcean |
 
 ---
@@ -88,7 +88,7 @@ Tests require a running Postgres + server on `:3001` (or the Docker stack). Each
 | `docs/OFFBOARDING.md` | Data export and portability guide (no lock-in) |
 
 **Security / compliance**
-| `docs/SOC2_CONTROLS.md` | SOC 2 Type I Trust Service Criteria mapping (13 gaps closed) |
+| `docs/SOC2_CONTROLS.md` | SOC 2 control-design self-assessment — Trust Service Criteria mapped to implemented controls (Type I *readiness*, not an issued report; no Type II evidence collection yet) |
 | `docs/SECURITY_TRUST_PACK.md` | Customer-facing security posture summary |
 | `docs/RISK_REGISTER.md` | Operational risk register (10 risks, L×I, mitigations, quarterly cadence) |
 | `docs/INCIDENT_RESPONSE.md` | Incident response plan + customer breach notification template |

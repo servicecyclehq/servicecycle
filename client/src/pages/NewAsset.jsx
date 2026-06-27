@@ -26,6 +26,14 @@ import Toast from '../components/Toast';
 import BackLink from '../components/BackLink';
 import { EQUIPMENT_TYPE_LABELS, CONDITION_META, REDUNDANCY_META, CRITICALITY_SCORE_META } from '../lib/equipment';
 
+// CUST-8-13: lightweight draft persistence — a half-filled new-asset form is
+// a lot of typing; an accidental tab-close / back-nav used to lose all of it.
+// We mirror the text fields + nameplate + custom fields into sessionStorage as
+// they change and restore them on return, then clear on a successful create.
+// sessionStorage (not local) so the draft is scoped to the tab and doesn't
+// linger across sessions or leak between users on a shared machine.
+const DRAFT_KEY = 'sc_new_asset_draft_v1';
+
 // ── "Start from a photo" helpers ─────────────────────────────────────────────
 const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 const PHOTO_ACCEPT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -119,6 +127,39 @@ export default function NewAsset() {
   useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // CUST-8-13: restore a saved draft once on mount (before the user types).
+  // We only restore the typed payload (form fields, nameplate, custom fields);
+  // the site-cascade effect re-resolves building/area/position from the live
+  // tree, so deep hierarchy picks may need re-selecting — the high-value text
+  // (type, make/model/serial, dates, conditions, notes, nameplate) is kept.
+  const draftRestored = useRef(false);
+  useEffect(() => {
+    if (draftRestored.current) return;
+    draftRestored.current = true;
+    // Skip restore when arriving via ?templateId= (the template prefill owns the form).
+    if (searchParams.get('templateId')) return;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d && typeof d === 'object') {
+        if (d.form && typeof d.form === 'object') setForm(prev => ({ ...prev, ...d.form }));
+        if (Array.isArray(d.nameplate) && d.nameplate.length) setNameplate(d.nameplate);
+        if (d.customFields && typeof d.customFields === 'object') setCustomFields(d.customFields);
+      }
+    } catch (_e) { /* corrupt/blocked storage — ignore, start fresh */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the typed payload as it changes (after the initial restore pass so
+  // we never clobber a saved draft with the empty initial state).
+  useEffect(() => {
+    if (!draftRestored.current) return;
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ form, nameplate, customFields }));
+    } catch (_e) { /* storage full/blocked — non-fatal, draft just won't persist */ }
+  }, [form, nameplate, customFields]);
 
   useEffect(() => {
     api.get('/api/sites')
@@ -397,6 +438,7 @@ export default function NewAsset() {
           // Non-fatal — the detail page has an "Apply schedule template" action.
         }
       }
+      try { sessionStorage.removeItem(DRAFT_KEY); } catch (_e) { /* ignore */ }
       navigate(`/assets/${asset.id}`);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create asset.');

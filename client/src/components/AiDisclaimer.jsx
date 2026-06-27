@@ -3,30 +3,33 @@ import React from 'react';
 /**
  * AiDisclaimer
  * ------------
- * One reusable AI-output disclaimer rendered in four contexts:
+ * One reusable AI-output disclaimer rendered in three contexts (the
+ * three keys in VARIANTS below — keep this list in sync with that map):
  *
- *   - extract       : ingest / extracted-field review (IngestReview)
- *                     and the signature-extract review surface
- *                     (VendorDetail). Amber tone — the AI is parsing
- *                     arbitrary user-supplied PDFs / text where
- *                     hallucination is a real risk.
- *   - renewalBrief  : AI-generated negotiation/renewal summary
- *                     (ContractDetail's "AI Renewal Brief" card).
- *                     Amber tone with a stronger downstream-authority
- *                     pointer (SAM team / licensing consultant).
- *   - ask           : Ask ServiceCycle Q&A modal. Slate (info) tone —
- *                     this surface is grounded in the curated
- *                     ServiceCycle product guide (RAG-lite over an
- *                     internal knowledge base, not free-form AI on
- *                     user content), so a strong amber warning would
- *                     overstate the risk and make the help system
- *                     look unreliable. Note still names AI as the
- *                     generator and points to the docs as the
- *                     authoritative source of truth.
+ *   - extract          : ingest / extracted-field review (IngestReview)
+ *                        and the signature-extract review surface.
+ *                        Amber tone — the AI is parsing arbitrary
+ *                        user-supplied PDFs / text where hallucination
+ *                        is a real risk.
+ *   - maintenanceBrief : AI maintenance recommendation + NFPA compliance
+ *                        summary (MaintenanceBriefCard). Strong amber
+ *                        tone — the output sits adjacent to electrical
+ *                        safety decisions, so the copy is explicit that
+ *                        it is not an engineering determination.
+ *   - ask              : Ask ServiceCycle Q&A modal. Slate (info) tone —
+ *                        this surface is grounded in the curated
+ *                        ServiceCycle product guide (RAG-lite over an
+ *                        internal knowledge base, not free-form AI on
+ *                        user content), so a strong amber warning would
+ *                        overstate the risk and make the help system
+ *                        look unreliable. Note still names AI as the
+ *                        generator and points to the docs as the
+ *                        authoritative source of truth.
  *
  * Centralized so wording stays consistent and reviewable in one
  * place. Each variant carries its own tone so callers don't need
- * to know the visual treatment.
+ * to know the visual treatment. An unknown `variant` falls back to
+ * `extract` (the most conservative amber warning).
  */
 
 const TONES = {

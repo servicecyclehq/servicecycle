@@ -28,6 +28,7 @@ import Toast from '../../components/Toast';
 import NameplateReview from '../../components/NameplateReview';
 import IncidentLogCard from '../../components/IncidentLogCard';
 import VoiceCaptureButton from '../../components/field/VoiceCaptureButton';
+import FailedSyncBanner from '../../components/field/FailedSyncBanner';
 import {
   EQUIPMENT_TYPE_LABELS, CONDITION_META, SEVERITY_META, WO_STATUS_META,
   assetLabel, fmtDate,
@@ -522,12 +523,25 @@ export default function FieldAsset() {
     if (ocrResult.serialNumber)  patch.serialNumber = ocrResult.serialNumber;
     if (!Object.keys(patch).length) return;
     try {
-      await api.put(`/api/assets/${id}`, patch);
+      // COMP-8-6: queue through the offline outbox so the nameplate fix the
+      // tech just typed survives a dropped signal instead of being lost on a
+      // "Could not save" toast. (The OCR scan itself needs the network, but the
+      // resulting field edit must not.)
+      const res = await fieldMutate({
+        method: 'PUT',
+        url: `/api/assets/${id}`,
+        body: patch,
+        meta: { label: 'Nameplate update', assetId: id },
+      });
       setOcrApplied(true);
-      setToast({ message: 'Asset updated from nameplate', type: 'success' });
-      setTimeout(fetchData, 800);
-    } catch {
-      setToast({ message: 'Could not save — try again', type: 'error' });
+      if (res?.queued) {
+        setToast({ message: 'Saved offline — nameplate update will sync when you\u2019re back online.', type: 'success' });
+      } else {
+        setToast({ message: 'Asset updated from nameplate', type: 'success' });
+        setTimeout(fetchData, 800);
+      }
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || err.response?.data?.message || 'Could not save — try again', type: 'error' });
     }
   }
 
@@ -641,6 +655,8 @@ export default function FieldAsset() {
 
   return (
     <div>
+      {/* COMP-8-5: surface offline mutations the server rejected on sync. */}
+      <FailedSyncBanner />
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--color-text)', lineHeight: 1.25 }}>

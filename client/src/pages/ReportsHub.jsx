@@ -2,16 +2,16 @@
 // ReportsHub.jsx — ServiceCycle compliance reports hub.
 //
 // The contract-renewal report grid was removed in the ServiceCycle conversion.
-// This hub renders the compliance report suite: ACTIVE cards either navigate
-// to an in-app report route (`to`: Compliance by Standard, Overdue
-// Maintenance by Severity, Standards Library, Audit Evidence Snapshots) or
-// download an export (`exportView`: asset register via
-// GET /api/export/xlsx?view=assets). Remaining planned reports (Maintenance
-// Activity Summary, Trend Analysis) show as disabled cards.
+// This hub renders the compliance report suite: cards either navigate to an
+// in-app report route (`to`: Compliance by Standard, Overdue Maintenance by
+// Severity, Standards Library, Audit Evidence Snapshots, the arc-flash suite,
+// Revenue Attribution) or download an export (`exportView` / `accountExport` /
+// `empDownload`). Every card in the registry is live.
 //
 // The registry (client/src/tables/reportsRegistry.js) is the single source of
-// truth for the cards. When a planned report ships, flip `planned: false` and
-// add its route there.
+// truth for the cards. ReportCard still supports a `planned: true` flag (renders
+// a disabled "Planned" card) for any future report that ships in stages, but no
+// registry entry currently sets it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react';
@@ -219,8 +219,8 @@ export default function ReportsHub() {
           Compliance by Standard rolls maintenance status up per governing standard with a drill-down
           evidence table; Overdue Maintenance by Severity surfaces the riskiest gaps first; the Standards
           Library explains each governing document in plain language; Audit Evidence Snapshots produce
-          immutable, hash-anchored PDFs for insurers and AHJs. Activity summaries and test-value trending
-          are planned — they get useful once completion history accumulates.
+          immutable, hash-anchored PDFs for insurers and AHJs. The arc-flash suite, EMP document, and
+          full account export round out the set.
         </div>
 
         <div style={{

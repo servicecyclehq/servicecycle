@@ -329,7 +329,26 @@ async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt
   }
 
   if (visionProvider === 'anthropic') {
-    const ak = process.env.ANTHROPIC_API_KEY || s.apiKey;
+    // COMP-8-10: Cloudflare Workers AI has no unified vision path for the
+    // text models ServiceCycle uses, so image calls detour to Anthropic by
+    // default — which requires ANTHROPIC_API_KEY *in addition to* the CF
+    // credentials. If an operator configured only Cloudflare, every nameplate
+    // / photo scan would otherwise throw a confusing SDK error deep in the
+    // call. Detect the missing key up front and surface a clear, handled
+    // setup error (callers can map AI_VISION_NOT_CONFIGURED to a 503 with
+    // guidance) rather than a silent failure.
+    const ak = process.env.ANTHROPIC_API_KEY || (s.provider !== 'cloudflare' ? s.apiKey : undefined);
+    if (!ak) {
+      const err: any = new Error(
+        '[ai] Image analysis is not configured: AI_PROVIDER=cloudflare routes vision to Anthropic '
+        + '(AI_VISION_PROVIDER), but ANTHROPIC_API_KEY is not set. Set ANTHROPIC_API_KEY, or set '
+        + 'AI_VISION_PROVIDER=gemini (+ a Gemini key) / =groq (+ GROQ_API_KEY) for a vision provider '
+        + 'that does not depend on Anthropic.',
+      );
+      err.code = 'AI_VISION_NOT_CONFIGURED';
+      err.statusHint = 503;
+      throw err;
+    }
     return _anthropicImage({ imageBuffer, mediaType, prompt, maxTokens, s: Object.assign({}, s, { apiKey: ak }) });
   } else if (visionProvider === 'openai' || visionProvider === 'azure_openai') {
     return _openaiImage({ imageBuffer, prompt, maxTokens, azure: visionProvider === 'azure_openai', s });
@@ -358,6 +377,40 @@ async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// COMP-8-11: provider completions are not guaranteed to put a text string in
+// content[0]. Anthropic can return a non-text first block (a refusal carries a
+// `stop_reason`, a tool-use block, or — on a safety stop — an empty content
+// array); the OpenAI/Azure shape can carry a null `content` (e.g. a refusal /
+// length stop with no text). Reaching straight for `.content[0].text.trim()`
+// or `.message.content.trim()` then throws a raw TypeError that surfaces to the
+// user as a 500 instead of a handled "couldn't read that". These helpers find
+// the first text block (or empty string) and raise a clear, catchable error
+// when the model genuinely returned no text.
+function _anthropicText(msg: any, providerLabel = 'anthropic'): string {
+  const blocks = Array.isArray(msg?.content) ? msg.content : [];
+  const textBlock = blocks.find((b: any) => b && b.type === 'text' && typeof b.text === 'string');
+  if (textBlock) return textBlock.text.trim();
+  const reason = msg?.stop_reason ? ` (stop_reason=${msg.stop_reason})` : '';
+  throw new Error(`[ai] ${providerLabel} returned no text content${reason} — the model may have refused or hit a safety stop.`);
+}
+
+function _openaiText(res: any, providerLabel = 'openai'): string {
+  const content = res?.choices?.[0]?.message?.content;
+  if (typeof content === 'string' && content.length > 0) return content.trim();
+  // Some responses (refusal / length-stop) carry an explicit refusal string or
+  // an array of content parts rather than a plain string.
+  const refusal = res?.choices?.[0]?.message?.refusal;
+  if (typeof refusal === 'string' && refusal.length > 0) {
+    throw new Error(`[ai] ${providerLabel} refused the request: ${refusal.slice(0, 200)}`);
+  }
+  if (Array.isArray(content)) {
+    const part = content.find((p: any) => typeof p?.text === 'string' && p.text.length > 0);
+    if (part) return part.text.trim();
+  }
+  const finish = res?.choices?.[0]?.finish_reason ? ` (finish_reason=${res.choices[0].finish_reason})` : '';
+  throw new Error(`[ai] ${providerLabel} returned no text content${finish} — the model may have refused or returned an empty completion.`);
+}
 
 function parseJSON(text, providerName) {
   const cleaned = text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
@@ -399,7 +452,7 @@ async function _anthropicComplete({ system, user, maxTokens, s, cacheSystem = fa
     system: systemPayload,
     messages: [{ role: 'user', content: user }],
   });
-  return { text: msg.content[0].text.trim() };
+  return { text: _anthropicText(msg) };
 }
 
 async function _anthropicImage({ imageBuffer, mediaType, prompt, maxTokens, s }) {
@@ -425,7 +478,7 @@ async function _anthropicImage({ imageBuffer, mediaType, prompt, maxTokens, s })
       ],
     }],
   });
-  return { text: msg.content[0].text.trim() };
+  return { text: _anthropicText(msg) };
 }
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
@@ -448,7 +501,7 @@ async function _openaiComplete({ system, user, maxTokens, s }) {
       { role: 'user', content: user },
     ],
   });
-  return { text: res.choices[0].message.content.trim() };
+  return { text: _openaiText(res) };
 }
 
 async function _openaiImage({ imageBuffer, prompt, maxTokens, azure, s }) {
@@ -465,7 +518,7 @@ async function _openaiImage({ imageBuffer, prompt, maxTokens, azure, s }) {
       ],
     }],
   });
-  return { text: res.choices[0].message.content.trim() };
+  return { text: _openaiText(res, azure ? 'azure_openai' : 'openai') };
 }
 
 // ── Azure OpenAI ──────────────────────────────────────────────────────────────
@@ -495,7 +548,7 @@ async function _azureComplete({ system, user, maxTokens, s }) {
       { role: 'user', content: user },
     ],
   });
-  return { text: res.choices[0].message.content.trim() };
+  return { text: _openaiText(res, 'azure_openai') };
 }
 
 // ── Gemini ────────────────────────────────────────────────────────────────────

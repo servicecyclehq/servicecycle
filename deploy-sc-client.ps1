@@ -1,5 +1,12 @@
 # ============================================================================
 # ServiceCycle CLIENT deploy  (run in YOUR PowerShell terminal — SSH works there)
+#
+# ⚠ DEPLOY-PATH NOTE: legacy path — builds the SPA on this laptop and scp's the
+#   dist to the live web root (/var/www/servicecycle/html) on the :3002 box.
+#   The CANONICAL path is a git-commit-based deploy via the VPS ops MCP (build
+#   + publish from a reviewed commit), not from the local working tree. Keep
+#   this only as a manual fallback; see deploy-sc-server.ps1 for the full note.
+#
 # Ships the client-side LapseIQ scrub (index.html, theme-bootstrap, CategoriesSection).
 # Cosmetic only; the current bundle works, so this just finishes the scrub.
 # Backs up the live web root first, preserves .well-known.

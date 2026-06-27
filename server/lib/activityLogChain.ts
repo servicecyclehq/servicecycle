@@ -40,6 +40,39 @@
  *   and recomputes all subsequent hashes. That's the higher-bar threat
  *   the W4 design decision deliberately scoped out (Pass-6 W4 design
  *   call: hash-chain over HKDF-signed entries).
+ *
+ * [LEGAL-8-6] Safety-data coverage (arc-flash + LOTO):
+ *
+ *   The chain commits to each row's `details` JSON (see canonical() below). The
+ *   arc-flash safety mutation paths now write the changed hazard values
+ *   (incident energy / PPE / arc-flash boundary / PE attribution / study date /
+ *   incident classification) into `details` with old->new + actor on every
+ *   mutation:
+ *     - SystemStudy edits        -> system_study_updated / *_pe_attribution_changed
+ *     - SystemStudyAsset binds   -> arc_flash_study_assets_bound / *_unbound
+ *     - PE results CSV imports   -> arc_flash_results_imported (per-bus from->to)
+ *     - AFX overwrite imports    -> arc_flash_afx_import_applied (per-field from->to)
+ *     - ingest reviewer edits    -> arc_flash_ingest_bus_edited
+ *     - ingest confirm           -> arc_flash_ingest_confirmed (AI-provenance)
+ *     - ArcFlashIncident         -> arc_flash_incident_logged / *_amended
+ *     - v1 protective devices    -> api_v1_protective_device_created (payload hash)
+ *   Because those values live in `details`, the chain transitively commits to the
+ *   safety numbers — a later direct-DB edit of the value in its own table cannot
+ *   change what the chain already attested without recomputing the whole chain
+ *   (the higher-bar threat above).
+ *
+ * [DD-8-2] Residual / trust boundary (partially mitigated):
+ *
+ *   This scheme is tamper-EVIDENT, not tamper-PROOF. An actor with BOTH database
+ *   write access AND app-server access (the canonical() + computeRowHash() code,
+ *   here) can rewrite a row and recompute every subsequent hash, producing an
+ *   internally-consistent forged chain that verifyAllChains() would pass. Full
+ *   defeat of that actor requires anchoring the chain head OUTSIDE the trust
+ *   boundary (e.g. periodic publish of the latest rowHash to an append-only
+ *   external store / WORM bucket / notarization service), which is infra, not an
+ *   application change. Until that exists, the integrity guarantee holds only
+ *   against a DB-only insider; treat the app-server + DB compound actor as the
+ *   accepted residual risk and gate that access operationally.
  */
 
 const crypto = require('crypto');
@@ -58,6 +91,13 @@ const crypto = require('crypto');
 // the canonical form. This shipped together with the schema reset, so no
 // rowHash backfill is needed — fresh databases chain from genesis with the
 // new form.
+//
+// [LEGAL-8-6] `details` is part of the canonical payload, so when a safety
+// mutation writes its changed hazard values (incident energy / PPE / boundary /
+// PE attribution / study date / incident fields) into details with old->new +
+// actor, the chain transitively commits to those values. Do NOT drop details
+// from canonical() — that would un-cover every safety number the audit trail
+// relies on.
 function canonical(row) {
   const obj = {
     id:         row.id,

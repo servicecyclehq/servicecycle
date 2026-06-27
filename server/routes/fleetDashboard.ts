@@ -147,15 +147,16 @@ router.get('/dashboard', async (req, res) => {
       }),
 
       // 5. Last completed work order date per account
-      prisma.workOrder.findMany({
+      // COMP-8-15: groupBy returns exactly ONE row per account (the max
+      // completedDate), so the query is bounded by account count regardless of
+      // how many completed work orders an account has -- no per-WO row scan.
+      prisma.workOrder.groupBy({
+        by: ['accountId'],
         where: {
           accountId: { in: accountIds },
           status: 'COMPLETE',
         },
-        select: { accountId: true, completedDate: true },
-        orderBy: { completedDate: 'desc' },
-        // We'll de-dup per account in JS
-        take: accountIds.length * 10,
+        _max: { completedDate: true },
       }),
 
       // 6. Open work orders per account
@@ -185,12 +186,11 @@ router.get('/dashboard', async (req, res) => {
       svcOpMap.set(r.accountId, (svcOpMap.get(r.accountId) ?? 0) + r._count.id);
     }
 
-    // Last WO date per account
+    // Last WO date per account (one row per account from the groupBy _max).
     const lastWoMap = new Map<string, Date | null>();
     for (const wo of lastWoByAccount) {
-      if (!lastWoMap.has(wo.accountId) && wo.completedDate) {
-        lastWoMap.set(wo.accountId, wo.completedDate);
-      }
+      const last = (wo as any)._max?.completedDate ?? null;
+      if (last) lastWoMap.set(wo.accountId, last);
     }
 
     // ── Assemble response ─────────────────────────────────────────────────────
@@ -637,6 +637,12 @@ router.get('/account-forecast', async (req, res) => {
       where: {
         accountId,
         archivedAt:             null,
+        // CFO-8-2: the OEM /api/fleet/forecast filters installDate: { not: null }.
+        // This customer-facing forecast omitted it, so the same account showed a
+        // LARGER CapEx total here than the contractor saw in the fleet view
+        // (assets with a null install date but a risk score were priced here and
+        // not there). Apply the identical filter so both forecasts reconcile.
+        installDate:            { not: null },
         modernizationRiskScore: { gte: 0.50 },
       },
       select: { equipmentType: true, modernizationRiskScore: true },

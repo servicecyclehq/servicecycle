@@ -16,8 +16,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../api/client';
+import { fieldMutate } from '../../lib/fieldApi';
 import { EQUIPMENT_TYPE_LABELS } from '../../lib/equipment';
 import NameplateReview from '../../components/NameplateReview';
+import FailedSyncBanner from '../../components/field/FailedSyncBanner';
 
 const LAST_SITE_KEY = 'sc_field_last_site';
 const LAST_TYPE_KEY = 'sc_field_last_type';
@@ -56,11 +58,25 @@ export default function FieldBatchNameplate() {
     if (!equipmentType) { setError('Pick an equipment type.'); return; }
     setBusy(true); setError(null);
     try {
-      const res = await api.post('/api/assets', { siteId, equipmentType });
+      // COMP-8-6: queue the create offline instead of losing it on a toast. The
+      // batch scanner needs a live asset id, so a queued (offline) create is
+      // recorded in the captured list as "will sync" and skips the scan modal;
+      // the tech scans it once it exists. Online behaviour is unchanged.
+      const res = await fieldMutate({
+        method: 'POST',
+        url: '/api/assets',
+        body: { siteId, equipmentType },
+        meta: { label: `Batch add ${typeLabel || 'equipment'}` },
+      });
+      try { localStorage.setItem(LAST_SITE_KEY, siteId); localStorage.setItem(LAST_TYPE_KEY, equipmentType); } catch (_e) { /* storage blocked */ }
+      if (res?.queued) {
+        setError(null);
+        setCaptured(prev => [...prev, { id: `queued-${Date.now()}`, label: `${typeLabel} (saved offline — will sync)`, scanned: false, queued: true }]);
+        return;
+      }
       const asset = res.data?.data?.asset || res.data?.data;
       const aid = asset?.id;
       if (!aid) throw new Error('Create failed');
-      try { localStorage.setItem(LAST_SITE_KEY, siteId); localStorage.setItem(LAST_TYPE_KEY, equipmentType); } catch (_e) { /* storage blocked */ }
       api.post('/api/schedules/bulk-apply', { assetId: aid }).catch(() => {}); // 70B template, best-effort
       setActiveAssetId(aid);
     } catch (err) {
@@ -84,6 +100,7 @@ export default function FieldBatchNameplate() {
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: '0 auto' }}>
       <Link to="/field" style={{ fontSize: 14, color: 'var(--color-primary, #2563eb)' }}>← Back</Link>
+      <FailedSyncBanner />
       <h1 style={{ fontSize: 20, fontWeight: 700, margin: '12px 0 4px' }}>Batch add equipment</h1>
       <p style={{ fontSize: 13.5, color: 'var(--color-text-secondary)', marginTop: 0 }}>
         Pick the site and type once, then snap each nameplate and save — it loops back so you can walk the
@@ -124,15 +141,27 @@ export default function FieldBatchNameplate() {
             Captured this session: {captured.length} ({scannedCount} with a nameplate)
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {captured.map((c, i) => (
-              <Link key={c.id} to={`/field/asset/${c.id}`}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-                  border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 13.5, color: 'var(--color-text)' }}>
-                <span style={{ color: c.scanned ? '#15803d' : '#92400e', fontWeight: 700 }}>{c.scanned ? '✓' : '•'}</span>
-                <span style={{ flex: 1 }}>{i + 1}. {c.label}{c.scanned ? '' : ' (no nameplate yet)'}</span>
-                <span style={{ fontSize: 12, color: 'var(--color-primary, #2563eb)' }}>Open →</span>
-              </Link>
-            ))}
+            {captured.map((c, i) => {
+              const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 13.5, color: 'var(--color-text)' };
+              // Queued (offline) creates have no real asset id yet — render as a
+              // non-link row so we don't link to /field/asset/queued-… .
+              if (c.queued) {
+                return (
+                  <div key={c.id} style={rowStyle}>
+                    <span style={{ color: '#92400e', fontWeight: 700 }} aria-hidden="true">⧗</span>
+                    <span style={{ flex: 1 }}>{i + 1}. {c.label}</span>
+                  </div>
+                );
+              }
+              return (
+                <Link key={c.id} to={`/field/asset/${c.id}`} style={rowStyle}>
+                  <span style={{ color: c.scanned ? '#15803d' : '#92400e', fontWeight: 700 }}>{c.scanned ? '✓' : '•'}</span>
+                  <span style={{ flex: 1 }}>{i + 1}. {c.label}{c.scanned ? '' : ' (no nameplate yet)'}</span>
+                  <span style={{ fontSize: 12, color: 'var(--color-primary, #2563eb)' }}>Open →</span>
+                </Link>
+              );
+            })}
           </div>
           <button type="button" onClick={() => navigate('/field')}
             style={{ width: '100%', padding: '12px', borderRadius: 10, border: '1px solid var(--color-border)',

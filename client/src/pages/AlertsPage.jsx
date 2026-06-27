@@ -51,6 +51,9 @@ const TYPE_FILTER_CHIPS = [
 export default function AlertsPage() {
   useDocumentTitle('Alerts');
   const [alerts, setAlerts]   = useState([]);
+  // serverTotal: the TRUE open-alert count (matches the sidebar bell). May
+  // exceed alerts.length when more than one page exists — CUST-8-1.
+  const [serverTotal, setServerTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const navigate = useNavigate();
@@ -140,10 +143,15 @@ export default function AlertsPage() {
 
   const fetchAlerts = () => {
     setLoading(true);
-    api.get('/api/alerts')
+    // Pull the full open-alert set (server caps at 500/page); `count` is the
+    // true total even if it ever exceeds that — used to reconcile the header
+    // and the sidebar bell.
+    api.get('/api/alerts', { params: { limit: 500 } })
       .then(r => {
         const d = r.data.data || {};
-        setAlerts(Array.isArray(d.alerts) ? d.alerts : []);
+        const list = Array.isArray(d.alerts) ? d.alerts : [];
+        setAlerts(list);
+        setServerTotal(typeof d.count === 'number' ? d.count : list.length);
       })
       .catch(() => setError('Failed to load alerts.'))
       .finally(() => setLoading(false));
@@ -155,6 +163,8 @@ export default function AlertsPage() {
     try {
       await api.post(`/api/alerts/${id}/acknowledge`);
       setAlerts(prev => prev.filter(a => a.id !== id));
+      // Keep the true total (and the implied bell) in step with the removal.
+      setServerTotal(t => Math.max(0, t - 1));
     } catch {
       setError('Failed to acknowledge alert.');
     }
@@ -188,7 +198,12 @@ export default function AlertsPage() {
   const headers = table.getHeaderGroups()[0]?.headers ?? [];
   const rows    = table.getRowModel().rows;
 
-  const totalCount    = alerts.length;
+  // totalCount drives the "X items need attention" header and the empty-state
+  // copy; use the server's true total so it reconciles with the sidebar bell
+  // even when the loaded page is capped (CUST-8-1).
+  const loadedCount   = alerts.length;
+  const totalCount    = Math.max(serverTotal, loadedCount);
+  const capped        = totalCount > loadedCount; // more alerts than we loaded
   const filteredCount = rows.length;
   const hasColumnFilters = columnFilters.length > 0;
   const hasAnyFilters    = hasColumnFilters || activeChip !== 'all';
@@ -385,6 +400,14 @@ export default function AlertsPage() {
                 );
               })}
             </div>
+
+            {capped && (
+              <div className="alert alert-info" style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)' }}>
+                Showing {loadedCount.toLocaleString()} of {totalCount.toLocaleString()} open alerts.
+                Use a filter chip or column filter to narrow to the ones you need —
+                the count above and the sidebar bell reflect the full total.
+              </div>
+            )}
 
             <div className="card">
               {chipFilteredRows.length === 0 ? (

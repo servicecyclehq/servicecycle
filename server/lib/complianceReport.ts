@@ -66,6 +66,15 @@ function summarizeSchedules(schedules, now) {
   }
 
   const rated = current + overdue;
+  // CFO-8-10: `complianceRate` is the SCHEDULE-compliance basis — current /
+  // (current + overdue) — which by design EXCLUDES unbaselined schedules (active
+  // schedules with no nextDueDate yet) from the denominator. That flatters an
+  // account mid-onboarding (200 schedules applied, 2 baselined-and-current reads
+  // 100%). We keep that field (many consumers + the in-app dashboard rely on it)
+  // but now also expose, with an explicit basis label, the rate that folds
+  // unbaselined INTO the denominator so an insurer/board can read the honest
+  // version. `complianceBasis` documents exactly what `complianceRate` measures.
+  const ratedWithUnbaselined = current + overdue + unbaselined;
   return {
     assetCount:       assetIds.size,
     scheduleCount:    current + overdue + unbaselined,
@@ -73,6 +82,9 @@ function summarizeSchedules(schedules, now) {
     overdueCount:     overdue,
     unbaselinedCount: unbaselined,
     complianceRate:   rated > 0 ? Math.round((current / rated) * 1000) / 10 : null,
+    complianceBasis:  'schedule-compliance (current / current+overdue); excludes unbaselined',
+    // Honest blended schedule rate: unbaselined counted as not-yet-compliant.
+    complianceRateInclUnbaselined: ratedWithUnbaselined > 0 ? Math.round((current / ratedWithUnbaselined) * 1000) / 10 : null,
     nextDue, // earliest upcoming due date (Date | null)
   };
 }
@@ -704,7 +716,14 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
 
   const denom = current + overdue + unbaselined + uncoveredWeight + empGapCount;
   const overallRate = denom > 0 ? Math.round((current / denom) * 1000) / 10 : 100;
-  const pointPerUnit = denom > 0 ? Math.round((100 / denom) * 10) / 10 : 0;
+  // CFO-8-4: each unmet obligation unit is worth EXACTLY 100/denom points. The
+  // old code rounded this to one decimal (pointPerUnit) and stamped the rounded
+  // constant on every action, so e.g. denom=7 → 14.3, and 7×14.3 = 100.1 ≠ 100 —
+  // clearing the whole list overshot/undershot 100%. We keep the exact per-unit
+  // value for the cumulative-residual rounding pass below (after all actions are
+  // built) so the displayed per-action points sum to exactly pointsToFull.
+  const exactPointPerUnit = denom > 0 ? 100 / denom : 0;
+  const pointPerUnit = denom > 0 ? Math.round(exactPointPerUnit * 10) / 10 : 0;
 
   const rated = current + overdue;
   const complianceRate = rated > 0 ? Math.round((current / rated) * 1000) / 10 : null;
@@ -727,6 +746,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
       siteName: null,
       criticalityScore: null,
       pointsRecovered: pointPerUnit,
+      _units: 1, // CFO-8-4: obligation units this action clears (for exact rounding)
     });
   }
 
@@ -744,6 +764,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
       title: `${s.taskDefinition.taskName} — ${days}d overdue on ${gapAssetLabel(s.asset)}`,
       standardRef: s.taskDefinition.standardRef,
       pointsRecovered: pointPerUnit,
+      _units: 1,
       action: { type: 'create_wo', assetId: s.asset.id, scheduleId: s.id },
       sortKey: [0, -days, -(s.asset.criticalityScore || 0)],
     });
@@ -760,6 +781,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
       title: `Baseline ${s.taskDefinition.taskName} on ${gapAssetLabel(s.asset)} (no first completion yet)`,
       standardRef: s.taskDefinition.standardRef,
       pointsRecovered: pointPerUnit,
+      _units: 1,
       action: { type: 'baseline', scheduleId: s.id },
       sortKey: [1, 0, -(s.asset.criticalityScore || 0)],
     });
@@ -776,6 +798,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
       title: `${gapAssetLabel(a)} has no maintenance program — apply its NFPA 70B task set`,
       standardRef: null,
       pointsRecovered: Math.round(pointPerUnit * (uncoveredWeightByAsset.get(a.id) || 1) * 10) / 10,
+      _units: (uncoveredWeightByAsset.get(a.id) || 1),
       action: { type: 'apply_template', assetId: a.id },
       sortKey: [2, 0, -(a.criticalityScore || 0)],
     });
@@ -785,8 +808,31 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
     for (let i = 0; i < 3; i++) { const d = x.sortKey[i] - y.sortKey[i]; if (d !== 0) return d; }
     return 0;
   });
+
+  // CFO-8-4: assign per-action points via CUMULATIVE-residual rounding ANCHORED
+  // to pointsToFull, so the displayed per-action values sum to EXACTLY
+  // pointsToFull (= 100 - overallRate). Each action clears `_units` obligation
+  // units; we walk the cumulative fraction of total units, scale it to
+  // pointsToFull, round the running total at each step, and take per-action
+  // deltas. The final action is forced onto pointsToFull, so "clear every action
+  // → 100%" holds to the tenth instead of drifting by ±0.x from constant-rounding.
+  const pointsToFull = Math.round((100 - overallRate) * 10) / 10;
+  const totalUnits = actions.reduce((n, a) => n + (a._units || 1), 0);
+  let cumUnits = 0;
+  let prevCumPoints = 0;
+  for (let i = 0; i < actions.length; i++) {
+    const act = actions[i];
+    cumUnits += (act._units || 1);
+    const isLast = i === actions.length - 1;
+    const cumPoints = isLast || totalUnits <= 0
+      ? pointsToFull // force the final cumulative onto the exact headline gap
+      : Math.round((pointsToFull * cumUnits / totalUnits) * 10) / 10;
+    act.pointsRecovered = Math.round((cumPoints - prevCumPoints) * 10) / 10;
+    prevCumPoints = cumPoints;
+  }
+
   const totalActions = actions.length;
-  const trimmed = actions.slice(0, limit).map(({ sortKey, ...rest }) => rest);
+  const trimmed = actions.slice(0, limit).map(({ sortKey, _units, ...rest }) => rest);
 
   return {
     generatedAt: now,
@@ -794,7 +840,7 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
     compliance: { rate: complianceRate, current, overdue, unbaselined },
     coverage:   { rate: coverageRate, coveredAssets, totalAssets: coverageDenom, uncoveredAssets: uncoveredCount },
     overallRate,
-    pointsToFull: Math.round((100 - overallRate) * 10) / 10,
+    pointsToFull,
     actions: trimmed,
     summary: {
       totalActions,

@@ -105,7 +105,11 @@ export default function DemoModeBanner() {
           right: 12,
           zIndex: 190,
           fontSize: '0.7rem',
-          color: 'var(--color-text-tertiary, #9ca3af)',
+          // --color-text-tertiary was never defined in the token set, so this
+          // silently fell back to a hardcoded light-mode gray. Use the real
+          // muted-text token, which is theme-aware (redefined under
+          // [data-theme="dark"] in index.css).
+          color: 'var(--color-text-muted, var(--color-text-secondary))',
         }}
       >
         <button

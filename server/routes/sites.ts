@@ -61,10 +61,27 @@ router.get('/', async (req, res) => {
     if (req.query.archived === 'true') where.NOT = { archivedAt: null };
     else where.archivedAt = null;
 
+    // [CUST-8-10] Optional pagination. Backward-compatible: callers that pass no
+    // limit/offset/page get the full list (existing behavior) PLUS a `pagination`
+    // block + `total`. Callers that opt in (limit/page) get a bounded page so the
+    // endpoint can't return an unbounded payload at real volume. Page size is
+    // capped at 200; offset takes precedence over page when both are given.
+    const PAGE_CAP = 200;
+    const rawLimit  = req.query.limit  !== undefined ? parseInt(String(req.query.limit), 10)  : NaN;
+    const rawOffset = req.query.offset !== undefined ? parseInt(String(req.query.offset), 10) : NaN;
+    const rawPage   = req.query.page   !== undefined ? parseInt(String(req.query.page), 10)   : NaN;
+    const paginated = Number.isFinite(rawLimit) || Number.isFinite(rawOffset) || Number.isFinite(rawPage);
+    const limit  = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, PAGE_CAP) : (paginated ? 50 : undefined);
+    let   offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+    if (!Number.isFinite(rawOffset) && Number.isFinite(rawPage) && rawPage > 1 && limit) offset = (rawPage - 1) * limit;
+
+    const total = await prisma.site.count({ where });
+
     const [sites, openDefs] = await Promise.all([
       prisma.site.findMany({
         where,
         orderBy: { name: 'asc' },
+        ...(limit !== undefined ? { skip: offset, take: limit } : {}),
         include: {
           _count: {
             select: {
@@ -97,7 +114,21 @@ router.get('/', async (req, res) => {
       openDeficiencyCount: defsBySite.get(s.id) || 0,
     }));
 
-    res.json({ success: true, data: { sites: decorated } });
+    res.json({
+      success: true,
+      data: {
+        sites: decorated,
+        total,
+        pagination: {
+          total,
+          limit:    limit ?? total,
+          offset:   limit !== undefined ? offset : 0,
+          returned: decorated.length,
+          // hasMore is meaningful only when paginating; full-list responses return everything.
+          hasMore:  limit !== undefined ? (offset + decorated.length) < total : false,
+        },
+      },
+    });
   } catch (err) {
     console.error('List sites error:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch sites' });
@@ -818,6 +849,32 @@ router.put('/studies/:id', requireManager, async (req, res) => {
       data:  updateData,
     });
 
+    // [LEGAL-8-3] Audit every changed study field with before/after. peName /
+    // peLicense are rendered as "Study by: …, PE" on the printed NFPA 70E label,
+    // and performedDate drives the 5-year expiry / "is this study current" gate —
+    // so a back-dated date or a swapped PE name must leave a trace. Routed through
+    // ActivityLog so the tamper-evident hash chain commits to the values
+    // (LEGAL-8-6). PE-attribution changes are emitted as a distinct, alertable
+    // action so a non-engineer attaching a PE's name surfaces loudly.
+    const AUDITED_STUDY_FIELDS = ['studyType', 'performedDate', 'expiresAt', 'performedBy', 'method', 'peName', 'peLicense', 'trigger', 'supersededById'];
+    const toIso = (v: any) => (v instanceof Date ? v.toISOString() : v);
+    const studyChanges: Record<string, { from: any; to: any }> = {};
+    for (const f of AUDITED_STUDY_FIELDS) {
+      if (updateData[f] === undefined) continue;
+      const before = toIso((existing as any)[f]);
+      const after  = toIso((study as any)[f]);
+      if (before !== after) studyChanges[f] = { from: before, to: after };
+    }
+    if (Object.keys(studyChanges).length > 0) {
+      const peChanged = studyChanges.peName !== undefined || studyChanges.peLicense !== undefined;
+      await logActivity(
+        req.user.id,
+        req.user.accountId,
+        peChanged ? 'system_study_pe_attribution_changed' : 'system_study_updated',
+        { studyId: existing.id, siteId: existing.siteId, changedBy: req.user.id, changes: studyChanges },
+      );
+    }
+
     res.json({ success: true, data: { study } });
   } catch (err) {
     console.error('Update system study error:', err);
@@ -952,6 +1009,14 @@ router.post('/studies/:id/assets', requireManager, async (req, res) => {
     if (electrode !== undefined)       rootData.electrodeConfig = electrode;
     if (upstreamDevice !== undefined)  rootData.upstreamDevice = upstreamDevice || null;
 
+    // [LEGAL-8-7] Capture the prior label values for the root binding BEFORE the
+    // upsert so the audit records what incident energy / PPE / boundary was
+    // replaced (not just that a bind happened).
+    const priorRootBinding = await prisma.systemStudyAsset.findUnique({
+      where:  { studyId_assetId: { studyId: study.id, assetId: rootAsset.id } },
+      select: { incidentEnergyCalCm2: true, arcFlashBoundaryIn: true, workingDistanceIn: true, ppeCategory: true, nominalVoltage: true },
+    });
+
     await prisma.systemStudyAsset.upsert({
       where:  { studyId_assetId: { studyId: study.id, assetId: rootAsset.id } },
       update: rootData,
@@ -973,8 +1038,27 @@ router.post('/studies/:id/assets', requireManager, async (req, res) => {
     }
 
     const count = await prisma.systemStudyAsset.count({ where: { studyId: study.id } });
+    // [LEGAL-8-7] Include the hazard label values set/replaced on the root binding
+    // (prior -> new) so the bind log is reconstructable, not just a count. Routed
+    // through ActivityLog so the hash chain (LEGAL-8-6) commits to the values.
+    const toNum = (v: any) => (v == null ? null : Number(v));
+    const labelBefore = priorRootBinding ? {
+      incidentEnergyCalCm2: toNum(priorRootBinding.incidentEnergyCalCm2),
+      arcFlashBoundaryIn:   toNum(priorRootBinding.arcFlashBoundaryIn),
+      workingDistanceIn:    toNum(priorRootBinding.workingDistanceIn),
+      ppeCategory:          priorRootBinding.ppeCategory ?? null,
+      nominalVoltage:       priorRootBinding.nominalVoltage ?? null,
+    } : null;
+    const labelAfter = {
+      incidentEnergyCalCm2: rootData.incidentEnergyCalCm2 !== undefined ? toNum(rootData.incidentEnergyCalCm2) : (labelBefore?.incidentEnergyCalCm2 ?? null),
+      arcFlashBoundaryIn:   rootData.arcFlashBoundaryIn   !== undefined ? toNum(rootData.arcFlashBoundaryIn)   : (labelBefore?.arcFlashBoundaryIn ?? null),
+      workingDistanceIn:    rootData.workingDistanceIn    !== undefined ? toNum(rootData.workingDistanceIn)    : (labelBefore?.workingDistanceIn ?? null),
+      ppeCategory:          rootData.ppeCategory          !== undefined ? rootData.ppeCategory                 : (labelBefore?.ppeCategory ?? null),
+      nominalVoltage:       rootData.nominalVoltage ?? (labelBefore?.nominalVoltage ?? null),
+    };
     await logActivity(req.user.id, req.user.accountId, 'arc_flash_study_assets_bound', {
       studyId: study.id, rootAssetId: rootAsset.id, includeDownstream: !!includeDownstream, downstreamAdded,
+      changedBy: req.user.id, busName: rootData.busName ?? null, labelBefore, labelAfter,
     });
 
     res.status(201).json({ success: true, data: { studyId: study.id, rootAssetId: rootAsset.id, downstreamAdded, coveredCount: count } });
@@ -995,12 +1079,31 @@ router.delete('/studies/:id/assets/:assetId', requireManager, async (req, res) =
 
     const link = await prisma.systemStudyAsset.findFirst({
       where:  { studyId: study.id, assetId: req.params.assetId },
-      select: { id: true },
+      select: { id: true, busName: true, nominalVoltage: true, incidentEnergyCalCm2: true, arcFlashBoundaryIn: true, workingDistanceIn: true, ppeCategory: true, requiredArcRatingCalCm2: true },
     });
     if (!link) return res.status(404).json({ success: false, error: 'Asset is not bound to this study' });
 
     await prisma.systemStudyAsset.delete({ where: { id: link.id } });
     const count = await prisma.systemStudyAsset.count({ where: { studyId: study.id } });
+
+    // [LEGAL-8-7] Deleting a binding erases the recorded incident energy / PPE for
+    // that bus. Audit the deletion WITH the values that were removed so there is a
+    // trace the hazard record ever existed. Routed through ActivityLog -> hash
+    // chain (LEGAL-8-6).
+    const toN = (v: any) => (v == null ? null : Number(v));
+    await logActivity(req.user.id, req.user.accountId, 'arc_flash_study_asset_unbound', {
+      studyId: study.id, assetId: req.params.assetId, deletedBy: req.user.id,
+      removedLabel: {
+        busName:                 link.busName ?? null,
+        nominalVoltage:          link.nominalVoltage ?? null,
+        incidentEnergyCalCm2:    toN(link.incidentEnergyCalCm2),
+        arcFlashBoundaryIn:      toN(link.arcFlashBoundaryIn),
+        workingDistanceIn:       toN(link.workingDistanceIn),
+        ppeCategory:             link.ppeCategory ?? null,
+        requiredArcRatingCalCm2: toN(link.requiredArcRatingCalCm2),
+      },
+    });
+
     res.json({ success: true, data: { studyId: study.id, coveredCount: count } });
   } catch (err) {
     console.error('Unbind study asset error:', err);

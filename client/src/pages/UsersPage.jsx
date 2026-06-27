@@ -376,15 +376,6 @@ export default function UsersPage() {
               <div className="card-title">Invite a Team Member</div>
             </div>
             <div className="card-body">
-              {/* TODO CS-7: Show a yellow warning banner here when email is in mock mode
-                  (invites logged to console, not delivered). Blocked on exposing a
-                  mockEmail / emailMode flag via AuthContext or /api/settings/admin.
-                  Once the flag is available, render:
-                  {features?.mockEmail && (
-                    <div style={{background:'#fffbeb', border:'1px solid #f59e0b', borderRadius:'6px', padding:'10px 14px', marginBottom:'12px', fontSize:'0.875rem', color:'#92400e'}}>
-                      ⚠ Email is in mock mode — invites are logged to the server console and not delivered. Configure a real email provider in Settings to send live invites.
-                    </div>
-                  )} */}
               {formError && <div role="alert" className="alert alert-error" style={{ marginBottom: 16 }}>{formError}</div>}
               {inviteSent && (
                 <div className="alert alert-success" style={{ marginBottom: 16 }}>

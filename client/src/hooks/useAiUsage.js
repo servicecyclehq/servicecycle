@@ -44,7 +44,10 @@ export function useAiUsage({ enabled = true } = {}) {
       setUsage(res.data?.data || null);
       setError(null);
     } catch (e) {
-      setError(e?.response?.data?.error || e.message);
+      // Don't leak raw axios strings ("Network Error", "Request failed with
+      // status code 500") into the UI — prefer the server message, else a
+      // friendly fallback.
+      setError(e?.response?.data?.error || 'Usage information is unavailable right now.');
     } finally {
       setLoading(false);
     }

@@ -159,6 +159,32 @@ const TIERS = [
 
 const ALERT_PRIORITY = { regulatory_breach: 0, escalation: 1, overdue: 2, maintenance_due: 3 };
 
+// CUST-8-2: positive lead tiers in DESC order (180,120,90,60,30,7). Used for
+// "band ownership" crossing: a lead tier owns the band (nextLowerTier, thisTier]
+// so it fires the moment daysUntil drops to/below its threshold and stays owed
+// (via the dedup set) until it actually fires — a multi-day cron outage or an
+// asset entering a tier mid-band can no longer skip it. Replaces the old fixed
+// +/-5-day window, which silently lost a tier if the cron missed >5 days right as
+// the schedule crossed the threshold.
+const POSITIVE_LEAD_DAYS_DESC = TIERS
+  .filter(t => t.leadDays >= 0)
+  .map(t => t.leadDays)
+  .sort((a, b) => b - a);
+
+// Pure crossing predicate — exported so the unit suite can assert the
+// band-ownership behavior without a live DB. Returns true iff `tier` should
+// fire (before dedup) for a schedule that is `daysUntil` days from due.
+function tierCrosses(tier: { leadDays: number }, daysUntil: number): boolean {
+  if (tier.leadDays >= 0) {
+    if (daysUntil < 0 || daysUntil > tier.leadDays) return false;
+    const owning = POSITIVE_LEAD_DAYS_DESC
+      .filter(d => d >= daysUntil)
+      .reduce((min, d) => Math.min(min, d), Infinity);
+    return tier.leadDays === owning;
+  }
+  return daysUntil <= tier.leadDays;
+}
+
 const TYPE_CONFIG = {
   regulatory_breach: { label: 'Regulatory Breach Risk', color: '#dc2626', bg: '#fef2f2' },
   escalation:        { label: 'Escalation',             color: '#dc2626', bg: '#fef2f2' },
@@ -568,15 +594,20 @@ async function runAlertEngine({ accountId }: any = {}) {
           );
 
           for (const tier of TIERS) {
-            // A tier fires once daysUntil has crossed it (daysUntil <= leadDays),
-            // bounded Â±5 days so a multi-day cron outage doesn't permanently skip
-            // a tier (inherited H2 widening), except overdue tiers which fire on
-            // any crossing (an asset 40d overdue discovered today must still get
-            // the -30 escalation, not silently skip it).
-            const crossed = tier.leadDays >= 0
-              ? Math.abs(daysUntil - tier.leadDays) <= 5
-              : daysUntil <= tier.leadDays;
-            if (!crossed) continue;
+            // A tier fires once daysUntil has crossed it. CUST-8-2:
+            //  - Positive lead tiers use BAND OWNERSHIP: the tier fires only
+            //    when daysUntil is inside its band — i.e. daysUntil <= leadDays
+            //    AND no larger lead tier is also at/above daysUntil (so exactly
+            //    one lead tier — the nearest crossed one — fires per run). The
+            //    dedup set keeps it "owed" until it actually fires, so a cron
+            //    outage of any length, or an asset entering a tier mid-band,
+            //    can no longer skip it (the old fixed +/-5-day window could).
+            //  - Overdue/escalation/breach tiers fire on any crossing
+            //    (daysUntil <= leadDays); an asset 40d overdue discovered today
+            //    must still get the -30 escalation, never silently skipped.
+            // Lead tiers use band ownership (future only); overdue tiers fire
+            // on any crossing. See tierCrosses + CUST-8-2 note above.
+            if (!tierCrosses(tier, daysUntil)) continue;
 
             const key = `${schedule.id}|${tier.alertType}|${tier.leadDays}`;
             if (fired.has(key)) { skipped++; continue; }
@@ -782,6 +813,6 @@ async function runAlertEngine({ accountId }: any = {}) {
   }
 }
 
-module.exports = { runAlertEngine, TIERS, deliverSlackDigest, deliverTeamsDigest, deliverWebhooks, deliverEventWebhooks };
+module.exports = { runAlertEngine, TIERS, tierCrosses, deliverSlackDigest, deliverTeamsDigest, deliverWebhooks, deliverEventWebhooks };
 
 export {};

@@ -407,20 +407,37 @@ function buildFillUpdates(tables: any, existingRows: any[], opts: any = {}): any
 }
 
 // Map an incoming equipment-type string to a valid Prisma EquipmentType. Pure.
-// Keep EQUIPMENT_TYPES in sync with schema.prisma enum EquipmentType. Unknown or
-// blank -> PANELBOARD (neutral LV default); the raw string is preserved by the
-// caller in nameplateData so nothing is lost.
+// Keep EQUIPMENT_TYPES in sync with schema.prisma enum EquipmentType.
 const EQUIPMENT_TYPES = new Set([
   'TRANSFORMER_LIQUID', 'TRANSFORMER_DRY', 'SWITCHGEAR', 'SWITCHBOARD', 'PANELBOARD', 'BUSWAY',
   'GENERATOR', 'MOTOR', 'MCC', 'VFD', 'UPS_BATTERY', 'BATTERY_SYSTEM', 'CIRCUIT_BREAKER', 'FUSE_GEAR',
   'DISCONNECT_SWITCH', 'TRANSFER_SWITCH', 'PROTECTION_RELAY', 'GROUND_FAULT_PROTECTION', 'SURGE_ARRESTER',
   'CABLE_LV', 'CABLE_MV_HV', 'CABLE_TRAY', 'GROUNDING_SYSTEM', 'EMERGENCY_LIGHTING', 'ARC_FLASH_PANEL', 'FIRE_PUMP_CONTROLLER',
 ]);
-function mapEquipmentType(raw: any): string {
+
+// [NETA-8-14] Documented conservative default for an UNKNOWN/blank equipment type.
+// The enum column must hold a valid value, but the choice is not arc-flash-neutral:
+// IEEE 1584 enclosure/conductor-gap defaults differ by equipment class, so a wrong
+// guess shifts the modeled incident energy. PANELBOARD is the lowest-energy LV
+// class — defaulting an unknown to it could UNDER-state the hazard. We default to
+// SWITCHGEAR instead (the larger-gap class), which is the conservative direction
+// for a study input, AND we surface `matched=false` so the caller/UI can flag the
+// row as "type unconfirmed — verify before the study" rather than silently trusting it.
+const UNKNOWN_EQUIPMENT_DEFAULT = 'SWITCHGEAR';
+
+// Returns the mapped type AND whether it came from a real match vs. the
+// documented unknown-default. Pure. (Mirrors inferEquipmentTypeResult in
+// commitTestReport.ts so the confidence/review surface is uniform.)
+function mapEquipmentTypeResult(raw: any): { type: string; matched: boolean } {
   const s = String(raw == null ? '' : raw).trim().toUpperCase().replace(/[\s-]+/g, '_');
-  return EQUIPMENT_TYPES.has(s) ? s : 'PANELBOARD';
+  if (EQUIPMENT_TYPES.has(s)) return { type: s, matched: true };
+  return { type: UNKNOWN_EQUIPMENT_DEFAULT, matched: false };
 }
 
-module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, EQUIPMENT_TYPES };
+function mapEquipmentType(raw: any): string {
+  return mapEquipmentTypeResult(raw).type;
+}
+
+module.exports = { TABLES, TOOLS, sanitizeId, buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, mapEquipmentTypeResult, UNKNOWN_EQUIPMENT_DEFAULT, EQUIPMENT_TYPES };
 
 export {};

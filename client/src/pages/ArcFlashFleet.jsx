@@ -166,15 +166,17 @@ function LoadGrowthBanner() {
 // and validate any CSV against it. The "Export model (CSV)" button above already
 // emits AFX-conformant data.
 // ConformanceBadge: visual marker on per-tool template download buttons.
-// 'exact' = column names verified from vendor-published import templates.
-// 'draft' = structure confirmed but field names need verification against your tool version.
+// [DEMO-8-11] Honest wording: 'matched' = column names are mapped to the tool's
+// published import format (format-matched), but you must still confirm them
+// against YOUR tool version. 'draft' = structure confirmed, field names need
+// verification. We do not assert independent verification we can't substantiate.
 function ConformanceBadge({ level }) {
   if (level === 'exact') return (
-    <span title="Column names verified from vendor-published templates"
+    <span title="Column names mapped to this tool's published import format — confirm against your tool version"
       style={{ fontSize: '0.62rem', fontWeight: 700, padding: '1px 5px', borderRadius: 3,
         background: 'var(--chip-green-bg, #dcfce7)', color: 'var(--chip-green-fg, #16a34a)',
         lineHeight: 1.4, whiteSpace: 'nowrap' }}>
-      EXACT
+      FORMAT-MATCHED
     </span>
   );
   return (
@@ -391,7 +393,7 @@ function AfxPanel() {
           <span key={tool} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
             <button type="button" className="btn btn-secondary btn-sm"
               onClick={() => downloadAuthedFile(`/api/arc-flash/afx/template?tool=${tool}`, `afx-template-${tool}.csv`).catch(() => {})}
-              title={`${label} template - column names verified from published import templates`}>{label}</button>
+              title={`${label} template - column names mapped to this tool's published import format; confirm against your tool version`}>{label}</button>
             <ConformanceBadge level={conf} />
           </span>
         ))}
@@ -402,7 +404,7 @@ function AfxPanel() {
           <ConformanceBadge level="draft" />
         </span>
         <span style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
-          EXACT = verified &middot; DRAFT = check with your tool
+          FORMAT-MATCHED = mapped to the tool's published format &middot; DRAFT = check with your tool. Confirm columns against your tool version before importing.
         </span>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>

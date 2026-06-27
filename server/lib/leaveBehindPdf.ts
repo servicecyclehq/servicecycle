@@ -52,22 +52,45 @@ const PAGE = {
 
 // ── severity display ──────────────────────────────────────────────────────────
 
+// [NETA-8-6] Show the NETA condition terminology a facility/PE expects, and give
+// each severity its own colour (the old code rendered every non-immediate badge
+// in the same grey, so a C2 "repair as scheduled" looked identical to a C1
+// advisory). Map ServiceCycle severities to NETA condition classes:
+//   IMMEDIATE   -> NETA C3 / Defective: de-energize / repair now
+//   RECOMMENDED -> NETA C2 / Deteriorated: repair as scheduled
+//   ADVISORY    -> NETA C1 / Monitor: advisory
 function severityColor(severity: string): string {
   if (severity === 'IMMEDIATE') return C.danger;
   if (severity === 'RECOMMENDED') return C.warning;
+  if (severity === 'ADVISORY') return C.accent;   // distinct from IMMEDIATE/RECOMMENDED
   return C.subtext;
 }
 
 function severityLabel(severity: string): string {
-  if (severity === 'IMMEDIATE') return 'IMMEDIATE';
-  if (severity === 'RECOMMENDED') return 'Recommended';
-  return 'Advisory';
+  if (severity === 'IMMEDIATE') return 'C3 · IMMEDIATE';
+  if (severity === 'RECOMMENDED') return 'C2 · REPAIR';
+  if (severity === 'ADVISORY') return 'C1 · MONITOR';
+  return 'ADVISORY';
+}
+
+// One-line plain-English gloss of the NETA condition class, shown under the badge.
+function severityConditionNote(severity: string): string {
+  if (severity === 'IMMEDIATE') return 'NETA Condition C3 (Defective) — de-energize / repair now.';
+  if (severity === 'RECOMMENDED') return 'NETA Condition C2 (Deteriorated) — repair as scheduled.';
+  if (severity === 'ADVISORY') return 'NETA Condition C1 — monitor; advisory only.';
+  return '';
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+// [CFO-8-3] Format cents → dollars with 2 decimals and NO lossy rounding of the
+// underlying figure, so the "What to Budget For" ranges tie to the rate card and
+// to every other PDF/CSV that reads the same minCents/maxCents. (e.g. 1234550
+// cents prints "$12,345.50", not "$12,346".)
 function fmtMoney(cents: number): string {
-  return '$' + Math.round(cents / 100).toLocaleString();
+  const n = Number(cents);
+  if (!Number.isFinite(n)) return '$0.00';
+  return '$' + (n / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function assetLabel(a: any): string {
@@ -88,7 +111,12 @@ export interface LeaveBehindData {
     completedDate: Date | null;
     asset: any;
     account: { companyName: string; serviceRepName?: string | null; serviceRepPhone?: string | null };
-    contractor: { name: string } | null;
+    // [NETA-8-7] contractor carries NETA-accreditation for the certification line;
+    // technician is the assigned ContractorTech or login user who performed the work.
+    contractor: { name: string; netaAccredited?: boolean | null } | null;
+    technicianName?: string | null;
+    netaDecal?: string | null;
+    asLeftCondition?: string | null;
   };
   deficiencies: Array<{
     severity: string;
@@ -186,8 +214,8 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
         const sColor = severityColor(def.severity);
         const sLabel = severityLabel(def.severity);
 
-        // Severity badge
-        const badgeW = 80;
+        // Severity badge — NETA condition class (C1/C2/C3), severity-coloured.
+        const badgeW = 96;
         doc.rect(M, y, badgeW, 16).fill(sColor);
         doc.font(FONT_BOLD).fontSize(8).fillColor('#fff')
            .text(sLabel, M + 4, y + 4, { width: badgeW - 8, align: 'center' });
@@ -196,6 +224,14 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
         doc.font(FONT_BOLD).fontSize(9).fillColor(C.text)
            .text(def.description.slice(0, 200), M + badgeW + 8, y, { width: W - badgeW - 8 });
         y += 20;
+
+        // [NETA-8-6] One-line NETA condition gloss so the C-code is self-explaining.
+        const condNote = severityConditionNote(def.severity);
+        if (condNote) {
+          doc.font(FONT_OBL).fontSize(7.5).fillColor(sColor)
+             .text(condNote, M + badgeW + 8, y, { width: W - badgeW - 8 });
+          y += 11;
+        }
 
         if (def.correctiveAction && !def.resolvedAt) {
           doc.font(FONT_REG).fontSize(8).fillColor(C.subtext)
@@ -306,6 +342,50 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     }
 
     y += 16;
+
+    // ── Performed-by / certification / signature block ───────────────────────
+    // [NETA-8-7] A leave-behind a customer can rely on must record WHO performed
+    // the work, their company + NETA accreditation, the as-left condition / decal,
+    // and carry a signature line. Uses data already on the work order — no schema.
+    if (y > PAGE.height - 140) { doc.addPage(); y = PAGE.margin; }
+    doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).stroke();
+    y += 12;
+    doc.font(FONT_BOLD).fontSize(11).fillColor(C.text).text('Performed By & Certification', M, y);
+    y += 16;
+
+    const company = data.workOrder.contractor?.name || data.workOrder.account.companyName;
+    const accredited = !!data.workOrder.contractor?.netaAccredited;
+    doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
+       .text('Company: ', M, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(company);
+    y += 13;
+    doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
+       .text('Certification: ', M, y, { continued: true })
+       .font(FONT_BOLD).fillColor(accredited ? C.success : C.text)
+       .text(accredited ? 'NETA-accredited company' : 'Per company qualification program (NFPA 70E qualified person)');
+    y += 13;
+    if (data.workOrder.technicianName) {
+      doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
+         .text('Technician: ', M, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(data.workOrder.technicianName);
+      y += 13;
+    }
+    const asLeft = data.workOrder.asLeftCondition || data.workOrder.netaDecal;
+    if (asLeft) {
+      doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
+         .text('As-left condition (NETA MTS): ', M, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(String(asLeft));
+      y += 13;
+    }
+    y += 10;
+
+    // Signature + date lines (two columns).
+    const colGap = 24;
+    const sigW = (W - colGap) / 2;
+    const sigY = y + 18;
+    doc.moveTo(M, sigY).lineTo(M + sigW, sigY).strokeColor(C.border).stroke();
+    doc.moveTo(M + sigW + colGap, sigY).lineTo(M + W, sigY).strokeColor(C.border).stroke();
+    doc.font(FONT_REG).fontSize(7.5).fillColor(C.subtext)
+       .text('Technician signature', M, sigY + 3, { width: sigW })
+       .text('Date', M + sigW + colGap, sigY + 3, { width: sigW });
+    y = sigY + 20;
 
     // ── Footer ────────────────────────────────────────────────────────────────
     if (y > PAGE.height - 60) { doc.addPage(); y = PAGE.margin; }

@@ -644,30 +644,42 @@ function AllRecommendations({ setToast }) {
   const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // CUST-8-9: real pagination so recommendations beyond the first 50 are
+  // reachable (the server already pages this list).
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Filter changes reset to page 1.
+  useEffect(() => { setPage(1); }, [filter]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const params = {};
+    const params = { page };
     if (filter === 'overdue') params.overdue = 'true';
     else if (filter) params.status = filter;
     api.get('/api/audits/recommendations', { params })
       .then(r => {
         if (cancelled) return;
-        setRecs(r.data?.data?.recommendations || []);
+        const d = r.data?.data || {};
+        const list = d.recommendations || [];
+        setRecs(list);
+        setTotal(d.pagination?.total ?? list.length);
+        setTotalPages(d.pagination?.pages ?? 1);
         setError('');
       })
       .catch(err => { if (!cancelled) setError(err.response?.data?.error || 'Failed to load recommendations.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [filter]);
+  }, [filter, page]);
 
   void setToast; // reserved for future row-level actions
 
   return (
     <div className="card">
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <div className="card-title">All recommendations {!loading && `(${recs.length})`}</div>
+        <div className="card-title">All recommendations {!loading && `(${total})`}</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginLeft: 'auto' }} role="group" aria-label="Filter recommendations by status">
           {REC_FILTERS.map(f => {
             const active = filter === f.key;
@@ -721,7 +733,7 @@ function AllRecommendations({ setToast }) {
             <tbody>
               {recs.map(rec => {
                 const overdue = isOverdue(rec);
-                const audit = rec.audit || {};
+                const audit = rec.auditVisit || {};
                 return (
                   <tr key={rec.id}>
                     <td style={{ maxWidth: 360 }}>
@@ -750,6 +762,20 @@ function AllRecommendations({ setToast }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && totalPages > 1 && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', padding: '10px 14px', borderTop: '1px solid var(--color-border)' }}>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+            {total.toLocaleString()} total · page {page} of {totalPages}
+          </span>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
+            {String.fromCharCode(8592)} Prev
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>
+            Next {String.fromCharCode(8594)}
+          </button>
         </div>
       )}
     </div>
@@ -800,7 +826,8 @@ export default function AuditsPage() {
   const fetchAudits = useCallback(() => {
     return api.get('/api/audits', { params: { page } })
       .then(r => {
-        setAudits(r.data?.data?.audits || []);
+        // Server returns data.visits (CUST-8-9: align client with the route shape).
+        setAudits(r.data?.data?.visits || []);
         setPagination(r.data?.data?.pagination || null);
         setError('');
       })
@@ -905,7 +932,7 @@ export default function AuditsPage() {
                       {audits.map(a => {
                         const expanded = expandedId === a.id;
                         const toggle = () => setExpandedId(expanded ? null : a.id);
-                        const openRecs = a.recCounts?.open ?? 0;
+                        const openRecs = a.recommendationCounts?.open ?? 0;
                         const auditorLabel = [a.auditorName, a.auditorOrg].filter(Boolean).join(' · ');
                         return (
                           <RowGroup key={a.id}>

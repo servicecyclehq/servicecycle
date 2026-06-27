@@ -240,10 +240,14 @@ const EMAIL_LOCKOUT_DURATION_MS = 15 * 60 * 1000; // lockout length
 const EMAIL_LOCKOUT_MAX_SIZE    = 1000;            // cap map to prevent DoS growth
 
 // SECURITY: This map is process-scoped and resets on restart/deploy.
-// TODO: Replace with DB-backed FailedLoginAttempt table (see schema.prisma — model to be added in migration 20260626_security).
-// The table should: INSERT on failure, SELECT COUNT where windowStart > now()-15min,
-// UPDATE lockedUntil on 5th failure, SELECT lockedUntil on each login attempt.
-// Until migrated, a PM2 restart (e.g. on deploy) resets all lockout state.
+// DD-8-4: the DB-backed model (FailedLoginAttempt) ALREADY EXISTS in
+// schema.prisma — what remains UNSCHEDULED is wiring this lockout logic to it.
+// An earlier note here pointed at a specific dated security migration that was
+// never created; that misleading reference has been removed. To migrate:
+// INSERT on failure, SELECT COUNT where attemptedAt > now()-15min, derive lock
+// from count, SELECT on each attempt. Until that wiring lands, a PM2 restart
+// (e.g. on deploy) resets all in-memory lockout state — accepted for the
+// single-node deployment.
 const loginFailMap = new Map();
 
 // Returns true when this call is the one that sets the lockedUntil (i.e. the
@@ -670,17 +674,24 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
     _clearLoginFails(normEmail);
 
     // ── SSO-required break-glass policy (feature/sso-polis) ───────────────────
-    // When the account has sso.required=true, password login is blocked EXCEPT
-    // for a local (non-SSO-managed) admin — the break-glass account that can
-    // still get in if the IdP/connection breaks. SSO-managed users already
-    // can't password-login (unusable hash); this also blocks legacy
-    // password-capable non-admins and records every break-glass use.
+    // SSO-managed users already can't password-login (unusable hash); this also
+    // blocks legacy password-capable non-admins and records every break-glass use.
+    // INFOSEC-8-2: when sso.required=true, password login is blocked for everyone
+    // EXCEPT a local (non-SSO-managed) admin — the break-glass account that can
+    // still get in if the IdP/connection breaks. The enforcement must FAIL
+    // CLOSED: if we cannot CONFIRM the policy is off (the AccountSetting read
+    // throws), we must not let a non-break-glass user password-login on the
+    // assumption that SSO isn't required. The ONLY identity we let through on an
+    // indeterminate read is the local-admin break-glass — bricking that on a DB
+    // blip would itself be a lockout. Normal login when the read SUCCEEDS and
+    // sso.required is absent/false is completely unchanged.
+    const _isBreakGlassAdmin = user.role === 'admin' && !user.ssoManaged;
     try {
       const ssoReq = await prisma.accountSetting.findUnique({
         where: { accountId_key: { accountId: user.accountId, key: 'sso.required' } },
       });
       if (ssoReq?.value === 'true') {
-        if (user.role === 'admin' && !user.ssoManaged) {
+        if (_isBreakGlassAdmin) {
           writeActivityLog({ userId: user.id, accountId: user.accountId, action: 'sso_break_glass_login', details: { ip: req.ip } });
         } else {
           writeActivityLog({ userId: user.id, accountId: user.accountId, action: 'login_blocked_sso_required', details: { ip: req.ip } });
@@ -688,9 +699,17 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
         }
       }
     } catch (ssoErr) {
-      // Fail OPEN on a settings read hiccup — do not lock everyone out of login
-      // because the AccountSetting lookup blipped. (Break-glass posture.)
-      console.error('[auth] sso.required check failed (allowing login):', ssoErr.message);
+      // FAIL CLOSED: the policy could not be confirmed off. Deny password login
+      // for any non-break-glass user; only the local-admin break-glass proceeds
+      // (so an account that DID require SSO can't be bypassed by inducing a read
+      // error). The demo's auto-provisioned admin is a local admin and is never
+      // locked out by this branch.
+      console.error('[auth] sso.required check failed (failing closed for non-break-glass):', ssoErr.message);
+      if (!_isBreakGlassAdmin) {
+        writeActivityLog({ userId: user.id, accountId: user.accountId, action: 'login_blocked_sso_required', details: { ip: req.ip, reason: 'policy_read_failed_fail_closed' } });
+        return res.status(403).json({ success: false, error: 'Your organization requires single sign-on. Please use “Sign in with SSO”.', code: 'SSO_REQUIRED' });
+      }
+      writeActivityLog({ userId: user.id, accountId: user.accountId, action: 'sso_break_glass_login', details: { ip: req.ip, reason: 'policy_read_failed_break_glass' } });
     }
 
     // Refresh industry news on successful auth (throttled, fire-and-forget).
@@ -739,6 +758,13 @@ router.post('/login', credentialLimiter, async (req, res) => { // (M1)
     // H4: short-lived access token + rotating refresh token
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.accountId);
 
+    // INFOSEC-8-6: tokens are returned in the JSON RESPONSE BODY — the SPA stores
+    // the access token in memory and the refresh token in localStorage and sends
+    // them via the Authorization header / refresh body. They are NOT set as
+    // httpOnly cookies. (Some infra comments around CORS mention "refresh-token
+    // cookies"; that is aspirational — a cookie migration is not implemented.
+    // Treat these as bearer tokens, not cookies.) A full httpOnly-cookie
+    // migration is tracked but out of scope for this round.
     const { passwordHash: _omit, twoFactorSecret: _s, twoFactorBackupCodes: _b, ...safeUser } = user;
     res.json({ success: true, data: { token: accessToken, refreshToken, user: safeUser, aiProvider: process.env.AI_PROVIDER || 'anthropic', requires2faSetup } });
   } catch (err) {
@@ -851,6 +877,18 @@ router.post('/refresh', async (req, res) => {
 
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
 // Revoke the given refresh token. Always 200 — don't leak whether it existed.
+//
+// INFOSEC-8-13 (residual, documented): this endpoint is intentionally
+// UNAUTHENTICATED and revokes ONLY the presented refresh token (single device).
+// It is unauthenticated so a client whose access token has already expired/been
+// cleared can still cleanly retire its refresh token, and it returns 200
+// regardless so it can't be used to probe which tokens exist. It is therefore
+// NOT a "log out everywhere" primitive. Logging out ALL sessions for a user is
+// available, authenticated, via POST /api/users/:id/revoke-sessions (self-revoke
+// is allowed) which revokes every refresh token AND bumps tokenEpoch to kill
+// outstanding access tokens instantly. A token-bound "logout all my own
+// sessions" convenience endpoint is deferred (would need its own authenticated
+// route) but the capability already exists.
 router.post('/logout', async (req, res) => {
   const { refreshToken } = req.body;
   if (refreshToken) {

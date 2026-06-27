@@ -54,22 +54,49 @@ function normalizeScore(v) {
 // ─── GET /api/contractors ─────────────────────────────────────────────────────
 // Directory list with tech headcount + open work order count per contractor —
 // the two signals the list view badges ("4 techs · 2 open WOs").
+//
+// CUST-8-10: paginated. Default limit is intentionally high (200) so the many
+// callers that use this purely as a dropdown source (work-order pickers, asset
+// filters) keep getting the full roster for typical accounts without change;
+// `pagination` + an optional ?search lets a directory UI page/filter large
+// books. Backward-compatible: `data.contractors` is unchanged in shape.
 router.get('/', async (req, res) => {
   try {
-    const contractors = await prisma.contractor.findMany({
-      where: { accountId: req.user.accountId },
-      orderBy: { name: 'asc' },
-      include: {
-        _count: {
-          select: {
-            techs: true,
-            workOrders: { where: { status: { in: OPEN_WO_STATUSES } } },
+    const take    = Math.min(Math.max(parseInt(String(req.query.limit), 10) || 200, 1), 500);
+    const pageNum = Math.max(parseInt(String(req.query.page), 10) || 1, 1);
+    const skip    = (pageNum - 1) * take;
+
+    const where: any = { accountId: req.user.accountId };
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    if (search) {
+      where.name = { contains: search, mode: 'insensitive' };
+    }
+
+    const [contractors, total] = await Promise.all([
+      prisma.contractor.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip,
+        take,
+        include: {
+          _count: {
+            select: {
+              techs: true,
+              workOrders: { where: { status: { in: OPEN_WO_STATUSES } } },
+            },
           },
         },
+      }),
+      prisma.contractor.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        contractors,
+        pagination: { page: pageNum, limit: take, total, pages: Math.ceil(total / take) },
       },
     });
-
-    res.json({ success: true, data: { contractors } });
   } catch (err) {
     console.error('List contractors error:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch contractors' });

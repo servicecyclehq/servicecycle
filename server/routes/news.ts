@@ -1,8 +1,10 @@
 /**
  * routes/news.ts — regulatory / industry news feed.
  *
- * Intended mount (index.ts) — NOT yet wired:
+ * Mounted in index.ts (verified):
  *   app.use('/api/news', authenticateToken, newsRoutes);
+ * Rows are also refreshed by a server-side cron every 6 hours
+ * (runNewsScanner), independent of the manual /refresh trigger below.
  *
  *   GET  /          — list news items (?category=&search=&page=&limit=)
  *   GET  /summary   — per-category counts, last 14 days (nav badge)
@@ -116,13 +118,43 @@ router.get('/summary', async (req, res) => {
 // Run the scanner synchronously and return its counts. Manager+ only — this
 // fires outbound HTTP to every configured feed (worst case ~10s/feed in
 // parallel) and writes to the global table.
+//
+// COMP-8-14: the scanner is a global outbound-fetch lever — without a guard a
+// manager (on any account) could spam third-party RSS endpoints (OSHA, trade
+// press) by hammering this route. Two cheap guards, process-wide because the
+// target feeds are global, not per-tenant:
+//   - an in-flight latch so concurrent calls don't fan out duplicate scans;
+//   - a cooldown window (default 10 min; the cron refreshes every 6h anyway, so
+//     manual refresh is a convenience, not a data-freshness requirement).
+// Tunable via NEWS_REFRESH_COOLDOWN_MS. Returns 429 with retryAfter when hot.
+const NEWS_REFRESH_COOLDOWN_MS = Math.max(0, parseInt(String(process.env.NEWS_REFRESH_COOLDOWN_MS || ''), 10) || 10 * 60 * 1000);
+let _newsRefreshInFlight = false;
+let _newsLastRefreshAt = 0;
+
 router.post('/refresh', requireManager, async (req, res) => {
+  if (_newsRefreshInFlight) {
+    return res.status(429).json({ success: false, error: 'A news refresh is already running — try again shortly.' });
+  }
+  const sinceLast = Date.now() - _newsLastRefreshAt;
+  if (_newsLastRefreshAt && sinceLast < NEWS_REFRESH_COOLDOWN_MS) {
+    const retryAfterSec = Math.ceil((NEWS_REFRESH_COOLDOWN_MS - sinceLast) / 1000);
+    res.setHeader('Retry-After', String(retryAfterSec));
+    return res.status(429).json({
+      success: false,
+      error: `News was refreshed recently — wait ${retryAfterSec}s before refreshing again. The feed also auto-updates every few hours.`,
+      data: { retryAfterSeconds: retryAfterSec },
+    });
+  }
+  _newsRefreshInFlight = true;
   try {
     const counts = await runNewsScanner();
+    _newsLastRefreshAt = Date.now();
     return res.json({ success: true, data: counts });
   } catch (err) {
     console.error('[news/refresh] failed:', err);
     return res.status(500).json({ success: false, error: 'News refresh failed' });
+  } finally {
+    _newsRefreshInFlight = false;
   }
 });
 

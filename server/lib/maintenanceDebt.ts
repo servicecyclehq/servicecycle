@@ -35,8 +35,6 @@ function scoreToBucket(score: number): 1 | 3 | 5 {
   return 5;
 }
 
-const zeroRange = () => ({ min: 0, max: 0 });
-function addRange(a: any, b: any) { return { min: a.min + b.min, max: a.max + b.max }; }
 const round = (n: number) => Math.round(n);
 
 async function buildMaintenanceDebtData(prisma: any, accountId: string) {
@@ -114,19 +112,55 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
     site.mod[bucket].count += 1;
   }
 
-  // Shape per-site rows with cumulative 1/3/5-year plans.
+  // CFO-8-5: keep RAW (unrounded) per-site sub-totals so the account rollups can
+  // sum raw and round ONCE at the end. Summing already-rounded per-site rows (the
+  // old approach) accumulated up to ±(siteCount/2) dollars of drift across a
+  // 120-site book, so the displayed TOTAL diverged from the true aggregate.
+  // All values here are DOLLARS (cents were divided by 100 at accumulation time).
+  const rawTotals = {
+    deferredMin: 0, deferredMax: 0, deferredCount: 0,
+    repair: 0,
+    modMin: 0, modMax: 0,
+    year1Min: 0, year1Max: 0, year3Min: 0, year3Max: 0, year5Min: 0, year5Max: 0,
+    debtMin: 0, debtMax: 0,
+  };
+
+  // Shape per-site rows with cumulative 1/3/5-year plans. Each DISPLAYED row is
+  // the rounded raw value; the account TOTAL is the rounded raw SUM (below).
   const bySite = [...sites.values()].map((s) => {
     const deferredCount = s.deferredAssetIds.size;
-    const deferred = { min: round(deferredCount * inspMin), max: round(deferredCount * inspMax), count: deferredCount };
-    const repair = round(s.repair);
-    const mod1 = { min: round(s.mod[1].min), max: round(s.mod[1].max), count: s.mod[1].count };
-    const mod3 = { min: round(s.mod[3].min), max: round(s.mod[3].max), count: s.mod[3].count };
-    const mod5 = { min: round(s.mod[5].min), max: round(s.mod[5].max), count: s.mod[5].count };
+    // Raw (dollar) sub-totals for this site.
+    const rawDeferredMin = deferredCount * inspMin;
+    const rawDeferredMax = deferredCount * inspMax;
+    const rawRepair = s.repair;
+    const rawMod = {
+      1: { min: s.mod[1].min, max: s.mod[1].max },
+      3: { min: s.mod[3].min, max: s.mod[3].max },
+      5: { min: s.mod[5].min, max: s.mod[5].max },
+    };
+    const rawYear1 = { min: rawDeferredMin + rawRepair + rawMod[1].min, max: rawDeferredMax + rawRepair + rawMod[1].max };
+    const rawYear3 = { min: rawYear1.min + rawMod[3].min, max: rawYear1.max + rawMod[3].max };
+    const rawYear5 = { min: rawYear3.min + rawMod[5].min, max: rawYear3.max + rawMod[5].max };
 
-    // Year 1 = deferred + repair + modernization due now (>=0.85).
-    const year1 = { min: deferred.min + repair + mod1.min, max: deferred.max + repair + mod1.max };
-    const year3 = { min: year1.min + mod3.min, max: year1.max + mod3.max };
-    const year5 = { min: year3.min + mod5.min, max: year3.max + mod5.max };
+    // Accumulate the account totals from RAW values (rounded once after the loop).
+    rawTotals.deferredMin += rawDeferredMin; rawTotals.deferredMax += rawDeferredMax; rawTotals.deferredCount += deferredCount;
+    rawTotals.repair += rawRepair;
+    rawTotals.modMin += rawMod[1].min + rawMod[3].min + rawMod[5].min;
+    rawTotals.modMax += rawMod[1].max + rawMod[3].max + rawMod[5].max;
+    rawTotals.year1Min += rawYear1.min; rawTotals.year1Max += rawYear1.max;
+    rawTotals.year3Min += rawYear3.min; rawTotals.year3Max += rawYear3.max;
+    rawTotals.year5Min += rawYear5.min; rawTotals.year5Max += rawYear5.max;
+    rawTotals.debtMin += rawYear5.min; rawTotals.debtMax += rawYear5.max;
+
+    // Rounded values for display.
+    const deferred = { min: round(rawDeferredMin), max: round(rawDeferredMax), count: deferredCount };
+    const repair = round(rawRepair);
+    const mod1 = { min: round(rawMod[1].min), max: round(rawMod[1].max), count: s.mod[1].count };
+    const mod3 = { min: round(rawMod[3].min), max: round(rawMod[3].max), count: s.mod[3].count };
+    const mod5 = { min: round(rawMod[5].min), max: round(rawMod[5].max), count: s.mod[5].count };
+    const year1 = { min: round(rawYear1.min), max: round(rawYear1.max) };
+    const year3 = { min: round(rawYear3.min), max: round(rawYear3.max) };
+    const year5 = { min: round(rawYear5.min), max: round(rawYear5.max) };
 
     return {
       siteId: s.siteId, siteName: s.siteName,
@@ -144,17 +178,17 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
   // Sort sites by year-5 debt, biggest first.
   bySite.sort((a, b) => b.debtTotal.max - a.debtTotal.max);
 
-  // Account-level rollups.
+  // Account-level rollups — round the RAW sums ONCE (CFO-8-5).
   const totals = {
-    deferredMaintenance: bySite.reduce((acc, s) => ({ min: acc.min + s.deferredMaintenance.min, max: acc.max + s.deferredMaintenance.max, count: acc.count + s.deferredMaintenance.count }), { min: 0, max: 0, count: 0 }),
-    repairBacklog: { amount: round(bySite.reduce((n, s) => n + s.repairBacklog.amount, 0)), assets: repairAssets.length },
-    modernization: bySite.reduce((acc, s) => addRange(acc, addRange(addRange(s.modernization.year1, s.modernization.year3), s.modernization.year5)), zeroRange()),
-    debtTotal: bySite.reduce((acc, s) => addRange(acc, s.debtTotal), zeroRange()),
+    deferredMaintenance: { min: round(rawTotals.deferredMin), max: round(rawTotals.deferredMax), count: rawTotals.deferredCount },
+    repairBacklog: { amount: round(rawTotals.repair), assets: repairAssets.length },
+    modernization: { min: round(rawTotals.modMin), max: round(rawTotals.modMax) },
+    debtTotal: { min: round(rawTotals.debtMin), max: round(rawTotals.debtMax) },
   };
   const plan = {
-    year1: bySite.reduce((acc, s) => addRange(acc, s.plan.year1), zeroRange()),
-    year3: bySite.reduce((acc, s) => addRange(acc, s.plan.year3), zeroRange()),
-    year5: bySite.reduce((acc, s) => addRange(acc, s.plan.year5), zeroRange()),
+    year1: { min: round(rawTotals.year1Min), max: round(rawTotals.year1Max) },
+    year3: { min: round(rawTotals.year3Min), max: round(rawTotals.year3Max) },
+    year5: { min: round(rawTotals.year5Min), max: round(rawTotals.year5Max) },
   };
 
   return {
@@ -186,8 +220,26 @@ function csvCell(s: any): string {
 }
 
 function debtLedgerToCsv(data: any): string {
+  // CFO-8-6: make the column semantics unambiguous so the workbook reconciles.
+  //   • "Modernization total" = mod1 + mod3 + mod5 (the INCREMENTAL modernization
+  //     dollars; the new spend on top of the catch-up + repair backlog).
+  //   • The Year 1/3/5 columns are CUMULATIVE (each contains the prior year), so
+  //     they must NOT be summed across years. The reconciling identity, per row
+  //     and on the TOTAL, is:
+  //         Year 5 = Deferred maint. + Repair backlog + Modernization total
+  //   These labels + the documentation row below stop a reader from double-
+  //   counting modernization (Year 3 already contains Year 1; Year 5 contains
+  //   Year 3) or expecting "Repair + Modernization = Year 5" (it omits Deferred).
   const rows: string[][] = [];
-  rows.push(['Site', 'Deferred maint. (min)', 'Deferred maint. (max)', 'Repair backlog', 'Modernization (min)', 'Modernization (max)', 'Year 1 (min)', 'Year 1 (max)', 'Year 3 (min)', 'Year 3 (max)', 'Year 5 (min)', 'Year 5 (max)']);
+  rows.push([
+    'Site',
+    'Deferred maint. (min)', 'Deferred maint. (max)',
+    'Repair backlog',
+    'Modernization total (min, incremental)', 'Modernization total (max, incremental)',
+    'Year 1 cumulative (min)', 'Year 1 cumulative (max)',
+    'Year 3 cumulative (min)', 'Year 3 cumulative (max)',
+    'Year 5 cumulative (min)', 'Year 5 cumulative (max)',
+  ]);
   for (const s of data.bySite) {
     const modMin = s.modernization.year1.min + s.modernization.year3.min + s.modernization.year5.min;
     const modMax = s.modernization.year1.max + s.modernization.year3.max + s.modernization.year5.max;
@@ -201,14 +253,20 @@ function debtLedgerToCsv(data: any): string {
       String(s.plan.year5.min), String(s.plan.year5.max),
     ]);
   }
+  const totalModMin = data.totals.modernization.min;
+  const totalModMax = data.totals.modernization.max;
   rows.push([
     'TOTAL',
     String(data.totals.deferredMaintenance.min), String(data.totals.deferredMaintenance.max),
     String(data.totals.repairBacklog.amount),
-    String(data.totals.modernization.min), String(data.totals.modernization.max),
+    String(totalModMin), String(totalModMax),
     String(data.plan.year1.min), String(data.plan.year1.max),
     String(data.plan.year3.min), String(data.plan.year3.max),
     String(data.plan.year5.min), String(data.plan.year5.max),
+  ]);
+  // Documentation row: the identity the columns satisfy (do not sum year columns).
+  rows.push([
+    'Note: Year columns are CUMULATIVE (do not add them together). Identity: Year 5 = Deferred maint. + Repair backlog + Modernization total. Modernization total is the incremental new spend.',
   ]);
   return rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

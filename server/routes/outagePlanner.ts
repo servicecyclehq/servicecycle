@@ -1,8 +1,8 @@
 /**
  * /api/outage-planner — Date-first Outage Plan Generator (§J + gem N1).
  *
- * The brother's question is "my outage is July 18 — what should we do that day?"
- * This module answers it. Given a target outage DATE and a de-energization
+ * The pilot customer's question is "my outage is July 18 — what should we do
+ * that day?" This module answers it. Given a target outage DATE and a de-energization
  * SCOPE (whole facility / a site / a switchgear+everything downstream of it),
  * it builds the candidate task set from the UNION of three configurable rules:
  *

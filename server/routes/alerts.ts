@@ -88,6 +88,14 @@ router.put('/preferences', async (req, res) => {
 // ── GET /api/alerts ──────────────────────────────────────────────────────────
 // Open (pending|sent) alerts with enough joined context for the AlertsPage
 // table and the sidebar bell count. Filters: alertType, siteId, assetId.
+//
+// CUST-8-1: paginated. `count` is the TRUE total of open alerts matching the
+// filters (the value the bell must reflect) — NOT the length of the returned
+// page. Default page size (200) is well above the bell's needs while keeping
+// the table response bounded; `pagination` exposes the rest so an account that
+// ever exceeds one page stays fully reachable. Backward-compatible: existing
+// callers that read `data.alerts` + `data.count` keep working, with `count`
+// now correct beyond the old 100-row cap.
 router.get('/', async (req, res) => {
   try {
     const where: any = {
@@ -100,30 +108,47 @@ router.get('/', async (req, res) => {
     if (req.query.assetId) where.assetId = String(req.query.assetId);
     if (req.query.siteId)  where.asset = { siteId: String(req.query.siteId) };
 
-    const alerts = await prisma.alert.findMany({
-      where,
-      include: {
-        asset: {
-          select: {
-            id: true, equipmentType: true, manufacturer: true, model: true,
-            serialNumber: true, governingCondition: true,
-            site: { select: { id: true, name: true } },
-          },
-        },
-        schedule: {
-          select: {
-            id: true, nextDueDate: true, lastCompletedDate: true,
-            taskDefinition: { select: { taskName: true, taskCode: true, standardRef: true, requiresOutage: true } },
-          },
-        },
-      },
-      // Most urgent first: overdue tiers (negative leadDays) before lead
-      // tiers, then by due date.
-      orderBy: [{ leadDays: 'asc' }, { scheduledAt: 'asc' }],
-      take: 100,
-    });
+    const take    = Math.min(Math.max(parseInt(String(req.query.limit), 10) || 200, 1), 500);
+    const pageNum = Math.max(parseInt(String(req.query.page), 10) || 1, 1);
+    const skip    = (pageNum - 1) * take;
 
-    return res.json({ success: true, data: { alerts, count: alerts.length } });
+    const [alerts, total] = await Promise.all([
+      prisma.alert.findMany({
+        where,
+        include: {
+          asset: {
+            select: {
+              id: true, equipmentType: true, manufacturer: true, model: true,
+              serialNumber: true, governingCondition: true,
+              site: { select: { id: true, name: true } },
+            },
+          },
+          schedule: {
+            select: {
+              id: true, nextDueDate: true, lastCompletedDate: true,
+              taskDefinition: { select: { taskName: true, taskCode: true, standardRef: true, requiresOutage: true } },
+            },
+          },
+        },
+        // Most urgent first: overdue tiers (negative leadDays) before lead
+        // tiers, then by due date.
+        orderBy: [{ leadDays: 'asc' }, { scheduledAt: 'asc' }],
+        skip,
+        take,
+      }),
+      prisma.alert.count({ where }),
+    ]);
+
+    // count = TRUE open-alert total (drives the bell); pagination covers the
+    // full set for the AlertsPage table.
+    return res.json({
+      success: true,
+      data: {
+        alerts,
+        count: total,
+        pagination: { page: pageNum, limit: take, total, pages: Math.ceil(total / take) },
+      },
+    });
   } catch (err) {
     console.error('Get alerts error:', err);
     return res.status(500).json({ success: false, error: 'Failed to fetch alerts' });

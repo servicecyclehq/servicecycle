@@ -29,6 +29,16 @@
 // ⚠ Keep the assets-query logic in SYNC with routes/assets.ts GET /. The
 // where/orderBy shapes are intentionally duplicated rather than refactored so
 // the list endpoint's behavior cannot regress from a shared-helper rewrite.
+//
+// DD-8-9 (known authz-drift surface): both copies are account-scoped — the FIRST
+// `where` key in each is `accountId: req.user.accountId` and that line is the
+// security-critical invariant. If you change the security-relevant scoping
+// (accountId / archivedAt / any tenant boundary) you MUST change it in BOTH
+// files. The cosmetic filters (search/sort/dueWithin) drifting is a UX bug, not
+// a security bug; the accountId scope drifting would be a cross-tenant leak.
+// Tracked for consolidation behind a shared, tested query-builder. Until then,
+// the accountId line below is duplicated DELIBERATELY and must never be removed
+// or made conditional.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const express = require('express');

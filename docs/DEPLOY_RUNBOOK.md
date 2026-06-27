@@ -178,6 +178,13 @@ docker compose exec server node node_modules/tsx/dist/cli.mjs scripts/seed-demo.
 
 Verified result: 14 standards + 85 task definitions, then 1 account / 4 users / 18 assets / 2 sites / 23 work orders.
 
+**Re-seeding the live demo without an SSH session:** the VPS ops MCP exposes a
+`reseed_demo` tool that runs the two scripts above on the droplet, so any
+authorized operator can refresh `servicecycle.app` without a manual terminal
+(closes the "reseed depends on one person's shell" continuity gap). Use the MCP
+tool for routine demo refreshes; the raw `docker compose exec` commands above
+are the fallback for a fresh install or when the MCP is unavailable.
+
 **Demo logins:**
 
 | Email | Password | Role |
@@ -297,6 +304,12 @@ Mapped against standard go-live best practices for a Dockerized app on a fresh V
 - [ ] **DNS A/AAAA** resolve to the droplet *before* starting Caddy; verify with `dig`; low TTL during cutover. (7)
 
 ### You should set up soon after go-live (operator, not in repo)
+
+> **These items are NOT automated by the repo or the compose stack — they are
+> manual operator responsibilities and the DR posture (RTO ~1–2h / RPO ~24h)
+> only holds if they are actually performed.** Treat this as a go-live checklist
+> to complete and record with the account. **Automation TODO:** codify these
+> (Terraform / provisioning script) so DR does not depend on operator memory.
 
 - [ ] **Enable DigitalOcean droplet backups** (usage-based) for one-click system recovery, and take a **manual snapshot** of the known-good box right after go-live.
 - [ ] **Copy `pg_dump` backups off-box** (DO Spaces or another host) - on-box-only backups die with the box. The app writes them to `./backups`; sync that dir + `./uploads` off the droplet (e.g. nightly `rclone`/`scp`).

@@ -51,21 +51,78 @@ function firstMatch(re: RegExp, s: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-/** Evaluate pass/fail from an expected-range string + the measured value. */
-function evaluate(value: number | null, expected: string | null): 'GREEN' | 'YELLOW' | 'RED' | null {
-  if (value == null || !expected) return null;
-  const m = expected.match(/([<>]=?)\s*([\d.]+)/);
-  if (!m) return null;
-  const op = m[1]; const thr = parseFloat(m[2]);
-  if (isNaN(thr)) return null;
-  let pass: boolean;
-  if (op === '>=' || op === '>') pass = op === '>=' ? value >= thr : value > thr;
-  else if (op === '<=' || op === '<') pass = op === '<=' ? value <= thr : value < thr;
-  else return null;
-  if (pass) return 'GREEN';
-  // how far out of spec → RED if badly out (>25%), else YELLOW
-  const ratio = thr === 0 ? 1 : Math.abs(value - thr) / thr;
-  return ratio > 0.25 ? 'RED' : 'YELLOW';
+// [NETA-8-9] IEEE 43 absolute acceptance floors for rotating-machine / winding
+// insulation diagnostics. These are PASS/FAIL minimums independent of any
+// per-report "expected" string, so a report that omits the limit (or sets a lax
+// one) still can't pass a wet/contaminated winding.
+//   Polarization Index (IEEE 43-2013 §12): PI >= 2.0 acceptable; 1.0–2.0
+//     questionable; < 1.0 indicates moisture/contamination (fail).
+//   Dielectric Absorption Ratio: DAR >= 1.4 good; 1.25–1.4 questionable;
+//     < 1.25 unsatisfactory.
+const IEEE43_FLOORS: Record<string, { red: number; yellow: number }> = {
+  polarization_index:         { red: 1.0,  yellow: 2.0 },
+  dielectric_absorption_ratio:{ red: 1.25, yellow: 1.4 },
+};
+
+// Worst-of two verdicts (RED > YELLOW > GREEN). null is ignored.
+function worstVerdict(a: any, b: any): 'GREEN' | 'YELLOW' | 'RED' | null {
+  const rank: any = { GREEN: 0, YELLOW: 1, RED: 2 };
+  const cands = [a, b].filter((v) => v === 'GREEN' || v === 'YELLOW' || v === 'RED');
+  if (!cands.length) return null;
+  return cands.reduce((w, v) => (rank[v] > rank[w] ? v : w));
+}
+
+/**
+ * Evaluate pass/fail from an expected-range string + the measured value.
+ * [NETA-8-13] When the caller supplies the measurement's `bad` direction, the
+ * out-of-spec band (RED vs YELLOW) is computed in that DIRECTION rather than from
+ * a symmetric unit-relative |value-thr|/thr ratio: an insulation-resistance
+ * reading FAR ABOVE a ">=" floor is excellent (still GREEN), and a contact
+ * resistance reading just over a "<=" cap on the bad side escalates correctly.
+ * [NETA-8-9] When `measurementType` has an IEEE 43 floor, that absolute floor is
+ * applied in ADDITION (worst-of), so it can only make the verdict worse.
+ */
+function evaluate(
+  value: number | null,
+  expected: string | null,
+  opts?: { bad?: 'up' | 'down'; measurementType?: string },
+): 'GREEN' | 'YELLOW' | 'RED' | null {
+  const bad = opts?.bad;
+  const mType = opts?.measurementType;
+
+  // IEEE 43 absolute floor (independent of the expected string).
+  let floorVerdict: 'GREEN' | 'YELLOW' | 'RED' | null = null;
+  if (value != null && mType && IEEE43_FLOORS[mType]) {
+    const f = IEEE43_FLOORS[mType];
+    floorVerdict = value < f.red ? 'RED' : value < f.yellow ? 'YELLOW' : 'GREEN';
+  }
+
+  let specVerdict: 'GREEN' | 'YELLOW' | 'RED' | null = null;
+  if (value != null && expected) {
+    const m = expected.match(/([<>]=?)\s*([\d.]+)/);
+    if (m) {
+      const op = m[1]; const thr = parseFloat(m[2]);
+      if (!isNaN(thr)) {
+        let pass: boolean | null = null;
+        if (op === '>=' || op === '>') pass = op === '>=' ? value >= thr : value > thr;
+        else if (op === '<=' || op === '<') pass = op === '<=' ? value <= thr : value < thr;
+        if (pass === true) specVerdict = 'GREEN';
+        else if (pass === false) {
+          // How far out of spec, measured on the BAD side. If a direction is
+          // known, only an excursion in that direction escalates to RED; an
+          // excursion on the good side of a single-sided limit is at most YELLOW.
+          const ratio = thr === 0 ? 1 : Math.abs(value - thr) / Math.abs(thr);
+          const onBadSide =
+            bad == null ? true
+            : bad === 'up' ? value > thr
+            : value < thr;
+          specVerdict = (onBadSide && ratio > 0.25) ? 'RED' : 'YELLOW';
+        }
+      }
+    }
+  }
+
+  return worstVerdict(specVerdict, floorVerdict);
 }
 
 /**
@@ -107,15 +164,31 @@ function parseTestReport(rawText: string) {
     const vocab = MEASUREMENT_VOCAB[label];
 
     const phase    = firstMatch(/\bPh(?:ase)?\.?\s*([ABCN](?:-[ABCN])?)/i, seg);
-    const valueStr = firstMatch(/\b([\d]+(?:\.\d+)?)\b/, seg.replace(label, '')); // first number after the label
-    const value    = valueStr != null ? parseFloat(valueStr) : null;
     let unit       = firstMatch(/[\d.]+\s*(MΩ|Mohm|kΩ|Ω|µΩ|uOhm|mΩ|ppm|%|VDC|kV|A|sec|ratio)/i, seg);
     if (unit) unit = unit.replace(/mohm/i, 'MΩ').replace(/uohm/i, 'µΩ');
     const expected = firstMatch(/Expected\s*([<>]=?\s*[\d.]+\s*[A-Za-zµΩ%]*)/i, seg);
     const testV    = firstMatch(/Test\s*Voltage\s*([\d.]+\s*[kV]*V?DC?)/i, seg);
+
+    // [NETA-8-5] Anchor the reading to the MEASUREMENT, not the applied test
+    // voltage. The old "first number after the label" grabbed the test voltage on
+    // forms laid out "<label> Test Voltage 500 VDC ... 1250 MΩ", fabricating a 500
+    // reading. Strategy: (1) drop the label, (2) excise the "Test Voltage NNNN"
+    // and "Expected <op> NNNN" clauses so their numbers can't win, then (3) prefer
+    // a number bound to a measurement unit; else fall back to the first remaining
+    // number. The reading's own unit (e.g. VDC for a hipot) is still allowed via
+    // the vocab unit, but the test-voltage clause is removed before the search.
+    let valueScope = seg.replace(label, '');
+    valueScope = valueScope
+      .replace(/Test\s*Voltage\s*[\d.]+\s*k?V?DC?/ig, ' ')
+      .replace(/Expected\s*[<>]=?\s*[\d.]+\s*[A-Za-zµΩ%]*/ig, ' ');
+    // Prefer "<number><unit>" so the reading (which carries the measurement unit)
+    // wins over a bare number elsewhere in the row.
+    const valueStr = firstMatch(/([\d]+(?:\.\d+)?)\s*(?:MΩ|Mohm|kΩ|Ω|µΩ|uOhm|mΩ|ppm|%|kV|VDC|A|sec|ratio)\b/i, valueScope)
+      ?? firstMatch(/\b([\d]+(?:\.\d+)?)\b/, valueScope);
+    const value    = valueStr != null ? parseFloat(valueStr) : null;
     let result: any = firstMatch(/Result\s*(GREEN|YELLOW|RED)/i, seg);
     if (result) result = result.toUpperCase();
-    else result = evaluate(value, expected);
+    else result = evaluate(value, expected, { bad: vocab.bad, measurementType: vocab.type });
 
     // Skip phantom matches (e.g. a section header that names a measurement type
     // but carries no reading): a real row has at least a value or a verdict.

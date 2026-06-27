@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Plus, ClipboardList } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -30,6 +30,42 @@ function metaOf(metaMap, key) {
   const m = metaMap?.[key];
   if (!m) return {};
   return typeof m === 'string' ? { label: m } : m;
+}
+
+// UX-8-3: lightweight skeleton table so the page shows structure while loading
+// instead of a bare "Loading…". Pure CSS shimmer via inline keyframes.
+function SkeletonRows({ rows = 6, cols = 8 }) {
+  return (
+    <div className="card" aria-busy="true" aria-label="Loading work orders">
+      <style>{`@keyframes sc-shimmer{0%{opacity:.55}50%{opacity:1}100%{opacity:.55}}`}</style>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Asset</th><th>Site</th><th>Task</th><th>Contractor / tech</th>
+              <th>Status</th><th style={{ textAlign: 'right' }}>Scheduled</th>
+              <th style={{ textAlign: 'right' }}>Completed</th><th>Decal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: rows }).map((_, r) => (
+              <tr key={r}>
+                {Array.from({ length: cols }).map((__, c) => (
+                  <td key={c}>
+                    <span style={{
+                      display: 'inline-block', height: 12, width: c === 0 ? '70%' : c === 3 ? '60%' : '45%',
+                      borderRadius: 4, background: 'var(--color-border, #e2e8f0)',
+                      animation: 'sc-shimmer 1.2s ease-in-out infinite',
+                    }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function Chip({ meta, fallback }) {
@@ -259,13 +295,42 @@ export default function WorkOrdersList() {
   const fromState = useFromState();
   const canWrite = ['admin', 'manager'].includes(user?.role);
 
+  // CUST-8-8: filters + page persist in the URL so returning from a job (or a
+  // refresh / back-nav) restores exactly where you were instead of resetting.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const WO_STATUS_SET = new Set(WO_STATUSES);
+
   const [workOrders, setWorkOrders] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [filters, setFilters] = useState({ status: '', siteId: '', contractorId: '' });
-  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState(() => {
+    const status = searchParams.get('status') || '';
+    return {
+      status: WO_STATUS_SET.has(status) ? status : '',
+      siteId: searchParams.get('siteId') || '',
+      contractorId: searchParams.get('contractorId') || '',
+    };
+  });
+  const [page, setPage] = useState(() => {
+    const p = parseInt(searchParams.get('page'), 10);
+    return Number.isFinite(p) && p >= 1 ? p : 1;
+  });
+
+  // Mirror filters + page → URL (replace so we don't spam history).
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    const setOrDel = (k, v) => { if (v) next.set(k, v); else next.delete(k); };
+    setOrDel('status', filters.status);
+    setOrDel('siteId', filters.siteId);
+    setOrDel('contractorId', filters.contractorId);
+    setOrDel('page', page > 1 ? String(page) : '');
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, page]);
 
   const [contractors, setContractors] = useState([]);
   const [sites, setSites] = useState([]);
@@ -424,7 +489,7 @@ export default function WorkOrdersList() {
           </div>
         )}
 
-        {loading && <div className="loading">Loading work orders…</div>}
+        {loading && <SkeletonRows />}
 
         {!loading && workOrders.length === 0 && !error && (
           <div className="card">

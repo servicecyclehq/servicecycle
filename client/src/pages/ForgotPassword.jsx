@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import BrandMark from '../components/BrandMark';
 
 export default function ForgotPassword() {
   useDocumentTitle('Forgot password');
@@ -28,7 +29,12 @@ export default function ForgotPassword() {
     <div className="login-page">
       <div className="login-box">
         <div className="login-logo">
-          <div className="login-logo-name">ServiceCycle</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+            {/* Public routes always render light (theme-bootstrap), matching
+                Login / SsoCallback so the auth flow has one brand treatment. */}
+            <BrandMark size={40} variant="light" />
+            <span className="login-logo-name">Service<span style={{ color: '#65a30d' }}>C</span>ycle</span>
+          </div>
           <div className="login-logo-tagline">Electrical Asset Management</div>
         </div>
 

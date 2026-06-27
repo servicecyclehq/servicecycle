@@ -82,8 +82,13 @@ export default class ErrorBoundary extends Component {
     const isDev = import.meta.env?.DEV;
     const onSettings = window.location.pathname.includes('/settings');
 
+    // All colors flow from the live design tokens so the recovery screen
+    // honors light/dark mode (the tokens are redefined under [data-theme]
+    // in index.css). Fallbacks are deliberately neutral system defaults —
+    // they only apply if the stylesheet failed to load entirely, in which
+    // case a readable monochrome screen beats a wrong-theme one.
     const linkStyle = {
-      fontSize: 'var(--font-size-ui)', color: 'var(--color-primary, #0d4f6e)',
+      fontSize: 'var(--font-size-ui, 13px)', color: 'var(--color-primary, #0d4f6e)',
       textDecoration: 'underline', cursor: 'pointer', background: 'none',
       border: 'none', padding: 0, fontFamily: 'inherit',
     };
@@ -93,15 +98,15 @@ export default class ErrorBoundary extends Component {
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', minHeight: '100vh',
         padding: 32, textAlign: 'center',
-        background: 'var(--color-bg, #fff)',
-        color: 'var(--color-text, #111)',
+        background: 'var(--color-bg, Canvas)',
+        color: 'var(--color-text, CanvasText)',
         fontFamily: 'var(--font-sans, system-ui, sans-serif)',
       }}>
         <div style={{ fontSize: 40, marginBottom: 16 }}>⚠️</div>
         <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
           Something went wrong
         </h1>
-        <p style={{ fontSize: 'var(--font-size-data)', color: 'var(--color-text-secondary, #6b7280)', maxWidth: 420, lineHeight: 1.6, marginBottom: 24 }}>
+        <p style={{ fontSize: 'var(--font-size-data, 14px)', color: 'var(--color-text-secondary, GrayText)', maxWidth: 420, lineHeight: 1.6, marginBottom: 24 }}>
           ServiceCycle hit an unexpected error on this page. Your data is safe — this
           is a display issue. Try reloading the section or navigating away.
         </p>
@@ -110,8 +115,8 @@ export default class ErrorBoundary extends Component {
         <button
           onClick={this.handleRetry}
           style={{
-            padding: '9px 20px', fontSize: 'var(--font-size-data)', fontWeight: 600,
-            background: 'var(--color-primary, #0d4f6e)', color: '#fff',
+            padding: '9px 20px', fontSize: 'var(--font-size-data, 14px)', fontWeight: 600,
+            background: 'var(--color-primary, #0d4f6e)', color: 'var(--color-on-primary, #fff)',
             border: 'none', borderRadius: 6, cursor: 'pointer',
             marginBottom: 14,
           }}
@@ -132,7 +137,7 @@ export default class ErrorBoundary extends Component {
         </div>
 
         {/* Support blurb with error code */}
-        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary, #6b7280)', maxWidth: 380, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 'var(--font-size-sm, 12px)', color: 'var(--color-text-secondary, GrayText)', maxWidth: 380, lineHeight: 1.6 }}>
           Still stuck? Email{' '}
           <a href="mailto:support@servicecycle.app" style={{ color: 'inherit' }}>
             support@servicecycle.app
@@ -145,9 +150,9 @@ export default class ErrorBoundary extends Component {
         {isDev && error && (
           <pre style={{
             marginTop: 28, padding: '12px 16px', maxWidth: 640,
-            textAlign: 'left', fontSize: 'var(--font-size-xs)', lineHeight: 1.5,
-            background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)',
-            borderRadius: 6, overflow: 'auto', color: 'var(--chip-red-fg)',
+            textAlign: 'left', fontSize: 'var(--font-size-xs, 11px)', lineHeight: 1.5,
+            background: 'var(--chip-red-bg, rgba(220,38,38,0.08))', border: '1px solid rgba(220,38,38,0.2)',
+            borderRadius: 6, overflow: 'auto', color: 'var(--chip-red-fg, #b91c1c)',
             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}>
             {error.toString()}

@@ -8,6 +8,7 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import api from '../api/client';
+import { useConfirm } from '../context/ConfirmContext';
 
 function QtyBadge({ qty, min }) {
   const low = min != null && qty < min;
@@ -21,6 +22,7 @@ function QtyBadge({ qty, min }) {
 }
 
 export default function SpareInventoryPanel({ assetId, canEdit }) {
+  const confirm = useConfirm();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -91,7 +93,12 @@ export default function SpareInventoryPanel({ assetId, canEdit }) {
     } catch (ex) { setErr(ex?.response?.data?.error || 'Save failed.'); }
   }
   async function removeEntry(entry) {
-    if (!window.confirm('Remove this spare from the asset?')) return;
+    if (!await confirm({
+      title: 'Remove spare?',
+      message: 'Remove this spare from the asset?',
+      confirmLabel: 'Remove',
+      danger: true,
+    })) return;
     try {
       await api.delete(`/api/parts/${entry.partId}/inventory/${entry.id}`);
       load();

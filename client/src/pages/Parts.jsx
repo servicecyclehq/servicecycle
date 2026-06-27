@@ -416,36 +416,71 @@ function CsvImportModal({ onClose, onImported }) {
   );
 }
 
+const PARTS_PAGE_SIZE = 50;
+
 export default function Parts() {
+  // CUST-8-11: search / category / low-stock filter persist in the URL so a
+  // refresh or back-nav keeps the view, and pagination keeps the rendered set
+  // bounded (PARTS_PAGE_SIZE) instead of dumping the whole catalog at once.
+  const initialParams = (() => {
+    try { return new URLSearchParams(window.location.search); }
+    catch { return new URLSearchParams(); }
+  })();
+
   const [parts, setParts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-  const [filter, setFilter] = useState(''); // 'low' = show only low-stock parts
+  const [search, setSearch] = useState(initialParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(initialParams.get('search') || '');
+  const [category, setCategory] = useState(initialParams.get('category') || '');
+  const [filter, setFilter] = useState(initialParams.get('filter') === 'low' ? 'low' : ''); // 'low' = low-stock only
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // Debounce the search box so each keystroke doesn't hit the API.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Persist the active view (search / category / low-stock) to the URL.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    if (category) params.set('category', category);
+    if (filter === 'low') params.set('filter', 'low');
+    const qs = params.toString();
+    const next = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    window.history.replaceState(null, '', next);
+  }, [debouncedSearch, category, filter]);
 
   async function loadParts() {
     setLoading(true); setErr('');
     try {
       const params = new URLSearchParams();
-      if (search) params.set('search', search);
+      if (debouncedSearch) params.set('search', debouncedSearch);
       if (category) params.set('category', category);
+      params.set('page', String(page));
+      params.set('limit', String(PARTS_PAGE_SIZE));
       const r = await api.get(`/api/parts?${params}`);
-      setParts(r.data?.data || []);
+      // Paginated envelope (page/limit sent) → { parts, pagination }.
+      const d = r.data?.data;
+      const list = Array.isArray(d) ? d : (d?.parts || []);
+      setParts(list);
+      setTotal(d?.pagination?.total ?? list.length);
+      setTotalPages(d?.pagination?.pages ?? 1);
     } catch { setErr('Failed to load parts.'); }
     finally { setLoading(false); }
   }
 
-  // Read ?filter=low from URL on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('filter') === 'low') setFilter('low');
-  }, []);
+  // Reset to page 1 when the search/category filter changes.
+  useEffect(() => { setPage(1); }, [debouncedSearch, category]);
 
-  useEffect(() => { loadParts(); }, [search, category]);
+  useEffect(() => { loadParts(); }, [debouncedSearch, category, page]);
 
   // Low-stock view data
   const [lowItems, setLowItems] = useState(null);
@@ -596,8 +631,29 @@ export default function Parts() {
                 </tbody>
               </table>
             </div>
-            <div style={{ padding: '8px 16px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' }}>
-              {parts.length} part{parts.length !== 1 ? 's' : ''}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 16px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+              <span>
+                {total.toLocaleString()} part{total !== 1 ? 's' : ''}
+                {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ''}
+              </span>
+              {totalPages > 1 && (
+                <span style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button" className="btn btn-secondary btn-sm"
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                  >
+                    {String.fromCharCode(8592)} Prev
+                  </button>
+                  <button
+                    type="button" className="btn btn-secondary btn-sm"
+                    disabled={page >= totalPages || loading}
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  >
+                    Next {String.fromCharCode(8594)}
+                  </button>
+                </span>
+              )}
             </div>
           </div>
         )}

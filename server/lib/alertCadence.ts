@@ -2,8 +2,8 @@ export {};
 /**
  * alertCadence.ts -- watermark-driven cadence for the rep briefing.
  *
- * The brother's reality: standards/maintenance tracking is important but NOT a
- * daily/weekly thing. So the outbound rep briefing defaults to MONTHLY, with
+ * The pilot customer's reality: standards/maintenance tracking is important but
+ * NOT a daily/weekly thing. So the outbound rep briefing defaults to MONTHLY, with
  * semi-monthly / weekly / off configurable per account (AccountSetting
  * `alert_cadence`). Customer-triggered events (quotes/emergencies) are a
  * separate IMMEDIATE lane and never touch this.

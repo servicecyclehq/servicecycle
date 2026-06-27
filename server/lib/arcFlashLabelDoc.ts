@@ -12,6 +12,8 @@
  * printed from the captured study; a licensed PE owns the underlying calculation.
  */
 
+const { shockApproachBoundaries } = require('./arcFlashLabel');
+
 // ANSI Z535.4 signal-word colors.
 const SAFETY_RED = '#C8102E';     // DANGER
 const SAFETY_ORANGE = '#FF8200';  // WARNING
@@ -63,6 +65,16 @@ function buildLabelModel(row: any, opts: any = {}): any {
   if (method !== 'incident_energy' && method !== 'ppe_category') {
     method = ie != null ? 'incident_energy' : (row.ppeCategory != null ? 'ppe_category' : 'incident_energy');
   }
+  // [NETA-8-8 / LEGAL-8-14] Shock approach boundaries are mandatory on the NFPA
+  // 70E §130.5(H) label. Prefer the study's recorded value; otherwise derive the
+  // published Table 130.4 distance from the nominal voltage so the label never
+  // prints a blank/soft placeholder. shockApproachSource tells the renderer
+  // whether the figure was captured or table-derived (so it can annotate it).
+  const limitedStored = num(row.shockLimitedApproachIn);
+  const restrictedStored = num(row.shockRestrictedApproachIn);
+  const tbl = shockApproachBoundaries(row.nominalVoltage);
+  const shockLimitedApproachIn = limitedStored != null ? limitedStored : tbl.limitedIn;
+  const shockRestrictedApproachIn = restrictedStored != null ? restrictedStored : tbl.restrictedIn;
   return {
     signalWord: danger ? 'DANGER' : 'WARNING',
     danger,
@@ -73,8 +85,10 @@ function buildLabelModel(row: any, opts: any = {}): any {
     arcFlashBoundaryIn: num(row.arcFlashBoundaryIn),
     ppeCategory: row.ppeCategory ?? null,
     requiredArcRatingCalCm2: num(row.requiredArcRatingCalCm2),
-    shockLimitedApproachIn: num(row.shockLimitedApproachIn),
-    shockRestrictedApproachIn: num(row.shockRestrictedApproachIn),
+    shockLimitedApproachIn,
+    shockRestrictedApproachIn,
+    shockLimitedApproachSource: shockLimitedApproachIn == null ? null : (limitedStored != null ? 'study' : 'table130_4'),
+    shockRestrictedApproachSource: shockRestrictedApproachIn == null ? null : (restrictedStored != null ? 'study' : 'table130_4'),
     busName: row.busName || row.asset?.name || 'Equipment',
     equipmentType: row.asset?.equipmentType || null,
     studyDate: fmtDate(row.study?.performedDate),
@@ -137,14 +151,33 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
     row('PPE category', `${m.ppeCategory}`, true);
   }
   if (m.nominalVoltage) row('Nominal system voltage', String(m.nominalVoltage));
-  // [AFX-3] NFPA 70E §130.5(H): shock approach boundaries are mandatory on the label.
-  // Render a "Required — not on file" placeholder rather than silently omitting them
-  // so the reviewer knows data is missing before printing.
-  // TODO NFPA 70E §130.5(H): shock approach boundaries are mandatory — warn when absent
+  // [NETA-8-8 / LEGAL-8-14] NFPA 70E §130.5(H): shock approach boundaries are
+  // mandatory on the label. Values are now populated from the study or derived
+  // from NFPA 70E Table 130.4 by nominal voltage. Only when the voltage is
+  // outside the table's scope (or unknown) do we mark the field as needing a PE
+  // entry — never a silent blank. Restricted = "avoid contact" in the 50–150 V
+  // band, which the table expresses as a rule rather than a distance.
   {
-    const limitedVal  = m.shockLimitedApproachIn     != null ? `Limited ${m.shockLimitedApproachIn} in`     : 'Limited: [Required — not on file]';
-    const restrictVal = m.shockRestrictedApproachIn  != null ? `Restricted ${m.shockRestrictedApproachIn} in` : 'Restricted: [Required — not on file]';
+    const limitedVal  = m.shockLimitedApproachIn != null
+      ? `Limited ${m.shockLimitedApproachIn} in`
+      : 'Limited: [confirm — voltage outside Table 130.4]';
+    let restrictVal: string;
+    if (m.shockRestrictedApproachIn != null) {
+      restrictVal = `Restricted ${m.shockRestrictedApproachIn} in`;
+    } else if (m.shockLimitedApproachSource === 'table130_4') {
+      // Table 130.4 gave a limited boundary but no restricted distance -> the
+      // 50–150 V "avoid contact" rule (the only in-table band without a number).
+      restrictVal = 'Restricted: avoid contact (≤150 V)';
+    } else {
+      restrictVal = 'Restricted: [confirm — voltage outside Table 130.4]';
+    }
     row('Shock approach boundary', `${limitedVal}  /  ${restrictVal}`);
+    const tableDerived = m.shockLimitedApproachSource === 'table130_4' || m.shockRestrictedApproachSource === 'table130_4';
+    if (tableDerived) {
+      doc.font('Helvetica').fontSize(6).fillColor(MUTED)
+        .text('Shock boundaries per NFPA 70E Table 130.4 — confirm against the study.', x + pad, cy);
+      cy += 9;
+    }
   }
 
   // Footer: equipment identity leads, facility name, study date, minimal brand.

@@ -6,15 +6,23 @@
 //
 //   enqueue({ method, url, body, meta })  -> Promise<id>
 //   pendingCount()                        -> Promise<number>
-//   subscribe(cb)                         -> unsubscribe fn; cb({ pending, flushing, lastFlush })
+//   failedCount()                         -> Promise<number>
+//   failedEntries()                       -> Promise<Array>
+//   retryFailed(api)                      -> Promise<flush result>  (re-queues failed, re-flushes)
+//   clearFailed(ids?)                     -> Promise<void>          (dismiss after the tech has acted)
+//   subscribe(cb)                         -> unsubscribe fn; cb({ pending, failed, flushing, lastFlush })
 //   flush(api)                            -> Promise<{ sent, failed, remaining }>
 //
 // Replay semantics (flush):
 //   FIFO. Per entry: 2xx -> remove; network error (no response) -> KEEP the
 //   entry and STOP the flush (we're offline/flaky — order must be preserved);
 //   4xx/5xx response -> server actively rejected it: DROP from the queue and
-//   record to the 'failed' store so the UI can surface it (retrying forever
-//   would wedge the queue behind a permanently-bad request).
+//   record to the 'failed' store. COMP-8-5: the failed store is now SURFACED
+//   (failedCount in the subscribe snapshot + a needs-attention banner in the
+//   field UI with view/retry/dismiss) so a rejected compliance write is never
+//   silently lost — the tech who saw "Saved" gets told it didn't stick.
+//   (Retrying forever would wedge the queue behind a permanently-bad request,
+//   so we still don't auto-retry — a human decides.)
 //
 // Photos: pass `body: { _formData: [...] }`? No — callers pass a plain object
 // OR a FormData. FormData can't be structured-cloned into IndexedDB, so we
@@ -63,8 +71,12 @@ let _lastFlush = null; // { sent, failed, at } of the most recent completed flus
 
 async function _notify() {
   let pending = 0;
+  let failed = 0;
   try { pending = await pendingCount(); } catch (_) { /* IDB unavailable */ }
-  const snapshot = { pending, flushing: _flushing, lastFlush: _lastFlush };
+  // COMP-8-5: failed-store size rides the snapshot so subscribers can show a
+  // persistent "needs attention" state for server-rejected mutations.
+  try { failed = await failedCount(); } catch (_) { /* IDB unavailable */ }
+  const snapshot = { pending, failed, flushing: _flushing, lastFlush: _lastFlush };
   for (const cb of _subscribers) {
     try { cb(snapshot); } catch (_) { /* subscriber error must not break the queue */ }
   }
@@ -72,8 +84,9 @@ async function _notify() {
 
 /**
  * Subscribe to outbox state. cb is called immediately with the current state
- * and again on every change: { pending: number, flushing: boolean,
- * lastFlush: { sent, failed, at } | null }. Returns an unsubscribe function.
+ * and again on every change: { pending: number, failed: number,
+ * flushing: boolean, lastFlush: { sent, failed, at } | null }. Returns an
+ * unsubscribe function.
  */
 export function subscribe(cb) {
   _subscribers.add(cb);
@@ -121,6 +134,49 @@ export async function pendingCount() {
 export async function failedEntries() {
   const db = await openDb();
   return idb(db.transaction(FAILED, 'readonly').objectStore(FAILED).getAll());
+}
+
+/** Number of server-rejected mutations awaiting the tech's attention. */
+export async function failedCount() {
+  const db = await openDb();
+  return idb(db.transaction(FAILED, 'readonly').objectStore(FAILED).count());
+}
+
+/**
+ * Move every failed entry back onto the live queue and re-flush — for when the
+ * cause was transient (asset un-archived, a fixed server bug, etc.). The
+ * re-queued entries lose their original FIFO position (they go to the tail),
+ * which is fine: a rejected entry was already removed from the ordered stream.
+ * @returns {Promise<{ sent, failed, remaining }>} the resulting flush summary
+ */
+export async function retryFailed(api) {
+  const db = await openDb();
+  const failures = await idb(db.transaction(FAILED, 'readonly').objectStore(FAILED).getAll());
+  for (const f of failures) {
+    // Strip the failure metadata; restore the original mutation shape.
+    const { id, status, serverError, failedAt, ...orig } = f;
+    orig.queuedAt = Date.now();
+    await idb(db.transaction(QUEUE, 'readwrite').objectStore(QUEUE).add(orig));
+    await idb(db.transaction(FAILED, 'readwrite').objectStore(FAILED).delete(id));
+  }
+  _notify();
+  return flush(api);
+}
+
+/**
+ * Dismiss failed entries the tech has acknowledged / re-entered manually.
+ * Pass specific ids, or omit to clear all.
+ */
+export async function clearFailed(ids) {
+  const db = await openDb();
+  if (Array.isArray(ids) && ids.length) {
+    for (const id of ids) {
+      await idb(db.transaction(FAILED, 'readwrite').objectStore(FAILED).delete(id));
+    }
+  } else {
+    await idb(db.transaction(FAILED, 'readwrite').objectStore(FAILED).clear());
+  }
+  _notify();
 }
 
 // Rebuild the request payload for the axios client from a stored entry.

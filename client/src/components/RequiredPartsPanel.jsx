@@ -13,6 +13,7 @@
  */
 import { useEffect, useState, useRef } from 'react';
 import api from '../api/client';
+import { useConfirm } from '../context/ConfirmContext';
 
 const STOCK_META = {
   OK:  { label: 'OK',  bg: 'var(--chip-green-bg, #dcfce7)',  fg: 'var(--chip-green-fg, #15803d)' },
@@ -108,6 +109,7 @@ function AddPartRow({ assetId, onAdded }) {
 }
 
 export default function RequiredPartsPanel({ assetId, canEdit }) {
+  const confirm = useConfirm();
   const [requirements, setRequirements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -126,7 +128,12 @@ export default function RequiredPartsPanel({ assetId, canEdit }) {
   useEffect(() => { load(); }, [assetId]);
 
   async function removeRequirement(partId) {
-    if (!window.confirm('Remove this required part link?')) return;
+    if (!await confirm({
+      title: 'Remove required part?',
+      message: 'Remove this required part link from the asset?',
+      confirmLabel: 'Remove',
+      danger: true,
+    })) return;
     try {
       await api.delete(`/api/parts/required-by/${assetId}/${partId}`);
       load();

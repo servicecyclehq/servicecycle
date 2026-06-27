@@ -46,6 +46,13 @@
  * and never blocks the cron callback — monitoring outages must not
  * destabilize the scheduled work itself.
  *
+ * POP-8-3: "no-op when unconfigured" means an unmonitored production box can
+ * lose its scheduler silently. This module intentionally cannot self-provision
+ * a healthchecks.io account, so the fail-LOUD enforcement lives at startup:
+ * server/index.ts emits a prominent warning in production when no heartbeat
+ * target is configured (unless HEARTBEAT_MONITORING_ACK=true). Configure a key
+ * here to make a dead cron alarm within minutes.
+ *
  * See docs/observability.md for end-to-end setup instructions.
  */
 

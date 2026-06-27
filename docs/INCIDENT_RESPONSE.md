@@ -1,8 +1,15 @@
 # Incident Response Plan — ServiceCycle
 
 **Version:** 2026-06-24  
-**Owner:** Dustin (founder / sole operator)  
+**Owner:** Incident Response Lead (primary on-call operator)  
+**Backup:** Secondary operator (designate and document before go-live)  
 **Review cadence:** Annually, or after any security incident  
+
+> **Operator continuity (acquirer note):** This plan must not depend on a
+> single named individual. Designate a primary Incident Response Lead and at
+> least one backup operator, and store droplet / Cloudflare / DigitalOcean /
+> Brevo access in a shared secret manager with a documented break-glass
+> procedure so any authorized operator can execute every step below.
 
 ---
 
@@ -16,7 +23,7 @@ This plan covers security incidents affecting the ServiceCycle hosted deployment
 - Data loss or corruption
 - Denial-of-service attacks
 - Vulnerability disclosure
-- Third-party vendor incidents (DigitalOcean, Brevo, Resend, Cloudflare)
+- Third-party vendor incidents (DigitalOcean, Brevo, Cloudflare)
 
 ---
 
@@ -47,7 +54,7 @@ This plan covers security incidents affecting the ServiceCycle hosted deployment
 
 ```bash
 # Check recent login failures on the droplet
-docker exec -i servicecycle-server-1 node -e \
+docker exec -i servicecycle-server node -e \
   "const p=require('./lib/prisma').default; \
    p.activityLog.findMany({where:{action:'login_failed'},orderBy:{createdAt:'desc'},take:20}).then(r=>console.log(JSON.stringify(r,null,2)))"
 ```
@@ -79,7 +86,7 @@ docker exec -i servicecycle-server-1 node -e \
 
 **Production down:**
 1. Check container status: `docker ps` on the droplet
-2. Check server logs: `docker logs servicecycle-server-1 --tail=100`
+2. Check server logs: `docker logs servicecycle-server --tail=100`
 3. Restart: `docker compose -f /root/ServiceCycle/docker-compose.yml up -d server`
 4. If DB is corrupted: stop server, restore from last nightly backup (see `docs/DEPLOY_RUNBOOK.md` §5)
 
@@ -91,7 +98,7 @@ docker exec -i servicecycle-server-1 node -e \
 
 1. Activity log export (NDJSON): `GET /api/activity/export?format=ndjson&dateFrom=<incident-date>`
 2. Nginx access logs: `/var/log/nginx/access.log` on the droplet
-3. Docker container logs: `docker logs servicecycle-server-1 --since=<incident-date>`
+3. Docker container logs: `docker logs servicecycle-server --since=<incident-date>`
 4. Cloudflare analytics: Log → HTTP requests filtered by time window
 
 **Audit chain integrity check:**
@@ -201,8 +208,7 @@ Within 5 business days of incident resolution:
 |---|---|
 | Droplet access | DigitalOcean console → ServiceCycle droplet |
 | Cloudflare dashboard | dash.cloudflare.com → servicecycle.app |
-| Brevo (email) | app.brevo.com |
-| Resend (inbound) | resend.com |
+| Brevo (email — transactional + inbound) | app.brevo.com |
 | Activity log export | `GET https://servicecycle.app/api/activity/export` (admin token) |
 | Audit chain verifier | `server/scripts/verify-audit-chain.js` |
 | Security disclosure | `security@servicecycle.app` |

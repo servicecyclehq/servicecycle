@@ -8,9 +8,18 @@
  * quality — same posture as the DGA + test-report parsers).
  */
 
+// [NETA-8-1] Reference frame the ΔT is measured against. NETA Table 100.18 grades
+// "over-ambient-air" rises on a DIFFERENT (more lenient) scale than
+// "between-similar-components" rises, so the frame must travel with the value or
+// a 30°C-over-ambient RECOMMENDED rise gets mis-graded as an IMMEDIATE
+// similar-component discrepancy. 'baseline' is treated as similar-component for
+// grading (a prior-reading comparison) until a dedicated band exists.
+export type HotspotReference = 'ambient' | 'similar' | 'baseline';
+
 export interface ParsedHotspot {
   location: string;
   deltaT: number;
+  reference?: HotspotReference;
 }
 
 // deltaT token + value: "ΔT 25C", "delta-T 8 degC", "dT: 12", "25°C rise",
@@ -28,11 +37,28 @@ function extractDelta(line: string): number | null {
   return null;
 }
 
+// [NETA-8-1] Infer the ΔT reference frame from the line text. Defaults to
+// 'similar' (the most common electrical-IR comparison and the conservative band)
+// only when the line gives no frame cue. "over/above ambient" => over-ambient;
+// "vs/between similar/phase" => similar-component; "baseline/last/prior" =>
+// baseline.
+function extractReference(line: string): HotspotReference {
+  const s = line.toLowerCase();
+  if (/\b(over|above|vs\.?|versus|compared to|from)\s+ambient\b/.test(s) || /\bambient\s+rise\b/.test(s) || /\bover[-\s]?ambient\b/.test(s)) {
+    return 'ambient';
+  }
+  if (/\b(baseline|last (?:scan|survey|reading)|prior|previous)\b/.test(s)) return 'baseline';
+  // similar-component cues (or default): "similar", "between phases", "phase-to-phase"
+  return 'similar';
+}
+
 function cleanLocation(line: string): string {
-  // Strip the delta token and trailing severity words to leave the location.
+  // Strip the delta token + reference phrase and trailing severity words to
+  // leave the location.
   let loc = line
     .replace(/(?:Δ\s*t|delta[\s-]?t|\bd\s*t)\b.*$/i, '')
     .replace(/\d+(?:\.\d+)?\s*(?:°|deg(?:rees)?|º)?\s*c\b.*$/i, '')
+    .replace(/\b(over|above)\s+ambient\b.*$/i, '')
     .replace(/[\s.:,_|-]+$/g, '')
     .trim();
   // collapse leading table noise (bullets, indices)
@@ -49,7 +75,8 @@ export function parseThermographyText(text: string): { hotspots: ParsedHotspot[]
     const deltaT = extractDelta(line);
     if (deltaT == null) continue;
     const location = cleanLocation(line) || 'Unspecified location';
-    hotspots.push({ location, deltaT });
+    const reference = extractReference(line);
+    hotspots.push({ location, deltaT, reference });
   }
 
   let surveyDate: string | null = null;

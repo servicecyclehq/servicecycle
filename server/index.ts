@@ -468,7 +468,7 @@ if (process.env.DEMO_MODE !== 'true' && !process.env.HEALTHCHECKS_PING_KEY) {
 // hero images embedded in upcoming docs panes, or future fonts served from
 // the marketing CDN. script-src deliberately stays 'self' only — no third
 // party should ever ship JS into the running app.
-const cspDirectives = {
+const cspDirectives: any = {
   defaultSrc:    ["'none'"],
   scriptSrc:     ["'self'"],                                     // S3: same-origin scripts only
   styleSrc:      ["'self'"],                                     // S3: same-origin styles only
@@ -479,7 +479,30 @@ const cspDirectives = {
   baseUri:       ["'none'"],
   formAction:    ["'self'"],
   frameAncestors:["'none'"],          // X-Frame-Options DENY equivalent
+  // INFOSEC-8-11: tighten the worker/media/manifest fetch directives that
+  // otherwise fall back to default-src. They're already effectively 'none' via
+  // the default, but stating them explicitly removes ambiguity for scanners and
+  // pins the PWA's own service worker + manifest to same-origin.
+  workerSrc:     ["'self'"],          // service worker / web workers: same-origin only
+  manifestSrc:   ["'self'"],          // PWA manifest: same-origin only
+  mediaSrc:      ["'self'"],          // <audio>/<video>: same-origin only
 };
+// INFOSEC-8-11: upgrade-insecure-requests so any stray http:// subresource is
+// auto-promoted to https in production (harmless on http:// localhost, so only
+// emitted under TLS). Helmet needs a null-valued key (no array) to emit a
+// valueless directive.
+if (process.env.NODE_ENV === 'production') {
+  cspDirectives.upgradeInsecureRequests = [];
+}
+// INFOSEC-8-11: opt-in CSP violation reporting. When CSP_REPORT_URI is set the
+// browser POSTs violation reports there (both the legacy report-uri and the
+// modern report-to/Reporting-Endpoints names are emitted for coverage). Off by
+// default so self-hosted instances without a collector are unaffected.
+const CSP_REPORT_URI = process.env.CSP_REPORT_URI;
+if (CSP_REPORT_URI) {
+  cspDirectives.reportUri = [CSP_REPORT_URI];
+  cspDirectives.reportTo  = ['csp-endpoint'];
+}
 
 // ── Request logging (audit Cluster C P1) ───────────────────────────────────
 // pino-http is installed but loaded lazily so the server still boots if a
@@ -550,6 +573,15 @@ try {
   console.warn('[startup] pino-http not installed — request logging disabled. Run `npm install` to enable.');
 }
 
+// INFOSEC-8-11: bind the report-to group name to an actual endpoint via the
+// Reporting-Endpoints header (modern replacement for the Report-To header).
+// Only emitted when CSP_REPORT_URI is configured.
+if (CSP_REPORT_URI) {
+  app.use((_req, res, next) => {
+    res.setHeader('Reporting-Endpoints', `csp-endpoint="${CSP_REPORT_URI}"`);
+    next();
+  });
+}
 app.use(helmet({
   contentSecurityPolicy: {
     useDefaults: false,
@@ -584,11 +616,20 @@ const CORS_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
 app.use(
   cors({
     // Function form so we can match against the parsed allowlist. Returning
-    // the actual matched origin lets express-cors echo it on the response
-    // (required when credentials:true, which we use for refresh-token cookies).
+    // the actual matched origin lets express-cors echo it on the response.
+    // credentials:true is set because the SPA sends the Authorization bearer on
+    // cross-origin XHR. INFOSEC-8-6: tokens are bearer tokens in the JSON body /
+    // Authorization header, NOT httpOnly refresh-token cookies — an earlier
+    // comment here described a cookie model that is not implemented. The
+    // allowlisted methods + headers below are explicit (no wildcard).
     origin: (origin, callback) => {
-      // No-origin requests (curl, server-side, same-origin XHR) are allowed —
-      // the auth middleware + CSRF posture defends those independently.
+      // INFOSEC-8-12: requests with NO Origin header (curl, server-to-server,
+      // same-origin navigations) are allowed through CORS by design — CORS is a
+      // browser cross-origin control, and a bearer token is still required by
+      // authenticateToken on every protected route, so an Origin-less request
+      // gains nothing without valid credentials. The risk a credentialed
+      // no-Origin request would carry (an ambient cookie) does not apply here
+      // because we do not authenticate via cookies.
       if (!origin) return callback(null, true);
       if (CORS_ORIGINS.includes(origin)) return callback(null, origin);
       // v0.37.1 W5 MT-130: sanitise the origin before logging so a hostile
@@ -1521,6 +1562,24 @@ app.use((req, res) => {
 // activity log rows. Wrap every cron callback in `runOnce(name, fn)`
 // which short-circuits if the previous invocation hasn't returned.
 const _cronInFlight = Object.create(null);
+// POP-8-3: a silently-stopped scheduler is invisible unless cron heartbeat
+// monitoring is configured. The pingHeartbeat module no-ops entirely when
+// neither HEALTHCHECKS_PING_KEY nor any HEALTHCHECKS_URL_* override is set, so
+// on an unmonitored production box a dead cron surfaces only "weeks later when a
+// customer notices the missing alert." Emit a LOUD startup warning in
+// production when no heartbeat target is configured so go-live can't silently
+// ship without scheduler monitoring. (Dev/test stay quiet.) Set
+// HEARTBEAT_MONITORING_ACK=true to acknowledge an intentionally-unmonitored
+// production deployment and silence this warning.
+(function _warnIfHeartbeatUnconfigured() {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (process.env.HEARTBEAT_MONITORING_ACK === 'true') return;
+  const hasKey = !!process.env.HEALTHCHECKS_PING_KEY;
+  const hasOverride = Object.keys(process.env).some((k) => k.startsWith('HEALTHCHECKS_URL_'));
+  if (!hasKey && !hasOverride) {
+    console.warn('[startup][POP-8-3] WARNING: cron heartbeat monitoring is NOT configured (no HEALTHCHECKS_PING_KEY or HEALTHCHECKS_URL_* set). A silently-stopped scheduler will go unnoticed. Configure healthchecks.io (see docs/observability.md) or set HEARTBEAT_MONITORING_ACK=true to acknowledge.');
+  }
+})();
 // Pass-5 Tier 4 / Agent 5 G10: pingHeartbeat wraps every cron with a
 // healthchecks.io start/success/fail ping. The module no-ops unless
 // HEALTHCHECKS_PING_KEY (or per-check HEALTHCHECKS_URL_<NAME> override) is
@@ -1694,12 +1753,18 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     }
     console.log('[Cron] Acquired scheduler advisory lock — this instance owns scheduled jobs.');
   } catch (lockErr: any) {
-    // If the lock probe fails (DB momentarily unreachable at boot), fail CLOSED:
-    // do NOT register crons. A failed lock probe likely means the DB is down;
-    // starting crons against a down DB would fail silently or double-fire.
-    // Restart the process to retry once the DB is available.
-    console.error('[CRON] Advisory lock probe failed - skipping cron registration. Restart to retry:', (lockErr as Error).message);
-    cronLeader = false;
+    // POP-8-8: If the lock probe fails (DB momentarily unreachable at boot),
+    // fail CLOSED — do NOT register crons. A failed lock probe likely means the
+    // DB is down; starting crons against a down DB would fail silently or, in a
+    // multi-instance deploy, double-fire backups/prunes/digests. Previously this
+    // branch set a `cronLeader` flag that was referenced nowhere and then FELL
+    // THROUGH into cron registration, so the stated safety property was never
+    // implemented. The explicit `return` below now actually enforces it. The
+    // single-node demo always WINS the lock, so this branch never fires there
+    // and normal behavior is unchanged. Restart the process to retry once the
+    // DB is available.
+    console.error('[CRON] Advisory lock probe failed - skipping cron registration (fail closed). Restart to retry:', (lockErr as Error).message);
+    return;
   }
 
   // ── Nightly alert cron (runs at 7:00 AM server time) ──────────────────────
@@ -2060,7 +2125,13 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
         return;
       }
       if (!process.env.PG_TEST_DB_URL) {
-        console.log('[Cron] deepRestoreTest: skipped (PG_TEST_DB_URL not configured)');
+        // POP-8-13: this is the ONLY job that actually asserts row counts on a
+        // restored dump (the true proof a backup is recoverable). Skipping it
+        // silently let a green dashboard imply restores were verified when they
+        // never ran. Surface the skip loudly so it is visible in ops logs and
+        // the gap is not mistaken for a passing restore. Provision a sidecar
+        // Postgres + PG_TEST_DB_URL (see docs) to enable the real restore proof.
+        console.warn('[Cron] deepRestoreTest: SKIPPED — PG_TEST_DB_URL not configured. No deep restore verification is running; backup recoverability is UNPROVEN until a sidecar Postgres is provisioned.');
         return;
       }
       const { runDeepRestoreTest } = require('./lib/restoreTest');

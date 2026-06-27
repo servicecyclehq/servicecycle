@@ -34,8 +34,21 @@ function parseVolts(raw: any): number | null {
 /**
  * Validate whether an energized-work permit may be issued for a bus's current
  * study. Returns canIssue + the blocking reasons. Pure.
+ *
+ * [LEGAL-8-12] opts.unreviewedDrift (optional, caller-supplied): a signal that the
+ * physical system changed since the study (a swapped breaker, a re-imported
+ * protective-device setting, a NETA/ingest drift flag) that has NOT been resolved
+ * by a re-study. Date-based supersession alone can't detect this, so a permit must
+ * NOT auto-issue authoritative-looking hazard numbers when such drift exists.
+ * When set, issuance is blocked (canIssue=false) and the reason is surfaced.
+ * Backward-compatible: callers that omit opts behave exactly as before.
  */
-export function validatePermitIssuance(bus: any, study: any, asOf: Date = new Date()): { canIssue: boolean; reasons: string[] } {
+export function validatePermitIssuance(
+  bus: any,
+  study: any,
+  asOf: Date = new Date(),
+  opts?: { unreviewedDrift?: boolean; driftReason?: string },
+): { canIssue: boolean; reasons: string[]; unreviewedDrift: boolean } {
   const reasons: string[] = [];
   if (!study) reasons.push('No arc-flash study is bound to this equipment.');
   if (study && study.supersededById) reasons.push('The bound study has been superseded by a newer revision.');
@@ -43,7 +56,11 @@ export function validatePermitIssuance(bus: any, study: any, asOf: Date = new Da
   const ie = num(bus && bus.incidentEnergyCalCm2);
   const volts = parseVolts(bus && bus.nominalVoltage);
   if (ie == null && volts == null) reasons.push('No incident energy or system voltage on record for this bus.');
-  return { canIssue: reasons.length === 0, reasons };
+  const unreviewedDrift = !!(opts && opts.unreviewedDrift);
+  if (unreviewedDrift) {
+    reasons.push((opts && opts.driftReason) || 'A system change has been detected since the study date (unreviewed). The incident energy may no longer be valid — re-study or have a qualified person clear the drift before issuing.');
+  }
+  return { canIssue: reasons.length === 0, reasons, unreviewedDrift };
 }
 
 /**
@@ -68,6 +85,11 @@ export function buildEnergizedWorkPermit(ctx: {
   // [AFX-10] Required attestations per NFPA 70E §130.2(B).
   riskAssessmentCompleted?: boolean;
   safeWorkProcedureAvailable?: boolean;
+  // [LEGAL-8-12] Optional: an unresolved system-change/drift signal for this asset.
+  // When set, the gate downgrades canIssue (date-supersession can't detect a
+  // physical change since the study). Omit to keep prior behavior.
+  unreviewedDrift?: boolean;
+  driftReason?: string;
 }): any {
   const { bus, study, asset } = ctx;
   const justification = ctx.energizedWorkJustification || null;
@@ -77,7 +99,7 @@ export function buildEnergizedWorkPermit(ctx: {
   const ie = num(bus && bus.incidentEnergyCalCm2);
   const volts = parseVolts(bus && bus.nominalVoltage);
   const danger = ie != null && ie > 40;
-  const validation = validatePermitIssuance(bus, study, asOf);
+  const validation = validatePermitIssuance(bus, study, asOf, { unreviewedDrift: ctx.unreviewedDrift, driftReason: ctx.driftReason });
 
   const permit = {
     generatedAt: asOf.toISOString(),

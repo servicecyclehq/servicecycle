@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
+import { useConfirm } from '../context/ConfirmContext';
+import { fmtDate } from '../lib/equipment';
 
 // #25 client: bind assets/buses to an arc-flash (or coordination) SystemStudy
 // with the NFPA 70E 130.5(H) incident-energy label fields, show per-label
@@ -35,6 +37,7 @@ const inputStyle = {
 };
 
 export default function StudyAssetBinding({ study, siteAssets = [], canWrite = false, onCoverageChange }) {
+  const confirm = useConfirm();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -89,7 +92,16 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
   }
 
   async function unbind(assetId, label) {
-    if (!window.confirm('Remove "' + label + '" from this study?')) return;
+    // [UX-8-1] Branded confirmation (was native window.confirm). Removing a
+    // binding deletes the recorded incident energy / PPE for that bus, so flag it
+    // as destructive.
+    const ok = await confirm({
+      title: 'Remove from this study?',
+      message: 'Remove "' + label + '" from this study? This deletes its recorded arc-flash label data (incident energy, PPE, boundary) for this study.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
     setErr(null);
     try {
       const r = await api.delete('/api/sites/studies/' + study.id + '/assets/' + assetId);
@@ -99,9 +111,11 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
   }
 
   function printLabels() {
-    if (!data || labels.length === 0) { window.alert('No assets are bound to this study yet.'); return; }
+    if (!data || labels.length === 0) { setErr('No assets are bound to this study yet.'); return; }
     const s = data.study;
-    const dateStr = s.performedDate ? new Date(s.performedDate).toLocaleDateString() : '';
+    // [UX-8-12] Use the app's house date formatter (locale-pinned "Jan 5, 2026")
+    // instead of browser-locale-dependent toLocaleDateString().
+    const dateStr = s.performedDate ? fmtDate(s.performedDate) : '';
     const provparts = [dateStr ? 'Study ' + dateStr : '', s.peName ? esc(s.peName) + (s.peLicense ? ' (Lic. ' + esc(s.peLicense) + ')' : '') : '', s.method ? esc(s.method) : ''].filter(Boolean);
     const prov = provparts.join(' &middot; ');
     const cards = labels.map((l) => {
@@ -145,7 +159,7 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
       '<h1>Arc-flash warning labels - ' + esc(s.siteName || '') + ' (' + labels.length + ')</h1>' +
       '<div class="grid">' + cards + '</div></body></html>';
     const w = window.open('', '_blank');
-    if (!w) { window.alert('Allow pop-ups to print the labels.'); return; }
+    if (!w) { setErr('Allow pop-ups to print the labels.'); return; }
     w.document.write(html);
     w.document.close();
   }

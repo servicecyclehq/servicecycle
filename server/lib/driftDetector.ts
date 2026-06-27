@@ -3,6 +3,13 @@
 /**
  * driftDetector.ts — #4 Repeat-failure / compliance-drift detector.
  *
+ * NOT predictive ML. This is a deterministic, transparent RULES ENGINE over the
+ * recorded deficiency/work-order history: explicit thresholds (trailing-window,
+ * open-age, repeat-count) applied with plain if/else — no model, no training,
+ * no forecast. Describe it as "rule-based drift detection," never as
+ * "predictive"/"AI failure prediction." The value is an explainable,
+ * auditable program-change prompt, not a probabilistic prediction. (COMP-8-7)
+ *
  * Looks across maintenance cycles (trailing 24 months) for assets that are
  * drifting — not to file another ticket, but to recommend a PROGRAM change:
  *

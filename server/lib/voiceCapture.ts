@@ -3,12 +3,22 @@
 /**
  * lib/voiceCapture.ts
  * -------------------
- * Deterministic NLU for frictionless voice field entry.
+ * Deterministic keyword/regex parser for structured voice field-entry shortcuts.
  *
- * The phone does speech→text with the browser-native Web Speech API (no cloud
- * key, no external dependency); the server gets the TRANSCRIPT and turns it into
- * a structured, pre-filled measurement PROPOSAL that the tech confirms before
- * anything is written. We never auto-commit compliance data from a voice guess.
+ * Honest scope (COMP-8-8): this is NOT speech understanding or ML — it is a
+ * fixed lexicon of regular expressions over an already-transcribed string.
+ * Phrasing outside the hard-coded synonym tables yields a null field (the tech
+ * then just types it). Describe it to users as "structured voice shortcuts,"
+ * not "natural-language voice" / "AI voice."
+ *
+ * Two hard dependencies worth setting expectations on:
+ *   - Speech→text is done on the phone by the browser-native Web Speech API,
+ *     which is effectively Chrome/Chromium-only and (in Chrome) ships the audio
+ *     to Google for recognition — so the speech step needs a network round-trip
+ *     and is NOT available in the fully-offline field flow.
+ *   - This module receives only the resulting TRANSCRIPT and turns it into a
+ *     structured, pre-filled measurement PROPOSAL the tech confirms before
+ *     anything is written. We never auto-commit compliance data from a voice guess.
  *
  *   parseVoiceReading("Breaker 42, IR normal, 68")
  *     → { assetHint: "breaker 42", measurementType: "insulation_resistance",

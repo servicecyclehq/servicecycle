@@ -62,8 +62,16 @@ async function buildUnderwritingPackage(prisma: any, accountId: string) {
       level: audit.readiness?.level ?? null,
       levelLabel: audit.readiness?.levelLabel ?? null,
       documentedPct: audit.readiness?.documentedPct ?? null,
+      // `overallRate` is the honest blended readiness (folds unbaselined +
+      // uncovered assets into the denominator). `complianceRate` is the narrower
+      // SCHEDULE-compliance basis (current / current+overdue) and EXCLUDES
+      // unbaselined schedules — so it reads higher. CFO-8-10: label the basis and
+      // surface the unbaselined count so an underwriter isn't handed the
+      // flattering number without context.
       overallRate: gap.overallRate,
       complianceRate: gap.compliance?.rate ?? null,
+      complianceRateBasis: 'schedule compliance (current / current+overdue); excludes unbaselined schedules',
+      unbaselinedSchedules: gap.compliance?.unbaselined ?? 0,
       coverageRate: gap.coverage?.rate ?? null,
       coveredAssets: gap.coverage?.coveredAssets ?? 0,
       totalAssets: gap.coverage?.totalAssets ?? 0,

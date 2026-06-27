@@ -6,6 +6,15 @@
 # then force-recreate the server container so it picks up any environment
 # block changes.
 #
+# ⚠ DEPLOY-PATH NOTE: this is the GHCR (pulled-image) path, which uses the
+#   LOWERCASE /root/servicecycle directory — NOT /root/ServiceCycle (capital S),
+#   which is the separate legacy tar-from-laptop path used by deploy-sc-*.ps1.
+#   The two are different deploy routes to the same box; do not mix them. Pick
+#   one canonical directory + route and retire the other (tracked as an ops item).
+#   The undocumented failure mode this script exists to patch — compose
+#   `environment:` whitelist changes shipping to the repo but never reaching the
+#   running container — is the reason a compose change alone is not enough.
+#
 # Why this is its own script:
 #   The standard deploy-vX.Y.Z-do-console.sh scripts bump SERVICECYCLE_VERSION in
 #   /root/servicecycle/.env and roll containers, but they don't copy the compose

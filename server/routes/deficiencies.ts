@@ -258,6 +258,77 @@ router.post('/:id/resolve', requireManager, async (req, res) => {
   }
 });
 
+// ─── POST /api/deficiencies/bulk-resolve ──────────────────────────────────────
+// CUST-8-7: resolve many findings in one action (select → resolve). Body:
+//   { ids: string[] (1..200), resolution?: string }
+// Only OPEN, in-account deficiencies are touched. If ANY selected finding is
+// IMMEDIATE, a meaningful corrective note (≥20 chars) is required for the whole
+// batch — same rule as the single /resolve path, so bulk can't bypass it.
+// Already-resolved or cross-tenant ids are skipped (reported in `skipped`), so
+// a partial selection still succeeds for the rest. NOTE: registered before
+// /:id/reopen but after /:id/resolve; '/bulk-resolve' is a literal path that
+// would otherwise be captured by '/:id' — keep it ahead of any '/:id' route.
+router.post('/bulk-resolve', requireManager, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x) => typeof x === 'string' && x) : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'ids must be a non-empty array of deficiency ids' });
+    }
+    if (ids.length > 200) {
+      return res.status(400).json({ success: false, error: 'Cannot resolve more than 200 deficiencies at once' });
+    }
+    const uniqueIds = [...new Set(ids)];
+
+    // Pull the in-account, currently-open targets only. Resolved/cross-tenant
+    // ids simply don't come back and are reported as skipped.
+    const open = await prisma.deficiency.findMany({
+      where: { id: { in: uniqueIds }, accountId: req.user.accountId, resolvedAt: null },
+      select: { id: true, assetId: true, severity: true, correctiveAction: true, workOrderId: true },
+    });
+
+    const note = (req.body?.resolution ?? '').trim();
+    const hasImmediate = open.some((d) => d.severity === 'IMMEDIATE');
+    if (hasImmediate && note.length < 20) {
+      return res.status(400).json({
+        success: false,
+        error: 'One or more selected findings are IMMEDIATE — a detailed corrective action description (minimum 20 characters) is required to resolve them.',
+      });
+    }
+
+    const now = new Date();
+    const resolvedNote = note ? `[Resolved] ${note}` : null;
+
+    // Per-row update so the appended note preserves each finding's existing
+    // correctiveAction (a single updateMany can't concatenate per-row).
+    let resolvedCount = 0;
+    for (const d of open) {
+      const data: any = { resolvedAt: now, resolvedById: req.user.id };
+      if (resolvedNote) {
+        data.correctiveAction = d.correctiveAction ? `${d.correctiveAction}\n${resolvedNote}` : resolvedNote;
+      }
+      await prisma.deficiency.update({ where: { id: d.id }, data });
+      writeActivityLog({
+        assetId:   d.assetId,
+        userId:    req.user.id,
+        accountId: req.user.accountId,
+        action:    'deficiency_resolved',
+        details:   { deficiencyId: d.id, severity: d.severity, workOrderId: d.workOrderId, bulk: true },
+      });
+      resolvedCount++;
+    }
+
+    const resolvedIds = open.map((d) => d.id);
+    const skipped = uniqueIds.filter((id) => !resolvedIds.includes(id));
+    return res.json({
+      success: true,
+      data: { resolved: resolvedCount, skipped: skipped.length, skippedIds: skipped },
+    });
+  } catch (err) {
+    console.error('Bulk resolve deficiencies error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to bulk-resolve deficiencies' });
+  }
+});
+
 // ─── POST /api/deficiencies/:id/reopen ────────────────────────────────────────
 // Manager+ undo for a mistaken resolve. Clears the resolution stamp; the
 // appended resolution note (if any) stays in correctiveAction as history.

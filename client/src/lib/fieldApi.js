@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import api from '../api/client';
-import { enqueue, flush, subscribe, installAutoFlush } from './outbox';
+import { enqueue, flush, subscribe, installAutoFlush, failedEntries, retryFailed, clearFailed } from './outbox';
 
 // Wire auto-flush exactly once at module load: replay on 'online' + app start.
 installAutoFlush(api);
@@ -48,12 +48,28 @@ export function flushOutbox() {
   return flush(api);
 }
 
+// COMP-8-5: failed-store accessors wired to the field axios client so a page
+// can list, retry, or dismiss server-rejected offline mutations.
+/** List server-rejected offline mutations awaiting attention. */
+export function getFailedMutations() {
+  return failedEntries();
+}
+/** Re-queue every rejected mutation and re-flush through the field client. */
+export function retryFailedMutations() {
+  return retryFailed(api);
+}
+/** Dismiss rejected mutations (ids array, or omit to clear all). */
+export function clearFailedMutations(ids) {
+  return clearFailed(ids);
+}
+
 /**
  * React hook: live outbox status.
- * @returns {{ pending: number, flushing: boolean, lastFlush: { sent, failed, at } | null }}
+ * @returns {{ pending: number, failed: number, flushing: boolean,
+ *   lastFlush: { sent, failed, at } | null }}
  */
 export function useOutboxStatus() {
-  const [status, setStatus] = useState({ pending: 0, flushing: false, lastFlush: null });
+  const [status, setStatus] = useState({ pending: 0, failed: 0, flushing: false, lastFlush: null });
   useEffect(() => subscribe(setStatus), []);
   return status;
 }

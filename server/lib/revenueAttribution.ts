@@ -65,7 +65,14 @@ async function buildRevenueAttribution(
 
   const funnel = { submitted: 0, quoted: 0, accepted: 0, converted: 0, completed: 0 };
   const attribution = { systemTriggered: 0, manual: 0, platformDrivenPct: null as number | null, completedFromAlert: 0, alertConversionShare: null as number | null };
-  const value = { currency: 'USD', pipeline: 0, realized: 0, total: 0, unpricedOpen: 0, unpricedCompleted: 0 };
+  // CFO-8-14: the $ totals (realized/pipeline) only sum quotes whose asset has a
+  // repairCostEstimate, while the funnel counts EVERY non-draft quote. To stop a
+  // reader pairing "$X realized" with a funnel count drawn from a larger
+  // population, we track the priced-vs-unpriced split with equal prominence:
+  // pricedCompleted + unpricedCompleted === funnel.completed, and
+  // pricedOpen + unpricedOpen === the open population behind `pipeline`.
+  const value = { currency: 'USD', pipeline: 0, realized: 0, total: 0,
+    pricedOpen: 0, unpricedOpen: 0, pricedCompleted: 0, unpricedCompleted: 0 };
   const byTrigger = new Map<string, any>();
   const completedRows: any[] = [];
 
@@ -92,9 +99,9 @@ async function buildRevenueAttribution(
     if (hasCompleteWo && triggered) attribution.completedFromAlert += 1;
 
     if (hasCompleteWo) {
-      if (est != null) value.realized += est; else value.unpricedCompleted += 1;
+      if (est != null) { value.realized += est; value.pricedCompleted += 1; } else value.unpricedCompleted += 1;
     } else if (isOpen) {
-      if (est != null) value.pipeline += est; else value.unpricedOpen += 1;
+      if (est != null) { value.pipeline += est; value.pricedOpen += 1; } else value.unpricedOpen += 1;
     }
 
     const key = q.triggerType || 'MANUAL';
@@ -156,6 +163,12 @@ async function buildRevenueAttribution(
     summary: {
       totalQuotes: funnel.submitted,
       clean: funnel.submitted === 0,
+      // CFO-8-14: true when some completed/open quotes have NO priced asset, so
+      // the realized/pipeline $ describe a SMALLER population than the funnel
+      // counts. Consumers should show the priced-vs-unpriced split when set.
+      hasUnpricedQuotes: (value.unpricedCompleted + value.unpricedOpen) > 0,
+      pricedCompleted: value.pricedCompleted,
+      unpricedCompleted: value.unpricedCompleted,
     },
   };
 }

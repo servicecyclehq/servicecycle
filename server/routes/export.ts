@@ -19,7 +19,7 @@ const express = require('express');
 // sendXlsx lives in server/lib/xlsxExport.js so report routes can reuse the
 // same workbook builder without duplicating ExcelJS plumbing.
 const { sendXlsx, sendAccountXlsx } = require('../lib/xlsxExport');
-const { buildAccountExport, EXPORT_SHEETS } = require('../lib/accountExport');
+const { buildAccountExport, streamAccountExportJson, EXPORT_SHEETS } = require('../lib/accountExport');
 const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
 
@@ -37,9 +37,63 @@ const {
 
 const router = express.Router();
 
-// CR-9: every export fetches cap+1 rows so truncation is detectable. The
-// X-Truncated:1 response header signals when the cap was hit.
-const EXPORT_ROW_CAP = 5000;
+// COMP-8-2: the export is pitched as a "complete, portable snapshot / no
+// lock-in". The previous behaviour silently sliced at 5,000 rows and only set
+// an X-Truncated header the UI never surfaced — a 25k-asset utility got 5,000
+// rows and no warning. We now CURSOR-PAGINATE the DB read in PAGE_SIZE batches
+// so the export contains the full result set, bounded only by a high safety
+// ceiling (EXPORT_HARD_CEILING) that exists purely to protect a single node
+// from an absurd request. Realistic datasets (single contractor, 120-site
+// book) are never truncated. If the ceiling is genuinely hit we (a) set
+// X-Truncated and (b) append a visible warning row to the file itself so the
+// truncation can never be silent.
+const PAGE_SIZE = 2000;
+const EXPORT_HARD_CEILING = 250_000;
+
+// Cursor-paginate a Prisma model into a single in-memory array, capped at
+// EXPORT_HARD_CEILING+1 so we can still detect (and surface) the extreme case.
+// `id` is the stable cursor for every model here.
+async function fetchAllPaged(model: any, { where, include, orderBy }: any): Promise<{ rows: any[]; truncated: boolean }> {
+  const rows: any[] = [];
+  let cursor: any = null;
+  for (;;) {
+    const page = await model.findMany({
+      where,
+      include,
+      orderBy: [...orderBy, { id: 'asc' }], // tie-break on id so the cursor is deterministic
+      take: PAGE_SIZE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    if (rows.length > EXPORT_HARD_CEILING) {
+      return { rows: rows.slice(0, EXPORT_HARD_CEILING), truncated: true };
+    }
+    cursor = page[page.length - 1].id;
+  }
+  return { rows, truncated: false };
+}
+
+// COMP-8-2: when the hard ceiling truncates the result set, append a sentinel
+// row whose FIRST column renders an explicit warning, so the truncation is
+// visible IN the file (not just an X-Truncated header the UI ignores). Returns
+// the columnDefs to use (a shallow clone with the first column's getter wrapped
+// to emit the notice for the sentinel) — we must NOT mutate the passed array's
+// objects because filterToRequestedColumns can hand back the shared module-level
+// registry by reference, which would leak the wrapper into later requests.
+// No-op (returns columnDefs unchanged) when not truncated.
+function appendTruncationRow(rows, columnDefs, truncated, ceiling) {
+  if (!truncated || !columnDefs.length) return columnDefs;
+  const realGet = columnDefs[0].get;
+  const wrappedFirst = {
+    ...columnDefs[0],
+    get: (r) => (r && r.__truncationNotice
+      ? `*** TRUNCATED: export exceeded ${ceiling.toLocaleString()} rows — this file is INCOMPLETE. Filter the view (by site/date) and export in parts, or contact ServiceCycle for a full data extract. ***`
+      : realGet(r)),
+  };
+  rows.push({ __truncationNotice: true });
+  return [wrappedFirst, ...columnDefs.slice(1)];
+}
 
 // Equipment-type label passthrough — enum codes are already operator-facing
 // (TRANSFORMER_LIQUID etc.); render them verbatim so the export round-trips
@@ -112,8 +166,8 @@ async function exportAssets(req, res) {
 
   applyAssetColumnFilters(where, req.query);
 
-  req.setTimeout(120_000);
-  const assetsRaw = await prisma.asset.findMany({
+  req.setTimeout(300_000);
+  const { rows: assets, truncated } = await fetchAllPaged(prisma.asset, {
     where,
     include: {
       site: { select: { name: true } },
@@ -125,13 +179,16 @@ async function exportAssets(req, res) {
       },
     },
     orderBy: [{ siteId: 'asc' }, { equipmentType: 'asc' }],
-    take: EXPORT_ROW_CAP + 1,
   });
-  const truncated = assetsRaw.length > EXPORT_ROW_CAP;
-  const assets = truncated ? assetsRaw.slice(0, EXPORT_ROW_CAP) : assetsRaw;
   if (truncated) res.setHeader('X-Truncated', '1');
 
-  const columnDefs = filterToRequestedColumns(ASSETS_COLUMN_REGISTRY, req.query.columns);
+  // COMP-8-2: never truncate silently — if the hard ceiling was hit, append a
+  // visible warning row so the file itself says so (the X-Truncated header
+  // alone was invisible to the user). appendTruncationRow returns the columnDefs
+  // to render (wrapped first getter when truncated, unchanged otherwise).
+  const columnDefs = appendTruncationRow(
+    assets, filterToRequestedColumns(ASSETS_COLUMN_REGISTRY, req.query.columns), truncated, EXPORT_HARD_CEILING,
+  );
 
   if (String(req.query.format || '').toLowerCase() === 'csv') {
     return sendCsv(res, { columnDefs, rows: assets, filename: `Assets-${dateStamp()}.csv` });
@@ -202,8 +259,8 @@ async function exportWorkOrders(req, res) {
 
   applyWorkOrderColumnFilters(where, req.query);
 
-  req.setTimeout(120_000);
-  const workOrdersRaw = await prisma.workOrder.findMany({
+  req.setTimeout(300_000);
+  const { rows: workOrders, truncated } = await fetchAllPaged(prisma.workOrder, {
     where,
     include: {
       asset: {
@@ -215,13 +272,12 @@ async function exportWorkOrders(req, res) {
       contractor: { select: { name: true } },
     },
     orderBy: [{ scheduledDate: 'asc' }, { createdAt: 'asc' }],
-    take: EXPORT_ROW_CAP + 1,
   });
-  const truncated = workOrdersRaw.length > EXPORT_ROW_CAP;
-  const workOrders = truncated ? workOrdersRaw.slice(0, EXPORT_ROW_CAP) : workOrdersRaw;
   if (truncated) res.setHeader('X-Truncated', '1');
 
-  const columnDefs = filterToRequestedColumns(WORKORDERS_COLUMN_REGISTRY, req.query.columns);
+  const columnDefs = appendTruncationRow(
+    workOrders, filterToRequestedColumns(WORKORDERS_COLUMN_REGISTRY, req.query.columns), truncated, EXPORT_HARD_CEILING,
+  );
 
   if (String(req.query.format || '').toLowerCase() === 'csv') {
     return sendCsv(res, { columnDefs, rows: workOrders, filename: `WorkOrders-${dateStamp()}.csv` });
@@ -256,12 +312,15 @@ router.get('/account', requireManager, async (req, res) => {
       });
     }
 
-    // JSON (default) -- the canonical, lossless no-lock-in artifact.
+    // JSON (default) -- the canonical, lossless no-lock-in artifact. COMP-8-2b:
+    // stream it element-by-element rather than JSON.stringify-then-send so the
+    // whole account isn't held in memory twice (object graph + giant string).
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="ServiceCycle-Account-Export-${stamp}.json"`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, no-store');
-    return res.send(JSON.stringify(data, null, 2));
+    await streamAccountExportJson(res, data);
+    return res.end();
   } catch (err) {
     console.error('Account export error:', err);
     if (!res.headersSent) return res.status(500).json({ success: false, error: 'Account export failed' });

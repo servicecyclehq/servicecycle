@@ -82,7 +82,11 @@ function _esc(s: any) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function _money(n: number) {
-  return fmtMoneyCompact(n);
+  // CFO-8-11: the totals strip + rep-email line items must reconcile to the
+  // per-row sums in the attached Excel (which uses full currency). The old
+  // fmtMoneyCompact rounded to the nearest $1,000 with a "k" suffix, hiding up
+  // to $499 per side and disagreeing with the spreadsheet. Show full currency.
+  return fmtMoney(n);
 }
 function _rateColor(rate: number | null) {
   if (rate == null) return '#94a3b8';
@@ -170,13 +174,22 @@ async function gatherAccountDigest(account: any, now: Date) {
   const items: any[] = [];
   const rows: any[] = [];
 
+  // CFO-8-1: a routine maintenance SCHEDULE that is merely due is a service
+  // visit, NOT an equipment replacement. forEquip() maps e.g. TRANSFORMER_LIQUID
+  // → TRANSFORMER_REPLACEMENT, which would price an annual oil sample at the full
+  // transformer-replacement rate (10–100× too high). Price the upcoming-service
+  // pipeline at the INSPECTION (service/labor) line instead. minCents/maxCents
+  // are CENTS; estMin/estMax are whole dollars (Math.round(cents/100)).
+  const serviceRate = resolver.get('INSPECTION');
+  const svcMin = serviceRate ? Math.round(serviceRate.minCents / 100) : null;
+  const svcMax = serviceRate ? Math.round(serviceRate.maxCents / 100) : null;
+
   for (const s of schedules as any[]) {
     const a = s.asset;
     const d = _daysUntil(s.nextDueDate, now);
     if (d < 0) overdueCount++;
-    const rate = resolver.forEquip(a.equipmentType);
-    const estMin = rate ? Math.round(rate.minCents / 100) : null;
-    const estMax = rate ? Math.round(rate.maxCents / 100) : null;
+    const estMin = svcMin;
+    const estMax = svcMax;
     if (estMin) pipelineMin += estMin;
     if (estMax) pipelineMax += estMax;
     const ageYears = a.installDate ? Math.round((now.getTime() - new Date(a.installDate).getTime()) / (365 * 86400000)) : null;
@@ -559,7 +572,11 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         repCount: 1, customerCount: 1,
       });
       const managerTo = [...new Set((managers as any[]).map((m) => m.email).filter(Boolean))];
-      if (await _sendEmails(managerTo, `Monthly compliance roll-up — ${acc.companyName}`, managerHtml, attach)) managerEmails++;
+      // CUST-8-5: track whether ANY email actually landed for this account; only
+      // advance the watermark on success so a total send failure (e.g. Brevo
+      // outage) retries next run instead of silently losing the month's roll-up.
+      let anySent = false;
+      if (await _sendEmails(managerTo, `Monthly compliance roll-up — ${acc.companyName}`, managerHtml, attach)) { managerEmails++; anySent = true; }
 
       // Rep email → account.serviceRepEmail (the standalone "rep").
       if (acc.serviceRepEmail) {
@@ -569,17 +586,27 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
           topItems: _topItems(bundle.items.map((it: any) => ({ ...it, companyName: acc.companyName }))),
           generatedAt: now, cadence,
         });
-        if (await _sendEmails([acc.serviceRepEmail], `Your service book — ${acc.companyName}`, repHtml, attach)) repEmails++;
+        if (await _sendEmails([acc.serviceRepEmail], `Your service book — ${acc.companyName}`, repHtml, attach)) { repEmails++; anySent = true; }
       }
 
       // Customer digest (value-framed; TO facility admins, CC + Reply-To the rep).
-      customerEmails += await _sendCustomerDigest(acc);
+      const custSent = await _sendCustomerDigest(acc);
+      customerEmails += custSent;
+      if (custSent > 0) anySent = true;
 
       const itemsByAccount = new Map([[acc.id, bundle.items]]);
       await _deliverChannels([acc.id], itemsByAccount);
 
-      await markBriefingSent(acc.id, now);
-      accountsCovered++;
+      // Only mark sent (advance watermark) if at least one email succeeded.
+      // If every send failed, leave the watermark so the next run retries; the
+      // digest is idempotent + self-healing, so a re-send is safe.
+      if (anySent) {
+        await markBriefingSent(acc.id, now);
+        accountsCovered++;
+      } else {
+        skipped++;
+        console.warn('[monthlyDigest] all emails failed for', acc.id, '— watermark NOT advanced, will retry next run');
+      }
     } catch (e: any) {
       console.error('[monthlyDigest] standalone account failed', acc.id, e?.message || e);
     }
@@ -635,7 +662,15 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
         repCount: repNamesCovered.size, customerCount: coveredIds.length,
       });
       const managerTo = [...new Set((oemAdmins as any[]).map((m) => m.email).filter(Boolean))];
-      if (await _sendEmails(managerTo, `Monthly compliance roll-up — ${orgName}`, managerHtml, managerAttach)) managerEmails++;
+      // CUST-8-5: per-account delivery success drives the watermark. The manager
+      // roll-up covers EVERY account in the org, so a successful manager send
+      // means all covered accounts were legitimately reported this run; rep +
+      // customer sends additionally count for their own accounts.
+      const sentForAccount = new Set<string>();
+      if (await _sendEmails(managerTo, `Monthly compliance roll-up — ${orgName}`, managerHtml, managerAttach)) {
+        managerEmails++;
+        for (const id of coveredIds) sentForAccount.add(id);
+      }
 
       // Rep emails — group covered accounts by assignedRep user.
       const byRep = new Map<string, any[]>();
@@ -662,15 +697,28 @@ async function runMonthlyDigest({ accountId, force }: any = {}) {
           overallRate: repOverall, totals: repAgg.totals, topItems: _topItems(repAgg.items),
           generatedAt: now, cadence,
         });
-        if (await _sendEmails([rep.email], `Your service book — ${repBundles.length} customer${repBundles.length === 1 ? '' : 's'}`, repHtml, repAttach)) repEmails++;
+        if (await _sendEmails([rep.email], `Your service book — ${repBundles.length} customer${repBundles.length === 1 ? '' : 's'}`, repHtml, repAttach)) {
+          repEmails++;
+          for (const id of repCustomerIds) sentForAccount.add(id);
+        }
       }
 
       // Customer digest per customer account (value-framed; TO facility admins,
       // CC + Reply-To the assigned rep via account.serviceRepEmail).
-      for (const b of bundles) { customerEmails += await _sendCustomerDigest(b.account); }
+      for (const b of bundles) {
+        const custSent = await _sendCustomerDigest(b.account);
+        customerEmails += custSent;
+        if (custSent > 0) sentForAccount.add(b.account.id);
+      }
 
       await _deliverChannels(coveredIds, itemsByAccount);
-      for (const id of coveredIds) { await markBriefingSent(id, now); accountsCovered++; }
+      // Advance the watermark per account only where at least one email landed.
+      // Accounts that got nothing this run (total send failure) keep their old
+      // watermark and retry next run — no silently-lost month.
+      for (const id of coveredIds) {
+        if (sentForAccount.has(id)) { await markBriefingSent(id, now); accountsCovered++; }
+        else { skipped++; console.warn('[monthlyDigest] no email landed for account', id, 'in org', orgId, '— watermark NOT advanced'); }
+      }
     } catch (e: any) {
       console.error('[monthlyDigest] partner org failed', orgId, e?.message || e);
     }

@@ -158,18 +158,33 @@ function pwaPlugin() {
         {
           // Read-path field data: GET-only NetworkFirst, 1h freshness cap.
           // Static assets are CacheFirst by virtue of the precache manifest.
+          //
+          // COMP-8-4: the "works offline in the field" pitch previously cached
+          // only the asset list + sites + bootstrap, so a tech who lost signal
+          // in a switchgear room couldn't open a WORK ORDER, see a maintenance
+          // SCHEDULE, or check PARTS/SPARES — the exact field scenario marketed.
+          // Added /api/work-orders, /api/schedules, /api/parts to the read cache.
+          // Still GET-ONLY and NetworkFirst (fresh when online, last-known-good
+          // offline); non-GET mutations are never cached — they go through the
+          // outbox. NetworkFirst means an authenticated read always re-validates
+          // against the server when online, so a stale/foreign-tenant response
+          // can't be served while connectivity exists; the 1h cap + 200-only
+          // bound staleness and keep error/401 responses out of the cache.
           urlPattern: ({ url, request }) =>
             request.method === 'GET' &&
             url.origin === self.location.origin &&
             (url.pathname.startsWith('/api/field/') ||
               url.pathname === '/api/bootstrap' ||
               url.pathname.startsWith('/api/assets') ||
-              url.pathname.startsWith('/api/sites')),
+              url.pathname.startsWith('/api/sites') ||
+              url.pathname.startsWith('/api/work-orders') ||
+              url.pathname.startsWith('/api/schedules') ||
+              url.pathname.startsWith('/api/parts')),
           handler: 'NetworkFirst',
           method: 'GET', // belt + braces: never cache non-GET
           options: {
             cacheName: 'api-cache',
-            expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 },
+            expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 },
             cacheableResponse: { statuses: [200] },
           },
         },

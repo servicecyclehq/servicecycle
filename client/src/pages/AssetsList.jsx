@@ -8,7 +8,7 @@
 // buildFilterParams().
 //
 // D1 (2026-06-11): Excel-style per-column filters. The bootstrap fetch now
-// pulls the full server-filtered set in one page (FETCH_LIMIT) and the
+// pulls the full server-filtered set (paged through the server, CUST-8-4) and the
 // dedicated filter row beneath the column headers narrows it CLIENT-side
 // (AND across columns, OR within a column's multi-select), with client-side
 // pagination over the filtered rows. Column filters do NOT flow into the
@@ -43,10 +43,14 @@ import {
 
 const PAGE_SIZE = 25;
 
-// D1: pull the whole server-filtered set in one bootstrap page so the
-// per-column filters + pagination can run client-side. Well above the demo
-// population (~67 assets); revisit if a tenant ever approaches this.
-const FETCH_LIMIT = 500;
+// CUST-8-4: pull the WHOLE server-filtered set so the per-column filters +
+// client pagination operate on every matching asset (not a silently-truncated
+// first 500). We page through /api/bootstrap server-side (FETCH_PAGE rows per
+// request) and concatenate, up to FETCH_CAP as a runaway safety bound. Below
+// the cap nothing is dropped; only an account that exceeds FETCH_CAP matching
+// assets sees a banner asking it to narrow — and even then the count is honest.
+const FETCH_PAGE = 500;   // rows per bootstrap request
+const FETCH_CAP  = 5000;  // hard safety bound on total rows held client-side
 
 // ─── Columns (ColumnPicker + filter row share these ids) ─────────────────────
 // D2 (2026-06-11): ordered so the "does this need attention?" quartet
@@ -206,6 +210,9 @@ export default function AssetsList() {
   const [error, setError]     = useState('');
   const [toast, setToast]     = useState(null);
   const [exporting, setExporting] = useState(false);
+  // CUST-8-4: true only when the matching set exceeds FETCH_CAP (rare) — drives
+  // an honest "narrow your filters" banner instead of a silent truncation.
+  const [truncated, setTruncated] = useState(false);
 
   // Deep links (Dashboard's volume tab and elsewhere) pre-filter via
   // /assets?equipmentType=X&siteId=&dueWithin= — read once on mount, then
@@ -289,30 +296,60 @@ export default function AssetsList() {
     return params;
   }
 
-  // Fetch the full server-filtered set in one page (D1: column filters and
-  // pagination are client-side, so the server page param is always 1).
+  // Fetch the full server-filtered set by paging through /api/bootstrap
+  // (CUST-8-4) so column filters + client pagination see every matching asset.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const params = buildFilterParams();
-    if (sort) params.set('sort', sort);
-    params.set('page', '1');
-    params.set('limit', String(FETCH_LIMIT));
-    api.get(`/api/bootstrap?${params}`)
-      .then(r => {
+    setTruncated(false);
+
+    (async () => {
+      try {
+        const base = buildFilterParams();
+        if (sort) base.set('sort', sort);
+
+        const fetchPage = async (pageNum) => {
+          const params = new URLSearchParams(base);
+          params.set('page', String(pageNum));
+          params.set('limit', String(FETCH_PAGE));
+          const r = await api.get(`/api/bootstrap?${params}`);
+          return r.data.data || {};
+        };
+
+        // First page also carries the lookups (sites / equipmentTypes / members).
+        const first = await fetchPage(1);
         if (cancelled) return;
-        const d = r.data.data || {};
+        let allAssets = first.assets || [];
+        const totalPages = first.pagination?.pages || 1;
+
+        // Pull remaining pages (bounded by FETCH_CAP) and concatenate.
+        for (let p = 2; p <= totalPages; p++) {
+          if (allAssets.length >= FETCH_CAP) break;
+          // eslint-disable-next-line no-await-in-loop
+          const next = await fetchPage(p);
+          if (cancelled) return;
+          allAssets = allAssets.concat(next.assets || []);
+        }
+
+        const wasTruncated = allAssets.length > FETCH_CAP;
+        if (wasTruncated) allAssets = allAssets.slice(0, FETCH_CAP);
+
         setData({
-          assets:         d.assets || [],
-          pagination:     d.pagination || { page: 1, pages: 1, total: 0 },
-          sites:          d.sites || [],
-          equipmentTypes: d.equipmentTypes || Object.keys(EQUIPMENT_TYPE_LABELS),
-          members:        d.members || [],
+          assets:         allAssets,
+          pagination:     first.pagination || { page: 1, pages: 1, total: allAssets.length },
+          sites:          first.sites || [],
+          equipmentTypes: first.equipmentTypes || Object.keys(EQUIPMENT_TYPE_LABELS),
+          members:        first.members || [],
         });
+        setTruncated(wasTruncated);
         setError('');
-      })
-      .catch(() => { if (!cancelled) setError('Failed to load assets.'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      } catch {
+        if (!cancelled) setError('Failed to load assets.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, siteId, equipmentType, condition, ownerId, inServiceF, dueWithin, minCriticality, predictiveOnly, highPriority, sort]);
@@ -703,9 +740,9 @@ export default function AssetsList() {
             )
           ) : (
             <>
-              {assets.length >= FETCH_LIMIT && (
+              {truncated && (
                 <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 4, padding: '8px 12px', margin: '8px 0', fontSize: 13 }}>
-                  Showing first {FETCH_LIMIT} assets. Use search or filters to narrow results.
+                  This account has more than {FETCH_CAP.toLocaleString()} matching assets — showing the first {FETCH_CAP.toLocaleString()}. Narrow with search or filters to see the rest.
                 </div>
               )}
               <div className="table-wrap">

@@ -12,7 +12,7 @@
 // resolved findings (manager+, confirm dialog).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ClipboardCheck, ShieldCheck } from 'lucide-react';
 import api from '../api/client';
@@ -132,6 +132,71 @@ function ResolveModal({ deficiency, onClose, onConfirm, busy }) {
   );
 }
 
+// ── Bulk resolve modal (CUST-8-7) ─────────────────────────────────────────────
+// Resolves the N selected open findings at once. When the selection contains an
+// IMMEDIATE finding, the corrective note is required (≥20 chars) — same rule as
+// the single-resolve path, enforced server-side too.
+function BulkResolveModal({ count, requireNote, onClose, onConfirm, busy }) {
+  const [note, setNote] = useState('');
+  const noteTrimmed = note.trim();
+  const noteTooShort = requireNote && noteTrimmed.length < 20;
+  return (
+    <div
+      role="dialog" aria-modal="true" aria-label="Resolve selected deficiencies"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1050, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <form
+        onSubmit={e => { e.preventDefault(); if (!noteTooShort) onConfirm(noteTrimmed || null); }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--color-surface)', color: 'var(--color-text)',
+          borderRadius: 'var(--radius-lg)', boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+          maxWidth: 460, width: '100%', padding: '20px 24px',
+        }}
+      >
+        <div style={{ fontSize: 'var(--font-size-base)', fontWeight: 700, marginBottom: 6 }}>
+          Resolve {count} deficienc{count === 1 ? 'y' : 'ies'}?
+        </div>
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>
+          Each selected open finding is marked resolved, stamped with you as the resolver.
+          {requireNote && ' The selection includes an IMMEDIATE finding, so a corrective note is required.'}
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 }}>
+            Resolution note{requireNote
+              ? <span style={{ color: 'var(--color-danger)', fontWeight: 400 }}> — required (min 20 chars)</span>
+              : <span className="text-muted" style={{ fontWeight: 400 }}> — optional</span>}
+          </label>
+          <textarea
+            className="form-control form-control-wide"
+            rows={3}
+            placeholder="What was done — applied to every selected finding."
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            autoFocus
+            style={{ resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
+          />
+          {noteTooShort && (
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-danger)', marginTop: 4 }}>
+              {20 - noteTrimmed.length} more character{20 - noteTrimmed.length !== 1 ? 's' : ''} needed.
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || noteTooShort}>
+            {busy ? 'Resolving…' : `Resolve ${count}`}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DeficienciesPage() {
   useDocumentTitle('Deficiencies');
@@ -163,6 +228,7 @@ export default function DeficienciesPage() {
 
   const [deficiencies, setDeficiencies] = useState([]);
   const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -170,6 +236,13 @@ export default function DeficienciesPage() {
   const [resolving, setResolving] = useState(null); // deficiency being resolved (modal open)
   const [busy, setBusy] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+
+  // CUST-8-3: real pagination so items beyond the first page stay reachable.
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  // CUST-8-7: multi-select for bulk resolve (open findings only).
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const canResolve = ['admin', 'manager'].includes(user?.role);
 
@@ -179,11 +252,20 @@ export default function DeficienciesPage() {
       .catch(() => { /* dropdown just stays empty */ });
   }, []);
 
+  // Filter changes reset to page 1 (skip the very first mount).
+  const filtersKey = `${severity}|${status}|${siteId}`;
+  const firstFilterRun = useRef(true);
+  useEffect(() => {
+    if (firstFilterRun.current) { firstFilterRun.current = false; return; }
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError('');
-    const params = { limit: 200 };
+    const params = { page, limit: PAGE_SIZE };
     if (severity) params.severity = severity;
     if (status === 'open') params.resolved = 'false';
     if (status === 'resolved') params.resolved = 'true';
@@ -192,13 +274,16 @@ export default function DeficienciesPage() {
       .then(r => {
         if (cancelled) return;
         const d = r.data?.data || {};
-        setDeficiencies(Array.isArray(d.deficiencies) ? d.deficiencies : []);
-        setTotal(d.pagination?.total ?? (Array.isArray(d.deficiencies) ? d.deficiencies.length : 0));
+        const list = Array.isArray(d.deficiencies) ? d.deficiencies : [];
+        setDeficiencies(list);
+        setTotal(d.pagination?.total ?? list.length);
+        setTotalPages(d.pagination?.pages ?? 1);
+        setSelectedIds(new Set()); // selection is page-scoped — clear on reload
       })
       .catch(() => { if (!cancelled) setError('Failed to load deficiencies.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [severity, status, siteId, refreshTick]);
+  }, [severity, status, siteId, page, refreshTick]);
 
   const refetch = () => setRefreshTick(t => t + 1);
 
@@ -231,6 +316,54 @@ export default function DeficienciesPage() {
       refetch();
     } catch (err) {
       setToast({ message: err.response?.data?.error || 'Failed to reopen deficiency.', variant: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── Bulk selection (CUST-8-7) ─────────────────────────────────────────────
+  // Only OPEN findings on the current page are selectable.
+  const openOnPage = deficiencies.filter(d => !d.resolvedAt);
+  const allOpenSelected = openOnPage.length > 0 && openOnPage.every(d => selectedIds.has(d.id));
+  const anySelected = selectedIds.size > 0;
+  // If any selected finding is IMMEDIATE, the bulk note is mandatory (server
+  // enforces ≥20 chars too).
+  const selectedHasImmediate = deficiencies.some(d => selectedIds.has(d.id) && d.severity === 'IMMEDIATE');
+
+  function toggleOne(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllOpen() {
+    setSelectedIds(prev => {
+      if (openOnPage.every(d => prev.has(d.id))) return new Set();
+      return new Set(openOnPage.map(d => d.id));
+    });
+  }
+
+  async function handleBulkResolve(note) {
+    if (busy || selectedIds.size === 0) return;
+    setBusy(true);
+    try {
+      const r = await api.post('/api/deficiencies/bulk-resolve', {
+        ids: [...selectedIds],
+        ...(note ? { resolution: note } : {}),
+      });
+      const { resolved = 0, skipped = 0 } = r.data?.data || {};
+      setBulkOpen(false);
+      setSelectedIds(new Set());
+      setToast({
+        message: skipped
+          ? `${resolved} resolved · ${skipped} skipped (already resolved).`
+          : `${resolved} deficienc${resolved === 1 ? 'y' : 'ies'} resolved.`,
+        variant: 'success', duration: 4000,
+      });
+      refetch();
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || 'Failed to bulk-resolve.', variant: 'error' });
     } finally {
       setBusy(false);
     }
@@ -312,6 +445,38 @@ export default function DeficienciesPage() {
           </select>
         </div>
 
+        {/* ── Bulk action bar (CUST-8-7) ───────────────────────────────────── */}
+        {canResolve && anySelected && (
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+              padding: '8px 14px', marginBottom: 12, borderRadius: 'var(--radius)',
+              background: 'var(--color-primary-light, #eef6f6)',
+              border: '1px solid var(--color-primary)',
+            }}
+          >
+            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }}>
+              {selectedIds.size} selected
+            </span>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setBulkOpen(true)}
+              disabled={busy}
+            >
+              Resolve selected
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setSelectedIds(new Set())}
+              disabled={busy}
+            >
+              Clear selection
+            </button>
+          </div>
+        )}
+
         {/* ── List ─────────────────────────────────────────────────────────── */}
         {loading ? (
           <div className="loading">Loading deficiencies…</div>
@@ -329,6 +494,18 @@ export default function DeficienciesPage() {
               <table>
                 <thead>
                   <tr>
+                    {canResolve && (
+                      <th style={{ width: 32 }}>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all open findings on this page"
+                          checked={allOpenSelected}
+                          ref={el => { if (el) el.indeterminate = anySelected && !allOpenSelected; }}
+                          disabled={openOnPage.length === 0 || busy}
+                          onChange={toggleAllOpen}
+                        />
+                      </th>
+                    )}
                     <th>Severity</th>
                     <th>Description</th>
                     <th>Asset</th>
@@ -347,6 +524,19 @@ export default function DeficienciesPage() {
                     const woId = def.workOrder?.id || def.workOrderId || null;
                     return (
                       <tr key={def.id} style={isResolved ? { opacity: 0.75 } : undefined}>
+                        {canResolve && (
+                          <td style={{ width: 32 }}>
+                            {!isResolved && (
+                              <input
+                                type="checkbox"
+                                aria-label={`Select deficiency: ${(def.description || '').slice(0, 60)}`}
+                                checked={selectedIds.has(def.id)}
+                                disabled={busy}
+                                onChange={() => toggleOne(def.id)}
+                              />
+                            )}
+                          </td>
+                        )}
                         <td><SeverityChip severity={def.severity} /></td>
                         <td style={{ maxWidth: 380 }}>
                           <div style={{ fontSize: 'var(--font-size-ui)', fontWeight: 500, lineHeight: 1.4 }}>
@@ -424,9 +614,27 @@ export default function DeficienciesPage() {
                 </tbody>
               </table>
             </div>
-            {total > deficiencies.length && (
-              <div style={{ padding: '10px 16px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' }}>
-                Showing the first {deficiencies.length} of {total} — narrow the filters to see the rest.
+            {(totalPages > 1 || total > deficiencies.length) && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 16px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                  {total.toLocaleString()} total · page {page} of {totalPages}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button" className="btn btn-secondary btn-sm"
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                  >
+                    {String.fromCharCode(8592)} Prev
+                  </button>
+                  <button
+                    type="button" className="btn btn-secondary btn-sm"
+                    disabled={page >= totalPages || loading}
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  >
+                    Next {String.fromCharCode(8594)}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -439,6 +647,16 @@ export default function DeficienciesPage() {
           busy={busy}
           onClose={() => { if (!busy) setResolving(null); }}
           onConfirm={handleResolve}
+        />
+      )}
+
+      {bulkOpen && (
+        <BulkResolveModal
+          count={selectedIds.size}
+          requireNote={selectedHasImmediate}
+          busy={busy}
+          onClose={() => { if (!busy) setBulkOpen(false); }}
+          onConfirm={handleBulkResolve}
         />
       )}
 

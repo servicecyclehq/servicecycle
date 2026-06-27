@@ -12,7 +12,7 @@ For the full technical reference, start with `docs/ARCHITECTURE.md`. For deploy 
 
 ## Stack in one sentence
 
-Node 20 / Express 4 / TypeScript on the server; Prisma 5 / PostgreSQL 16 for the DB; React 18 / Vite 5 on the client; Docker Compose on a single DigitalOcean VPS (198.211.99.45); Resend for email; Anthropic Claude + Gemini + Groq in a cascade for AI.
+Node 20 / Express 4 / TypeScript on the server; Prisma 5 / PostgreSQL 16 for the DB; React 18 / Vite 5 on the client; Docker Compose on a single DigitalOcean VPS (198.211.99.45); Brevo for email (transactional + inbound); a provider-configurable AI layer (Cloudflare Workers AI is the demo default; Anthropic / OpenAI / Azure OpenAI / Gemini are selectable) with a Cloudflare → HuggingFace → Groq cascade fallback.
 
 Everything runs in one docker-compose.yml. There is no Kubernetes. That's intentional at this stage — keep it simple, keep it shippable. When volume warrants it, the natural split is server → Fly.io or DigitalOcean App Platform, DB → DigitalOcean Managed Postgres, client → Cloudflare Pages.
 
@@ -22,7 +22,7 @@ Everything runs in one docker-compose.yml. There is no Kubernetes. That's intent
 
 ### 1. Tenant isolation is the most critical invariant
 
-Every DB table that holds customer data has an `accountId` column. Every query must filter by it. The Prisma middleware in `server/middleware/multiTenantMiddleware.ts` enforces this automatically on most read operations, but direct `prisma.X.findFirst` calls without a `where.accountId` are the attack surface.
+Every DB table that holds customer data has an `accountId` column. Every query must filter by it. Account scoping is enforced per-route: the auth layer in `server/middleware/auth.ts` resolves the caller's `accountId` and routes apply it in their `where` clauses. Direct `prisma.X.findFirst` calls without a `where.accountId` are the attack surface.
 
 The IDOR test suite (`server/tests/idor.test.js`) was written specifically because a stale cross-account query would be catastrophic. Run it after any route changes. If you find a query that's missing `accountId`, stop and fix it before shipping.
 
@@ -42,7 +42,7 @@ The chain is per-account. If you're doing a data migration that touches Activity
 
 ## What the codebase does well
 
-- **Domain logic is correct.** The NFPA 70B interval calculations, arc-flash label rules, and NFPA 70E study-expiry logic have been cross-referenced against the actual standards. The arc-flash module (`server/routes/arcFlash.ts`, `server/lib/arcFlashLabels.ts`) is the most domain-dense part of the codebase — read the comments before touching it.
+- **Domain logic is correct.** The NFPA 70B interval calculations, arc-flash label rules, and NFPA 70E study-expiry logic have been cross-referenced against the actual standards. The arc-flash module (`server/routes/arcFlashIngest.ts`, `server/routes/v1/arcFlash.ts`, and `server/lib/arcFlashLabel.ts` / `server/lib/arcFlashLabelDoc.ts`) is the most domain-dense part of the codebase — read the comments before touching it.
 - **The public API is clean.** `/api/v1` is versioned, scoped (read/write), rate-limited, idempotent-key-aware, and fully OpenAPI 3.1 documented. The API changelog (`docs/api/CHANGELOG.md`) tracks every breaking and additive change.
 - **Test coverage is solid on the critical paths.** ~500 integration tests run against a real Postgres instance. Auth, IDOR, field isolation, arc-flash label generation, export, and the v1 API are all covered. The unit tests (mocked Prisma) are less comprehensive — don't rely on them for security properties.
 - **CI is wired.** Every PR runs `tsc --noEmit` + `npm audit --audit-level=high` + jest (unit + integration). GitHub Actions config at `.github/workflows/ci.yml`. Dependabot opens weekly PRs for npm and GitHub Actions deps.
@@ -67,7 +67,7 @@ The chain is per-account. If you're doing a data migration that touches Activity
 
 **AI budget guard is advisory.** `server/lib/aiBudgetGuard.ts` tracks token spend against a per-account monthly cap and soft-blocks when the cap is hit. It does not enforce hard limits at the infrastructure level. If Anthropic bills spike, the guard will log warnings but won't stop inference until the next request after it detects the breach.
 
-**The reseed script requires a terminal.** `server/prisma/reseed.ts` must be run locally or via a terminal session on the VPS. It is not wired to any API endpoint (intentionally, for security). You cannot trigger it from the admin UI.
+**Demo reseed runs from a terminal (or the ops MCP).** The seed scripts are `server/scripts/seed-standards.js` then `server/scripts/seed-demo.js`, run via `docker compose exec server …` (see DEPLOY_RUNBOOK §6). They are intentionally not wired to a user-facing API endpoint. The VPS ops MCP exposes a `reseed_demo` tool that runs them on the droplet without a manual SSH session, so an authorized operator can refresh the live demo without one specific person's terminal.
 
 ### Low priority / deferred by design
 
@@ -93,7 +93,7 @@ These are parked, not forgotten. Don't rebuild them without reading why:
 
 ## The AI cascade
 
-AI-assisted features use a three-tier cascade: Anthropic Claude (primary) → Google Gemini (fallback) → Groq (fast fallback for latency-sensitive paths). The cascade logic is in `server/lib/aiCascade.ts`. Customers can also bring their own API key (`BYO_AI` feature).
+AI-assisted features use a provider-configurable layer (`AI_PROVIDER`, default `cloudflare` on the demo; `anthropic` / `openai` / `azure_openai` / `gemini` selectable). For the `ask` / `classify` tasks on the Cloudflare provider there is a three-tier cascade: Cloudflare Workers AI → HuggingFace → Groq (every other provider/task is a single-element chain). The logic is in `server/lib/ai.ts` (the per-provider adapters live under `server/lib/aiProviders/`). Customers can also bring their own API key (`BYO_AI` feature).
 
 The cascade is gated by `AI_ENABLED` env var (set to `"false"` to run in fully deterministic mode — useful for testing). `aiBudgetGuard.ts` tracks spend against the `accountSetting.aiMonthlyBudgetUsd` field.
 
@@ -103,7 +103,7 @@ AI is used for: document ingest (PDF gap-fill), arc-flash study import (IEEE 158
 
 ## The demo environment
 
-`servicecycle.app` is the live demo, gated behind basic auth. The demo data is seeded from `server/prisma/reseed.ts` — a deterministic reseed script that populates realistic equipment records, arc-flash studies, deficiencies, work orders, and telemetry data for a plausible mid-sized industrial facility. The seed is designed to make every dashboard tell a compelling story (compliance gaps, overdue items, procurement risk flags, arc-flash label currency issues).
+`servicecycle.app` is the live demo, gated behind basic auth. The demo data is seeded from `server/scripts/seed-demo.js` (with `server/scripts/seed-arcflash-trend-demo.js` for the arc-flash trend) — deterministic seed scripts that populate realistic equipment records, arc-flash studies, deficiencies, work orders, and telemetry data for a plausible mid-sized industrial facility. The seed is designed to make every dashboard tell a compelling story (compliance gaps, overdue items, procurement risk flags, arc-flash label currency issues).
 
 `DEMO_MODE` env var, when set, enables small UI affordances that make the demo smoother (e.g. the demo scan meter). Do not ship DEMO_MODE behavior to a production multi-tenant deployment — it relaxes some guard rails.
 
@@ -117,8 +117,8 @@ The demo punch list is at `docs/DEMO_FIXES.md`. As of the last session, all item
 - [ ] Read `docs/DEPLOY_RUNBOOK.md` — understand the deploy pipeline before you touch it
 - [ ] Run `docker compose up -d` locally with the `.env.example` values — confirm the full stack boots
 - [ ] Run `npm test` in `server/` — confirm all ~500 tests pass on your machine
-- [ ] Read `server/middleware/multiTenantMiddleware.ts` — understand the tenant isolation layer
-- [ ] Read `server/lib/arcFlashLabels.ts` and its comments — the most domain-dense code in the repo
+- [ ] Read `server/middleware/auth.ts` — understand how per-route `accountId` scoping (tenant isolation) is enforced
+- [ ] Read `server/lib/arcFlashLabel.ts` / `server/lib/arcFlashLabelDoc.ts` and their comments — the most domain-dense code in the repo
 - [ ] Review the open items in `docs/RISK_REGISTER.md` — R-03 (managed DB) is the first infrastructure investment to plan
 - [ ] Confirm `MASTER_KEY` is stored securely outside the repo and the VPS (key management is your first security task)
 - [ ] Set up Dependabot review process — PRs open weekly, don't let them pile up
@@ -128,6 +128,6 @@ The demo punch list is at `docs/DEMO_FIXES.md`. As of the last session, all item
 
 ## Who to call if things break
 
-There is currently one engineer (the founding engineer). Post-acquisition, the intent is a clean handoff — the docs, tests, and runbooks are the knowledge transfer. If you need context on a specific design decision, the session notes in `docs/sessions/` record the reasoning behind major features as they were built.
+The engineering function has been a single founding engineer to date — a bus-factor-of-one that an acquirer should close early by designating a primary maintainer plus a backup operator and moving all infrastructure credentials into a shared secret manager (see the operator-continuity note in `docs/INCIDENT_RESPONSE.md`). Post-acquisition, the intent is a clean handoff — the docs, tests, and runbooks are the knowledge transfer. If you need context on a specific design decision, the session notes in `docs/sessions/` record the reasoning behind major features as they were built.
 
 For security incidents: `docs/INCIDENT_RESPONSE.md`. For key rotation: `docs/KEY_ROTATION.md`. For rollback after a bad deploy: `docs/DEPLOY_RUNBOOK.md` §Rollback.

@@ -649,7 +649,16 @@ function MitigationCard({ assetId, mitigations, current, canWrite }) {
             <div style={{ marginTop: 10, fontSize: '0.82rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px 16px' }}>
               <Field label="Incident energy after" value={`${roi.ieAfterCalCm2} cal/cm²`} />
               <Field label="Reduced by" value={`${roi.calReduced} cal/cm²`} />
-              <Field label="Clears DANGER (>40)?" value={roi.removesDanger ? 'Yes' : 'No'} />
+              {/* [DEMO-8-9] "Clears DANGER (>40)?" is only meaningful when the bus
+                  is DANGER because of incident energy itself (IE > 40). For a bus
+                  that is DANGER from system voltage (>600 V) the IE is already <40,
+                  so reducing energy can never flip that label and a bare "No" reads
+                  as the feature being broken. Show the honest headline instead: the
+                  >40 question when it applies, otherwise the PPE-category drop that
+                  energy reduction actually achieves. */}
+              {roi.ieDrivenDanger
+                ? <Field label="Clears DANGER (>40)?" value={roi.removesDanger ? 'Yes' : 'No'} />
+                : <Field label="Lowers required PPE?" value={roi.ppeImproved ? 'Yes' : 'No'} />}
               <Field label="PPE category" value={`${roi.ppeBefore ?? '—'} → ${roi.ppeAfter ?? '—'}`} />
               {roi.costPerCalReduced != null && <Field label="$ / cal reduced" value={`$${roi.costPerCalReduced}`} />}
             </div>

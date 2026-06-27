@@ -47,11 +47,20 @@ async function buildCfoReportData(prisma: any, accountId: string) {
   const quarterAgo = new Date(now.getTime() - 90 * MS_PER_DAY);
   const assetScope = { archivedAt: null, inService: true };
 
-  const [account, gap, defsBySeverity, wosThisQuarter, defsOpened, defsClosed, snapshots, openDefs, debt] = await Promise.all([
+  const [account, gap, defsBySeverity, wosThisQuarter, quarterWoCosts, defsOpened, defsClosed, snapshots, openDefs, debt] = await Promise.all([
     prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } }),
     buildComplianceGap(prisma, accountId, {}),
     prisma.deficiency.groupBy({ by: ['severity'], where: { accountId, resolvedAt: null }, _count: true }),
     prisma.workOrder.count({ where: { accountId, status: 'COMPLETE', completedDate: { gte: quarterAgo, lte: now } } }),
+    // CFO-8-13: realized spend lives on work orders in CENTS (laborCostCents +
+    // Σ partsUsed.unitCostCents × quantityUsed). Fetch the quarter's completed
+    // WOs with their cost fields so we can report ACTUAL spend (cents→dollars,
+    // converted once) alongside the repairCostEstimate forecast (already dollars)
+    // — the two had never been reconciled and live in different units.
+    prisma.workOrder.findMany({
+      where: { accountId, status: 'COMPLETE', completedDate: { gte: quarterAgo, lte: now } },
+      select: { laborCostCents: true, partsUsed: { select: { unitCostCents: true, quantityUsed: true } } },
+    }),
     prisma.deficiency.count({ where: { accountId, createdAt: { gte: quarterAgo, lte: now } } }),
     prisma.deficiency.count({ where: { accountId, resolvedAt: { gte: quarterAgo, lte: now } } }),
     prisma.complianceSnapshot.findMany({
@@ -66,8 +75,23 @@ async function buildCfoReportData(prisma: any, accountId: string) {
   const severity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
   for (const r of defsBySeverity) severity[r.severity] = r._count;
 
-  // Estimated remediation spend: sum repairCostEstimate over the distinct assets
-  // that carry at least one open deficiency. Honest about coverage.
+  // CFO-8-13: sum realized work-order spend in CENTS, then convert to dollars
+  // ONCE so it shares the same unit as every other figure in this report.
+  let realizedCents = 0;
+  for (const wo of (quarterWoCosts as any[])) {
+    realizedCents += Number(wo.laborCostCents) || 0;
+    for (const p of (wo.partsUsed || [])) {
+      realizedCents += (Number(p.unitCostCents) || 0) * (Number(p.quantityUsed) || 0);
+    }
+  }
+  const realizedQuarterSpend = Math.round(realizedCents / 100); // dollars
+
+  // Estimated remediation spend: sum repairCostEstimate (DOLLARS) over the
+  // distinct assets that carry at least one open deficiency. CFO-8-8: this is a
+  // KNOWN-SCOPED SUBSET ONLY — assets without an estimate are excluded, so the
+  // figure is a floor, not the full exposure. We surface the coverage counts
+  // (assetsWithCostEstimate of assetsWithOpenDeficiencies) so the PDF can show
+  // the basis with equal visual weight rather than burying it.
   const assetIds = Array.from(new Set(openDefs.map((d: any) => d.assetId)));
   let estimatedSpend = 0;
   let assetsWithEstimate = 0;
@@ -80,14 +104,28 @@ async function buildCfoReportData(prisma: any, accountId: string) {
       if (a.repairCostEstimate != null) { estimatedSpend += Number(a.repairCostEstimate); assetsWithEstimate++; }
     }
   }
+  const assetsWithoutEstimate = assetIds.length - assetsWithEstimate;
 
-  // Compliance trajectory: derive a rate from each snapshot's stats when
-  // possible (current / (current + overdue)). Oldest first for a left-to-right read.
+  // Compliance trajectory (CFO-8-12): the snapshot row is the tamper-evident,
+  // hash-anchored record of what the customer was shown on that date, so the
+  // trend MUST reflect the snapshot's own numbers — never a freshly-recomputed
+  // rate under a different definition. Prefer a rate the snapshot recorded
+  // as-stored (stats.complianceRate / stats.rate) if present; otherwise derive
+  // it with the SAME formula the snapshot's PDF used — summarizeSchedules:
+  // schedule compliance = current / (current + overdue), one decimal, excluding
+  // unbaselined (this is the documented "schedule compliance" basis labeled in
+  // the PDF below). Oldest first for a left-to-right read.
   const trajectory = snapshots.map((s: any) => {
     const st = s.stats || {};
-    const cur = Number(st.current ?? 0), ovd = Number(st.overdue ?? 0);
-    const denom = cur + ovd;
-    const rate = denom > 0 ? Math.round((cur / denom) * 1000) / 10 : null;
+    let rate: number | null;
+    const storedRate = st.complianceRate ?? st.rate;
+    if (storedRate != null && Number.isFinite(Number(storedRate))) {
+      rate = Number(storedRate);
+    } else {
+      const cur = Number(st.current ?? 0), ovd = Number(st.overdue ?? 0);
+      const denom = cur + ovd;
+      rate = denom > 0 ? Math.round((cur / denom) * 1000) / 10 : null;
+    }
     return { date: s.createdAt, rate, assets: st.assets ?? null, overdue: st.overdue ?? null };
   }).reverse();
 
@@ -102,11 +140,14 @@ async function buildCfoReportData(prisma: any, accountId: string) {
       workOrdersCompleted: wosThisQuarter,
       deficienciesOpened: defsOpened,
       deficienciesClosed: defsClosed,
+      realizedSpend: realizedQuarterSpend, // CFO-8-13: ACTUAL WO spend, dollars
     },
     spend: {
-      estimatedRemediation: estimatedSpend,
+      estimatedRemediation: estimatedSpend, // dollars; KNOWN-SCOPED SUBSET only
       assetsWithOpenDeficiencies: assetIds.length,
       assetsWithCostEstimate: assetsWithEstimate,
+      assetsWithoutCostEstimate: assetsWithoutEstimate, // CFO-8-8: uncovered count
+      coverageComplete: assetIds.length > 0 && assetsWithoutEstimate === 0,
     },
     debtPlan: {
       year1: debt.plan.year1,
@@ -189,7 +230,9 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
       const q = data.quarter;
       doc.font(FONT_REG).fontSize(11).fillColor(COLORS.textMuted);
       doc.text(`Work orders completed: ${q.workOrdersCompleted}`, PAGE.margin, y); y = doc.y + 2;
-      doc.text(`Deficiencies opened: ${q.deficienciesOpened}    closed: ${q.deficienciesClosed}`, PAGE.margin, y); y = doc.y + 16;
+      doc.text(`Deficiencies opened: ${q.deficienciesOpened}    closed: ${q.deficienciesClosed}`, PAGE.margin, y); y = doc.y + 2;
+      // CFO-8-13: actual recorded WO spend this quarter (labor + parts, dollars).
+      doc.text(`Recorded work-order spend: ${fmtMoney(q.realizedSpend)} (labor + parts on completed WOs)`, PAGE.margin, y); y = doc.y + 16;
 
       // Open risk by severity
       doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Open risk by severity', PAGE.margin, y); y = doc.y + 8;
@@ -198,10 +241,21 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
       doc.fillColor(COLORS.danger).text(`Immediate: ${sev.IMMEDIATE}`, PAGE.margin, y, { continued: true }).fillColor(COLORS.textMuted).text(`    Recommended: ${sev.RECOMMENDED}    Advisory: ${sev.ADVISORY}`);
       y = doc.y + 16;
 
-      // Spend forecast
-      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Estimated remediation spend', PAGE.margin, y); y = doc.y + 8;
+      // Spend forecast (CFO-8-8: the headline is a KNOWN-SCOPED FLOOR, not the
+      // full exposure. Title + an equal-weight coverage line make that explicit
+      // so a board never reads the number as the total remediation cost.)
       const sp = data.spend;
+      const spendTitle = sp.coverageComplete
+        ? 'Estimated remediation spend'
+        : 'Estimated remediation spend (scoped subset — floor)';
+      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text(spendTitle, PAGE.margin, y); y = doc.y + 8;
       doc.font(FONT_BOLD).fontSize(16).fillColor(COLORS.accent).text(fmtMoney(sp.estimatedRemediation), PAGE.margin, y); y = doc.y + 4;
+      // Coverage stated at body weight (not buried in fine print) when incomplete.
+      if (!sp.coverageComplete && sp.assetsWithoutCostEstimate > 0) {
+        doc.font(FONT_BOLD).fontSize(10).fillColor(COLORS.warn)
+           .text(`Covers ${sp.assetsWithCostEstimate} of ${sp.assetsWithOpenDeficiencies} deficient asset(s); ${sp.assetsWithoutCostEstimate} have no estimate and are NOT included — true exposure is higher.`, PAGE.margin, y, { width: PAGE.contentW, lineGap: 1 });
+        y = doc.y + 4;
+      }
       doc.font(FONT_OBL).fontSize(9).fillColor(COLORS.textMuted)
          .text(`Based on ${sp.assetsWithCostEstimate} of ${sp.assetsWithOpenDeficiencies} asset(s) with open deficiencies that carry a repair-cost estimate. Assets without an estimate are not included.`, PAGE.margin, y, { width: PAGE.contentW, lineGap: 1 });
       y = doc.y + 16;

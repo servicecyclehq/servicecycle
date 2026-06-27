@@ -83,7 +83,7 @@ export default function NameplateCard({ asset, canEdit, onChanged }) {
         {hasScan && (
           <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
             {photoUrl
-              ? <img src={photoUrl} alt="nameplate" style={{ width: 200, height: 150, objectFit: 'cover', borderRadius: 8, border: '1px solid #e5e7eb', flex: '0 0 auto' }} />
+              ? <img src={photoUrl} alt="Saved equipment nameplate" style={{ width: 200, height: 150, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--color-border)', flex: '0 0 auto' }} />
               : <div style={{ width: 200, height: 150, borderRadius: 8, background: 'var(--color-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)', fontSize: 12 }}>photo</div>}
             <div style={{ flex: '1 1 280px', minWidth: 0 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
