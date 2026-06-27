@@ -16,6 +16,7 @@ import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
   Smartphone, QrCode, ShieldAlert, Layers, Bolt, UploadCloud, Package, FileText,
+  TrendingUp,
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
@@ -988,6 +989,17 @@ export default function Sidebar() {
             >
               <Users {...ICON_PROPS} />
               Sales
+            </NavLink>
+          )}
+
+          {/* Revenue Intelligence — super_admin only. SC detects; CRM manages. */}
+          {user?.role === 'super_admin' && (
+            <NavLink
+              to="/admin/opportunities"
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              <TrendingUp {...ICON_PROPS} />
+              Opportunities
             </NavLink>
           )}
 

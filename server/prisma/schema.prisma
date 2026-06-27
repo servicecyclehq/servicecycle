@@ -681,6 +681,8 @@ model Site {
   primaryContactEmail String?
   primaryContactPhone String?
   notes               String?
+  oneLineDiagramOnFile Boolean   @default(false)
+  oneLineDiagramDate   DateTime?
   archivedAt          DateTime? // soft-delete; assets keep their siteId
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -3383,4 +3385,26 @@ model FailedLoginAttempt {
   @@index([email])
   @@index([attemptedAt])
   @@map("failed_login_attempts")
+}
+
+/// Platform-level pricing inputs for the Revenue Intelligence module.
+/// Single row (no accountId) -- this is platform config, not tenant data.
+/// Drives SC dollar estimates on /admin/opportunities; estimates are hidden
+/// until configured and again once the sheet goes stale (expiresAfterDays).
+model RateSheet {
+  id                              String   @id @default(uuid())
+  arcFlashStudyPerPanelCents      Int?     // $/panel for study estimate
+  arcFlashStudyMinimumCents       Int?     // floor $/site
+  arcFlashStudyMaximumCents       Int?     // cap $/site
+  pmServiceHourlyRateCents        Int?     // $/hour
+  pmVisitMinimumCents             Int?     // minimum charge per site visit
+  oneLineDiagramCreationCents     Int?     // flat $/diagram
+  equipmentReplacementRanges      Json?    // { CIRCUIT_BREAKER: {min,max}, TRANSFORMER: {min,max}, ... }
+  expiresAfterDays                Int      @default(180)
+  updatedAt                       DateTime @updatedAt
+  updatedById                     String?
+  lastConfirmedAt                 DateTime?
+  lastConfirmedById               String?
+
+  @@map("rate_sheet")
 }

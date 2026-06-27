@@ -136,6 +136,7 @@ const NewsPage                = lazyWithReload(() => import('./pages/NewsPage'))
 // Shared / admin pages
 const UsersPage               = lazyWithReload(() => import('./pages/UsersPage'));
 const AdminMetrics            = lazyWithReload(() => import('./pages/AdminMetrics')); // audit 3.2.6
+const OpportunitiesPage       = lazyWithReload(() => import('./pages/OpportunitiesPage')); // Revenue Intelligence (super_admin)
 const PermissionsPage         = lazyWithReload(() => import('./pages/PermissionsPage'));
 const AlertsPage              = lazyWithReload(() => import('./pages/AlertsPage'));
 const DisasterResponsePage    = lazyWithReload(() => import('./pages/DisasterResponsePage')); // disaster response mode
@@ -501,10 +502,11 @@ function AppRoutes() {
                 handles the loading state and role check inside the element. */}
             <Route path="users"       element={<RequireRole roles={['admin']}><UsersPage /></RequireRole>} />
             <Route path="permissions" element={<RequireRole roles={['admin']}><PermissionsPage /></RequireRole>} />
-            <Route path="settings"    element={<RequireRole roles={['admin']}><SettingsPage /></RequireRole>} />
+            <Route path="settings"    element={<RequireRole roles={['admin', 'super_admin']}><SettingsPage /></RequireRole>} />
             <Route path="activity"    element={<RequireRole roles={['admin', 'manager']}><ActivityLogPage /></RequireRole>} />
             <Route path="admin/early-access" element={<RequireRole roles={['admin']} denyOnDemo><EarlyAccessLeadsPage /></RequireRole>} />
             <Route path="admin/metrics"      element={<RequireRole roles={['super_admin']}><AdminMetrics /></RequireRole>} />
+            <Route path="admin/opportunities" element={<RequireRole roles={['super_admin']}><OpportunitiesPage /></RequireRole>} />
             {/* 2026-05-10 review M3: in-shell 404 so unknown paths under an
                 authenticated session don't silently redirect to /dashboard
                 (which masked broken links from emails, old bookmarks, and

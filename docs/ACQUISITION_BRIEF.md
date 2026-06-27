@@ -57,6 +57,28 @@ Once a contractor's report archive is loaded, switching costs are high: the equi
 
 ---
 
+## Revenue Intelligence — SC detects, the CRM manages
+
+ServiceCycle ships a super_admin-only **Revenue Intelligence** surface: a read-only, cross-tenant field-intelligence feed that surfaces condition-driven pull-through opportunities the platform can see and a CRM cannot. It is deliberately *not* a pipeline tool.
+
+**SC is the detector; the CRM is the manager.** The module has no stages, owners, forecasts, or close dates — it never duplicates pipeline management. It detects, scores, and hands off. The rationale is structural: a strategic acquirer already owns a CRM (Salesforce, Dynamics, HubSpot), and re-implementing one inside SC would create a competing system of record and a perpetual data-sync liability. SC's defensible contribution is the **signal** — the cross-tenant, condition-derived opportunity no CRM can compute, because the CRM does not hold equipment-health data. The single editable field on the surface, "CRM Value," is rep-owned and never pre-populated from SC's estimate, so the number that lands in the CRM is always owned by a human.
+
+**Pull-through revenue for OEM channel programs.** For an OEM acquirer this is the channel-enablement layer. Every panel an OEM instrument tests becomes a monitored asset; when an arc-flash study expires, a safety-critical breaker or transformer is modified after the study, or a protective device drifts out of its study assumptions, SC surfaces it as a *scored* lead with an estimated dollar range and a resolved customer contact — ready to route to the channel partner's or service org's CRM. The instrument sale seeds recurring service pull-through, and the platform makes the next service call a data-driven signal instead of a cold call. The planning-horizon framing (arc-flash studies require 2–4 months of lead time) converts "compliance is due" into "act now, you may already be inside the window."
+
+**The opportunity lifecycle is condition-driven, not time-driven.** Legacy renewal engines fire on a calendar — a study turns five years old, send a reminder. SC fires on **condition**: equipment changed after the last study, devices drifted from their study settings, IMMEDIATE deficiencies went unresolved, nameplate data is incomplete, no one-line diagram is on file. Each is a real, defensible reason the field data has materially changed — not an arbitrary date. The composite score (0–100) blends six condition signals — expiry horizon, post-study system changes, drift-flagged devices, protective-device PM currency, nameplate completeness, and one-line presence — so the highest-liability accounts rank first and the feed reads as risk triage, not a mail-merge.
+
+**Rate-sheet confirmation as an audit trail — defensible pricing integrity.** Dollar estimates appear only when the platform rate sheet is *fresh*: configured and confirmed within a validity window (default 180 days). A dedicated "Confirm Rates Are Current" action — separate from editing the rates — re-affirms them and writes a hash-chained ActivityLog entry snapshotting the values, the actor, and the timestamp. Once the sheet goes stale, estimates auto-hide from the UI and from CSV exports. The effect is that every exported dollar figure is traceable to a dated, attributed pricing basis — defensible under diligence and in front of a customer.
+
+**CRM integration roadmap (funded upside).** The shipped module resolves contacts, scores opportunities, and exports them to CSV with a hardcoded `Lead Source = "ServiceCycle Field Intelligence"`. The handoff path to native integration is scoped and intentionally deferred:
+- **`OpportunityReview` table** — persist review state (accepted / rejected + reason, rep-entered CRM value, exported-at) so triage survives sessions and de-dupes against what is already in the acquirer's CRM.
+- **Native connectors** — Salesforce, Dynamics 365, and HubSpot lead/opportunity creation with field mapping.
+- **Zapier / Make templates** — no-code routing for smaller channel partners.
+- **`/api/v1/opportunities`** — a versioned, API-key-scoped public endpoint mirroring the feed for scheduled CRM polling. The v1 REST API, scoped keys, webhooks (HMAC-signed), and Idempotency-Key support already exist; this endpoint is an additive surface, not new infrastructure.
+
+This keeps ServiceCycle firmly in the detector role: it emits signal; the acquirer's system of record decides what to do with it.
+
+---
+
 ## Acquisition angles
 
 ### PE contractor roll-up

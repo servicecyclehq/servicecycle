@@ -228,6 +228,7 @@ const backupRoutes              = require('./routes/backup');
 const documentRoutes            = require('./routes/documents');
 const setupRoutes               = require('./routes/setup'); // (S8) first-run wizard
 const adminRoutes               = require('./routes/admin'); // (A4) demo reset endpoint
+const adminOpportunitiesRoutes  = require('./routes/adminOpportunities'); // Revenue Intelligence (super_admin)
 const adminAuditChainRoutes     = require('./routes/adminAuditChain'); // Pass-6 W4 MT-127 chain verify endpoint
 const adminPartnerOrgsRoutes    = require('./routes/adminPartnerOrgs'); // super-admin PartnerOrg management
 const reportRoutes              = require('./routes/reports'); // compliance reports (stub — later session)
@@ -1405,6 +1406,9 @@ app.use('/api/admin',             authenticateToken, adminRoutes);
 app.use('/api/admin/audit-chain', authenticateToken, adminAuditChainRoutes);
 const { requireAdmin, requireSuperAdmin } = require('./middleware/roles');
 app.use('/api/admin/partner-orgs', authenticateToken, requireSuperAdmin, adminPartnerOrgsRoutes);
+// Revenue Intelligence — super_admin-only opportunities feed + platform rate sheet.
+// requireSuperAdmin is enforced per-route inside the router; cross-tenant by design.
+app.use('/api/admin',             authenticateToken, adminOpportunitiesRoutes);
 
 // T2-N3 (audit-2 2026-05-22): admin endpoint to trigger deep restore test on demand.
 // POST /api/admin/restore-test/deep -- admin only; no body required.

@@ -6,6 +6,7 @@ import UsersPage from './UsersPage';
 import PermissionsPage from './PermissionsPage';
 import SettingsTabRouter from './settings/SettingsTabRouter.jsx'; // v0.91 Phase 1a
 import ApiKeysSection  from '../components/settings/ApiKeysSection.jsx';  // v0.91 Phase 1b
+import RateSheetSection from '../components/settings/RateSheetSection.jsx'; // Revenue Intelligence (super_admin)
 import WebhooksSection from '../components/settings/WebhooksSection.jsx'; // v0.91 Phase 1b
 import ImportWebhookSection from '../components/settings/ImportWebhookSection.jsx'; // import event webhook
 import SlackIntegrationSection from '../components/settings/SlackIntegrationSection.jsx'; // v0.91 Phase 1b cont'd
@@ -298,6 +299,13 @@ export default function SettingsPage() {
           {!isAdmin && ' (View only — admin access required to change settings.)'}
         </p>
       </div>
+
+      {/* Revenue Intelligence rate sheet — super_admin only (platform pricing). */}
+      {user?.role === 'super_admin' && (
+        <div style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
+          <RateSheetSection />
+        </div>
+      )}
 
       <SettingsTabRouter
         activeSubTab={activeTab}
