@@ -386,6 +386,7 @@ function clip(s) {
 function drawFooter(doc, meta, pageNum) {
   if (doc._renderingFooter) return;
   doc._renderingFooter = true;
+  const sx = doc.x, sy = doc.y; // cursor-neutral: footer draws below the bottom margin
   try {
     const y = doc.page.height - PAGE.margin + 10;
     doc.moveTo(PAGE.margin, y).lineTo(doc.page.width - PAGE.margin, y)
@@ -396,13 +397,11 @@ function drawFooter(doc, meta, pageNum) {
          PAGE.margin, y + 4,
          { align: 'left', lineBreak: false }
        );
-    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
-       .text(
-         `Page ${pageNum}`,
-         PAGE.margin, y + 4,
-         { align: 'right', lineBreak: false }
-       );
+    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8);
+    const pageLabel = `Page ${pageNum}`;
+    doc.text(pageLabel, doc.page.width - PAGE.margin - doc.widthOfString(pageLabel), y + 4, { lineBreak: false });
   } finally {
+    doc.x = sx; doc.y = sy;
     doc._renderingFooter = false;
   }
 }
@@ -511,15 +510,24 @@ function warnBox(doc, ctx, label, text) {
 // Generic measured-row table with page-break + repeated header
 // (compliancePdf drawAssetTaskTable pattern, generalized over `cols`).
 function drawTableHeader(doc, cols, y) {
-  doc.rect(PAGE.margin, y, PAGE.contentW, 16).fill(COLORS.bgDark);
+  // Measure the tallest (possibly wrapping) column label so a 2-line header band
+  // grows to fit it; otherwise the first data row overlaps the wrapped header.
+  doc.font(FONT_BOLD).fontSize(7.5);
+  let labelH = 0;
+  for (const col of cols) {
+    const hh = doc.heightOfString(col.label, { width: col.w - CELL_PAD * 2, lineGap: 1 });
+    if (hh > labelH) labelH = hh;
+  }
+  const bandH = Math.max(16, labelH + 7);
+  doc.rect(PAGE.margin, y, PAGE.contentW, bandH).fill(COLORS.bgDark);
   let x = PAGE.margin;
   doc.font(FONT_BOLD).fontSize(7.5).fillColor(COLORS.textOnDark);
   for (const col of cols) {
-    doc.text(col.label, x + CELL_PAD, y + 4, { width: col.w - CELL_PAD * 2, lineBreak: false });
+    doc.text(col.label, x + CELL_PAD, y + 4, { width: col.w - CELL_PAD * 2, lineGap: 1 });
     x += col.w;
   }
   doc.fillColor(COLORS.text);
-  return y + 16;
+  return y + bandH;
 }
 
 function table(doc, ctx, cols, rows) {

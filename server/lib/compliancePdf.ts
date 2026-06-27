@@ -112,6 +112,9 @@ function statusLabel(status) {
 function drawFooter(doc, meta, pageNum) {
   if (doc._renderingFooter) return;
   doc._renderingFooter = true;
+  // Cursor-neutral: the footer draws below the bottom margin, so restore doc.x/y
+  // afterwards or the next content write auto-breaks to a fresh page.
+  const sx = doc.x, sy = doc.y;
   try {
     const y = doc.page.height - PAGE.margin + 10;
     doc.moveTo(PAGE.margin, y).lineTo(doc.page.width - PAGE.margin, y)
@@ -122,13 +125,13 @@ function drawFooter(doc, meta, pageNum) {
          PAGE.margin, y + 4,
          { align: 'left', lineBreak: false }
        );
-    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
-       .text(
-         `Page ${pageNum}`,
-         PAGE.margin, y + 4,
-         { align: 'right', lineBreak: false }
-       );
+    // Right-align by computed x. A width + align:'right' lets pdfkit flow the
+    // text, and a flow below the bottom margin auto-adds a blank page.
+    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8);
+    const pageLabel = `Page ${pageNum}`;
+    doc.text(pageLabel, doc.page.width - PAGE.margin - doc.widthOfString(pageLabel), y + 4, { lineBreak: false });
   } finally {
+    doc.x = sx; doc.y = sy;
     doc._renderingFooter = false;
   }
 }
