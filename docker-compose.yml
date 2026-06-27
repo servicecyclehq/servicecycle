@@ -183,7 +183,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.75'
+          cpus: '2'
           memory: 1g
           pids: 256
     ulimits:

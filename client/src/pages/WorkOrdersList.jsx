@@ -15,6 +15,7 @@ import { Plus, ClipboardList } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import EmptyState from '../components/EmptyState';
+import Pagination from '../components/Pagination';
 import { useFromState } from '../components/BackLink';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -564,17 +565,13 @@ export default function WorkOrdersList() {
             </div>
 
             {totalPages > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
-                <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                  {String.fromCharCode(8592)} Prev
-                </button>
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                  Page {page} of {totalPages}
-                </span>
-                <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                  Next {String.fromCharCode(8594)}
-                </button>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                label={`Page ${page} of ${totalPages}`}
+                onPrev={() => setPage(p => p - 1)}
+                onNext={() => setPage(p => p + 1)}
+              />
             )}
           </div>
         )}

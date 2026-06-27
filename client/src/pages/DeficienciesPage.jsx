@@ -21,6 +21,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
+import Pagination from '../components/Pagination';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { SEVERITY_META, assetLabel, fmtDate } from '../lib/equipment';
 
@@ -615,27 +616,14 @@ export default function DeficienciesPage() {
               </table>
             </div>
             {(totalPages > 1 || total > deficiencies.length) && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 16px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                  {total.toLocaleString()} total · page {page} of {totalPages}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button
-                    type="button" className="btn btn-secondary btn-sm"
-                    disabled={page <= 1 || loading}
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                  >
-                    {String.fromCharCode(8592)} Prev
-                  </button>
-                  <button
-                    type="button" className="btn btn-secondary btn-sm"
-                    disabled={page >= totalPages || loading}
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  >
-                    Next {String.fromCharCode(8594)}
-                  </button>
-                </div>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                disabled={loading}
+                label={`${total.toLocaleString()} total · page ${page} of ${totalPages}`}
+                onPrev={() => setPage(p => Math.max(1, p - 1))}
+                onNext={() => setPage(p => Math.min(totalPages, p + 1))}
+              />
             )}
           </div>
         )}

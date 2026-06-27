@@ -68,7 +68,16 @@ export default function PublicArcFlashLabel() {
     color: 'var(--color-text)',
   };
 
-  if (state === 'loading') return <div style={wrap}>Loading label…</div>;
+  if (state === 'loading') return (
+    <div style={{ ...wrap, textAlign: 'center', paddingTop: 48 }} role="status" aria-live="polite">
+      <span aria-hidden="true" style={{
+        display: 'inline-block', width: 22, height: 22,
+        border: '2.5px solid var(--color-border)', borderTopColor: 'var(--color-primary)',
+        borderRadius: '50%', animation: 'spin 0.9s linear infinite',
+      }} />
+      <div style={{ marginTop: 12, fontSize: '0.86rem', color: 'var(--color-text-secondary)' }}>Loading label…</div>
+    </div>
+  );
   if (state === 'notfound') return <div style={wrap}><h1 style={{ fontSize: '1.2rem' }}>Label not found</h1><p style={{ color: 'var(--color-text-secondary)' }}>This arc-flash label is no longer available. Check with the facility for a current label.</p></div>;
   if (state === 'error') return <div style={wrap}><h1 style={{ fontSize: '1.2rem' }}>Something went wrong</h1><p style={{ color: 'var(--color-text-secondary)' }}>Could not load this label. Please try again.</p></div>;
 

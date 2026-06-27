@@ -23,6 +23,7 @@ import {
 import { kbdActivate } from '../lib/a11y';
 import api from '../api/client';
 import ColumnPicker from '../components/ColumnPicker';
+import Pagination from '../components/Pagination';
 import ColumnFilterInput from '../components/ColumnFilterInput';
 import ColumnDateRangeButton from '../components/ColumnDateRangeButton';
 import SavedViewsMenu from '../components/SavedViewsMenu';
@@ -513,28 +514,14 @@ export default function AlertsPage() {
                 The "of N" total is the server's true open-alert count (reconciles
                 with the sidebar bell). */}
             {(totalPages > 1 || rangeEnd < totalCount) && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 12, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                  Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {totalCount.toLocaleString()} open alert{totalCount !== 1 ? 's' : ''}
-                  {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ''}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button
-                    type="button" className="btn btn-secondary btn-sm"
-                    disabled={page <= 1 || loading}
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                  >
-                    {String.fromCharCode(8592)} Prev
-                  </button>
-                  <button
-                    type="button" className="btn btn-secondary btn-sm"
-                    disabled={page >= totalPages || loading}
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  >
-                    Next {String.fromCharCode(8594)}
-                  </button>
-                </div>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                disabled={loading}
+                label={`Showing ${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${totalCount.toLocaleString()} open alert${totalCount !== 1 ? 's' : ''}${totalPages > 1 ? ` · page ${page} of ${totalPages}` : ''}`}
+                onPrev={() => setPage(p => Math.max(1, p - 1))}
+                onNext={() => setPage(p => Math.min(totalPages, p + 1))}
+              />
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, paddingTop: 8 }}>

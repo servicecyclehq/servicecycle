@@ -178,9 +178,11 @@ function drawFooter(doc: any, meta: any, pageNum: number) {
 function statCard(doc: any, x: number, y: number, w: number, value: string, label: string, color: string) {
   const h = 56;
   doc.rect(x, y, w, h).fill(COLORS.cardBg);
+  // Color-coded top accent stripe makes the three KPIs read as a dashboard row.
+  doc.rect(x, y, w, 3).fill(color);
   doc.rect(x, y, w, h).strokeColor(COLORS.border).lineWidth(0.75).stroke();
-  doc.fillColor(color).font(FONT_BOLD).fontSize(18).text(value, x, y + 10, { width: w, align: 'center', lineBreak: false });
-  doc.fillColor(COLORS.textMuted).font(FONT_REG).fontSize(8).text(label, x, y + 36, { width: w, align: 'center', lineBreak: false });
+  doc.fillColor(color).font(FONT_BOLD).fontSize(20).text(value, x, y + 12, { width: w, align: 'center', lineBreak: false });
+  doc.fillColor(COLORS.textMuted).font(FONT_REG).fontSize(7.5).text(label.toUpperCase(), x, y + 38, { width: w, align: 'center', characterSpacing: 0.5, lineBreak: false });
 }
 
 function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
@@ -202,10 +204,12 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
     doc.on('pageAdded', () => { pageNum += 1; drawFooter(doc, meta, pageNum); });
 
     try {
-      // Header band
+      // Header band — masthead with a thin accent rule for a finished, board-grade top.
       doc.rect(0, 0, doc.page.width, 96).fill(meta.brandColor || COLORS.bgDark);
-      doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(22).text('ServiceCycle', PAGE.margin, 26, { lineBreak: false });
-      doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(12).text('Quarterly Compliance & Budget Report', PAGE.margin, 56, { lineBreak: false });
+      doc.rect(0, 96, doc.page.width, 3).fill(meta.brandColor ? COLORS.bgDark : COLORS.accent);
+      doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(22).text('ServiceCycle', PAGE.margin, 24, { lineBreak: false });
+      doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(11.5).text('Quarterly Compliance & Budget Report', PAGE.margin, 54, { lineBreak: false });
+      doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(8).text('BOARD & BUDGET REVIEW', PAGE.margin, 72, { characterSpacing: 1.5, lineBreak: false });
 
       let y = 124;
       if (meta.brandName) {
@@ -226,7 +230,8 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
       y += 56 + 22;
 
       // This quarter
-      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('This quarter (last 90 days)', PAGE.margin, y); y = doc.y + 8;
+      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('This quarter (last 90 days)', PAGE.margin, y); y = doc.y + 3;
+      doc.rect(PAGE.margin, y, 28, 2).fill(COLORS.accent); y += 7;
       const q = data.quarter;
       doc.font(FONT_REG).fontSize(11).fillColor(COLORS.textMuted);
       doc.text(`Work orders completed: ${q.workOrdersCompleted}`, PAGE.margin, y); y = doc.y + 2;
@@ -235,7 +240,8 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
       doc.text(`Recorded work-order spend: ${fmtMoney(q.realizedSpend)} (labor + parts on completed WOs)`, PAGE.margin, y); y = doc.y + 16;
 
       // Open risk by severity
-      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Open risk by severity', PAGE.margin, y); y = doc.y + 8;
+      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Open risk by severity', PAGE.margin, y); y = doc.y + 3;
+      doc.rect(PAGE.margin, y, 28, 2).fill(COLORS.accent); y += 7;
       const sev = data.severity;
       doc.font(FONT_REG).fontSize(11);
       doc.fillColor(COLORS.danger).text(`Immediate: ${sev.IMMEDIATE}`, PAGE.margin, y, { continued: true }).fillColor(COLORS.textMuted).text(`    Recommended: ${sev.RECOMMENDED}    Advisory: ${sev.ADVISORY}`);
@@ -248,8 +254,9 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
       const spendTitle = sp.coverageComplete
         ? 'Estimated remediation spend'
         : 'Estimated remediation spend (scoped subset — floor)';
-      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text(spendTitle, PAGE.margin, y); y = doc.y + 8;
-      doc.font(FONT_BOLD).fontSize(16).fillColor(COLORS.accent).text(fmtMoney(sp.estimatedRemediation), PAGE.margin, y); y = doc.y + 4;
+      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text(spendTitle, PAGE.margin, y); y = doc.y + 3;
+      doc.rect(PAGE.margin, y, 28, 2).fill(COLORS.accent); y += 8;
+      doc.font(FONT_BOLD).fontSize(20).fillColor(COLORS.accent).text(fmtMoney(sp.estimatedRemediation), PAGE.margin, y); y = doc.y + 4;
       // Coverage stated at body weight (not buried in fine print) when incomplete.
       if (!sp.coverageComplete && sp.assetsWithoutCostEstimate > 0) {
         doc.font(FONT_BOLD).fontSize(10).fillColor(COLORS.warn)
@@ -265,7 +272,8 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
         if (y > BOTTOM - 90) { doc.addPage(); y = PAGE.margin; }
         const dp = data.debtPlan;
         const range = (r: any) => `${fmtMoney(r.min)} – ${fmtMoney(r.max)}`;
-        doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Maintenance debt — capital plan', PAGE.margin, y); y = doc.y + 8;
+        doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Maintenance debt — capital plan', PAGE.margin, y); y = doc.y + 3;
+        doc.rect(PAGE.margin, y, 28, 2).fill(COLORS.accent); y += 7;
         doc.font(FONT_REG).fontSize(11).fillColor(COLORS.textMuted);
         doc.text(`Fund by year 1: ${range(dp.year1)}`, PAGE.margin, y); y = doc.y + 2;
         doc.text(`Cumulative by year 3: ${range(dp.year3)}`, PAGE.margin, y); y = doc.y + 2;
@@ -277,7 +285,8 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
 
       // Compliance trajectory
       if (y > BOTTOM - 40) { doc.addPage(); y = PAGE.margin; }
-      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Compliance trajectory', PAGE.margin, y); y = doc.y + 8;
+      doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(13).text('Compliance trajectory', PAGE.margin, y); y = doc.y + 3;
+      doc.rect(PAGE.margin, y, 28, 2).fill(COLORS.accent); y += 7;
       if (!data.trajectory || data.trajectory.length === 0) {
         doc.font(FONT_OBL).fontSize(10).fillColor(COLORS.textMuted).text('No compliance snapshots recorded yet. Generate snapshots to build a trend line.', PAGE.margin, y, { width: PAGE.contentW });
         y = doc.y + 8;

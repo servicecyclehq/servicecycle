@@ -129,6 +129,17 @@ function ConfidenceChip({ confidence }) {
   );
 }
 
+// Tiny inline spinner (reuses the global `spin` keyframe) for active button states.
+function Spinner({ size = 13 }) {
+  return (
+    <span aria-hidden="true" style={{
+      display: 'inline-block', width: size, height: size, verticalAlign: '-2px', marginRight: 6,
+      border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%',
+      opacity: 0.85, animation: 'spin 0.7s linear infinite',
+    }} />
+  );
+}
+
 function SectionHeading({ children }) {
   return (
     <div style={{
@@ -672,7 +683,7 @@ export default function PhotoInspectCard({ asset, onApplied }) {
                   onClick={handleApply}
                   disabled={!anyChecked || applying}
                 >
-                  {applying ? 'Applying…' : 'Apply selected'}
+                  {applying ? <><Spinner />Applying…</> : 'Apply selected'}
                 </button>
               </>
             )}

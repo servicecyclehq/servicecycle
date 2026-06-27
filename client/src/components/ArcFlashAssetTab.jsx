@@ -59,6 +59,26 @@ const h3 = { margin: '0 0 10px', fontSize: '0.95rem' };
 const dlGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px 18px', fontSize: '0.82rem' };
 const dt = { color: 'var(--color-text-secondary)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.02em' };
 
+// Tiny inline spinner reusing the global `spin` keyframe — pairs with the
+// "Building…/Modeling…/Searching…/Working…" button labels for snappier feedback.
+function Spinner({ size = 12 }) {
+  return (
+    <span aria-hidden="true" style={{
+      display: 'inline-block', width: size, height: size, verticalAlign: '-1px', marginRight: 6,
+      border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%',
+      opacity: 0.85, animation: 'spin 0.7s linear infinite',
+    }} />
+  );
+}
+
+// Shimmer placeholder bar for the loading skeleton card.
+function SkeletonBar({ w = '100%', h = 12 }) {
+  return <span style={{
+    display: 'inline-block', width: w, height: h, borderRadius: 4,
+    background: 'var(--color-border)', animation: 'sc-shimmer 1.2s ease-in-out infinite',
+  }} />;
+}
+
 function Field({ label, value }) {
   return (
     <div>
@@ -139,7 +159,25 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="card mb-16" style={{ padding: 16 }}>Loading arc-flash data…</div>;
+  if (loading) return (
+    <div id="arc-flash-asset-report" aria-busy="true" aria-label="Loading arc-flash data">
+      <style>{'@keyframes sc-shimmer{0%{opacity:.55}50%{opacity:1}100%{opacity:.55}}'}</style>
+      <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ flex: '1 1 240px' }}>
+          <SkeletonBar w={120} h={15} />
+          <div style={{ marginTop: 8 }}><SkeletonBar w="90%" h={10} /></div>
+        </div>
+        <SkeletonBar w={92} h={24} />
+      </div>
+      <div style={card}>
+        <div style={{ ...dlGrid, marginTop: 0 }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i}><SkeletonBar w="55%" h={9} /><div style={{ marginTop: 6 }}><SkeletonBar w="80%" h={12} /></div></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
   if (err) return <div role="alert" className="alert alert-error mb-16">{err}</div>;
 
   const current = data?.current || null;
@@ -538,7 +576,7 @@ function PermitCard({ assetId }) {
           <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>NFPA 70E 130.2(B) — pre-filled from the current study, with an issuance check.</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={generate} disabled={busy}>{busy ? 'Building…' : (permit ? 'Refresh' : 'Generate permit')}</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={generate} disabled={busy}>{busy ? <><Spinner />Building…</> : (permit ? 'Refresh' : 'Generate permit')}</button>
           {permit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>}
         </div>
       </div>
@@ -643,7 +681,7 @@ function MitigationCard({ assetId, mitigations, current, canWrite }) {
           <form onSubmit={runWhatIf} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <input style={{ fontSize: '0.8rem', width: 130 }} placeholder="reduction %" aria-label="Estimated reduction percentage" value={wf.pct} onChange={e => setWf({ ...wf, pct: e.target.value })} />
             <input style={{ fontSize: '0.8rem', width: 150 }} placeholder="mitigation $ (optional)" aria-label="Mitigation cost in USD (optional)" value={wf.cost} onChange={e => setWf({ ...wf, cost: e.target.value })} />
-            <button type="submit" className="btn btn-secondary btn-sm" disabled={busy || !wf.pct}>{busy ? 'Modeling…' : 'Model'}</button>
+            <button type="submit" className="btn btn-secondary btn-sm" disabled={busy || !wf.pct}>{busy ? <><Spinner />Modeling…</> : 'Model'}</button>
           </form>
           {roi?.ok && (
             <div style={{ marginTop: 10, fontSize: '0.82rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px 16px' }}>
@@ -707,7 +745,7 @@ function TccLookup() {
           <option value="">any type</option><option value="breaker">breaker</option><option value="fuse">fuse</option>
         </select>
         <input style={{ ...inp, width: 90 }} placeholder="rating A" value={f.ratingA} onChange={e => setF({ ...f, ratingA: e.target.value })} />
-        <button type="submit" className="btn btn-secondary btn-sm" disabled={busy}>{busy ? 'Searching…' : 'Look up'}</button>
+        <button type="submit" className="btn btn-secondary btn-sm" disabled={busy}>{busy ? <><Spinner />Searching…</> : 'Look up'}</button>
       </form>
 
       {searched && !busy && (matches.length > 0 ? (
@@ -758,7 +796,7 @@ function LabelPortal({ assetId, canWrite }) {
             A scannable label that opens the live record — and warns when the printed sticker is out of date.
           </div>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={issue} disabled={busy}>{busy ? 'Working…' : (out ? 'Reprint' : 'Issue QR label')}</button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={issue} disabled={busy}>{busy ? <><Spinner />Working…</> : (out ? 'Reprint' : 'Issue QR label')}</button>
       </div>
 
       {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}

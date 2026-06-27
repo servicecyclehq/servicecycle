@@ -28,6 +28,17 @@ const FIELDS = [
 const DOT = { high: 'var(--chip-green-fg)', medium: 'var(--chip-amber-fg)', low: 'var(--chip-red-fg)' };
 const LABEL = { high: 'AI confident', medium: 'double-check', low: 'verify / enter' };
 
+// Tiny inline spinner (reuses the global `spin` keyframe) for active button states.
+function Spinner({ size = 14, color = '#fff' }) {
+  return (
+    <span aria-hidden="true" style={{
+      display: 'inline-block', width: size, height: size, verticalAlign: '-2px', marginRight: 7,
+      border: `2px solid ${color}`, borderTopColor: 'transparent', borderRadius: '50%',
+      opacity: 0.9, animation: 'spin 0.7s linear infinite',
+    }} />
+  );
+}
+
 export default function NameplateReview({ assetId, assetLabel, onClose, onSaved }) {
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
@@ -140,7 +151,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
               {preview && <img src={preview} alt="Nameplate photo to be read" style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 14, border: '1px solid var(--color-border)' }} />}
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={pick} style={{ display: 'none' }} />
               <button onClick={() => fileRef.current?.click()} disabled={busy} style={btnPrimary}>
-                {busy ? 'Reading nameplate…' : preview ? 'Choose a different photo' : '📷 Take / upload photo'}
+                {busy ? <><Spinner />Reading nameplate…</> : preview ? 'Choose a different photo' : '📷 Take / upload photo'}
               </button>
               {remaining != null && (
                 <div style={{ marginTop: 10, fontSize: 12, color: remaining <= 1 ? 'var(--chip-amber-fg)' : 'var(--color-text-secondary)' }}>
@@ -191,7 +202,7 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
         <div style={{ padding: '14px 20px', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button onClick={onClose} disabled={busy} style={btnGhost}>Cancel</button>
           {values && <button onClick={() => { setValues(null); setPreview(p => { if (p) URL.revokeObjectURL(p); return null; }); setFile(null); }} disabled={busy} style={btnGhost}>Rescan</button>}
-          {values && <button onClick={save} disabled={busy} style={btnPrimary}>{busy ? 'Saving…' : 'Confirm & save to asset'}</button>}
+          {values && <button onClick={save} disabled={busy} style={btnPrimary}>{busy ? <><Spinner />Saving…</> : 'Confirm & save to asset'}</button>}
         </div>
       </div>
     </div>

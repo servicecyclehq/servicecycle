@@ -164,43 +164,54 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     // ── Header band ──────────────────────────────────────────────────────────
     // #15 co-brand: use the contractor's accent color for the band when present.
     const headerBg = data.branding?.primaryColor || C.bg;
-    doc.rect(0, 0, PAGE.width, 72).fill(headerBg);
-    doc.font(FONT_BOLD).fontSize(16).fillColor(C.textOnDark)
+    doc.rect(0, 0, PAGE.width, 78).fill(headerBg);
+    // Thin brand accent rule grounds the band and reads as a finished masthead.
+    doc.rect(0, 78, PAGE.width, 3).fill(data.branding?.primaryColor ? C.bg : C.accent);
+    doc.font(FONT_BOLD).fontSize(17).fillColor(C.textOnDark)
        .text('Service Completion Report', M, 18, { width: W });
-    doc.font(FONT_REG).fontSize(9).fillColor(C.textMuted)
-       .text(data.workOrder.account.companyName, M, 36)
-       .text(`Work Order ${data.workOrder.id.slice(-8).toUpperCase()} · Completed ${data.workOrder.completedDate ? new Date(data.workOrder.completedDate).toLocaleDateString() : '—'}`, M, 48);
+    doc.font(FONT_BOLD).fontSize(9.5).fillColor(C.textOnDark)
+       .text(data.workOrder.account.companyName, M, 40, { width: W });
+    doc.font(FONT_REG).fontSize(8.5).fillColor(C.textMuted)
+       .text(`Work Order ${data.workOrder.id.slice(-8).toUpperCase()}  ·  Completed ${data.workOrder.completedDate ? new Date(data.workOrder.completedDate).toLocaleDateString() : '—'}`, M, 53, { width: W });
 
-    doc.font(FONT_REG).fontSize(8).fillColor(C.textMuted)
-       .text(`${coBrandLine(data.branding)} · This document is a summary leave-behind for the facility representative.`, M, 60, { width: W });
+    doc.font(FONT_REG).fontSize(7.5).fillColor(C.textMuted)
+       .text(`${coBrandLine(data.branding)} · Summary leave-behind for the facility representative.`, M, 65, { width: W });
 
-    y = 84;
+    y = 96;
 
     // ── Asset summary bar ────────────────────────────────────────────────────
+    // Light card panel makes the equipment identity read as one grounded block.
     const asset = data.workOrder.asset;
-    doc.font(FONT_BOLD).fontSize(10).fillColor(C.text)
-       .text('Asset: ', M, y, { continued: true })
-       .font(FONT_REG).text(assetLabel(asset));
-    y += 14;
+    const cardY = y;
+    let cardLines = 1;
+    if (asset?.site?.name) cardLines++;
+    if (data.workOrder.contractor) cardLines++;
+    const cardH = 22 + cardLines * 13 + 4;
+    doc.rect(M, cardY, W, cardH).fill(C.cardBg);
+    doc.rect(M, cardY, 3, cardH).fill(C.accent);
+    doc.rect(M, cardY, W, cardH).strokeColor(C.border).lineWidth(0.75).stroke();
+    let cy = cardY + 9;
+    doc.font(FONT_REG).fontSize(7).fillColor(C.subtext).text('ASSET', M + 12, cy);
+    doc.font(FONT_BOLD).fontSize(10.5).fillColor(C.text).text(assetLabel(asset), M + 12, cy + 8, { width: W - 24 });
+    cy += 24;
     if (asset?.site?.name) {
       doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
-         .text(`Site: ${asset.site.name}`, M, y);
-      y += 12;
+         .text('Site: ', M + 12, cy, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(asset.site.name);
+      cy += 13;
     }
     if (data.workOrder.contractor) {
       doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
-         .text(`Performed by: ${data.workOrder.contractor.name}`, M, y);
-      y += 12;
+         .text('Performed by: ', M + 12, cy, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(data.workOrder.contractor.name);
+      cy += 13;
     }
-    y += 8;
-
-    doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).stroke();
-    y += 12;
+    y = cardY + cardH + 16;
 
     // ── SECTION 1: What We Found ─────────────────────────────────────────────
-    doc.font(FONT_BOLD).fontSize(13).fillColor(C.accent)
-       .text('1  What We Found', M, y);
-    y += 18;
+    // Numbered chip + heading reads as a clean executive section marker.
+    doc.rect(M, y, 18, 18).fill(C.accent);
+    doc.font(FONT_BOLD).fontSize(11).fillColor('#fff').text('1', M, y + 4, { width: 18, align: 'center' });
+    doc.font(FONT_BOLD).fontSize(13).fillColor(C.accent).text('What We Found', M + 26, y + 2);
+    y += 26;
 
     const found = data.deficiencies;
     if (found.length === 0) {
@@ -216,29 +227,29 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
 
         // Severity badge — NETA condition class (C1/C2/C3), severity-coloured.
         const badgeW = 96;
-        doc.rect(M, y, badgeW, 16).fill(sColor);
+        doc.rect(M, y, badgeW, 17).fill(sColor);
         doc.font(FONT_BOLD).fontSize(8).fillColor('#fff')
-           .text(sLabel, M + 4, y + 4, { width: badgeW - 8, align: 'center' });
+           .text(sLabel, M + 4, y + 5, { width: badgeW - 8, align: 'center' });
 
-        // Description
+        // Description — nudged to sit visually centred against the badge.
         doc.font(FONT_BOLD).fontSize(9).fillColor(C.text)
-           .text(def.description.slice(0, 200), M + badgeW + 8, y, { width: W - badgeW - 8 });
-        y += 20;
+           .text(def.description.slice(0, 200), M + badgeW + 10, y + 4, { width: W - badgeW - 10 });
+        y += 21;
 
         // [NETA-8-6] One-line NETA condition gloss so the C-code is self-explaining.
         const condNote = severityConditionNote(def.severity);
         if (condNote) {
           doc.font(FONT_OBL).fontSize(7.5).fillColor(sColor)
-             .text(condNote, M + badgeW + 8, y, { width: W - badgeW - 8 });
+             .text(condNote, M + badgeW + 10, y, { width: W - badgeW - 10 });
           y += 11;
         }
 
         if (def.correctiveAction && !def.resolvedAt) {
           doc.font(FONT_REG).fontSize(8).fillColor(C.subtext)
-             .text(`Recommended corrective action: ${def.correctiveAction.slice(0, 200)}`, M + badgeW + 8, y, { width: W - badgeW - 8 });
+             .text(`Recommended corrective action: ${def.correctiveAction.slice(0, 200)}`, M + badgeW + 10, y, { width: W - badgeW - 10 });
           y += 14;
         }
-        y += 4;
+        y += 6;
       }
     }
     y += 8;
@@ -247,10 +258,11 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     if (y > PAGE.height - 80) { doc.addPage(); y = PAGE.margin; }
 
     doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).stroke();
-    y += 12;
-    doc.font(FONT_BOLD).fontSize(13).fillColor(C.success)
-       .text('2  What We Fixed', M, y);
-    y += 18;
+    y += 14;
+    doc.rect(M, y, 18, 18).fill(C.success);
+    doc.font(FONT_BOLD).fontSize(11).fillColor('#fff').text('2', M, y + 4, { width: 18, align: 'center' });
+    doc.font(FONT_BOLD).fontSize(13).fillColor(C.success).text('What We Fixed', M + 26, y + 2);
+    y += 26;
 
     const fixed = data.deficiencies.filter((d) => d.resolvedAt !== null);
     if (fixed.length === 0) {
@@ -279,10 +291,11 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     if (y > PAGE.height - 120) { doc.addPage(); y = PAGE.margin; }
 
     doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).stroke();
+    y += 14;
+    doc.rect(M, y, 18, 18).fill(C.purple);
+    doc.font(FONT_BOLD).fontSize(11).fillColor('#fff').text('3', M, y + 4, { width: 18, align: 'center' });
+    doc.font(FONT_BOLD).fontSize(13).fillColor(C.purple).text('What to Budget For', M + 26, y + 2);
     y += 12;
-    doc.font(FONT_BOLD).fontSize(13).fillColor(C.purple)
-       .text('3  What to Budget For', M, y);
-    y += 6;
     doc.font(FONT_OBL).fontSize(8).fillColor(C.subtext)
        .text('BUDGET PLANNING ESTIMATES ONLY. Figures are probabilistic ranges derived from IEEE/NFPA/NETA equipment-life models and published service benchmarks. Actual costs vary by site, equipment configuration, and local labor. These estimates are not formal quotes, engineering assessments, or guarantees of equipment condition or remaining useful life. Consult a licensed electrical engineer before making capital replacement decisions.', M, y + 14, { width: W });
     y += 34;
@@ -319,25 +332,28 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
          .text('No open service opportunities or at-risk assets identified for this account at this time.', M, y);
       y += 20;
     } else {
-      // Column header row
-      doc.font(FONT_BOLD).fontSize(8).fillColor(C.subtext)
-         .text('ASSET', M, y, { width: 220 })
-         .text('ESTIMATED RANGE', M + 228, y, { width: 140 })
-         .text('NOTE', M + 376, y, { width: W - 376 });
-      y += 14;
-      doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).stroke();
+      // Column header row — tinted band + bottom rule for a clean table top.
+      doc.rect(M, y - 2, W, 15).fill(C.cardBg);
+      doc.font(FONT_BOLD).fontSize(7.5).fillColor(C.subtext)
+         .text('ASSET', M + 4, y + 1, { width: 216 })
+         .text('ESTIMATED RANGE', M + 228, y + 1, { width: 140 })
+         .text('NOTE', M + 376, y + 1, { width: W - 376 });
+      y += 15;
+      doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).lineWidth(0.75).stroke();
       y += 6;
 
       for (const item of budgetItems) {
         if (y > PAGE.height - 60) { doc.addPage(); y = PAGE.margin; }
 
         doc.font(FONT_BOLD).fontSize(9).fillColor(C.text)
-           .text(item.label.slice(0, 45), M, y, { width: 220 });
-        doc.font(FONT_REG).fontSize(9).fillColor(C.text)
+           .text(item.label.slice(0, 45), M + 4, y, { width: 216 });
+        doc.font(FONT_BOLD).fontSize(9).fillColor(C.accent)
            .text(item.range, M + 228, y, { width: 140 });
         doc.font(FONT_OBL).fontSize(8).fillColor(C.subtext)
            .text(item.note.slice(0, 60), M + 376, y, { width: W - 376 });
-        y += 16;
+        y += 15;
+        doc.moveTo(M, y - 3).lineTo(M + W, y - 3).strokeColor('#eef1f6').lineWidth(0.5).stroke();
+        y += 1;
       }
     }
 
@@ -347,34 +363,34 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     // [NETA-8-7] A leave-behind a customer can rely on must record WHO performed
     // the work, their company + NETA accreditation, the as-left condition / decal,
     // and carry a signature line. Uses data already on the work order — no schema.
-    if (y > PAGE.height - 140) { doc.addPage(); y = PAGE.margin; }
-    doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).stroke();
-    y += 12;
-    doc.font(FONT_BOLD).fontSize(11).fillColor(C.text).text('Performed By & Certification', M, y);
-    y += 16;
+    if (y > PAGE.height - 150) { doc.addPage(); y = PAGE.margin; }
+    // Formal sign-off panel — petrol header bar sets it apart as the certification block.
+    doc.rect(M, y, W, 22).fill(C.accent);
+    doc.font(FONT_BOLD).fontSize(11).fillColor(C.textOnDark).text('Performed By & Certification', M + 12, y + 6);
+    y += 32;
 
     const company = data.workOrder.contractor?.name || data.workOrder.account.companyName;
     const accredited = !!data.workOrder.contractor?.netaAccredited;
     doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
-       .text('Company: ', M, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(company);
-    y += 13;
+       .text('Company: ', M + 4, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(company);
+    y += 14;
     doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
-       .text('Certification: ', M, y, { continued: true })
+       .text('Certification: ', M + 4, y, { continued: true })
        .font(FONT_BOLD).fillColor(accredited ? C.success : C.text)
        .text(accredited ? 'NETA-accredited company' : 'Per company qualification program (NFPA 70E qualified person)');
-    y += 13;
+    y += 14;
     if (data.workOrder.technicianName) {
       doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
-         .text('Technician: ', M, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(data.workOrder.technicianName);
-      y += 13;
+         .text('Technician: ', M + 4, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(data.workOrder.technicianName);
+      y += 14;
     }
     const asLeft = data.workOrder.asLeftCondition || data.workOrder.netaDecal;
     if (asLeft) {
       doc.font(FONT_REG).fontSize(9).fillColor(C.subtext)
-         .text('As-left condition (NETA MTS): ', M, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(String(asLeft));
-      y += 13;
+         .text('As-left condition (NETA MTS): ', M + 4, y, { continued: true }).font(FONT_BOLD).fillColor(C.text).text(String(asLeft));
+      y += 14;
     }
-    y += 10;
+    y += 12;
 
     // Signature + date lines (two columns).
     const colGap = 24;

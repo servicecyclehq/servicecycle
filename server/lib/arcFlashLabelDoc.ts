@@ -109,13 +109,14 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
   const headerColor = m.danger ? SAFETY_RED : SAFETY_ORANGE;
   const headerText = m.danger ? '#FFFFFF' : '#000000';
 
-  // Border
-  doc.lineWidth(1.5).strokeColor('#000000').rect(x, y, w, h).stroke();
+  // Border — heavier rule reads as a crisp die-cut edge at print.
+  doc.lineWidth(2).strokeColor('#000000').rect(x, y, w, h).stroke();
 
-  // Signal-word panel
+  // Signal-word panel — ANSI Z535.4 banner with a black separating rule beneath.
   doc.rect(x, y, w, headerH).fill(headerColor);
   doc.fillColor(headerText).font('Helvetica-Bold').fontSize(30)
     .text(m.signalWord, x, y + 12, { width: w, align: 'center' });
+  doc.moveTo(x, y + headerH).lineTo(x + w, y + headerH).lineWidth(1.5).strokeColor('#000000').stroke();
 
   // Hazard statement
   let cy = y + headerH + 8;
@@ -127,12 +128,15 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
         x + pad, cy, { width: w - 2 * pad, align: 'center' });
     cy += 30;
   }
-  doc.fillColor(INK).font('Helvetica-Bold').fontSize(10)
-    .text('Arc Flash and Shock Hazard', x + pad, cy, { width: w - 2 * pad, align: 'center' });
-  cy += 14;
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(11)
+    .text('ARC FLASH AND SHOCK HAZARD', x + pad, cy, { width: w - 2 * pad, align: 'center' });
+  cy += 15;
   doc.font('Helvetica').fontSize(8).fillColor(MUTED)
     .text('Appropriate PPE required. Follow your electrical safety program.', x + pad, cy, { width: w - 2 * pad, align: 'center' });
-  cy += 18;
+  cy += 16;
+  // Hairline divider before the data fields — separates warning from metrics.
+  doc.moveTo(x + pad, cy).lineTo(x + w - pad, cy).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+  cy += 8;
 
   // Field rows
   function row(label: string, value: string, big?: boolean) {
@@ -182,10 +186,10 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
 
   // Footer: equipment identity leads, facility name, study date, minimal brand.
   const footY = y + h - 60;
-  doc.moveTo(x + pad, footY).lineTo(x + w - pad, footY).lineWidth(0.5).strokeColor('#cbd5e1').stroke();
+  doc.moveTo(x + pad, footY).lineTo(x + w - pad, footY).lineWidth(0.75).strokeColor('#94a3b8').stroke();
   let fy = footY + 6;
-  doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(m.busName, x + pad, fy, { width: w - 2 * pad });
-  fy += 12;
+  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(m.busName, x + pad, fy, { width: w - 2 * pad });
+  fy += 13;
   if (m.facilityName) { doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(m.facilityName, x + pad, fy, { width: w - 2 * pad }); fy += 11; }
   doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(`Study date: ${m.studyDate}`, x + pad, fy);
   fy += 11;

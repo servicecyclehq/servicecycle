@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/client';
+import Pagination from '../components/Pagination';
 import { useConfirm } from '../context/ConfirmContext';
 
 const CATEGORIES = ['BREAKER', 'TRANSFORMER', 'RELAY', 'CABLE', 'FUSE', 'CONSUMABLE', 'OTHER'];
@@ -643,30 +644,14 @@ export default function Parts() {
                 </tbody>
               </table>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 16px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
-              <span>
-                {total.toLocaleString()} part{total !== 1 ? 's' : ''}
-                {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ''}
-              </span>
-              {totalPages > 1 && (
-                <span style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    type="button" className="btn btn-secondary btn-sm"
-                    disabled={page <= 1 || loading}
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                  >
-                    {String.fromCharCode(8592)} Prev
-                  </button>
-                  <button
-                    type="button" className="btn btn-secondary btn-sm"
-                    disabled={page >= totalPages || loading}
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  >
-                    Next {String.fromCharCode(8594)}
-                  </button>
-                </span>
-              )}
-            </div>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              disabled={loading}
+              label={`${total.toLocaleString()} part${total !== 1 ? 's' : ''}${totalPages > 1 ? ` · page ${page} of ${totalPages}` : ''}`}
+              onPrev={() => setPage(p => Math.max(1, p - 1))}
+              onNext={() => setPage(p => Math.min(totalPages, p + 1))}
+            />
           </div>
         )}
       </div>

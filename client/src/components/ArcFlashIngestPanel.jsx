@@ -29,6 +29,17 @@ function Chip({ band, children }) {
 
 const HAZARD_COLOR = { DANGER: 'var(--color-danger, #b91c1c)', WARNING: 'var(--color-warning, #c2410c)' };
 
+// Tiny inline spinner (reuses the global `spin` keyframe) for active button states.
+function Spinner({ size = 12 }) {
+  return (
+    <span aria-hidden="true" style={{
+      display: 'inline-block', width: size, height: size, verticalAlign: '-1px', marginRight: 6,
+      border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%',
+      opacity: 0.85, animation: 'spin 0.7s linear infinite',
+    }} />
+  );
+}
+
 /**
  * Slice 2.7 — field-collection of the hard inputs (upstream device + trip
  * settings + feeder cable) that block a bus. Generate tasks from the gap list,
@@ -108,7 +119,7 @@ function FieldCollection({ ingest, canWrite, onChanged }) {
     <div style={{ marginTop: 14, borderTop: '1px dashed var(--color-border)', paddingTop: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <strong style={{ fontSize: '0.82rem' }}>Field collection — get the missing device + cable data</strong>
-        {canWrite && <button className="btn-link" onClick={generate} disabled={busy} style={{ fontSize: '0.76rem' }}>Generate field tasks from gaps</button>}
+        {canWrite && <button className="btn-link" onClick={generate} disabled={busy} style={{ fontSize: '0.76rem' }}>{busy && <Spinner size={10} />}Generate field tasks from gaps</button>}
       </div>
       {note && <div style={{ color: 'var(--color-success, #16a34a)', fontSize: '0.76rem', marginTop: 6 }}>{note}</div>}
       {err && <div style={{ color: 'var(--color-danger)', fontSize: '0.76rem', marginTop: 6 }}>{err}</div>}
@@ -146,7 +157,7 @@ function FieldCollection({ ingest, canWrite, onChanged }) {
               </label>
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn-link" onClick={() => { setOpenId(null); setForm({}); }} style={{ fontSize: '0.74rem' }}>Cancel</button>
-                <button className="btn" onClick={() => collect(t.id)} disabled={busy} style={{ fontSize: '0.74rem' }}>{busy ? 'Saving…' : 'Save device & re-gap'}</button>
+                <button className="btn" onClick={() => collect(t.id)} disabled={busy} style={{ fontSize: '0.74rem' }}>{busy ? <><Spinner size={10} />Saving…</> : 'Save device & re-gap'}</button>
               </div>
             </div>
           ) : (
@@ -334,7 +345,7 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
             <option value="one_line">One-line diagram</option>
             <option value="study_report">Study report</option>
           </select>
-          <button type="submit" className="btn" disabled={busy}>{busy ? 'Working…' : 'Extract'}</button>
+          <button type="submit" className="btn" disabled={busy}>{busy ? <><Spinner />Reading {sourceType === 'study_report' ? 'study' : 'one-line'}…</> : 'Extract'}</button>
         </form>
       )}
 
@@ -448,7 +459,7 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
                 <input type="checkbox" checked={createStudy} onChange={e => setCreateStudy(e.target.checked)} />
                 Also create an arc-flash study from these inputs
               </label>
-              <button className="btn" onClick={confirm} disabled={busy}>{busy ? 'Working…' : 'Confirm & create assets'}</button>
+              <button className="btn" onClick={confirm} disabled={busy}>{busy ? <><Spinner />Working…</> : 'Confirm & create assets'}</button>
             </div>
           )}
           {confirmed && <div style={{ fontSize: '0.8rem', color: 'var(--color-success, #16a34a)', marginTop: 10, fontWeight: 600 }}>✓ Confirmed — assets {ing.producedStudyId ? 'and study ' : ''}created from this document.</div>}
