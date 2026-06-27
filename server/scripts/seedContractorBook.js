@@ -132,11 +132,26 @@ async function seedContractorBook(prisma) {
   const pw = await bcrypt.hash(SHARED_PW, 12);
 
   // Partner org + contractor "home" account that hosts the manager + reps.
-  await prisma.partnerOrganization.create({ data: { id: ORG_ID, name: 'Apex Power Services' } });
-  await prisma.account.create({ data: {
-    id: HOME_ID, companyName: 'Apex Power Services', status: 'active', planType: 'saas',
-    partnerOrgId: ORG_ID, lastActiveAt: now,
-  } });
+  // Idempotent: a prior reseed can leave the org/account row undeletable when
+  // partner-flywheel cron records (account-scoped, onDelete RESTRICT) still
+  // reference it. The asset/site/user children DO delete, so upsert reuses the
+  // org/account row and the rest of the book is rebuilt fresh.
+  await prisma.partnerOrganization.upsert({
+    where: { id: ORG_ID },
+    create: { id: ORG_ID, name: 'Apex Power Services' },
+    update: { name: 'Apex Power Services' },
+  });
+  await prisma.account.upsert({
+    where: { id: HOME_ID },
+    create: {
+      id: HOME_ID, companyName: 'Apex Power Services', status: 'active', planType: 'saas',
+      partnerOrgId: ORG_ID, lastActiveAt: now,
+    },
+    update: {
+      companyName: 'Apex Power Services', status: 'active', planType: 'saas',
+      partnerOrgId: ORG_ID, lastActiveAt: now,
+    },
+  });
 
   const manager = await prisma.user.create({ data: {
     accountId: HOME_ID, name: MANAGER.name, email: MANAGER.email, passwordHash: pw,
@@ -154,11 +169,19 @@ async function seedContractorBook(prisma) {
 
   for (const c of CUSTOMERS) {
     const rep = repByKey[c.rep];
-    await prisma.account.create({ data: {
-      id: c.id, companyName: c.name, status: 'active', planType: 'saas',
-      partnerOrgId: ORG_ID, assignedRepId: rep.id, fallbackRepId: manager.id,
-      serviceRepName: rep.name, serviceRepEmail: rep.email, serviceRepPhone: rep.phone, lastActiveAt: now,
-    } });
+    await prisma.account.upsert({
+      where: { id: c.id },
+      create: {
+        id: c.id, companyName: c.name, status: 'active', planType: 'saas',
+        partnerOrgId: ORG_ID, assignedRepId: rep.id, fallbackRepId: manager.id,
+        serviceRepName: rep.name, serviceRepEmail: rep.email, serviceRepPhone: rep.phone, lastActiveAt: now,
+      },
+      update: {
+        companyName: c.name, status: 'active', planType: 'saas',
+        partnerOrgId: ORG_ID, assignedRepId: rep.id, fallbackRepId: manager.id,
+        serviceRepName: rep.name, serviceRepEmail: rep.email, serviceRepPhone: rep.phone, lastActiveAt: now,
+      },
+    });
     await prisma.accountSetting.create({ data: { accountId: c.id, key: 'ONBOARDING_COMPLETE', value: 'true' } });
 
     // A facility admin (the customer's own person) so the value-framed customer
