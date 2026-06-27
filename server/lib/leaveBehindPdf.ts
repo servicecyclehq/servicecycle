@@ -231,25 +231,33 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
         doc.font(FONT_BOLD).fontSize(8).fillColor('#fff')
            .text(sLabel, M + 4, y + 5, { width: badgeW - 8, align: 'center' });
 
-        // Description — nudged to sit visually centred against the badge.
-        doc.font(FONT_BOLD).fontSize(9).fillColor(C.text)
-           .text(def.description.slice(0, 200), M + badgeW + 10, y + 4, { width: W - badgeW - 10 });
-        y += 21;
+        // Description — height MEASURED so a 2-line description never collides
+        // with the condition note beneath it. Advance past whichever is taller:
+        // the severity badge (17) or the wrapped description.
+        const descW = W - badgeW - 10;
+        const descTxt = def.description.slice(0, 200);
+        doc.font(FONT_BOLD).fontSize(9).fillColor(C.text);
+        const descH = doc.heightOfString(descTxt, { width: descW });
+        doc.text(descTxt, M + badgeW + 10, y + 4, { width: descW });
+        y += Math.max(17, descH + 4) + 5;
 
         // [NETA-8-6] One-line NETA condition gloss so the C-code is self-explaining.
         const condNote = severityConditionNote(def.severity);
         if (condNote) {
-          doc.font(FONT_OBL).fontSize(7.5).fillColor(sColor)
-             .text(condNote, M + badgeW + 10, y, { width: W - badgeW - 10 });
-          y += 11;
+          doc.font(FONT_OBL).fontSize(7.5).fillColor(sColor);
+          const condH = doc.heightOfString(condNote, { width: descW });
+          doc.text(condNote, M + badgeW + 10, y, { width: descW });
+          y += condH + 4;
         }
 
         if (def.correctiveAction && !def.resolvedAt) {
-          doc.font(FONT_REG).fontSize(8).fillColor(C.subtext)
-             .text(`Recommended corrective action: ${def.correctiveAction.slice(0, 200)}`, M + badgeW + 10, y, { width: W - badgeW - 10 });
-          y += 14;
+          const caTxt = `Recommended corrective action: ${def.correctiveAction.slice(0, 200)}`;
+          doc.font(FONT_REG).fontSize(8).fillColor(C.subtext);
+          const caH = doc.heightOfString(caTxt, { width: descW });
+          doc.text(caTxt, M + badgeW + 10, y, { width: descW });
+          y += caH + 4;
         }
-        y += 6;
+        y += 8;
       }
     }
     y += 8;
@@ -274,15 +282,19 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
         if (y > PAGE.height - 80) { doc.addPage(); y = PAGE.margin; }
 
         doc.rect(M, y, 8, 8).fill(C.success);
-        doc.font(FONT_BOLD).fontSize(9).fillColor(C.text)
-           .text(def.description.slice(0, 200), M + 14, y, { width: W - 14 });
-        y += 14;
+        const fDescTxt = def.description.slice(0, 200);
+        doc.font(FONT_BOLD).fontSize(9).fillColor(C.text);
+        const fDescH = doc.heightOfString(fDescTxt, { width: W - 14 });
+        doc.text(fDescTxt, M + 14, y, { width: W - 14 });
+        y += Math.max(10, fDescH) + 4;
         if (def.correctiveAction) {
-          doc.font(FONT_REG).fontSize(8).fillColor(C.subtext)
-             .text(`Action taken: ${def.correctiveAction.slice(0, 200)}`, M + 14, y, { width: W - 14 });
-          y += 12;
+          const actTxt = `Action taken: ${def.correctiveAction.slice(0, 200)}`;
+          doc.font(FONT_REG).fontSize(8).fillColor(C.subtext);
+          const actH = doc.heightOfString(actTxt, { width: W - 14 });
+          doc.text(actTxt, M + 14, y, { width: W - 14 });
+          y += actH + 4;
         }
-        y += 4;
+        y += 6;
       }
     }
     y += 8;
@@ -296,9 +308,13 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     doc.font(FONT_BOLD).fontSize(11).fillColor('#fff').text('3', M, y + 4, { width: 18, align: 'center' });
     doc.font(FONT_BOLD).fontSize(13).fillColor(C.purple).text('What to Budget For', M + 26, y + 2);
     y += 12;
-    doc.font(FONT_OBL).fontSize(8).fillColor(C.subtext)
-       .text('BUDGET PLANNING ESTIMATES ONLY. Figures are probabilistic ranges derived from IEEE/NFPA/NETA equipment-life models and published service benchmarks. Actual costs vary by site, equipment configuration, and local labor. These estimates are not formal quotes, engineering assessments, or guarantees of equipment condition or remaining useful life. Consult a licensed electrical engineer before making capital replacement decisions.', M, y + 14, { width: W });
-    y += 34;
+    const discTxt = 'BUDGET PLANNING ESTIMATES ONLY. Figures are probabilistic ranges derived from IEEE/NFPA/NETA equipment-life models and published service benchmarks. Actual costs vary by site, equipment configuration, and local labor. These estimates are not formal quotes, engineering assessments, or guarantees of equipment condition or remaining useful life. Consult a licensed electrical engineer before making capital replacement decisions.';
+    doc.font(FONT_OBL).fontSize(8).fillColor(C.subtext);
+    const discH = doc.heightOfString(discTxt, { width: W });
+    doc.text(discTxt, M, y + 14, { width: W });
+    // Measured disclaimer height + gap so the ASSET column header never draws on
+    // top of the disclaimer's last lines.
+    y += 14 + discH + 10;
 
     const budgetItems: Array<{ label: string; range: string; note: string }> = [];
 
@@ -308,7 +324,7 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
       const trigger = qr.triggerType ?? 'Service needed';
       budgetItems.push({
         label,
-        range: '— contact rep for estimate',
+        range: 'Contact rep for estimate',
         note:  trigger.replace(/_/g, ' '),
       });
     }
@@ -319,7 +335,7 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
       const scoreStr  = a.modernizationRiskScore != null ? `Risk score: ${(a.modernizationRiskScore * 100).toFixed(0)}%` : '';
       const rangeStr  = (a.rateMin != null && a.rateMax != null)
         ? `${fmtMoney(a.rateMin)} – ${fmtMoney(a.rateMax)}`
-        : '— contact rep for estimate';
+        : 'Contact rep for estimate';
       budgetItems.push({
         label,
         range: rangeStr,
@@ -332,13 +348,10 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
          .text('No open service opportunities or at-risk assets identified for this account at this time.', M, y);
       y += 20;
     } else {
-      // Cap the printed list so the leave-behind stays tight (a wall of line
-      // items belongs in the full capital plan the rep follows up with). Items
-      // already arrive QuoteRequests-first, then modernization assets in
-      // descending risk order, so the warmest opportunities are never cut.
-      const MAX_BUDGET_ROWS = 16;
-      const shownItems = budgetItems.slice(0, MAX_BUDGET_ROWS);
-      const overflowCount = budgetItems.length - shownItems.length;
+      // List EVERY at-risk asset — the customer deserves the full findings even
+      // if Section 3 flows onto additional pages. Capping the list reads like we
+      // are hiding something. Items arrive QuoteRequests-first, then modernization
+      // assets in descending risk order.
       const ROW_H = 16;
 
       // Deterministic single-line fit: measure with widthOfString and trim with
@@ -368,7 +381,7 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
       };
       drawBudgetHeader();
 
-      for (const item of shownItems) {
+      for (const item of budgetItems) {
         // Break BEFORE any row that would cross the bottom margin, with a full
         // row of headroom so no single cell can auto-paginate on its own (the
         // old bug: a row's three cells scattered across three pages). Redraw the
@@ -389,14 +402,6 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
            .text(fitOneLine(item.note, W - 376 - 4, FONT_OBL, 8), M + 376, y, { lineBreak: false });
         y += ROW_H;
         doc.moveTo(M, y - 4).lineTo(M + W, y - 4).strokeColor('#eef1f6').lineWidth(0.5).stroke();
-      }
-
-      if (overflowCount > 0) {
-        if (y + ROW_H > PAGE.height - PAGE.margin) { doc.addPage(); y = PAGE.margin; }
-        doc.font(FONT_OBL).fontSize(8.5).fillColor(C.subtext)
-           .text(fitOneLine(`+ ${overflowCount} more at-risk ${overflowCount === 1 ? 'asset' : 'assets'} — ask your service rep for the full capital plan.`, W - 8, FONT_OBL, 8.5),
-                 M + 4, y + 2, { lineBreak: false });
-        y += ROW_H + 2;
       }
     }
 
