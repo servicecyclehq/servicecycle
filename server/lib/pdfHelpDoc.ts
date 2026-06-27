@@ -193,20 +193,109 @@ function drawHeaderBand(doc, title) {
 //   -> Max call stack -> 500. lineBreak:false suppresses the auto-break.
 //   _renderingFooter is belt-and-suspenders against any future drawFooter
 //   call paths (e.g. an inner text() that we didn't account for).
-function drawFooter(doc) {
+function drawFooter(doc, pageNum) {
   if (doc._renderingFooter) return;
   doc._renderingFooter = true;
+  const sx = doc.x, sy = doc.y; // cursor-neutral: footer draws below the bottom margin
   try {
     const y = doc.page.height - PAGE.margin + 10;
     doc.moveTo(PAGE.margin, y).lineTo(doc.page.width - PAGE.margin, y)
        .strokeColor(COLORS.border).lineWidth(0.5).stroke();
     doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
        .text('servicecycle.app - generated help reference', PAGE.margin, y + 4, { align: 'left', lineBreak: false });
-    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
-       .text(`Page ${doc.bufferedPageRange().start + doc.page.number}`, PAGE.margin, y + 4, { align: 'right', lineBreak: false });
+    // Page number tracked by the caller (bufferedPageRange().start is NaN without
+    // bufferPages -> "Page NaN"), right-aligned by computed x (a width + align:'right'
+    // flows below the bottom margin and spawns a blank page).
+    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8);
+    const pageLabel = `Page ${pageNum}`;
+    doc.text(pageLabel, doc.page.width - PAGE.margin - doc.widthOfString(pageLabel), y + 4, { lineBreak: false });
   } finally {
+    doc.x = sx; doc.y = sy;
     doc._renderingFooter = false;
   }
+}
+
+/**
+ * Render the help doc PDF to a Buffer (pure — no Express response object).
+ *
+ *   const buf = await renderHelpDocPdf({ slug, title, markdown })
+ *
+ * Contains the exact pdfkit drawing/markdown-rendering pipeline used by
+ * streamHelpDocPdf, but instead of piping to a writable it collects the
+ * 'data' chunks and resolves Buffer.concat(chunks) on 'end'. The 'error'
+ * handler is bound BEFORE any write so a pdfkit stream-time error rejects
+ * the promise instead of bubbling as an unhandled rejection.
+ *
+ * This is the rendering core; streamHelpDocPdf is a thin response wrapper
+ * around it.
+ */
+function renderHelpDocPdf({ slug, title, markdown }: { slug: string; title: string; markdown: string }): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margins: { top: PAGE.margin, bottom: PAGE.margin, left: PAGE.margin, right: PAGE.margin },
+      info: {
+        Title:    `ServiceCycle Help - ${title || slug}`,
+        Author:   'ServiceCycle',
+        Subject:  'Per-module help reference',
+        Creator:  'ServiceCycle help engine',
+      },
+    });
+
+    // Collect output into a Buffer. Bind the 'error' handler BEFORE any
+    // write so a pdfkit stream-time error rejects rather than escaping as
+    // an unhandled rejection.
+    const chunks = [];
+    doc.on('error', (err) => {
+      try { console.error('[pdfHelpDoc] stream error:', err && err.message ? err.message : err); } catch (_) { /* noop */ }
+      reject(err);
+    });
+    doc.on('data', (chunk) => { chunks.push(chunk); });
+    doc.on('end', () => {
+      try {
+        resolve(Buffer.concat(chunks));
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    let pageNum = 1;
+    doc.on('pageAdded', () => {
+      pageNum += 1;
+      drawFooter(doc, pageNum);
+      doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(9)
+         .text(`Help . ${title || slug}`, PAGE.margin, PAGE.margin - 18);
+      doc.fillColor(COLORS.text);
+      doc.y = PAGE.margin;
+    });
+
+    drawHeaderBand(doc, title || slug);
+    drawFooter(doc, 1); // first page footer while page 1 is current
+
+    const blocks = tokenize(markdown);
+    let firstH1Skipped = false;
+
+    for (const b of blocks) {
+      try {
+        if (doc.y > doc.page.height - PAGE.margin - 90) {
+          doc.addPage();
+        }
+        _renderBlock(doc, b, { firstH1Skipped });
+        if (b.type === 'h1' && !firstH1Skipped) firstH1Skipped = true;
+      } catch (err) {
+        try { console.error('[pdfHelpDoc] block render failed; skipping. type=' + (b && b.type) + ' err=' + (err && err.message ? err.message : err)); } catch (_) { /* noop */ }
+        // Continue rendering remaining blocks; if pdfkit's internal state
+        // is unsalvageable doc.on('error') will fire and reject the promise.
+      }
+    }
+
+    try {
+      doc.end();
+    } catch (e) {
+      try { console.error('[pdfHelpDoc] doc.end() failed:', e && e.message ? e.message : e); } catch (_) { /* noop */ }
+      reject(e);
+    }
+  });
 }
 
 /**
@@ -216,16 +305,16 @@ function drawFooter(doc) {
  *
  * Caller sets Content-Type + Content-Disposition before invoking.
  *
- * Safety contract (v0.36.7):
- *   - If `res` closes or errors before pdfkit finishes, the pdfkit Readable
- *     is destroyed so no further 'data' events fire into a dead writable.
- *   - If pdfkit itself errors mid-stream, we unpipe and close the response
- *     gracefully without bubbling an unhandled rejection.
+ * Now a thin wrapper: renders the PDF to a Buffer via renderHelpDocPdf,
+ * then sends it on `res`. Preserves the prior response behavior:
  *   - A HEAD request must NOT reach this function — the route handler in
  *     routes/help.js short-circuits HEAD before calling here. Defensive
- *     check below is belt-and-suspenders.
+ *     check below is belt-and-suspenders; if one slips through we end the
+ *     response cleanly without touching pdfkit.
+ *   - If rendering errors, respond 500 (or end the response if headers
+ *     were already sent) instead of bubbling an unhandled rejection.
  */
-function streamHelpDocPdf(res, { slug, title, markdown }) {
+async function streamHelpDocPdf(res, { slug, title, markdown }) {
   // Defense-in-depth: HEAD requests should never get here (route handles
   // them separately). If one slipped through anyway, return cleanly without
   // touching pdfkit at all.
@@ -234,50 +323,11 @@ function streamHelpDocPdf(res, { slug, title, markdown }) {
     return;
   }
 
-  const doc = new PDFDocument({
-    size: 'LETTER',
-    margins: { top: PAGE.margin, bottom: PAGE.margin, left: PAGE.margin, right: PAGE.margin },
-    info: {
-      Title:    `ServiceCycle Help - ${title || slug}`,
-      Author:   'ServiceCycle',
-      Subject:  'Per-module help reference',
-      Creator:  'ServiceCycle help engine',
-    },
-  });
-
-  // v0.36.7: track destruction state so the block render loop can bail
-  // early when res goes away. The pdfkit doc emits 'data' on every text
-  // write; once the consumer is gone there's no value in continuing the
-  // walk and every continued write is a wasted CPU cycle.
-  let destroyed = false;
-  function _destroyDoc(reason) {
-    if (destroyed) return;
-    destroyed = true;
-    try { doc.unpipe(res); } catch (_) { /* noop */ }
-    try { doc.destroy(); } catch (_) { /* noop */ }
-    if (reason) {
-      try { console.warn('[pdfHelpDoc] doc destroyed early:', reason); } catch (_) { /* noop */ }
-    }
-  }
-
-  // v0.36.7: bind res close/error listeners BEFORE pipe so we react to a
-  // mid-stream consumer disappearance. Cases this catches:
-  //   - HEAD body-suppression (res ends after headers, pdfkit keeps emitting)
-  //   - client aborts the download mid-stream
-  //   - upstream proxy (Caddy) closes the connection
-  //   - response timeout in Express
-  res.on('close', () => _destroyDoc('res close'));
-  res.on('error', (err) => {
-    _destroyDoc('res error: ' + (err && err.message ? err.message : String(err)));
-  });
-
-  // v0.36.4 hot patch: bind a stream error handler BEFORE pipe() so any
-  // pdfkit error event surfaces here instead of becoming an unhandled
-  // rejection that crashes the Node process.
-  doc.on('error', (err) => {
-    try { console.error('[pdfHelpDoc] stream error:', err && err.message ? err.message : err); } catch (_) { /* noop */ }
-    // v0.36.7: unpipe first so pdfkit's flush doesn't race with res.end().
-    try { doc.unpipe(res); } catch (_) { /* noop */ }
+  let buf;
+  try {
+    buf = await renderHelpDocPdf({ slug, title, markdown });
+  } catch (err) {
+    try { console.error('[pdfHelpDoc] render failed:', err && err.message ? err.message : err); } catch (_) { /* noop */ }
     try {
       if (res && !res.headersSent) {
         res.status(500).end();
@@ -285,49 +335,12 @@ function streamHelpDocPdf(res, { slug, title, markdown }) {
         res.end();
       }
     } catch (_) { /* noop */ }
-    destroyed = true;
-  });
-
-  doc.on('pageAdded', () => {
-    drawFooter(doc);
-    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(9)
-       .text(`Help . ${title || slug}`, PAGE.margin, PAGE.margin - 18);
-    doc.fillColor(COLORS.text);
-    doc.y = PAGE.margin;
-  });
-
-  doc.pipe(res);
-
-  drawHeaderBand(doc, title || slug);
-  drawFooter(doc); // first page footer
-
-  const blocks = tokenize(markdown);
-  let firstH1Skipped = false;
-
-  for (const b of blocks) {
-    // v0.36.7: bail the moment res is gone — pdfkit will keep accepting
-    // writes into its internal buffer otherwise, walking through the
-    // entire block list for a stream nobody reads.
-    if (destroyed) break;
-    try {
-      if (doc.y > doc.page.height - PAGE.margin - 90) {
-        doc.addPage();
-      }
-      _renderBlock(doc, b, { firstH1Skipped });
-      if (b.type === 'h1' && !firstH1Skipped) firstH1Skipped = true;
-    } catch (err) {
-      try { console.error('[pdfHelpDoc] block render failed; skipping. type=' + (b && b.type) + ' err=' + (err && err.message ? err.message : err)); } catch (_) { /* noop */ }
-      // Continue rendering remaining blocks; if pdfkit's internal state
-      // is unsalvageable doc.on('error') will fire and end the stream.
-    }
+    return;
   }
 
-  if (!destroyed) {
-    try { doc.end(); } catch (e) {
-      try { console.error('[pdfHelpDoc] doc.end() failed:', e && e.message ? e.message : e); } catch (_) { /* noop */ }
-      _destroyDoc('doc.end() threw');
-    }
-  }
+  try {
+    res.send(buf);
+  } catch (_) { /* noop */ }
 }
 
 // Extracted so the per-block try/catch above can wrap it cleanly.
@@ -394,6 +407,6 @@ function _renderBlock(doc, b, state) {
   }
 }
 
-module.exports = { streamHelpDocPdf };
+module.exports = { streamHelpDocPdf, renderHelpDocPdf };
 
 export {};

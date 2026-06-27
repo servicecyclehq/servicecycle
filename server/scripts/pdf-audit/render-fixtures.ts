@@ -23,6 +23,10 @@ const { renderSnapshotPdf }    = require('../../lib/compliancePdf');
 const { renderProposalPdf }    = require('../../lib/proposalPdf');
 const { renderEmpPdf }         = require('../../lib/empDocument');
 const { buildLabelModel, drawArcFlashLabel, LABEL_W, LABEL_H } = require('../../lib/arcFlashLabelDoc');
+const { renderHelpDocPdf }     = require('../../lib/pdfHelpDoc');
+const { renderOutagePlanPdf }  = require('../../routes/outagePlanner');
+const { renderAssetLabelsPdf } = require('../../routes/assetLabels');
+const QRCode = require('qrcode');
 
 const OUT = process.argv[2] || path.join(os.tmpdir(), 'sc-pdf-audit');
 fs.mkdirSync(OUT, { recursive: true });
@@ -137,3 +141,58 @@ write('leave-behind.pdf', renderLeaveBehindPdf({
   openQuoteRequests: [{ triggerType: 'modernization_candidate', notes: 'Legacy unit beyond NETA service life.', asset: { equipmentType: 'Panelboard', manufacturer: 'Vantage', model: 'VP-400', serialNumber: 'VP-22-3310', site: { name: 'Riverside Plant' } }, createdAt: new Date('2026-06-10') }],
   modernizationAssets: lbMod, branding: null,
 }));
+
+// ── Help Center doc (markdown -> paginated PDF with per-page header + footer) ─
+write('help-doc.pdf', renderHelpDocPdf({
+  slug: 'asset-condition-scoring',
+  title: 'Asset Condition Scoring',
+  markdown: `# Asset Condition Scoring\n\nServiceCycle assigns every tracked asset a condition score derived from inspection history, deficiency severity, and remaining useful life. This document explains how the score is computed, what each band means, and how technicians can influence it from the field. Read it end to end before relying on the number for capital-planning decisions, because the score is a directional signal, not a guarantee, and should always be interpreted alongside the underlying findings.\n\n## How the score is computed\n\nThe condition score is a weighted rollup of three inputs. Each input is normalized to a 0-100 scale, multiplied by its configured weight, and summed. When any single input is missing, its weight is redistributed proportionally across the inputs that are present, so a freshly onboarded asset still receives a usable score rather than a null. Because the inputs are normalized before weighting, an asset with no inspection history falls back to its nameplate age curve until the first field scan lands.\n\n- Observed condition: the inspector QEMW rating from the latest field scan, mapped onto the 0-100 axis.\n- Open deficiencies: each open finding subtracts points scaled by its severity.\n- Remaining useful life: the modeled years-to-replacement pulls end-of-life assets downward.\n- Recency penalty: a stale last-inspection decays confidence in the observed term.\n\n## Score bands\n\n1. GOOD (80-100): no action required; routine maintenance cadence applies.\n2. FAIR (60-79): monitor; schedule the next inspection on the standard interval.\n3. POOR (40-59): plan remediation within the current budget cycle.\n4. DANGER (0-39): escalate immediately; critical deficiency, expired arc-flash study, or remaining useful life exhausted.\n\n## Influencing the score from the field\n\nTechnicians have more leverage than they often realize. Completing an overdue inspection refreshes the observed-condition term and clears the recency penalty in one step, frequently moving an asset up a full band the moment the scan syncs. Closing a deficiency removes its severity subtraction on the next recompute. Logging a new high-severity finding pulls the score down quickly, which is intended behavior, because the score is meant to react to ground truth rather than lag it.\n\n## Frequently asked questions\n\nWhy did my asset score drop overnight without anyone touching it? The most common cause is the recency penalty crossing a threshold, or a remaining-useful-life model tick as the asset aged past a modeled inflection point. Open the asset score-history panel to see which term moved.\n\nCan I freeze a score for an asset pending decommission? Yes. Mark it decommission-pending and the nightly recompute holds its last score and suppresses alerts while keeping it visible in registers for audit purposes until the decommission is finalized.`,
+}));
+
+// ── Outage plan export ───────────────────────────────────────────────────────
+write('outage-plan.pdf', renderOutagePlanPdf({
+  target: { date: '2026-07-18T23:59:59.999Z', scopeLabel: 'Whole facility' },
+  summary: { totalTasks: 18, totalDevices: 8, overdueCount: 5, carryOverCount: 3, opportunisticCount: 8, pulledForwardCount: 6, shutdownsAvoided: 3 },
+  locations: [
+    { siteName: 'North Plant - Main Substation Building (Bldg 100)', equipment: [
+      { isFeeder: true, equipmentName: 'Square D QED-2 4000A Main Switchboard MSB-1', devices: [
+        { assetName: 'Schneider Electric Masterpact NW40H1 4000A Drawout Air Circuit Breaker - Main Incomer, Cubicle 1A (very long asset name to force wrapping across the page width and onto subsequent lines)', condition: 'C3', tasks: [
+          { taskName: 'Primary injection / overcurrent trip-unit calibration verification across all bands (long-time, short-time, instantaneous, ground-fault) per NETA acceptance', reason: 'overdue', dueDate: '2026-03-01T00:00:00.000Z', standardRef: 'NETA MTS 2023 7.6' },
+          { taskName: 'Insulation resistance test (pole-to-pole, pole-to-ground)', reason: 'overdue', dueDate: '2026-04-10T00:00:00.000Z', standardRef: 'NFPA 70B' },
+          { taskName: 'Infrared thermographic survey under load', reason: 'opportunistic', dueDate: null, standardRef: null },
+        ] },
+        { assetName: 'Eaton Type VCP-W 15kV Vacuum Circuit Breaker VB-3', condition: 'C3', tasks: [
+          { taskName: 'Vacuum integrity (hi-pot) test', reason: 'overdue', dueDate: '2026-02-15T00:00:00.000Z', standardRef: 'NETA MTS 7.5' },
+          { taskName: 'Contact resistance test', reason: 'carry-over', dueDate: '2025-12-01T00:00:00.000Z', standardRef: null },
+        ] },
+      ] },
+      { isFeeder: false, equipmentName: 'GE 1500 kVA Pad-Mount Transformer T-100 (standalone unit)', devices: [
+        { assetName: 'GE Prolec 1500kVA 13.8kV-480V Liquid-Filled Transformer T-100', condition: 'C2', tasks: [
+          { taskName: 'Dissolved gas analysis (DGA) oil sample', reason: 'due', dueDate: '2026-07-12T00:00:00.000Z', standardRef: 'IEEE C57.104' },
+          { taskName: 'Turns ratio (TTR) test, all taps', reason: 'opportunistic', dueDate: null, standardRef: 'NETA MTS 7.2.2' },
+        ] },
+      ] },
+    ] },
+    { siteName: 'South Campus - Distribution Center', equipment: [
+      { isFeeder: true, equipmentName: 'Eaton Magnum DS 3200A Low-Voltage Switchgear SWGR-2', devices: [
+        { assetName: 'Eaton Magnum DS 3200A Drawout Breaker DS-1', condition: 'C3', tasks: [
+          { taskName: 'Trip-unit secondary injection test', reason: 'overdue', dueDate: '2026-05-01T00:00:00.000Z', standardRef: 'NETA MTS 7.6' },
+          { taskName: 'Rack-in/rack-out mechanism inspection', reason: 'carry-over', dueDate: '2026-01-15T00:00:00.000Z', standardRef: null },
+          { taskName: 'Bus insulation resistance test', reason: 'opportunistic', dueDate: null, standardRef: 'NETA MTS 7.1' },
+        ] },
+      ] },
+    ] },
+  ],
+}));
+
+// ── Asset QR label sheet (route helper needs pre-generated QR PNGs) ───────────
+(async () => {
+  const labelAssets: any[] = [
+    { equipmentType: 'Switchgear', manufacturer: 'Square D', model: 'QED-2', serialNumber: 'SG-001', governingCondition: 'C1', site: { name: 'North Plant' }, position: { name: 'MCC-1', code: 'A12' }, _decal: 'GREEN', _decalDate: '2025-09-14T00:00:00.000Z' },
+    { equipmentType: 'Transformer', manufacturer: 'ABB', model: 'DTE-1500', serialNumber: 'TX-204', governingCondition: 'C2', site: { name: 'South Yard' }, position: { name: 'Pad 3', code: null }, _decal: 'YELLOW', _decalDate: null },
+    { equipmentType: 'Medium-Voltage Metal-Clad Drawout Circuit Breaker Assembly', manufacturer: 'Westinghouse-Cutler-Hammer-Eaton Industrial Distribution Group', model: 'DSII-840-Vacuum-Interrupter-Type-Extended-Catalog-Designation-Rev-G', serialNumber: 'SN-00000000000000000000000000000000000000-LONG', governingCondition: 'C3', site: { name: 'East Substation Complex - Bay 14 Distribution Hall' }, position: { name: 'Section 7B Vertical Bus Riser', code: 'E14-S7B-VBR-0001' }, _decal: 'RED', _decalDate: '2024-12-31T00:00:00.000Z' },
+    { equipmentType: 'Panelboard', manufacturer: null, model: null, serialNumber: null, governingCondition: null, site: { name: 'West Annex' }, position: null, _decal: null, _decalDate: null },
+  ];
+  const qrPngs = await Promise.all(labelAssets.map((_, i) => QRCode.toBuffer(`https://example.test/field/asset/SC-ASSET-${i + 1}`, { type: 'png', errorCorrectionLevel: 'M', margin: 0, width: 240 })));
+  await write('asset-labels.pdf', renderAssetLabelsPdf(labelAssets, qrPngs, 'Apex Electrical Testing'));
+})();

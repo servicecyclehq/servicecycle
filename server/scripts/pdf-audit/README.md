@@ -32,22 +32,25 @@ produces a tiled contact-sheet PNG per report for a human glance.
 
 ## Coverage
 
-Pure renderers (data object in -> Buffer out) are driven directly with mock
-fixtures:
+Every report-producing renderer in the codebase is a pure
+`(...) -> Promise<Buffer>` function and is covered here:
 
 | Report | Renderer |
 | --- | --- |
-| Service leave-behind | `lib/leaveBehindPdf.ts` |
-| CFO quarterly report | `lib/cfoReport.ts` |
-| Compliance snapshot | `lib/compliancePdf.ts` |
-| Capital proposal | `lib/proposalPdf.ts` |
-| EMP program document | `lib/empDocument.ts` |
-| Arc-flash label | `lib/arcFlashLabelDoc.ts` |
+| Service leave-behind | `lib/leaveBehindPdf.ts` (`renderLeaveBehindPdf`) |
+| CFO quarterly report | `lib/cfoReport.ts` (`renderCfoReportPdf`) |
+| Compliance snapshot | `lib/compliancePdf.ts` (`renderSnapshotPdf`) |
+| Capital proposal | `lib/proposalPdf.ts` (`renderProposalPdf`) |
+| EMP program document | `lib/empDocument.ts` (`renderEmpPdf`) |
+| Arc-flash label | `lib/arcFlashLabelDoc.ts` (`drawArcFlashLabel`) |
+| Help Center doc | `lib/pdfHelpDoc.ts` (`renderHelpDocPdf`) |
+| Outage work plan | `routes/outagePlanner.ts` (`renderOutagePlanPdf`) |
+| Asset QR labels | `routes/assetLabels.ts` (`renderAssetLabelsPdf`) |
 
-Route/DB-coupled PDFs that stream straight to the HTTP response (outage planner,
-asset-label sheets, Help Center docs) are not yet fixtured here — audit those by
-downloading one from the running app and pointing `audit_pdf.py` at the file.
-Adding them means extracting a pure `(...) -> Promise<Buffer>` render helper.
+The last three used to stream straight to the HTTP response; they were refactored
+so the pdfkit drawing lives in a pure render function the route sends as a buffer,
+which is what lets them be fixtured and audited like the rest. **If you add a new
+PDF, add a fixture here and keep this table whole** — that is the whole point.
 
 ## pdfkit gotchas these renderers now avoid
 

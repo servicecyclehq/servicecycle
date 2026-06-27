@@ -150,6 +150,57 @@ function drawLabel(doc, x, y, asset, qrPng, brandName) {
   doc.fillColor('#000000');
 }
 
+// PURE renderer — the exact PDFDocument setup + label-grid loop, decoupled from
+// Express/Prisma so it can be exercised with mock assets and pre-built QR PNGs.
+// `qrPngs[i]` corresponds to `assets[i]`. Resolves a complete PDF Buffer.
+function renderAssetLabelsPdf(
+  assets: any[],
+  qrPngs: Buffer[],
+  brandName: string | null
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margin: 0,            // grid is positioned absolutely; no auto page breaks
+      autoFirstPage: false, // pages added explicitly per 24 labels
+      info: {
+        Title:   'ServiceCycle Asset QR Labels',
+        Author:  'ServiceCycle',
+        Subject: 'Asset labels',
+        Creator: 'ServiceCycle field mode',
+      },
+    });
+
+    // Collect into a Buffer. 'error' bound BEFORE any write.
+    const chunks: Buffer[] = [];
+    doc.on('error', (err) => reject(err));
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+    for (let i = 0; i < assets.length; i++) {
+      if (i % PER_PAGE === 0) doc.addPage();
+
+      const slot = i % PER_PAGE;
+      const col = slot % GRID.cols;
+      const row = Math.floor(slot / GRID.cols);
+      const x = GRID.marginX + col * (GRID.labelW + GRID.gutterX);
+      const y = GRID.marginY + row * (GRID.labelH + GRID.gutterY);
+
+      // Per-label try/catch — one malformed row must not take the sheet down.
+      try {
+        drawLabel(doc, x, y, assets[i], qrPngs[i], brandName);
+      } catch (err) {
+        try {
+          console.error('[assetLabels] label render failed; skipping.',
+            err && err.message ? err.message : err);
+        } catch (_) { /* noop */ }
+      }
+    }
+
+    doc.end();
+  });
+}
+
 // ─── GET /api/assets/labels ───────────────────────────────────────────────────
 // ?siteId=     — labels for one site (validated against the account);
 //                omitted = all sites in the account
@@ -246,77 +297,17 @@ router.get('/', async (req, res) => {
     const fileSite = site ? filenameSlug(site.name) : (idList ? 'selected' : 'all-sites');
     const filename = `servicecycle-asset-labels-${fileSite}.pdf`;
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
     const branding = await getAccountBranding(accountId); // #15 co-brand
     const brandName = branding?.name || null;
 
-    const doc = new PDFDocument({
-      size: 'LETTER',
-      margin: 0,            // grid is positioned absolutely; no auto page breaks
-      autoFirstPage: false, // pages added explicitly per 24 labels
-      info: {
-        Title:   'ServiceCycle Asset QR Labels',
-        Author:  'ServiceCycle',
-        Subject: site ? `Asset labels — ${site.name}` : 'Asset labels',
-        Creator: 'ServiceCycle field mode',
-      },
-    });
+    // Build the full PDF in-memory via the pure renderer, THEN send. A render
+    // failure surfaces as a rejected promise and is caught below as a clean
+    // JSON 500 because no headers have been sent yet.
+    const buf = await renderAssetLabelsPdf(assets, qrPngs, brandName);
 
-    // ── Stream hardening (pdfHelpDoc v0.36.4/v0.36.7 pattern) ────────────────
-    let destroyed = false;
-    const destroyDoc = (reason) => {
-      if (destroyed) return;
-      destroyed = true;
-      try { doc.unpipe(res); } catch (_) { /* noop */ }
-      try { doc.destroy(); } catch (_) { /* noop */ }
-      if (reason) {
-        try { console.warn('[assetLabels] doc destroyed early:', reason); } catch (_) { /* noop */ }
-      }
-    };
-
-    // res listeners BEFORE pipe — client abort / proxy close / timeout must
-    // stop pdfkit emitting into a dead writable.
-    res.on('close', () => destroyDoc('res close'));
-    res.on('error', (err) => destroyDoc('res error: ' + (err && err.message ? err.message : String(err))));
-
-    // doc error handler BEFORE pipe — a pdfkit stream error must surface here
-    // instead of crashing the process as an unhandled 'error' event.
-    doc.on('error', (err) => {
-      try { console.error('[assetLabels] stream error:', err && err.message ? err.message : err); } catch (_) { /* noop */ }
-      try { doc.unpipe(res); } catch (_) { /* noop */ }
-      try {
-        if (res && !res.headersSent) res.status(500).end();
-        else if (res && res.writable) res.end();
-      } catch (_) { /* noop */ }
-      destroyed = true;
-    });
-
-    doc.pipe(res);
-
-    for (let i = 0; i < assets.length; i++) {
-      if (destroyed) break;
-      if (i % PER_PAGE === 0) doc.addPage();
-
-      const slot = i % PER_PAGE;
-      const col = slot % GRID.cols;
-      const row = Math.floor(slot / GRID.cols);
-      const x = GRID.marginX + col * (GRID.labelW + GRID.gutterX);
-      const y = GRID.marginY + row * (GRID.labelH + GRID.gutterY);
-
-      // Per-label try/catch — one malformed row must not take the sheet down.
-      try {
-        drawLabel(doc, x, y, assets[i], qrPngs[i], brandName);
-      } catch (err) {
-        try {
-          console.error('[assetLabels] label render failed; skipping.',
-            err && err.message ? err.message : err);
-        } catch (_) { /* noop */ }
-      }
-    }
-
-    if (!destroyed) doc.end();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.status(200).send(buf);
   } catch (err) {
     console.error('Asset labels error:', err);
     if (!res.headersSent) {
@@ -328,5 +319,6 @@ router.get('/', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.renderAssetLabelsPdf = renderAssetLabelsPdf;
 
 export {};

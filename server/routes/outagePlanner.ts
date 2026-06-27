@@ -400,21 +400,17 @@ router.get('/plan/export.xlsx', async (req: any, res: any) => {
   }
 });
 
-// ── GET /api/outage-planner/plan/export.pdf ───────────────────────────────────
-router.get('/plan/export.pdf', async (req: any, res: any) => {
-  try {
-    const { data, error } = await buildPlan(req);
-    if (error) return res.status(400).json({ success: false, error });
-
+// ── PURE PDF RENDERER ─────────────────────────────────────────────────────────
+// Extracted verbatim from the export.pdf route so the plan PDF can be rendered
+// from a plain `data` object (no DB, no Express). Resolves a Buffer.
+function renderOutagePlanPdf(data: any): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
     const d = new Date(data.target.date);
     const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
     const chunks: any[] = [];
+    doc.on('error', reject);
     doc.on('data', (c: any) => chunks.push(c));
-    doc.on('end', () => {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="outage-plan-${d.toISOString().slice(0,10)}.pdf"`);
-      res.send(Buffer.concat(chunks));
-    });
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
 
     doc.fontSize(18).text('Outage Work Plan', { continued: false });
     doc.moveDown(0.2);
@@ -441,6 +437,20 @@ router.get('/plan/export.pdf', async (req: any, res: any) => {
       }
     }
     doc.end();
+  });
+}
+
+// ── GET /api/outage-planner/plan/export.pdf ───────────────────────────────────
+router.get('/plan/export.pdf', async (req: any, res: any) => {
+  try {
+    const { data, error } = await buildPlan(req);
+    if (error) return res.status(400).json({ success: false, error });
+
+    const d = new Date(data.target.date);
+    const buf = await renderOutagePlanPdf(data);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="outage-plan-${d.toISOString().slice(0,10)}.pdf"`);
+    res.send(buf);
   } catch (err) {
     console.error('[outagePlanner GET /plan/export.pdf]', err);
     if (!res.headersSent) return res.status(500).json({ success: false, error: 'Internal server error' });
@@ -694,5 +704,6 @@ router.post('/work-order', requireManager, async (req: any, res: any) => {
 });
 
 module.exports = router;
+module.exports.renderOutagePlanPdf = renderOutagePlanPdf;
 
 export {};
