@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const prisma = require('./lib/prisma').default;
 const { settleAllPending, verifyAllChains } = require('./lib/activityLogChain'); // Pass-6 W4 MT-127
 const { verifyToken } = require('./lib/jwtSecrets');
@@ -609,10 +609,14 @@ app.use(helmet({
 // can serve multiple front-end origins (e.g. servicecycle.app + servicecycle.app
 // + www.servicecycle.app all proxying to the same backend, but cookies/sessions
 // stay per-origin). Single-value CLIENT_URL is backward-compat.
-const CORS_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
+const CORS_ORIGINS = [
+  ...(process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(s => s.trim()).filter(Boolean),
+  // Defensive: always allow the canonical public origins so a missing or
+  // incorrect CLIENT_URL env cannot silently 403 every same-origin POST from
+  // the live app (e.g. the leave-behind PDF POST). Same-origin is always trusted.
+  'https://servicecycle.app',
+  'https://www.servicecycle.app',
+];
 app.use(
   cors({
     // Function form so we can match against the parsed allowlist. Returning
