@@ -2317,7 +2317,7 @@ router.get('/asset/:assetId/label.pdf', async (req: any, res: any) => {
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
     const rows = await prisma.systemStudyAsset.findMany({
       where: { assetId: asset.id, accountId },
-      include: { study: { select: { performedDate: true, supersededById: true } } },
+      include: { study: { select: { performedDate: true, expiresAt: true, peName: true, performedBy: true, peLicense: true, method: true, studyType: true, supersededById: true } } },
       orderBy: { createdAt: 'desc' },
     });
     const current = currentStudyAssetRow(rows);
