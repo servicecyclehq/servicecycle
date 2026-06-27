@@ -332,28 +332,71 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
          .text('No open service opportunities or at-risk assets identified for this account at this time.', M, y);
       y += 20;
     } else {
-      // Column header row — tinted band + bottom rule for a clean table top.
-      doc.rect(M, y - 2, W, 15).fill(C.cardBg);
-      doc.font(FONT_BOLD).fontSize(7.5).fillColor(C.subtext)
-         .text('ASSET', M + 4, y + 1, { width: 216 })
-         .text('ESTIMATED RANGE', M + 228, y + 1, { width: 140 })
-         .text('NOTE', M + 376, y + 1, { width: W - 376 });
-      y += 15;
-      doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).lineWidth(0.75).stroke();
-      y += 6;
+      // Cap the printed list so the leave-behind stays tight (a wall of line
+      // items belongs in the full capital plan the rep follows up with). Items
+      // already arrive QuoteRequests-first, then modernization assets in
+      // descending risk order, so the warmest opportunities are never cut.
+      const MAX_BUDGET_ROWS = 16;
+      const shownItems = budgetItems.slice(0, MAX_BUDGET_ROWS);
+      const overflowCount = budgetItems.length - shownItems.length;
+      const ROW_H = 16;
 
-      for (const item of budgetItems) {
-        if (y > PAGE.height - 60) { doc.addPage(); y = PAGE.margin; }
+      // Deterministic single-line fit: measure with widthOfString and trim with
+      // an ellipsis. pdfkit's lineBreak:false + ellipsis options proved unreliable
+      // here (a too-wide label still wrapped to a 2nd line and overlapped the next
+      // row), so we truncate to the column width ourselves before drawing.
+      const fitOneLine = (s: any, maxW: number, font: string, size: number): string => {
+        doc.font(font).fontSize(size);
+        const str = String(s ?? '');
+        if (doc.widthOfString(str) <= maxW) return str;
+        let t = str;
+        while (t.length > 1 && doc.widthOfString(t + '…') > maxW) t = t.slice(0, -1);
+        return t.replace(/\s+$/, '') + '…';
+      };
 
-        doc.font(FONT_BOLD).fontSize(9).fillColor(C.text)
-           .text(item.label.slice(0, 45), M + 4, y, { width: 216 });
-        doc.font(FONT_BOLD).fontSize(9).fillColor(C.accent)
-           .text(item.range, M + 228, y, { width: 140 });
-        doc.font(FONT_OBL).fontSize(8).fillColor(C.subtext)
-           .text(item.note.slice(0, 60), M + 376, y, { width: W - 376 });
+      // Column-header band. Extracted so it can be redrawn after a page break —
+      // a continued table must never show headerless rows.
+      const drawBudgetHeader = () => {
+        doc.rect(M, y - 2, W, 15).fill(C.cardBg);
+        doc.font(FONT_BOLD).fontSize(7.5).fillColor(C.subtext)
+           .text('ASSET', M + 4, y + 1, { lineBreak: false })
+           .text('ESTIMATED RANGE', M + 228, y + 1, { lineBreak: false })
+           .text('NOTE', M + 376, y + 1, { lineBreak: false });
         y += 15;
-        doc.moveTo(M, y - 3).lineTo(M + W, y - 3).strokeColor('#eef1f6').lineWidth(0.5).stroke();
-        y += 1;
+        doc.moveTo(M, y).lineTo(M + W, y).strokeColor(C.border).lineWidth(0.75).stroke();
+        y += 6;
+      };
+      drawBudgetHeader();
+
+      for (const item of shownItems) {
+        // Break BEFORE any row that would cross the bottom margin, with a full
+        // row of headroom so no single cell can auto-paginate on its own (the
+        // old bug: a row's three cells scattered across three pages). Redraw the
+        // header on the continuation page.
+        if (y + ROW_H > PAGE.height - PAGE.margin) {
+          doc.addPage();
+          y = PAGE.margin;
+          drawBudgetHeader();
+        }
+
+        // Each cell pre-fitted to its column width -> exactly one line: no wrap
+        // (which used to overlap the next row) and no auto-pagination.
+        doc.font(FONT_BOLD).fontSize(9).fillColor(C.text)
+           .text(fitOneLine(item.label, 214, FONT_BOLD, 9), M + 4, y, { lineBreak: false });
+        doc.font(FONT_BOLD).fontSize(9).fillColor(C.accent)
+           .text(fitOneLine(item.range, 140, FONT_BOLD, 9), M + 228, y, { lineBreak: false });
+        doc.font(FONT_OBL).fontSize(8).fillColor(C.subtext)
+           .text(fitOneLine(item.note, W - 376 - 4, FONT_OBL, 8), M + 376, y, { lineBreak: false });
+        y += ROW_H;
+        doc.moveTo(M, y - 4).lineTo(M + W, y - 4).strokeColor('#eef1f6').lineWidth(0.5).stroke();
+      }
+
+      if (overflowCount > 0) {
+        if (y + ROW_H > PAGE.height - PAGE.margin) { doc.addPage(); y = PAGE.margin; }
+        doc.font(FONT_OBL).fontSize(8.5).fillColor(C.subtext)
+           .text(fitOneLine(`+ ${overflowCount} more at-risk ${overflowCount === 1 ? 'asset' : 'assets'} — ask your service rep for the full capital plan.`, W - 8, FONT_OBL, 8.5),
+                 M + 4, y + 2, { lineBreak: false });
+        y += ROW_H + 2;
       }
     }
 
