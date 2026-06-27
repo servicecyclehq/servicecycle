@@ -38,6 +38,11 @@ import {
 
 const ALERTS_SAVED_VIEWS_KEY = 'servicecycle:alerts-list:saved-views';
 
+// UX-9-2: page the high-volume alert feed so items beyond the cap stay reachable.
+// The server (routes/alerts.ts) supports page/limit and returns a numeric `count`
+// total plus a `pagination` envelope.
+const ALERTS_PAGE_SIZE = 50;
+
 const DEFAULT_SORTING = [{ id: 'tier', desc: false }];
 
 const TYPE_FILTER_CHIPS = [
@@ -54,6 +59,9 @@ export default function AlertsPage() {
   // serverTotal: the TRUE open-alert count (matches the sidebar bell). May
   // exceed alerts.length when more than one page exists — CUST-8-1.
   const [serverTotal, setServerTotal] = useState(0);
+  // UX-9-2: server-side pagination state.
+  const [page, setPage]           = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const navigate = useNavigate();
@@ -141,23 +149,25 @@ export default function AlertsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  const fetchAlerts = () => {
+  const fetchAlerts = (pageNum = page) => {
     setLoading(true);
-    // Pull the full open-alert set (server caps at 500/page); `count` is the
-    // true total even if it ever exceeds that — used to reconcile the header
-    // and the sidebar bell.
-    api.get('/api/alerts', { params: { limit: 500 } })
+    // UX-9-2: pull one page at a time (server caps at 500/page; we request
+    // ALERTS_PAGE_SIZE). `count` is the true open-alert total — used to
+    // reconcile the header and the sidebar bell; `pagination.pages` drives the
+    // prev/next controls.
+    api.get('/api/alerts', { params: { page: pageNum, limit: ALERTS_PAGE_SIZE } })
       .then(r => {
         const d = r.data.data || {};
         const list = Array.isArray(d.alerts) ? d.alerts : [];
         setAlerts(list);
         setServerTotal(typeof d.count === 'number' ? d.count : list.length);
+        setTotalPages(d.pagination?.pages ?? 1);
       })
       .catch(() => setError('Failed to load alerts.'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchAlerts(); }, []);
+  useEffect(() => { fetchAlerts(page); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page]);
 
   async function acknowledge(id) {
     try {
@@ -200,10 +210,12 @@ export default function AlertsPage() {
 
   // totalCount drives the "X items need attention" header and the empty-state
   // copy; use the server's true total so it reconciles with the sidebar bell
-  // even when the loaded page is capped (CUST-8-1).
+  // even when only the current page is loaded (CUST-8-1).
   const loadedCount   = alerts.length;
   const totalCount    = Math.max(serverTotal, loadedCount);
-  const capped        = totalCount > loadedCount; // more alerts than we loaded
+  // UX-9-2: 1-based range of the alerts shown on the current page.
+  const rangeStart    = loadedCount === 0 ? 0 : (page - 1) * ALERTS_PAGE_SIZE + 1;
+  const rangeEnd      = (page - 1) * ALERTS_PAGE_SIZE + loadedCount;
   const filteredCount = rows.length;
   const hasColumnFilters = columnFilters.length > 0;
   const hasAnyFilters    = hasColumnFilters || activeChip !== 'all';
@@ -401,14 +413,6 @@ export default function AlertsPage() {
               })}
             </div>
 
-            {capped && (
-              <div className="alert alert-info" style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)' }}>
-                Showing {loadedCount.toLocaleString()} of {totalCount.toLocaleString()} open alerts.
-                Use a filter chip or column filter to narrow to the ones you need —
-                the count above and the sidebar bell reflect the full total.
-              </div>
-            )}
-
             <div className="card">
               {chipFilteredRows.length === 0 ? (
                 <div style={{ padding: '40px 32px', textAlign: 'center', maxWidth: 560, margin: '0 auto' }}>
@@ -502,6 +506,34 @@ export default function AlertsPage() {
             {hasColumnFilters && rows.length > 0 && filteredCount < chipFilteredRows.length && (
               <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: 6, textAlign: 'right' }}>
                 Showing {filteredCount} of {chipFilteredRows.length} (filtered by column)
+              </div>
+            )}
+
+            {/* UX-9-2: server-side pager — items beyond one page stay reachable.
+                The "of N" total is the server's true open-alert count (reconciles
+                with the sidebar bell). */}
+            {(totalPages > 1 || rangeEnd < totalCount) && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                  Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {totalCount.toLocaleString()} open alert{totalCount !== 1 ? 's' : ''}
+                  {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ''}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button" className="btn btn-secondary btn-sm"
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                  >
+                    {String.fromCharCode(8592)} Prev
+                  </button>
+                  <button
+                    type="button" className="btn btn-secondary btn-sm"
+                    disabled={page >= totalPages || loading}
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  >
+                    Next {String.fromCharCode(8594)}
+                  </button>
+                </div>
               </div>
             )}
 

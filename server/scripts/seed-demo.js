@@ -1934,6 +1934,88 @@ async function _seedAccount() {
 
   console.log('  seeded 6 incident log entries (5 resolved, 1 open)');
 
+  // -- Arc-flash incident register ---------------------------------------------
+  // DEMO-9-2: the arc-flash incident register + per-asset "Incidents & near-misses"
+  // card read prisma.arcFlashIncident (arcFlashIngest.ts register/fleet/risk-score +
+  // ArcFlashAssetTab.jsx), NOT incidentLog. Seed the arc-flash-relevant incidents
+  // here so the hero feature's register is populated: the 18-month ARC_FLASH_EVENT on
+  // the SWGR-1A hero bus (drives the per-asset tab + "incident outranks DANGER%" sort)
+  // and the open SWGR-2M thermal-alarm near-miss (feeds the risk-score upgrade story),
+  // plus a couple of resolved near-misses. incidentType uses the arcFlashIncident enum
+  // (near_miss | arc_flash | shock | equipment_failure | other), distinct from the
+  // incidentLog types above. busName matches the SystemStudyAsset binding so the
+  // register links to the bus.
+  await prisma.arcFlashIncident.createMany({ data: [
+    // 1. arc_flash — resolved/closed, 18 months ago on the SWGR-1A hero bus
+    {
+      accountId:        account.id,
+      assetId:          assets['SWGR-1A-1'].id,
+      siteId:           riverside.id,
+      busName:          'SWGR-1A Main Bus',
+      incidentType:     'arc_flash',
+      occurredAt:       addDays(now, -548),
+      description:      'Low-energy arc event during racking operation on section 1A-1. No injuries; PPE (Cat 4) properly worn. Caused by debris on draw-out rails. Area decontaminated; study rescoped to include updated incident-energy values on this bus. PPE labels replaced.',
+      injury:           false,
+      ppeWorn:          'Cat 4 arc suit, face shield, voltage-rated gloves',
+      workType:         'energized',
+      oshaRecordable:   false,
+      correctiveAction: 'Draw-out rails cleaned; racking procedure updated to require rail inspection. Study rescoped; arc-flash labels reprinted at current values.',
+      status:           'closed',
+      resolvedAt:       addDays(now, -545),
+      reportedById:     manager.id,
+    },
+    // 2. near_miss — OPEN, 45 days ago on SWGR-2M (feeds the risk-score upgrade story)
+    {
+      accountId:    account.id,
+      assetId:      assets['SWGR-2M'].id,
+      siteId:       riverside.id,
+      busName:      'SWGR-2M Section 1',
+      incidentType: 'near_miss',
+      occurredAt:   addDays(now, -45),
+      description:  'Thermal imaging alarm from permanent IR monitoring window on SWGR-2M B-phase bus connection. Spot temperature 74C ambient-corrected (delta-T 38C above ambient); threshold 60C for Category III. Open investigation. Interim: load reduced on affected feeder. Outage window requested for re-torque and cleaning.',
+      injury:       false,
+      workType:     'inspection',
+      status:       'open',
+      reportedById: admin.id,
+    },
+    // 3. near_miss — resolved/closed, 14 months ago on SWGR-2M (relay operation)
+    {
+      accountId:        account.id,
+      assetId:          assets['SWGR-2M'].id,
+      siteId:           riverside.id,
+      busName:          'SWGR-2M Section 1',
+      incidentType:     'near_miss',
+      occurredAt:       addDays(now, -425),
+      description:      'SEL-751 relay operated on B-phase overcurrent in the mezzanine lineup, coinciding with a confirmed thermal overload on the B-phase bus connection. No arc, no injury. Connection retorqued and thermal compound applied; relay event log reviewed by relay engineer.',
+      injury:           false,
+      workType:         'de_energized',
+      oshaRecordable:   false,
+      correctiveAction: 'B-phase connection retorqued to spec; thermal compound applied. Added to IR monitoring watch list.',
+      status:           'closed',
+      resolvedAt:       addDays(now, -420),
+      reportedById:     admin.id,
+    },
+    // 4. equipment_failure — resolved/closed, 3 months ago on GEN-1 (overspeed trip)
+    {
+      accountId:        account.id,
+      assetId:          assets['GEN-1'].id,
+      siteId:           riverside.id,
+      busName:          'GEN-1 Output',
+      incidentType:     'equipment_failure',
+      occurredAt:       addDays(now, -91),
+      description:      'Overspeed relay tripped GEN-1 during monthly NFPA 110 transfer test. No arc, no injury. Engine governor system found drifted out of calibration. Unit isolated during repair.',
+      injury:           false,
+      workType:         'de_energized',
+      oshaRecordable:   false,
+      correctiveAction: 'Governor adjusted by Caterpillar-certified technician; unit passed load test post-repair. NFPA 110 log updated.',
+      status:           'closed',
+      resolvedAt:       addDays(now, -88),
+      reportedById:     manager.id,
+    },
+  ]});
+
+  console.log('  seeded 4 arc-flash incidents (1 arc_flash hero-bus event + 1 open near-miss + 2 resolved)');
+
   // -- LOTO Procedures -------------------------------------------------------
   // One active procedure on T-1 (most critical asset), one draft on GEN-1.
 

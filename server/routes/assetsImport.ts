@@ -618,19 +618,19 @@ async function prepareImport(req): Promise<any> {
   // in the account. Bounded by the import (<=500 rows => at most a few hundred
   // distinct site names). We only need existing sites that the file references —
   // unknownSites is derived from siteNamesByLc minus what we find here, so a
-  // file-scoped lookup gives the identical result. Query both case variants so
-  // a case-sensitive Postgres `in` still matches a site stored in a different
-  // case; the map is keyed by lc() exactly as before.
-  const siteNameVariants = new Set<string>();
-  for (const orig of siteNamesByLc.values()) {
-    const trimmed = String(orig).trim();
-    if (!trimmed) continue;
-    siteNameVariants.add(trimmed);
-    siteNameVariants.add(trimmed.toLowerCase());
-    siteNameVariants.add(trimmed.toUpperCase());
-  }
-  const siteRecords = siteNameVariants.size === 0 ? [] : await prisma.site.findMany({
-    where:  { accountId: req.user.accountId, name: { in: [...siteNameVariants] } },
+  // file-scoped lookup gives the identical result.
+  //
+  // REGRESS-9-1: match case-insensitively. A Postgres `in` is case-SENSITIVE, so
+  // generating original/lower/UPPER variants misses any site stored in mixed case
+  // (e.g. file "Riverside Plant" vs stored "Riverside plant") and creates a
+  // duplicate. Use `mode: 'insensitive'` per distinct name so the DB folds case
+  // for us, while still scoping the query to ONLY the file's names (no full-table
+  // load); the result map is keyed by lc() exactly as before.
+  const siteNameLookups = [...siteNamesByLc.values()]
+    .map((orig) => String(orig).trim())
+    .filter((t) => t.length > 0);
+  const siteRecords = siteNameLookups.length === 0 ? [] : await prisma.site.findMany({
+    where:  { accountId: req.user.accountId, OR: siteNameLookups.map((name) => ({ name: { equals: name, mode: 'insensitive' as const } })) },
     select: { id: true, name: true },
   });
   const siteByLc = new Map(siteRecords.map((s: any) => [lc(s.name), s]));
@@ -646,22 +646,24 @@ async function prepareImport(req): Promise<any> {
   // of pulling every asset-with-a-serial in the account into memory. The import
   // is capped at 500 rows, so the lookup set is tiny; the previous full-table
   // findMany made every preview/commit scale with the whole catalog (a 50k-asset
-  // tenant re-read 50k rows for a 10-row import). We collect the distinct
-  // file serials in BOTH original and lowercased casing so a Postgres `in`
-  // (case-sensitive) still catches an existing row stored in a different case,
-  // then key the map by lc() exactly as before.
-  const fileSerialVariants = new Set<string>();
+  // tenant re-read 50k rows for a 10-row import).
+  //
+  // REGRESS-9-1: match case-insensitively. A Postgres `in` is case-SENSITIVE, so
+  // original/lower/UPPER variants miss an existing serial stored in mixed case
+  // (e.g. file "Ab123" vs stored "aB123") and bypass the dedupe, inserting a
+  // duplicate asset. Use `mode: 'insensitive'` per distinct file serial so the DB
+  // folds case, while keeping the query scoped to ONLY the file's serials (no
+  // full-table load); the map is keyed by lc() exactly as before.
+  const fileSerialLookups = new Set<string>();
   for (const data of normalizedRows) {
     const sn = (data as any).serialNumber;
     if (!sn) continue;
     const trimmed = String(sn).trim();
     if (!trimmed) continue;
-    fileSerialVariants.add(trimmed);
-    fileSerialVariants.add(trimmed.toLowerCase());
-    fileSerialVariants.add(trimmed.toUpperCase());
+    fileSerialLookups.add(trimmed);
   }
-  const existingAssets = fileSerialVariants.size === 0 ? [] : await prisma.asset.findMany({
-    where:  { accountId: req.user.accountId, serialNumber: { in: [...fileSerialVariants] } },
+  const existingAssets = fileSerialLookups.size === 0 ? [] : await prisma.asset.findMany({
+    where:  { accountId: req.user.accountId, OR: [...fileSerialLookups].map((sn) => ({ serialNumber: { equals: sn, mode: 'insensitive' as const } })) },
     select: { id: true, serialNumber: true },
   });
   const existingBySerial = new Map();

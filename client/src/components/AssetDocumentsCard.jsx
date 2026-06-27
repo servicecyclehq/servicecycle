@@ -271,7 +271,7 @@ export default function AssetDocumentsCard({ asset, canWrite }) {
 
   function handleDeleted(id) {
     setDocs(d => d.filter(doc => doc.id !== id));
-    setToast({ message: 'Document removed', type: 'success' });
+    setToast({ message: 'Document removed', variant: 'success' });
   }
 
   function handleUpdated(updated) {
@@ -282,7 +282,7 @@ export default function AssetDocumentsCard({ asset, canWrite }) {
 
   return (
     <div className="card mb-16">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <Toast toast={toast} onClose={() => setToast(null)} />
 
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="card-title">Documents & Procedures {docs.length > 0 && `(${docs.length})`}</div>
@@ -295,7 +295,7 @@ export default function AssetDocumentsCard({ asset, canWrite }) {
         {showAdd && (
           <AddDocForm
             assetId={asset.id}
-            onAdded={() => { setShowAdd(false); fetchDocs(); setToast({ message: 'Document added', type: 'success' }); }}
+            onAdded={() => { setShowAdd(false); fetchDocs(); setToast({ message: 'Document added', variant: 'success' }); }}
             onCancel={() => setShowAdd(false)}
           />
         )}

@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/client';
+import { useConfirm } from '../context/ConfirmContext';
 
 const CATEGORIES = ['BREAKER', 'TRANSFORMER', 'RELAY', 'CABLE', 'FUSE', 'CONSUMABLE', 'OTHER'];
 
@@ -139,6 +140,7 @@ function InventoryEntry({ entry, onEdit, onDelete }) {
 }
 
 function PartRow({ part, onRefresh }) {
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -169,7 +171,12 @@ function PartRow({ part, onRefresh }) {
   }
 
   async function deletePart() {
-    if (!window.confirm(`Delete part ${part.partNumber}? This cannot be undone.`)) return;
+    if (!await confirm({
+      title: 'Delete part?',
+      message: `Delete part ${part.partNumber}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })) return;
     try {
       await api.delete(`/api/parts/${part.id}`);
       onRefresh();
@@ -187,7 +194,12 @@ function PartRow({ part, onRefresh }) {
   }
 
   async function deleteInventory(entryId) {
-    if (!window.confirm('Remove this inventory entry?')) return;
+    if (!await confirm({
+      title: 'Remove inventory entry?',
+      message: 'Remove this inventory entry?',
+      confirmLabel: 'Remove',
+      danger: true,
+    })) return;
     await api.delete(`/api/parts/${part.id}/inventory/${entryId}`);
     loadDetail();
   }

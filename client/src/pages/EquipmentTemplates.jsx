@@ -307,10 +307,10 @@ export default function EquipmentTemplates() {
     })) return;
     try {
       await api.delete(`/api/asset-templates/${t.id}`);
-      setToast({ message: `Deleted "${t.name}"`, type: 'success' });
+      setToast({ message: `Deleted "${t.name}"`, variant: 'success' });
       load();
     } catch (e) {
-      setToast({ message: e?.response?.data?.error || 'Delete failed', type: 'error' });
+      setToast({ message: e?.response?.data?.error || 'Delete failed', variant: 'error' });
     }
   }
 
@@ -323,13 +323,13 @@ export default function EquipmentTemplates() {
 
   return (
     <div className="page-container">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <Toast toast={toast} onClose={() => setToast(null)} />
 
       {(showForm || editTarget) && (
         <TemplateFormModal
           existing={editTarget}
           allTasks={allTasks}
-          onSave={() => { setShowForm(false); setEditTarget(null); setToast({ message: 'Template saved', type: 'success' }); load(); }}
+          onSave={() => { setShowForm(false); setEditTarget(null); setToast({ message: 'Template saved', variant: 'success' }); load(); }}
           onClose={() => { setShowForm(false); setEditTarget(null); }}
         />
       )}

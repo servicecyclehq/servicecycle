@@ -890,7 +890,7 @@ router.get('/dashboard', async (req: any, res: any) => {
     const liveIds = liveIngests.map((i: any) => i.id);
 
     const [studyAssets, studiesExpiringSoon, blockedBuses, openCollectionTasks] = await Promise.all([
-      prisma.systemStudyAsset.findMany({ where: { accountId }, select: { busName: true, incidentEnergyCalCm2: true, nominalVoltage: true, assetId: true, studyId: true }, take: 2000 }),
+      prisma.systemStudyAsset.findMany({ where: { accountId, study: { supersededById: null } }, select: { busName: true, incidentEnergyCalCm2: true, nominalVoltage: true, assetId: true, studyId: true }, take: 2000 }),
       prisma.systemStudy.count({ where: { accountId, expiresAt: { lte: soon } } }),
       liveIds.length ? prisma.arcFlashIngestBus.count({ where: { ingestId: { in: liveIds }, readiness: 'blocked' } }) : Promise.resolve(0),
       prisma.arcFlashCollectionTask.count({ where: { accountId, status: { in: ['open', 'in_progress'] } } }),
