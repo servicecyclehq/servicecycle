@@ -1,84 +1,43 @@
 /**
- * xlsxExport.js — shared ExcelJS workbook builder + streamer.
+ * xlsxExport.ts — shared ExcelJS workbook builder + streamer.
  *
- * v0.58.0: extracted from routes/export.js so report routes can reuse the
- * same column-registry → workbook conversion without duplicating the
- * workbook formatting code or the column-type number-format choices.
+ * Report routes reuse the same column-registry → workbook conversion without
+ * duplicating formatting. All styling now flows through lib/xlsxStyle so every
+ * Excel export across the platform shares one canonical, branded look (navy
+ * masthead, petrol header, status chips, typed formats, frozen + filterable
+ * header). The multi-sheet account export gets a KPI summary cover.
  *
  * Column def shape (columnDefs[i]):
- *   {
- *     id:      'fieldKey',
- *     header:  'Column Header',
- *     type:    'string' | 'number' | 'currency' | 'date' | 'percent',
- *     get:     row => valueFromRow,
- *     width?:  number,  // default 20
- *   }
- *
- * Date cells use 'yyyy-mm-dd' format; currency uses "$"#,##0; percent uses
- * 0.0%; number uses #,##0 implicit. Cells with null/empty strings are left
- * blank rather than coerced to 0 — so a missing date doesn't show as
- * 1900-01-00.
+ *   { id, header, type?: 'string'|'number'|'currency'|'date'|'percent',
+ *     get?: row => value, width?: number,
+ *     chip?: raw => 'good'|'warn'|'bad'|null, bar?: boolean }
  */
 
 'use strict';
 
 const ExcelJS = require('exceljs');
+const { applyReportSheet, applySummarySheet, brandWorkbook } = require('./xlsxStyle');
 
-function dateOrNull(v) {
-  if (v == null || v === '') return null;
-  if (v instanceof Date) return v;
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? null : d;
+const today = () => new Date().toISOString().slice(0, 10);
+const rowsLabel = (n: number) => `${n} row${n === 1 ? '' : 's'}`;
+
+// Map a column registry entry (id-keyed) to an xlsxStyle column (key-keyed).
+function toStyleColumns(defs: any[]): any[] {
+  return defs.map((c) => ({ header: c.header, key: c.id, type: c.type, get: c.get, width: c.width, chip: c.chip, bar: c.bar }));
 }
 
-async function sendXlsx(res, { sheetName, columnDefs, rows, filename }) {
+async function sendXlsx(res: any, { sheetName, columnDefs, rows, filename, subtitle, truncated }: any) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'ServiceCycle';
-  wb.created = new Date();
+  brandWorkbook(wb);
   const ws = wb.addWorksheet(sheetName || 'Report');
 
-  ws.columns = columnDefs.map(c => ({
-    header: c.header,
-    key: c.id,
-    width: c.width || 20,
-  }));
-  ws.getRow(1).font = { bold: true };
-  ws.getRow(1).fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFF1F5F9' },
-  };
-
-  for (const r of rows) {
-    const rowObj = {};
-    for (const c of columnDefs) {
-      const raw = c.get(r);
-      if (c.type === 'date') {
-        rowObj[c.id] = raw instanceof Date ? raw : dateOrNull(raw);
-      } else if (c.type === 'number' || c.type === 'currency' || c.type === 'percent') {
-        rowObj[c.id] = (raw == null || raw === '') ? null : Number(raw);
-      } else {
-        rowObj[c.id] = raw == null ? '' : String(raw);
-      }
-    }
-    const row = ws.addRow(rowObj);
-    columnDefs.forEach((c, idx) => {
-      if (c.type === 'currency') {
-        row.getCell(idx + 1).numFmt = '"$"#,##0';
-      } else if (c.type === 'date') {
-        row.getCell(idx + 1).numFmt = 'yyyy-mm-dd';
-      } else if (c.type === 'percent') {
-        // Values stored as 0..1 render as 0%..100%; values >1 are treated
-        // as already-multiplied (e.g. 23.4 → 23.4%) so callers can pick
-        // whichever convention is natural for their data.
-        row.getCell(idx + 1).numFmt = '0.0%';
-      } else if (c.type === 'number') {
-        row.getCell(idx + 1).numFmt = '#,##0';
-      }
-    });
-  }
-
-  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  applyReportSheet(ws, {
+    title: sheetName || 'Report',
+    subtitle: subtitle || `${rowsLabel(rows.length)} · Generated ${today()}${truncated ? ' · capped — refine filters for the full set' : ''}`,
+    columns: toStyleColumns(columnDefs),
+    rows,
+    autoFilter: true,
+  });
 
   const buffer = await wb.xlsx.writeBuffer();
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -87,52 +46,45 @@ async function sendXlsx(res, { sheetName, columnDefs, rows, filename }) {
 }
 
 // ── Multi-sheet full-account export (#5 export-everything) ───────────────────
-// Builds one workbook from a buildAccountExport() payload: a "Read Me" cover
-// sheet (meta + counts + offboarding) followed by one sheet per entity, driven
-// by the sheetPlan (accountExport.EXPORT_SHEETS). Reuses the same type/number
-// formatting conventions as sendXlsx.
-async function sendAccountXlsx(res, { exportData, sheetPlan, filename }) {
+// A branded "Read Me" summary (KPI cards from the entity counts + meta +
+// offboarding) followed by one filterable sheet per entity from the sheetPlan.
+async function sendAccountXlsx(res: any, { exportData, sheetPlan, filename }: any) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'ServiceCycle';
-  wb.created = new Date();
+  brandWorkbook(wb);
 
-  // Cover sheet.
-  const cover = wb.addWorksheet('Read Me');
-  cover.columns = [{ header: 'Field', key: 'k', width: 28 }, { header: 'Value', key: 'v', width: 90 }];
-  cover.getRow(1).font = { bold: true };
   const m = exportData.meta || {};
-  cover.addRow({ k: 'Product', v: `${m.product || 'ServiceCycle'} account export v${m.exportVersion || '1'}` });
-  cover.addRow({ k: 'Standard', v: m.standard || 'NFPA 70B' });
-  cover.addRow({ k: 'Generated', v: m.generatedAt ? new Date(m.generatedAt).toISOString() : '' });
-  cover.addRow({ k: 'Company', v: exportData.account?.companyName || '' });
-  cover.addRow({ k: '', v: '' });
-  for (const [k, v] of Object.entries(exportData.counts || {})) cover.addRow({ k: `Count: ${k}`, v: String(v) });
-  cover.addRow({ k: '', v: '' });
-  for (const line of (exportData.offboarding || [])) cover.addRow({ k: 'Offboarding', v: line });
+  const acct = exportData.account?.companyName || '';
+  const gen = m.generatedAt ? new Date(m.generatedAt).toISOString().slice(0, 10) : today();
+  const counts = exportData.counts || {};
+
+  const kpis = Object.entries(counts).slice(0, 4).map(([k, v]) => ({ value: String(v), label: k }));
+  const lines: Array<[string | null, any]> = [
+    ['Product', `${m.product || 'ServiceCycle'} account export v${m.exportVersion || '1'}`],
+    ['Standard', m.standard || 'NFPA 70B'],
+    ['Company', acct],
+    ['Generated', gen],
+    [null, null],
+    ...Object.entries(counts).map(([k, v]) => [`Count — ${k}`, String(v)] as [string, string]),
+  ];
+  for (const line of (exportData.offboarding || [])) lines.push([null, null], ['Offboarding', line]);
+
+  applySummarySheet(wb.addWorksheet('Read Me'), {
+    title: 'ServiceCycle Account Export',
+    subtitle: `${acct ? acct + '   ·   ' : ''}Generated ${gen}`,
+    kpis,
+    lines,
+  });
 
   for (const plan of sheetPlan) {
     const rows = exportData[plan.key] || [];
     const ws = wb.addWorksheet(plan.sheet);
-    ws.columns = plan.columns.map((c) => ({ header: c.header, key: c.id, width: c.width || 22 }));
-    ws.getRow(1).font = { bold: true };
-    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-    for (const r of rows) {
-      const rowObj = {};
-      for (const c of plan.columns) {
-        const raw = c.get ? c.get(r) : r[c.id];
-        if (c.type === 'date') rowObj[c.id] = raw instanceof Date ? raw : dateOrNull(raw);
-        else if (c.type === 'number' || c.type === 'currency') rowObj[c.id] = (raw == null || raw === '') ? null : Number(raw);
-        else if (typeof raw === 'boolean') rowObj[c.id] = raw ? 'Yes' : 'No';
-        else rowObj[c.id] = raw == null ? '' : String(raw);
-      }
-      const row = ws.addRow(rowObj);
-      plan.columns.forEach((c, idx) => {
-        if (c.type === 'currency') row.getCell(idx + 1).numFmt = '"$"#,##0';
-        else if (c.type === 'date') row.getCell(idx + 1).numFmt = 'yyyy-mm-dd';
-        else if (c.type === 'number') row.getCell(idx + 1).numFmt = '#,##0';
-      });
-    }
-    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    applyReportSheet(ws, {
+      title: plan.sheet,
+      subtitle: `${acct ? acct + '   ·   ' : ''}${rowsLabel(rows.length)}   ·   Generated ${gen}`,
+      columns: toStyleColumns(plan.columns),
+      rows,
+      autoFilter: true,
+    });
   }
 
   const buffer = await wb.xlsx.writeBuffer();

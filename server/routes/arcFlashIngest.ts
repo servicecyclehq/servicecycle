@@ -30,6 +30,7 @@ const { diffIngestRevisions } = require('../lib/arcFlashDrift');
 const { checkSystemContradictions, checkBusContradictions } = require('../lib/arcFlashSanity');
 const { parseQuery, matchRow } = require('../lib/arcFlashSearch');
 const { buildExportRows, toCsv, EXPORT_COLUMNS } = require('../lib/arcFlashExport');
+const { applyTemplateHeader } = require('../lib/xlsxStyle');
 const { parseResultsCsv, matchResults } = require('../lib/arcFlashResultsImport');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
@@ -1964,6 +1965,7 @@ router.get('/afx/export-multi', requireManager, async (req: any, res: any) => {
       const ws = wb.addWorksheet(s.sheet);
       ws.addRow(s.headers);
       for (const row of s.rows) ws.addRow(row.map((v: any) => (v == null ? '' : v)));
+      applyTemplateHeader(ws);
     }
     const buf = await wb.xlsx.writeBuffer();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
