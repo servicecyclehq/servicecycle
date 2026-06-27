@@ -185,7 +185,11 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
   }
 
   // Footer: equipment identity leads, facility name, study date, minimal brand.
-  const footY = y + h - 60;
+  // Reserve enough height for the full stacked block (equipment + facility +
+  // study date/expiry + PE attribution + 2-line disclaimer) so it all lands on
+  // THIS sticker. Too small a reserve pushes the last lines past the page bottom
+  // and pdfkit auto-adds blank stickers for the overflow.
+  const footY = y + h - 92;
   doc.moveTo(x + pad, footY).lineTo(x + w - pad, footY).lineWidth(0.75).strokeColor('#94a3b8').stroke();
   let fy = footY + 6;
   doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(m.busName, x + pad, fy, { width: w - 2 * pad });
@@ -205,8 +209,9 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
       .text(expiryLabel, x + pad, fy, { width: w - 2 * pad });
     fy += 11;
   }
+  const peLabel = m.peName ? (/\bPE\b/i.test(m.peName) ? m.peName : `${m.peName}, PE`) : null;
   const studyByLine = (m.firmName || m.peName)
-    ? `Study by: ${[m.firmName, m.peName ? m.peName + ', PE' : null].filter(Boolean).join(' / ')}`
+    ? `Study by: ${[m.firmName, peLabel].filter(Boolean).join(' / ')}`
     : 'Study by: [PE firm name — enter in study record]';
   doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(studyByLine, x + pad, fy, { width: w - 2 * pad });
   fy += 10;
