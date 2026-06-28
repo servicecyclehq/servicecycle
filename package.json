@@ -15,7 +15,8 @@
     "audit:aggregate": "node server/scripts/audit-aggregator.js",
     "lint": "eslint .",
     "lint:css": "stylelint \"client/src/**/*.css\"",
-    "lint:html": "html-validate marketing-site/*.html"
+    "lint:html": "html-validate marketing-site/*.html",
+    "bump": "node scripts/bump-version.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
