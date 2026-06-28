@@ -19,6 +19,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api/client';
 import { useConfirm } from '../context/ConfirmContext';
 import { UPLOAD_DISCLAIMER, DOWNLOAD_DISCLAIMER } from '../lib/documentDisclaimer';
+import ProvenanceBadge, { PROVENANCE_OPTIONS } from './ProvenanceBadge';
 import Toast from './Toast';
 
 const DOC_TYPE_META = {
@@ -74,6 +75,7 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
   const [saving,   setSaving]   = useState(false);
   const [err,      setErr]      = useState(null);
   const [ack,      setAck]      = useState(false);
+  const [provenance, setProvenance] = useState('unverified');
   const fileRef = useRef();
 
   async function handleSubmit(e) {
@@ -84,13 +86,14 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
     try {
       if (mode === 'url') {
         if (!url.trim() || !filename.trim()) { setErr('URL and filename are required'); setSaving(false); return; }
-        await api.post('/api/documents/link', { url, filename, docType: docType || null, assetId });
+        await api.post('/api/documents/link', { url, filename, docType: docType || null, provenance, assetId });
       } else {
         if (!file) { setErr('Select a file to upload'); setSaving(false); return; }
         const form = new FormData();
         form.append('file', file);
         form.append('assetId', assetId);
         if (docType) form.append('docType', docType);
+        form.append('provenance', provenance);
         await api.post('/api/documents/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
       }
       onAdded();
@@ -125,6 +128,13 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
           <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Document type</label>
           <select className="input" value={docType} onChange={e => setDocType(e.target.value)} style={{ width: 200 }}>
             {DOC_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+
+        <div style={{ flex: '0 0 auto' }}>
+          <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Provenance</label>
+          <select className="input" value={provenance} onChange={e => setProvenance(e.target.value)} style={{ width: 200 }}>
+            {PROVENANCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
 
@@ -232,6 +242,7 @@ function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
         </div>
       </div>
 
+      <ProvenanceBadge value={doc.provenance} />
       {/* Inline type reclassification (manager+) */}
       {editing ? (
         <select className="input" value={newType} onChange={e => { handleTypeChange(e.target.value); setEditing(false); }}

@@ -2154,29 +2154,38 @@ async function _seedAccount() {
     externalUrl: 'https://www.cat.com/en_US/support/documentation/c175-generator-set.html',
   }});
 
-  // -- Real downloadable one-line drawing (wiring_diagram) -------------------
-  // Branded as-built one-line PDF stored in object storage so it is genuinely
-  // viewable AND downloadable on the demo (the other demo docs are external
-  // URLs only). Attached to the SWGR-1A-1 hero bus so it sits with the arc-
-  // flash story. Non-fatal: a missing asset file must not break the seed.
+  // -- Real downloadable one-line drawings (SITE-level) ----------------------
+  // Branded as-built one-line PDFs in object storage, attached at the SITE
+  // level (not one asset) so each surfaces on EVERY asset at that site via the
+  // asset<->site union. provenance 'as_built' -- demo drawings, NOT PE-sealed.
+  // Non-fatal: a missing asset file must not break the seed.
   try {
     const fs = require('fs');
     const { uploadFile } = require('../lib/storage');
-    const oneLinePath = require('path').join(__dirname, 'demo-assets', 'riverside-substation-a-oneline.pdf');
-    const oneLineBytes = fs.readFileSync(oneLinePath);
-    const oneLineName = 'Riverside Substation A -- Electrical One-Line (As-Built).pdf';
-    const oneLineUp = await uploadFile(account.id, assets['SWGR-1A-1'].id, oneLineName, oneLineBytes, 'application/pdf');
-    await prisma.document.create({ data: {
-      accountId:  account.id,
-      assetId:    assets['SWGR-1A-1'].id,
-      uploadedBy: admin.id,
-      filename:   oneLineName,
-      fileType:   'application/pdf',
-      filePath:   oneLineUp.storageKey,
-      encrypted:  false,
-      docType:    'wiring_diagram',
-    }});
-    console.log('  seeded downloadable one-line PDF on SWGR-1A-1 (' + oneLineBytes.length + ' bytes)');
+    const seedSiteOneLine = async (site, file, name) => {
+      const bytes = fs.readFileSync(require('path').join(__dirname, 'demo-assets', file));
+      const up = await uploadFile(account.id, null, name, bytes, 'application/pdf');
+      await prisma.document.create({ data: {
+        accountId:  account.id,
+        siteId:     site.id,
+        uploadedBy: admin.id,
+        filename:   name,
+        fileType:   'application/pdf',
+        filePath:   up.storageKey,
+        encrypted:  false,
+        docType:    'wiring_diagram',
+        provenance: 'as_built',
+      }});
+      return bytes.length;
+    };
+    const rB = await seedSiteOneLine(riverside, 'riverside-substation-a-oneline.pdf', 'Riverside Substation A -- Electrical One-Line (As-Built).pdf');
+    let eB = 0;
+    try {
+      eB = await seedSiteOneLine(eastgate, 'eastgate-dc-oneline.pdf', 'Eastgate DC -- Electrical One-Line (As-Built).pdf');
+    } catch (e2) {
+      console.error('[seed] eastgate one-line skipped (file missing?):', (e2 && e2.message) || e2);
+    }
+    console.log('  seeded site-level one-line PDFs: Riverside ' + rB + 'B, Eastgate ' + eB + 'B');
   } catch (e) {
     console.error('[seed] one-line document seed failed (non-fatal):', (e && e.message) || e);
   }

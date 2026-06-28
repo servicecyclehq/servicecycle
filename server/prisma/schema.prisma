@@ -225,6 +225,17 @@ enum DocType {
   other
 }
 
+/// Document provenance — human-authoritative, AI-assisted, conservative by default.
+/// Drives the trust badge + "not for switching unless sealed" treatment, and is a
+/// Revenue Intelligence signal (sites lacking a pe_sealed one-line).
+enum DocProvenance {
+  pe_sealed   // licensed PE stamp/seal on file -- authoritative (manager-attested)
+  engineered  // from an engineering firm but not sealed
+  as_built    // field/as-built sketch, or a ServiceCycle-generated drawing
+  vendor      // OEM / vendor-supplied document
+  unverified  // uploaded, not yet classified (default)
+}
+
 // Lockout/Tagout procedure lifecycle.
 enum LotoStatus {
   draft // Being authored; not yet in use
@@ -693,6 +704,7 @@ model Site {
   positions           EquipmentPosition[]
   assets              Asset[]
   systemStudies       SystemStudy[]
+  documents           Document[]
   blackoutWindows     BlackoutWindow[]
   complianceSnapshots ComplianceSnapshot[]
   auditVisits         AuditVisit[]
@@ -1695,6 +1707,7 @@ model Document {
   id          String   @id @default(uuid())
   assetId     String?
   workOrderId String?
+  siteId      String? // site-level docs (e.g. a substation one-line) not pinned to one asset
   accountId   String
   filename    String
   filePath    String // storage key (path on disk or S3 object key); '__external__' for URL-only docs
@@ -1706,12 +1719,16 @@ model Document {
   // Document classification â€” drives the grouped display on asset detail.
   // Null means pre-classification (legacy rows): shown under "Other".
   docType     DocType?
+  // Provenance: where the document came from / how trustworthy. Defaults to
+  // unverified (never over-claim). pe_sealed is a manager-gated, logged action.
+  provenance  DocProvenance @default(unverified)
   // External URL: for OEM portals, shared drives, or vendor doc links where
   // uploading a copy isn't practical. When set, filePath = '__external__' and
   // the serve route redirects instead of streaming bytes.
   externalUrl String?
 
   asset      Asset?             @relation(fields: [assetId], references: [id])
+  site       Site?              @relation(fields: [siteId], references: [id], onDelete: SetNull)
   workOrder  WorkOrder?         @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   account    Account            @relation(fields: [accountId], references: [id])
   uploader   User               @relation("Uploader", fields: [uploadedBy], references: [id])
@@ -1720,6 +1737,7 @@ model Document {
   @@index([accountId])
   @@index([assetId])
   @@index([workOrderId])
+  @@index([siteId])
   // GET /file looks up by (filePath, accountId); without this every
   // download triggers a full table scan.
   @@index([accountId, filePath])

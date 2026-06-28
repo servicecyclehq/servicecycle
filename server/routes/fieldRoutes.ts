@@ -263,13 +263,15 @@ router.get('/asset/:id', async (req, res) => {
     // the one-line / manuals / LOTO / test reports right from the asset card or
     // a QR scan. Slim shape only; bytes are fetched via the scoped download
     // route below (the storage key is never exposed to the client).
+    const siteIdForDocs = asset.site?.id || null;
     const docRows = await prisma.document.findMany({
-      where:   { assetId: asset.id, accountId: req.user.accountId },
-      select:  { id: true, filename: true, docType: true, fileType: true, externalUrl: true, filePath: true, uploadedAt: true },
+      where:   { accountId: req.user.accountId, OR: [{ assetId: asset.id }, ...(siteIdForDocs ? [{ siteId: siteIdForDocs }] : [])] },
+      select:  { id: true, filename: true, docType: true, provenance: true, fileType: true, externalUrl: true, filePath: true, uploadedAt: true, siteId: true },
       orderBy: [{ uploadedAt: 'desc' }],
     });
     const documents = docRows.map((d) => ({
-      id: d.id, filename: d.filename, docType: d.docType, fileType: d.fileType, uploadedAt: d.uploadedAt,
+      id: d.id, filename: d.filename, docType: d.docType, provenance: d.provenance, fileType: d.fileType, uploadedAt: d.uploadedAt,
+      scope: d.siteId ? 'site' : 'asset',
       external: d.filePath === '__external__',
       externalUrl: d.filePath === '__external__' ? d.externalUrl : null,
     }));
@@ -316,12 +318,16 @@ router.get('/asset/:assetId/document/:documentId', async (req, res) => {
     if (scope && !scope.assetIds.has(req.params.assetId)) {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
+    const reqAsset = await prisma.asset.findFirst({
+      where: { id: req.params.assetId, accountId: req.user.accountId, archivedAt: null },
+      select: { id: true, siteId: true },
+    });
+    if (!reqAsset) return res.status(404).json({ success: false, error: 'Document not found' });
     const doc = await prisma.document.findFirst({
       where: {
         id:        req.params.documentId,
-        assetId:   req.params.assetId,
         accountId: req.user.accountId,
-        asset:     { archivedAt: null },
+        OR: [{ assetId: reqAsset.id }, { siteId: reqAsset.siteId }],
       },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });

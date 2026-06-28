@@ -27,6 +27,7 @@ import { useAiConsent } from '../../context/AiConsentContext';
 import Toast from '../../components/Toast';
 import NameplateReview from '../../components/NameplateReview';
 import IncidentLogCard from '../../components/IncidentLogCard';
+import ProvenanceBadge from '../../components/ProvenanceBadge';
 import VoiceCaptureButton from '../../components/field/VoiceCaptureButton';
 import FailedSyncBanner from '../../components/field/FailedSyncBanner';
 import {
@@ -371,6 +372,7 @@ function FieldDocumentsSection({ assetId, documents }) {
                   {isOneLine ? (label + ' - ' + doc.filename) : label}
                 </span>
               </span>
+              <ProvenanceBadge value={doc.provenance} />
               {isOneLine && <Chip label="ONE-LINE" color="#fff" bg="var(--color-primary)" />}
             </button>
           );

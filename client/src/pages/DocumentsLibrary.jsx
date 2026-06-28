@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import api from '../api/client';
 import { useConfirm } from '../context/ConfirmContext';
 import { DOWNLOAD_DISCLAIMER } from '../lib/documentDisclaimer';
+import ProvenanceBadge from '../components/ProvenanceBadge';
 
 const DOC_TYPES = [
   { value: '', label: 'All types' },
@@ -123,6 +124,7 @@ export default function DocumentsLibrary({ siteId = null, embedded = false }) {
           <tr>
             <th style={S.th}>Document</th>
             <th style={S.th}>Type</th>
+            <th style={S.th}>Trust</th>
             <th style={S.th}>Asset</th>
             {!siteId && <th style={S.th}>Site</th>}
             <th style={S.th}>Uploaded</th>
@@ -131,7 +133,7 @@ export default function DocumentsLibrary({ siteId = null, embedded = false }) {
         </thead>
         <tbody>
           {docs.length === 0 ? (
-            <tr><td style={{ ...S.cell, textAlign: 'center', color: 'var(--color-text-muted)' }} colSpan={siteId ? 5 : 6}>
+            <tr><td style={{ ...S.cell, textAlign: 'center', color: 'var(--color-text-muted)' }} colSpan={siteId ? 6 : 7}>
               {loading ? 'Loading…' : 'No documents match.'}
             </td></tr>
           ) : docs.map((d) => (
@@ -140,8 +142,9 @@ export default function DocumentsLibrary({ siteId = null, embedded = false }) {
                 {d.filename}{d.external && <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>(link)</span>}
               </td>
               <td style={S.cell}>{TYPE_LABEL[d.docType] || 'Unclassified'}</td>
+              <td style={S.cell}><ProvenanceBadge value={d.provenance} /></td>
               <td style={S.cell}>{d.asset?.name || '—'}</td>
-              {!siteId && <td style={S.cell}>{d.asset?.site?.name || '—'}</td>}
+              {!siteId && <td style={S.cell}>{d.site?.name || '—'}</td>}
               <td style={{ ...S.cell, whiteSpace: 'nowrap' }}>{fmtDate(d.uploadedAt)}</td>
               <td style={{ ...S.cell, textAlign: 'right' }}>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => open(d)} disabled={busyId === d.id}>

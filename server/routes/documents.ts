@@ -57,6 +57,12 @@ const DENIED_IMAGE_MIME = new Set([
   'image/svg',
 ]);
 
+// Provenance is human-authoritative + conservative: accept only known values,
+// otherwise leave it unset so the column default ('unverified') applies.
+function validProvenance(p) {
+  return ['pe_sealed', 'engineered', 'as_built', 'vendor', 'unverified'].includes(p) ? p : undefined;
+}
+
 function isAllowedUploadMime(mimetype) {
   if (!mimetype) return false;
   if (DENIED_IMAGE_MIME.has(mimetype)) return false; // F011
@@ -338,12 +344,12 @@ router.get('/asset/:assetId', async (req, res) => {
     // Verify asset ownership
     const asset = await prisma.asset.findFirst({
       where:  { id: assetId, accountId, archivedAt: null },
-      select: { id: true },
+      select: { id: true, siteId: true },
     });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
     const docs = await prisma.document.findMany({
-      where:   { assetId, accountId },
+      where:   { accountId, OR: [{ assetId }, ...(asset.siteId ? [{ siteId: asset.siteId }] : [])] },
       include: { uploader: { select: { id: true, name: true } } },
       orderBy: [{ docType: 'asc' }, { uploadedAt: 'desc' }],
     });
@@ -369,7 +375,7 @@ router.get('/', async (req, res) => {
 
     const where: any = { accountId };
     if (siteId) {
-      where.asset = { siteId, archivedAt: null };
+      where.OR = [{ asset: { siteId, archivedAt: null } }, { siteId }];
     } else {
       where.OR = [{ assetId: null }, { asset: { archivedAt: null } }];
     }
@@ -380,8 +386,9 @@ router.get('/', async (req, res) => {
     const docs = await prisma.document.findMany({
       where,
       select: {
-        id: true, filename: true, docType: true, fileType: true, filePath: true,
-        externalUrl: true, uploadedAt: true,
+        id: true, filename: true, docType: true, provenance: true, fileType: true, filePath: true,
+        externalUrl: true, uploadedAt: true, siteId: true,
+        site: { select: { id: true, name: true } },
         uploader: { select: { name: true } },
         asset: {
           select: {
@@ -401,8 +408,10 @@ router.get('/', async (req, res) => {
       fileType: d.fileType,
       uploadedAt: d.uploadedAt,
       uploaderName: d.uploader?.name || null,
+      provenance: d.provenance,
       external: d.filePath === '__external__',
       externalUrl: d.filePath === '__external__' ? d.externalUrl : null,
+      site: d.asset?.site || d.site || null,
       asset: d.asset
         ? {
             id: d.asset.id,
@@ -451,6 +460,7 @@ router.post('/link', requireManager, async (req, res) => {
         encrypted:   false,
         externalUrl: url.trim(),
         docType:     docType || null,
+        provenance:  validProvenance(req.body.provenance),
       },
     });
 
@@ -466,6 +476,7 @@ router.post('/link', requireManager, async (req, res) => {
 router.patch('/:documentId', requireManager, async (req, res) => {
   try {
     const { docType, filename } = req.body;
+    const provenance = validProvenance(req.body.provenance);
     const doc = await prisma.document.findFirst({
       where:  { id: req.params.documentId, accountId: req.user.accountId },
       select: { id: true },
@@ -475,10 +486,21 @@ router.patch('/:documentId', requireManager, async (req, res) => {
     const updated = await prisma.document.update({
       where: { id: req.params.documentId },
       data:  {
-        ...(docType  !== undefined && { docType  }),
-        ...(filename !== undefined && { filename }),
+        ...(docType    !== undefined && { docType  }),
+        ...(filename   !== undefined && { filename }),
+        ...(provenance !== undefined && { provenance }),
       },
     });
+
+    // pe_sealed is the high-liability claim: log the manager's attestation to the
+    // tamper-evident audit chain (who marked which document PE-sealed, and when).
+    if (provenance === 'pe_sealed') {
+      writeActivityLog({
+        userId: req.user.id, accountId: req.user.accountId, assetId: updated.assetId || null,
+        action: 'document_provenance_attested',
+        details: { documentId: updated.id, filename: updated.filename, provenance: 'pe_sealed' },
+      });
+    }
     return res.json({ success: true, data: updated });
   } catch (err) {
     console.error('[documents PATCH /:id]', err);
@@ -601,6 +623,7 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
         filePath:    '__pending__',               // non-empty placeholder; updated after storage write
         encrypted:   false,
         docType:     docType || null,
+        provenance:  validProvenance(req.body.provenance),
       },
       select: { id: true },
     });
