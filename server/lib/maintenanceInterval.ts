@@ -32,10 +32,15 @@
 
 const { addMonths } = require('date-fns');
 
-// ── Derivation-fallback constants — ANSI/NETA MTS Appendix B matrix corners,
-// used only when a task lacks an explicit 70B Table 9.2.2 column (custom tasks).
-const C1_MULTIPLIER = 2.5; // C1 stretches the base interval ×2.5 (NETA App. B)
-const C3_MULTIPLIER = 0.25; // C3 compresses the base interval ×0.25 (NETA App. B)
+// ── Derivation-fallback constants — the extreme CORNERS of the ANSI/NETA MTS
+// Appendix B "Frequency of Maintenance Tests" 3×3 matrix (equipment condition ×
+// reliability requirement): 2.5 is the (Good condition, Low reliability) corner and
+// 0.25 is the (Poor condition, High reliability) corner. They are NOT pure condition
+// multipliers. Used ONLY as a coarse derivation fallback when a custom task lacks an
+// explicit 70B Table 9.2.2 column — every seeded task carries explicit C1/C2/C3 columns,
+// so these never apply to the seeded matrix.
+const C1_MULTIPLIER = 2.5; // best-case corner (Good condition × Low reliability)
+const C3_MULTIPLIER = 0.25; // worst-case corner (Poor condition × High reliability)
 const C1_CEILING_MONTHS = 60; // C1 hard ceiling — never beyond 5 years
 const C3_CEILING_MONTHS = 12; // C3 hard ceiling — poor gear seen at least annually
 const C3_FLOOR_MONTHS = 1; // rounding guard — an interval can never hit zero

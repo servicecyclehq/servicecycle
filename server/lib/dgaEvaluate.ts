@@ -10,7 +10,9 @@
  * NOTE: the 2019 edition refines this with O2/N2-ratio + age percentile tables;
  * the four-condition table here is the stable, vendor-agnostic baseline and is
  * flagged for NETA/engineer review before any production reliance (same posture
- * as the seeded interval matrix).
+ * as the seeded interval matrix). Acetylene is additionally treated as significant
+ * on its own: any Duval D1/D2 arcing signature raises the traffic light to at least
+ * YELLOW even when the absolute condition is 1 (acetylene is the key arcing gas).
  *
  * Combustible gases counted in TDCG: H2, CH4, C2H2, C2H4, C2H6, CO. (CO2 is
  * tracked but excluded from TDCG per the standard.)
@@ -20,12 +22,16 @@ export type GasKey = 'h2' | 'ch4' | 'c2h2' | 'c2h4' | 'c2h6' | 'co' | 'co2' | 'o
 export type Gases = Partial<Record<GasKey, number>>;
 
 // Upper bound (inclusive) of each Condition band, in ppm. Condition 4 = above C3.
-// Source: IEEE C57.104 individual-gas / TDCG condition table.
+// Source: IEEE C57.104-2008 Table 1 individual-gas / TDCG four-condition table.
+// Cross-check: the Condition-1 individual limits sum to the Condition-1 TDCG of 720
+// (100 + 120 + 35 + 50 + 65 + 350 = 720), which fixes acetylene at 35/50/80 — NOT
+// the 1/9/35 a prior revision carried (that set is internally inconsistent with the
+// TDCG row and was the 2026-06-28 domain-audit P0-1 correction).
 const LIMITS: Record<string, [number, number, number]> = {
   // gas: [C1 max, C2 max, C3 max]
   h2:   [100, 700, 1800],
   ch4:  [120, 400, 1000],
-  c2h2: [1, 9, 35],
+  c2h2: [35, 50, 80],
   c2h4: [50, 100, 200],
   c2h6: [65, 100, 150],
   co:   [350, 570, 1400],
@@ -106,11 +112,24 @@ export function evaluateDga(g: Gases): DgaEvaluation {
   if (tdcgCond > worst) worst = tdcgCond;
 
   const fault = keyGasFault(g);
+
+  // Absolute four-condition traffic light from the worst individual gas / TDCG.
+  let resultRating: 'GREEN' | 'YELLOW' | 'RED' = worst <= 1 ? 'GREEN' : worst === 2 ? 'YELLOW' : 'RED';
+  // Acetylene-significance override: detectable acetylene (Duval D1/D2 arcing) is the
+  // single most safety-significant fault gas. Even when every gas is within Condition 1
+  // ABSOLUTE limits, newly-present acetylene warrants at least a YELLOW caution + resample.
+  // This nudges ONLY the traffic light — overallCondition/ieeeStatus stay true to the
+  // absolute four-condition screen, so it neither fabricates a Condition 2 nor auto-
+  // escalates the ingest deficiency (which is gated on overallCondition, not resultRating).
+  if (resultRating === 'GREEN' && (fault?.code === 'D1' || fault?.code === 'D2')) {
+    resultRating = 'YELLOW';
+  }
+
   return {
     tdcg,
     overallCondition: worst,
     ieeeStatus: worst,
-    resultRating: worst <= 1 ? 'GREEN' : worst === 2 ? 'YELLOW' : 'RED',
+    resultRating,
     perGas,
     faultCode: fault?.code ?? null,
     faultLabel: fault?.label ?? null,

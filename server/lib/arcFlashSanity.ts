@@ -112,35 +112,45 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
     add('bus_fault_gt_source', 'warning', 'Bus available fault current exceeds the utility source maximum — check the model.', `${bolted} kA bus > ${uMax} kA utility max`);
   }
 
-  // [AFX-5] PPE Category Method is not applicable above 15 kV per NFPA 70E 2024
-  // Table 130.7(C)(15)(b). At this voltage the Incident Energy Analysis Method is required.
+  // [AFX-5] The AC PPE-Category (table) Method is not applicable above 15 kV — the
+  // selection table NFPA 70E 2024 Table 130.7(C)(15)(a) tops out at 15 kV. Above that the
+  // Incident Energy Analysis Method is required. (130.7(C)(15)(b) is the DC table.)
   const nomV = num(bus.nominalVoltage != null ? String(bus.nominalVoltage).replace(/[^0-9.]/g, '') : null);
   const nomVKv = bus.nominalVoltage != null && /kv/i.test(String(bus.nominalVoltage)) ? (nomV != null ? nomV * 1000 : null) : nomV;
   if (bus.ppeMethod === 'ppe_category' && nomVKv != null && nomVKv > 15000) {
     add('ppe_category_exceeds_voltage_limit', 'error',
-      'PPE Category Method (Table 130.7(C)(15)(b)) is not applicable for voltages above 15 kV per NFPA 70E 2024. Use the Incident Energy Analysis Method at this voltage.',
+      'PPE Category (table) Method (Table 130.7(C)(15)(a)) is not applicable above 15 kV per NFPA 70E 2024. Use the Incident Energy Analysis Method at this voltage.',
       `nominalVoltage=${bus.nominalVoltage}, ppeMethod=ppe_category`);
   }
 
-  // [AFX-9] IEEE 1584-2018 input range validation.
-  const arcingKA = num(bus.arcingCurrentKA);
+  // [AFX-9] IEEE 1584-2018 input range validation. The model's bolted (available)
+  // fault-current validity envelope is 0.5–106 kA; the electrode-gap range is
+  // voltage-class dependent (audit 2026-06-28 P1-10 / P2-3 corrections).
   const boltedKA = num(bus.boltedFaultCurrentKA);
   const gapMm    = num(bus.conductorGapMm);
   const wdIn     = num(bus.workingDistanceIn);
-  if (arcingKA != null && arcingKA < 0.5) {
-    add('arcing_below_ieee1584_min', 'error',
-      'Arcing current below IEEE 1584-2018 minimum of 0.5 kA — results are outside model validity.',
-      `arcingCurrentKA=${arcingKA}`);
+  if (boltedKA != null && boltedKA < 0.5) {
+    add('fault_below_ieee1584_min', 'error',
+      'Available (bolted) fault current is below the IEEE 1584-2018 minimum of 0.5 kA — results are outside model validity.',
+      `boltedFaultCurrentKA=${boltedKA}`);
   }
   if (boltedKA != null && boltedKA > 106) {
     add('fault_exceeds_ieee1584_max', 'error',
       'Bolted fault current exceeds IEEE 1584-2018 maximum of 106 kA — results are outside model validity.',
       `boltedFaultCurrentKA=${boltedKA}`);
   }
-  if (gapMm != null && (gapMm < 6.35 || gapMm > 152.4)) {
-    add('gap_outside_ieee1584_range', 'error',
-      `Conductor gap ${gapMm}mm is outside IEEE 1584-2018 valid range of 6.35–152.4 mm.`,
-      `conductorGapMm=${gapMm}`);
+  // Electrode-gap validity is voltage-class dependent: 6.35–76.2 mm for ≤600 V,
+  // 19.05–254 mm for 601 V–15 kV. Default to the wider MV envelope when voltage is
+  // unknown so we don't false-flag a valid MV study.
+  if (gapMm != null) {
+    const lvClass = nomVKv != null && nomVKv <= 600;
+    const gapMin = lvClass ? 6.35 : 19.05;
+    const gapMax = lvClass ? 76.2 : 254;
+    if (gapMm < gapMin || gapMm > gapMax) {
+      add('gap_outside_ieee1584_range', 'error',
+        `Conductor gap ${gapMm} mm is outside the IEEE 1584-2018 valid range (${gapMin}–${gapMax} mm for ${lvClass ? '≤600 V' : '601 V–15 kV'}).`,
+        `conductorGapMm=${gapMm}, nominalVoltage=${bus.nominalVoltage ?? 'n/a'}`);
+    }
   }
   if (wdIn != null && wdIn < 12) {
     add('working_distance_below_ieee1584_min', 'error',

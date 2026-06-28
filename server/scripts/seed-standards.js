@@ -102,7 +102,7 @@ const TASKS = [
   // ── SWITCHGEAR ─────────────────────────────────────────────────────────────
   {
     code: 'SWGR_IR_THERMO', equipmentType: 'SWITCHGEAR', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 Table 100.2',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 Table 100.18',
     // NFPA 70B mandates IR annually regardless of condition; C3 compresses.
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
@@ -192,21 +192,21 @@ const TASKS = [
   },
   {
     code: 'GEN_LOAD_BANK', equipmentType: 'GENERATOR', name: 'Annual load bank test',
-    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.4.2.3 (required when monthly runs miss 30% loading)',
+    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.4.2 (supplemental load-bank test required when monthly runs miss 30% nameplate loading)',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: false, netaLevel: null,
-    description: 'Supplemental load bank (NFPA 110:2022 §8.4.2.3 profile): 25% kW × 30min, 50% kW × 30min, 75% kW × 60min (two-hour stepped sequence). NOTE: the 2025 edition changed this to 50%×30 + 75%×60; verify against the edition in force.',
+    description: 'Supplemental load bank when monthly runs cannot reach 30% nameplate kW: 50% kW × 30 min, then 75% kW × 60 min (1.5-hour stepped sequence per current NFPA 110). [VERIFY exact subsection (§8.4.2.x) and step profile against the edition in force — older editions used a 25/50/75 two-hour profile.]',
   },
   {
     code: 'GEN_FULL_SYSTEM_TEST', equipmentType: 'GENERATOR', name: '3-year full system test',
-    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.4.9 (4-hour test at full EPSS load)',
+    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.4.9 (triennial ≤36-mo test; run for the duration of its class OR 4 h, whichever is LESS, at ≥30% nameplate kW)',
     c1: 36, c2: 36, c3: 12,
     requiresEnergized: true, requiresOutage: true, neta: false, netaLevel: null,
-    description: 'Full EPSS test for the duration of its class (min 4hr); includes transfer switches.',
+    description: 'Triennial EPSS test (§8.4.9): run for the duration of its assigned class OR 4 hours, whichever is LESS, at ≥30% nameplate kW (supplemental load bank permitted); includes transfer switches.',
   },
   {
     code: 'GEN_FUEL_ANALYSIS', equipmentType: 'GENERATOR', name: 'Fuel quality analysis',
-    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.3.8 (annual fuel test per ASTM standards)',
+    standardKey: 'NFPA 110', ref: 'NFPA 110:2022 §8.3.7 (annual fuel test per ASTM standards) [VERIFY subsection vs edition]',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: false, requiresOutage: false, neta: false, netaLevel: null,
     description: 'Tank sample to ASTM D975/D6468; microbial contamination, water, sediment, cetane.',
@@ -256,7 +256,7 @@ const TASKS = [
   },
   {
     code: 'ATS_IR_THERMO', equipmentType: 'TRANSFER_SWITCH', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.22.3',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.22.3',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan under load (≥40% rated where possible); cover normal/emergency/load terminals and control wiring. Record ΔT class and load % at scan time.',
@@ -279,7 +279,7 @@ const TASKS = [
   // ── SWITCHBOARD ────────────────────────────────────────────────────────────
   {
     code: 'SWBD_IR_THERMO', equipmentType: 'SWITCHBOARD', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 Table 100.2',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 Table 100.18',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan under load (≥40% rated where possible). Record thermal anomalies by ΔT class and load % at scan time.',
@@ -302,7 +302,7 @@ const TASKS = [
   // ── PANELBOARD ─────────────────────────────────────────────────────────────
   {
     code: 'PNL_IR_THERMO', equipmentType: 'PANELBOARD', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 Table 100.2',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 Table 100.18',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan with dead-front removed, under load (≥40% rated where possible). Record ΔT class and load % at scan time.',
@@ -325,7 +325,7 @@ const TASKS = [
   // ── BUSWAY ─────────────────────────────────────────────────────────────────
   {
     code: 'BUS_IR_THERMO', equipmentType: 'BUSWAY', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.4',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.4',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan accessible joints, plug-in units, and end feeds under load — busway joints loosen with thermal cycling. Record ΔT class and load %.',
@@ -408,7 +408,7 @@ const TASKS = [
   },
   {
     code: 'MTR_IR_THERMO', equipmentType: 'MOTOR', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.15',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.15',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan connection box, starter/feeder connections, and bearing housings under load. Record ΔT class and load %.',
@@ -417,7 +417,7 @@ const TASKS = [
   // ── MCC ────────────────────────────────────────────────────────────────────
   {
     code: 'MCC_IR_THERMO', equipmentType: 'MCC', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.16',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.16',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan horizontal/vertical bus, bucket stabs, and starter connections under load (≥40% rated where possible).',
@@ -454,7 +454,7 @@ const TASKS = [
   },
   {
     code: 'XFMRD_IR_THERMO', equipmentType: 'TRANSFORMER_DRY', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.2.1',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.2.1',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan windings (through ventilation openings where safe), terminations, and tap connections under load.',
@@ -598,7 +598,7 @@ const TASKS = [
   // ── DISCONNECT_SWITCH ──────────────────────────────────────────────────────
   {
     code: 'DISC_IR_THERMO', equipmentType: 'DISCONNECT_SWITCH', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.5',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.5',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan blades, jaws, and terminal connections under load. Record ΔT class and load %.',
@@ -660,7 +660,7 @@ const TASKS = [
   },
   {
     code: 'CBLMV_IR_TERMINATIONS', equipmentType: 'CABLE_MV_HV', name: 'Infrared scan at terminations',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.3.3',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.3.3',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan accessible terminations, splices, and elbows under load. Record ΔT class and load %.',
@@ -751,7 +751,7 @@ const TASKS = [
   },
   {
     code: 'VFD_IR_THERMO', equipmentType: 'VFD', name: 'Infrared thermography scan',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / NETA MTS-2023 §7.17',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / NETA MTS-2023 §7.17',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'Scan input/output/DC bus connections and reactor/filter components under load. Record ΔT class and load %.',
@@ -764,7 +764,7 @@ const TASKS = [
   // sprinkler contractor typically executes the tests.
   {
     code: 'FP_MONTHLY_CHURN', equipmentType: 'FIRE_PUMP_CONTROLLER', name: 'Monthly electric-pump no-flow (churn) run — oversight record',
-    standardKey: 'NFPA 25', ref: 'NFPA 25:2023 §8.3.1.2 (electric fire pumps: monthly no-flow run; monthly cadence effective since the 2017 edition)',
+    standardKey: 'NFPA 25', ref: 'NFPA 25:2023 §8.3.1.2 (electric fire pumps: monthly no-flow run; monthly cadence effective since the 2011 edition)',
     c1: 1, c2: 1, c3: 1,
     requiresEnergized: true, requiresOutage: false, neta: false, netaLevel: null,
     description: 'Oversight record of the monthly no-flow run (≥10 min for electric pumps): suction/discharge pressure, automatic controller start, alarm and signal verification. Interval is mandate-fixed — condition does not stretch it.',
@@ -778,7 +778,7 @@ const TASKS = [
   },
   {
     code: 'FP_IR_CONNECTIONS', equipmentType: 'FIRE_PUMP_CONTROLLER', name: 'Infrared scan + electrical connection inspection',
-    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §11.17 / industry practice (fire pump controller)',
+    standardKey: 'NFPA 70B', ref: 'NFPA 70B:2023 §7.4 (Infrared Thermography) / industry practice (fire pump controller)',
     c1: 12, c2: 12, c3: 6,
     requiresEnergized: true, requiresOutage: false, neta: true, netaLevel: 'LEVEL_II',
     description: 'IR scan of the controller (and transfer switch, where service/generator fed) during a run; visually inspect line and load connections. [ENCODED FROM PRACTICE — VERIFY]',
@@ -911,7 +911,9 @@ function correct70bRef(ref, equipmentType) {
   if (!ref) return ref;
   const chapter = NFPA70B_CHAPTER[equipmentType];
   if (!chapter) return ref;
-  return ref.replace(/NFPA 70B:2023 §[0-9.]+/g, `NFPA 70B:2023 ${chapter}`);
+  // §7.4 (Infrared Thermography) is a cross-cutting Ch 7 test-method clause, correct for
+  // every equipment type — preserve it; only stale equipment-specific §x.y get rewritten.
+  return ref.replace(/NFPA 70B:2023 §(?!7\.4\b)[0-9.]+/g, `NFPA 70B:2023 ${chapter}`);
 }
 
 async function seedStandards(prismaClient) {

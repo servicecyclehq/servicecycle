@@ -63,8 +63,8 @@ try { require('tsx/cjs'); } catch (_) { /* running under tsx already -- no-op */
  *     switchgear IR scan)
  *   - 4 deficiencies: 1 IMMEDIATE open (C3 switchgear B-phase hot joint),
  *     2 RECOMMENDED open, 1 ADVISORY resolved
- *   - 1 DGA LabSample (IEEE C57.104 gases incl. O2/N2, mildly elevated C2H2 →
- *     YELLOW, ieeeStatus 2, Duval D1)
+ *   - 1 DGA LabSample (IEEE C57.104 gases incl. O2/N2, detectable C2H2 →
+ *     YELLOW caution via Duval D1 arcing rule; ieeeStatus 1 absolute)
  *   - 3 SystemStudies at Riverside: arc_flash ~4.2yr ago (5-year clock →
  *     expiry-warning territory, IEEE 1584-2018 + PE provenance),
  *     short_circuit ~3yr ago, one_line_review ~6mo ago
@@ -725,7 +725,7 @@ async function _seedAccount() {
       installDate: new Date('2010-09-08'),
       criticalityScore: 4, conditionScore: 3, repairCostEstimate: 28000, spareLeadTimeWeeks: 6,
       nameplateData: { voltage: '125 V DC', batteryType: 'flooded lead-acid', cells: 60, chargerAmps: 25 },
-      notes: 'Switchgear control battery for Substation A breaker tripping — IEEE 450 quarterly ohmic program.' },
+      notes: 'Switchgear control battery for Substation A breaker tripping — IEEE 450 vented-cell program: quarterly per-cell float voltage + supplementary ohmic trend, annual capacity test.' },
     // — Eastgate (flat hierarchy) —
     { key: 'T-E1', siteId: eastgate.id, positionId: egPos.DOCK.id,
       equipmentType: 'TRANSFORMER_LIQUID',
@@ -952,7 +952,7 @@ async function _seedAccount() {
   // Compliance by Standard / Activity reports meaningful data to render.
 
   // WO #6 -- COMPLETE: T-1 dissolved-gas analysis 90 days ago (Apex, C2 YELLOW).
-  // Mildly elevated C2H2 triggers YELLOW -- matches the LabSample story.
+  // Detectable C2H2 triggers a YELLOW caution (Duval D1 arcing rule) -- matches the LabSample story.
   await prisma.workOrder.create({ data: {
     accountId: account.id,
     scheduleId: schedules['T-1:XFMR_DGA'].id,
@@ -965,7 +965,7 @@ async function _seedAccount() {
     netaDecal: 'YELLOW',
     ambientTempC: 20.0, humidityPct: 44.0,
     testEquipment: testEquipmentProvenance,
-    notes: 'DGA oil sample collected per IEEE C57.104; C2H2 at 2.8 ppm (elevated vs. prior baseline). YELLOW decal applied; IEEE Status 2 / Duval D1 (low-energy discharge). Resample in 90 days recommended.',
+    notes: 'DGA oil sample collected per IEEE C57.104; C2H2 at 2.8 ppm (newly detectable vs. <0.5 ppm prior baseline). YELLOW decal applied: individual gases within Condition 1 absolute limits, but detectable acetylene = Duval D1 low-energy arcing -> caution. Resample in 90 days recommended.',
   } });
 
   // WO #7 -- COMPLETE: T-1 insulation resistance + PI ~13 months ago (Murphy, C1 GREEN).
@@ -1030,7 +1030,7 @@ async function _seedAccount() {
     netaDecal: 'YELLOW',
     ambientTempC: 22.0, humidityPct: 48.0,
     testEquipment: testEquipmentProvenance,
-    notes: 'Annual IR thermography under 62% load. C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient -- NETA MTS Table 100.18 Category 2 (repair at earliest convenience). Deficiency logged.',
+    notes: 'Annual IR thermography under 62% load. C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient -- NETA MTS Table 100.18: probable deficiency, repair as time permits (11-20 deg C over-ambient band). Deficiency logged.',
   } });
 
   // WO #11 -- COMPLETE: SWGR-1A-2 insulation resistance ~4 months ago (Murphy, C1 GREEN).
@@ -1062,7 +1062,7 @@ async function _seedAccount() {
     netaDecal: 'GREEN',
     ambientTempC: 21.0, humidityPct: 43.0,
     testEquipment: testEquipmentProvenance,
-    notes: 'IR scan at 70% load; all bus joints and connections within NETA MTS Category 1 (< 1 deg C differential). No corrective action required.',
+    notes: 'IR scan at 70% load; all bus joints and connections within NETA MTS Table 100.18 limits (< 1 deg C differential -- no action). No corrective action required.',
   } });
 
   // WO #13 -- COMPLETE: SWGR-1A-3 insulation resistance ~12.5 months ago (Murphy, C1 GREEN).
@@ -1094,7 +1094,7 @@ async function _seedAccount() {
     netaDecal: 'GREEN',
     ambientTempC: 20.5, humidityPct: 39.0,
     testEquipment: testEquipmentProvenance,
-    notes: 'Annual thermographic survey of Substation A cubicle 3 under load. No elevated temperatures detected. All connections within NETA Category 1.',
+    notes: 'Annual thermographic survey of Substation A cubicle 3 under load. No elevated temperatures detected. All connections within NETA Table 100.18 limits (no action).',
   } });
 
   // WO #15 -- COMPLETE: SWGR-2M IR thermography ~12 months ago (Apex, C2 YELLOW).
@@ -1111,7 +1111,7 @@ async function _seedAccount() {
     netaDecal: 'YELLOW',
     ambientTempC: 27.0, humidityPct: 55.0,
     testEquipment: testEquipmentProvenance,
-    notes: 'Mezzanine lineup IR scan at 55% load. B-phase bus connection showing delta-T 12 deg C -- NETA Category 2. Deficiency logged as RECOMMENDED; follow-up scan required at next scheduled interval.',
+    notes: 'Mezzanine lineup IR scan at 55% load. B-phase bus connection showing delta-T 12 deg C -- NETA MTS Table 100.18: probable deficiency, repair as time permits. Deficiency logged as RECOMMENDED; follow-up scan required at next scheduled interval.',
   } });
 
   // WO #16 -- COMPLETE: SWGR-2M insulation resistance ~20 months ago (Murphy, C2 YELLOW).
@@ -1198,7 +1198,7 @@ async function _seedAccount() {
     netaDecal: 'YELLOW',
     ambientTempC: 15.5, humidityPct: 70.0,
     testEquipment: testEquipmentProvenance,
-    notes: 'Annual oil quality screen per ASTM D877; moisture content 28 ppm (IEEE C57.106 Action Level 1 for 15 kV class; threshold <=35 ppm). Dielectric strength 28 kV (low). Dehydration filtration recommended; deficiency logged as ADVISORY.',
+    notes: 'Annual oil quality screen per ASTM D1816; moisture content 28 ppm (IEEE C57.106 Class I for <=69 kV class; <=35 ppm limit). Dielectric breakdown 28 kV (ASTM D1816, 2 mm gap) -- below the ~40 kV service-aged minimum for this class. Dehydration filtration recommended; deficiency logged as ADVISORY.',
   } });
 
   // WO #22 -- COMPLETE: ATS-1 monthly transfer test ~12 days ago (Apex, C1 GREEN).
@@ -1265,14 +1265,14 @@ async function _seedAccount() {
   const def5 = await prisma.deficiency.create({ data: {
     accountId: account.id, assetId: assets['SWGR-1A-1'].id, workOrderId: wo5.id,
     severity: 'RECOMMENDED',
-    description: 'C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient at 62% load (NETA MTS Table 100.18 Category 2 -- repair at earliest convenience)',
+    description: 'C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient at 62% load (NETA MTS Table 100.18: probable deficiency, repair as time permits -- 11-20 deg C over-ambient band)',
     correctiveAction: 'Clean and re-torque C-phase bus connection at next outage window; re-image under load to confirm resolution.',
     createdAt: addDays(now, -365),
   } });
   await prisma.deficiency.create({ data: {
     accountId: account.id, assetId: assets['SWGR-2M'].id,
     severity: 'RECOMMENDED',
-    description: 'B-phase bus connection delta-T 12 deg C above ambient at 55% load (NETA MTS Category 2 -- early-stage thermal signature). History: 38 deg C in most recent scan.',
+    description: 'B-phase bus connection delta-T 12 deg C above ambient at 55% load (NETA MTS Table 100.18: probable deficiency, repair as time permits -- early-stage thermal signature). History: 38 deg C in most recent scan.',
     correctiveAction: 'Superseded by the current IMMEDIATE deficiency (38 deg C) on this same B-phase joint -- the early-stage signature progressed; tracking now consolidated under the open IMMEDIATE item.',
     createdAt: addDays(now, -350),
     resolvedAt: addDays(now, -12), resolvedById: admin.id,
@@ -1280,14 +1280,14 @@ async function _seedAccount() {
   await prisma.deficiency.create({ data: {
     accountId: account.id, assetId: assets['T-2'].id,
     severity: 'ADVISORY',
-    description: 'Oil moisture content 28 ppm (IEEE C57.106 Action Level 1); dielectric strength 28 kV -- below recommended 30 kV minimum for transformer class',
+    description: 'Oil moisture content 28 ppm (IEEE C57.106 Class I for <=69 kV); dielectric breakdown 28 kV (ASTM D1816, 2 mm gap) -- below the ~40 kV service-aged minimum for this class',
     correctiveAction: 'Schedule oil dehydration filtration within next planned maintenance window. Re-test after treatment.',
     createdAt: addDays(now, -150),
   } });
   await prisma.deficiency.create({ data: {
     accountId: account.id, assetId: assets['BATT-1'].id,
     severity: 'RECOMMENDED',
-    description: 'Two battery cells (strings 1-C4 and 2-C7) showing ohmic resistance 25% above baseline -- IEEE 450 replacement threshold is 20% above initial value. Cell voltage still holding.',
+    description: 'Two battery cells (cells 1-C4 and 2-C7) showing internal ohmic resistance ~40% above baseline. IEEE 450 (vented) bases replacement on the annual capacity test (<80% rated); the rising ohmic trend is a supplementary early indicator -- flag these cells for capacity verification. Cell voltage still holding.',
     correctiveAction: 'Replace cells 1-C4 and 2-C7 at next scheduled ohmic inspection window; order spares now (6-week lead time). Interim: add to weekly float-voltage monitoring.',
     createdAt: addDays(now, -14),
   } });
@@ -1310,9 +1310,9 @@ async function _seedAccount() {
     h2: 42, ch4: 36, c2h2: 2.8, c2h4: 24, c2h6: 19, co: 340, co2: 3100,
     // O2/N2 ratio ≈ 0.03 — sealed-unit reference table applies.
     o2: 1850, n2: 56400,
-    // IEEE C57.104-2019 status 2 (caution) + Duval D1 (low-energy discharge)
-    // matching the detectable-acetylene story below.
-    ieeeStatus: 2, faultCode: 'D1',
+    // Gases within Condition 1 ABSOLUTE limits (corrected C57.104 four-condition table),
+    // but newly-detectable acetylene = Duval D1 low-energy arcing -> YELLOW caution + resample.
+    ieeeStatus: 1, faultCode: 'D1',
     resultRating: 'YELLOW',
     notes: 'C2H2 detectable at 2.8 ppm (was <0.5 ppm in prior sample) -- possible low-energy discharge. Lab recommends resample in 90 days; other gases within IEEE C57.104 Condition 1 limits for transformer age.',
   } });
@@ -1326,7 +1326,7 @@ async function _seedAccount() {
     o2: 2200, n2: 62000,
     ieeeStatus: 1, faultCode: null,
     resultRating: 'GREEN',
-    notes: 'All gases within IEEE C57.104-2019 Condition 1 limits. C2H2 < 0.5 ppm (below significance threshold). Transformer in normal service.',
+    notes: 'All gases within IEEE C57.104 Condition 1 limits. C2H2 < 0.5 ppm (below significance threshold). Transformer in normal service.',
   } });
 
   // T-E1 DGA sample (~6.5 months ago) -- Condition 1 (GREEN), FR3 natural-ester oil.
@@ -1347,7 +1347,7 @@ async function _seedAccount() {
     sampleType: 'oil_quality', sampleDate: addDays(now, -150),
     labName: 'Delta Insulating Fluids Laboratory',
     resultRating: 'YELLOW',
-    notes: 'Moisture 28 ppm (IEEE C57.106 Action Level 1); dielectric strength 28 kV (below 30 kV recommended minimum). Oil dehydration filtration recommended. Acid number and color within limits.',
+    notes: 'Moisture 28 ppm (IEEE C57.106 Class I for <=69 kV); dielectric breakdown 28 kV (ASTM D1816, 2 mm gap, below the ~40 kV service-aged minimum). Oil dehydration filtration recommended. Acid number and color within limits.',
   } });
 
   // ── Demo disaster events (DEMO_FIXES 2.4) ───────────────────────────────
@@ -1423,9 +1423,10 @@ async function _seedAccount() {
   // The current arc_flash study supersedes this prior one.
   await prisma.systemStudy.update({ where: { id: arcFlashPrior.id }, data: { supersededById: arcFlash.id } });
   // Bind the SWGR-1A-1 lead 15 kV switchgear to both studies; incident energy
-  // rises 14.2 -> 19.6 cal/cm2 across revisions. DANGER class: 13.8 kV (> 600 V)
-  // is DANGER per NFPA 70E 130.5(H) regardless of IE, matching the dashboard
-  // (volts>600) and fleet rules so every surface agrees on DANGER.
+  // rises 14.2 -> 19.6 cal/cm2 across revisions. DANGER signal word here is a documented house labeling-philosophy rule (ANSI Z535.4)
+  // applied to >600 V buses, matching the dashboard (volts>600) and fleet rules so every
+  // surface agrees on DANGER. NOTE: NFPA 70E 130.5(H) governs label CONTENT, not signal
+  // words -- DANGER vs WARNING is an ANSI Z535.4 convention, not voltage-mandated by 70E.
   const afTrendBus = assets['SWGR-1A-1'];
   if (afTrendBus) {
     await prisma.systemStudyAsset.create({ data: {
@@ -1780,7 +1781,7 @@ async function _seedAccount() {
     category:     'OTHER',
     unitCost:     280,
     leadTimeWeeks: 1,
-    notes:        'NFPA 110 §8.4 requires annual battery replacement on Level 1 EPS. Stock 2 minimum.',
+    notes:        'NFPA 110 §8.3.6 requires monthly battery testing; replace on indication of defect (not a fixed annual NFPA schedule). Many sites still replace generator starting batteries on a ~2-3 yr preventive cycle. Stock 2 minimum.',
   }});
 
   const partRelay = await prisma.part.create({ data: {
@@ -1840,7 +1841,7 @@ async function _seedAccount() {
     // Site-level: 4 gen batteries (healthy stock)
     { accountId: account.id, partId: partGenBattery.id, siteId: riverside.id,
       qtyOnHand: 4, qtyMin: 2, location: 'Maintenance shop bin G-7',
-      notes: 'NFPA 110 annual replacement. 2 used per generator per year.' },
+      notes: 'Preventive replacement ~annually (condition-based per NFPA 110 §8.3.6 testing, not an NFPA mandate). ~2 used per generator per year.' },
     // SWGR-1A-1: 1 protection relay on hand
     { accountId: account.id, partId: partRelay.id, assetId: assets['SWGR-1A-1'].id,
       qtyOnHand: 1, qtyMin: 0, location: 'Substation A control cabinet 2-C',
@@ -2253,7 +2254,7 @@ async function _seedAccount() {
   await writeActivityLog({
     assetId: assets['BATT-1'].id, userId: admin.id, accountId: account.id,
     action: 'deficiency_created',
-    details: { severity: 'RECOMMENDED', description: 'Two cells exceeding IEEE 450 ohmic replacement threshold' },
+    details: { severity: 'RECOMMENDED', description: 'Two cells with rising ohmic trend -- flagged for IEEE 450 capacity verification' },
   });
 
   // ── Equipment templates (item 4.1 + section 2 seeding) ─────────────────────

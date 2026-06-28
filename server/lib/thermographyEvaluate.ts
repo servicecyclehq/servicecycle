@@ -11,14 +11,15 @@
  *   4-15 C  -> probable deficiency; repair as time permits (priority 2 / RECOMMENDED)
  *   >15 C   -> major discrepancy; repair immediately       (priority 1 / IMMEDIATE)
  *
- * NETA Table 100.18 (over-ambient bands) — corrected per HSB/Zurich guidance:
- *   1-10 C  possible deficiency; investigate               (priority 4 / ADVISORY)
- *   11-20 C probable deficiency; repair as time permits    (priority 2 / RECOMMENDED)
- *   21-40 C probable deficiency; immediate investigation   (priority 2 / RECOMMENDED)
- *   >40 C   major discrepancy; repair immediately          (priority 1 / IMMEDIATE)
- * The 21-40 C band was previously ADVISORY (priority 3) — corrected to RECOMMENDED
- * per NETA MTS table 100.18 and HSB/Zurich industry guidance that 21-40 C over-ambient
- * indicates "probable deficiency" requiring immediate investigation, not mere monitoring.
+ * NETA Table 100.18 (over-ambient bands). NOTE: NETA's literal action for the 21-40 C
+ * over-ambient row is "monitor until corrective measures can be accomplished."
+ * ServiceCycle deliberately escalates that row to RECOMMENDED (immediate investigation)
+ * per HSB/Zurich insurer guidance — a house override that is MORE conservative than the
+ * NETA table, not a restatement of it:
+ *   1-10 C  possible deficiency; investigate                  (priority 4 / ADVISORY)
+ *   11-20 C probable deficiency; repair as time permits       (priority 2 / RECOMMENDED)
+ *   21-40 C NETA: "monitor" → SC override: investigate now    (priority 2 / RECOMMENDED)
+ *   >40 C   major discrepancy; repair immediately             (priority 1 / IMMEDIATE)
  */
 
 export type DeltaReference = 'similar' | 'ambient';
@@ -34,10 +35,12 @@ export function severityForDeltaT(deltaT: number, reference: DeltaReference = 's
   if (!Number.isFinite(d) || d <= 0) return { priority: 4, severity: null, label: 'No measurable rise' };
 
   if (reference === 'ambient') {
-    // NETA Table 100.18 over-ambient-air bands (corrected per HSB/Zurich guidance):
+    // NETA Table 100.18 over-ambient-air bands. The 21-40 C row's literal NETA action is
+    // "monitor until corrective measures can be accomplished"; SC deliberately escalates it
+    // to RECOMMENDED (investigate now) as a more-conservative HSB/Zurich-insurer house rule:
     //   1-10 C  possible deficiency, investigate            (ADVISORY)
     //   11-20 C probable deficiency, repair as time permits (RECOMMENDED)
-    //   21-40 C probable deficiency, immediate investigation (RECOMMENDED) — was ADVISORY, corrected NETA-7-12
+    //   21-40 C NETA "monitor" → SC override: investigate now (RECOMMENDED)
     //   >40 C   major discrepancy, repair immediately       (IMMEDIATE)
     if (d > 40) return { priority: 1, severity: 'IMMEDIATE', label: 'Major discrepancy — repair immediately' };
     if (d >= 21) return { priority: 2, severity: 'RECOMMENDED', label: 'Probable deficiency — immediate investigation required' };

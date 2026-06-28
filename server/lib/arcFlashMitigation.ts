@@ -108,12 +108,17 @@ export function recommendMitigations(bus: any): { danger: boolean; options: any[
   return { danger, options, note };
 }
 
-// NFPA 70E PPE-category arc ratings (cal/cm^2) — for the what-if PPE-band change.
-// Per NFPA 70E Table 130.7(C)(15)(a): Cat 0 < 1.2, Cat 1 < 4, Cat 2 < 8, Cat 3 < 25, Cat 4 <= 40.
+// PPE arc ratings (cal/cm^2) per NFPA 70E Table 130.7(C)(15)(c): Cat 1 4, Cat 2 8,
+// Cat 3 25, Cat 4 40; below 1.2 cal/cm² = no arc-rated clothing required. Used ONLY to
+// show the what-if "PPE band" an incident-energy change would land in. IMPORTANT: per
+// NFPA 70E §130.5(F), an incident-energy result must be reported as a required MINIMUM
+// ARC RATING (cal/cm^2), not assigned a PPE Category — these bands are an equivalence aid
+// for the mitigation preview, not a category assignment. (Numbered "Category 0" was
+// removed in NFPA 70E-2015; retained here only as the <1.2 cal/cm² band sentinel.)
 const PPE_BANDS: Array<[number, number]> = [[1.2, 0], [4, 1], [8, 2], [25, 3], [40, 4]];
 function ppeCategoryFor(ie: number | null): number | null {
   if (ie == null) return null;
-  // NFPA 70E Table 130.7(C)(15)(a): below 1.2 cal/cm² → Category 0.
+  // Below 1.2 cal/cm²: no arc-rated clothing required (legacy "Category 0" band).
   if (ie < 1.2) return 0;
   // > 40 cal -> DANGER, no category (de-energize; do not work energized).
   if (ie > 40) return null;
