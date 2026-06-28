@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AiConsentProvider } from './context/AiConsentContext';
 import { ConfirmProvider } from './context/ConfirmContext';
@@ -33,7 +33,11 @@ function FieldHomeByRole() {
 }
 function FieldAssetByRole() {
   const { user } = useAuth();
-  return user?.role === 'field_tech' ? <FieldJob /> : <FieldAsset />;
+  // key={id} forces a remount when navigating between assets so per-asset state
+  // (selected work order, measurement/deficiency drafts, OCR result) cannot bleed
+  // across assets — e.g. filing a NETA measurement against the prior asset's WO.
+  const { id } = useParams();
+  return user?.role === 'field_tech' ? <FieldJob key={id} /> : <FieldAsset key={id} />;
 }
 function ShellOrField({ children }) {
   // Non-blocking (preserves the ProtectedRoute soft-gate): only redirect once

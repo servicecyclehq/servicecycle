@@ -25,6 +25,11 @@ const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const router = express.Router();
 
+// Defense-in-depth: every route below is also individually requireSuperAdmin-gated;
+// gating the whole router too means a future route added here without the per-route
+// guard can never expose this cross-tenant feed to a regular tenant user.
+router.use(requireSuperAdmin);
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DAY_MS = 86_400_000;
@@ -148,9 +153,10 @@ function studyEstimate(panels: number, rs: any, status: string): Estimate {
     return { low, high, detail };
   }
   if (min != null || max != null) {
-    const low = min ?? max;
-    const high = max ?? min;
-    return { low, high, detail: 'Flat study range from rate sheet (no per-panel rate set).' };
+    // Guard against a misconfigured rate sheet (min > max) producing an inverted range.
+    const a = min ?? max;
+    const b = max ?? min;
+    return { low: Math.min(a, b), high: Math.max(a, b), detail: 'Flat study range from rate sheet (no per-panel rate set).' };
   }
   return { low: null, high: null, detail: null };
 }
@@ -261,11 +267,21 @@ async function rateSheetPayload(rs: any) {
 
 // ── GET /api/admin/opportunities ─────────────────────────────────────────────
 
-router.get('/opportunities', requireSuperAdmin, async (_req: any, res: any) => {
+router.get('/opportunities', requireSuperAdmin, async (req: any, res: any) => {
   try {
     const now = Date.now();
+    // Audit the cross-tenant read: a super_admin viewing every tenant's contact
+    // book + pipeline should leave a trail (the rate-sheet confirm path logs; this
+    // read previously did not). Fire-and-forget; never block the response.
+    writeActivityLog({
+      assetId: null,
+      userId: req.user?.id ?? null,
+      accountId: req.user?.accountId ?? null,
+      action: 'revenue_intel_viewed',
+      details: { surface: 'opportunities' },
+    });
     const oneYearAgo = now - 365 * DAY_MS;
-    const twelveMonthsAgo = now - 365 * DAY_MS;
+    const twelveMonthsAgo = oneYearAgo; // identical 1-year cutoff; named alias for readability
 
     // ── Bulk loads (cross-tenant) ──────────────────────────────────────────
     const [
@@ -678,6 +694,15 @@ router.put('/rate-sheet', requireSuperAdmin, async (req: any, res: any) => {
     data.updatedById = req.user?.id ?? null;
 
     const existing = await getOrCreateRateSheet();
+
+    // Reject an inverted arc-flash study range (min > max) so the feed never shows
+    // a "$X – $Y" with X > Y. Validate the effective values (incoming or existing).
+    const effMin = 'arcFlashStudyMinimumCents' in data ? data.arcFlashStudyMinimumCents : existing.arcFlashStudyMinimumCents;
+    const effMax = 'arcFlashStudyMaximumCents' in data ? data.arcFlashStudyMaximumCents : existing.arcFlashStudyMaximumCents;
+    if (effMin != null && effMax != null && effMin > effMax) {
+      return res.status(400).json({ success: false, error: 'arcFlashStudyMinimumCents cannot exceed arcFlashStudyMaximumCents' });
+    }
+
     const rs = await prisma.rateSheet.update({ where: { id: existing.id }, data });
     return res.json({ success: true, data: await rateSheetPayload(rs) });
   } catch (err: any) {

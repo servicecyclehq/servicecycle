@@ -327,7 +327,7 @@ router.get('/asset/:assetId/document/:documentId', async (req, res) => {
       where: {
         id:        req.params.documentId,
         accountId: req.user.accountId,
-        OR: [{ assetId: reqAsset.id }, { siteId: reqAsset.siteId }],
+        OR: [{ assetId: reqAsset.id }, ...(reqAsset.siteId ? [{ siteId: reqAsset.siteId }] : [])],
       },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });

@@ -166,7 +166,6 @@ export default function OpportunitiesPage() {
   const [selected, setSelected] = useState(() => new Set());
   const [rejected, setRejected] = useState(() => new Set());
   const [crmValues, setCrmValues] = useState({});
-  const [rejectReason, setRejectReason] = useState('already_in_progress');
   const [exportPrompt, setExportPrompt] = useState(null); // { eligible, empty, rows }
   const [confirming, setConfirming] = useState(false);
 
@@ -303,6 +302,14 @@ export default function OpportunitiesPage() {
     setRejected((prev) => new Set([...prev, ...selected]));
     setSelected(new Set());
   }
+
+  // Export modal: close on Escape (it also closes on backdrop click).
+  useEffect(() => {
+    if (!exportPrompt) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setExportPrompt(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [exportPrompt]);
 
   function buildCsvRow(key) {
     const entry = rowByKey.get(key); if (!entry) return null;
@@ -447,7 +454,7 @@ export default function OpportunitiesPage() {
                     {visible.map((r) => (
                       <tr key={r._key} style={selected.has(r._key) ? { background: 'var(--color-primary-light)' } : undefined}>
                         <td style={S.cell}>
-                          <input type="checkbox" checked={selected.has(r._key)} onChange={() => toggle(r._key)} aria-label="Select opportunity" />
+                          <input type="checkbox" checked={selected.has(r._key)} onChange={() => toggle(r._key)} aria-label={`Select ${r.accountName || 'opportunity'}`} />
                         </td>
                         {sec.columns.map((c) => (
                           <td key={c.label} style={{ ...S.cell, textAlign: c.align === 'right' ? 'right' : 'left' }}>{c.render(r)}</td>
@@ -480,20 +487,10 @@ export default function OpportunitiesPage() {
       }}>
         <strong style={{ color: 'var(--color-text)' }}>{selected.size} selected</strong>
         {selected.size > 0 && (
-          <>
-            <label style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              Rejection reason:
-              <select value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
-                style={{ padding: '5px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 'var(--font-size-ui)' }}>
-                <option value="already_in_progress">Already in progress</option>
-                <option value="not_qualified">Not qualified</option>
-                <option value="timing_wrong">Timing wrong</option>
-                <option value="duplicate">Duplicate</option>
-                <option value="data_error">Data error</option>
-              </select>
-            </label>
-            <button onClick={rejectSelected} style={btn('ghost')}>Reject Selected</button>
-          </>
+          <button onClick={rejectSelected} style={btn('ghost')}
+            title="Hides the selected rows for this browser session only. Triage state is not saved — the acquirer's CRM is the system of record.">
+            Hide for this session
+          </button>
         )}
         <div style={{ flex: 1 }} />
         <button onClick={startExport} disabled={selected.size === 0} style={btn(selected.size === 0 ? 'disabled' : 'solid')}>
@@ -503,15 +500,17 @@ export default function OpportunitiesPage() {
 
       {/* Export modal */}
       {exportPrompt && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 480, width: '90%', border: '1px solid var(--color-border)' }}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 'var(--font-size-lg)', color: 'var(--color-text)' }}>Export without all values?</h3>
+        <div onClick={() => setExportPrompt(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="export-modal-title" onClick={(e) => e.stopPropagation()}
+            style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 480, width: '90%', border: '1px solid var(--color-border)' }}>
+            <h3 id="export-modal-title" style={{ margin: '0 0 10px', fontSize: 'var(--font-size-lg)', color: 'var(--color-text)' }}>Export without all values?</h3>
             <p style={{ margin: '0 0 18px', fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
               {exportPrompt.empty} of {exportPrompt.total} selected opportunities have no CRM dollar value entered.
               Export with $0 for those rows, or go back to enter values?
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button onClick={() => setExportPrompt(null)} style={btn('ghost')}>Go Back</button>
+              <button onClick={() => setExportPrompt(null)} style={btn('ghost')} autoFocus>Go Back</button>
               <button onClick={() => finishExport(exportPrompt.rows, 'zero')} style={btn('outline')}>Export with $0</button>
               <button onClick={() => finishExport(exportPrompt.rows, 'entered')} style={btn('solid')}>Export Entered Values Only</button>
             </div>

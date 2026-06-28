@@ -84,15 +84,20 @@ export default function DocumentsLibrary({ siteId = null, embedded = false }) {
   async function open(doc) {
     if (!await confirm({ title: 'Before you download', message: DOWNLOAD_DISCLAIMER, confirmLabel: 'Acknowledge & Download' })) return;
     setBusyId(doc.id);
+    setErr('');
     try {
       if (doc.external) {
         if (doc.externalUrl) window.open(doc.externalUrl, '_blank', 'noopener');
+        else setErr('That link is unavailable.');
       } else {
         const { data } = await api.get(`/api/documents/${doc.id}/url`);
         const href = data.data?.url || data.data?.apiPath;
         if (href) window.open(href, '_blank', 'noopener');
+        else setErr('Could not open that document right now.');
       }
-    } catch { /* ignore */ } finally { setBusyId(null); }
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Could not open that document. Please try again.');
+    } finally { setBusyId(null); }
   }
 
   const filterBar = (

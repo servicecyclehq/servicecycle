@@ -30,6 +30,7 @@ import IncidentLogCard from '../../components/IncidentLogCard';
 import ProvenanceBadge from '../../components/ProvenanceBadge';
 import VoiceCaptureButton from '../../components/field/VoiceCaptureButton';
 import FailedSyncBanner from '../../components/field/FailedSyncBanner';
+import { DOWNLOAD_DISCLAIMER } from '../../lib/documentDisclaimer';
 import {
   EQUIPMENT_TYPE_LABELS, CONDITION_META, SEVERITY_META, WO_STATUS_META,
   assetLabel, fmtDate,
@@ -314,15 +315,22 @@ const DOC_TYPE_LABELS = {
   warranty: 'Warranty',
   other: 'Document',
 };
-const DOWNLOAD_DISCLAIMER =
-  'This file was uploaded by your organization or its contractors. ServiceCycle stores and displays it but does not author or verify it, and does not guarantee its accuracy or currency. Confirm it is current (and where required, professionally sealed) before relying on it for switching, de-energization, or LOTO.';
+// DOWNLOAD_DISCLAIMER is imported from ../../lib/documentDisclaimer (shared source of truth)
 
 function FieldDocumentsSection({ assetId, documents }) {
   const docs = documents || [];
   const [pending, setPending] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [toast, setToast] = useState(null);
-  if (docs.length === 0) return null;
+  if (docs.length === 0) {
+    return (
+      <SectionCard title="Documents" accent="var(--color-primary)">
+        <div style={{ padding: 12, fontSize: 13.5, color: 'var(--color-text-secondary)' }}>
+          No documents uploaded for this equipment yet.
+        </div>
+      </SectionCard>
+    );
+  }
   const sorted = [...docs].sort((a, b) =>
     (a.docType === 'wiring_diagram' ? 0 : 1) - (b.docType === 'wiring_diagram' ? 0 : 1));
 

@@ -29,7 +29,7 @@ async function getFieldAssignmentScope(prisma, user): Promise<AssignmentScope | 
   });
   return {
     workOrderIds: new Set(rows.map((r) => r.id)),
-    assetIds:     new Set(rows.map((r) => r.assetId)),
+    assetIds:     new Set(rows.map((r) => r.assetId).filter(Boolean)), // drop null assetIds (unassigned WOs)
   };
 }
 

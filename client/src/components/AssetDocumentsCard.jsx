@@ -126,14 +126,14 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
         {/* Doc type */}
         <div style={{ flex: '0 0 auto' }}>
           <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Document type</label>
-          <select className="input" value={docType} onChange={e => setDocType(e.target.value)} style={{ width: 200 }}>
+          <select className="input" aria-label="Document type" value={docType} onChange={e => setDocType(e.target.value)} style={{ width: 200 }}>
             {DOC_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
 
         <div style={{ flex: '0 0 auto' }}>
           <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Provenance</label>
-          <select className="input" value={provenance} onChange={e => setProvenance(e.target.value)} style={{ width: 200 }}>
+          <select className="input" aria-label="Document provenance" value={provenance} onChange={e => setProvenance(e.target.value)} style={{ width: 200 }}>
             {PROVENANCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
@@ -142,7 +142,18 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
           <div style={{ flex: '1 1 200px' }}>
             <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, display: 'block', marginBottom: 4 }}>File *</label>
             <input ref={fileRef} type="file" className="input" style={{ padding: '5px 8px' }}
-              onChange={e => setFile(e.target.files[0] || null)} />
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp,.csv,.txt"
+              onChange={e => {
+                const f = e.target.files[0] || null;
+                if (f && f.size > 20 * 1024 * 1024) {
+                  setErr('That file is larger than 20 MB. Please choose a smaller file.');
+                  setFile(null);
+                  if (fileRef.current) fileRef.current.value = '';
+                  return;
+                }
+                setErr(null);
+                setFile(f);
+              }} />
           </div>
         ) : (
           <>
@@ -176,7 +187,7 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
 }
 
 // ── Document row ──────────────────────────────────────────────────────────────
-function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
+function DocRow({ doc, canWrite, onDeleted, onUpdated, onToast }) {
   const confirm = useConfirm();
   const [opening,  setOpening]  = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -196,7 +207,10 @@ function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
       const { data } = await api.get(`/api/documents/${doc.id}/url`);
       const href = data.data?.url || data.data?.apiPath;
       if (href) window.open(href, '_blank', 'noopener');
-    } catch { /* ignore */ }
+      else onToast?.({ message: 'This document is not available to download right now.', variant: 'error' });
+    } catch (e) {
+      onToast?.({ message: e?.response?.data?.error || 'Could not download this document. Please try again.', variant: 'error' });
+    }
     finally { setOpening(false); }
   }
 
@@ -211,7 +225,10 @@ function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
     try {
       await api.delete(`/api/documents/${doc.id}`);
       onDeleted(doc.id);
-    } catch { setDeleting(false); }
+    } catch (e) {
+      setDeleting(false);
+      onToast?.({ message: e?.response?.data?.error || 'Could not delete this document.', variant: 'error' });
+    }
   }
 
   async function handleTypeChange(val) {
@@ -219,7 +236,10 @@ function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
     try {
       await api.patch(`/api/documents/${doc.id}`, { docType: val || null });
       onUpdated({ ...doc, docType: val || null });
-    } catch { /* revert */ setNewType(doc.docType || ''); }
+    } catch (e) {
+      setNewType(doc.docType || '');
+      onToast?.({ message: e?.response?.data?.error || 'Could not change the document type.', variant: 'error' });
+    }
   }
 
   return (
@@ -245,7 +265,7 @@ function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
       <ProvenanceBadge value={doc.provenance} />
       {/* Inline type reclassification (manager+) */}
       {editing ? (
-        <select className="input" value={newType} onChange={e => { handleTypeChange(e.target.value); setEditing(false); }}
+        <select className="input" aria-label="Document type" value={newType} onChange={e => { handleTypeChange(e.target.value); setEditing(false); }}
           style={{ fontSize: 'var(--font-size-xs)', padding: '3px 6px', width: 170 }}>
           {DOC_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -346,7 +366,7 @@ export default function AssetDocumentsCard({ asset, canWrite }) {
             </div>
             {typeDocs.map(doc => (
               <DocRow key={doc.id} doc={doc} canWrite={canWrite}
-                onDeleted={handleDeleted} onUpdated={handleUpdated} />
+                onDeleted={handleDeleted} onUpdated={handleUpdated} onToast={setToast} />
             ))}
           </div>
         ))}

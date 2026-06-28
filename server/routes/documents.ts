@@ -63,6 +63,11 @@ function validProvenance(p) {
   return ['pe_sealed', 'engineered', 'as_built', 'vendor', 'unverified'].includes(p) ? p : undefined;
 }
 
+// docType must match the Prisma DocType enum (or be empty/null = unclassified).
+// Validate before it reaches Prisma so a bad value returns a clean 400, not a 500.
+const DOC_TYPES = ['oem_manual', 'wiring_diagram', 'loto_pdf', 'test_report', 'inspection_report', 'commissioning_report', 'warranty', 'other'];
+function isValidDocType(t) { return t == null || t === '' || DOC_TYPES.includes(t); }
+
 function isAllowedUploadMime(mimetype) {
   if (!mimetype) return false;
   if (DENIED_IMAGE_MIME.has(mimetype)) return false; // F011
@@ -373,13 +378,19 @@ router.get('/', async (req, res) => {
     const accountId = req.user.accountId;
     const { q, docType, siteId, assetId } = req.query;
 
+    if (docType && !isValidDocType(docType)) {
+      return res.status(400).json({ success: false, error: 'Invalid docType filter' });
+    }
+
     const where: any = { accountId };
-    if (siteId) {
+    // assetId takes precedence over siteId so passing both isn't an ambiguous OR.
+    if (assetId) {
+      where.assetId = assetId;
+    } else if (siteId) {
       where.OR = [{ asset: { siteId, archivedAt: null } }, { siteId }];
     } else {
       where.OR = [{ assetId: null }, { asset: { archivedAt: null } }];
     }
-    if (assetId) where.assetId = assetId;
     if (docType) where.docType = docType;
     if (q && String(q).trim()) where.filename = { contains: String(q).trim(), mode: 'insensitive' };
 
@@ -436,6 +447,7 @@ router.post('/link', requireManager, async (req, res) => {
     const { accountId, id: userId } = req.user;
     const { url, filename, docType, assetId, workOrderId, notes } = req.body;
 
+    if (!isValidDocType(docType)) return res.status(400).json({ success: false, error: 'Invalid docType' });
     if (!url?.trim())      return res.status(400).json({ success: false, error: 'url required' });
     if (!filename?.trim()) return res.status(400).json({ success: false, error: 'filename required' });
 
@@ -477,9 +489,12 @@ router.patch('/:documentId', requireManager, async (req, res) => {
   try {
     const { docType, filename } = req.body;
     const provenance = validProvenance(req.body.provenance);
+    if (docType !== undefined && !isValidDocType(docType)) {
+      return res.status(400).json({ success: false, error: 'Invalid docType' });
+    }
     const doc = await prisma.document.findFirst({
       where:  { id: req.params.documentId, accountId: req.user.accountId },
-      select: { id: true },
+      select: { id: true, provenance: true },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
 
@@ -492,13 +507,15 @@ router.patch('/:documentId', requireManager, async (req, res) => {
       },
     });
 
-    // pe_sealed is the high-liability claim: log the manager's attestation to the
-    // tamper-evident audit chain (who marked which document PE-sealed, and when).
-    if (provenance === 'pe_sealed') {
+    // Log EVERY provenance transition (not just the upgrade to sealed) so each
+    // trust-status change is attributable in the tamper-evident audit chain. The
+    // dedicated 'document_provenance_attested' action is kept for pe_sealed (the
+    // high-liability claim) so existing queries/tests for it still match.
+    if (provenance !== undefined && provenance !== doc.provenance) {
       writeActivityLog({
         userId: req.user.id, accountId: req.user.accountId, assetId: updated.assetId || null,
-        action: 'document_provenance_attested',
-        details: { documentId: updated.id, filename: updated.filename, provenance: 'pe_sealed' },
+        action: provenance === 'pe_sealed' ? 'document_provenance_attested' : 'document_provenance_changed',
+        details: { documentId: updated.id, filename: updated.filename, from: doc.provenance, to: provenance },
       });
     }
     return res.json({ success: true, data: updated });
@@ -574,6 +591,7 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
     const { accountId, id: userId } = req.user;
     let { assetId } = req.body || {};
     const { workOrderId, docType } = req.body || {};
+    if (!isValidDocType(docType)) return res.status(400).json({ success: false, error: 'Invalid docType' });
 
     // If an assetId was given, verify it belongs to this account before
     // letting the upload pin to it (defence-in-depth — Document.accountId is

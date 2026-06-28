@@ -28,7 +28,7 @@ const REPL_TYPES = [
 ];
 
 const c2d = (c) => (c == null ? '' : String(c / 100));
-const d2c = (s) => (s === '' || s == null ? null : Math.round(Number(s) * 100));
+const d2c = (s) => { if (s === '' || s == null) return null; const n = Number(s); return Number.isFinite(n) ? Math.round(n * 100) : null; };
 
 export default function RateSheetSection() {
   const [meta, setMeta] = React.useState(null);
@@ -68,6 +68,12 @@ export default function RateSheetSection() {
     e.preventDefault();
     setSaving(true); setMsg(''); setError('');
     try {
+      // Guard: a non-numeric entry serializes to null and would silently wipe the
+      // field. Surface a validation error instead of saving a blanked value.
+      const bad = [];
+      for (const f of MONEY_FIELDS) { const v = money[f.key]; if (v !== '' && v != null && !Number.isFinite(Number(v))) bad.push(f.label); }
+      for (const t of REPL_TYPES) for (const b of ['min', 'max']) { const v = ranges[t.key]?.[b]; if (v !== '' && v != null && !Number.isFinite(Number(v))) bad.push(`${t.label} ${b}`); }
+      if (bad.length) { setError(`Please enter valid numbers for: ${bad.join(', ')}.`); setSaving(false); return; }
       const payload = { expiresAfterDays: Number(days) || 180, equipmentReplacementRanges: {} };
       for (const f of MONEY_FIELDS) payload[f.key] = d2c(money[f.key]);
       for (const t of REPL_TYPES) {

@@ -6,7 +6,7 @@
 const META = {
   pe_sealed:  { label: 'PE-SEALED',  fg: 'var(--color-success)', bg: 'var(--color-success-bg)' },
   engineered: { label: 'Engineered', fg: 'var(--color-info)',    bg: 'var(--color-info-bg)' },
-  vendor:     { label: 'Vendor',     fg: 'var(--color-text-secondary)', bg: 'var(--color-section-bg, #eef1f6)' },
+  vendor:     { label: 'Vendor',     fg: 'var(--color-text-secondary)', bg: 'var(--color-section-bg)' },
   as_built:   { label: 'As-built',   fg: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
   unverified: { label: 'Unverified', fg: 'var(--color-danger)',  bg: 'var(--color-danger-bg)' },
 };
