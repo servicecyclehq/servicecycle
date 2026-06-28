@@ -43,13 +43,16 @@ describe('[DEMO-8-9] mitigation what-if — IE-driven vs voltage-driven DANGER',
   test('voltage-driven DANGER bus (IE already <40) can never "remove DANGER", but PPE improves', () => {
     // 19.6 cal/cm2 bus that is DANGER only because of 13.8 kV (>600 V): reducing
     // incident energy cannot clear the DANGER label, so removesDanger stays false
-    // and ieDrivenDanger is false — the UI shows the PPE drop instead.
+    // and ieDrivenDanger is false — the UI shows the required-arc-rating drop instead.
     const r = estimateMitigationRoi({ currentIeCalCm2: 19.6, estReductionPct: 60 });
     expect(r.ok).toBe(true);
     expect(r.ieDrivenDanger).toBe(false);
     expect(r.removesDanger).toBe(false);
     expect(r.ieAfterCalCm2).toBeCloseTo(7.84, 2);
-    expect(r.ppeImproved).toBe(true); // 19.6 (PPE 3) -> 7.84 (PPE 2)
+    // required arc rating drops 25 -> 8 cal/cm² (19.6 -> 7.84); no PPE *category* is asserted
+    expect(r.arcRatingReduced).toBe(true);
+    expect(r.requiredArcRatingBeforeCalCm2).toBe(25);
+    expect(r.requiredArcRatingAfterCalCm2).toBe(8);
   });
 
   test('incident-energy-driven DANGER bus (IE>40) can clear DANGER with a real reduction', () => {

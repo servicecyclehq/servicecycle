@@ -10,7 +10,7 @@
  *    caveat.
  *  - estimateMitigationRoi(...): given the CURRENT incident energy, a USER/PE-
  *    supplied expected reduction %, and an estimated mitigation cost, computes the
- *    energy-after, PPE-category change, whether it clears the >40 cal DANGER line,
+ *    energy-after, the required-arc-rating change, whether it clears the >40 cal DANGER line,
  *    and $/cal-reduced. The reduction % is an input, not a claim — the engine only
  *    does the arithmetic.
  */
@@ -96,11 +96,12 @@ export function recommendMitigations(bus: any): { danger: boolean; options: any[
     .filter((m) => m.applies(ctx))
     .map((m) => ({ key: m.key, label: m.label, category: m.category, mechanism: m.mechanism, caveat: m.caveat }));
 
-  const ppeNow = ppeCategoryFor(ie);
-  // [AFX-6] NFPA 70E §130.7(C)(14): arc rating of layered clothing is NOT additive.
-  // Cat 3/4 requires system arc-rated combinations verified by test.
-  const highCatNote = ppeNow != null && ppeNow >= 3
-    ? ' Note: NFPA 70E §130.7(C)(14) — Cat 3/4 PPE requires arc-rated clothing with a system arc rating verified by test. Individual layer ratings are not additive.'
+  const arcRatingNow = requiredArcRatingCalCm2(ie);
+  // [AFX-6] NFPA 70E §130.7(C)(14): the arc rating of layered clothing is NOT additive.
+  // A high required arc rating (≥25 cal/cm²) needs an arc-rated clothing SYSTEM whose
+  // combined rating is verified by test.
+  const highCatNote = arcRatingNow != null && arcRatingNow >= 25
+    ? ' Note: NFPA 70E §130.7(C)(14) — a required arc rating ≥25 cal/cm² needs an arc-rated clothing system whose combined rating is verified by test. Individual layer ratings are not additive.'
     : '';
   const note = danger
     ? 'This bus is in the DANGER class. Consider the energy-reduction options below, then request a quote. ServiceCycle is the data layer; a PE confirms the reduced value by re-study.' + highCatNote
@@ -108,22 +109,20 @@ export function recommendMitigations(bus: any): { danger: boolean; options: any[
   return { danger, options, note };
 }
 
-// PPE arc ratings (cal/cm^2) per NFPA 70E Table 130.7(C)(15)(c): Cat 1 4, Cat 2 8,
-// Cat 3 25, Cat 4 40; below 1.2 cal/cm² = no arc-rated clothing required. Used ONLY to
-// show the what-if "PPE band" an incident-energy change would land in. IMPORTANT: per
-// NFPA 70E §130.5(F), an incident-energy result must be reported as a required MINIMUM
-// ARC RATING (cal/cm^2), not assigned a PPE Category — these bands are an equivalence aid
-// for the mitigation preview, not a category assignment. (Numbered "Category 0" was
-// removed in NFPA 70E-2015; retained here only as the <1.2 cal/cm² band sentinel.)
-const PPE_BANDS: Array<[number, number]> = [[1.2, 0], [4, 1], [8, 2], [25, 3], [40, 4]];
-function ppeCategoryFor(ie: number | null): number | null {
+// Required minimum arc rating (cal/cm²) for an incident energy, per NFPA 70E §130.5(F):
+// the incident-energy-analysis method reports a REQUIRED ARC RATING, never a PPE Category.
+// ServiceCycle deliberately does NOT assert a PPE category from a computed incident energy —
+// that life-safety determination belongs to the licensed PE who seals the IEEE 1584 study.
+// We report only the minimum arc rating the worker's PPE must meet or exceed, snapped UP to
+// the commonly-stocked arc-rated garment tiers (4 / 8 / 25 / 40 cal/cm²). Below 1.2 cal/cm²
+// no arc-rated clothing is required; above 40 cal/cm² no PPE applies (de-energize).
+const ARC_RATING_TIERS = [4, 8, 25, 40]; // standard arc-rated garment ratings, cal/cm²
+function requiredArcRatingCalCm2(ie: number | null): number | null {
   if (ie == null) return null;
-  // Below 1.2 cal/cm²: no arc-rated clothing required (legacy "Category 0" band).
-  if (ie < 1.2) return 0;
-  // > 40 cal -> DANGER, no category (de-energize; do not work energized).
-  if (ie > 40) return null;
-  for (const [cal, cat] of PPE_BANDS) if (ie <= cal) return cat;
-  return null; // safety net — unreachable given the >40 guard above
+  if (ie < 1.2) return 0;    // no arc-rated clothing required
+  if (ie > 40) return null;  // de-energize; no PPE covers > 40 cal/cm²
+  for (const tier of ARC_RATING_TIERS) if (ie <= tier) return tier;
+  return null; // unreachable given the > 40 guard above
 }
 
 /**
@@ -147,22 +146,23 @@ export function estimateMitigationRoi(opts: { currentIeCalCm2: any; estReduction
   // is IE-driven DANGER; a bus that is DANGER purely because of system voltage
   // (>600 V, e.g. a 13.8 kV bus at 19.6 cal) can never have its DANGER class
   // cleared by reducing incident energy, so reporting a bare "Clears DANGER? No"
-  // there is misleading. The real ROI for such a bus is the PPE-category drop
-  // (ppeImproved), which this engine already computes. Surfacing ieDrivenDanger
+  // there is misleading. The real ROI for such a bus is the required-arc-rating drop
+  // (arcRatingReduced), which this engine already computes. Surfacing ieDrivenDanger
   // lets the UI show the correct headline instead of a perpetual "No".
   const ieDrivenDanger = ie > 40;
   const removesDanger = ieDrivenDanger && ieAfter <= 40 + FLOAT_TOLERANCE;
-  const ppeBefore = ppeCategoryFor(ie);
-  const ppeAfter = ppeCategoryFor(ieAfter);
+  const arcRatingBefore = requiredArcRatingCalCm2(ie);
+  const arcRatingAfter = requiredArcRatingCalCm2(ieAfter);
   const costPerCalReduced = cost != null && calReduced > 0 ? Math.round((cost / calReduced) * 100) / 100 : null;
 
   return {
     ok: true,
     currentIeCalCm2: ie, estReductionPct: pct, ieAfterCalCm2: ieAfter, calReduced,
-    ppeBefore, ppeAfter, ppeImproved: ppeBefore != null && ppeAfter != null && ppeAfter < ppeBefore,
+    requiredArcRatingBeforeCalCm2: arcRatingBefore, requiredArcRatingAfterCalCm2: arcRatingAfter,
+    arcRatingReduced: arcRatingBefore != null && arcRatingAfter != null && arcRatingAfter < arcRatingBefore,
     ieDrivenDanger, removesDanger, mitigationCostUsd: cost, costPerCalReduced,
-    caveat: 'The reduction percentage is your (or your PE\'s) estimate — ServiceCycle does not run the IEEE 1584 calculation. Confirm the modeled value with a re-study before relabeling.',
+    caveat: 'The reduction percentage is your (or your PE\'s) estimate — ServiceCycle does not run the IEEE 1584 calculation and does not assign a PPE category; it reports the minimum required arc rating (cal/cm²). Confirm the modeled value with a re-study before relabeling.',
   };
 }
 
-export { ppeCategoryFor };
+export { requiredArcRatingCalCm2 };

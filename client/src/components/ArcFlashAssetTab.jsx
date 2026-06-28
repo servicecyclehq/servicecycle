@@ -692,12 +692,12 @@ function MitigationCard({ assetId, mitigations, current, canWrite }) {
                   that is DANGER from system voltage (>600 V) the IE is already <40,
                   so reducing energy can never flip that label and a bare "No" reads
                   as the feature being broken. Show the honest headline instead: the
-                  >40 question when it applies, otherwise the PPE-category drop that
+                  >40 question when it applies, otherwise the required-arc-rating drop that
                   energy reduction actually achieves. */}
               {roi.ieDrivenDanger
                 ? <Field label="Clears DANGER (>40)?" value={roi.removesDanger ? 'Yes' : 'No'} />
-                : <Field label="Lowers required PPE?" value={roi.ppeImproved ? 'Yes' : 'No'} />}
-              <Field label="PPE category" value={`${roi.ppeBefore ?? '—'} → ${roi.ppeAfter ?? '—'}`} />
+                : <Field label="Lowers required arc rating?" value={roi.arcRatingReduced ? 'Yes' : 'No'} />}
+              <Field label="Required arc rating (cal/cm²)" value={`${roi.requiredArcRatingBeforeCalCm2 ?? '—'} → ${roi.requiredArcRatingAfterCalCm2 ?? '—'}`} />
               {roi.costPerCalReduced != null && <Field label="$ / cal reduced" value={`$${roi.costPerCalReduced}`} />}
             </div>
           )}
