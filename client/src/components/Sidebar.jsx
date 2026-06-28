@@ -723,6 +723,14 @@ export default function Sidebar() {
             {Icons.sites}
             Sites
           </NavLink>
+
+          <NavLink
+            to="/documents"
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            <FileText {...ICON_PROPS} />
+            Documents
+          </NavLink>
         </NavGroup>
 
         {/* ── Work ──────────────────────────────────────────────────────── */}

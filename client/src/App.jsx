@@ -125,6 +125,7 @@ const ReviewQueue             = lazyWithReload(() => import('./pages/ReviewQueue
 const ArchivedAssets          = lazyWithReload(() => import('./pages/ArchivedAssets'));
 const SitesList               = lazyWithReload(() => import('./pages/SitesList'));
 const SiteDetail              = lazyWithReload(() => import('./pages/SiteDetail'));
+const DocumentsLibrary        = lazyWithReload(() => import('./pages/DocumentsLibrary')); // account-wide searchable doc library
 const ContractorsList         = lazyWithReload(() => import('./pages/ContractorsList'));
 const ContractorDetail        = lazyWithReload(() => import('./pages/ContractorDetail'));
 const QemwWallet              = lazyWithReload(() => import('./pages/QemwWallet'));
@@ -373,6 +374,7 @@ function AppRoutes() {
             <Route path="assets/:id"         element={<AssetDetail />} />
             <Route path="sites"              element={<SitesList />} />
             <Route path="sites/:id"          element={<SiteDetail />} />
+            <Route path="documents"          element={<DocumentsLibrary />} />
             <Route path="contractors"        element={<ContractorsList />} />
             <Route path="contractors/qemw-wallet" element={<QemwWallet />} />
             <Route path="contractors/:id"    element={<ContractorDetail />} />

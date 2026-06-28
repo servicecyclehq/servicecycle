@@ -24,6 +24,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import StudyAssetBinding from '../components/StudyAssetBinding';
 import ArcFlashIngestPanel from '../components/ArcFlashIngestPanel';
+import DocumentsLibrary from './DocumentsLibrary';
 import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
@@ -710,7 +711,22 @@ export default function SiteDetail() {
           )}
         </div>
 
-        {/* ── Blackout windows ───────────────────────────────────────────── */}
+                {/* -- Documents ---------------------------------------------------- */}
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header">
+            <div>
+              <div className="card-title">Documents</div>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                One-lines, manuals, and reports uploaded for this site's equipment
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: '12px 20px' }}>
+            <DocumentsLibrary siteId={id} embedded />
+          </div>
+        </div>
+
+{/* ── Blackout windows ───────────────────────────────────────────── */}
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-header">
             <div>

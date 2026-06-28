@@ -355,6 +355,70 @@ router.get('/asset/:assetId', async (req, res) => {
   }
 });
 
+// ── GET /api/documents ───────────────────────────────────────────────────────
+// Account-wide document library: searchable / filterable list across all assets.
+// Filters: ?q= (filename, case-insensitive contains), ?docType=, ?siteId=,
+// ?assetId=. Joins asset -> site so the library can show and filter by site.
+// Account-scoped; archived assets' docs excluded (same H5 rule as the serve
+// routes). Capped at 300 rows (newest first); pagination is the documented next
+// step if a tenant's library grows past that.
+router.get('/', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const { q, docType, siteId, assetId } = req.query;
+
+    const where: any = { accountId };
+    if (siteId) {
+      where.asset = { siteId, archivedAt: null };
+    } else {
+      where.OR = [{ assetId: null }, { asset: { archivedAt: null } }];
+    }
+    if (assetId) where.assetId = assetId;
+    if (docType) where.docType = docType;
+    if (q && String(q).trim()) where.filename = { contains: String(q).trim(), mode: 'insensitive' };
+
+    const docs = await prisma.document.findMany({
+      where,
+      select: {
+        id: true, filename: true, docType: true, fileType: true, filePath: true,
+        externalUrl: true, uploadedAt: true,
+        uploader: { select: { name: true } },
+        asset: {
+          select: {
+            id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [{ uploadedAt: 'desc' }],
+      take: 300,
+    });
+
+    const data = docs.map((d) => ({
+      id: d.id,
+      filename: d.filename,
+      docType: d.docType,
+      fileType: d.fileType,
+      uploadedAt: d.uploadedAt,
+      uploaderName: d.uploader?.name || null,
+      external: d.filePath === '__external__',
+      externalUrl: d.filePath === '__external__' ? d.externalUrl : null,
+      asset: d.asset
+        ? {
+            id: d.asset.id,
+            name: [d.asset.manufacturer, d.asset.model].filter(Boolean).join(' ') || d.asset.serialNumber || d.asset.equipmentType,
+            equipmentType: d.asset.equipmentType,
+            site: d.asset.site || null,
+          }
+        : null,
+    }));
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[documents GET /]', err);
+    return res.status(500).json({ success: false, error: 'Failed to list documents' });
+  }
+});
+
 // ── POST /api/documents/link ──────────────────────────────────────────────────
 // Create a document record that is a URL link only (no upload).
 // Body: { assetId?, workOrderId?, url, filename, docType? }

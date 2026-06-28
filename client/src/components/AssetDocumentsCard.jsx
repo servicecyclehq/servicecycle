@@ -18,6 +18,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api/client';
 import { useConfirm } from '../context/ConfirmContext';
+import { UPLOAD_DISCLAIMER, DOWNLOAD_DISCLAIMER } from '../lib/documentDisclaimer';
 import Toast from './Toast';
 
 const DOC_TYPE_META = {
@@ -72,11 +73,13 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
   const [file,     setFile]     = useState(null);
   const [saving,   setSaving]   = useState(false);
   const [err,      setErr]      = useState(null);
+  const [ack,      setAck]      = useState(false);
   const fileRef = useRef();
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErr(null);
+    if (!ack) { setErr('Please acknowledge the storage notice below before saving.'); return; }
     setSaving(true);
     try {
       if (mode === 'url') {
@@ -144,7 +147,13 @@ function AddDocForm({ assetId, onAdded, onCancel }) {
           </>
         )}
 
-        <button type="submit" className="btn btn-primary btn-sm" disabled={saving} style={{ alignSelf: 'flex-end' }}>
+        <div style={{ flexBasis: '100%', marginTop: 4 }}>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+            <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} style={{ marginTop: 2, flexShrink: 0 }} />
+            <span>{UPLOAD_DISCLAIMER}</span>
+          </label>
+        </div>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={saving || !ack} style={{ alignSelf: 'flex-end' }}>
           {saving ? 'Saving…' : 'Save'}
         </button>
         <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} style={{ alignSelf: 'flex-end' }}>
@@ -166,6 +175,11 @@ function DocRow({ doc, canWrite, onDeleted, onUpdated }) {
   const isExternal = doc.filePath === '__external__';
 
   async function handleOpen() {
+    if (!await confirm({
+      title: 'Before you download',
+      message: DOWNLOAD_DISCLAIMER,
+      confirmLabel: 'Acknowledge & Download',
+    })) return;
     if (isExternal) { window.open(doc.externalUrl, '_blank', 'noopener'); return; }
     setOpening(true);
     try {
