@@ -26,6 +26,9 @@ const prisma = require('../lib/prisma').default;
 const { getFieldAssignmentScope } = require('../lib/fieldScope');
 const { parseVoiceReading, hintTokens } = require('../lib/voiceCapture');
 const { regapIngestBusAfterDevice } = require('../lib/arcFlashDevice');
+const { downloadFile } = require('../lib/storage');
+const { decrypt } = require('../lib/docCrypto');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -256,6 +259,21 @@ router.get('/asset/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Asset not found' });
     }
 
+    // Documents attached to this asset — surfaced so a field tech can pull up
+    // the one-line / manuals / LOTO / test reports right from the asset card or
+    // a QR scan. Slim shape only; bytes are fetched via the scoped download
+    // route below (the storage key is never exposed to the client).
+    const docRows = await prisma.document.findMany({
+      where:   { assetId: asset.id, accountId: req.user.accountId },
+      select:  { id: true, filename: true, docType: true, fileType: true, externalUrl: true, filePath: true, uploadedAt: true },
+      orderBy: [{ uploadedAt: 'desc' }],
+    });
+    const documents = docRows.map((d) => ({
+      id: d.id, filename: d.filename, docType: d.docType, fileType: d.fileType, uploadedAt: d.uploadedAt,
+      external: d.filePath === '__external__',
+      externalUrl: d.filePath === '__external__' ? d.externalUrl : null,
+    }));
+
     const now = new Date();
     const { schedules, deficiencies, workOrders, _count, ...assetFields } = asset;
 
@@ -276,11 +294,66 @@ router.get('/asset/:id', async (req, res) => {
           status: wo.status,
           taskName: wo.schedule?.taskDefinition?.taskName ?? null,
         })),
+        documents,
       },
     });
   } catch (err) {
     console.error('Field asset card error:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch asset' });
+  }
+});
+
+// ─── GET /api/field/asset/:assetId/document/:documentId ───────────────────────
+// Field-safe document download. field_tech is default-denied on /api/documents,
+// so this is their ONLY path to a file — and it re-checks assignment scope:
+//   field_tech → the asset MUST be in their assignment scope
+//   manager+   → any asset in the account
+// Streams the (decrypted) bytes for stored docs; returns the link for external
+// URL-only docs. accountId is the hard tenant boundary; archived assets blocked.
+router.get('/asset/:assetId/document/:documentId', async (req, res) => {
+  try {
+    const scope = await getFieldAssignmentScope(prisma, req.user);
+    if (scope && !scope.assetIds.has(req.params.assetId)) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    const doc = await prisma.document.findFirst({
+      where: {
+        id:        req.params.documentId,
+        assetId:   req.params.assetId,
+        accountId: req.user.accountId,
+        asset:     { archivedAt: null },
+      },
+    });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    // External URL-only document — hand back the link; the client opens it.
+    if (doc.filePath === '__external__') {
+      return res.json({ success: true, data: { external: true, externalUrl: doc.externalUrl } });
+    }
+
+    let buf = await downloadFile(doc.filePath);
+    if (doc.encrypted) buf = decrypt(buf, doc.id);
+
+    const safeAscii = (doc.filename || 'document').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+    const rfc5987   = encodeURIComponent(doc.filename || 'document');
+    res.set('Content-Type',           doc.fileType || 'application/octet-stream');
+    res.set('Content-Disposition',    `attachment; filename="${safeAscii}"; filename*=UTF-8''${rfc5987}`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Length',         buf.length);
+    res.set('Cache-Control',          'private, no-store');
+
+    writeActivityLog({
+      assetId: doc.assetId || null,
+      userId:  req.user.id,
+      action:  'document_accessed',
+      details: { documentId: doc.id, filename: doc.filename, method: 'field-stream' },
+    });
+
+    // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- safe: explicit Content-Type from doc.fileType (upload MIME allowlist + magic-byte check); buf is a decrypted file buffer, not user HTML.
+    return res.send(buf);
+  } catch (err) {
+    console.error('[field document download]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve document' });
   }
 });
 

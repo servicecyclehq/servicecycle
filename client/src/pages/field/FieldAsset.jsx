@@ -299,6 +299,99 @@ function FieldLotoSection({ assetId }) {
   );
 }
 
+// -- Documents -- one-line, manuals, LOTO PDFs, test reports at the equipment ---
+// Surfaces documents UPLOADED for this asset so a tech can pull up the one-line
+// before PM / switching. We store and display these; we do not author or verify
+// them -- hence the acknowledge-to-download gate (storage-platform posture).
+const DOC_TYPE_LABELS = {
+  wiring_diagram: 'One-line / wiring diagram',
+  oem_manual: 'OEM manual',
+  loto_pdf: 'LOTO procedure',
+  test_report: 'Test report',
+  inspection_report: 'Inspection report',
+  commissioning_report: 'Commissioning report',
+  warranty: 'Warranty',
+  other: 'Document',
+};
+const DOWNLOAD_DISCLAIMER =
+  'This file was uploaded by your organization or its contractors. ServiceCycle stores and displays it but does not author or verify it, and does not guarantee its accuracy or currency. Confirm it is current (and where required, professionally sealed) before relying on it for switching, de-energization, or LOTO.';
+
+function FieldDocumentsSection({ assetId, documents }) {
+  const docs = documents || [];
+  const [pending, setPending] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [toast, setToast] = useState(null);
+  if (docs.length === 0) return null;
+  const sorted = [...docs].sort((a, b) =>
+    (a.docType === 'wiring_diagram' ? 0 : 1) - (b.docType === 'wiring_diagram' ? 0 : 1));
+
+  async function doDownload(doc) {
+    setPending(null);
+    setBusyId(doc.id);
+    try {
+      if (doc.external) {
+        const r = await api.get(`/api/field/asset/${assetId}/document/${doc.id}`);
+        const url = r.data?.data?.externalUrl;
+        if (!url) throw new Error('no link');
+        window.open(url, '_blank', 'noopener');
+      } else {
+        const res = await api.get(`/api/field/asset/${assetId}/document/${doc.id}`, { responseType: 'blob' });
+        const url = URL.createObjectURL(res.data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = doc.filename || 'document';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+    } catch {
+      setToast({ message: 'Could not open document. Try again when online.', variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <SectionCard title="Documents" accent="var(--color-primary)">
+      <Toast toast={toast} onClose={() => setToast(null)} />
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {sorted.map((doc) => {
+          const isOneLine = doc.docType === 'wiring_diagram';
+          const label = DOC_TYPE_LABELS[doc.docType] || 'Document';
+          return (
+            <button key={doc.id} type="button" onClick={() => setPending(doc)} disabled={busyId === doc.id}
+              style={{ ...fatBtn, justifyContent: 'flex-start', textAlign: 'left', gap: 12, minHeight: 60, padding: '12px 14px',
+                background: isOneLine ? 'var(--color-primary-light, #e6f0f5)' : 'var(--color-surface)',
+                border: '1px solid ' + (isOneLine ? 'var(--color-primary)' : 'var(--color-border)'),
+                color: 'var(--color-text)', opacity: busyId === doc.id ? 0.6 : 1 }}>
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                <span style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {isOneLine ? 'One-line for this equipment' : doc.filename}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {isOneLine ? (label + ' - ' + doc.filename) : label}
+                </span>
+              </span>
+              {isOneLine && <Chip label="ONE-LINE" color="#fff" bg="var(--color-primary)" />}
+            </button>
+          );
+        })}
+      </div>
+      {pending && (
+        <div onClick={() => setPending(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--color-surface)', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, width: '100%', maxWidth: 520, boxSizing: 'border-box', boxShadow: '0 -4px 20px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8, color: 'var(--color-text)' }}>Before you download</div>
+            <p style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--color-text-secondary)', margin: '0 0 16px' }}>{DOWNLOAD_DISCLAIMER}</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={() => setPending(null)} style={{ ...fatBtn, flex: 1, background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>Cancel</button>
+              <button type="button" onClick={() => doDownload(pending)} style={{ ...fatBtn, flex: 2, background: 'var(--color-primary)', border: 'none', color: '#fff' }}>Acknowledge and Download</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 export default function FieldAsset() {
   const { id } = useParams();
   const { aiEnabled, aiConfigured, features } = useAuth();
@@ -741,6 +834,7 @@ export default function FieldAsset() {
       </SectionCard>
 
       {/* ── LOTO — written procedure at the equipment ──────────────────────── */}
+      <FieldDocumentsSection assetId={id} documents={data?.documents} />
       <FieldLotoSection assetId={id} />
 
       {/* ── Incidents / protective-device operations (#24) ─────────────────── */}
