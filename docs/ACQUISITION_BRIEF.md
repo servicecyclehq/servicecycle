@@ -114,6 +114,8 @@ The platform is production-deployed with a live demo at servicecycle.app:
 - **Multi-tenant** — HoldCo/OpCo rollup (EnterpriseGroup) + OEM fleet view (PartnerOrganization)
 - **SSO** — Ory Polis OIDC/SAML/SCIM; ships dark (SSO_ENABLED env flag)
 - **Full data portability** — one-click account export (JSON + XLSX) covering all assets, work orders, arc-flash data, and parts; no lock-in
+- **Revenue Intelligence** — super_admin-only, cross-tenant field-intelligence feed: arc-flash study pipeline with a 0–100 composite score, system-change alerts, plus dormant / greenfield / no-study leads; a platform rate sheet (researched US-average rates) drives dollar estimates; CSV export to the acquirer's CRM. SC detects; the CRM manages.
+- **Document layer** — customer-uploaded documents (one-lines, manuals, test reports, LOTO) surfaced on the asset, in field mode / via QR scan, on the site, and in an account-wide searchable library; accuracy acknowledgment at upload and download (storage-platform posture — SC stores and extracts, it does not author, verify, or generate documents)
 
 Security posture: SOC 2 Type I controls mapped and documented; 13 of the actionable TSC gaps closed; hash-chain audit log; AES-256-GCM encryption at rest; multi-layer rate limiting; tenant isolation tested.
 
