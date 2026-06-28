@@ -1304,7 +1304,14 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
         aiConfigured: !!(process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || (process.env.CF_WORKERS_AI_API_KEY && process.env.CF_WORKERS_AI_ACCOUNT_ID) || process.env.GROQ_API_KEY || process.env.HF_TOKEN) || dbKeyConfigured, // (N3)
         // v0.90.4: surface server's deployed version so the client can detect skew
         // between its baked-in build-id meta and reality. SPA polls this every 60s.
-        servicecycleVersion: process.env.SERVICECYCLE_VERSION || null,
+        // Fallback to the server package.json version (formatted as 'v'+x, to match
+        // the client's 'v'+pkg.version build-id) when the deploy doesn't inject
+        // SERVICECYCLE_VERSION — i.e. the from-source demo. Without this the field
+        // is null and the version-skew "Reload" banner is disabled entirely; with
+        // it, bumping the package version on a deploy makes the banner fire for any
+        // tab still on the old bundle (works even when /sw.js is behind basic-auth,
+        // since this path is /api, not the gated static origin).
+        servicecycleVersion: process.env.SERVICECYCLE_VERSION || ('v' + _serviceVersion),
         accountFeatures,
       },
     };
