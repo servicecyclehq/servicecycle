@@ -24,7 +24,7 @@ try { require('tsx/cjs'); } catch (_) { /* running under tsx already -- no-op */
  * What the full demo seed produces (account pinned to DEMO_ACCOUNT_ID):
  *   - 1 demo Account: "Meridian Manufacturing" — fictional industrial
  *     facility operator (everything below is invented; no real companies)
- *   - 4 users: admin@demo.local (Admin1234!), manager@demo.local
+ *   - 5 users (incl. tech@demo.local / Tech1234!, role field_tech): admin@demo.local (Admin1234!), manager@demo.local
  *     (Manager1234!), viewer@demo.local (Viewer1234!), consultant@demo.local
  *     (Consultant1234!) — roles match the local-part
  *   - The GLOBAL standards library + task matrix via seedStandards() (runs
@@ -479,7 +479,7 @@ async function _seedAccount() {
     passwordHash: consultantHash, role: 'consultant',
   } });
   // Field-labor login: assigned-jobs-only, default-deny outside /api/field.
-  await prisma.user.create({ data: {
+  const tech = await prisma.user.create({ data: {
     accountId: account.id, name: 'Terry Vance', email: 'tech@demo.local',
     passwordHash: techHash, role: 'field_tech',
   } });
@@ -2378,9 +2378,9 @@ async function _seedAccount() {
   return {
     accountId: account.id,
     companyName: account.companyName,
-    users: { admin: admin.email, manager: manager.email, viewer: viewer.email, consultant: consultant.email },
+    users: { admin: admin.email, manager: manager.email, viewer: viewer.email, consultant: consultant.email, tech: tech.email },
     counts: {
-      users: 4,
+      users: 5,
       powerDbAssets: pdb.assets, powerDbWorkOrders: pdb.workOrders, powerDbMeasurements: pdb.measurements,
       sites: 2, buildings: 1, areas: 2, positions: posSpecs.length + egPosSpecs.length,
       contractors: 2, contractorTechs: 5,
