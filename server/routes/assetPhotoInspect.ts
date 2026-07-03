@@ -476,9 +476,11 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
       }
     }
     // Deterministic sanity downgrades — cheap guards the model can't talk past.
-    if (fields.serialNumber && !/\d/.test(String(fields.serialNumber))) confidence.serialNumber = 'low';
-    if (fields.year != null && !(Number(fields.year) >= 1900 && Number(fields.year) <= 2100)) confidence.year = 'low';
-    if (fields.phases != null && ![1, 3].includes(Number(fields.phases))) confidence.phases = 'low';
+    // Logic lives in lib/measurementSanity so the full set (serialNumber, year,
+    // phases, voltage, kva, amperage, enclosureRating) is unit-testable without
+    // spinning up this route.  Mutates `confidence` in-place.
+    const { applyNameplateDowngrades } = require('../lib/measurementSanity');
+    applyNameplateDowngrades(fields, confidence);
 
     const assetId = (req.body?.assetId || '').trim();
     if (assetId) {

@@ -31,6 +31,10 @@ const MEASUREMENT_VOCAB: any = {
 };
 const LABELS = Object.keys(MEASUREMENT_VOCAB);
 
+// Layer-2 physical-plausibility gate (see lib/measurementSanity.ts).
+// Required at module level so esbuild tree-shakes it correctly.
+const { checkMeasurement: _physCheck } = require('./measurementSanity');
+
 /** Extract the concatenated text layer from a PDF buffer via pdfjs-dist. */
 async function extractPdfText(buffer: Buffer): Promise<string> {
   const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -205,6 +209,19 @@ function parseTestReport(rawText: string) {
       passFail: result,        // GREEN | YELLOW | RED | null
       critical: vocab.critical,
     });
+  }
+
+  // Physical-plausibility gate — runs AFTER the full measurements array is built,
+  // BEFORE returning to the caller.  ERROR-severity findings force passFail to RED
+  // so evaluateUnit() in ingestConfidenceGate.ts routes the whole unit to the
+  // Review Queue (same path as a low-confidence match — see evaluateUnit line ~98).
+  // A sanityNote field is added for the review UI to surface the reason.
+  for (const m of measurements) {
+    const errors = (_physCheck(m) as any[]).filter((f: any) => f.severity === 'error');
+    if (errors.length > 0) {
+      m.passFail  = 'RED';
+      m.sanityNote = errors.map((f: any) => f.message).join('; ');
+    }
   }
 
   return { meta, measurements, detectedLabels: [...new Set(hits.map(h => h.label))] };
