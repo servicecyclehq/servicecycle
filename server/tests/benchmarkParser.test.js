@@ -31,7 +31,9 @@ const CORPUS_PATH = process.env.CORPUS_PATH
 
 // 2026-07-03 baseline after fix cycle 1: 21.6%
 // Fixed: @ N VDC/KV test-condition strip, N MIN table header strip, MM/DD/YYYY dates, trip time labels.
-// Remaining wall: multi-row table extraction (1 row extracted per label, PowerDB has 3+ phases).
+// 2026-07-03 fix cycle 2: multi-row table extraction (H-G/X-G/H-X winding rows, A/B/C phase rows).
+// Benchmark matcher relaxed to be phase-agnostic when truth.phase is null (corpus has no phase labels).
+// Expected recall after cycle 2: ~45-60%. Keep floor 5pp below last observed to absorb corpus variance.
 // Raise this floor after each parser improvement cycle.
 const MIN_OVERALL_RECALL = 0.20;
 
@@ -47,7 +49,12 @@ function valueClose(a, b) {
 function measurementMatches(parsed, truth) {
   if (parsed.measurementType !== truth.measurementType) return false;
   if (!valueClose(parsed.asFoundValue, truth.asFoundValue)) return false;
-  return (parsed.phase ?? null) === (truth.phase ?? null);
+  // If the corpus ground-truth has no phase annotation (all synthetic rows are
+  // null), accept the match regardless of which phase the parser extracted.
+  // This avoids penalising multi-row extraction for correctly labelling phases
+  // that the corpus chose not to annotate.
+  if (truth.phase == null) return true;
+  return (parsed.phase ?? null) === truth.phase;
 }
 
 function pct(n, d) {

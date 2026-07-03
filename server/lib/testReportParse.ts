@@ -133,6 +133,54 @@ function evaluate(
 }
 
 /**
+ * [NETA-8-9] Multi-row table extraction for PowerDB measurement grids.
+ *
+ * PowerDB lays IR, contact resistance, and trip-time data as phase tables.
+ * After whitespace-normalisation the text looks like:
+ *   "... WINDING (MΩ) (MΩ) H-G 12500 28800 X-G 9340 21400 ..."
+ *   "... POLE AS FOUND (µΩ) AS LEFT (µΩ) A 52 48 B 61 55 C 58 50 ..."
+ *
+ * Returns ≥2 {phase, value} pairs when a table is detected; null otherwise
+ * (caller falls back to the legacy single-value path).
+ */
+function extractTableRows(seg: string): Array<{ phase: string; value: number }> | null {
+  // Strip test-condition noise before scanning so instrument model numbers like
+  // "S1-5010" and test voltages like "@ 5000 VDC" don't produce phantom rows.
+  const cleaned = seg
+    .replace(/@\s*[\d.]+\s*(?:k?VDC?|k?VAC?|KV)\b/ig, ' ')
+    .replace(/\b\d+\s+min\b/ig, ' ');
+
+  // ── Winding rows (transformer IR / power factor) ───────────────────────────
+  // Tokens: H-G, X-G, H-X, H-L, L-G, LV, HV, CHL, CH+CHL, PRI, SEC
+  // Pattern in collapsed text: WINDING_TOKEN SPACE NUMBER
+  const WINDING_PAT =
+    '(?:H-G|X-G|H-X|H-L|L-G|LV|HV|CHL|CH\\+CHL|PRI(?:MARY)?|SEC(?:ONDARY)?)';
+  const windingRe = new RegExp(`\\b(${WINDING_PAT})\\s+(\\d+(?:,\\d+)*(?:\\.\\d+)?)`, 'ig');
+  const windings: Array<{ phase: string; value: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = windingRe.exec(cleaned)) !== null) {
+    const v = parseFloat(m[2].replace(/,/g, ''));
+    if (Number.isFinite(v)) windings.push({ phase: m[1].toUpperCase(), value: v });
+  }
+  if (windings.length >= 2) return windings;
+
+  // ── Phase / pole rows (breaker contact resistance, trip time) ──────────────
+  // In collapsed text a phase row looks like: "...FOUND (µΩ) A 52 48 B 61..."
+  // Require ≥2-digit value to reduce false matches against letter abbreviations.
+  // Accept all three phases A/B/C or at least two of them.
+  const phaseRe = /(?:^|[\s(])([ABC])\s+(\d{2,}(?:\.\d+)?)\b/g;
+  const phases: Array<{ phase: string; value: number }> = [];
+  while ((m = phaseRe.exec(cleaned)) !== null) {
+    const v = parseFloat(m[2]);
+    if (Number.isFinite(v)) phases.push({ phase: m[1].toUpperCase(), value: v });
+  }
+  const phaseSet = new Set(phases.map((p) => p.phase));
+  if (phases.length >= 2 && phaseSet.size >= 2) return phases;
+
+  return null;
+}
+
+/**
  * Parse extracted text into report metadata + measurement rows.
  * @returns { meta, measurements[], detectedLabels[] }
  */
@@ -172,7 +220,9 @@ function parseTestReport(rawText: string) {
   const measurements: any[] = [];
   for (let h = 0; h < hits.length; h++) {
     const { idx, label } = hits[h];
-    const end = h + 1 < hits.length ? hits[h + 1].idx : Math.min(text.length, idx + 90);
+    // 200-char fallback window (up from 90) so multi-row tables (H-G/X-G/H-X
+    // or A/B/C phase rows) fall inside the segment for extractTableRows().
+    const end = h + 1 < hits.length ? hits[h + 1].idx : Math.min(text.length, idx + 200);
     const seg = text.slice(idx, end);
     const vocab = MEASUREMENT_VOCAB[label];
 
@@ -202,6 +252,31 @@ function parseTestReport(rawText: string) {
       // These small integers precede the actual MΩ readings and beat them in the bare-number
       // fallback when no unit-anchored match is found.
       .replace(/\b\d+\s+min\b/ig, ' ');
+    // [NETA-8-9] Multi-row table extraction: PowerDB lays transformer IR,
+    // contact resistance, and trip-time data as winding (H-G/X-G/H-X) or
+    // phase (A/B/C) tables.  When we detect ≥2 rows in the segment, emit
+    // one measurement per row and skip the legacy single-value path entirely.
+    const tableRows = extractTableRows(valueScope);
+    if (tableRows && tableRows.length >= 2) {
+      const unitForTable = unit || vocab.unit;
+      for (const row of tableRows) {
+        const rowResult = evaluate(row.value, expected, { bad: vocab.bad, measurementType: vocab.type });
+        measurements.push({
+          measurementType: vocab.type,
+          label: label.replace(/\b\w/g, c => c.toUpperCase()),
+          phase: row.phase,
+          asFoundValue: row.value,
+          asFoundUnit: unitForTable,
+          expectedRange: expected,
+          testVoltage: testV,
+          passFail: rowResult,
+          critical: vocab.critical,
+        });
+      }
+      continue;
+    }
+
+    // ── Legacy single-value path ──────────────────────────────────────────────
     // Prefer "<number><unit>" so the reading (which carries the measurement unit)
     // wins over a bare number elsewhere in the row.
     const valueStr = firstMatch(/([\d]+(?:\.\d+)?)\s*(?:MΩ|Mohm|kΩ|Ω|µΩ|uOhm|mΩ|ppm|%|kV|VDC|A|sec|ratio)\b/i, valueScope)
