@@ -42,6 +42,21 @@ const CRITICAL_TYPES = new Set([
   'primary_injection', 'secondary_injection',
 ]);
 
+// Numeric confidence stamped on every AI/vision-recovered reading.
+//
+// P0 fix (2026-07-03): this used to be the STRING 'ai', which the confidence
+// gate (ingestConfidenceGate.evaluateUnit) silently skipped because it only
+// scores `typeof confidence === 'number'`. Result: the least-certain source in
+// the pipeline never counted below the review floor. It is now a real number.
+//
+// Chosen conservatively BELOW the default review floor (0.85) so AI readings
+// route to human review by default — LLM self-reported confidence is
+// systematically overconfident, so we do not trust a model's own number here.
+// An account that deliberately lowers its threshold below this value opts into
+// auto-committing non-critical AI readings; AI-sourced CRITICAL readings are
+// force-reviewed regardless of threshold (see ingestConfidenceGate).
+const AI_READING_CONFIDENCE = 0.5;
+
 /**
  * Strip the two PII classes most likely to ride along in a report header
  * (technician/customer emails, phone numbers) before sending to a free-tier
@@ -175,7 +190,7 @@ function _mapMeasurements(arr: any[]) {
       critical,
       kind: x.kind === 'R' ? 'R' : 'D',
       source: 'ai',
-      confidence: 'ai',
+      confidence: AI_READING_CONFIDENCE,
     };
     // Drop pure noise: a row with neither a value nor an expected range.
     if (m.asFoundValue == null && !m.expectedRange) continue;
@@ -278,5 +293,5 @@ async function aiFillReadingsFromImage(imageBuffer: Buffer, opts: any = {}) {
   return { ok: true, measurements: _mapMeasurements(c.measurements), fields: _mapFields(c.fields) };
 }
 
-module.exports = { aiFillReadings, aiFillReadingsFromImage, scrubForAi, KNOWN_TYPES, _mapMeasurements, _mapFields, _mapResult, _normUnit };
+module.exports = { aiFillReadings, aiFillReadingsFromImage, scrubForAi, KNOWN_TYPES, CRITICAL_TYPES, AI_READING_CONFIDENCE, _mapMeasurements, _mapFields, _mapResult, _normUnit };
 export {};

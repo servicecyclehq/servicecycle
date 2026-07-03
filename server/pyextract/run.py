@@ -33,6 +33,7 @@ def main():
             "sections": r.get("sections", []),
             "page_count": r.get("page_count"),
             "pages_scanned": r.get("pages_scanned"),
+            "text_pages": r.get("text_pages"),
             "truncated": bool(r.get("truncated")),
         }, default=str))
     except Exception as e:

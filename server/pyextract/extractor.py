@@ -710,6 +710,7 @@ def extract_fields(path: str, mode: str = "all"):
     table_settings = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
     page_count = 0
     pages_scanned = 0
+    text_pages = 0
     truncated = False
     started = time.monotonic()
     with pdfplumber.open(path) as pdf:
@@ -722,7 +723,14 @@ def extract_fields(path: str, mode: str = "all"):
             if i > 0 and (time.monotonic() - started) > TEXT_TIME_BUDGET_S:
                 truncated = True
                 break
-            full_text.append(page.extract_text() or "")
+            _ptxt = page.extract_text() or ""
+            # Per-page text-layer signal: count pages that carry real text so a
+            # machine-readable cover sheet in front of a scanned body does not
+            # make the whole document look text-based. Feeds the silent-empty
+            # guard in ingestConfidenceGate (text_pages < page_count => scan).
+            if len(_ptxt.strip()) >= 40:
+                text_pages += 1
+            full_text.append(_ptxt)
             pages_scanned = i + 1
             if i < MAX_CELL_PAGES:
                 cells.extend(_page_cells(page))
@@ -767,4 +775,5 @@ def extract_fields(path: str, mode: str = "all"):
             "ocr": ocr_used, "asset_sections": asset_sections,
             "sections": sections,
             "page_count": page_count, "pages_scanned": pages_scanned,
+            "text_pages": text_pages,
             "truncated": truncated}

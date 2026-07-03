@@ -89,15 +89,51 @@ function evaluateUnit(
   // drives a deficiency), so it pushes to RED; ordinary low readings to YELLOW.
   let belowCount = 0;
   let min: number | null = null;
+  let aiCriticalCount = 0;
+  let unscoredCount = 0;
   for (const m of unit.measurements) {
-    const c = (m && typeof m.confidence === 'number') ? m.confidence : null;
-    if (c == null) continue;
+    if (!m) continue;
+
+    // HARD RULE (P0, 2026-07-03): an AI/vision-recovered reading that is
+    // safety-CRITICAL (contact resistance, trip time, pickup, injection, ground-
+    // fault) always forces review, regardless of the account threshold. A model
+    // can confabulate a value for an empty cell, and a critical RED reading auto-
+    // creates an IMMEDIATE deficiency — so a human must confirm it first. Mirrors
+    // the strict-identity rules above.
+    if (m.source === 'ai' && m.critical === true) {
+      aiCriticalCount++;
+      worse('red');
+    }
+
+    // A legitimately deterministic reading carries NO per-reading confidence
+    // (undefined/null) and sails through — that is the frictionless common case
+    // the product depends on.
+    const raw = m.confidence;
+    if (raw === null || raw === undefined) continue;
+
+    const c = (typeof raw === 'number' && Number.isFinite(raw)) ? raw : null;
+    if (c == null) {
+      // Confidence is PRESENT but not a finite number (the old 'ai' string, or a
+      // corrupt value). We cannot score it — fail LOUD to review rather than
+      // silently skipping, which is exactly how AI readings used to bypass this
+      // gate entirely.
+      unscoredCount++;
+      worse(m.passFail === 'RED' ? 'red' : 'yellow');
+      continue;
+    }
+
     min = min == null ? c : Math.min(min, c);
     if (c < threshold) {
       belowCount++;
       if (m.passFail === 'RED') worse('red');
       else worse('yellow');
     }
+  }
+  if (aiCriticalCount > 0) {
+    reasons.push(`${aiCriticalCount} AI-recovered critical reading${aiCriticalCount === 1 ? '' : 's'} — a human must confirm before it can drive a deficiency.`);
+  }
+  if (unscoredCount > 0) {
+    reasons.push(`${unscoredCount} reading${unscoredCount === 1 ? '' : 's'} with an unscoreable confidence value — verify against the source report.`);
   }
   if (belowCount > 0) {
     reasons.push(`${belowCount} reading${belowCount === 1 ? '' : 's'} below the confidence floor — verify the values.`);
@@ -163,13 +199,63 @@ function evaluateIngestGate(preview: any, opts: { threshold?: any; originalName?
     for (const r of ur.reasons) reasons.push(`${ur.label}: ${r}`);
   }
 
-  // No usable units at all — nothing to commit; let the worker handle it as a
-  // no-op done (not a review item).
   const hasUnits = unitResults.length > 0;
+
+  // ── Silent-empty / low-coverage guard (2026-07-03) ──────────────────────────
+  // There is no working raster-OCR path today, so a scanned or image-only report
+  // extracts few or no readings. Never let that pass as a completed no-op: an
+  // empty extraction routes to review, and a multi-page scan that yielded far
+  // fewer readings than its length suggests is flagged (the body pages likely
+  // didn't parse) rather than auto-committing a fraction of the report.
+  const allMeasurements: any[] = Array.isArray(preview?.measurements) ? preview.measurements : [];
+  const pageCount = Number(preview?.pageCount) || 0;
+  const textPages = Number(preview?.textPages);
+  const scannedSignal = preview?.ocr === true
+    || String(preview?.source || '').includes('pdfjs')
+    || (Number.isFinite(textPages) && pageCount > 0 && textPages < pageCount);
+
+  if (allMeasurements.length === 0) {
+    worse('red');
+    reasons.push('No readings could be extracted — the report may be a scan needing OCR or an unrecognised layout. Review manually; do not treat it as complete.');
+  } else if (scannedSignal && pageCount > 1 && allMeasurements.length < pageCount) {
+    worse('yellow');
+    reasons.push('Looks like a scan/mixed PDF and far fewer readings were extracted than its page count suggests — verify none were missed.');
+  }
+  if (preview?.truncated === true) {
+    worse('yellow');
+    reasons.push('Extraction was truncated (large document) — readings past the limit may be missing.');
+  }
+
+  // Cross-pass disagreement: two independent extraction passes produced
+  // different values for the same measurement (flagged in testReportPreview).
+  const disagreements = allMeasurements.filter((m: any) => m && m.crossPassDisagreement === true).length;
+  if (disagreements > 0) {
+    worse('yellow');
+    reasons.push(`${disagreements} reading${disagreements === 1 ? '' : 's'} where two extraction passes disagreed on the value — verify against the source report.`);
+  }
+
+  // ── Domain cross-consistency validators (Part 2) ────────────────────────────
+  // Internal-consistency checks (peer balance, PI/DAR/TDCG recompute, gas
+  // plausibility, temp-correction, report-verdict cross-check, completeness).
+  // They ROUTE suspect extractions to review; they never assert compliance or
+  // rewrite a value. Must never break the gate — degrade to prior scoring.
+  try {
+    const { checkDomainConsistency } = require('./domainValidators');
+    const findings = checkDomainConsistency(allMeasurements, {
+      meta: preview?.meta || {},
+      reportVerdict: (preview?.meta && preview.meta.reportResult) || preview?.reportVerdict || null,
+    });
+    for (const f of (Array.isArray(findings) ? findings : [])) {
+      worse(f.severity === 'error' ? 'red' : 'yellow');
+      if (f.message) reasons.push(f.message);
+    }
+  } catch (e: any) {
+    console.warn('[ingestGate] domain validators skipped:', e && e.message ? e.message : String(e));
+  }
 
   return {
     autoCommit: band === 'green' && hasUnits,
-    band: hasUnits ? band : 'green',
+    band,
     threshold,
     source: preview?.source || null,
     ocr: !!preview?.ocr,

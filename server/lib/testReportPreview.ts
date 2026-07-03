@@ -63,6 +63,61 @@ async function resolveSectionAsset(accountId: string, def: any, docSerial: strin
   return { best: candidates[0] || null, candidates };
 }
 
+/**
+ * Merge AI/vision-recovered readings into the deterministic set (P0 fix,
+ * 2026-07-03). Shared by BOTH the text gap-fill and the vision fallback so the
+ * dedup logic can never drift between the two passes.
+ *
+ * The dedup key includes SOURCE, so provenance is preserved and same-source
+ * repeats collapse. Across sources:
+ *   - an exact (type|phase|value) match is AGREEMENT — keep the existing
+ *     (deterministic-preferred) row, drop the duplicate, and mark the retained
+ *     row so the reviewer can see two passes concurred;
+ *   - the same (type|phase) with a DIFFERENT value is a cross-pass DISAGREEMENT
+ *     — keep both rows but flag them so the confidence gate routes them to
+ *     review. Two independent passes disagreeing on one measurement is the
+ *     strongest single misread signal the pipeline has; it used to be discarded.
+ *
+ * Mutates `existing` in place; returns the number of net-new rows added.
+ */
+function mergeExtractedMeasurements(existing: any[], incoming: any[]): number {
+  let added = 0;
+  const keyOf = (m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}|${m.source || 'det'}`;
+  const seen = new Set(existing.map(keyOf));
+  for (const m of incoming) {
+    if (!m) continue;
+    // Exact value already present from ANY source → agreement; skip the dup.
+    const exact = existing.find((e: any) =>
+      e.measurementType === m.measurementType &&
+      (e.phase || '') === (m.phase || '') &&
+      String(e.asFoundValue) === String(m.asFoundValue));
+    if (exact) {
+      if ((exact.source || 'det') !== (m.source || 'ai')) exact.crossSourceAgreement = true;
+      continue;
+    }
+    // Within-source exact repeat → skip.
+    if (seen.has(keyOf(m))) continue;
+    // Different value for a reading we already have (same type+phase) →
+    // keep both, flag the disagreement.
+    const conflicts = existing.filter((e: any) =>
+      e.measurementType === m.measurementType &&
+      (e.phase || '') === (m.phase || '') &&
+      e.asFoundValue != null && m.asFoundValue != null &&
+      String(e.asFoundValue) !== String(m.asFoundValue));
+    if (conflicts.length) {
+      m.crossPassDisagreement = true;
+      for (const e of conflicts) e.crossPassDisagreement = true;
+    }
+    if (!m.passFail && m.expectedRange != null && m.asFoundValue != null) {
+      m.passFail = evaluate(Number(m.asFoundValue), m.expectedRange);
+    }
+    existing.push(m);
+    seen.add(keyOf(m));
+    added++;
+  }
+  return added;
+}
+
 interface BuildPreviewOpts {
   accountId: string;
   userId: string;
@@ -96,6 +151,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   let meta: any, measurements: any[], source: string;
   let assetSections = 1, ocr = false;
   let pageCount: number | null = null, pagesScanned: number | null = null, truncated = false;
+  let textPages: number | null = null;
   let sectionDefs: any[] = [];
   const py = await runDeterministic(buffer);
   if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
@@ -104,6 +160,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     sectionDefs = Array.isArray(py.sections) ? py.sections : [];
     pageCount = py.page_count ?? null;
     pagesScanned = py.pages_scanned ?? null;
+    textPages = py.text_pages ?? null;
     truncated = !!py.truncated;
     ocr = !!py.ocr;
     const f = py.fields || {};
@@ -150,17 +207,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
         const filled = await aiFillReadings(aiText);
         if (filled.ok) mergeMeta(filled.fields);
         if (filled.ok && filled.measurements.length) {
-          const seen = new Set(measurements.map((m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`));
-          for (const m of filled.measurements) {
-            const key = `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            if (!m.passFail && m.expectedRange != null && m.asFoundValue != null) {
-              m.passFail = evaluate(Number(m.asFoundValue), m.expectedRange);
-            }
-            measurements.push(m);
-            aiAdded++;
-          }
+          aiAdded += mergeExtractedMeasurements(measurements, filled.measurements);
           aiUsed = aiAdded > 0;
           if (aiUsed && source !== 'pdfjs') source = `${source}+ai`;
           else if (aiUsed) source = 'ai';
@@ -182,17 +229,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
       const vres = await aiFillReadingsFromImage(inputBuffer, { mediaType: opts.mimetype });
       if (vres.ok) mergeMeta(vres.fields);
       if (vres.ok && vres.measurements.length) {
-        const seen = new Set(measurements.map((m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`));
-        for (const m of vres.measurements) {
-          const key = `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          if (!m.passFail && m.expectedRange != null && m.asFoundValue != null) {
-            m.passFail = evaluate(Number(m.asFoundValue), m.expectedRange);
-          }
-          measurements.push(m);
-          visionAdded++;
-        }
+        visionAdded += mergeExtractedMeasurements(measurements, vres.measurements);
         visionUsed = visionAdded > 0;
         if (visionUsed) source = source.includes('ai') ? `${source}+vision` : `${source}+vision`;
       }
@@ -263,7 +300,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   return {
     meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, sections, ocr, aiUsed, aiAdded,
     visionUsed, visionAdded,
-    pageCount, pagesScanned, truncated, extractionId, photoOfPaper,
+    pageCount, pagesScanned, textPages, truncated, extractionId, photoOfPaper,
     priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
   };
 }
