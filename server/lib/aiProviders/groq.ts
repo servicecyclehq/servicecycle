@@ -9,8 +9,12 @@
  * Wire model:
  *   - OpenAI-compatible chat completions at
  *     `https://api.groq.com/openai/v1/chat/completions`
- *   - Default model: llama-3.1-8b-instant (matches CF + HF primary so
- *     cascade is invisible to the user)
+ *   - Default model: openai/gpt-oss-20b (v0.92.x: was llama-3.1-8b-instant,
+ *     which Groq deprecated 2026-06-17 with an 08/16/26 shutdown date —
+ *     see console.groq.com/docs/deprecations. gpt-oss-20b is Groq's
+ *     recommended replacement. This is no longer the exact same model
+ *     family as the CF/HF primaries, so cascade behavior may be very
+ *     slightly more visible to the user on the rare Groq-fallback path.)
  *   - axios (already a dep) — no new npm packages
  *
  * NOTE on Groq's free tier: per Groq's Community FAQ, the free tier is
@@ -39,7 +43,7 @@ const budgetGuard = require('../aiBudgetGuard');
 
 const GROQ_BASE = process.env.GROQ_API_BASE || 'https://api.groq.com/openai/v1';
 
-const DEFAULT_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+const DEFAULT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
 class QuotaError   extends Error { cascade: boolean; constructor(msg) { super(msg); this.name = 'QuotaError';   this.cascade = true; } }
 class ServerError  extends Error { cascade: boolean; constructor(msg) { super(msg); this.name = 'ServerError';  this.cascade = true; } }
