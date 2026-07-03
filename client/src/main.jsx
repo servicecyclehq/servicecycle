@@ -47,28 +47,62 @@ installGlobalErrorHandlers();
   window.addEventListener('unhandledrejection', (e) => { if (e && e.reason && CHUNK_RE.test(e.reason.message)) recover(); });
 })();
 
-// Register the PWA service worker (no-op in dev — see import note above).
-// immediate:true so updates are checked on every load, matching autoUpdate.
-// Plus: re-check for a new SW every 60s AND whenever the tab regains focus, so a
-// deploy reaches an already-open tab without a manual reload/unregister. With
-// registerType 'autoUpdate' (skipWaiting+clientsClaim) a found update activates
-// and reloads on its own — ending the "did it update?" dance.
-// When a NEW SW takes over from an OLD one (skipWaiting + clientsClaim),
-// reload so the user gets fresh JS/CSS instead of stale in-memory bundles.
+// ── PWA update lifecycle -> "new version" toast (2026-07-03 stale-cache fix) ──
+// The SW precache is version-stamped per build (vite.config.js SW_BUILD_STAMP),
+// so EVERY deploy yields a new sw.js. workbox runs skipWaiting + clientsClaim:
+// the new SW installs, activates, and takes over this tab as soon as an update
+// check finds it (immediate check on load, then every 60s + on tab focus below).
 //
-// Guard: only reload if there was ALREADY a controller before this event.
-// On a first install (incognito / fresh browser) the controller goes
-// null → SW via clientsClaim, which also fires controllerchange — but
-// that's not a version update, so we must NOT reload (it would crash
-// mid-render). `hadController` captures the state before registration.
+// What we deliberately do NOT do anymore is force a mid-session reload (this
+// used to window.location.reload() on controllerchange -- lethal to a demo
+// presenter mid-flow or a tech mid-form). Instead both update signals feed one
+// idempotent toast -- "A new version is available - Reload" -- and a single
+// click fetches the fresh bundle:
+//   - registration 'updatefound' -> new worker hits 'installed' while a
+//     controller exists = an update finished downloading (fires even if
+//     activation stalls);
+//   - 'controllerchange' with a pre-existing controller = the new SW took
+//     over and the JS currently running is the stale side.
+// First-install controllerchange (controller null -> SW via clientsClaim) is
+// NOT an update, hence the hadController guard. Stale lazy-chunk 404s are
+// still auto-recovered by the vite:preloadError guard above -- that reload is
+// crash recovery, not an update push.
+const SW_TOAST_ID = 'sc-sw-update-toast';
+function showSwUpdateToast() {
+  try {
+    if (document.getElementById(SW_TOAST_ID)) return; // already showing
+    const bar = document.createElement('div');
+    bar.id = SW_TOAST_ID;
+    bar.setAttribute('role', 'alert');
+    bar.style.cssText = [
+      'position:fixed', 'left:50%', 'bottom:16px', 'transform:translateX(-50%)',
+      'z-index:2147483000', 'display:flex', 'align-items:center', 'gap:12px',
+      'background:#0d4f6e', 'color:#ffffff', 'padding:10px 16px',
+      'border-radius:8px', 'box-shadow:0 4px 16px rgba(0,0,0,0.35)',
+      'font-family:Inter,system-ui,sans-serif', 'font-size:14px',
+      'font-weight:500', 'max-width:92vw',
+    ].join(';');
+    const msg = document.createElement('span');
+    msg.textContent = 'A new version is available';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Reload';
+    btn.style.cssText =
+      'background:#ffffff;color:#0d4f6e;border:none;padding:6px 14px;' +
+      'border-radius:6px;font-size:13px;font-weight:600;cursor:pointer';
+    btn.addEventListener('click', () => { window.location.reload(); });
+    bar.appendChild(msg);
+    bar.appendChild(btn);
+    if (document.body) document.body.appendChild(bar);
+    else document.addEventListener('DOMContentLoaded', () => { document.body.appendChild(bar); });
+  } catch (_e) { /* toast is best-effort -- never break the app over it */ }
+}
+
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
-  let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController) return; // first install — not an update, skip reload
-    if (refreshing) return;
-    refreshing = true;
-    window.location.reload();
+    if (!hadController) return; // first install — not an update, no toast
+    showSwUpdateToast();
   });
 }
 
@@ -76,6 +110,17 @@ registerSW({
   immediate: true,
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;
+    // Belt: surface the update as soon as it finishes installing, in addition
+    // to the controllerchange signal (braces). Same idempotent toast.
+    registration.addEventListener('updatefound', () => {
+      const newWorker = registration.installing;
+      if (!newWorker) return;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          showSwUpdateToast();
+        }
+      });
+    });
     const check = () => { registration.update().catch(() => {}); };
     setInterval(check, 60 * 1000);
     window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });

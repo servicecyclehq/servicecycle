@@ -54,6 +54,15 @@ const CEF_SEVERITY: any = {
   // classify alongside the other security-critical privileged ops (sev 7) so
   // a SIEM triaging on severity surfaces it instead of burying it at 3.
   account_exported: 7,
+  // 2026-07-03 scan (SCAN 3): the IdP tried to claim the account's LAST
+  // password-capable admin via SCIM -- almost certainly an IdP misconfig, and
+  // the break-glass invariant only held because the guard suppressed the flip.
+  // Warning-grade so a SIEM surfaces it alongside the other auth anomalies.
+  scim_break_glass_flip_suppressed: 6,
+  // 2026-07-03 demo role switcher: a session-issuance primitive (hard-gated
+  // to DEMO_MODE + the pinned shared demo tenant in routes/demo.ts). Classify
+  // alongside the other auth-relevant events so a SIEM surfaces the hop.
+  demo_role_switched: 6,
 };
 
 const router = express.Router();
@@ -92,6 +101,10 @@ const ACTION_LABELS: any = {
   // 2026-07-03 acquisition scan (SCAN 4) -- audit-coverage additions
   account_exported:          'Account data exported',
   arc_flash_label_generated: 'Arc-flash label PDF generated',
+  // 2026-07-03 acquisition scan (SCAN 3) -- SCIM break-glass guard
+  scim_break_glass_flip_suppressed: 'SCIM sync blocked from claiming the last password-capable admin',
+  // 2026-07-03 demo "view as" switcher (routes/demo.ts, demo tenant only)
+  demo_role_switched:        'Demo role switched (view as)',
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

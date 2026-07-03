@@ -121,15 +121,25 @@ async function runNewsScanner() {
   }
   console.log('[newsScanner] Starting scan…');
 
-  // A descriptive browser-ish User-Agent: several newsrooms (e.g. OSHA) return
-  // 403 to the default rss-parser agent. maxRedirects bumped so feeds that 301
-  // to a new path (e.g. EC&M) still resolve.
+  // Browser-like User-Agent on EVERY feed fetch (one shared parser). History:
+  // the default rss-parser agent got 403s, so a product-identifying
+  // "Mozilla/5.0 (compatible; ServiceCycleNewsBot/1.0; ...)" UA was added —
+  // but OSHA's WAF kept returning 403 from the droplet ("Feed failed (OSHA
+  // Newsroom): Status code 403" every run). .gov edge WAFs (Akamai) score
+  // "bot"/"compatible" UA tokens plus datacenter source IPs; a plain browser
+  // UA is the standard fix. Re-verified 2026-07-03: the feed URL itself is
+  // alive (HTTP 200, valid rss+xml) — the URL is not the problem. If 403
+  // persists from the droplet with this UA, the block is purely IP-based
+  // (datacenter range) and needs a different egress, not another header.
+  // maxRedirects bumped so feeds that 301 to a new path (e.g. EC&M) still
+  // resolve. Per-feed failures stay fail-soft (see catch below).
   const parser = new Parser({
     timeout: 15_000,
     maxRedirects: 5,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; ServiceCycleNewsBot/1.0; +https://servicecycle.app)',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Accept': 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5',
+      'Accept-Language': 'en-US,en;q=0.9',
     },
   });
   let feedErrors = 0;

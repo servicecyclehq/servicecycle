@@ -54,6 +54,17 @@ Backups bind-mount: ./backups   (nightly pg_dump.gz, 30-day retention)
 **Single-machine deploy.** Docker Compose manages three services: `db`, `server`, `client`
 (the client container only builds; nginx serves the compiled static files from the host path).
 
+**PWA cache headers (host nginx — `/etc/nginx/sites-available/servicecycle`, not in repo):**
+`index.html` must stay OUTSIDE the 1y-immutable static-asset block (`no-store`/`no-cache`),
+and `/sw.js` + `/manifest.webmanifest` + `/sw-build-version.json` must be served `no-cache`
+as well — a long-cached service worker pins the old precached bundle after a deploy (the
+"new features look missing mid-demo" landmine). The hashed `/assets/*` and `workbox-*.js`
+files stay immutable. `client/nginx.conf` (the Docker image config) is the reference
+implementation. Every `vite build` stamps a unique `SW_BUILD_STAMP` into `sw.js` and emits
+it at `/sw-build-version.json`, so `curl https://servicecycle.app/sw-build-version.json`
+shows which build is live; stale clients self-report via an in-app
+"A new version is available - Reload" toast (no forced reload).
+
 **CI/deploy loop (hands-free via vps-control MCP):**
 1. Push to `origin/main` via PowerShell.
 2. MCP `git_pull` to `/root/ServiceCycle` on the droplet.

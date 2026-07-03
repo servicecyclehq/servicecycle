@@ -12,7 +12,10 @@
  *   POST   /api/arc-flash/ingest/:id/confirm    create/match assets (+ optional study)
  *
  * Mounted in index.ts: app.use('/api/arc-flash', authenticateToken, ingestLimiter, ...).
- * Writes are manager+; reads are any authenticated role.
+ * Writes are manager+; reads are any authenticated role, EXCEPT the account-wide
+ * reporting/export surfaces (/fleet, /report, /audit-bundle, /export) which are
+ * requireManager — viewer/consultant must not pull whole-account risk rollups or
+ * the full model CSV (2026-07-03 acquisition scan, Scan 3).
  */
 
 'use strict';
@@ -795,6 +798,11 @@ router.post('/devices', requireManager, async (req: any, res: any) => {
       const a = await prisma.asset.findFirst({ where: { id: b.assetId, accountId: req.user.accountId }, select: { id: true } });
       if (!a) return res.status(404).json({ success: false, error: 'assetId not found' });
     }
+    // Tenancy: the provenance bus must belong to the caller's account (2026-07-03 scan).
+    if (b.ingestBusId) {
+      const bus = await prisma.arcFlashIngestBus.findFirst({ where: { id: b.ingestBusId, accountId: req.user.accountId }, select: { id: true } });
+      if (!bus) return res.status(404).json({ success: false, error: 'ingestBusId not found' });
+    }
     const { data, error } = deviceDataFromBody(b);
     if (error) return res.status(400).json({ success: false, error });
     const device = await prisma.protectiveDevice.create({
@@ -932,8 +940,9 @@ function busForFleet(r: any, equipmentType: any) {
 // ── GET /fleet ── Slice 3a: cross-site arc-flash rollup ───────────────────────
 // Per-site DANGER %, label readiness, average confidence (2.8a), open
 // contradictions (2.8c), and expiring studies — the "where is my arc-flash risk
-// across the whole portfolio" view. Read-only; manager/admin via the Reports gate.
-router.get('/fleet', async (req: any, res: any) => {
+// across the whole portfolio" view. Read-only; requireManager (server-enforced —
+// viewer/consultant must not see the account-wide risk rollup).
+router.get('/fleet', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const soon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
@@ -1133,6 +1142,9 @@ router.post('/device-tests', requireManager, async (req: any, res: any) => {
     if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
     if (b.assetId) { const a = await prisma.asset.findFirst({ where: { id: b.assetId, accountId }, select: { id: true } }); if (!a) return res.status(404).json({ success: false, error: 'assetId not found' }); }
     if (b.protectiveDeviceId) { const d = await prisma.protectiveDevice.findFirst({ where: { id: b.protectiveDeviceId, accountId }, select: { id: true } }); if (!d) return res.status(404).json({ success: false, error: 'protectiveDeviceId not found' }); }
+    // Tenancy: study-asset + ingest-bus FKs must belong to the caller's account (2026-07-03 scan).
+    if (b.systemStudyAssetId) { const s = await prisma.systemStudyAsset.findFirst({ where: { id: b.systemStudyAssetId, accountId }, select: { id: true } }); if (!s) return res.status(404).json({ success: false, error: 'systemStudyAssetId not found' }); }
+    if (b.ingestBusId) { const ib = await prisma.arcFlashIngestBus.findFirst({ where: { id: b.ingestBusId, accountId }, select: { id: true } }); if (!ib) return res.status(404).json({ success: false, error: 'ingestBusId not found' }); }
 
     const testType = TEST_TYPES.has(String(b.testType)) ? String(b.testType) : 'other';
     const asFound = settingsObj(b.asFoundSettings);
@@ -1517,8 +1529,8 @@ router.post('/asset/:assetId/what-if', requireManager, async (req: any, res: any
 // ── GET /report ── account-wide arc-flash label report (Reports hub) ──────────
 // Every current (non-superseded) per-bus label across the account: the NFPA 70E
 // 130.5(H) fields + DANGER/WARNING severity + study expiry. Printable from the
-// Reports section. Manager/admin only (mounted under the manager-gated hub use).
-router.get('/report', async (req: any, res: any) => {
+// Reports section. Manager/admin only — requireManager (server-enforced).
+router.get('/report', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const soon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
@@ -1579,9 +1591,9 @@ router.get('/report', async (req: any, res: any) => {
 // POSTURE scorecard (coverage, DANGER, confidence, sanity errors, expiring/expired
 // studies, open field tasks), a prioritized ITEMS-TO-RESOLVE punch list, the full
 // label schedule, and the per-site rollup. Exposure is expressed as deterministic
-// risk INDICATORS (counts) — not fabricated dollar figures. Manager/admin via the
-// Reports gate. Read-only.
-router.get('/audit-bundle', async (req: any, res: any) => {
+// risk INDICATORS (counts) — not fabricated dollar figures. Manager/admin only —
+// requireManager (server-enforced). Read-only.
+router.get('/audit-bundle', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const now = Date.now();
@@ -1848,8 +1860,9 @@ router.get('/regulatory-review', requireManager, async (req: any, res: any) => {
 // ── GET /export ── Slice 3.5a: export the collected model for SKM/EasyPower ────
 // CSV (default) or JSON of every current bound bus + its IEEE 1584 inputs, device,
 // cable, and source model — so the PE imports the field-collected data instead of
-// re-keying it. Optional ?siteId= scope. Manager/admin via the Reports gate.
-router.get('/export', async (req: any, res: any) => {
+// re-keying it. Optional ?siteId= scope. Manager/admin only — requireManager
+// (server-enforced; matches routes/export.ts GET /account for whole-account exports).
+router.get('/export', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const where: any = { accountId, study: { supersededById: null } };

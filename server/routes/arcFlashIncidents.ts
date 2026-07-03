@@ -224,6 +224,20 @@ router.patch('/:id', requireManager, async (req: any, res) => {
       return res.status(400).json({ error: 'reportUrl must be a valid HTTP/HTTPS URL (max 2000 chars)' });
     }
 
+    // Ownership (2026-07-03 acquisition scan, Scan 3): a supplied siteId/assetId
+    // must belong to this account -- mirrors the POST checks above. PATCH
+    // previously wrote these FKs unchecked (cross-tenant FK write). Clearing a
+    // field (null / '') intentionally skips the lookup, same truthy semantics
+    // as POST.
+    if (siteId) {
+      const site = await prisma.site.findFirst({ where: { id: siteId, accountId } });
+      if (!site) return res.status(400).json({ success: false, error: 'siteId not found' });
+    }
+    if (assetId) {
+      const asset = await prisma.asset.findFirst({ where: { id: assetId, accountId } });
+      if (!asset) return res.status(400).json({ success: false, error: 'assetId not found' });
+    }
+
     const data: any = {};
     if (incidentType  !== undefined) data.incidentType  = normEnum(incidentType, INCIDENT_TYPES, existing.incidentType as string);
     if (occurredAt    !== undefined) data.occurredAt    = occurredAt ? new Date(occurredAt) : null;

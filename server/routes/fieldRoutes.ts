@@ -23,6 +23,7 @@
 
 const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
+const { requireRole } = require('../middleware/roles');
 const { getFieldAssignmentScope } = require('../lib/fieldScope');
 const { parseVoiceReading, hintTokens } = require('../lib/voiceCapture');
 const { regapIngestBusAfterDevice } = require('../lib/arcFlashDevice');
@@ -372,6 +373,18 @@ router.get('/asset/:assetId/document/:documentId', async (req, res) => {
 //   manager+    → any work order/asset in the account (Field Mode on a phone)
 // accountId is the hard tenant boundary in both cases.
 
+// RBAC (2026-07-03 acquisition scan, Scan 3): consultant is read-only-with-
+// attribution by design (see middleware/roles.ts header -- the SPA banner
+// promises "changes are logged", the server must enforce read-only). It used
+// to pass every /api/field write account-wide: complete work orders, log
+// deficiencies, create ProtectiveDevice rows. Every MUTATING field endpoint
+// now carries this gate; it 403s consultant AND the cross-account read-only
+// roles (oem_admin / group_admin / super_admin) exactly like every other
+// write path in the app (the requireRole exclusion pattern documented in
+// middleware/roles.ts). GET endpoints and POST /voice/parse (parse-only,
+// persists nothing) are untouched, so consultant read flows keep working.
+const requireFieldWriter = requireRole(['admin', 'manager', 'viewer', 'field_tech']);
+
 // Resolve a work order the caller may act on, honouring field-labor scope.
 // Returns the work order row (id, status, assetId) or null (404-worthy).
 async function resolveScopedWorkOrder(user, workOrderId) {
@@ -454,7 +467,7 @@ function buildFieldMeasurement(accountId, workOrderId, raw) {
 
 // ─── POST /api/field/work-orders/:id/measurements ─────────────────────────────
 // Record a NETA test measurement against an assigned work order.
-router.post('/work-orders/:id/measurements', async (req, res) => {
+router.post('/work-orders/:id/measurements', requireFieldWriter, async (req, res) => {
   try {
     if (!UUID_RE.test(String(req.params.id))) {
       return res.status(400).json({ success: false, error: 'id must be a uuid' });
@@ -476,7 +489,7 @@ router.post('/work-orders/:id/measurements', async (req, res) => {
 // ─── POST /api/field/work-orders/:id/complete ─────────────────────────────────
 // Mark an assigned work order COMPLETE. Optional asLeftCondition (C1/C2/C3).
 const CONDITION_RATINGS = ['C1', 'C2', 'C3'];
-router.post('/work-orders/:id/complete', async (req, res) => {
+router.post('/work-orders/:id/complete', requireFieldWriter, async (req, res) => {
   try {
     if (!UUID_RE.test(String(req.params.id))) {
       return res.status(400).json({ success: false, error: 'id must be a uuid' });
@@ -508,7 +521,7 @@ router.post('/work-orders/:id/complete', async (req, res) => {
 // ─── POST /api/field/deficiencies ─────────────────────────────────────────────
 // Report a finding against an in-scope asset.
 const SEVERITIES = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
-router.post('/deficiencies', async (req, res) => {
+router.post('/deficiencies', requireFieldWriter, async (req, res) => {
   try {
     const { assetId, severity, description, correctiveAction } = req.body || {};
     if (!assetId || !UUID_RE.test(String(assetId))) {
@@ -676,7 +689,7 @@ router.get('/arc-flash/tasks', async (req, res) => {
 // Record the collected device (+ optional feeder cable). Creates a durable
 // ProtectiveDevice, marks the task collected, and re-gaps the linked ingest bus
 // so a blocked bus moves toward ready. field_tech clamped to assigned tasks.
-router.post('/arc-flash/tasks/:id/collect', async (req, res) => {
+router.post('/arc-flash/tasks/:id/collect', requireFieldWriter, async (req, res) => {
   try {
     const where: any = { id: req.params.id, accountId: req.user.accountId };
     if (req.user.role === 'field_tech') where.assignedUserId = req.user.id;

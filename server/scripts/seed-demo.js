@@ -928,6 +928,9 @@ async function _seedAccount() {
     scheduleId: schedules['GEN-1:GEN_LOAD_BANK'].id,
     assetId: assets['GEN-1'].id,
     contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+    // Field-tech world (2026-07-03): Terry Vance owns the in-app capture for
+    // this job -- it appears in his /field "My Jobs" as the in-progress item.
+    assignedUserId: tech.id,
     status: 'IN_PROGRESS',
     scheduledDate: addDays(now, -1), startedAt: addDays(now, -1),
     notes: 'Load bank staged in generator yard; 50%/75% kW steps per NFPA 110 §8.4.2.3 running today -- clearing the load-bank task that came due 9 days ago (monthly NFPA 110 exercise remains current, completed ~20 days ago).',
@@ -1238,6 +1241,45 @@ async function _seedAccount() {
     asFoundCondition: 'C1', asLeftCondition: 'C1',
     netaDecal: 'GREEN',
     notes: 'NFPA 101 30-second functional self-test on all 24 heads. All units illuminated and held illumination for full test period. Battery float current normal.',
+  } });
+
+  // -- Field-tech assignments (2026-07-03): Terry Vance / tech@demo.local ----
+  // Give the field_tech login a working world: /field "My Jobs" lists the
+  // IN_PROGRESS load-bank job (WO #3 above, assignedUserId added there) plus
+  // the SCHEDULED job below; the COMPLETE one from yesterday fills history.
+  // Neither new WO touches a schedule anchor or nextDueDate, so the
+  // "Engineered buckets" dashboard story above is unchanged (overdue counts,
+  // hero-bus DANGER arc, and alert ladders are all driven by schedules /
+  // deficiencies, not by work-order rows).
+
+  // WO #24 -- SCHEDULED (+2d): GEN-E1 monthly exercise, brought in-house.
+  // The schedule stays due in ~6 days (due-30 bucket unchanged); Terry is
+  // booked two days out on the Eastgate generator -- a clean standalone
+  // asset that makes an easy QR-scan target in field-mode demos.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    scheduleId: schedules['GEN-E1:GEN_MONTHLY_EXERCISE'].id,
+    assetId: assets['GEN-E1'].id,
+    assignedUserId: tech.id,
+    status: 'SCHEDULED',
+    scheduledDate: addDays(now, 2),
+    notes: 'Monthly NFPA 110 exercise brought in-house this cycle (contract techs are tied up on the Riverside load-bank job). 30-minute run at available load; log transfer time and battery float readings in Field Mode.',
+  } });
+
+  // WO #25 -- COMPLETE (yesterday): ad-hoc corrective check on BATT-1.
+  // scheduleId null (CORRECTIVE) so no schedule anchor moves: the ohmic-scan
+  // schedule stays 14 days overdue and the open RECOMMENDED battery
+  // deficiency stays open -- this is the interim weekly float-voltage check
+  // that deficiency's corrective action calls for.
+  await prisma.workOrder.create({ data: {
+    accountId: account.id,
+    assetId: assets['BATT-1'].id,
+    assignedUserId: tech.id,
+    status: 'COMPLETE',
+    workOrderType: 'CORRECTIVE',
+    scheduledDate: addDays(now, -1), startedAt: addDays(now, -1), completedDate: addDays(now, -1),
+    asFoundCondition: 'C2', asLeftCondition: 'C2',
+    notes: 'Interim weekly float-voltage check on flagged cells 1-C4 and 2-C7 (per the open battery deficiency). Float voltages holding within 0.05 V of string average; no thermal runaway indicators. Quarterly ohmic scan remains outstanding under its own schedule.',
   } });
 
   // ── Deficiencies ──────────────────────────────────────────────────────────
@@ -1717,15 +1759,26 @@ async function _seedAccount() {
     snapshotAt: now.toISOString(),
   };
 
+  // QR #1's outage window is computed from seed time (the next Saturday at
+  // least 10 days out) so the copy never goes stale the way the original
+  // hardcoded "Weekend of July 12th" did for most of the year.
+  const outageSat = addDays(now, 10);
+  outageSat.setDate(outageSat.getDate() + ((6 - outageSat.getDay()) % 7)); // roll forward to Saturday
+  const outageSun = addDays(outageSat, 1);
+  const fmtMonthDay = (d) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  const outageRange = outageSat.getMonth() === outageSun.getMonth()
+    ? fmtMonthDay(outageSat) + '-' + outageSun.getDate()
+    : fmtMonthDay(outageSat) + ' - ' + fmtMonthDay(outageSun);
+
   const qr1 = await prisma.quoteRequest.create({ data: {
     accountId: account.id, assetId: assets['T-1'].id, requestedById: manager.id,
     status: 'quoted', driver: 'suspected_failing', timeline: 'within_1_week',
-    outageAvailable: true, outageWindow: 'Weekend of July 12th',
+    outageAvailable: true, outageWindow: 'Weekend of ' + fmtMonthDay(outageSat),
     budgeted: false, budgetNotes: 'Need a number for Q3 capital request',
     attachmentNotes: 'DGA trend report from oil lab (emailed separately)',
     emergencyMode: false, dossierSnapshot: dossierSnapshotT1,
     quotedAt: addDays(now, -3),
-    quoteNotes: 'Quote for full power transformer testing + oil sampling: $4,200. Includes DGA, power factor, and turns ratio. Available July 12-13.',
+    quoteNotes: 'Quote for full power transformer testing + oil sampling: $4,200. Includes DGA, power factor, and turns ratio. Available ' + outageRange + '.',
   } });
 
   await prisma.quoteRequest.create({ data: {
@@ -2386,7 +2439,7 @@ async function _seedAccount() {
       contractors: 2, contractorTechs: 5,
       assets: assetSpecs.length, archivedAssets: archivedAssetCount,
       schedules: scheduleCount,
-      workOrders: 23, testMeasurements: wo2Measurements.length,
+      workOrders: 25, testMeasurements: wo2Measurements.length,
       deficiencies: 9, labSamples: 4, systemStudies: 3,
       auditVisits: 4, auditRecommendations: 6,
       alerts: alertCount,

@@ -8,12 +8,16 @@
 // browser back/forward + refresh keep the filter state.
 //
 // Row actions: Resolve (manager+, optional resolution note via a small modal —
-// the note is appended to correctiveAction server-side) and Reopen for
-// resolved findings (manager+, confirm dialog).
+// the note is appended to correctiveAction server-side), Reopen for resolved
+// findings (manager+, confirm dialog), and Create work order (manager+, open
+// unlinked findings only) — opens the shared NewWorkOrderModal locked to the
+// finding's asset, notes pre-seeded from the description; the server links the
+// finding to the new job atomically (POST /api/work-orders + deficiencyId),
+// then we navigate to the new job.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ClipboardCheck, ShieldCheck } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +26,7 @@ import Toast from '../components/Toast';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
 import Pagination from '../components/Pagination';
+import NewWorkOrderModal from '../components/NewWorkOrderModal';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { SEVERITY_META, assetLabel, fmtDate } from '../lib/equipment';
 
@@ -203,6 +208,7 @@ export default function DeficienciesPage() {
   useDocumentTitle('Deficiencies');
   const { user } = useAuth();
   const confirm = useConfirm();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // C1: asset/WO links record this page (incl. active filters) as the origin
   // for their BackLink.
@@ -235,6 +241,7 @@ export default function DeficienciesPage() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
   const [resolving, setResolving] = useState(null); // deficiency being resolved (modal open)
+  const [creatingWo, setCreatingWo] = useState(null); // deficiency spawning a work order (modal open)
   const [busy, setBusy] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -598,14 +605,27 @@ export default function DeficienciesPage() {
                                 Reopen
                               </button>
                             ) : (
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => setResolving(def)}
-                                disabled={busy}
-                              >
-                                Resolve
-                              </button>
+                              <>
+                                {!woId && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => setCreatingWo(def)}
+                                    disabled={busy}
+                                    style={{ marginRight: 6 }}
+                                  >
+                                    Create work order
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => setResolving(def)}
+                                  disabled={busy}
+                                >
+                                  Resolve
+                                </button>
+                              </>
                             )}
                           </td>
                         )}
@@ -635,6 +655,22 @@ export default function DeficienciesPage() {
           busy={busy}
           onClose={() => { if (!busy) setResolving(null); }}
           onConfirm={handleResolve}
+        />
+      )}
+
+      {creatingWo && (
+        <NewWorkOrderModal
+          fromDeficiency={{
+            id: creatingWo.id,
+            assetId: creatingWo.asset?.id || creatingWo.assetId,
+            assetLabel: `${assetLabel(creatingWo.asset)}${creatingWo.asset?.site?.name ? ` — ${creatingWo.asset.site.name}` : ''}`,
+            description: creatingWo.description || '',
+          }}
+          onClose={() => setCreatingWo(null)}
+          onCreated={(wo) => {
+            setCreatingWo(null);
+            if (wo?.id) navigate(`/work-orders/${wo.id}`, { state: fromState });
+          }}
         />
       )}
 

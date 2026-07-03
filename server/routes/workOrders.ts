@@ -99,6 +99,9 @@ const CreateWorkOrderSchema = z.object({
   humidityPct:    NumLike,
   testEquipment:  TestEquipmentSchema.nullable().optional(),
   notes:          z.string().max(4000).nullable().optional(),
+  // Create-from-deficiency: link an existing open, unlinked finding on the
+  // same asset to the job being created (validated in the POST / handler).
+  deficiencyId:   UuidStr.nullable().optional().or(z.literal('')),
 }).strict();
 
 // Shared include for the list view.
@@ -305,6 +308,9 @@ async function validateTech(accountId, contractorId, assignedTechId) {
 // body doesn't pin a cert level, the task definition's netaCertLevelMin is
 // copied onto the work order — schema documents netaCertLevel as "from the
 // task definition at creation time; editable".
+// The optional deficiencyId links an existing OPEN, unlinked finding on the
+// SAME asset to the new job -- the link is claimed inside the same
+// transaction as the create, so the job and its finding are atomic.
 router.post('/', requireManager, async (req, res) => {
   const parsed = validateBody(req, res, CreateWorkOrderSchema);
   if (!parsed) return;
@@ -313,6 +319,7 @@ router.post('/', requireManager, async (req, res) => {
     const scheduleId     = parsed.scheduleId || null;
     const contractorId   = parsed.contractorId || null;
     const assignedTechId = parsed.assignedTechId || null;
+    const deficiencyId   = parsed.deficiencyId || null;
     let   netaCertLevel  = parsed.netaCertLevel || null;
 
     const asset = await prisma.asset.findFirst({
@@ -332,6 +339,30 @@ router.post('/', requireManager, async (req, res) => {
       }
       if (!netaCertLevel && schedule.taskDefinition.netaCertLevelMin) {
         netaCertLevel = schedule.taskDefinition.netaCertLevelMin;
+      }
+    }
+
+    // Create-from-deficiency: the optional deficiencyId must belong to this
+    // account AND this asset, must not already ride on another work order,
+    // and must still be open. The link itself is claimed inside the create
+    // transaction below so a concurrent link can never double-attach it.
+    let deficiency: any = null;
+    if (deficiencyId) {
+      deficiency = await prisma.deficiency.findFirst({
+        where: { id: deficiencyId, accountId: req.user.accountId },
+        select: { id: true, assetId: true, severity: true, workOrderId: true, resolvedAt: true },
+      });
+      if (!deficiency) {
+        return res.status(404).json({ success: false, error: 'Deficiency not found' });
+      }
+      if (deficiency.assetId !== asset.id) {
+        return res.status(400).json({ success: false, error: 'Deficiency does not belong to this asset' });
+      }
+      if (deficiency.workOrderId) {
+        return res.status(400).json({ success: false, error: 'Deficiency is already linked to a work order' });
+      }
+      if (deficiency.resolvedAt) {
+        return res.status(400).json({ success: false, error: 'Deficiency is already resolved' });
       }
     }
 
@@ -384,31 +415,58 @@ router.post('/', requireManager, async (req, res) => {
       ? parsedWorkOrderType
       : defaultWorkOrderType;
 
-    const workOrder = await prisma.workOrder.create({
-      data: {
-        accountId:     req.user.accountId,
-        assetId:       asset.id,
-        scheduleId,
-        contractorId,
-        assignedTechId,
-        netaCertLevel,
-        scheduledDate: when,
-        ambientTempC,
-        humidityPct,
-        testEquipment: parsed.testEquipment ?? undefined,
-        notes:         notes || null,
-        workOrderType,
-        // status defaults to SCHEDULED in the schema
-      },
-      include: listInclude,
-    });
+    // Create the job. When born from a deficiency, the finding is claimed in
+    // the SAME transaction: the updateMany below is guarded on
+    // workOrderId: null, so a concurrent link between the pre-check above and
+    // this write throws and rolls the whole create back -- the job and its
+    // finding link are atomic.
+    let workOrder: any;
+    try {
+      workOrder = await prisma.$transaction(async (tx: any) => {
+        const created = await tx.workOrder.create({
+          data: {
+            accountId:     req.user.accountId,
+            assetId:       asset.id,
+            scheduleId,
+            contractorId,
+            assignedTechId,
+            netaCertLevel,
+            scheduledDate: when,
+            ambientTempC,
+            humidityPct,
+            testEquipment: parsed.testEquipment ?? undefined,
+            notes:         notes || null,
+            workOrderType,
+            // status defaults to SCHEDULED in the schema
+          },
+          include: listInclude,
+        });
+        if (deficiency) {
+          const claimed = await tx.deficiency.updateMany({
+            where: { id: deficiency.id, accountId: req.user.accountId, workOrderId: null },
+            data:  { workOrderId: created.id },
+          });
+          if (claimed.count !== 1) {
+            const conflict: any = new Error('Deficiency is already linked to a work order');
+            conflict.deficiencyConflict = true;
+            throw conflict;
+          }
+        }
+        return created;
+      });
+    } catch (txErr: any) {
+      if (txErr && txErr.deficiencyConflict) {
+        return res.status(400).json({ success: false, error: 'Deficiency is already linked to a work order' });
+      }
+      throw txErr;
+    }
 
     writeActivityLog({
       assetId:   asset.id,
       userId:    req.user.id,
       accountId: req.user.accountId,
       action:    'work_order_created',
-      details:   { workOrderId: workOrder.id, scheduleId, contractorId, scheduledDate: when },
+      details:   { workOrderId: workOrder.id, scheduleId, contractorId, scheduledDate: when, deficiencyId: deficiency ? deficiency.id : null },
     });
 
     res.status(201).json({ success: true, data: { workOrder } });

@@ -125,18 +125,45 @@ async function processEvent(ev: any, dir: any): Promise<string> {
     // Update existing: backfill SCIM identity, mark managed, refresh name +
     // reactivate. Never change a privileged role; otherwise leave role as-is
     // (role changes flow through group.user_added).
+    //
+    // BREAK-GLASS GUARD (2026-07-03 acquisition scan, Scan 3): flipping
+    // ssoManaged on a local admin strips their password-login capability --
+    // routes/auth.ts treats role==='admin' && !ssoManaged as the
+    // sso_break_glass_login identity, and routes/ssoAdmin.ts PUT /policy
+    // requires >= 1 active non-ssoManaged admin before sso.required can be
+    // enabled. A misconfigured IdP emitting a SCIM event that matches the
+    // account's LAST password-capable admin must never be able to lock the
+    // whole account out of password login. Suppress the flip (identity
+    // linking, name refresh and reactivation still apply) and log it at
+    // warning severity so the operator sees the misconfiguration.
+    let setSsoManaged = true;
+    if (user.role === 'admin' && !user.ssoManaged) {
+      const otherBreakGlassAdmins = await prisma.user.count({
+        where: { accountId, role: 'admin', isActive: true, ssoManaged: false, id: { not: user.id } },
+      });
+      if (otherBreakGlassAdmins < 1) {
+        setSsoManaged = false;
+        console.warn(`[sso-scim] suppressed ssoManaged flip for ${user.email} -- last password-capable admin on account ${accountId}`);
+        writeActivityLog({
+          userId: user.id,
+          accountId,
+          action: 'scim_break_glass_flip_suppressed',
+          details: { scimUserId, reason: 'last_password_capable_admin' },
+        });
+      }
+    }
     await prisma.user.update({
       where: { id: user.id },
       data: {
         name,
         isActive: true,
-        ssoManaged: true,
+        ...(setSsoManaged ? { ssoManaged: true } : {}),
         scimDirectoryId: dir.id,
         scimExternalId: scimUserId || user.scimExternalId,
         ...(email ? { email } : {}),
       },
     });
-    writeActivityLog({ userId: user.id, accountId, action: 'scim_user_updated', details: { scimUserId } });
+    writeActivityLog({ userId: user.id, accountId, action: 'scim_user_updated', details: { scimUserId, ...(setSsoManaged ? {} : { ssoManagedFlipSuppressed: true }) } });
     return 'updated';
   }
 

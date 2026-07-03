@@ -37,7 +37,7 @@
 
 import { Router } from 'express';
 import prisma from '../lib/prisma';
-const { requireManager } = require('../middleware/roles');
+const { requireManager, requireAdmin } = require('../middleware/roles');
 
 const router: Router = Router();
 
@@ -378,7 +378,11 @@ router.post('/:id/resolve', requireManager, async (req: any, res) => {
 // ── POST /api/weather/scan ────────────────────────────────────────────────────
 // Manually trigger a NWS scan (admin only — useful for testing and in the
 // Settings page as a "Force refresh" button).
-router.post('/scan', requireManager, async (req: any, res) => {
+// 2026-07-03 acquisition scan (Scan 3): the gate now matches the documented
+// intent -- requireAdmin, not requireManager. The scan is an account-agnostic
+// system action (hits the NWS API for every tenant's sites); no client code
+// calls this endpoint, so tightening it breaks nothing.
+router.post('/scan', requireAdmin, async (req: any, res) => {
   try {
     const { runWeatherScanner } = require('../lib/weatherScanner');
     const result = await runWeatherScanner();

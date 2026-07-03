@@ -18,11 +18,69 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/client';
 
 const DISMISS_KEY = 'servicecycle_demo_banner_dismissed';
 
+// ── Demo "View as" role switcher (2026-07-03) ────────────────────────────────
+// Pinned ids from server/scripts/seed-demo.js + seedContractorBook.js. The
+// switcher only renders for sessions already inside the shared demo tenant
+// (or the Apex partner home account) — per-visitor sandbox accounts never see
+// it, and the server re-enforces the same gates on POST /api/demo/switch-role.
+const DEMO_ACCOUNT_ID         = '11111111-1111-4111-8111-111111111111';
+const PARTNER_HOME_ACCOUNT_ID = '22222222-0000-4000-8000-000000000000';
+
+const VIEW_AS_OPTIONS = [
+  { value: 'admin',      label: 'Admin' },
+  { value: 'manager',    label: 'Manager' },
+  { value: 'viewer',     label: 'Viewer' },
+  { value: 'consultant', label: 'Consultant' },
+  { value: 'field_tech', label: 'Field Tech' },
+  { value: 'partner',    label: 'Partner (Apex)' },
+];
+
+// Map the signed-in seed user back to its switcher option so the select shows
+// the current identity. Unknown emails (shouldn't happen behind the account
+// gate) fall back to the disabled placeholder.
+const EMAIL_TO_OPTION = {
+  'admin@demo.local':          'admin',
+  'manager@demo.local':        'manager',
+  'viewer@demo.local':         'viewer',
+  'consultant@demo.local':     'consultant',
+  'tech@demo.local':           'field_tech',
+  'sam.carter@apexpower.demo': 'partner',
+};
+
 export default function DemoModeBanner() {
-  const { demoMode } = useAuth();
+  const { demoMode, user, setAuthData } = useAuth();
+  const [switching, setSwitching] = useState(false);
+
+  // Only the shared demo tenant + the Apex partner home account get the
+  // switcher. The server 403s everyone else anyway; this just avoids
+  // rendering a control that would error for sandbox visitors.
+  const canSwitchRoles =
+    !!user &&
+    (user.accountId === DEMO_ACCOUNT_ID || user.accountId === PARTNER_HOME_ACCOUNT_ID);
+
+  const handleSwitchRole = useCallback(async (e) => {
+    const role = e.target.value;
+    if (!role || switching) return;
+    setSwitching(true);
+    try {
+      const res = await api.post('/api/demo/switch-role', { role });
+      const { token, refreshToken, user: newUser } = res.data.data;
+      // Swap the session exactly the way login does (clear-then-write via
+      // AuthContext.setAuthData), then hard-navigate to the app root so every
+      // role-scoped surface (routes, feature flags, account settings)
+      // rebuilds from the new identity.
+      setAuthData(token, refreshToken, newUser);
+      window.location.assign('/');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Demo role switch failed:', err?.response?.data?.error || err.message);
+      setSwitching(false);
+    }
+  }, [switching, setAuthData]);
 
   const [dismissed, setDismissed] = useState(() => {
     try {
@@ -159,6 +217,41 @@ export default function DemoModeBanner() {
         Demo sandbox — entire sandbox is deleted after 5 days of inactivity.
         Don&apos;t enter real customer data; the demo&apos;s TOS forbids it.
       </span>
+      {canSwitchRoles && (
+        <label
+          style={{
+            display:    'flex',
+            alignItems: 'center',
+            gap:        '0.35rem',
+            marginLeft: '0.5rem',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          View as:
+          <select
+            value={EMAIL_TO_OPTION[user?.email] || ''}
+            onChange={handleSwitchRole}
+            disabled={switching}
+            aria-label="View the demo as a different role"
+            style={{
+              background:   'transparent',
+              border:       '1px solid var(--color-warning, #b45309)',
+              color:        'var(--color-warning, #b45309)',
+              borderRadius: 4,
+              padding:      '0.25rem 0.35rem',
+              fontSize:     '0.75rem',
+              fontWeight:   500,
+              cursor:       switching ? 'wait' : 'pointer',
+            }}
+          >
+            <option value="" disabled hidden>Switch role</option>
+            {VIEW_AS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+      )}
       <button
         type="button"
         onClick={dismiss}

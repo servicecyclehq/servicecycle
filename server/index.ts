@@ -1410,6 +1410,9 @@ app.use('/api/documents',         authenticateToken, documentRoutes);
 // (A4) admin utilities — currently only /reset-demo. Auth + role + DEMO_MODE
 // guards live inside the route handler.
 app.use('/api/admin',             authenticateToken, adminRoutes);
+// Demo-only "view as" role switcher -- all gates (DEMO_MODE, shared-demo-
+// tenant caller, fixed target map) live inside the router. See routes/demo.ts.
+app.use('/api/demo',              authenticateToken, require('./routes/demo'));
 app.use('/api/admin/audit-chain', authenticateToken, adminAuditChainRoutes);
 const { requireAdmin, requireSuperAdmin } = require('./middleware/roles');
 app.use('/api/admin/partner-orgs', authenticateToken, requireSuperAdmin, adminPartnerOrgsRoutes);

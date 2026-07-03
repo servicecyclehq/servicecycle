@@ -108,6 +108,44 @@ function buildIdMetaPlugin() {
   };
 }
 
+// 2026-07-03 PWA stale-cache fix (demo landmine): per-build SW version stamp.
+//
+// Problem: workbox precache revisions are CONTENT hashes, so two builds of
+// identical client source emit a byte-identical sw.js. A deploy that didn't
+// change the client bundle (or a rebuild after a server-only change) gave the
+// browser no new SW to install, and any stale precache stayed pinned -- the
+// documented "new features look missing mid-demo" failure. Stamping a unique
+// revision into the precache manifest guarantees every `vite build` produces
+// a different sw.js, so the browser runs the full SW update lifecycle
+// (updatefound -> installed -> skipWaiting/clientsClaim activate) on the
+// first update check after EVERY deploy. main.jsx turns that lifecycle into
+// a "new version available - Reload" toast; it never forces a reload.
+//
+// The stamp is also emitted as /sw-build-version.json (see
+// swVersionStampPlugin) both because workbox install fails if a precached
+// URL 404s, and so ops can `curl https://servicecycle.app/sw-build-version.json`
+// to read the live build stamp.
+const SW_BUILD_STAMP =
+  'v' + require('./package.json').version +
+  '-' + new Date().toISOString().replace(/[:.]/g, '-') +
+  '-' + Math.random().toString(36).slice(2, 8);
+
+// Emits /sw-build-version.json into the bundle so the additionalManifestEntries
+// precache entry below resolves at install time.
+function swVersionStampPlugin() {
+  return {
+    name: 'servicecycle-sw-version-stamp',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sw-build-version.json',
+        source: JSON.stringify({ build: SW_BUILD_STAMP }) + '\n',
+      });
+    },
+  };
+}
+
 // PWA — installable app + offline support for field technicians.
 //
 // Strategy:
@@ -151,6 +189,12 @@ function pwaPlugin() {
       skipWaiting: true,
       clientsClaim: true,
       cleanupOutdatedCaches: true,
+      // Force a DISTINCT sw.js per build -- see SW_BUILD_STAMP above. The
+      // per-build revision lands in the precache manifest, so sw.js bytes
+      // change every build even when no client source changed.
+      additionalManifestEntries: [
+        { url: 'sw-build-version.json', revision: SW_BUILD_STAMP },
+      ],
       // SPA offline deep-links — but never intercept API navigations/requests.
       navigateFallback: 'index.html',
       navigateFallbackDenylist: [/^\/api/],
@@ -194,7 +238,7 @@ function pwaPlugin() {
 }
 
 export default defineConfig({
-  plugins: [react(), buildIdMetaPlugin(), routeModulePreloadPlugin(), pwaPlugin()],
+  plugins: [react(), buildIdMetaPlugin(), routeModulePreloadPlugin(), swVersionStampPlugin(), pwaPlugin()],
 
   // Strip console.* and debugger from production bundles via esbuild.
   // Audit-7 launch-readiness fix: Vite's default prod minifier (esbuild)

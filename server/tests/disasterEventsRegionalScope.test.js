@@ -53,8 +53,12 @@ jest.mock('../lib/prisma', () => {
 });
 
 // Pass-through gate: role enforcement is covered in securityAuditFixesA.
+// requireAdmin must exist too -- the router destructures it for POST /scan
+// (2026-07-03 Scan 3 fix); the gate itself is covered in
+// disasterEventsScanAdminGate.test.js with the REAL middleware.
 jest.mock('../middleware/roles', () => ({
   requireManager: (req, res, next) => next(),
+  requireAdmin: (req, res, next) => next(),
 }));
 
 const express = require('express');

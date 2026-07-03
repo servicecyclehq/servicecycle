@@ -39,14 +39,12 @@
 > Liability posture (don't ad-lib past it): ServiceCycle does **not** run the IEEE 1584 calc or assert PPE categories itself — it stores and version-controls the licensed PE's sealed study results. The Arc Flash tab says exactly this on screen ("a licensed PE runs and stamps the study").
 
 ### 2:30 — Turn the hazard into action (the workflow)
-*(Note: findings attach to jobs — so you dispatch the job first, then the finding rides on it. There is no "create WO" button on the deficiency itself.)*
 **Do:**
 1. Open **Deficiencies** — the **OPEN · IMMEDIATE** finding sits at the top of the triage queue: SWGR-2M's B-phase hot joint (ΔT 38°C above ambient).
-2. Go to **Work orders** → click **New work order** (top right).
-3. In the modal: search the asset picker for **"NorthStar"** → select **NorthStar Switchgear Co. NS-LV600** (that's SWGR-2M) → Contractor: **Apex Electrical Testing** → Assigned tech: **Carmen Rios (NETA Level II)** → click **Create work order**. You land on the new job.
-4. On the job page, in **Deficiencies found**: set Severity to **Immediate**, Description: *"Severe overheating at B-phase bus connection — ΔT 38°C above ambient"* → click **Record deficiency**. A red banner appears: the job **can't be completed** while an IMMEDIATE deficiency is open.
+2. Click **Create work order** right on that row. The modal opens already locked to the right asset — **NorthStar Switchgear Co. NS-LV600** (that's SWGR-2M) — with the finding's description pre-seeded in the notes.
+3. In the modal: Contractor: **Apex Electrical Testing** → Assigned tech: **Carmen Rios (NETA Level II)** → click **Create work order**. You land on the new job — the finding is already riding on it under **Deficiencies found**, and a red banner says the job **can't be completed** while the IMMEDIATE deficiency is open.
 **Say:** *"Thirty seconds, and the hazard is an assigned, tracked work order with the finding riding on it — it doesn't die in a report. And notice the platform won't let anyone close this job until that IMMEDIATE finding is resolved with a documented corrective action. That's accountability the spreadsheet never gave them."*
-**Optional flourish:** flip back to **Deficiencies** — the recorded finding now shows a **View WO →** link.
+**Optional flourish:** flip back to **Deficiencies** — the finding now shows a **View WO →** link where the Create button was.
 **Buyer takeaway:** Recurring operational workflow, not a one-time inspection. This is the stickiness — and the path to recurring revenue.
 
 ### 3:15 — The leave-behind: the artifacts a customer/board actually holds
@@ -85,7 +83,7 @@ Everything is seeded and coherent — let them roam these:
 
 ## DO NOT CLICK / KNOWN ROUGH EDGES
 - Don't live-edit or delete seed data mid-demo — if you must, reseed afterward (it powers the hero story; resolving or deleting SWGR-2M's IMMEDIATE deficiency breaks beat 2:30).
-- Beat 2:30 **adds** a work order + a recorded finding by design — reseed between rehearsals so the dashboard counts (8 open deficiencies / 1 immediate) stay accurate.
+- Beat 2:30 **adds a work order and links the seeded IMMEDIATE finding to it** by design — deficiency counts stay accurate, but a linked finding shows **View WO →** instead of the **Create work order** button, so reseed between rehearsals to run the beat again.
 - Don't free-type into AI/ingest fields under time pressure — live model calls can be slow; if asked, describe it, don't wait on it.
 - Don't promise integrations on the call (MaintainX/Maximo/SAP) — say "documented v1 REST API, OpenAPI 3.1" and move on.
 - Avoid empty/unseeded corners — stay on the named entities above; if a screen looks thin, navigate back to the dashboard.

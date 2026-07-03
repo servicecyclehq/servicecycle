@@ -460,6 +460,18 @@ router.post('/link', requireManager, async (req, res) => {
       if (!owns) return res.status(404).json({ success: false, error: 'Asset not found' });
     }
 
+    // #10 parity (2026-07-03 acquisition scan, Scan 3): verify a supplied
+    // workOrderId belongs to this account before pinning the link to it --
+    // same check as POST /upload below. Previously the client-supplied id was
+    // written unverified (cross-tenant FK write).
+    if (workOrderId) {
+      const wo = await prisma.workOrder.findFirst({
+        where:  { id: workOrderId, accountId },
+        select: { id: true },
+      });
+      if (!wo) return res.status(404).json({ success: false, error: 'Work order not found.' });
+    }
+
     const doc = await prisma.document.create({
       data: {
         accountId,

@@ -18,6 +18,7 @@
  *              assetId is given.
  *
  * Gate order (copied from routes/assetBrief.ts — keep the two in sync):
+ *   0. requireManager role gate (photo-inspect only; it persists a Document)
  *   1. AI_ENABLED kill-switch            → 503 ai_disabled
  *   2. GPC opt-out (Sec-GPC: 1)          → 403 GPC_AI_BLOCKED
  *   3. per-user burst limiter (30/hr)    → 429 (express-rate-limit message)
@@ -53,6 +54,7 @@ const { ensureAiConsent }  = require('../lib/aiConsent');
 const { ensureAiBudget }   = require('../lib/aiBudgetGuard');
 const { checkAndIncrement: checkAiQuota, refundIncrement: refundAiQuota } = require('../lib/aiQuota');
 const { aiIpLimiter }      = require('../middleware/aiIpLimit');
+const { requireManager }   = require('../middleware/roles');
 const { buildInspectContext, inspectPhoto } = require('../lib/photoInspect');
 const { uploadFile }       = require('../lib/storage');
 const { recordExtraction } = require('../lib/extractionTelemetry'); // #4 telemetry (scan paths)
@@ -147,7 +149,15 @@ async function logActivity(assetId, userId, accountId, action, details = null) {
 
 // ─── POST /photo-inspect ──────────────────────────────────────────────────────
 
-router.post('/photo-inspect', aiPreGate, aiIpLimiter, photoInspectLimiter, photoUploadMiddleware, async (req, res) => {
+// RBAC (2026-07-03 acquisition scan, Scan 3): photo-inspect PERSISTS the photo
+// as a Document row on the asset, so it is a write path -- requireManager,
+// matching the sibling document-write routes (routes/documents.ts POST
+// /upload). This does NOT touch field capture: field_tech is default-denied
+// off /api/assets entirely (lib/fieldRoleScope allowlist), the field_tech UI
+// (FieldJob.jsx) never calls this endpoint, and the client documents
+// photo-inspect/OCR as manager-tier features on the full FieldAsset card.
+// /ocr-nameplate below stays ungated -- it persists nothing.
+router.post('/photo-inspect', requireManager, aiPreGate, aiIpLimiter, photoInspectLimiter, photoUploadMiddleware, async (req, res) => {
   if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
     return res.status(400).json({ success: false, error: 'An image file is required (multipart field "image").' });
   }
