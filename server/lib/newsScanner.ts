@@ -32,8 +32,15 @@ import prisma from './prisma';
 const SCANNER_ENABLED = process.env.NEWS_SCANNER_ENABLED !== 'false';
 
 // ── Feed registry ─────────────────────────────────────────────────────────────
-// All public RSS, probed 2026-06-07:
-//   OSHA newsreleases.xml      → 200 application/rss+xml  (valid RSS 2.0)
+// All public RSS, probed 2026-06-07 (OSHA source swapped 2026-07-03):
+//   OSHA regulatory coverage   → via Google News RSS search. The direct
+//                                osha.gov/news/newsreleases.xml feed 403s
+//                                from datacenter IPs (OSHA WAF; works from
+//                                residential IPs, headers don't help), so we
+//                                read OSHA coverage through Google News,
+//                                which serves datacenter egress fine. Query
+//                                pre-filters to OSHA+electrical; MATCH_TERMS
+//                                still applies on top.
 //   ecmweb.com/rss.xml         → 200 application/rss+xml  (valid RSS 2.0)
 //   csemag.com/feed/           → 200 application/rss+xml  (valid RSS 2.0)
 //   plantengineering.com/feed/ → 200 application/rss+xml  (valid RSS 2.0)
@@ -48,7 +55,7 @@ const SCANNER_ENABLED = process.env.NEWS_SCANNER_ENABLED !== 'false';
 // category maps straight onto NewsItem.category
 // (regulatory | standards | safety | industry).
 const FEEDS: { url: string; source: string; category: string }[] = [
-  { url: 'https://www.osha.gov/news/newsreleases.xml', source: 'OSHA Newsroom',                  category: 'regulatory' },
+  { url: 'https://news.google.com/rss/search?q=OSHA%20electrical&hl=en-US&gl=US&ceid=US:en', source: 'OSHA (via Google News)', category: 'regulatory' },
   { url: 'https://www.ecmweb.com/rss.xml',             source: 'EC&M',                           category: 'industry'   },
   { url: 'https://www.csemag.com/feed/',               source: 'Consulting-Specifying Engineer', category: 'industry'   },
   { url: 'https://www.plantengineering.com/feed/',     source: 'Plant Engineering',              category: 'industry'   },
@@ -127,10 +134,11 @@ async function runNewsScanner() {
   // but OSHA's WAF kept returning 403 from the droplet ("Feed failed (OSHA
   // Newsroom): Status code 403" every run). .gov edge WAFs (Akamai) score
   // "bot"/"compatible" UA tokens plus datacenter source IPs; a plain browser
-  // UA is the standard fix. Re-verified 2026-07-03: the feed URL itself is
-  // alive (HTTP 200, valid rss+xml) — the URL is not the problem. If 403
-  // persists from the droplet with this UA, the block is purely IP-based
-  // (datacenter range) and needs a different egress, not another header.
+  // UA is the standard fix. Re-verified 2026-07-03: the block persisted with
+  // a browser UA too — purely IP-based (datacenter range). RESOLUTION: the
+  // direct osha.gov feed was swapped for a Google News RSS search query (see
+  // FEEDS above), which serves datacenter IPs. The browser UA stays for the
+  // remaining trade feeds.
   // maxRedirects bumped so feeds that 301 to a new path (e.g. EC&M) still
   // resolve. Per-feed failures stay fail-soft (see catch below).
   const parser = new Parser({
