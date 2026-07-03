@@ -1,0 +1,650 @@
+[
+  {
+    "id": "report_001",
+    "equipment": {
+      "type": "TRANSFORMER",
+      "manufacturer": "ABB",
+      "model": "TRAF-2500",
+      "serialNumber": "A2C-39471-B",
+      "voltageClass": "13800V",
+      "kva": 2500,
+      "amperage": 104.6,
+      "year": 2008
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 12500, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 9340, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.31, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false },
+      { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.34, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS                                        Page 1 of 1\nTRANSFORMER TEST REPORT - LIQUID-FILLED\nJOB NO: 22-1044          TEST DATE: 06/14/2022        AMBIENT: 28 C / 45% RH\nSUBSTATION: MAIN SUB 1                    POSITION: T-1\n\nNAMEPLATE DATA\nMANUFACTURER: ABB                         SERIAL NUMBER: A2C-39471-B\nTYPE/MODEL: TRAF-2500                     YEAR MFG: 2008\nKVA: 2500                                 TEMP RISE: 65 C\nPRIMARY: 13800 V DELTA                    SECONDARY: 480Y/277 V\nPRIMARY AMPS: 104.6                       IMPEDANCE: 5.75 %\n\nINSULATION RESISTANCE - MEGGER MIT1025 @ 5000 VDC\nWINDING             1 MIN (MΩ)     10 MIN (MΩ)\nH-G                 12500          28800\nX-G                 9340           21400\nPOLARIZATION INDEX (H-G): 2.31            EXPECTED: >=2.0     PASS\nMINIMUM IR ACCEPTABLE: >=1000 MΩ          RESULT: PASS\n\nPOWER FACTOR - DOBLE M4100 @ 10 KV\nTEST        MODE     %PF CORR 20C    EXPECTED     RESULT\nCH+CHL      GST      0.34            <=0.5        PASS\n\nOVERALL CONDITION: ACCEPTABLE - GREEN",
+    "groundTruth": {
+      "serialNumber": "A2C-39471-B",
+      "manufacturer": "ABB",
+      "model": "TRAF-2500",
+      "testDate": "2022-06-14",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 12500, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 9340, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.31, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false },
+        { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.34, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_002",
+    "equipment": {
+      "type": "TRANSFORMER",
+      "manufacturer": "Siemens",
+      "model": "TLH-5000/34.5",
+      "serialNumber": "SB7-88213-T4",
+      "voltageClass": "34500V",
+      "kva": 5000,
+      "amperage": 83.7,
+      "year": 1996
+    },
+    "measurements": [
+      { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 1240, "asFoundUnit": "ppm", "expectedRange": "<=100", "passFail": "RED", "critical": true },
+      { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 38, "asFoundUnit": "ppm", "expectedRange": "<=1", "passFail": "RED", "critical": true },
+      { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 405, "asFoundUnit": "ppm", "expectedRange": "<=50", "passFail": "RED", "critical": true },
+      { "measurementType": "power_factor", "phase": null, "asFoundValue": 2.14, "asFoundUnit": "%", "expectedRange": "<=1.0", "passFail": "RED", "critical": true }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS                                        Page 1 of 2\nTRANSFORMER OIL & POWER FACTOR TEST REPORT\nJOB NO: 23-0877          TEST DATE: 09/08/2023        OIL TEMP: 34 C\nSUBSTATION: 34.5KV YARD                   POSITION: T-4\n\nNAMEPLATE DATA\nMANUFACTURER: SIEMENS                     SERIAL NUMBER: SB7-88213-T4\nTYPE/MODEL: TLH-5000/34.5                 YEAR MFG: 1996\nKVA: 5000/6250 FA                         HV: 34500 V DELTA\nLV: 4160 V WYE                            FULL LOAD AMPS: 83.7\n\nDISSOLVED GAS ANALYSIS - IEEE C57.104 (LAB SAMPLE #A-113302)\nGAS                    PPM        LIMIT       STATUS\nHYDROGEN (H2)          1240       <=100       HIGH - RED\nMETHANE (CH4)          318        <=120       HIGH\nACETYLENE (C2H2)       38         <=1         HIGH - RED\nETHYLENE (C2H4)        405        <=50        HIGH - RED\nETHANE (C2H6)          44         <=65        OK\nCARBON MONOXIDE        472        <=350       HIGH\nCARBON DIOXIDE         3920       <=2500      HIGH\nTDCG: 2517 PPM         CONDITION 4\nDUVAL TRIANGLE: D2 - ARCING / HIGH ENERGY DISCHARGE INDICATED\n\nPOWER FACTOR - DOBLE M4100 @ 10 KV\nCH+CHL      GST      2.14 %      EXPECTED <=1.0      FAIL - RED\n\nRECOMMENDATION: REMOVE FROM SERVICE - INTERNAL ARCING SUSPECTED\nOVERALL CONDITION: UNACCEPTABLE - RED",
+    "groundTruth": {
+      "serialNumber": "SB7-88213-T4",
+      "manufacturer": "Siemens",
+      "model": "TLH-5000/34.5",
+      "testDate": "2023-09-08",
+      "measurements": [
+        { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 1240, "asFoundUnit": "ppm", "expectedRange": "<=100", "passFail": "RED", "critical": true },
+        { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 38, "asFoundUnit": "ppm", "expectedRange": "<=1", "passFail": "RED", "critical": true },
+        { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 405, "asFoundUnit": "ppm", "expectedRange": "<=50", "passFail": "RED", "critical": true },
+        { "measurementType": "power_factor", "phase": null, "asFoundValue": 2.14, "asFoundUnit": "%", "expectedRange": "<=1.0", "passFail": "RED", "critical": true }
+      ]
+    }
+  },
+  {
+    "id": "report_003",
+    "equipment": {
+      "type": "TRANSFORMER",
+      "manufacturer": "GE",
+      "model": "9T83B3871",
+      "serialNumber": "GEX-58201-A",
+      "voltageClass": "4160V",
+      "kva": 1500,
+      "amperage": 208.2,
+      "year": 2015
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 3850, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.62, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false },
+      { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.68, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "partial_ocr",
+    "extractedText": "POWERDB TEST FORMS\nTRANSFORMER TEST REPORT - DRY TYPE\nJOB NO: 21-0392        TEST DATE: 04/22/2021       AMB: 19 C\nMANUFACTURER: GE                SERIAL NUMBER: GEX-58201-A\nTYPE/MODEL: 9T83B3871           YEAR MFG:\nKVA: 1500        PRIMARY: 4160 V DELTA      SECONDARY: 480Y/277 V\nFLA: 208.2\n\nINSULATION RESISTANCE @ 5000 VDC\nWINDING          1 MIN (M?)     10 MIN (M?)\nH-G            3850        6240\nX-G              --             --\nPOLARIZATION INDEX (H-G): 1.62       EXPECTED: >=2.0      MARGINAL - YELLOW\nMINIMUM ACCEPTABLE: >=1000 MOhm      RESULT: PASS\n\nPOWER FACTOR @ 10 KV\nCH+CHL     GST     0.68 %     EXPECTED <=0.5     MARGINAL - YELLOW\n\nOVERALL CONDITION: YELLOW",
+    "groundTruth": {
+      "serialNumber": "GEX-58201-A",
+      "manufacturer": "GE",
+      "model": "9T83B3871",
+      "testDate": "2021-04-22",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 3850, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.62, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.68, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_004",
+    "equipment": {
+      "type": "TRANSFORMER",
+      "manufacturer": "Eaton",
+      "model": "RA-10000",
+      "serialNumber": "ETN-91-44782C",
+      "voltageClass": "34500V",
+      "kva": 10000,
+      "amperage": 167.3,
+      "year": 1991
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 0, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "RED", "critical": true },
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 11200, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 14800, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.71, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "partial_ocr",
+    "extractedText": "POWERDB TEST FORMS\nTRANSFORMER TEST REPORT - LIQUID-FILLED\nJOB NO: 19-1218        TEST DATE: 11/03/2019       OIL TEMP: 41 C\nMANUFACTURER: EATON             SERIAL NUMBER: ETN-91-44782C\nTYPE/MODEL: RA-10000            YEAR MFG: 1991\nKVA: 10000       HV: 34500 V DELTA       LV: 13800 V WYE\nFLA: 167.3\n\nINSULATION RESISTANCE - MEGGER S1-5010 @ 5000 VDC\nWINDING          1 MIN (MΩ)     10 MIN (MΩ)\nH-G              0              --\nX-G              11200          26400\nH-X              14800\nMINIMUM ACCEPTABLE: >=5000 M?\nRESULT H-G: RECORDED            RESULT X-G: PASS\n\nPOWER FACTOR - DOBLE @ 10 KV\nCH+CHL     GST     0.71 %     EXPECTED <=0.5     MARGINAL - YELLOW",
+    "groundTruth": {
+      "serialNumber": "ETN-91-44782C",
+      "manufacturer": "Eaton",
+      "model": "RA-10000",
+      "testDate": "2019-11-03",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 0, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "RED", "critical": true },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 11200, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 14800, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.71, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_005",
+    "equipment": {
+      "type": "TRANSFORMER",
+      "manufacturer": "Square D",
+      "model": "7400-SP3750",
+      "serialNumber": "SQD-3P-20871",
+      "voltageClass": "13800V",
+      "kva": 3750,
+      "amperage": 156.9,
+      "year": 2018
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 6800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 5210, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.4, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false },
+      { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.83, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "garbled_ocr",
+    "extractedText": "P0WERDB TESTF0RMS TRANSF0RMER REP0RT LIQUID FILLED\nJ0B 20-0655 TESTDATE 08/17/2020 0ILTEMP 36 C\nMFR: SQUARE D SER: SQD-3P-20871 M0DEL: 7400-SP3750\nYR 2018 KVA 3750 HV 13800 DELTA LV 480Y\nFLA 156.9\nINSULATI0N RESISTANCE 5000VDC MEGGER S1-5010\nH-G 68\n00 M0hm 10MIN 16300 PI 2.4 >=2.0 PASS\nX-G 5210 M0hm >=1000 PASS ~|\nP0WER FACT0R D0BLE 10KV\nCH+CHL GST 0.83% <=0.5 MARGINAL YELL0W #\n0VERALL: YELL0W",
+    "groundTruth": {
+      "serialNumber": "SQD-3P-20871",
+      "manufacturer": "Square D",
+      "model": "7400-SP3750",
+      "testDate": "2020-08-17",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 6800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 5210, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.4, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false },
+        { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.83, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_006",
+    "equipment": {
+      "type": "SWITCHGEAR",
+      "manufacturer": "Eaton",
+      "model": "VCW-40-1200",
+      "serialNumber": "EVW-20031-88B",
+      "voltageClass": "4160V",
+      "kva": null,
+      "amperage": 1200,
+      "year": 2003
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 15200, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 14100, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 16800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 42, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 52, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "YELLOW", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 61, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS\nMEDIUM VOLTAGE SWITCHGEAR & BUS TEST REPORT\nJOB NO: 22-0311        TEST DATE: 03/11/2022       AMB: 22 C\nSUBSTATION: PLANT 2 ELECTRICAL ROOM       DESIGNATION: SWGR-2A\n\nNAMEPLATE DATA\nMANUFACTURER: EATON (CUTLER-HAMMER)       MODEL: VCW-40-1200\nSERIAL NO: EVW-20031-88B                  YEAR: 2003\nRATED VOLTAGE: 4160 V                     BUS RATING: 1200 A\nBIL: 60 KV\n\nBUS INSULATION RESISTANCE @ 2500 VDC (MΩ)\nA-G: 15200      B-G: 14100      C-G: 16800\nMINIMUM ACCEPTABLE: >=1000 MΩ             RESULT: PASS\n\nBUS JOINT / STAB CONTACT RESISTANCE - DLRO 10HD (µΩ)\nPHASE     AS-FOUND     EXPECTED     RESULT\nA         42           <=50         PASS\nB         52           <=50         INVESTIGATE - YELLOW\nC         61           <=50         INVESTIGATE - YELLOW\n\nOVERALL CONDITION: YELLOW - RETORQUE B & C PHASE BUS JOINTS",
+    "groundTruth": {
+      "serialNumber": "EVW-20031-88B",
+      "manufacturer": "Eaton",
+      "model": "VCW-40-1200",
+      "testDate": "2022-03-11",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 15200, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 14100, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 16800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 42, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 52, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 61, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_007",
+    "equipment": {
+      "type": "SWITCHGEAR",
+      "manufacturer": "Square D",
+      "model": "QED-2",
+      "serialNumber": "QD2-88472-E1",
+      "voltageClass": "480V",
+      "kva": null,
+      "amperage": 3000,
+      "year": 2012
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": "AB", "asFoundValue": 850, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "BC", "asFoundValue": 720, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "CA", "asFoundValue": 910, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 118, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "YELLOW", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 86, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "partial_ocr",
+    "extractedText": "POWERDB TEST FORMS\nLOW VOLTAGE SWITCHGEAR TEST REPORT\nJOB: 18-0544     DATE: 05/30/2018\nMANUFACTURER: SQUARE D        MODEL: QED-2\nSERIAL: QD2-88472-E1          YEAR: 2012\nVOLTAGE: 480 V                MAIN BUS: 3000 A\n\nBUS INSULATION RESISTANCE @ 1000 VDC\nA-B: 850 M?      B-C: 720 M?      C-A: 910\nMINIMUM: >=100 MOhm      RESULT: PASS\n\nMAIN BUS JOINT RESISTANCE (DLRO)\nPHASE    uOhm       EXPECTED     RESULT\nA        118        <=100        INVESTIGATE - YELLOW\nB        86         <=100        PASS\nC                   <=100\n\nOVERALL: YELLOW",
+    "groundTruth": {
+      "serialNumber": "QD2-88472-E1",
+      "manufacturer": "Square D",
+      "model": "QED-2",
+      "testDate": "2018-05-30",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": "AB", "asFoundValue": 850, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "BC", "asFoundValue": 720, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "CA", "asFoundValue": 910, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 118, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 86, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_008",
+    "equipment": {
+      "type": "SWITCHGEAR",
+      "manufacturer": "GE",
+      "model": "Power/Vac PV-2000",
+      "serialNumber": "PV98-30447-G",
+      "voltageClass": "13800V",
+      "kva": null,
+      "amperage": 2000,
+      "year": 1998
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 8900, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 485000, "asFoundUnit": "µΩ", "expectedRange": "<=500", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 412, "asFoundUnit": "µΩ", "expectedRange": "<=500", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 398, "asFoundUnit": "µΩ", "expectedRange": "<=500", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "garbled_ocr",
+    "extractedText": "P0WERDB TEST F0RMS MEDIUM V0LTAGE SWITCHGEAR REP0RT\nJ0B 16-0912 DATE 10/12/2016 AMB 27 C\nMFG GE M0DEL P0WER/VAC PV-2000 SN PV98-30447-G YR 1998\nRATED 13800 V BUS 2000 A BIL 95KV\nBUS INSULATI0N RESISTANCE 2500VDC 8900 M0hm >=1000 PASS\nBREAKER STAB C0NTACT RESISTANCE DLR0 (uO)\nA 485000 <=500 PASS ~\nB 412 <=500 PASS\nC 398 <=500 PASS #\n0VERALL C0NDITI0N: ACCEPTABLE - GREEN",
+    "groundTruth": {
+      "serialNumber": "PV98-30447-G",
+      "manufacturer": "GE",
+      "model": "Power/Vac PV-2000",
+      "testDate": "2016-10-12",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 8900, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 485000, "asFoundUnit": "µΩ", "expectedRange": "<=500", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 412, "asFoundUnit": "µΩ", "expectedRange": "<=500", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 398, "asFoundUnit": "µΩ", "expectedRange": "<=500", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_009",
+    "equipment": {
+      "type": "SWITCHGEAR",
+      "manufacturer": "Cutler-Hammer",
+      "model": "VC-38-1200",
+      "serialNumber": "CH94-BB218-4",
+      "voltageClass": "34500V",
+      "kva": null,
+      "amperage": 1200,
+      "year": 1994
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 26000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 155, "asFoundUnit": "µΩ", "expectedRange": "<=200", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 233, "asFoundUnit": "µΩ", "expectedRange": "<=200", "passFail": "YELLOW", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 148, "asFoundUnit": "µΩ", "expectedRange": "<=200", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS\nMEDIUM VOLTAGE METAL-CLAD SWITCHGEAR TEST REPORT\nJOB NO: 17-0698        TEST DATE: 07/19/2017       AMB: 31 C\nSUBSTATION: NORTH YARD          DESIGNATION: SWGR-N1\n\nNAMEPLATE DATA\nMANUFACTURER: CUTLER-HAMMER     MODEL: VC-38-1200\nSERIAL NO: CH94-BB218-4         YEAR: 1994\nRATED VOLTAGE: 34500 V          BUS: 1200 A       BIL: 150 KV\n\nBUS INSULATION RESISTANCE @ 5000 VDC\nA-G: 26000 MΩ      MINIMUM: >=5000 MΩ      RESULT: PASS\n\nBUS JOINT CONTACT RESISTANCE - DLRO 10HD (µΩ)\nPHASE     AS-FOUND     EXPECTED     RESULT\nA         155          <=200        PASS\nB         233          <=200        INVESTIGATE - YELLOW\nC         148          <=200        PASS\n\nOVERALL CONDITION: YELLOW",
+    "groundTruth": {
+      "serialNumber": "CH94-BB218-4",
+      "manufacturer": "Cutler-Hammer",
+      "model": "VC-38-1200",
+      "testDate": "2017-07-19",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 26000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 155, "asFoundUnit": "µΩ", "expectedRange": "<=200", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 233, "asFoundUnit": "µΩ", "expectedRange": "<=200", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 148, "asFoundUnit": "µΩ", "expectedRange": "<=200", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_010",
+    "equipment": {
+      "type": "MOTOR",
+      "manufacturer": "WEG",
+      "model": "W22-075T4",
+      "serialNumber": "WG16-77120-B",
+      "voltageClass": "480V",
+      "kva": null,
+      "amperage": 96,
+      "year": 2016
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 850, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "polarization_index", "phase": null, "asFoundValue": 4.2, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS\nAC INDUCTION MOTOR TEST REPORT\nJOB NO: 23-0148        TEST DATE: 02/27/2023       AMB: 18 C\nLOCATION: COOLING TOWER CT-3          TAG: CT-3-FAN-1\n\nNAMEPLATE DATA\nMANUFACTURER: WEG            MODEL: W22-075T4\nSERIAL NO: WG16-77120-B      YEAR: 2016\nHP: 75     VOLTS: 480     FLA: 96     RPM: 1780\nFRAME: 365T     SF: 1.15     INSUL CLASS: F\n\nINSULATION RESISTANCE - MEGGER MIT515 @ 1000 VDC\nWINDING-GND 1 MIN: 850 MΩ       10 MIN: 3570 MΩ\nPOLARIZATION INDEX: 4.20        EXPECTED: >=2.0       PASS\nMINIMUM IR: >=100 MΩ            RESULT: PASS\n\nOVERALL CONDITION: ACCEPTABLE - GREEN",
+    "groundTruth": {
+      "serialNumber": "WG16-77120-B",
+      "manufacturer": "WEG",
+      "model": "W22-075T4",
+      "testDate": "2023-02-27",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 850, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "polarization_index", "phase": null, "asFoundValue": 4.2, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_011",
+    "equipment": {
+      "type": "MOTOR",
+      "manufacturer": "Baldor",
+      "model": "EM4103T",
+      "serialNumber": "BSZI-IOSB",
+      "voltageClass": "480V",
+      "kva": null,
+      "amperage": 65,
+      "year": 2019
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 42, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "RED", "critical": true },
+      { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.6, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "partial_ocr",
+    "extractedText": "POWERDB TEST FORMS\nAC INDUCTION MOTOR TEST REPORT\nJOB NO: 24-0071        TEST DATE: 01/16/2024\nMANUFACTURER: BALDOR            MODEL: EM4103T\nSERIAL NO: BSZI-IOSB            YEAR: 2019\nHP: 50      VOLTS: 480      FLA: 65      RPM: 1775\n\nINSULATION RESISTANCE - MEGGER MIT515 @ 1000 VDC\n1 MIN: 42 M?        10 MIN: 109 M?\nPOLARIZATION INDEX: 2.60      EXPECTED: >=2.0      PASS\nMINIMUM IR: >=100 MOhm        RESULT: FAIL - RED\nNOTE: winding moisture suspected - space heater found de-energ",
+    "groundTruth": {
+      "serialNumber": "BSZI-IOSB",
+      "manufacturer": "Baldor",
+      "model": "EM4103T",
+      "testDate": "2024-01-16",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 42, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "RED", "critical": true },
+        { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.6, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_012",
+    "equipment": {
+      "type": "MOTOR",
+      "manufacturer": "Siemens",
+      "model": "1LA8-405-4",
+      "serialNumber": "SM89-40217-K",
+      "voltageClass": "4160V",
+      "kva": null,
+      "amperage": 362,
+      "year": 1989
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 145, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.9, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "garbled_ocr",
+    "extractedText": "P0WERDB AC M0T0R TEST REP0RT\nJ0B 15-0233 DATE 06/09/2015\nMFR SIEMENS M0DEL 1LA8-405-4 SN SM89-40217-K YR 1989\nHP 2500 V0LTS 4160 FLA 362 RPM 1789 FRAME 800\nINSULATI0N RESISTANCE 5000VDC MEGGER S1-5010\n1MIN 14\n5 M0hm 10MIN 276 M0hm PI 1.9 >=2.0 MARGINAL YELL0W\nMINIMUM >=100 M0hm PASS\n0VERALL YELL0W ~| retest 6 m0",
+    "groundTruth": {
+      "serialNumber": "SM89-40217-K",
+      "manufacturer": "Siemens",
+      "model": "1LA8-405-4",
+      "testDate": "2015-06-09",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 145, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.9, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_013",
+    "equipment": {
+      "type": "MOTOR",
+      "manufacturer": "GE",
+      "model": "5K6339XC",
+      "serialNumber": "GEM-55023-D2",
+      "voltageClass": "4160V",
+      "kva": null,
+      "amperage": 188,
+      "year": 1847
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 1.2, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "RED", "critical": true },
+      { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.1, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "partial_ocr",
+    "extractedText": "POWERDB TEST FORMS\nAC INDUCTION MOTOR TEST REPORT\nJOB NO: 19-0810        TEST DATE: 08/24/2019\nMANUFACTURER: GE                MODEL: 5K6339XC\nSERIAL NO: GEM-55023-D2         YEAR MFG: 1847\nHP: 700     VOLTS: 4160     FLA: 188     RPM: 3580\n\nINSULATION RESISTANCE @ 2500 VDC\n1 MIN: 1.2 MOhm       10 MIN: 1.3\nPOLARIZATION INDEX: 1.10      EXPECTED: >=2.0      MARGINAL - YELLOW\nMINIMUM IR: >=100 M?          RESULT: FAIL - RED\nRECOMMENDATION: DO NOT ENERGIZE - WINDING WET/CONTAMINATED",
+    "groundTruth": {
+      "serialNumber": "GEM-55023-D2",
+      "manufacturer": "GE",
+      "model": "5K6339XC",
+      "testDate": "2019-08-24",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 1.2, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "RED", "critical": true },
+        { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.1, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_014",
+    "equipment": {
+      "type": "CIRCUIT_BREAKER",
+      "manufacturer": "ABB",
+      "model": "Emax E2N-1600",
+      "serialNumber": "AB14-E2N-7731",
+      "voltageClass": "480V",
+      "kva": null,
+      "amperage": 1600,
+      "year": 2014
+    },
+    "measurements": [
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 62, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 58, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 66, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "trip_time", "phase": "A", "asFoundValue": 42.5, "asFoundUnit": "sec", "expectedRange": "<=40", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS\nLOW VOLTAGE POWER CIRCUIT BREAKER TEST REPORT\nJOB NO: 21-0930        TEST DATE: 10/05/2021       AMB: 24 C\nLOCATION: MAIN SWITCHBOARD MSB-1          CUBICLE: 3B\n\nNAMEPLATE DATA\nMANUFACTURER: ABB             MODEL: EMAX E2N-1600\nSERIAL NO: AB14-E2N-7731      YEAR: 2014\nFRAME: 1600 A     VOLTAGE: 480 V     TRIP UNIT: PR122/P LSIG\nSENSOR: 1600 A    IC: 65 KA\n\nCONTACT RESISTANCE - DLRO 10HD (µΩ)\nPHASE     AS-FOUND     EXPECTED     RESULT\nA         62           <=100        PASS\nB         58           <=100        PASS\nC         66           <=100        PASS\n\nPRIMARY INJECTION - LONG TIME @ 300% (4800 A)\nPHASE A TRIP TIME: 42.5 SEC     EXPECTED: <=40 SEC     MARGINAL - YELLOW\n\nOVERALL CONDITION: YELLOW - LT DELAY DRIFT, RECALIBRATE TRIP UNIT",
+    "groundTruth": {
+      "serialNumber": "AB14-E2N-7731",
+      "manufacturer": "ABB",
+      "model": "Emax E2N-1600",
+      "testDate": "2021-10-05",
+      "measurements": [
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 62, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 58, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 66, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "trip_time", "phase": "A", "asFoundValue": 42.5, "asFoundUnit": "sec", "expectedRange": "<=40", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_015",
+    "equipment": {
+      "type": "CIRCUIT_BREAKER",
+      "manufacturer": "Cutler-Hammer",
+      "model": "150DHP-VR1200",
+      "serialNumber": "CH88-DHP-0341",
+      "voltageClass": "13800V",
+      "kva": null,
+      "amperage": 1200,
+      "year": 1988
+    },
+    "measurements": [
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 310, "asFoundUnit": "µΩ", "expectedRange": "<=300", "passFail": "YELLOW", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 265, "asFoundUnit": "µΩ", "expectedRange": "<=300", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 248, "asFoundUnit": "µΩ", "expectedRange": "<=300", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 9800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "trip_time", "phase": null, "asFoundValue": 0.071, "asFoundUnit": "sec", "expectedRange": "<=0.06", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "partial_ocr",
+    "extractedText": "POWERDB TEST FORMS\nMEDIUM VOLTAGE AIR CIRCUIT BREAKER TEST REPORT\nJOB: 16-0402     DATE: 04/14/2016\nMANUFACTURER: CUTLER-HAMMER     MODEL: 150DHP-VR1200\nSERIAL: CH88-DHP-0341           YEAR: 1988\nRATED: 13800 V    CONT: 1200 A    IC: 500 MVA\n\nCONTACT RESISTANCE (uOhm) - DLRO\nA: 310       B: 265       C: 248\nEXPECTED: <=300       A-PHASE: INVESTIGATE - YELLOW\n\nINSULATION RESISTANCE @ 2500 VDC: 9800 M?     >=1000     PASS\n\nTIMING TEST - OPEN\nAVG OPEN TIME: 0.071 SEC      EXPECTED: <=0.06\nRESULT: SLOW - YELLOW / lubricate mechanism\nCLOSE TIME:",
+    "groundTruth": {
+      "serialNumber": "CH88-DHP-0341",
+      "manufacturer": "Cutler-Hammer",
+      "model": "150DHP-VR1200",
+      "testDate": "2016-04-14",
+      "measurements": [
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 310, "asFoundUnit": "µΩ", "expectedRange": "<=300", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 265, "asFoundUnit": "µΩ", "expectedRange": "<=300", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 248, "asFoundUnit": "µΩ", "expectedRange": "<=300", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 9800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "trip_time", "phase": null, "asFoundValue": 0.071, "asFoundUnit": "sec", "expectedRange": "<=0.06", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_016",
+    "equipment": {
+      "type": "CIRCUIT_BREAKER",
+      "manufacturer": "Siemens",
+      "model": "SDV7-38-1200",
+      "serialNumber": "SI10-SDV-4482",
+      "voltageClass": "34500V",
+      "kva": null,
+      "amperage": 1200,
+      "year": 2010
+    },
+    "measurements": [
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 41, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 39, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 58, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "YELLOW", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 31000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "trip_time", "phase": null, "asFoundValue": 0.064, "asFoundUnit": "sec", "expectedRange": "<=0.06", "passFail": "YELLOW", "critical": false }
+    ],
+    "textQuality": "garbled_ocr",
+    "extractedText": "P0WERDB MV VACUUM BREAKER REP0RT\nJ0B 20-1155 DATE 12/02/2020\nMFR SIEMENS M0DEL SDV7-38-1200 SN SI10-SDV-4482 YR 2010\nRATED 34500V 1200A BIL 170KV\nC0NTACT RESISTANCE DLR0 uO A 41 B 3\n9 C 58 <=50 C-PHASE MARGINAL YELL0W\nIR 5000VDC 31000 M0hm >=5000 PASS ~#\nTIMING 0PEN 0.064 SEC <=0.06 MARGINAL YELL0W\n0VERALL YELL0W",
+    "groundTruth": {
+      "serialNumber": "SI10-SDV-4482",
+      "manufacturer": "Siemens",
+      "model": "SDV7-38-1200",
+      "testDate": "2020-12-02",
+      "measurements": [
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 41, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 39, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 58, "asFoundUnit": "µΩ", "expectedRange": "<=50", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 31000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "trip_time", "phase": null, "asFoundValue": 0.064, "asFoundUnit": "sec", "expectedRange": "<=0.06", "passFail": "YELLOW", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_017",
+    "equipment": {
+      "type": "CIRCUIT_BREAKER",
+      "manufacturer": "Square D",
+      "model": "PowerPact PG800-LSI",
+      "serialNumber": "SQ20-PG8-1147",
+      "voltageClass": "480V",
+      "kva": null,
+      "amperage": 800,
+      "year": 2020
+    },
+    "measurements": [
+      { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 88, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 92, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 95, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+      { "measurementType": "trip_time", "phase": "B", "asFoundValue": 0.31, "asFoundUnit": "sec", "expectedRange": "<=0.05", "passFail": "RED", "critical": true }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS\nLOW VOLTAGE INSULATED CASE CIRCUIT BREAKER TEST REPORT\nJOB NO: 24-0517        TEST DATE: 05/21/2024       AMB: 26 C\nLOCATION: DIST PANEL DP-4          POSITION: MAIN\n\nNAMEPLATE DATA\nMANUFACTURER: SQUARE D          MODEL: POWERPACT PG800-LSI\nSERIAL NO: SQ20-PG8-1147        YEAR: 2020\nFRAME: 800 A     VOLTAGE: 480 V     TRIP: MICROLOGIC 3.0\n\nCONTACT RESISTANCE - DLRO (µΩ)\nPHASE     AS-FOUND     EXPECTED     RESULT\nA         88           <=100        PASS\nB         92           <=100        PASS\nC         95           <=100        PASS\n\nPRIMARY INJECTION - INSTANTANEOUS @ 800% (6400 A)\nPHASE B TRIP TIME: 0.310 SEC     EXPECTED: <=0.05 SEC     FAIL - RED\nRETEST: 0.298 SEC - CONFIRMED FAIL\nRECOMMENDATION: REPLACE BREAKER - DO NOT RETURN TO SERVICE\n\nOVERALL CONDITION: UNACCEPTABLE - RED",
+    "groundTruth": {
+      "serialNumber": "SQ20-PG8-1147",
+      "manufacturer": "Square D",
+      "model": "PowerPact PG800-LSI",
+      "testDate": "2024-05-21",
+      "measurements": [
+        { "measurementType": "contact_resistance", "phase": "A", "asFoundValue": 88, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "B", "asFoundValue": 92, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "contact_resistance", "phase": "C", "asFoundValue": 95, "asFoundUnit": "µΩ", "expectedRange": "<=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "trip_time", "phase": "B", "asFoundValue": 0.31, "asFoundUnit": "sec", "expectedRange": "<=0.05", "passFail": "RED", "critical": true }
+      ]
+    }
+  },
+  {
+    "id": "report_018",
+    "equipment": {
+      "type": "CABLE",
+      "manufacturer": "Okonite",
+      "model": "Okoguard-URO 15kV 500",
+      "serialNumber": "OKN-R55082-3",
+      "voltageClass": "13800V",
+      "kva": null,
+      "amperage": 310,
+      "year": 2001
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 45000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 52000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 48500, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "power_factor", "phase": "A", "asFoundValue": 0.12, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "clean",
+    "extractedText": "POWERDB TEST FORMS\nMEDIUM VOLTAGE CABLE TEST REPORT\nJOB NO: 18-0781        TEST DATE: 09/13/2018       AMB: 23 C\nCIRCUIT: FEEDER F-6, SUB 1 TO MCC-6          LENGTH: 420 FT\n\nCABLE DATA\nMANUFACTURER: OKONITE       TYPE: OKOGUARD-URO 15KV 500 KCMIL\nREEL/SERIAL NO: OKN-R55082-3       YEAR: 2001\nINSULATION: EPR 220 MIL     RATED: 15 KV (CIRCUIT: 13800 V)     AMPACITY: 310 A\n\nINSULATION RESISTANCE - MEGGER S1-5010 @ 5000 VDC (MΩ)\nA-G: 45000      B-G: 52000      C-G: 48500\nMINIMUM ACCEPTABLE: >=1000 MΩ       RESULT: PASS\n\nVLF TAN DELTA @ 1.5 UO (0.1 HZ)\nPHASE A: 0.12 %      EXPECTED: <=0.5 %      PASS\n\nOVERALL CONDITION: ACCEPTABLE - GREEN",
+    "groundTruth": {
+      "serialNumber": "OKN-R55082-3",
+      "manufacturer": "Okonite",
+      "model": "Okoguard-URO 15kV 500",
+      "testDate": "2018-09-13",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 45000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 52000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 48500, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "power_factor", "phase": "A", "asFoundValue": 0.12, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  },
+  {
+    "id": "report_019",
+    "equipment": {
+      "type": "CABLE",
+      "manufacturer": "Prysmian",
+      "model": "Airguard 35kV 750 EPR",
+      "serialNumber": "PRY-07-88231",
+      "voltageClass": "34500V",
+      "kva": null,
+      "amperage": 420,
+      "year": 2007
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 38000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 4200, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "YELLOW", "critical": false },
+      { "measurementType": "power_factor", "phase": "B", "asFoundValue": 1.4, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "RED", "critical": true }
+    ],
+    "textQuality": "partial_ocr",
+    "extractedText": "POWERDB TEST FORMS\nMEDIUM VOLTAGE CABLE TEST REPORT\nJOB: 22-1290     DATE: 11/08/2022\nCIRCUIT: 34.5KV TIE LINE, SUB N1 TO SUB S2\nMANUFACTURER: PRYSMIAN      TYPE: AIRGUARD 35KV 750 KCMIL EPR\nREEL/SERIAL: PRY-07-88231        YEAR: 2007\nRATED: 35 KV (CIRCUIT 34500 V)      AMPACITY: 420 A\n\nINSULATION RESISTANCE @ 5000 VDC\nA-G: 38000 M?      B-G: 4200 M?      C-G:\nMINIMUM: >=5000 MOhm\nA: PASS     B: INVESTIGATE - YELLOW     C: NOT TESTED - ELBOW INACCESSIBLE\n\nVLF TAN DELTA @ 1.5 UO\nPHASE B: 1.40 %      EXPECTED: <=0.5 %      FAIL - RED\nTD TIP-UP B: HIGH - water tree degradation suspected\nRECOMMENDATION: REPLACE B-PHASE CONDUCTOR",
+    "groundTruth": {
+      "serialNumber": "PRY-07-88231",
+      "manufacturer": "Prysmian",
+      "model": "Airguard 35kV 750 EPR",
+      "testDate": "2022-11-08",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 38000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 4200, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "power_factor", "phase": "B", "asFoundValue": 1.4, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "RED", "critical": true }
+      ]
+    }
+  },
+  {
+    "id": "report_020",
+    "equipment": {
+      "type": "CABLE",
+      "manufacturer": "Southwire",
+      "model": "HCF 5kV 350",
+      "serialNumber": "SW93-C0182-B",
+      "voltageClass": "4160V",
+      "kva": null,
+      "amperage": 225,
+      "year": 1993
+    },
+    "measurements": [
+      { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 9200, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+      { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 85, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "RED", "critical": true },
+      { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 8800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false }
+    ],
+    "textQuality": "garbled_ocr",
+    "extractedText": "P0WERDB MV CABLE TEST REP0RT\nJ0B 15-0119 DATE 03/26/2015\nCIRCUIT PUMPH0USE FDR P-2\nMFR S0UTHWIRE TYPE HCF 5KV 350 KCMIL SN SW93-C0182-B YR 1993\nRATED 5KV CIRCUIT 4160V AMPACITY 225A\nINSULATI0N RESISTANCE 2500VDC M0hm\nA-G 92\n00 B-G 85 C-G 8800 >=1000\nA PASS B FAIL RED C PASS ~#|\nn0te: B phase splice at MH-4 suspect m0isture ingress\n0VERALL RED - REPLACE 0R RESPLICE B PHASE",
+    "groundTruth": {
+      "serialNumber": "SW93-C0182-B",
+      "manufacturer": "Southwire",
+      "model": "HCF 5kV 350",
+      "testDate": "2015-03-26",
+      "measurements": [
+        { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 9200, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 85, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "RED", "critical": true },
+        { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 8800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false }
+      ]
+    }
+  }
+]

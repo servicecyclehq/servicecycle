@@ -27,7 +27,10 @@ const MEASUREMENT_VOCAB: any = {
   'dissolved gas':         { type: 'dissolved_gas',         unit: 'ppm', bad: 'up',   critical: false },
   'turns ratio':           { type: 'turns_ratio_measured',  unit: 'ratio', bad: 'up', critical: false },
   'ground fault':          { type: 'ground_fault_pickup',   unit: 'A',   bad: 'up',   critical: true },
-  'trip test':             { type: 'trip_time',             unit: 'sec', bad: 'up',   critical: true },
+  'trip test':             { type: 'trip_time',             unit: 'ms',  bad: 'up',   critical: true },
+  'trip time':             { type: 'trip_time',             unit: 'ms',  bad: 'up',   critical: true },
+  'timing test':           { type: 'trip_time',             unit: 'ms',  bad: 'up',   critical: true },
+  'operating time':        { type: 'trip_time',             unit: 'ms',  bad: 'up',   critical: true },
 };
 const LABELS = Object.keys(MEASUREMENT_VOCAB);
 
@@ -140,7 +143,13 @@ function parseTestReport(rawText: string) {
     serialNumber: firstMatch(/Serial(?:\s*Number)?\s*[:#]?\s*([A-Za-z0-9._-]+)/i, text),
     model:        firstMatch(/Model\s*[:#]?\s*([A-Za-z0-9._-]+)/i, text),
     manufacturer: firstMatch(/Manufacturer\s*[:#]?\s*([A-Za-z0-9._&-]+)/i, text),
-    testDate:     firstMatch(/Test\s*Date\s*[:#]?\s*(\d{4}-\d{2}-\d{2})/i, text),
+    // [NETA-8-8] PowerDB prints dates as MM/DD/YYYY; normalise to ISO YYYY-MM-DD.
+    testDate: (() => {
+      const iso = firstMatch(/Test\s*Date\s*[:#]?\s*(\d{4}-\d{2}-\d{2})/i, text);
+      if (iso) return iso;
+      const m = text.match(/Test\s*Date\s*[:#]?\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+      return m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : null;
+    })(),
     vendor:       firstMatch(/Vendor\s*[:#]?\s*([A-Za-z0-9 .&-]+?)(?:\s{2,}|\sTechnician|\sTech\b|$)/i, text),
     techName:     firstMatch(/Techn?icians?\s*[:#]?\s*([A-Za-z0-9 .]+?)(?:\s{2,}|$)/i, text),
   };
@@ -184,7 +193,15 @@ function parseTestReport(rawText: string) {
     let valueScope = seg.replace(label, '');
     valueScope = valueScope
       .replace(/Test\s*Voltage\s*[\d.]+\s*k?V?DC?/ig, ' ')
-      .replace(/Expected\s*[<>]=?\s*[\d.]+\s*[A-Za-zµΩ%]*/ig, ' ');
+      .replace(/Expected\s*[<>]=?\s*[\d.]+\s*[A-Za-zµΩ%]*/ig, ' ')
+      // [NETA-8-6] Strip test-condition voltage suffixes ("@ 5000 VDC", "@ 10 KV") that
+      // appear in instrument headers like "MEGGER MIT1025 @ 5000 VDC" and "DOBLE M4100 @ 10 KV".
+      // Without this strip the @ voltage wins the bare-number fallback over the actual reading.
+      .replace(/@\s*[\d.]+\s*(?:k?VDC?|k?VAC?|KV)\b/ig, ' ')
+      // [NETA-8-7] Strip "N MIN" time-column headers in multi-row IR tables ("1 MIN", "10 MIN").
+      // These small integers precede the actual MΩ readings and beat them in the bare-number
+      // fallback when no unit-anchored match is found.
+      .replace(/\b\d+\s+min\b/ig, ' ');
     // Prefer "<number><unit>" so the reading (which carries the measurement unit)
     // wins over a bare number elsewhere in the row.
     const valueStr = firstMatch(/([\d]+(?:\.\d+)?)\s*(?:MΩ|Mohm|kΩ|Ω|µΩ|uOhm|mΩ|ppm|%|kV|VDC|A|sec|ratio)\b/i, valueScope)
