@@ -21,6 +21,7 @@ const router = require('express').Router();
 const multer = require('multer');
 const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { uploadFile } = require('../lib/storage');
 const { extractArcFlashDocument } = require('../lib/arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('../lib/arcFlashGap');
@@ -2330,6 +2331,16 @@ router.get('/asset/:assetId/label.pdf', async (req: any, res: any) => {
       getAccountBranding(accountId).catch(() => null),
     ]);
     const m = buildLabelModel(current, { facilityName: account?.companyName || null, brandName: branding?.name || null });
+    // 2026-07-03 scan P0 (SCAN 4): NFPA 70E labels get physically posted on
+    // equipment -- record who generated which label. Fire-and-forget after every
+    // lookup succeeded (404 paths above never log) and before the PDF streams.
+    writeActivityLog({
+      assetId:   asset.id,
+      userId:    req.user.id,
+      accountId: req.user.accountId,
+      action:    'arc_flash_label_generated',
+      details:   { scope: 'single', busName: m.busName || null, studyId: current.studyId || null },
+    });
     streamLabelPdf(res, `arc-flash-label-${(m.busName || 'equipment').replace(/[^a-z0-9]+/gi, '-')}.pdf`, (doc: any) => {
       doc.addPage(); drawArcFlashLabel(doc, 0, 0, LABEL_W, LABEL_H, m);
     });
@@ -2358,6 +2369,16 @@ router.get('/labels.pdf', async (req: any, res: any) => {
     ]);
     const facilityName = account?.companyName || null;
     const brandName = branding?.name || null;
+    // 2026-07-03 scan P0 (SCAN 4): audit bulk label printing too -- one row for
+    // the batch (count + optional site scope), logged after the row fetch
+    // succeeded (the empty-set 404 above never logs) and before streaming.
+    writeActivityLog({
+      assetId:   null,
+      userId:    req.user.id,
+      accountId: req.user.accountId,
+      action:    'arc_flash_label_generated',
+      details:   { scope: 'bulk', labelCount: rows.length, siteId: req.query.siteId ? String(req.query.siteId) : null },
+    });
     streamLabelPdf(res, `arc-flash-labels-${new Date().toISOString().slice(0, 10)}.pdf`, (doc: any) => {
       for (const r of rows) {
         const m = buildLabelModel(r, { facilityName, brandName });

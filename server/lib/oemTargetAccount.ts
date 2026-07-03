@@ -4,8 +4,8 @@
  * Resolves the account a request operates on. Normally that's the caller's own
  * account, but an oem_admin may act on one of its fleet customer accounts by
  * passing targetAccountId (query or body). The target must belong to the OEM's
- * partner org — or any account when the OEM has no partnerOrgId, matching the
- * fleet-dashboard demo scoping. Throws an error carrying httpStatus on a
+ * partner org; an oem_admin with no partnerOrgId has no fleet and may only
+ * target its own account. Throws an error carrying httpStatus on a
  * cross-fleet attempt so callers can map it to a 403/404.
  */
 
@@ -24,7 +24,17 @@ export async function resolveTargetAccount(req: any): Promise<string> {
       prisma.account.findUnique({ where: { id: String(raw) }, select: { id: true, partnerOrgId: true } }),
     ]);
     if (!target) throw new TargetAccountError(404, 'Target account not found');
-    if (oem?.partnerOrgId && target.partnerOrgId !== oem.partnerOrgId) {
+    // TENANCY: fleet membership requires a partner org on BOTH sides. An
+    // oem_admin with no partnerOrgId has no fleet, so it may only "target"
+    // its own account; previously the null case skipped the check entirely
+    // and accepted any accountId (cross-tenant write).
+    if (!oem?.partnerOrgId) {
+      if (target.id !== req.user.accountId) {
+        throw new TargetAccountError(403, 'Account is not in your fleet');
+      }
+      return target.id;
+    }
+    if (target.partnerOrgId !== oem.partnerOrgId) {
       throw new TargetAccountError(403, 'Account is not in your fleet');
     }
     return target.id;

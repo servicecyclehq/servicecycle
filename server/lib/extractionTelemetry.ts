@@ -126,18 +126,24 @@ async function findPriorImport(p: { accountId: string; sha256: string }): Promis
  * many fields were committed, how many the human changed, and the field-level
  * before/after diff. No-op when extractionId is falsy (telemetry was
  * unavailable at preview, or an older client didn't echo the id).
+ *
+ * TENANCY: extractionId is client-supplied, so the write is scoped to the
+ * committing account via updateMany({ id, accountId }). A valid id belonging
+ * to another tenant matches zero rows and silently no-ops (fail-soft, same as
+ * a spoofed/missing id) instead of performing a cross-tenant write.
  */
 async function recordCommit(p: {
+  accountId: string;
   extractionId?: string | null;
   fieldsCommitted?: number | null;
   corrections?: Array<{ field: string; before: any; after: any; formFamily?: string | null }>;
   reviewMs?: number | null;
 }): Promise<void> {
-  if (!p.extractionId) return;
+  if (!p.extractionId || !p.accountId) return;
   try {
     const corrections = Array.isArray(p.corrections) ? p.corrections : undefined;
-    await prisma.extractionEvent.update({
-      where: { id: p.extractionId },
+    await prisma.extractionEvent.updateMany({
+      where: { id: p.extractionId, accountId: p.accountId },
       data: {
         committedAt: new Date(),
         fieldsCommitted: p.fieldsCommitted ?? null,
@@ -146,6 +152,8 @@ async function recordCommit(p: {
         reviewMs: p.reviewMs ?? null,
       },
     });
+    // count === 0 (foreign or unknown id) is deliberately not an error:
+    // telemetry is fire-and-forget and must never break the commit request.
   } catch (err: any) {
     // A missing/foreign extractionId (e.g. a spoofed client value) just no-ops.
     console.error('[extractionTelemetry] recordCommit failed:', err?.message || err);

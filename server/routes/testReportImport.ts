@@ -157,7 +157,7 @@ router.post('/commit', async (req: any, res: any) => {
       }, { measurementsCreated: 0, deficienciesCreated: 0, assetsCreated: 0, assetsCommitted: results.length });
 
       await recordCommit({
-        extractionId, fieldsCommitted: totals.measurementsCreated,
+        accountId, extractionId, fieldsCommitted: totals.measurementsCreated,
         corrections: Array.isArray(corrections) ? corrections : undefined,
         reviewMs: Number.isFinite(Number(reviewMs)) ? Number(reviewMs) : null,
       });
@@ -188,7 +188,7 @@ router.post('/commit', async (req: any, res: any) => {
     // send `corrections` still record the committed count + close the row for
     // the #5 dedupe check. Fire-and-forget.
     await recordCommit({
-      extractionId, fieldsCommitted: r.measurementsCreated,
+      accountId, extractionId, fieldsCommitted: r.measurementsCreated,
       corrections: Array.isArray(corrections) ? corrections : undefined,
       reviewMs: Number.isFinite(Number(reviewMs)) ? Number(reviewMs) : null,
     });

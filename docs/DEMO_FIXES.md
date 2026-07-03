@@ -82,6 +82,9 @@ the live demo and verify each fix behind the gate.
 - **5.1 Assets - Excel-style per-column header filters.** Model on ServiceCycle's contract-page column filtering. Dustin approved a **one-time** look at the ServiceCycle code to review/adapt that filtering - adapt it to ServiceCycle's asset columns.
 - **5.2 Help - "Ask ServiceCycle AI" chatbot** (like ServiceCycle's). Seed the help corpus well; have customers supply their own API key for usage. Lower priority / product decision - confirm with Dustin before building.
 
+### 6. Demo script
+- **6.1 Deficiency -> work-order beat in `docs/DEMO_SCRIPT.md`.** RESOLVED 2026-07-03: the UI has no "create WO from a deficiency" action, so the 2:30 beat was rewritten to the real flow - create the work order first (Work orders -> New work order), then record the finding on that job (POST /api/work-orders/:id/deficiencies).
+
 ---
 
 ## Suggested execution order (minimizes rebuilds)

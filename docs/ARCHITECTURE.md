@@ -25,8 +25,8 @@ reasons about data captured by qualified personnel and PE-stamped studies.
 | Auth | JWT (jose + jsonwebtoken) + bcrypt; optional SSO via Ory Polis (OIDC/SAML/SCIM) | SSO ships dark; `SSO_ENABLED` env flag |
 | File storage | Local filesystem (`./uploads/` bind-mount) OR S3-compatible (env-configured) | Sharp for image processing |
 | PDF generation | pdfkit (arc-flash labels, reports, proposals) | |
-| Email | Resend (transactional + inbound forwarding) | Inbound email -> asset card creation |
-| AI providers | Anthropic Claude (primary), Google Gemini, Groq -- cascade fallback | `lib/aiProviders/` |
+| Email | Brevo (transactional outbound); Resend (inbound forwarding only) | Inbound email -> asset card creation via Resend `email.received` webhook |
+| AI providers | Cloudflare Workers AI (demo default, `AI_PROVIDER=cloudflare`) with automatic fallback cascade Cloudflare -> Groq (`openai/gpt-oss-20b`) -> HuggingFace; Anthropic / OpenAI / Azure OpenAI / Gemini / Groq selectable as single providers (no cascade) | `lib/ai.ts` cascade + `lib/aiProviders/` |
 | Cron | node-cron (in-process) | Alerts, backup, demo-prune, digest |
 | Rate limiting | express-rate-limit (global + per-endpoint) | IP + authenticated budget tiers |
 | Logging | pino + pino-http | JSON structured logs |
@@ -171,13 +171,13 @@ AFX v1 is a versioned open standard anchored on IEEE 1584-2018 + NFPA 70E 130.5(
 It is both the SC export format AND a published interchange specification.
 
 **Flat export:** `GET /api/arc-flash/export?format=csv|json` -- single-table per-bus label data.
-**Multi-table export:** `GET /api/afx/export-multi?tool=afx|etap|easypower&format=xlsx|json` --
+**Multi-table export:** `GET /api/arc-flash/afx/export-multi?tool=afx|etap|easypower&format=xlsx|json` --
   Bus / Cable / Transformer / Device tables with deterministic IDs + topology (fedFromAssetId).
-**Validator:** `POST /api/afx/validate` (flat) + `POST /api/afx/validate-multi` (multi-table).
-**Per-tool templates:** `GET /api/afx/template?tool=arcad|skm|easypower` -- header-mapped CSVs.
-**Crosswalk:** `GET /api/afx/spec` returns the full field catalog + vendor header aliases
+**Validator:** `POST /api/arc-flash/afx/validate` (flat) + `POST /api/arc-flash/afx/validate-multi` (multi-table).
+**Per-tool templates:** `GET /api/arc-flash/afx/template?tool=arcad|skm|easypower` -- header-mapped CSVs.
+**Crosswalk:** `GET /api/arc-flash/afx/spec` returns the full field catalog + vendor header aliases
   (ARCAD/SKM/EasyPower sourced from real vendor files).
-**Import:** `POST /api/afx/import-multi/preview` (dry-run) + `/apply` (fill-only or overwrite,
+**Import:** `POST /api/arc-flash/afx/import-multi/preview` (dry-run) + `/apply` (fill-only or overwrite,
   confirm-gated, atomic $transaction, 5000-row cap, full tenant isolation).
 
 **Competitor interop:**

@@ -130,8 +130,16 @@ router.get('/regional', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
 
+    // TENANCY: system broadcasts (accountId=null) plus this account's own
+    // declarations only, never other tenants' declarations. Matches the
+    // two-bucket scoping in GET / above; without this an account with zero
+    // sites fell through the hasSites filter below and saw every tenant's
+    // manual declarations.
     const systemEvents: any[] = await prisma.disasterEvent.findMany({
-      where:   { resolvedAt: null },
+      where: {
+        resolvedAt: null,
+        OR: [{ accountId: null }, { accountId }],
+      },
       orderBy: { declaredAt: 'desc' },
       take:    100,
     });

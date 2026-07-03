@@ -50,6 +50,10 @@ const CEF_SEVERITY: any = {
   login_failed: 6, login_lockout_triggered: 7, permission_denied: 6, admin_password_reset: 7,
   encryption_enabled: 7, encryption_disabled: 7,
   compliance_snapshot_integrity_failure: 9,
+  // 2026-07-03 scan (SCAN 4): full-tenant export is exfiltration-relevant --
+  // classify alongside the other security-critical privileged ops (sev 7) so
+  // a SIEM triaging on severity surfaces it instead of burying it at 3.
+  account_exported: 7,
 };
 
 const router = express.Router();
@@ -85,6 +89,9 @@ const ACTION_LABELS: any = {
   // Security-critical settings changes
   encryption_enabled:  'Field encryption enabled',
   encryption_disabled: 'Field encryption disabled',
+  // 2026-07-03 acquisition scan (SCAN 4) -- audit-coverage additions
+  account_exported:          'Account data exported',
+  arc_flash_label_generated: 'Arc-flash label PDF generated',
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

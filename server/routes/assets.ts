@@ -278,7 +278,7 @@ async function resolveCustomFields(accountId, customFields) {
 // definitionId) unique; a null canonical value DELETES the row so cleared
 // fields don't linger as empty strings in exports. Returns the display names
 // of fields whose stored value actually changed (feeds fields_updated).
-async function writeCustomFieldValues(assetId, entries, db = prisma) {
+async function writeCustomFieldValues(assetId, entries, db: any = prisma) {
   if (entries.length === 0) return [];
   const existing = await db.customFieldValue.findMany({
     where: { assetId, definitionId: { in: entries.map(e => e.definition.id) } },
@@ -1338,7 +1338,7 @@ router.post('/:id/archive', requireManager, async (req, res) => {
     notifyAssetDecommissioned({
       accountId: req.user.accountId,
       assetId: req.params.id,
-      assetName: existing.name ?? req.params.id,
+      assetName: [existing.manufacturer, existing.model].filter(Boolean).join(' ').trim() || req.params.id,
       decommissionedBy: req.user.name || req.user.email,
     }).catch(() => {});
 

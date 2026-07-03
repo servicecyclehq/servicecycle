@@ -455,11 +455,12 @@ async function _seedAccount() {
     },
   });
 
-  const [adminHash, managerHash, viewerHash, consultantHash] = await Promise.all([
+  const [adminHash, managerHash, viewerHash, consultantHash, techHash] = await Promise.all([
     bcrypt.hash('Admin1234!', 12),
     bcrypt.hash('Manager1234!', 12),
     bcrypt.hash('Viewer1234!', 12),
     bcrypt.hash('Consultant1234!', 12),
+    bcrypt.hash('Tech1234!', 12),
   ]);
   const admin = await prisma.user.create({ data: {
     accountId: account.id, name: 'Avery Sandoval', email: 'admin@demo.local',
@@ -476,6 +477,11 @@ async function _seedAccount() {
   const consultant = await prisma.user.create({ data: {
     accountId: account.id, name: 'Theo Brandt', email: 'consultant@demo.local',
     passwordHash: consultantHash, role: 'consultant',
+  } });
+  // Field-labor login: assigned-jobs-only, default-deny outside /api/field.
+  await prisma.user.create({ data: {
+    accountId: account.id, name: 'Terry Vance', email: 'tech@demo.local',
+    passwordHash: techHash, role: 'field_tech',
   } });
 
   // Pre-seeded account — skip the onboarding wizard.
@@ -764,12 +770,13 @@ async function _seedAccount() {
   // completedAgo anchors lastCompletedDate to pair with COMPLETE work orders.
   //
   // Engineered buckets:
-  //   OVERDUE (3):  SWGR-2M IR scan 120d overdue (C3 + >90d ⇒ regulatory-
-  //                 breach alert tier), T-1 oil screen 25d, GEN-1 load bank 9d
-  //   ≤30d (4):     GEN-1 monthly exercise (~10d, via 20d-ago completion),
-  //                 T-2 DGA 22d, SWGR-1A-2 IR 27d, GEN-E1 monthly exercise 6d
-  //   60–90d (5):   SWGR-1A-3 IR 64d, GEN-E1 fuel analysis 70d, T-1 TTR 75d,
-  //                 T-E1 DGA 82d, SWGR-2M insulation resistance 88d
+  //   OVERDUE (6):  SWGR-2M IR scan 120d overdue (C3 + >90d ⇒ regulatory-
+  //                 breach alert tier), T-1 oil screen 25d, GEN-1 load bank 9d,
+  //                 ATS-1 IR 18d, BATT-1 ohmic 14d, SWGR-2M insulation ~418d
+  //                 (via its completedAgo: 600 WO #16 anchor below)
+  //   ≤30d (3):     GEN-1 monthly exercise (~10d, via 20d-ago completion),
+  //                 T-2 DGA 22d, GEN-E1 monthly exercise 6d
+  //   60–90d (3):   SWGR-1A-3 IR 64d, GEN-E1 fuel analysis 70d, T-1 TTR 75d
   //   future:       everything else spreads deterministically from ~120d out
   const story = {
     // overdue
@@ -781,7 +788,6 @@ async function _seedAccount() {
     // due within 30 days
     'GEN-1:GEN_MONTHLY_EXERCISE':   { completedAgo: 20 }, // due ≈ +10d; pairs with WO #1
     'T-2:XFMR_DGA':                 { dueIn: 22 },
-    'SWGR-1A-2:SWGR_IR_THERMO':     { dueIn: 27 },
     'GEN-E1:GEN_MONTHLY_EXERCISE':  { dueIn: 6 },
     'ATS-1:ATS_MONTHLY_TRANSFER':   { completedAgo: 12 }, // monthly transfer test CURRENT, due ≈ +18d
     'ELTG-1:ELTG_MONTHLY_FUNCTIONAL': { completedAgo: 10 }, // monthly functional CURRENT, due ≈ +20d
@@ -789,8 +795,6 @@ async function _seedAccount() {
     'SWGR-1A-3:SWGR_IR_THERMO':     { dueIn: 64 },
     'GEN-E1:GEN_FUEL_ANALYSIS':     { dueIn: 70 },
     'T-1:XFMR_TTR':                 { dueIn: 75 },
-    'T-E1:XFMR_DGA':                { dueIn: 82 },
-    'SWGR-2M:SWGR_INSULATION_RES':  { dueIn: 88 },
     // anchors for the COMPLETE work orders below
     'SWGR-1A-1:SWGR_INSULATION_RES': { completedAgo: 45 }, // pairs with WO #2 (YELLOW)
     'T-2:XFMR_INSULATION_RES':       { completedAgo: 30 }, // pairs with WO #1 (GREEN)
@@ -801,6 +805,12 @@ async function _seedAccount() {
     'SWGR-1A-1:SWGR_IR_THERMO':      { completedAgo: 365 },
     'SWGR-1A-2:SWGR_INSULATION_RES': { completedAgo: 120 },
     'SWGR-1A-3:SWGR_INSULATION_RES': { completedAgo: 380 },
+    'SWGR-1A-2:SWGR_IR_THERMO':      { completedAgo: 210 }, // pairs with WO #12; due ~ +155d
+    'T-E1:XFMR_DGA':                 { completedAgo: 200 }, // pairs with WO #8; due ~ +165d
+    // Pairs with WO #16 (the last documented test). 6-month C3 interval puts
+    // this ~418d overdue -- the mezzanine problem child's insulation-resistance
+    // program lapsed along with everything else on that lineup.
+    'SWGR-2M:SWGR_INSULATION_RES':   { completedAgo: 600 },
     'T-2:XFMR_OIL_QUALITY':          { completedAgo: 150 },
     // GEN-E1:GEN_FUEL_ANALYSIS skipped -- dueIn:70 entry above drives the
     // dashboard; WO #20 uses its own completedDate for EMP history.
@@ -943,8 +953,8 @@ async function _seedAccount() {
     contractorId: murphy.id, assignedTechId: murphyTechs.hale.id,
     netaCertLevel: 'LEVEL_II',
     status: 'SCHEDULED',
-    scheduledDate: addDays(now, 46), // inside the Thanksgiving outage window
-    notes: 'De-energized micro-ohm survey of bus joints; aligned to the Thanksgiving shutdown window.',
+    scheduledDate: addDays(now, 46), // inside the annual production outage window
+    notes: 'De-energized micro-ohm survey of bus joints; aligned to the annual production shutdown window.',
   } });
 
   // ── Work orders: 24-month history (WOs #6-#22) ────────────────────────────
@@ -1018,7 +1028,8 @@ async function _seedAccount() {
 
   // WO #10 -- COMPLETE: SWGR-1A-1 IR thermography ~12 months ago (Apex, C2 YELLOW).
   // Moderate hotspot found, noted but within NETA MTS acceptable range.
-  await prisma.workOrder.create({ data: {
+  // Bound to a variable: deficiency def5 below is the finding this WO logged.
+  const wo10 = await prisma.workOrder.create({ data: {
     accountId: account.id,
     scheduleId: schedules['SWGR-1A-1:SWGR_IR_THERMO'].id,
     assetId: assets['SWGR-1A-1'].id,
@@ -1262,8 +1273,11 @@ async function _seedAccount() {
 
   // Additional deficiencies: fuller severity breakdown for the Overdue
   // Maintenance by Severity report and the EMP Section 6 open-deficiency table.
+  // def5 is the finding WO #10 (SWGR-1A-1 IR thermography, completed -365d)
+  // logged -- description mirrors that WO's notes and createdAt matches its
+  // completedDate.
   const def5 = await prisma.deficiency.create({ data: {
-    accountId: account.id, assetId: assets['SWGR-1A-1'].id, workOrderId: wo5.id,
+    accountId: account.id, assetId: assets['SWGR-1A-1'].id, workOrderId: wo10.id,
     severity: 'RECOMMENDED',
     description: 'C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient at 62% load (NETA MTS Table 100.18: probable deficiency, repair as time permits -- 11-20 deg C over-ambient band)',
     correctiveAction: 'Clean and re-torque C-phase bus connection at next outage window; re-image under load to confirm resolution.',
@@ -1617,7 +1631,7 @@ async function _seedAccount() {
     accountId: account.id, siteId: riverside.id,
     startsAt: outageStart, endsAt: addDays(outageStart, 2), // 48 hours
     isOutageWindow: true,
-    reason: 'Annual Thanksgiving production shutdown',
+    reason: 'Annual production shutdown',
   } });
 
   // ── Alerts (G2/F5) ────────────────────────────────────────────────────────
@@ -1658,10 +1672,11 @@ async function _seedAccount() {
     { sched: 'GEN-E1:GEN_MONTHLY_EXERCISE', type: 'maintenance_due', leadDays: 7,  at: -1,  status: 'sent' },
     { sched: 'T-2:XFMR_DGA',                type: 'maintenance_due', leadDays: 30, at: -8,  status: 'sent' },
     { sched: 'GEN-E1:GEN_FUEL_ANALYSIS',    type: 'maintenance_due', leadDays: 90, at: -20, status: 'sent' },
-    // Queued-not-yet-emailed rows (90d tier already passed for these — the
-    // engine won't re-cross it, so no duplicate risk).
-    { sched: 'T-1:XFMR_TTR',                type: 'maintenance_due', leadDays: 90, at: -15, status: 'pending' },
-    { sched: 'T-E1:XFMR_DGA',               type: 'maintenance_due', leadDays: 90, at: -8,  status: 'pending' },
+    // Queued-not-yet-emailed rows (the lead tier already passed for these — the
+    // engine won't re-cross it, so no duplicate risk). T-1 TTR due +75d -> 90d
+    // tier crossed 15d ago; T-E1 DGA due ~+165d -> 180d tier crossed 15d ago.
+    { sched: 'T-1:XFMR_TTR',                type: 'maintenance_due', leadDays: 90,  at: -15, status: 'pending' },
+    { sched: 'T-E1:XFMR_DGA',               type: 'maintenance_due', leadDays: 180, at: -15, status: 'pending' },
   ];
   let alertCount = 0;
   for (const a of alertSpecs) {
@@ -2649,6 +2664,7 @@ if (require.main === module) {
       console.log('  manager@demo.local    / Manager1234!');
       console.log('  viewer@demo.local     / Viewer1234!');
       console.log('  consultant@demo.local / Consultant1234!');
+      console.log('  tech@demo.local       / Tech1234!');
       return prisma.$disconnect();
     })
     .catch(async (err) => {

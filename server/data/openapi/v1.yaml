@@ -202,10 +202,9 @@ components:
         id:          { type: string, format: uuid }
         assetId:     { type: string, format: uuid }
         workOrderId: { type: string, format: uuid, nullable: true }
-        severity:    { type: string, enum: [CRITICAL, HIGH, MEDIUM, LOW] }
-        code:        { type: string, nullable: true }
+        severity:    { type: string, enum: [IMMEDIATE, RECOMMENDED, ADVISORY] }
         description: { type: string }
-        status:      { type: string, enum: [OPEN, RESOLVED] }
+        correctiveAction: { type: string, nullable: true }
         resolvedAt:  { type: string, format: date-time, nullable: true }
         createdAt:   { type: string, format: date-time }
         updatedAt:   { type: string, format: date-time }
@@ -214,6 +213,9 @@ components:
           properties:
             id:            { type: string, format: uuid }
             equipmentType: { type: string }
+            manufacturer:  { type: string, nullable: true }
+            model:         { type: string, nullable: true }
+            serialNumber:  { type: string, nullable: true }
             site:
               type: object
               nullable: true
@@ -659,10 +661,10 @@ paths:
           schema: { type: integer, default: 50, maximum: 100 }
         - in: query
           name: status
-          schema: { type: string, enum: [OPEN, RESOLVED] }
+          schema: { type: string, enum: [open, resolved] }
         - in: query
           name: severity
-          schema: { type: string, enum: [CRITICAL, HIGH, MEDIUM, LOW] }
+          schema: { type: string, enum: [IMMEDIATE, RECOMMENDED, ADVISORY] }
         - in: query
           name: assetId
           schema: { type: string, format: uuid }
@@ -1126,9 +1128,8 @@ tags:
   - name: Work Orders
     description: Maintenance work orders with bi-directional CMMS integration
   - name: Deficiencies
-    description: Deficiencies found during inspections (CRITICAL / HIGH / MEDIUM / LOW)
+    description: Deficiencies found during inspections (IMMEDIATE / RECOMMENDED / ADVISORY)
   - name: Arc Flash
     description: IEEE 1584 study data, NFPA 70E 130.5(H) labels, and energized-work precheck
   - name: Telemetry
     description: Continuous condition monitoring — ingest readings from edge gateways, configure thresholds, read breach notifications
- 

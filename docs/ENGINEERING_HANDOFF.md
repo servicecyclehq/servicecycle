@@ -26,9 +26,9 @@ Every DB table that holds customer data has an `accountId` column. Every query m
 
 The IDOR test suite (`server/tests/idor.test.js`) was written specifically because a stale cross-account query would be catastrophic. Run it after any route changes. If you find a query that's missing `accountId`, stop and fix it before shipping.
 
-### 2. The encryption key hierarchy matters
+### 2. The encryption design matters
 
-`MASTER_KEY` (base64-encoded 32-byte key in `.env`) encrypts per-account `ENCRYPTED_KEYS`. Those encrypted keys are stored in the DB. When a user authenticates, their account key is decrypted in memory and used for field-level AES-256-GCM encryption on sensitive columns.
+`MASTER_KEY` (base64-encoded 32-byte key in `.env`) directly encrypts a small set of secret account settings at rest — there is no per-account key hierarchy and no decrypt-on-auth step. The `ENCRYPTED_KEYS` set in `server/routes/settings.ts` names three settings: `AI_API_KEY`, `SLACK_WEBHOOK_URL`, and `TEAMS_WEBHOOK_URL`. On write, their values are encrypted with AES-256-GCM (`server/lib/crypto.ts`: `enc.v1:` sentinel + 12-byte IV + 16-byte auth tag + ciphertext, base64-encoded) and stored in the `AccountSetting` table; on read, they are decrypted at the storage boundary so the rest of the request lifecycle handles plaintext. A secondary pattern gate also auto-encrypts any setting key ending in `_API_KEY`, `_SECRET`, `_TOKEN`, `_PASSWORD`, or `_WEBHOOK_URL`.
 
 If you lose `MASTER_KEY`, all encrypted data is unrecoverable. There is no reset path. The key rotation runbook (`docs/KEY_ROTATION.md`) covers the dual-write window for zero-downtime rotation. The key lives only in the VPS `.env` and in your heads — it is not in the repo, not in GitHub secrets, not in the docker image.
 

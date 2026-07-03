@@ -59,7 +59,7 @@ is deferred or manual.
 |---|---|---|---|
 | CC5.1 | Selects and develops control activities over technology | RBAC, account-scoping, audit log, rate limiting | `server/middleware/roles.ts`; `server/index.ts` (limiter stack) | — |
 | CC5.2 | Selects and develops general controls over technology | Dependency audit; CSP headers; HTTPS/TLS; `npm audit --audit-level=high` in CI; Dependabot enabled for server + client + GitHub Actions | `docs/DEPENDENCY_AUDIT_2026-06-18.md`; `.github/dependabot.yml`; `.github/workflows/ci.yml` | — |
-| CC5.3 | Deploys through policies and procedures | Git-gated deploys via documented runbook; GitHub Actions CI runs `tsc --noEmit + jest` on every PR; `npm audit` in CI | `docs/DEPLOY_RUNBOOK.md`; `.github/workflows/ci.yml` | — |
+| CC5.3 | Deploys through policies and procedures | Git-gated deploys via documented runbook; GitHub Actions CI on every PR and branch push runs `npm audit --audit-level=high`, `tsc --noEmit`, the jest `unit` project (`--selectProjects unit`, mocked Prisma), then boots the API server and runs the `health`/`auth`/`aiQuota` smoke tests against it plus a client production build | `docs/DEPLOY_RUNBOOK.md`; `.github/workflows/ci.yml` | jest `integration` project (`server/__tests__/`, real DB) is not wired into CI — executed on demand outside CI via `npm test` (documented in `CONTRIBUTING.md`) |
 
 ### CC6 — Logical and Physical Access Controls
 
@@ -135,7 +135,7 @@ Ordered by impact on an acquirer or enterprise customer's security review:
 
 1. **Automated uptime alerting** — configure Better Stack alert thresholds (30-minute task; no code needed). Closes A1.2 gap.
 2. ~~**Automated SCA / CVE scanning**~~ — ✅ CLOSED. `npm audit --audit-level=high` in CI; `.github/dependabot.yml` monitors server, client, and GitHub Actions weekly. Closes CC5.2 + CC7.1 gap.
-3. ~~**CI pipeline**~~ — ✅ CLOSED. `.github/workflows/ci.yml` runs `tsc --noEmit + jest` (unit + integration) + `npm audit` on every PR. Closes CC5.3 gap.
+3. ~~**CI pipeline**~~ — ✅ CLOSED. `.github/workflows/ci.yml` runs `tsc --noEmit`, the jest `unit` project, the `health`/`auth`/`aiQuota` live-server smoke tests, a client production build, and `npm audit` on every PR and branch push. The jest `integration` project is not run in CI — it is executed on demand outside CI via `npm test`. Closes CC5.3 gap.
 4. **Data retention enforcement** — add a scheduled job to prune records older than the configured retention window. Closes C1.2 gap.
 5. ~~**Formal risk register**~~ — ✅ CLOSED. `docs/RISK_REGISTER.md` documents 10 risks with L×I scoring, mitigations, residual scores, owners, and quarterly review cadence. Closes CC3.2 gap.
 6. ~~**Key rotation runbook**~~ — ✅ CLOSED. `docs/KEY_ROTATION.md` documents zero-downtime rotation for `JWT_SECRET` (dual-verify window), `MASTER_KEY`/`ENCRYPTED_KEYS`, and `BACKUP_ENCRYPTION_KEY`. Closes CC6.8 gap.

@@ -16,6 +16,13 @@
  *   document_accessed         — document download or signed-URL fetch
  *   api_v1_call               — v1 public API request (CC6.8 audit log)
  *
+ * Added by 2026-07-03 acquisition scan (SCAN 4, activity-log coverage):
+ *   account_exported          -- full-tenant export via GET /api/export/account
+ *                               (exfiltration-relevant sibling of the per-user
+ *                               user_data_exported GDPR export)
+ *   arc_flash_label_generated -- NFPA 70E arc-flash label PDF generated
+ *                               (details.scope = 'single' | 'bulk')
+ *
  * NOTE: ActivityLog.userId is nullable as of B4 (migration
  * 20260502160000_activity_log_user_optional). Anonymous events such as
  * login_failed against an unregistered email persist with userId = null.

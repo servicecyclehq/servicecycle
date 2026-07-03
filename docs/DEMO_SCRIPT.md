@@ -3,7 +3,13 @@
 **Format:** ~5-minute live demo, screenshare — rehearsable, one continuous story
 **Audience:** PE operating partner / OEM corp-dev (the person who has to underwrite the asset)
 **Live site:** https://servicecycle.app
-**Login:** `admin@demo.local` / `Admin1234!`  *(also `manager@` / `viewer@` / `consultant@demo.local`, same password)*
+**Logins** *(each account has its own password — see `server/scripts/seed-demo.js`)*:
+- `admin@demo.local` / `Admin1234!` — admin *(drive the demo with this one)*
+- `manager@demo.local` / `Manager1234!` — manager
+- `viewer@demo.local` / `Viewer1234!` — viewer (read-only)
+- `consultant@demo.local` / `Consultant1234!` — consultant
+- `tech@demo.local` / `Tech1234!` — field_tech (field mode)
+- `sam.carter@apexpower.demo` / `Demo1234!` — oem_admin, Apex Power Services partner org *(required for the 4:00 fleet beat — `admin@demo.local` cannot open `/fleet`)*
 **Account:** Meridian Manufacturing — 2 sites (Riverside, Davenport IA · Eastgate, Moline IL), 18 assets, 231 historical work orders
 **One thing to leave them thinking:** *"This is a defensible safety-data asset with a recurring compliance workflow and a channel to scale it."*
 
@@ -26,14 +32,21 @@
 
 ### 1:00 — Drill into the HERO: arc-flash bus **SWGR-1A Main Bus** (the liability story)
 **Do:** Click the DANGER flag → open **SWGR-1A Main Bus (SWGR-1A-1)** → Arc Flash tab.
-**Say:** *"This 13.8 kV main bus computes to 19.6 cal/cm² — a DANGER label — and it's gotten worse, trending up from 14.2 to 19.6, so the hazard is moving the wrong way."*
-**Do (point, don't dwell):** the computed **incident energy**, required **PPE**, and **arc-flash/shock boundaries**; then the **tamper-evident audit trail** and the **logged arc-flash incident** on this bus.
-**Say:** *"Every number here is computed and version-stamped, and there's already a recorded incident on this exact bus — so this is the difference between 'we think we're safe' and a defensible, timestamped record when OSHA shows up."*
-**Buyer takeaway:** This is the moat — proprietary, computed, audit-trailed life-safety data tied to real liability. You cannot rebuild this from a spreadsheet.
+**Say:** *"This 13.8 kV main bus carries a PE-stamped study at 19.6 cal/cm² — a DANGER label — and it's gotten worse, trending up from 14.2 to 19.6, so the hazard is moving the wrong way."*
+**Do (point, don't dwell):** the study's **incident energy**, **PPE / arc rating**, and **arc-flash/shock boundaries**; then the **tamper-evident audit trail** and the **logged arc-flash incident** on this bus.
+**Say:** *"Every number here is PE-stamped and version-controlled — ServiceCycle is the system of record for the licensed engineer's study, not a calculator — and there's already a recorded incident on this exact bus. That's the difference between 'we think we're safe' and a defensible, timestamped record when OSHA shows up."*
+**Buyer takeaway:** This is the moat — proprietary, PE-stamped, audit-trailed life-safety data tied to real liability. You cannot rebuild this from a spreadsheet.
+> Liability posture (don't ad-lib past it): ServiceCycle does **not** run the IEEE 1584 calc or assert PPE categories itself — it stores and version-controls the licensed PE's sealed study results. The Arc Flash tab says exactly this on screen ("a licensed PE runs and stamps the study").
 
 ### 2:30 — Turn the hazard into action (the workflow)
-**Do:** From the bus / deficiencies, open the **OPEN · IMMEDIATE** deficiency → create a **work order** → **assign** it.
-**Say:** *"One click turns the hazard into an assigned, tracked work order — the finding doesn't die in a report, it becomes scheduled, accountable work."*
+*(Note: findings attach to jobs — so you dispatch the job first, then the finding rides on it. There is no "create WO" button on the deficiency itself.)*
+**Do:**
+1. Open **Deficiencies** — the **OPEN · IMMEDIATE** finding sits at the top of the triage queue: SWGR-2M's B-phase hot joint (ΔT 38°C above ambient).
+2. Go to **Work orders** → click **New work order** (top right).
+3. In the modal: search the asset picker for **"NorthStar"** → select **NorthStar Switchgear Co. NS-LV600** (that's SWGR-2M) → Contractor: **Apex Electrical Testing** → Assigned tech: **Carmen Rios (NETA Level II)** → click **Create work order**. You land on the new job.
+4. On the job page, in **Deficiencies found**: set Severity to **Immediate**, Description: *"Severe overheating at B-phase bus connection — ΔT 38°C above ambient"* → click **Record deficiency**. A red banner appears: the job **can't be completed** while an IMMEDIATE deficiency is open.
+**Say:** *"Thirty seconds, and the hazard is an assigned, tracked work order with the finding riding on it — it doesn't die in a report. And notice the platform won't let anyone close this job until that IMMEDIATE finding is resolved with a documented corrective action. That's accountability the spreadsheet never gave them."*
+**Optional flourish:** flip back to **Deficiencies** — the recorded finding now shows a **View WO →** link.
 **Buyer takeaway:** Recurring operational workflow, not a one-time inspection. This is the stickiness — and the path to recurring revenue.
 
 ### 3:15 — The leave-behind: the artifacts a customer/board actually holds
@@ -42,9 +55,9 @@
 **Buyer takeaway:** Two audiences, two artifacts, one system — the technical buyer AND the economic buyer both get something to hold. That's how this renews.
 
 ### 4:00 — The flywheel close: channel + the thesis
-**Do:** Switch to the partner view — **Apex Power Services** (contractor org: 6 customers, 4 reps, 1 manager).
+**Do:** Switch to the partner view: **log out** of `admin@demo.local`, **log in as `sam.carter@apexpower.demo` / `Demo1234!`** (role `oem_admin` — the fleet dashboard at `/fleet` is gated to this role; `admin@demo.local` cannot see it), then open the fleet dashboard — **Apex Power Services** (contractor org: 6 customers, 4 reps, 1 manager).
 **Say:** *"And it rolls up: one contractor like Apex Power Services manages 6 customers, 4 reps, all on the same rails — so this scales through the existing electrical-contractor channel, not one facility at a time."*
-**Say (the thesis — land it slowly):** *"So what you're buying is three things that compound: defensible, computed safety data; a recurring compliance workflow customers can't easily leave; and a contractor channel to roll it up. That's an acquirable asset, not a feature."*
+**Say (the thesis — land it slowly):** *"So what you're buying is three things that compound: defensible, PE-stamped safety data; a recurring compliance workflow customers can't easily leave; and a contractor channel to roll it up. That's an acquirable asset, not a feature."*
 **Buyer takeaway:** Data moat × recurring workflow × channel = a roll-up platform, priced as an asset.
 
 ### ~5:00 — Stop.
@@ -55,7 +68,7 @@
 
 ## 30-SECOND ELEVATOR (3 beats)
 1. *"Electrical safety/compliance is high-stakes and still run on PDFs."*
-2. *"We have a live bus computing 19.6 cal/cm² DANGER, trending worse, with a logged incident and a tamper-evident audit trail — proprietary safety data you can't fake."*
+2. *"We have a live bus carrying a PE-stamped 19.6 cal/cm² DANGER label, trending worse, with a logged incident and a tamper-evident audit trail — proprietary safety data you can't fake."*
 3. *"It turns hazards into assigned work, hands the customer a NETA packet and the CFO an ROI number, and rolls up through the contractor channel — defensible data + recurring workflow + channel = an acquirable asset."*
 
 ---
@@ -68,10 +81,11 @@ Everything is seeded and coherent — let them roam these:
 - **Deficiencies** (9, one OPEN IMMEDIATE), **Work orders** (231 historical, 2 yrs), **Schedules** (88).
 - **Incident register / incident log** (6 entries), **System studies** (3), **Audit visits** (4), **Recommendations** (6), **Alerts** (17), **Quote requests** (4), **Parts** (7), **LOTO procedures** (2).
 - **Partner roll-up:** Apex Power Services (6 customers, 4 reps, manager).
-- Log in as `viewer@` or `consultant@demo.local` to show **role-based access** is real.
+- Log in as `viewer@demo.local` (`Viewer1234!`) or `consultant@demo.local` (`Consultant1234!`) to show **role-based access** is real.
 
 ## DO NOT CLICK / KNOWN ROUGH EDGES
-- Don't live-edit or delete seed data mid-demo — if you must, reseed afterward (it powers the hero story; a deleted deficiency breaks beat 2:30).
+- Don't live-edit or delete seed data mid-demo — if you must, reseed afterward (it powers the hero story; resolving or deleting SWGR-2M's IMMEDIATE deficiency breaks beat 2:30).
+- Beat 2:30 **adds** a work order + a recorded finding by design — reseed between rehearsals so the dashboard counts (8 open deficiencies / 1 immediate) stay accurate.
 - Don't free-type into AI/ingest fields under time pressure — live model calls can be slow; if asked, describe it, don't wait on it.
 - Don't promise integrations on the call (MaintainX/Maximo/SAP) — say "documented v1 REST API, OpenAPI 3.1" and move on.
 - Avoid empty/unseeded corners — stay on the named entities above; if a screen looks thin, navigate back to the dashboard.

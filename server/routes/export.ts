@@ -21,6 +21,7 @@ const express = require('express');
 const { sendXlsx, sendAccountXlsx } = require('../lib/xlsxExport');
 const { buildAccountExport, streamAccountExportJson, EXPORT_SHEETS } = require('../lib/accountExport');
 const { requireManager } = require('../middleware/roles');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 import prisma from '../lib/prisma';
 
 // Pure helper functions — extracted to lib/exportHelpers.js so they can be
@@ -303,6 +304,20 @@ router.get('/account', requireManager, async (req, res) => {
     const data = await buildAccountExport(prisma, req.user.accountId);
     const stamp = dateStamp();
     const format = String(req.query.format || 'json').toLowerCase();
+
+    // 2026-07-03 scan P0 (SCAN 4): the full-tenant export must leave an audit
+    // trail -- user_data_exported already covers the much smaller per-user GDPR
+    // export; this is its account-wide sibling. Fire-and-forget AFTER the
+    // snapshot is built (a failed build never logs a false success) and before
+    // the bytes stream out, mirroring the user_data_exported placement.
+    // req.ip per INFOSEC-8-4 (privileged/security route).
+    writeActivityLog({
+      userId:    req.user.id,
+      accountId: req.user.accountId,
+      action:    'account_exported',
+      details:   { format, counts: data.counts ?? null },
+      ipAddress: req.ip,
+    });
 
     if (format === 'xlsx') {
       return await sendAccountXlsx(res, {
