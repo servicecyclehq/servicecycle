@@ -105,6 +105,10 @@ const ACTION_LABELS: any = {
   scim_break_glass_flip_suppressed: 'SCIM sync blocked from claiming the last password-capable admin',
   // 2026-07-03 demo "view as" switcher (routes/demo.ts, demo tenant only)
   demo_role_switched:        'Demo role switched (view as)',
+  // 2026-07-03 import lattice (smart CSV/XLSX, bulk PDFs, Doble) -- informational, CEF default 3
+  assets_imported:            'Assets imported (bulk)',
+  test_reports_bulk_imported: 'Test reports bulk imported',
+  doble_import_committed:     'Doble test data imported',
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

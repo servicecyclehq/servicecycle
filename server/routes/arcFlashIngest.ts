@@ -45,6 +45,7 @@ const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
 const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
 const { normalizeKey: idemNormalizeKey, findStored: idemFindStored, store: idemStore } = require('../lib/apiIdempotency');
+const { listToolTemplates, getToolTemplate, applyTemplate: applyAfxToolTemplate, afxRecordsToTables, rowsFromCsv: afxRowsFromCsv } = require('../lib/afxToolTemplates');
 const normBusKey = (s: any) => String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '');
 const MAX_AFX_MULTI_ROWS = 5000; // DoS guard: cap total rows an import request may carry
 const afxRowCount = (t: any) => (t?.buses?.length || 0) + (t?.cables?.length || 0) + (t?.transformers?.length || 0) + (t?.devices?.length || 0);
@@ -1925,6 +1926,34 @@ router.get('/afx/template', (req: any, res: any) => {
   }
 });
 
+// ── GET /afx/tool-templates ── per-tool RESULT-import templates (SKM/ETAP/EasyPower)
+// Data-driven column maps for each study tool's arc-flash RESULTS export, with
+// per-mapping confidence (verified|probable|assumed) + source notes (SKM/EasyPower
+// captions researched from real artifacts; ETAP captions are drafts). Any authed
+// user can read them (same stance as the /afx/spec + /afx/template siblings).
+// POLICY: tool-computed PPE/hazard-category columns map to NOTHING (see each
+// template's policyNote) — SC stores PE-stamped results, never asserts PPE.
+router.get('/afx/tool-templates', (_req: any, res: any) => {
+  try {
+    res.json({ success: true, data: { tools: listToolTemplates() } });
+  } catch (e) {
+    console.error('afx tool-templates error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load tool templates' });
+  }
+});
+
+// ── GET /afx/tool-templates/:tool ── one template with its full mapping list ───
+router.get('/afx/tool-templates/:tool', (req: any, res: any) => {
+  try {
+    const tpl = getToolTemplate(req.params.tool);
+    if (!tpl) return res.status(404).json({ success: false, error: `Unknown tool template. Use one of: ${listToolTemplates().map((t: any) => t.tool).join(', ')}.` });
+    res.json({ success: true, data: tpl });
+  } catch (e) {
+    console.error('afx tool-template error:', e);
+    res.status(500).json({ success: false, error: 'Failed to load tool template' });
+  }
+});
+
 // ── GET /afx/export-multi?tool=afx|etap|easypower&format=xlsx|json ──────────────
 // Emit SC's collected model as RELATED tables (Bus / Cable / Transformer /
 // Device) — the shape ETAP DataX / EasyPower / SKM actually ingest, with exact
@@ -2049,7 +2078,25 @@ router.post('/afx/import-multi/preview', requireManager, (req: any, res: any) =>
       if (err) return res.status(400).json({ success: false, error: String(err.message || err) });
       const accountId = req.user.accountId;
       let tables: any;
-      if (req.file && req.file.buffer) tables = await tablesFromWorkbook(req.file.buffer);
+      let toolTemplateReport: any = null;
+      // Optional per-tool pre-mapping (toolTemplate=skm|etap|easypower + the tool's
+      // flat results export as { csv } text or { rows } array). The template maps
+      // vendor columns onto AFX fields — dropping PPE/hazard columns by policy —
+      // BEFORE the standard multi-table validation below, which remains the source
+      // of truth for what may be imported.
+      const toolTemplateId = req.body && req.body.toolTemplate ? String(req.body.toolTemplate).trim().toLowerCase() : '';
+      if (toolTemplateId) {
+        const tpl = getToolTemplate(toolTemplateId);
+        if (!tpl) return res.status(400).json({ success: false, error: `Unknown toolTemplate. Use one of: ${listToolTemplates().map((t: any) => t.tool).join(', ')}.` });
+        let flatRows: any[] | null = null;
+        if (Array.isArray(req.body.rows)) flatRows = req.body.rows;
+        else if (typeof req.body.csv === 'string' && req.body.csv.trim()) flatRows = afxRowsFromCsv(req.body.csv).rows;
+        if (!flatRows) return res.status(400).json({ success: false, error: 'toolTemplate requires the tool export as { csv } text or { rows } array.' });
+        if (flatRows.length > MAX_AFX_MULTI_ROWS) return res.status(413).json({ success: false, error: `Too large: ${flatRows.length} rows exceeds the ${MAX_AFX_MULTI_ROWS}-row limit.` });
+        const mapped = applyAfxToolTemplate(flatRows, tpl);
+        tables = afxRecordsToTables(mapped.records);
+        toolTemplateReport = { tool: tpl.tool, label: tpl.label, policyNote: tpl.policyNote, summary: mapped.summary, columns: mapped.columnReport, issues: mapped.issues.slice(0, 200) };
+      } else if (req.file && req.file.buffer) tables = await tablesFromWorkbook(req.file.buffer);
       else if (req.body && (req.body.buses || req.body.cables || req.body.transformers || req.body.devices)) {
         tables = { buses: req.body.buses || [], cables: req.body.cables || [], transformers: req.body.transformers || [], devices: req.body.devices || [] };
       } else return res.status(400).json({ success: false, error: 'Provide a multi-table .xlsx (field "file") or a JSON tables body.' });
@@ -2060,7 +2107,7 @@ router.post('/afx/import-multi/preview', requireManager, (req: any, res: any) =>
       const plan = planMultiTableImport(tables, existing.map((r: any) => r.busName));
       const previewOverwrite = req.body && (req.body.mode === 'overwrite' || req.body.overwrite === true || req.body.overwrite === 'true');
       const mergePreview = previewOverwrite ? buildMergeConflictPreview(tables, existing) : null;
-      res.json({ success: true, data: { dryRun: true, validation, plan, mergePreview } });
+      res.json({ success: true, data: { dryRun: true, validation, plan, mergePreview, toolTemplate: toolTemplateReport } });
     } catch (e) {
       console.error('afx import-multi preview error:', e);
       if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to preview multi-table import' });

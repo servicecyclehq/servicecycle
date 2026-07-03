@@ -1,0 +1,7 @@
+Arc Fault Bus Name,Arc Fault Bus kV,Upstream Trip Device Name,Upstream Trip Device Function,Equip Type,Electrode Configuration,Electrode Gap (mm),Bus Bolted Fault (kA),Bus Arc Fault (kA),Trip Time (sec),Opening Time (sec),Arc Time (sec),Est Arc Flash Boundary (inches),Working Distance (inches),Incident Energy (cal/cm2),PPE Level
+FICTION-SWG-4,0.48,FICTION-BL-1,,Switchgear,VCB,32,24.128,17.76,0.34,0,0.34,89.4,18,15.5,PPE 3
+FICTION-BUS-7,13.8,FICTION-R-7,51/50,Open Air,VOA,153,9.914,8.262,0.016,0.083,0.099,30.5,26,1.5,PPE 1
+FICTION-MAIN-SWG,13.8,FICTION-R-18,51/50,Switchgear,VCB,153,10.053,1.116,0.654,0.083,0.737,126.2,26,25.4,PPE 4
+FICTION-REFINER,2.4,FICTION-R-9,51/50,Switchgear,VCB,102,18.75,2.76,0.841,0.083,0.925,191.1,18,48.9,PPE 4
+FICTION-M-1,0.48,FICTION-BL-3,,Other,VCB,32,19.48,14.545,0.05,0,0.05,23.6,18,1.8,PPE 1
+FICTION-PNL-2,0.208,FICTION-BL-9,,MCC/Panel,VCB,25,8.882,0.206,0.604,0,0.604,14.8,18,0.9,PPE 0

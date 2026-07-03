@@ -1,0 +1,6 @@
+Bus Name,Protective Device Name,Bus kV,Bus Bolted Fault (kA),Bus Arcing Fault (kA),Prot Dev Bolted Fault (kA),Prot Dev Arcing Fault (kA),Trip/Delay Time (sec.),Breaker Opening Time/Tol (sec.),Equip Type,Electrode Config,Box Width (in),Box Height (in),Box Depth (in),Gap (mm),Arc Flash Boundary (in),Working Distance (in),Incident Energy (cal/cm2),PPE Level / Notes (*N)
+FICTION-MDP-A,FICTION-MAIN-52A,0.48,32.5,18.2,32.5,18.2,0.05,0.0000,SWG,VCB,38,90,30,32,52,18,6.7,Level 2
+FICTION-PNL-1,FICTION-MDP-BRK-4,0.208,4.65,1.99,4.65,1.99,0.0083,0.0000,PNL,VCB,12,14,10,25,2,18,0.04,Level 0
+FICTION-MCC-EAST,FICTION-FDR-52E,0.48,22.1,12.9,22.1,12.9,0.3,0.0000,MCC,VCBB,20,72,20,25,71,18,11.2,Level 3
+FICTION-SWGR-13,FICTION-REL-51X,13.8,15.92,14.1,15.92,14.1,0.5,0.083,SWG,VCB,36,91,30,152,182,36,29.4,Level 4 (*N3)
+FICTION-CHILLER-DISC,FICTION-PNL-1-BRK-9,0.208,1.54,0.6,1.54,0.6,0.0083,0.0000,PNL,VCB,12,14,10,25,1,18,0.01,Level 0 (*N15b)

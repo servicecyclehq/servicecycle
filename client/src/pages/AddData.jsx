@@ -59,6 +59,18 @@ export default function AddData() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><FileText size={16} /> Test report (PDF)</div>
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>PowerDB / Megger / NETA → fix list</div>
         </Link>
+        <Link to="/test-reports/bulk-import" className="card" style={{ flex: '1 1 200px', padding: 16, textDecoration: 'none', color: 'inherit' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><UploadCloud size={16} /> Bulk PDFs</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Drop a stack of test reports → extraction queue → review → commit</div>
+        </Link>
+        <Link to="/import/assets" className="card" style={{ flex: '1 1 200px', padding: 16, textDecoration: 'none', color: 'inherit' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Table2 size={16} /> Smart import (any spreadsheet)</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Any CSV/XLSX layout — columns auto-mapped, you approve, assets appear</div>
+        </Link>
+        <Link to="/import/doble" className="card" style={{ flex: '1 1 200px', padding: 16, textDecoration: 'none', color: 'inherit' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Database size={16} /> Doble export</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>TestGuide / TDMS XML or CSV → same measurement pool as PowerDB</div>
+        </Link>
         <Link to="/assets/import" className="card" style={{ flex: '1 1 200px', padding: 16, textDecoration: 'none', color: 'inherit' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Table2 size={16} /> Assets (CSV/XLSX)</div>
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Bulk import equipment + schedules</div>

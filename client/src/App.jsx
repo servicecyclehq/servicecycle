@@ -126,6 +126,10 @@ const TestReportImport        = lazyWithReload(() => import('./pages/TestReportI
 const AddData                 = lazyWithReload(() => import('./pages/AddData'));
 const BackfillImport          = lazyWithReload(() => import('./pages/BackfillImport')); // #34 bulk backfill (zip of reports)
 const ReviewQueue             = lazyWithReload(() => import('./pages/ReviewQueue')); // confidence-gated ingest review
+const ImportAssetsSmart       = lazyWithReload(() => import('./pages/ImportAssetsPage')); // smart CSV/XLSX import (AI column mapping)
+const BulkReportImport        = lazyWithReload(() => import('./pages/BulkReportImportPage')); // bulk PDF test-report drop-zone
+const DobleImport             = lazyWithReload(() => import('./pages/DobleImportPage')); // Doble TestGuide/TDMS ingest
+const InstalledBasePage       = lazyWithReload(() => import('./pages/InstalledBasePage')); // fleet benchmarks + modernization pipeline + attach-rate
 const ArchivedAssets          = lazyWithReload(() => import('./pages/ArchivedAssets'));
 const SitesList               = lazyWithReload(() => import('./pages/SitesList'));
 const SiteDetail              = lazyWithReload(() => import('./pages/SiteDetail'));
@@ -352,6 +356,26 @@ function AppRoutes() {
             <Route path="add-data" element={
               <RequireRole roles={['admin', 'manager']}>
                 <AddData />
+              </RequireRole>
+            } />
+            <Route path="import/assets" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <ImportAssetsSmart />
+              </RequireRole>
+            } />
+            <Route path="test-reports/bulk-import" element={
+              <RequireRole roles={['admin', 'manager', 'oem_admin']}>
+                <BulkReportImport />
+              </RequireRole>
+            } />
+            <Route path="import/doble" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <DobleImport />
+              </RequireRole>
+            } />
+            <Route path="installed-base" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <InstalledBasePage />
               </RequireRole>
             } />
             {/* Chunk B: sales-manager roll-up. Client gate is broad (operator +

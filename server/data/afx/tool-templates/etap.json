@@ -1,0 +1,172 @@
+{
+  "templateFormatVersion": "1.0",
+  "afxVersion": "1.0",
+  "tool": "etap",
+  "label": "ETAP - Arc Flash Result Analyzer / report export (DRAFT captions)",
+  "toolVersionRange": "ETAP ~12-22 arc-flash results (AC). IMPORTANT: unlike the SKM/EasyPower templates, NO real ETAP export was available - ETAP's help/manual is not publicly text-accessible. The RESULT FIELD SET is verified from official ETAP documents (Arc Flash Analysis tutorial PDF; Arc Flash Analysis Overview brochure; Result Analyzer product page: arcing current Ia, bolted fault Ibf, FCT, incident energy, arc flash boundary, working distance, gap, equipment type, hazard/risk level; 'Automatically Export / Create MS Excel arc flash reports'), but the exact Excel COLUMN CAPTIONS are probable/assumed. Confirm every caption against one real Result Analyzer Excel export before relying on this template.",
+  "policyNote": "LIABILITY POSTURE: ServiceCycle stores PE-stamped study RESULTS; it never computes incident energy and never asserts PPE categories. ETAP's computed hazard/risk / PPE category columns are deliberately mapped to NOTHING by this template. Unit conversions here are mechanical only (kV to V, s or cycles to ms with a declared 60 Hz assumption, ft or mm to in, J/cm2 to cal/cm2); no engineering derivation is performed.",
+  "frequencyAssumptionHz": 60,
+  "sourceNotes": [
+    "ETAP 'Arc Flash Analysis' tutorial PDF (etap.com/docs/default-source/faqs-tutorials/arc-flash-analysis.pdf, fetched 2026-07-03): confirms the result vocabulary - bolted fault current, arc fault clearing time (FCT), incident energy, flash protection boundary, hazard/risk level per NFPA 70E, working distance, gap, equipment type, system grounding - and the AF Result Analyzer workflow.",
+    "ETAP 'Arc Flash Analysis Overview' brochure PDF (etap.com/docs/default-source/brochures/arc-flash-analysis-overview.pdf, fetched 2026-07-03): 'Automatically Export / Create MS Excel arc flash reports', metric or English units, results grouped by equipment location.",
+    "ETAP Arc Flash Result Analyzer product page (etap.com/arc-flash/arc-flash-result-analyzer, fetched 2026-07-03): Excel export, per-column sorting/filtering, Ia variation checks.",
+    "ETAP element naming convention ('ID' identifies every element; kV-based voltages throughout, e.g. 13.8 kV) from the tutorial; 'BusID'/'NomkV' shapes align with the repo's existing DRAFT ETAP DataX header map in lib/arcFlashAfxMultiTable.ts.",
+    "BLOCKED sources (noted, not worked around): IOP open-access paper 'Arc flash analysis using ETAP platform' (iopscience.iop.org, PDF and landing page both returned empty to fetch); Northeastern University thesis PDF (repository.library.northeastern.edu, returned empty); raw curl egress from the sandbox (blocked). These would likely show verbatim ETAP result tables."
+  ],
+  "mappings": [
+    {
+      "afxField": "busName",
+      "aliases": ["Bus ID", "BusID", "ID", "Faulted Bus"],
+      "confidence": "probable",
+      "source": "ETAP identifies every element by ID (tutorial); Result Analyzer rows are per faulted bus/PD/terminal. Exact caption unverified; 'BusID' matches the repo's DRAFT DataX map.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "nominalVoltageV",
+      "aliases": ["Nominal kV", "NomkV", "Bus Nominal kV", "Bus kV", "kV"],
+      "confidence": "probable",
+      "source": "ETAP is kV-based throughout (tutorial examples 13.8 kV); 'NomkV' matches the repo's DRAFT DataX map. Exact caption unverified.",
+      "convert": { "id": "kvToV", "from": "kV", "to": "V" },
+      "note": "Mechanical conversion: kV x 1000 = V."
+    },
+    {
+      "afxField": "boltedFaultCurrentKA",
+      "aliases": ["Bolted Fault (kA)", "Ibf (kA)", "Bus Bolted Fault (kA)", "Ibf"],
+      "confidence": "probable",
+      "source": "'Ibf' is ETAP/IEEE 1584 notation for bolted fault current in kA (official ETAP doc vocabulary); caption spelling unverified.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "arcingCurrentKA",
+      "aliases": ["Arcing Current (kA)", "Ia (kA)", "Iarc (kA)", "Ia"],
+      "confidence": "probable",
+      "source": "'Ia' is ETAP's notation for arcing current in kA (Result Analyzer filters '% Ia' variation; official ETAP doc vocabulary); caption spelling unverified.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "clearingTimeMs",
+      "aliases": ["FCT (sec)", "FCT (sec.)", "Fault Clearing Time (sec)", "Arc Duration (sec)"],
+      "confidence": "probable",
+      "source": "ETAP tutorial: 'Arc Fault Clearing Time (FCT)' in seconds; brochure: 'Arc Fault Duration'. Caption spelling unverified.",
+      "convert": { "id": "sToMs", "from": "s", "to": "ms" },
+      "note": "Mechanical conversion: s x 1000 = ms. FCT is ETAP's total clearing time for the row's clearing device."
+    },
+    {
+      "afxField": "clearingTimeMs",
+      "aliases": ["FCT (cycle)", "FCT (cycles)"],
+      "confidence": "assumed",
+      "source": "ETAP commonly expresses protective-device times in cycles as well as seconds; a cycles-captioned FCT column has not been sighted in an export.",
+      "convert": { "id": "cyclesToMs", "from": "cycles", "to": "ms" },
+      "note": "Mechanical conversion with a DECLARED assumption: cycles x (1000 / 60 Hz) = ms. frequencyAssumptionHz in this template is 60 (North American systems). A 50 Hz project must not use this alias."
+    },
+    {
+      "afxField": "workingDistanceIn",
+      "aliases": ["Working Distance (in)", "Working Distance (inches)"],
+      "confidence": "probable",
+      "source": "ETAP tutorial: working distance 'typically 18 inches for low voltage equipment'; English-units export mode. Caption spelling unverified.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "workingDistanceIn",
+      "aliases": ["Working Distance (mm)"],
+      "confidence": "assumed",
+      "source": "ETAP exports support metric units (brochure); metric caption unsighted.",
+      "convert": { "id": "mmToIn", "from": "mm", "to": "in" },
+      "note": "Mechanical conversion: mm / 25.4 = in."
+    },
+    {
+      "afxField": "conductorGapMm",
+      "aliases": ["Gap (mm)", "Bus Gap (mm)"],
+      "confidence": "probable",
+      "source": "ETAP tutorial: 'gaps between conductors' with IEEE 1584 typical values (mm is the IEEE 1584 unit). Caption spelling unverified.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "equipmentType",
+      "aliases": ["Equipment Type", "Type"],
+      "confidence": "assumed",
+      "source": "ETAP tutorial: bus rating page selects the equipment type (MCC, switchgear, open air). Whether/how the export captions it is unverified; 'Type' matches the repo's DRAFT DataX map.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "electrodeConfig",
+      "aliases": ["Electrode Configuration", "Electrode Config", "EC"],
+      "confidence": "assumed",
+      "source": "ETAP supports IEEE 1584-2018 electrode configurations (VCB/VCBB/HCB/VOA/HOA per etap.com IEEE 1584-2018 page); export caption unsighted.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "incidentEnergyCalCm2",
+      "aliases": ["Incident Energy (cal/cm2)", "IE (cal/cm2)", "Total IE (cal/cm2)"],
+      "confidence": "probable",
+      "source": "cal/cm2 is ETAP's English-units incident-energy unit (official ETAP doc vocabulary); caption spelling unverified.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "incidentEnergyCalCm2",
+      "aliases": ["Incident Energy (J/cm2)", "IE (J/cm2)"],
+      "confidence": "assumed",
+      "source": "ETAP exports support metric units (brochure); metric caption unsighted.",
+      "convert": { "id": "jPerCm2ToCalPerCm2", "from": "J/cm2", "to": "cal/cm2" },
+      "note": "Mechanical conversion: J/cm2 / 4.184 = cal/cm2 (thermochemical calorie, the IEEE 1584 convention)."
+    },
+    {
+      "afxField": "arcFlashBoundaryIn",
+      "aliases": ["AFB (in)", "Arc Flash Boundary (in)", "Arc Flash Boundary (inches)"],
+      "confidence": "probable",
+      "source": "AFB is ETAP's arc-flash-boundary abbreviation (official ETAP doc vocabulary); caption spelling unverified.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "arcFlashBoundaryIn",
+      "aliases": ["AFB (ft)", "Arc Flash Boundary (ft)"],
+      "confidence": "probable",
+      "source": "ETAP frequently reports AFB in feet in English-units mode (doc vocabulary); caption spelling unverified.",
+      "convert": { "id": "ftToIn", "from": "ft", "to": "in" },
+      "note": "Mechanical conversion: ft x 12 = in."
+    },
+    {
+      "afxField": "arcFlashBoundaryIn",
+      "aliases": ["AFB (mm)", "Arc Flash Boundary (mm)"],
+      "confidence": "assumed",
+      "source": "Metric-units export mode (brochure); caption unsighted.",
+      "convert": { "id": "mmToIn", "from": "mm", "to": "in" },
+      "note": "Mechanical conversion: mm / 25.4 = in."
+    },
+    {
+      "afxField": "deviceModel",
+      "aliases": ["Source PD ID", "Source PD", "Protective Device ID", "Protective Device"],
+      "confidence": "assumed",
+      "source": "ETAP reports the clearing/source protective device per row (tutorial: labels generated 'for every protective device location'); caption unsighted.",
+      "convert": null,
+      "note": "Device NAME/designation, not a catalog model number; mapped to deviceModel for parity with the existing AFX crosswalk."
+    }
+  ],
+  "ignoredByPolicy": [
+    {
+      "aliases": ["PPE Category", "PPE Level", "PPE", "Hazard Risk Category", "Hazard/Risk Category", "Hazard Risk Category (HRC)", "HRC", "Risk Level", "Hazard Category", "Energy Level"],
+      "reason": "ppe_assertion",
+      "note": "ETAP computes 'the hazard/risk level according to NFPA 70E' (official tutorial wording) and the Result Analyzer sorts by 'Energy Level' category. Recorded product policy: ServiceCycle never asserts PPE/hazard categories; every tool-computed PPE/hazard-category column is mapped to nothing."
+    }
+  ],
+  "knownUnmapped": [
+    {
+      "aliases": ["Limited Approach Boundary", "Restricted Approach Boundary", "Prohibited Approach Boundary", "Limited Approach Boundary (in)", "Restricted Approach Boundary (in)"],
+      "note": "NFPA 70E shock-protection boundaries; AFX v1 has no shock-boundary fields."
+    },
+    {
+      "aliases": ["% Ia Variation", "Ia Variation (%)", "Grounding", "System Grounding", "Configuration", "Config", "Study Case", "Revision", "Output Report"],
+      "note": "ETAP scenario/bookkeeping and grounding columns with no AFX v1 equivalent. Listed so they are recognized rather than 'unknown'."
+    }
+  ],
+  "rowChecks": []
+}

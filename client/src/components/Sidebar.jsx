@@ -827,6 +827,17 @@ export default function Sidebar() {
               </NavLink>
             )}
 
+            {/* Smart import - any-layout CSV/XLSX with AI column mapping. */}
+            {(user?.role === 'admin' || user?.role === 'manager') && (
+              <NavLink
+                to="/import/assets"
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              >
+                {Icons.cmmsImport}
+                Smart Import
+              </NavLink>
+            )}
+
             {/* Test-report PDF ingest (R1) — contractor's report → fix list. */}
             {(user?.role === 'admin' || user?.role === 'manager') && (
               <NavLink

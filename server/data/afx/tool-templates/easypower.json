@@ -1,0 +1,154 @@
+{
+  "templateFormatVersion": "1.0",
+  "afxVersion": "1.0",
+  "tool": "easypower",
+  "label": "EasyPower - Arc Flash Hazard Report spreadsheet (Open With Excel)",
+  "toolVersionRange": "EasyPower ~9.x-12.x Arc Flash Hazard Report. Column captions verified against EasyPower's official help topic 'Arc Flash Hazard Reports' (help.easypower.com, EasyPower 10.3, help updated 2020-12-04), including its 'Spreadsheet Column Headings' table and report screenshots. Newer releases (Bentley) may add columns - confirm against one real export.",
+  "policyNote": "LIABILITY POSTURE: ServiceCycle stores PE-stamped study RESULTS; it never computes incident energy and never asserts PPE categories. EasyPower's computed PPE columns ('PPE Level', 'PPE Description', legacy dual-purpose 'Comments/PPE Level') are deliberately mapped to NOTHING by this template. Unit conversions here are mechanical only (kV to V, seconds to ms, J/cm2 to cal/cm2); no engineering derivation is performed.",
+  "frequencyAssumptionHz": 60,
+  "sourceNotes": [
+    "PRIMARY (verified): EasyPower 10.3 help topic 'Arc Flash Hazard Reports' (help.easypower.com/ezp/10.3/Content/16_Arc_Flash_Hazard_Analysis/Arc_Flash_Hazard_Report.htm) - report screenshots show the on-screen captions (Arc Fault Bus Name / Arc Fault Bus kV / Upstream Trip Device Name / Upstream Trip Device Function / Equip Type / Electrode Configuration / Electrode Gap (mm) / Bus Bolted Fault (kA) / Bus Arc Fault (kA) / Trip Time (sec) / Opening Time (sec) / Arc Time (sec) / Est Arc Flash Boundary (inches) / Working Distance (inches) / Incident Energy (cal/cm2) / Comments) and the 'Spreadsheet Column Headings' table enumerates every optional column.",
+    "Same help topic: 'Opening the Arc Flash Hazard Report in Excel' documents that this exact spreadsheet is what exports to Excel.",
+    "Unit caveats from the help text: Electrode Gap 'is always expressed in millimeters'; Incident Energy 'is reported in calories or joules per square centimeter based on settings'; boundary/working-distance units follow Short Circuit Options. Bare (unit-less) captions are therefore left unmapped as ambiguous rather than guessed."
+  ],
+  "mappings": [
+    {
+      "afxField": "busName",
+      "aliases": ["Arc Fault Bus Name"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column; described as 'the ID name of the buses faulted'.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "nominalVoltageV",
+      "aliases": ["Arc Fault Bus kV"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column; 'the voltage of the bus being faulted' (values like 0.48, 13.8).",
+      "convert": { "id": "kvToV", "from": "kV", "to": "V" },
+      "note": "Mechanical conversion: kV x 1000 = V."
+    },
+    {
+      "afxField": "deviceModel",
+      "aliases": ["Upstream Trip Device Name"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column; the protective device whose trip time drives the row.",
+      "convert": null,
+      "note": "Device NAME/designation, not a catalog model number; mapped to deviceModel for parity with the existing AFX crosswalk."
+    },
+    {
+      "afxField": "equipmentType",
+      "aliases": ["Equipment Type", "Equip Type"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - 'Equipment Type' in the headings table; report screenshots abbreviate the caption to 'Equip Type'. Values: Switchgear, MCC/Panel, Open Air, Conductor.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "electrodeConfig",
+      "aliases": ["Electrode Configuration"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column, IEEE 1584-2018 only (values VCB, VOA, ...).",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "conductorGapMm",
+      "aliases": ["Electrode Gap (mm)", "Electrode Gap"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column; help states the gap 'is always expressed in millimeters', so the unit-less caption is safe to map.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "boltedFaultCurrentKA",
+      "aliases": ["Bus Bolted Fault (kA)"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column; 'total bolted fault current calculated at the faulted bus'.",
+      "convert": null,
+      "note": "Bus-level value. 'Branch Bolted Fault (kA)' (through-device current) is intentionally NOT mapped."
+    },
+    {
+      "afxField": "arcingCurrentKA",
+      "aliases": ["Bus Arc Fault (kA)"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column; 'total arcing current calculated at the faulted bus'.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "clearingTimeMs",
+      "aliases": ["Arc Time (sec)"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help - default column; defined as 'total duration of arc fault... the sum of Trip Time and Opening Time' - i.e. the total clearing time.",
+      "convert": { "id": "sToMs", "from": "s", "to": "ms" },
+      "note": "Arc Time is already the tool-defined TOTAL (trip + opening), so no summing is needed. The separate Trip Time / Opening Time columns are recognized but unmapped."
+    },
+    {
+      "afxField": "arcFlashBoundaryIn",
+      "aliases": ["Est Arc Flash Boundary (inches)", "Est Arc Flash Boundary (in)", "Estimated Arc Flash Boundary (inches)"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help report screenshots show 'Est Arc Flash Boundary (inches)'; the headings table calls it 'Estimated Arc Flash Boundary' with units set in Short Circuit Options.",
+      "convert": null,
+      "note": "Only the explicit inches captions are mapped. The bare 'Estimated Arc Flash Boundary' caption is left unmapped because its unit follows a project setting."
+    },
+    {
+      "afxField": "workingDistanceIn",
+      "aliases": ["Working Distance (inches)", "Working Distance (in)"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help report screenshots show 'Working Distance (inches)'.",
+      "convert": null,
+      "note": "Bare 'Working Distance' caption is left unmapped (unit follows a project setting). EasyPower can emit one row per working distance (up to five); duplicate-bus rows are surfaced by the downstream multi-table validation for engineer review."
+    },
+    {
+      "afxField": "incidentEnergyCalCm2",
+      "aliases": ["Incident Energy (cal/cm2)"],
+      "confidence": "verified",
+      "source": "EasyPower 10.3 help report screenshots show 'Incident Energy (cal/cm2)'.",
+      "convert": null,
+      "note": null
+    },
+    {
+      "afxField": "incidentEnergyCalCm2",
+      "aliases": ["Incident Energy (J/cm2)"],
+      "confidence": "assumed",
+      "source": "EasyPower 10.3 help states incident energy 'is reported in calories or joules per square centimeter based on settings in Short Circuit Options'; the exact J/cm2 caption has not been sighted in an export.",
+      "convert": { "id": "jPerCm2ToCalPerCm2", "from": "J/cm2", "to": "cal/cm2" },
+      "note": "Mechanical conversion: J/cm2 / 4.184 = cal/cm2 (thermochemical calorie, the IEEE 1584 convention)."
+    }
+  ],
+  "ignoredByPolicy": [
+    {
+      "aliases": ["PPE Level", "PPE Description", "Comments/PPE Level", "Comments / PPE Level"],
+      "reason": "ppe_assertion",
+      "note": "EasyPower's PPE columns display the software-selected PPE level/clothing description from its device library ('PPE Levels' section). Recorded product policy: ServiceCycle never asserts PPE categories; tool-computed PPE columns are mapped to nothing. The legacy dual-purpose 'Comments/PPE Level' column is dropped for the same reason (it may carry PPE levels)."
+    }
+  ],
+  "knownUnmapped": [
+    {
+      "aliases": ["Trip Time (sec)", "Trip Time (branch bolted fault) (sec)", "Opening Time (sec)", "Clearing Time (branch bolted fault)"],
+      "note": "Component times. 'Arc Time (sec)' is the tool-defined total and is what maps to clearingTimeMs; ServiceCycle does not sum or reconcile the component columns."
+    },
+    {
+      "aliases": ["Branch Bolted Fault (kA)", "Branch Arc Fault (kA)"],
+      "note": "Through-device (branch) currents; AFX v1 carries the bus-level values only."
+    },
+    {
+      "aliases": ["Incident Energy", "Estimated Arc Flash Boundary", "Working Distance"],
+      "note": "DELIBERATELY unmapped: these bare captions take their unit from Short Circuit Options (cal vs J, inches vs other), so mapping them would guess units. Re-export with explicit units or use the AFX headers."
+    },
+    {
+      "aliases": ["Limited Approach Boundary", "Restricted Approach Boundary"],
+      "note": "NFPA 70E shock-protection boundaries; AFX v1 has no shock-boundary fields."
+    },
+    {
+      "aliases": ["Bus Area", "Bus Zone", "Location Description", "Location X", "Location Y", "Floor", "AC/DC", "L-G Bus kV", "Device Code", "Upstream Bus Name", "Upstream Function ID", "Upstream Trip Device Function", "Gnd", "Height", "Width", "Depth"],
+      "note": "Optional EasyPower report columns with no AFX v1 equivalent (locations, relay function IDs, grounding flag, enclosure dimensions - AFX uses an enclosure class, not dimensions). Listed so they are recognized rather than 'unknown'."
+    },
+    {
+      "aliases": ["Comments", "Equipment Comments", "Equipment Label Comment", "Equipment Label Quantity", "Device Label Comment", "Device Label Quantity"],
+      "note": "Free-text comments and label print-quantity plumbing; no AFX v1 equivalent."
+    }
+  ],
+  "rowChecks": []
+}

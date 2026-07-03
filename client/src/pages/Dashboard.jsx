@@ -22,6 +22,7 @@ import AuditReadyBanner from '../components/AuditReadyBanner';
 import ComplianceDocsCard from '../components/ComplianceDocsCard';
 import DashboardTrends from '../components/DashboardTrends';
 import ArcFlashDashboardCard from '../components/ArcFlashDashboardCard';
+import IdentifiedWorkCard from '../components/installedBase/IdentifiedWorkCard';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { CriticalityBadge } from './AssetsList';
@@ -913,6 +914,7 @@ export default function Dashboard() {
             <AuditReadyBanner />
             <ArcFlashDashboardCard />
             <ConditionChangesCard />
+            <IdentifiedWorkCard />
             <MaturityScoreCard compact />
             <PathTo100 compact />
             <ComplianceDocsCard />

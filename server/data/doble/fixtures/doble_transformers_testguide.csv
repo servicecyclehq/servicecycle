@@ -1,0 +1,23 @@
+Serial Number,Manufacturer,Model,Equipment Type,Location,Test Date,Ambient C,Technician,Test Type,Test Voltage,Reading Name,Phase,Value,Unit,Expected,Result
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,Power Factor,10 kV,CHL,H,0.31,%PF,< 0.5%,PASS
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,Power Factor,10 kV,CH,H,0.29,%PF,< 0.5%,PASS
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,Power Factor,10 kV,CL,X,0.34,%PF,< 0.5%,PASS
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,TTR,,Ratio,H1-H2,20.81,ratio,20.79 +/-0.5%,PASS
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,TTR,,Ratio,H2-H3,20.83,ratio,20.79 +/-0.5%,PASS
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,TTR,,Ratio,H3-H1,20.80,ratio,20.79 +/-0.5%,PASS
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,DGA,,H2,,42,ppm,,
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,DGA,,CH4,,18,ppm,,
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,DGA,,C2H2,,0,ppm,,
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,DGA,,C2H4,,6,ppm,,
+TX-4400-A,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T1,2026-05-10,21.5,A. Fictional,DGA,,CO,,310,ppm,,
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,Power Factor,10 kV,CHL,H,0.58,%PF,< 0.5%,FAIL
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,Power Factor,10 kV,CH,H,0.41,%PF,< 0.5%,PASS
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,Power Factor,10 kV,CL,X,0.39,%PF,< 0.5%,PASS
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,TTR,,Ratio,H1-H2,20.78,ratio,20.79 +/-0.5%,PASS
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,TTR,,Ratio,H2-H3,20.80,ratio,20.79 +/-0.5%,PASS
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,TTR,,Ratio,H3-H1,20.77,ratio,20.79 +/-0.5%,PASS
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,DGA,,H2,,88,ppm,,
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,DGA,,CH4,,35,ppm,,
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,DGA,,C2H2,,2,ppm,,
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,DGA,,C2H4,,21,ppm,,
+TX-4400-B,Fictional Transformer Co,OA-2500,Power Transformer,Cedar Ridge - Main Sub - T2,2026-05-11,22.0,A. Fictional,DGA,,CO,,540,ppm,,

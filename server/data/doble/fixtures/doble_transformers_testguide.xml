@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC / FICTIONAL Doble-TestGuide-style export.
+  Hand-authored to match server/lib/dobleImport.ts ASSUMED SCHEMA v1.
+  Every serial, name, value and date below is invented for testing only and
+  does NOT come from any real Doble file or customer. Two transformers, each
+  with Power Factor (10 kV), TTR and DGA (lab) rows.
+  Swap this file for a real TestGuide export to harden the importer -- the
+  parser keys off element/attribute NAMES (aliased), not this exact layout.
+-->
+<DobleTestData schemaHint="testguide" version="1.0">
+  <Export>
+    <Software>Doble TestGuide</Software>
+    <ExportedUtc>2026-05-12T14:30:00Z</ExportedUtc>
+  </Export>
+  <Assets>
+    <Asset>
+      <SerialNumber>TX-4400-A</SerialNumber>
+      <Manufacturer>Fictional Transformer Co</Manufacturer>
+      <Model>OA-2500</Model>
+      <EquipmentType>Power Transformer</EquipmentType>
+      <Location>Cedar Ridge - Main Sub - T1</Location>
+      <TestSession>
+        <TestDate>2026-05-10</TestDate>
+        <AmbientC>21.5</AmbientC>
+        <Technician>A. Fictional</Technician>
+        <TestSet make="Doble" model="M4100" serial="M4100-0001" />
+        <Test type="PowerFactor" voltage="10 kV">
+          <Reading name="CHL" phase="H" value="0.31" unit="%PF" expected="&lt; 0.5%" result="PASS" />
+          <Reading name="CH"  phase="H" value="0.29" unit="%PF" expected="&lt; 0.5%" result="PASS" />
+          <Reading name="CL"  phase="X" value="0.34" unit="%PF" expected="&lt; 0.5%" result="PASS" />
+        </Test>
+        <Test type="TTR">
+          <Reading name="Ratio" phase="H1-H2" value="20.81" unit="ratio" expected="20.79 +/-0.5%" result="PASS" />
+          <Reading name="Ratio" phase="H2-H3" value="20.83" unit="ratio" expected="20.79 +/-0.5%" result="PASS" />
+          <Reading name="Ratio" phase="H3-H1" value="20.80" unit="ratio" expected="20.79 +/-0.5%" result="PASS" />
+        </Test>
+        <Test type="DGA" source="lab">
+          <Reading name="H2"  value="42"  unit="ppm" />
+          <Reading name="CH4" value="18"  unit="ppm" />
+          <Reading name="C2H2" value="0"  unit="ppm" />
+          <Reading name="C2H4" value="6"  unit="ppm" />
+          <Reading name="CO"  value="310" unit="ppm" />
+        </Test>
+      </TestSession>
+    </Asset>
+    <Asset>
+      <SerialNumber>TX-4400-B</SerialNumber>
+      <Manufacturer>Fictional Transformer Co</Manufacturer>
+      <Model>OA-2500</Model>
+      <EquipmentType>Power Transformer</EquipmentType>
+      <Location>Cedar Ridge - Main Sub - T2</Location>
+      <TestSession>
+        <TestDate>2026-05-11</TestDate>
+        <AmbientC>22.0</AmbientC>
+        <Technician>A. Fictional</Technician>
+        <TestSet make="Doble" model="M4100" serial="M4100-0001" />
+        <Test type="PowerFactor" voltage="10 kV">
+          <Reading name="CHL" phase="H" value="0.58" unit="%PF" expected="&lt; 0.5%" result="FAIL" />
+          <Reading name="CH"  phase="H" value="0.41" unit="%PF" expected="&lt; 0.5%" result="PASS" />
+          <Reading name="CL"  phase="X" value="0.39" unit="%PF" expected="&lt; 0.5%" result="PASS" />
+        </Test>
+        <Test type="TTR">
+          <Reading name="Ratio" phase="H1-H2" value="20.78" unit="ratio" expected="20.79 +/-0.5%" result="PASS" />
+          <Reading name="Ratio" phase="H2-H3" value="20.80" unit="ratio" expected="20.79 +/-0.5%" result="PASS" />
+          <Reading name="Ratio" phase="H3-H1" value="20.77" unit="ratio" expected="20.79 +/-0.5%" result="PASS" />
+        </Test>
+        <Test type="DGA" source="lab">
+          <Reading name="H2"  value="88"  unit="ppm" />
+          <Reading name="CH4" value="35"  unit="ppm" />
+          <Reading name="C2H2" value="2"  unit="ppm" />
+          <Reading name="C2H4" value="21" unit="ppm" />
+          <Reading name="CO"  value="540" unit="ppm" />
+        </Test>
+      </TestSession>
+    </Asset>
+  </Assets>
+</DobleTestData>

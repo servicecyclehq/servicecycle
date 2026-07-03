@@ -199,6 +199,8 @@ const deficiencyRoutes      = require('./routes/deficiencies'); // findings
 const standardsRoutes       = require('./routes/standards');    // NFPA/NETA matrix
 const assetsImportRoutes    = require('./routes/assetsImport'); // CSV/XLSX bulk import
 const testReportImportRoutes = require('./routes/testReportImport'); // R1 PDF test-report ingest
+const importAssetsRoutes    = require('./routes/importAssets'); // smart CSV/XLSX import (AI column mapping)
+const dobleImportRoutes     = require('./routes/dobleImport'); // Doble TestGuide/TDMS ingest
 const ingestJobsRoutes = require('./routes/ingestJobs'); // #2 async ingest jobs
 const ingestBackfillRoutes = require('./routes/ingestBackfill'); // #34 bulk backfill
 const ingestReviewRoutes = require('./routes/ingestReview'); // confidence-gated review queue
@@ -255,6 +257,7 @@ const outagePlannerRoutes   = require('./routes/outagePlanner');
 const lotoRoutes            = require('./routes/loto');
 const disasterEventRoutes   = require('./routes/disasterEvents');
 const arcFlashIncidentRoutes = require('./routes/arcFlashIncidents'); // ESP-5 arc-flash incident register
+const installedBaseRoutes   = require('./routes/installedBase'); // IBI: fleet benchmarks + modernization pipeline + attach-rate
 const leaveBehindRoutes     = require('./routes/leaveBehind');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
 const { requestId }                      = require('./middleware/requestId'); // v0.37.1 W5 MT-129
@@ -1336,6 +1339,8 @@ app.get('/api/config', authenticateToken, async (req, res) => { // (N3)
 app.use('/api/assets/labels',   authenticateToken, assetLabelRoutes);
 app.use('/api/assets/import',   authenticateToken, ingestLimiter, assetsImportRoutes);
 app.use('/api/test-reports/import', authenticateToken, ingestLimiter, testReportImportRoutes);
+app.use('/api/import/assets',   authenticateToken, ingestLimiter, importAssetsRoutes);
+app.use('/api/doble/import',    authenticateToken, ingestLimiter, dobleImportRoutes);
 // Review queue: list/approve/reject parked items. Mounted BEFORE the jobs/
 // backfill mounts so it does NOT inherit their ingestLimiter (20/min) — those
 // mounts run their middleware before falling through to a non-matching path, so
@@ -1534,6 +1539,9 @@ app.use('/api/public', publicParseLimiter, publicParseRoutes);
 
 // ── Quote Request — per-asset service quote lifecycle ────────────────────────
 app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
+
+// -- Installed-Base Intelligence - fleet benchmarks / modernization pipeline / attach-rate --
+app.use('/api/installed-base', authenticateToken, installedBaseRoutes);
 
 // ── Access Blockers — missing-access / open-items blocker log ─────────────────
 app.use('/api/access-blockers', authenticateToken, require('./routes/accessBlockers'));

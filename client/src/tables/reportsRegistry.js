@@ -34,6 +34,13 @@ export const REPORTS = [
     to: '/reports/revenue',
   },
   {
+    id: 'installed-base',
+    name: 'Installed-Base Intelligence',
+    description: 'Fleet benchmarks from normalized test readings — each asset\'s latest values placed in percentile context against comparable units, with trend direction — plus the Watch/Plan/Act modernization pipeline built on age, condition, and end-of-support, and the identified → quoted → converted attach-rate funnel. Fleet context for planning conversations; condition decisions stay with qualified engineers.',
+    icon: BarChart3,
+    to: '/installed-base',
+  },
+  {
     id: 'arc-flash-labels',
     name: 'Arc Flash Label Report',
     description: 'Every current NFPA 70E 130.5(H) arc-flash label across your sites — nominal voltage, incident energy, arc-flash boundary, PPE / minimum arc rating, and DANGER/WARNING severity — with study dates and which studies are expiring within 90 days. The label schedule auditors and insurers ask for.',
