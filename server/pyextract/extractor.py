@@ -256,7 +256,10 @@ _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _NUM = r"-?\d[\d,]*(?:\.\d+)?"
 _UNIT = (r"(?:M\s?Ω|MΩ|Mohm|megohm|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|ppm|kVDC|VDC|"
          r"kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A)")
-_INLINE_RE = re.compile(r"([A-Za-z][\w .,/&()+#-]{0,28}?)\s*[:=]?\s*(" + _NUM + r")\s*(" + _UNIT + r")(?![A-Za-z0-9])")
+# NOTE: [ \t]* (not \s*) between value and unit — a unit must sit on the SAME
+# LINE as its value. PowerDB flattened tables otherwise pair the last number of
+# one row with a %/unit that starts the NEXT line ("…6 37 5 28\n% SATURATION").
+_INLINE_RE = re.compile(r"([A-Za-z][\w .,/&()+#-]{0,28}?)[ \t]*[:=]?[ \t]*(" + _NUM + r")[ \t]*(" + _UNIT + r")(?![A-Za-z0-9])")
 _EXPECT_RE = re.compile(r"(?:Expected|Limit|Min(?:imum)?|Spec|Acceptance|Nameplate)\.?\s*[:=]?\s*([<>]=?\s*[\d.]+\s*[A-Za-zΩµ%]*)", re.I)
 _RESULT_RE = re.compile(r"\b(GREEN|YELLOW|RED|PASS(?:ED)?|FAIL(?:ED)?|MARGINAL|SAT|UNSAT|ACCEPTABLE|DEFICIENT)\b", re.I)
 
@@ -323,15 +326,26 @@ def _inline_readings(text):
     real PowerDB / prose / load-bank readings the ruled-table pass misses."""
     out = []
     for m in _INLINE_RE.finditer(text):
-        label = m.group(1).strip(" :=.-,/#")
+        label = m.group(1).strip(" :=.-,/#(")
         if not re.search(r"[A-Za-z]", label):
             continue
-        label = " ".join(label.split()[-4:])  # keep the last few words, not a whole sentence
+        # A label is words, not table data. In a flattened PowerDB row
+        # ("X1 - X2 40 40.000 0.998 40.080 0.20 %") the tokens between the real
+        # row label and the matched value are NUMBERS — strip trailing numeric
+        # tokens, and if we stripped 2+ the "label" was row data: drop the match.
+        toks = label.split()
+        stripped = 0
+        while toks and re.fullmatch(r"-?[\d,]+(?:\.\d+)?%?", toks[-1]):
+            toks.pop()
+            stripped += 1
+        if not toks or stripped >= 2:
+            continue
+        label = " ".join(toks[-4:])  # keep the last few words, not a whole sentence
         try:
             val = float(m.group(2).replace(",", ""))
         except ValueError:
             continue
-        unit = m.group(3)
+        unit = m.group(3).replace("Μ", "M")   # Greek capital Mu -> Latin M (PowerDB "Μ Ω")
         mt, crit, u, kind = _classify(label, unit)
         # Capture a trailing PASS/FAIL/GREEN-RED token on the SAME line. Borderless
         # reports (reportlab drawString, PowerDB prose) have no ruled cells, so the
@@ -403,6 +417,158 @@ def _column_tables(page_tables):
     return out
 
 
+# --- PowerDB grid pass -------------------------------------------------------
+# PowerDB forms put the UNIT in the COLUMN HEADER ("READING Μ Ω 20ºC Μ Ω",
+# "(minutes) (kVDC) (megohms)", "Hydrogen (ppm): 18 18 …") and the values in
+# bare numeric rows, so the inline <label> <value> <unit> pass can never see
+# them and the ruled-table pass never matches a value/result header. This pass
+# walks the text layer line-by-line with a small state machine keyed on those
+# header signatures. NOTE: PowerDB renders megohm as GREEK capital Mu + Ω
+# ("Μ Ω" / "ΜΩ", U+039C), which no Latin-M regex matches.
+_NUMTOK_RE = re.compile(r"-?[\d,]+(?:\.\d+)?")
+_MOHM_HDR_RE = re.compile(r"Μ\s?Ω|MΩ")
+_UNITCOL_RE = re.compile(r"\(([A-Za-zµ%]+)\)")
+_DGA_ROW_RE = re.compile(
+    r"^\*?\s*([A-Za-z][A-Za-z0-9 /.]*?)\s*\((ppm|ppb)\)\s*:?\s*"
+    r"((?:-?[\d,]+(?:\.\d+)?[ \t]+)*-?[\d,]+(?:\.\d+)?)$")
+_PF_ROW_RE = re.compile(r"^\d+\s+([HXhx]\d)\s+\S+\s+(?:GRD|GND|GST|UST)\b(.+)$")
+_PHASEHDR_RE = re.compile(r"\bPHASE\s+\d", re.I)
+
+
+def _is_numtok(t):
+    return _NUMTOK_RE.fullmatch(t) is not None
+
+
+def _tofloat(t):
+    try:
+        return float(t.replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _grid_rec(mt, label, val, unit, kind, crit, conf, off, phase=None):
+    return {"measurementType": mt, "label": label, "phase": phase,
+            "asFoundValue": val, "asFoundUnit": unit, "expectedRange": None,
+            "passFail": None, "critical": crit, "kind": kind,
+            "confidence": conf, "_off": off}
+
+
+def _powerdb_grids(text):
+    """Diagnostic readings from PowerDB unit-in-header grids: insulation
+    resistance (Μ Ω / (megohms) headers), pole contact resistance (µΩ block
+    beside the breaker IR grid), DGA ppm rows, bushing C2 power-factor rows."""
+    out = []
+    ir_rows = 0        # countdown: data rows left in a Μ Ω READING grid
+    ir_micro = False   # grid also carries a POLE RESISTANCE - MICRO-OHMS block
+    unit_cols = None   # units from a "(minutes) (kVDC) (megohms) …" header
+    unit_rows = 0
+    ctx = None         # nearest "WINDING n" context label
+    off = 0
+    for raw in text.split("\n"):
+        loff = off
+        off += len(raw) + 1
+        line = raw.strip()
+        if not line:
+            ir_rows, unit_cols = 0, None
+            continue
+        toks = line.split()
+        has_num = any(_is_numtok(t) for t in toks)
+        wm = re.search(r"\bWINDING\s+(\d)\b", line, re.I)
+        if wm:
+            ctx = "Winding " + wm.group(1)
+
+        # 1) DGA rows: "Hydrogen (ppm): 18 18 21 18 20" — newest sample FIRST.
+        dm = _DGA_ROW_RE.match(line)
+        if dm:
+            v = _tofloat(dm.group(3).split()[0])
+            if v is not None:
+                name = dm.group(1).strip()
+                mt, crit, u, kind = _classify(name, dm.group(2))
+                out.append(_grid_rec(mt, name.title(), v, u or dm.group(2),
+                                     kind, crit, 0.75, loff))
+            continue
+
+        # 2) unit-in-header column tables: "(minutes) (kVDC) (megohms) (microamps)"
+        units = _UNITCOL_RE.findall(line)
+        if len(units) >= 2 and any(u.lower().startswith("megohm") for u in units):
+            unit_cols = [u.lower() for u in units]
+            unit_rows = 10
+            continue
+        if unit_cols is not None and unit_rows > 0:
+            run = []
+            for t in toks:
+                if _is_numtok(t):
+                    run.append(t)
+                else:
+                    break
+            if len(run) == len(unit_cols):
+                mi = next(i for i, u in enumerate(unit_cols) if u.startswith("megohm"))
+                v = _tofloat(run[mi])
+                if v is not None and v > 0:
+                    out.append(_grid_rec("insulation_resistance",
+                                         ctx or "Insulation Resistance", v, "MΩ",
+                                         "D", False, 0.7, loff))
+                unit_rows -= 1
+                continue
+            if run:                    # numeric row, missing cells: skip, stay in mode
+                unit_rows -= 1
+                continue
+            unit_cols = None           # non-numeric line: table over
+
+        # 3) Μ Ω READING grids: header "INSULATION POLE 1 ΜΩ (P1-P2) … POLE
+        #    RESISTANCE - MICRO-OHMS", rows "POLE TO FRAME 2,000 1,548.00 … 10 12 13"
+        if _MOHM_HDR_RE.search(raw):
+            ir_rows = 8
+            ir_micro = "MICRO-OHM" in raw.upper()
+            continue
+        if ir_rows > 0:
+            ir_rows -= 1
+            if len(_PHASEHDR_RE.findall(line)) >= 2:
+                ir_rows = 0            # a NEW section header: grid over
+                continue
+            if not has_num:            # continuation header row ("RESISTANCE
+                continue               # READING 20°C …"): skip, stay in grid
+            i = 0
+            while i < len(toks) and not _is_numtok(toks[i]):
+                i += 1
+            lbl, run, j = toks[:i], [], i
+            while j < len(toks) and _is_numtok(toks[j]):
+                run.append(toks[j])
+                j += 1
+            label = " ".join(lbl).strip("':")
+            if re.search(r"READING|COUNTER|WIRING|COMMENT", label, re.I):
+                continue               # counter/boilerplate rows, not readings
+            if lbl and len(lbl) <= 4 and len(run) >= 2:
+                for t in run[:6]:      # ≤3 phases × (reading, 20°C-corrected)
+                    v = _tofloat(t)
+                    if v is not None and v > 0:
+                        out.append(_grid_rec("insulation_resistance", label, v,
+                                             "MΩ", "D", False, 0.75, loff))
+                extra = run[6:]        # µΩ pole-resistance block beside the IR grid
+                if ir_micro and len(extra) == 3:
+                    for pi, t in enumerate(extra, 1):
+                        v = _tofloat(t)
+                        if v is not None and v > 0:
+                            out.append(_grid_rec(
+                                "contact_resistance", "Pole %d Resistance" % pi,
+                                v, "µΩ", "D", True, 0.75, loff, phase="P%d" % pi))
+            continue
+
+        # 4) bushing C2 power-factor rows (under a "BUSHING … % POWER FACTOR"
+        #    header): "29 H1 1 GRD 4,150.00 1.00 4,145.30 0.52 0.52 1.000 …"
+        #    cols: npl-cap, npl-PF, meas-cap, %PF measured, %PF corrected 20°C.
+        pm = _PF_ROW_RE.match(line)
+        if pm and "POWER FACTOR" in text[max(0, loff - 900):loff].upper():
+            nums = [_tofloat(t) for t in pm.group(2).split() if _is_numtok(t)]
+            if len(nums) >= 5 and nums[4] is not None and 0 < nums[4] <= 20:
+                out.append(_grid_rec(
+                    "power_factor",
+                    "Bushing %s Power Factor" % pm.group(1).upper(),
+                    nums[4], "%", "D", False, 0.75, loff,
+                    phase=pm.group(1).upper()))
+    return out
+
+
 # A NETA/PowerDB job report covers many devices, each opening with a
 # "SUBSTATION <id> POSITION <id>" block. This is the boundary the one-upload =
 # one-facility split (#1) keys on.
@@ -452,8 +618,9 @@ def _section_for_offset(off, raw_spans):
 
 def extract_measurements(cells, page_tables, full_text=""):
     table_out = _column_tables(page_tables)              # clean column tables
+    grid_out = _powerdb_grids(full_text)                 # PowerDB unit-in-header grids
     inline_out = _inline_readings(full_text)             # general value+unit pass
-    combined = table_out + inline_out
+    combined = table_out + grid_out + inline_out
     # Which (type, value, unit) triples already have a PHASED reading (from the
     # richer column-table pass) — used to drop the inline pass's phase-less
     # duplicate of the same value.
@@ -577,6 +744,11 @@ def extract_fields(path: str, mode: str = "all"):
         ocr = _ocr_text(path)
         if len(ocr.strip()) >= 40:
             text, cells, line_tables, ocr_used = ocr, [], [], True
+
+    # PowerDB embeds U+2126 OHM SIGN (Ω) and U+00B5 MICRO SIGN (µ); every regex
+    # in this pipeline uses U+03A9 GREEK OMEGA / U+00B5 — normalize once here so
+    # "Μ Ω" megohm headers and µΩ readings actually match.
+    text = text.replace("Ω", "Ω").replace("μ", "µ")
 
     header = extract_header(cells, text)
     measurements = extract_measurements(cells, line_tables, text)  # already deduped
