@@ -118,7 +118,7 @@ jobs:
         # but with migrations run above it should pass fully.
         run: |
           npx jest --selectProjects unit --ci --forceExit \
-            --testPathPattern="tests/(health|auth|aiQuota)\.test\.js"
+            --testPathPatterns="tests/(health|auth|aiQuota)\.test\.js"
 
       - name: Stop background server
         if: always()
