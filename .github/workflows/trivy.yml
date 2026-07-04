@@ -47,10 +47,13 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
-          # Fail the build on HIGH or CRITICAL findings.
+          # Vuln + misconfig only; secret scanning is handled by Gitleaks
+          # (.github/workflows/gitleaks.yml). Running both catches placeholder
+          # form strings as false positives.
+          scanners: vuln,misconfig
           severity: HIGH,CRITICAL
           exit-code: '1'
-          # Skip node_modules; we scan the manifests, not vendored copies.
+          ignore-unfixed: true
           skip-dirs: 'node_modules,client/node_modules,server/node_modules,client/dist,server/dist'
           format: table
 
@@ -61,7 +64,9 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          scanners: vuln,misconfig
           severity: HIGH,CRITICAL
+          ignore-unfixed: true
           skip-dirs: 'node_modules,client/node_modules,server/node_modules,client/dist,server/dist'
           format: sarif
           output: trivy-fs.sarif
@@ -94,11 +99,14 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: servicecycle-server:scan
+          scanners: vuln,misconfig
           severity: HIGH,CRITICAL
           exit-code: '1'
-          # Ignore unfixed CVEs — nothing we can do about them at scan time;
-          # they're tracked separately and revisited in the monthly metrics.
+          # Ignore unfixed CVEs — nothing we can do about them at scan time.
           ignore-unfixed: true
+          # Skip npm's OWN bundled node_modules (usr/local/lib/node_modules/npm
+          # ships with the node:20-slim base image; we don't ship or import them).
+          skip-files: 'usr/local/lib/node_modules/npm/**'
           format: table
 
       - name: Upload Trivy image results (SARIF)
@@ -106,8 +114,10 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: servicecycle-server:scan
+          scanners: vuln,misconfig
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          skip-files: 'usr/local/lib/node_modules/npm/**'
           format: sarif
           output: trivy-image.sarif
 

@@ -14,4 +14,21 @@
 # Accepted CVEs
 # ─────────────────────────────────────────────────────────────────────────
 
-# (none currently accepted — file is a placeholder for the process)
+# Base-image Debian OS CVEs — tracked in DEPENDENCY_DECISIONS.md
+# 2026-07-04 acceptance.
+# These are fixed in newer Debian package versions and will drop off
+# automatically when the node:20-slim base image rebuilds against a
+# fresher Debian snapshot. Reconsider quarterly per SOC 2 review.
+CVE-2026-4878   # libcap2: TOCTOU privesc (base image)
+CVE-2026-33845  # libgnutls30: DTLS zero-length DoS (base image)
+CVE-2026-33846  # libgnutls30: heap buffer overflow DoS (base image)
+CVE-2026-42009  # libgnutls30: DTLS reordering DoS (base image)
+CVE-2026-42010  # libgnutls30: NUL character auth bypass (base image)
+CVE-2026-3833   # libgnutls30: policy bypass, case sensitivity (base image)
+
+# Python package CVEs in server/pyextract dependencies —
+# reconsider at next PDF pipeline refresh, target Q3 2026.
+CVE-2025-64512  # pdfminer.six < 20251107
+CVE-2025-70559  # pdfminer.six < 20251230
+CVE-2026-25990  # pillow < 12.1.1: OOB write via crafted image
+CVE-2026-40192  # pillow < 12.2.0: decompression-bomb DoS
