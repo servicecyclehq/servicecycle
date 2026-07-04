@@ -358,11 +358,18 @@ const OCR_SYSTEM = `You are an expert electrical equipment nameplate reader.
 Extract structured data from a photo of an equipment nameplate.
 Respond ONLY with a JSON object — no markdown fences, no prose.
 
-For EACH field below return an object: { "value": <value-or-null>, "confidence": "high" | "medium" | "low" }.
+For EACH field below return an object:
+  { "value": <value-or-null>, "confidence": "high" | "medium" | "low", "sourceText": <verbatim-nameplate-snippet-or-null> }
+
 Confidence rubric:
 - "high"   — the characters are crisp and unambiguous.
 - "medium" — legible but partly obscured / glare / you inferred the formatting.
 - "low"    — barely legible or guessed, OR the field is not visibly present (then value = null).
+
+"sourceText" is the VERBATIM text on the nameplate that you read the value from — including
+the unit label ("kVA", "V", "A", "Hz") so a downstream check can verify the value came from
+the right line. Copy it exactly as printed (e.g. "75 kVA", "480/277 V", "60 Hz", "YEAR 2015").
+Return null only when the field itself is not visibly present.
 
 Fields and their value types:
 {
@@ -378,13 +385,15 @@ Fields and their value types:
   "enclosureRating": string | null    // NEMA or IP rating e.g. "NEMA 12" or "IP54"
 }
 
-Example element: "manufacturer": { "value": "Square D", "confidence": "high" }
+Example element: "kva": { "value": 75, "confidence": "high", "sourceText": "KVA 75" }
 
 Rules:
-- NEVER guess a value you cannot actually see — use { "value": null, "confidence": "low" }.
+- NEVER guess a value you cannot actually see — use { "value": null, "confidence": "low", "sourceText": null }.
 - For voltage, preserve the full string from the nameplate.
 - For kva, return only the number (e.g. 75, not "75 kVA").
-- If multiple values appear (e.g. dual-voltage transformer), use the primary.`;
+- If multiple values appear (e.g. dual-voltage transformer), use the primary.
+- The "sourceText" MUST contain the unit label for that field (kVA / V / A / Hz / year).
+  If you cannot see the unit label next to the value, downgrade confidence to "medium" or "low".`;
 
 const ocrLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -444,7 +453,7 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
     // completeWithImage routes by provider (gemini → _geminiImage) and uses
     // ONLY `prompt` for images — settings.system is ignored — so the JSON
     // schema instructions must travel inside the prompt itself.
-    const { text } = await completeWithImage({
+    const { text, model: readerModel } = await completeWithImage({
       imageBuffer: img.buffer,
       mediaType:   img.mimeType,
       prompt:      `${OCR_SYSTEM}\n\nRead this equipment nameplate and respond with ONLY the JSON object described above.`,
@@ -492,6 +501,37 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
     const { applyNameplateDowngrades } = require('../lib/measurementSanity');
     applyNameplateDowngrades(fields, confidence);
 
+    // Cross-field domain-consistency layer (2026-07-03 nameplate review §4).
+    // Catches the observed failure class: an OCR that reads a crisp value from
+    // the wrong line (e.g. kva=60 grabbed from a "60 Hz" frequency row).
+    // POSTURE: routes suspect fields to review — NEVER auto-corrects, NEVER
+    // asserts compliance. Findings become tooltip reasons for red fields.
+    // See docs/NAMEPLATE_INGESTION_REVIEW_2026-07-03.md §4.
+    const { checkNameplateConsistency, checkNameplateEvidence } = require('../lib/nameplateValidators');
+    const consistencyFindings = checkNameplateConsistency(fields, confidence);
+    // V7 evidence-string check — only fires if the model returned a `sourceText`
+    // map alongside the value/confidence cells (prompt asks for it; older
+    // responses regress to no evidence and this is a no-op).
+    let evidenceMap: Record<string, string> | null = null;
+    if (parsed && typeof parsed === 'object') {
+      evidenceMap = {};
+      for (const k of KEYS) {
+        const cell = parsed[k];
+        if (cell && typeof cell === 'object' && typeof cell.sourceText === 'string' && cell.sourceText.trim() !== '') {
+          evidenceMap[k] = String(cell.sourceText);
+        }
+      }
+      if (Object.keys(evidenceMap).length === 0) evidenceMap = null;
+    }
+    const evidenceFindings = checkNameplateEvidence(fields, confidence, evidenceMap);
+    // Machine-readable reasons per field so the client tooltip can say WHY
+    // a field is red ("60 also appears as the frequency — verify the kVA line").
+    const reasons: Record<string, string[]> = {};
+    for (const f of [...consistencyFindings, ...evidenceFindings]) {
+      if (!reasons[f.field]) reasons[f.field] = [];
+      reasons[f.field].push(f.message);
+    }
+
     const assetId = (req.body?.assetId || '').trim();
     if (assetId) {
       void logActivity(assetId, userId, accountId, 'nameplate_ocr', {
@@ -507,14 +547,26 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
       const _present = KEYS.filter((k) => fields[k] != null);
       const _confs = _present.map((k) => _cMap[confidence[k]] ?? 0.6);
       void recordExtraction({
-        accountId, userId: userId || null, kind: 'nameplate', engine: 'nameplate-vision', aiUsed: true,
+        accountId, userId: userId || null, kind: 'nameplate',
+        // Actual model used (Gemini cascade hop, Groq fallback, etc.) so
+        // per-provider accuracy is comparable — the sibling photo_inspect
+        // path uses this same pattern at :308.
+        engine: String(readerModel || 'nameplate-vision'), aiUsed: true,
         fieldsExtracted: _present.length,
         confMean: _confs.length ? _confs.reduce((a: number, b: number) => a + b, 0) / _confs.length : null,
         confMin: _confs.length ? Math.min(..._confs) : null,
       });
     }
 
-    return res.json({ success: true, data: { fields, confidence, scansRemaining: Number.isFinite(scan.cap) ? Math.max(0, scan.cap - scan.count) : null } });
+    return res.json({ success: true, data: {
+      fields, confidence, reasons,
+      // Model surfaced so the client can round-trip it to the save route,
+      // where it's persisted alongside the ORIGINAL AI read (below) as free
+      // ground-truth. Never blank the field — 'nameplate-vision' is the
+      // legacy engine label the telemetry table understands.
+      readerModel: String(readerModel || 'nameplate-vision'),
+      scansRemaining: Number.isFinite(scan.cap) ? Math.max(0, scan.cap - scan.count) : null,
+    } });
   } catch (err: any) {
     void refundScan(userId, 'nameplate_scan', accountId); // a failed read must not burn a preview scan
     console.error('[ocr-nameplate] error:', err.message);

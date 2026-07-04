@@ -478,7 +478,10 @@ async function _anthropicImage({ imageBuffer, mediaType, prompt, maxTokens, s })
       ],
     }],
   });
-  return { text: _anthropicText(msg) };
+  // model returned so callers (telemetry, distinguishing Gemini vs Groq reads)
+  // can log the actual model used — hardcoded engine labels hide provider
+  // differences and prevent per-provider accuracy comparison.
+  return { text: _anthropicText(msg), model: s.model };
 }
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
@@ -518,7 +521,7 @@ async function _openaiImage({ imageBuffer, prompt, maxTokens, azure, s }) {
       ],
     }],
   });
-  return { text: _openaiText(res, azure ? 'azure_openai' : 'openai') };
+  return { text: _openaiText(res, azure ? 'azure_openai' : 'openai'), model: s.model };
 }
 
 // ── Azure OpenAI ──────────────────────────────────────────────────────────────
@@ -576,25 +579,24 @@ async function _azureComplete({ system, user, maxTokens, s }) {
 // surface immediately without cascading — we don't waste calls on other
 // models when the request is structurally broken.
 
-// 2026-06-12: gemini-1.5-flash was RETIRED by Google — it now 404s on v1beta
-// generateContent, which silently broke the cascade's last hop (when the two
-// 2.5 models hit their daily free quota, the fallback 404'd → hard failure).
-// Replaced with the 2.0 flash family: each model name carries its OWN
-// independent free-tier daily (RPD) bucket, so cascading across four distinct
-// models multiplies daily headroom AND every entry is a live model. Keep this
-// list to currently-available model ids (verify via ListModels) — a dead id
-// here re-introduces the same silent-failure bug.
-// Quality-first, then quantity, then two self-healing aliases. The 2.5 + 2.0
-// families each carry an INDEPENDENT free-tier daily (RPD) bucket, so cascading
-// across all four multiplies daily headroom. The trailing `*-latest` aliases
-// always resolve to a live model, so this cascade can never hard-fail the way
-// it did when gemini-1.5-flash was retired (404) — at worst they re-hit an
-// already-exhausted bucket. NOTE: free buckets are small; a true bulk-ingest
-// need is solved by a customer's own key (BYO-AI, Settings) or a paid tier, not
-// by adding more free models here. Verify ids via ListModels before editing.
+// 2026-07-03 verified against https://ai.google.dev/gemini-api/docs/models (last
+// updated 2026-06-30): gemini-2.0-flash and gemini-2.0-flash-lite are both
+// SHUT DOWN. Prior comment left the retired ids in the cascade, which would
+// throw immediately mid-cascade (404 is not a quota error) — re-introducing
+// exactly the silent-failure bug the 1.5-flash retirement caused.
+// Fixed: cascade to live 2.5 buckets + two self-healing `*-latest` aliases.
+// Live 2.5 models carry INDEPENDENT free-tier daily (RPD) buckets — cascading
+// across the two multiplies daily headroom. The `-latest` aliases always
+// resolve to a currently-live model, so this cascade can never hard-fail the
+// way it did before; at worst the aliases re-hit an already-exhausted bucket.
+// Also see _isGeminiCascadeError below: 404 model-not-found is now treated as
+// a cascade signal too, so a future model retirement degrades to the next hop
+// instead of throwing.
+// NOTE: free buckets are small; a true bulk-ingest need is solved by a
+// customer's own key (BYO-AI, Settings) or a paid tier, not by adding more
+// free models here. Verify ids via ListModels before editing.
 const DEFAULT_GEMINI_CASCADE = [
   'gemini-2.5-flash', 'gemini-2.5-flash-lite',
-  'gemini-2.0-flash', 'gemini-2.0-flash-lite',
   'gemini-flash-latest', 'gemini-flash-lite-latest',
 ];
 
@@ -609,6 +611,18 @@ function _resolveGeminiCascade(primaryModel) {
 function _isGeminiQuotaError(err) {
   const msg = err?.message || String(err);
   return /\b429\b|RESOURCE_EXHAUSTED|quota exceeded|rate.?limit/i.test(msg);
+}
+
+// A model that gets retired by Google returns 404 NOT_FOUND from
+// generateContent, which is NOT a quota error. Left untreated, that throws
+// mid-cascade (the exact 1.5-flash retirement bug). Treat 404 / model-not-found
+// as a "try the next hop" signal so an unnoticed retirement degrades instead
+// of hard-failing. Any other non-quota error still surfaces immediately
+// (auth, bad input, network — cascading those wastes calls).
+function _isGeminiCascadeError(err) {
+  if (_isGeminiQuotaError(err)) return true;
+  const msg = err?.message || String(err);
+  return /\b404\b|not.?found|NOT_FOUND|is not supported for generateContent|no longer supported|deprecated/i.test(msg);
 }
 
 async function _geminiComplete({ system, user, maxTokens, s }) {
@@ -633,12 +647,12 @@ async function _geminiComplete({ system, user, maxTokens, s }) {
       }
       return { text: result.response.text().trim() };
     } catch (err) {
-      if (_isGeminiQuotaError(err)) {
-        console.warn(`[ai][gemini] ${modelName} returned 429 / quota-exhausted; trying next model in cascade`);
+      if (_isGeminiCascadeError(err)) {
+        console.warn(`[ai][gemini] ${modelName} unavailable (${(err && err.message) || err}); trying next model in cascade`);
         lastError = err;
         continue;
       }
-      throw err;  // non-quota error — surface immediately
+      throw err;  // real error (auth, bad input, network) — surface immediately
     }
   }
   throw lastError || new Error('[ai][gemini] all cascade models exhausted their free-tier quotas for today');
@@ -670,10 +684,10 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s }) {
       if (i > 0) {
         console.log(`[ai][gemini] image cascade ${cascade[0]} → ${modelName} after ${i} quota-exhausted hop(s)`);
       }
-      return { text: result.response.text().trim() };
+      return { text: result.response.text().trim(), model: modelName };
     } catch (err) {
-      if (_isGeminiQuotaError(err)) {
-        console.warn(`[ai][gemini] image: ${modelName} returned 429 / quota-exhausted; trying next model in cascade`);
+      if (_isGeminiCascadeError(err)) {
+        console.warn(`[ai][gemini] image: ${modelName} unavailable (${(err && err.message) || err}); trying next model in cascade`);
         lastError = err;
         continue;
       }
@@ -722,7 +736,7 @@ async function _groqImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTo
     throw new Error(`[ai][groq] vision ${res.status}: ${detail}`);
   }
   const text = res.data && res.data.choices && res.data.choices[0] && res.data.choices[0].message && res.data.choices[0].message.content;
-  return { text: String(text || '').trim() };
+  return { text: String(text || '').trim(), model };
 }
 
 module.exports = { complete, completeWithImage, parseJSON };

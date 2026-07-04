@@ -4,6 +4,34 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-03 update — DGA / PI / PF parsers + nameplate-noise suppression
+
+Added three explicit passes in `server/pyextract/extractor.py` to close the three concrete gaps this baseline documented, and suppressed nameplate context lines from becoming false-positive `voltage_reading` / `percent_reading` measurements. All wins are deterministic (no new deps, no OCR path change).
+
+**Recall delta (parser recall — the deterministic-parser signal, unchanged corpus):**
+
+| Tier | Before | After | Δ |
+|---|---|---|---|
+| clean | 19% | **41%** | +22pp |
+| partial_ocr | 12% | **31%** | +19pp |
+| garbled_ocr | 5% | 5% | 0 (render too noisy — needs OCR pipeline, out of scope) |
+| clean OCR-path | 3% | **25%** | +22pp |
+
+What moved:
+
+- `_dga_readings` — DGA table rows keyed by `<gas name> (<symbol>) <value> <=<limit> [<result>]`; `HYDROGEN (H2)  1240  <=100  HIGH - RED` now emits a `dissolved_gas` reading. Report 002 goes from 0% → 100%.
+- `_pi_readings` — `POLARIZATION INDEX (H-G): 2.31` now emits a `polarization_index` reading (was invisible to the general inline pass because it carries no unit).
+- `_pf_readings` — multi-line PF table under `POWER FACTOR ... Doble` headers; the "label + mode + %PF" row (`CH+CHL  GST  0.34  <=0.5  PASS`) is now captured.
+- Nameplate suppression in `_inline_readings` — labels containing `PRIMARY / SECONDARY / RATED / IMPEDANCE / BUS / AMBIENT / BIL / FRAME / TEMP RISE` no longer create fake measurements; single/double-letter labels for ambiguous units (V / A / %) are also dropped (the `AMBIENT: 28 C / 45% RH` → label='C' class).
+
+Still open (deferred — not in this session's scope):
+
+- Reports 006 / 007 / 017 — bus-insulation `A-G: 15200` and phase-column contact-resistance tables (label header on one line, phase rows on the next) still 0%. These need column-header inference for standalone A/B/C rows.
+- Report 014 / 018 — protection relay pickup + tan-delta variants. Different regex families.
+- Garbled tier is a render-noise floor — the fix path is the RapidOCR second reader (backlogged this session per the "no new deps" gate; documented in `docs/NAMEPLATE_INGESTION_REVIEW_2026-07-03.md` §3.1).
+
+Verified: 15-case `tests/ingestGateDomainValidators.test.js` still green; new 42-case `tests/nameplateValidators.test.js` green. Full run: 145 tests passing across the three pure-lib suites (nameplate validators + gate + measurement sanity).
+
 ## Read this first — what the numbers mean
 
 **1. This is a BASELINE (a "before"), and it measures the deterministic pdfplumber extractor.** The P0/validator changes shipped this session (numeric AI confidence, AI-critical HITL routing, silent-empty + cross-pass guards, domain validators) are *safety-routing* changes — they govern what happens to whatever is extracted, not how much is extracted. Their effect is proven by the 15-case `tests/ingestGateDomainValidators.test.js` suite (all green), not by a change in these recall numbers. So there is no meaningful extraction-recall "after" delta from this session; the honest artifact is this baseline plus the passing safety tests.

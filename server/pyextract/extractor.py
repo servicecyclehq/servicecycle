@@ -321,6 +321,40 @@ def _classify(label, unit):
     return slug, False, nu, "R"
 
 
+# Nameplate/context labels: these carry ratings not test readings, so an
+# inline "<label> <value> <unit>" match is noise not signal (baseline eval
+# flagged "PRIMARY: 13800 V", "IMPEDANCE: 5.75 %", "AMBIENT: 28 C / 45% RH",
+# "BUS RATING: 1200 A" as false-positive voltage/current/percent readings).
+# Match on any WORD in the label — labels can be "PRIMARY", "PRIMARY AMPS",
+# "RATED VOLTAGE", etc. Case-insensitive substring check.
+_NAMEPLATE_LABEL_TOKENS = {
+    "primary", "secondary", "rated", "nameplate", "ampacity",
+    "impedance", "bil", "kva", "kvar", "temp", "ambient",
+    "rise", "bus", "frame", "voltage",  # "RATED VOLTAGE" / "BUS RATING"
+}
+# A subset of common inline labels that are ALWAYS nameplate context regardless
+# of surrounding words (used for whole-label suffix match).
+_NAMEPLATE_LABEL_SUFFIXES = (
+    "primary", "secondary", "impedance", "ambient", "bil",
+    "primary amps", "secondary amps", "rated voltage", "bus rating",
+    "temp rise", "frame",
+)
+
+
+def _looks_like_nameplate_label(label):
+    """True if this label is a NAMEPLATE / CONTEXT reading, not a test result.
+    Suppressing these stops "PRIMARY: 13800 V" from becoming a voltage_reading
+    measurement (baseline eval Section 'Findings')."""
+    low = label.lower().strip()
+    if not low:
+        return False
+    if any(low.endswith(sfx) or low == sfx for sfx in _NAMEPLATE_LABEL_SUFFIXES):
+        return True
+    # Any whole-word match of a nameplate token pins it as context.
+    words = re.findall(r"[a-z]+", low)
+    return any(w in _NAMEPLATE_LABEL_TOKENS for w in words)
+
+
 def _inline_readings(text):
     """General pass: every <label> <value> <unit> in the text layer. Captures
     real PowerDB / prose / load-bank readings the ruled-table pass misses."""
@@ -328,6 +362,20 @@ def _inline_readings(text):
     for m in _INLINE_RE.finditer(text):
         label = m.group(1).strip(" :=.-,/#(")
         if not re.search(r"[A-Za-z]", label):
+            continue
+        # Nameplate suppression: PRIMARY:/IMPEDANCE:/BUS RATING: etc. carry
+        # ratings not readings — surface them as nameplate data elsewhere,
+        # never as fake voltage/current/percent measurements.
+        if _looks_like_nameplate_label(label):
+            continue
+        # Reject 1-2 letter labels for ambiguous units (V/A/%). These are the
+        # "AMBIENT: 28 C / 45% RH" → label='C' class: the greedy regex snags
+        # a single trailing letter from the *previous* value's unit tail.
+        # A real measurement label ("Voltage", "Current", "Impedance") has ≥3
+        # alphabetic chars. Diagnostic units (MΩ/µΩ/mΩ/ppm) are safe as-is
+        # because their tokens are already unambiguous.
+        _label_alpha = re.sub(r"[^A-Za-z]", "", label)
+        if len(_label_alpha) < 3 and m.group(3).strip() in {"V", "A", "%", "VDC", "VAC", "mA", "kA", "kV"}:
             continue
         # A label is words, not table data. In a flattened PowerDB row
         # ("X1 - X2 40 40.000 0.998 40.080 0.20 %") the tokens between the real
@@ -569,6 +617,177 @@ def _powerdb_grids(text):
     return out
 
 
+# ── Explicit passes: DGA, PI, PF (2026-07-03 eval-gap fixes) ────────────────
+# These three passes close the concrete recall gaps documented in
+# docs/EVAL_BASELINE_2026-07.md (baseline: parser recall 19% / 12% / 5%). Each
+# targets one measurement family the general inline pass cannot see: DGA
+# tables (unit lives in a header, values sit in bare rows with <=LIMIT trails),
+# polarization index (dimensionless ratio — the inline pass requires a unit),
+# and the multi-line PF-block table (label on one line, header on next, values
+# after that). Pure regex, no deps.
+
+# DGA gas names → dissolved-gas identifier keeps the label human-readable.
+_DGA_NAMES = {
+    "hydrogen": "H2", "methane": "CH4",
+    "ethane": "C2H6", "ethylene": "C2H4", "acetylene": "C2H2",
+    "carbon monoxide": "CO", "carbon dioxide": "CO2",
+    "oxygen": "O2", "nitrogen": "N2",
+    "tdcg": "TDCG", "total dissolved combustible gas": "TDCG",
+}
+# DGA table rows: "HYDROGEN (H2)  1240  <=100  HIGH - RED"
+# The gas symbol appears in parentheses OR the name alone leads the line;
+# leading value = the reading (ppm), trailing `<=N` = expected limit, trailing
+# token = result. `_DGA_ROW_RE` in the powerdb pass requires "(ppm)" INLINE,
+# which this variant does not have — the "ppm" unit is in the section header.
+_DGA_TABLE_ROW_RE = re.compile(
+    r"^\s*"
+    r"([A-Z][A-Z ]{2,30}?)"                        # gas name (uppercase)
+    r"(?:\s*\(([A-Z][A-Z0-9]{0,5})\))?"            # optional (H2) style symbol
+    r"\s+"
+    r"(-?\d[\d,]*(?:\.\d+)?)"                      # value
+    r"\s+"
+    r"(?:<=?\s*[\d,.]+|>=?\s*[\d,.]+|N/?A)"        # expected limit (required — cheap header-vs-data disambiguator)
+    r"(?:\s+([A-Z][A-Z\s\-]{1,30}))?"              # optional result token(s)
+    r"\s*$",
+    re.M,
+)
+
+
+def _dga_readings(text):
+    """Match DGA table rows across report formats — the header-per-column
+    variant (values with an inline <=LIMIT) that `_DGA_ROW_RE` in the powerdb
+    pass cannot see. Emits one dissolved_gas record per gas."""
+    out = []
+    for m in _DGA_TABLE_ROW_RE.finditer(text or ""):
+        name_raw = (m.group(1) or "").strip()
+        sym = (m.group(2) or "").strip().upper() or None
+        try:
+            val = float(m.group(3).replace(",", ""))
+        except ValueError:
+            continue
+        # Match against known gas name (fuzzy: whitespace-insensitive lowercase)
+        key = re.sub(r"\s+", " ", name_raw.lower()).strip()
+        canon = _DGA_NAMES.get(key)
+        if not canon and sym in {"H2","CH4","C2H6","C2H4","C2H2","CO","CO2","O2","N2","TDCG"}:
+            canon = sym
+        if not canon:
+            continue
+        # Result token → PASS/FAIL normalization (parse_value tolerates "HIGH - RED")
+        result_raw = (m.group(4) or "").strip()
+        pf = parse_value("result", result_raw) if result_raw else None
+        label = "%s (%s)" % (name_raw.title(), canon)
+        out.append({
+            "measurementType": "dissolved_gas",
+            "label":           label,
+            "phase":           None,
+            "asFoundValue":    val,
+            "asFoundUnit":     "ppm",
+            "expectedRange":   None,
+            "passFail":        pf,
+            "critical":        canon == "C2H2",  # acetylene is diagnostic-critical for oil transformers
+            "kind":            "D",
+            "confidence":      0.85,
+            "_off":            m.start(),
+        })
+    return out
+
+
+# Polarization index: "POLARIZATION INDEX (H-G): 2.31" — dimensionless ratio,
+# so the general inline pass (requires unit token) will never see it.
+_PI_RE = re.compile(
+    r"POLARIZATION\s+INDEX(?:\s*\(([HXG0-9\-]+)\))?\s*[:=]?\s*"
+    r"(-?\d+(?:\.\d+)?)",
+    re.I,
+)
+
+
+def _pi_readings(text):
+    out = []
+    for m in _PI_RE.finditer(text or ""):
+        phase = (m.group(1) or "").strip() or None
+        try:
+            val = float(m.group(2))
+        except ValueError:
+            continue
+        # Physical floor: NETA/IEEE-43 PI must be ≥ 1.0 (asymptote). A parse
+        # yielding < 1 is misread. We record it anyway (confidence 0.75) so
+        # domainValidators fires on it — hiding it here would let a real
+        # < 1.0 misread never reach review.
+        out.append({
+            "measurementType": "polarization_index",
+            "label":           "Polarization Index",
+            "phase":           phase,
+            "asFoundValue":    val,
+            "asFoundUnit":     "ratio",
+            "expectedRange":   None,
+            "passFail":        None,
+            "critical":        False,
+            "kind":            "D",
+            "confidence":      0.9,
+            "_off":            m.start(),
+        })
+    return out
+
+
+# Power Factor table (Doble): the LABEL sits on one line, the VALUE on another.
+# Report 001:
+#   POWER FACTOR - DOBLE M4100 @ 10 KV
+#   TEST        MODE     %PF CORR 20C    EXPECTED     RESULT
+#   CH+CHL      GST      0.34            <=0.5        PASS
+# The value is the number after the mode token (GST/UST/GRD), constrained to a
+# reasonable %PF range (0 < v <= 20).
+_PF_HEADER_RE = re.compile(r"^\s*POWER\s+FACTOR\b.*$", re.I | re.M)
+_PF_TABLE_ROW_RE = re.compile(
+    r"^\s*"
+    r"([A-Z0-9+\-/]{2,20})"                        # test label (CH+CHL, CL+CLH, HL, etc.)
+    r"\s+"
+    r"(GST|UST|GRD|GND)"                           # mode
+    r"\s+"
+    r"(-?\d+(?:\.\d+)?)"                           # %PF value
+    r"(?:\s+(?:<=?\s*[\d,.]+|>=?\s*[\d,.]+|N/?A))?" # optional expected
+    r"(?:\s+([A-Z][A-Z\s\-]{1,20}))?"              # optional result
+    r"\s*$",
+    re.M,
+)
+
+
+def _pf_readings(text):
+    """PF table rows in a POWER FACTOR block. Confidence gate: header must
+    appear within the preceding 600 chars so a stray GST/UST token elsewhere
+    (rare) never becomes a PF reading."""
+    if not text:
+        return []
+    out = []
+    hdr_positions = [h.start() for h in _PF_HEADER_RE.finditer(text)]
+    for m in _PF_TABLE_ROW_RE.finditer(text):
+        # Require a POWER FACTOR header within 600 chars before this row.
+        if not any(0 <= (m.start() - hp) <= 600 for hp in hdr_positions):
+            continue
+        try:
+            val = float(m.group(3))
+        except ValueError:
+            continue
+        if not (0 <= val <= 20):  # %PF plausibility envelope
+            continue
+        label = "%s %s" % (m.group(1).upper(), m.group(2).upper())
+        result_raw = (m.group(4) or "").strip()
+        pf = parse_value("result", result_raw) if result_raw else None
+        out.append({
+            "measurementType": "power_factor",
+            "label":           label,
+            "phase":           None,
+            "asFoundValue":    val,
+            "asFoundUnit":     "%",
+            "expectedRange":   None,
+            "passFail":        pf,
+            "critical":        False,
+            "kind":            "D",
+            "confidence":      0.85,
+            "_off":            m.start(),
+        })
+    return out
+
+
 # A NETA/PowerDB job report covers many devices, each opening with a
 # "SUBSTATION <id> POSITION <id>" block. This is the boundary the one-upload =
 # one-facility split (#1) keys on.
@@ -619,8 +838,11 @@ def _section_for_offset(off, raw_spans):
 def extract_measurements(cells, page_tables, full_text=""):
     table_out = _column_tables(page_tables)              # clean column tables
     grid_out = _powerdb_grids(full_text)                 # PowerDB unit-in-header grids
-    inline_out = _inline_readings(full_text)             # general value+unit pass
-    combined = table_out + grid_out + inline_out
+    dga_out = _dga_readings(full_text)                   # DGA <=LIMIT-anchored table rows (report_002 class)
+    pi_out = _pi_readings(full_text)                     # polarization index (ratio — no unit)
+    pf_out = _pf_readings(full_text)                     # PF-block table rows (Doble M4100)
+    inline_out = _inline_readings(full_text)             # general value+unit pass (post-nameplate-suppression)
+    combined = table_out + grid_out + dga_out + pi_out + pf_out + inline_out
     # Which (type, value, unit) triples already have a PHASED reading (from the
     # richer column-table pass) — used to drop the inline pass's phase-less
     # duplicate of the same value.

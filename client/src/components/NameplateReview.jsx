@@ -50,6 +50,12 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
   const [touched, setTouched] = useState({});       // fields the tech edited → verified
   const [remaining, setRemaining] = useState(null); // preview scans left today (null = unlimited)
   const [capped, setCapped] = useState(false);      // hit the preview scan cap
+  // Original AI read + reasons, captured on scan and sent back on save so the
+  // server can persist the ORIGINAL fields alongside the tech-corrected values.
+  // That per-field diff is free ground-truth for later confidence calibration
+  // (see docs/NAMEPLATE_INGESTION_REVIEW_2026-07-03.md §2.2 H5).
+  const [aiRead, setAiRead] = useState(null);       // { fields, confidence, model }
+  const [reasons, setReasons] = useState({});       // { field: string[] } — validator tooltips
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
@@ -85,9 +91,21 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
       const res = await api.post('/api/assets/ocr-nameplate', fd);
       const d = res.data?.data || {};
       const fields = d.fields || {};
+      const confidence = d.confidence || {};
       setValues(Object.fromEntries(FIELDS.map(([k]) => [k, fields[k] ?? ''])));
-      setConf(d.confidence || {});
+      setConf(confidence);
       setTouched({});
+      setReasons(d.reasons || {});
+      // Snapshot the raw AI read so we can send it back at save time — the
+      // server persists it under _scan.aiRead as free ground-truth. Keep it
+      // deep-cloned so subsequent user edits to `values` don't mutate the
+      // captured original.
+      setAiRead({
+        fields: JSON.parse(JSON.stringify(fields)),
+        confidence: JSON.parse(JSON.stringify(confidence)),
+        model: d.readerModel || null,
+        scannedAt: new Date().toISOString(),
+      });
       if (typeof d.scansRemaining === 'number') setRemaining(d.scansRemaining);
     } catch (err) {
       const s = err.response?.status; const e = err.response?.data;
@@ -114,6 +132,10 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
       if (file) fd.append('image', file);
       fd.append('fields', JSON.stringify(cleanVals));
       fd.append('confidence', JSON.stringify(cleanConf));
+      // Round-trip the original AI read + which fields the tech edited so the
+      // server can persist the diff as free ground-truth (H5 from the review).
+      if (aiRead) fd.append('aiRead', JSON.stringify(aiRead));
+      fd.append('touched', JSON.stringify(touched));
       const res = await api.post(`/api/assets/${assetId}/nameplate`, fd);
       onSaved?.(res.data?.data?.nameplateData || null);
     } catch (err) {
@@ -179,9 +201,14 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
               <div>
                 {FIELDS.map(([k, label]) => {
                   const c = effConf(k);
+                  // Domain-validator findings for this field (kva_equals_frequency,
+                  // kva_not_standard_size, etc.) show up as a native tooltip on
+                  // the confidence dot so the tech knows WHY it's red.
+                  const fieldReasons = (reasons && Array.isArray(reasons[k])) ? reasons[k] : [];
+                  const dotTitle = fieldReasons.length ? fieldReasons.join('; ') : LABEL[c];
                   return (
                     <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                      <span title={LABEL[c]} style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: 999, background: DOT[c] }} />
+                      <span title={dotTitle} style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: 999, background: DOT[c], cursor: fieldReasons.length ? 'help' : 'default' }} />
                       <label style={{ flex: '0 0 96px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</label>
                       <input
                         value={values[k] ?? ''} onChange={e => setField(k, e.target.value)}

@@ -1543,6 +1543,14 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
     try { fields = JSON.parse(req.body?.fields || '{}'); } catch (_e) { /* tolerate */ }
     try { confidence = JSON.parse(req.body?.confidence || '{}'); } catch (_e) { /* tolerate */ }
 
+    // Ground-truth capture (2026-07-03 nameplate review §2.2 H5, §5 #5): the
+    // client sends the ORIGINAL AI read + which fields the tech edited so the
+    // correction diff persists as free training/calibration data. Payloads
+    // are best-effort — a client that omits them still saves normally.
+    let aiRead: any = null, touched: any = {};
+    try { aiRead = req.body?.aiRead ? JSON.parse(req.body.aiRead) : null; } catch (_e) { aiRead = null; }
+    try { touched = req.body?.touched ? JSON.parse(req.body.touched) : {}; } catch (_e) { touched = {}; }
+
     const values: any = {};
     for (const k of NP_KEYS) {
       const v = fields[k];
@@ -1572,11 +1580,42 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
       } catch (e: any) { console.error('[nameplate] photo persist failed (non-fatal):', e?.message); }
     }
 
+    // Build the diff: fields where the tech's saved value differs from the
+    // AI's original read. This is the *training* signal — per-field precision
+    // by confidence tier drives future calibration. Keep only whitelisted keys.
+    let correctionDiff: Record<string, { ai: any; saved: any; touched: boolean }> | null = null;
+    if (aiRead && aiRead.fields && typeof aiRead.fields === 'object') {
+      const diff: Record<string, { ai: any; saved: any; touched: boolean }> = {};
+      for (const k of NP_KEYS) {
+        const aiVal = aiRead.fields[k];
+        const savedVal = values[k];
+        // Only record when the AI actually read *something* (so blank fields
+        // the tech typed in aren't spurious corrections) — the tech may still
+        // add data, but it's not a "correction" of an AI value.
+        const aiHasVal = aiVal !== undefined && aiVal !== null && String(aiVal).trim() !== '';
+        const savedHasVal = savedVal !== undefined && savedVal !== null;
+        if (aiHasVal && (savedHasVal ? String(aiVal) !== String(savedVal) : true)) {
+          diff[k] = { ai: aiVal, saved: savedHasVal ? savedVal : null, touched: !!touched[k] };
+        }
+      }
+      if (Object.keys(diff).length > 0) correctionDiff = diff;
+    }
+
     const nameplateData: any = {
       ...values,
       _scan: {
         confidence, photoDocumentId: photoDocId, photoKey,
         scannedAt: new Date().toISOString(), scannedBy: req.user.id,
+        // aiRead = the model's original read + confidence + model id, kept
+        // verbatim for future confidence calibration (isotonic-style,
+        // per-field precision by tier). Optional — best-effort payload.
+        ...(aiRead ? { aiRead: {
+          fields:     aiRead.fields ?? null,
+          confidence: aiRead.confidence ?? null,
+          model:      aiRead.model ?? null,
+          scannedAt:  aiRead.scannedAt ?? null,
+        } } : {}),
+        ...(correctionDiff ? { correctionDiff } : {}),
       },
     };
     // Lift the identity fields onto the top-level columns too (search/match).
