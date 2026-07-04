@@ -1,0 +1,17 @@
+# Trivy ignore file — CVEs we've reviewed and accepted.
+#
+# Every entry MUST have:
+#   1. The CVE ID.
+#   2. A comment linking to a decision entry in docs/security/DEPENDENCY_DECISIONS.md
+#      OR docs/security/SECURITY_DECISIONS.md.
+#   3. The date of acceptance.
+#
+# Reconsider each acceptance at the quarterly security review.
+# If a CVE gets a fix, remove it from this file so the scan fails until the
+# fixed version is adopted.
+
+# ─────────────────────────────────────────────────────────────────────────
+# Accepted CVEs
+# ─────────────────────────────────────────────────────────────────────────
+
+# (none currently accepted — file is a placeholder for the process)

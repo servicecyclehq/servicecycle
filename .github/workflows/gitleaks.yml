@@ -1,0 +1,49 @@
+name: Gitleaks (secret scan)
+
+# SOC 2 CC6.8 / CC7.1 — detect secrets committed to source.
+# Runs on every push and PR. Fails the build if a secret is detected.
+# The workflow uses the official Gitleaks Action, which is free for public
+# and private repos.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  # Weekly full-history scan catches secrets that slipped in before
+  # gitleaks was wired up. Runs Sunday 06:00 UTC.
+  schedule:
+    - cron: '0 6 * * 0'
+
+concurrency:
+  group: gitleaks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write   # for SARIF upload
+  pull-requests: write     # for PR comments on findings
+
+jobs:
+  gitleaks:
+    name: Scan for secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so weekly scans can walk back.
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          # No GITLEAKS_LICENSE required for public/personal use.
+          # If we adopt Gitleaks Pro later, add GITLEAKS_LICENSE as a repo secret.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Fails the job on any leak detection.
+          # Config file is optional; omitting uses the default ruleset.
+          # Add `.gitleaks.toml` at repo root if we need to allowlist known-false-positive patterns
+          # (e.g., example env vars in `.env.example`).
+          config-path: .gitleaks.toml

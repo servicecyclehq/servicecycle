@@ -1,0 +1,87 @@
+name: Verify Signed Commits (main)
+
+# SOC 2 CC1.4 / CC8.1 — every commit landing on main must be signed.
+# Prevents unverified commits from being pushed without traceability.
+#
+# ⚠️ Enforcement mode
+# ─────────────────────────────────────────────────────────────────────────
+# This workflow runs on push to main. It DOES NOT block the merge itself
+# (that would require branch protection with "Require signed commits" enabled
+# in repo Settings → Branches). But it provides a green/red CI signal that
+# an auditor can grep.
+#
+# To fully enforce, in GitHub UI:
+#   Settings → Branches → Add rule for `main`:
+#     - Require signed commits ✅
+#     - Require status checks: this workflow ✅
+#
+# GPG key setup for Dustin (do once locally):
+#   git config --global user.signingkey <KEY-ID>
+#   git config --global commit.gpgsign true
+#   git config --global tag.gpgsign true
+# Add the public key to GitHub → Settings → SSH and GPG keys.
+#
+# Alternative: SSH commit signing (simpler; no GPG server):
+#   git config --global gpg.format ssh
+#   git config --global user.signingkey ~/.ssh/id_ed25519.pub
+#   git config --global commit.gpgsign true
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Check signature on all new commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify commit signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Determine commit range to check.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+            # First push to a branch: `before` is 000000...; check just HEAD.
+            if [[ "${{ github.event.before }}" =~ ^0+$ ]]; then
+              RANGE="${{ github.sha }}"
+            fi
+          else
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          fi
+
+          echo "Checking signatures on: $RANGE"
+
+          UNSIGNED=0
+          for SHA in $(git rev-list --no-merges "$RANGE"); do
+            VERIFY=$(gh api "/repos/${{ github.repository }}/commits/$SHA" --jq '.commit.verification.verified')
+            REASON=$(gh api "/repos/${{ github.repository }}/commits/$SHA" --jq '.commit.verification.reason')
+            if [ "$VERIFY" != "true" ]; then
+              echo "❌ $SHA — unsigned or unverifiable (reason: $REASON)"
+              UNSIGNED=$((UNSIGNED + 1))
+            else
+              echo "✅ $SHA — verified ($REASON)"
+            fi
+          done
+
+          if [ "$UNSIGNED" -gt 0 ]; then
+            echo ""
+            echo "$UNSIGNED unsigned commit(s) found."
+            echo "Configure git commit signing per docs/security/SIGNED_COMMITS.md."
+            # Fail the build. Comment out this exit for a warn-only phase.
+            exit 1
+          fi
+
+          echo ""
+          echo "All commits verified."

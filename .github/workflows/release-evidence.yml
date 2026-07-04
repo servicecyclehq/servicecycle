@@ -1,0 +1,191 @@
+name: Release Evidence Archive
+
+# SOC 2 CC7.1 / CC8.1 — on every release tag, archive the full evidence
+# bundle needed for auditor review of that release:
+#   - CycloneDX SBOM (server + client)
+#   - Dependency scan output (npm audit)
+#   - CodeQL results reference
+#   - Gitleaks scan result
+#   - Trivy filesystem + image scan
+#   - Git commit SHA
+#   - Release notes (from tag annotation)
+#   - Deployment timestamp
+#
+# All artifacts get attached to the GitHub Release AND uploaded as workflow
+# artifacts (retained 400 days for audit-window coverage).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to archive (e.g. v0.1.2). Ignored when triggered by tag push.'
+        required: false
+
+permissions:
+  contents: write   # to attach to release
+  actions: read
+
+jobs:
+  archive:
+    name: Archive release evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so we can extract release notes / commit metadata.
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect metadata
+        id: meta
+        run: |
+          {
+            echo "sha=$(git rev-parse HEAD)"
+            echo "sha_short=$(git rev-parse --short HEAD)"
+            echo "timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "release_notes<<EOF"
+            git tag -l --format='%(contents)' "${{ steps.tag.outputs.tag }}" \
+              | sed '/^-----BEGIN PGP SIGNATURE-----$/,$d'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      # ─────────────────────────────────────────────────────────────
+      # Server evidence
+      # ─────────────────────────────────────────────────────────────
+      - name: Install server deps
+        run: npm ci
+        working-directory: server
+
+      - name: npm audit (server, JSON)
+        # Do not fail the release archive on audit findings — audit gating is
+        # already done by ci.yml at merge time. This job just captures state.
+        continue-on-error: true
+        run: |
+          npm audit --json > ../evidence/server-npm-audit.json || true
+        working-directory: server
+
+      - name: CycloneDX SBOM (server)
+        run: |
+          mkdir -p ../evidence
+          npx --yes @cyclonedx/cyclonedx-npm@2 \
+            --output-file "../evidence/server-cyclonedx.json" \
+            --output-format JSON \
+            || npx --yes @cyclonedx/bom@4 \
+              --output "../evidence/server-cyclonedx.json"
+        working-directory: server
+
+      # ─────────────────────────────────────────────────────────────
+      # Client evidence
+      # ─────────────────────────────────────────────────────────────
+      - name: Install client deps
+        run: npm ci
+        working-directory: client
+
+      - name: npm audit (client, JSON)
+        continue-on-error: true
+        run: |
+          npm audit --json > ../evidence/client-npm-audit.json || true
+        working-directory: client
+
+      - name: CycloneDX SBOM (client)
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm@2 \
+            --output-file "../evidence/client-cyclonedx.json" \
+            --output-format JSON \
+            || npx --yes @cyclonedx/bom@4 \
+              --output "../evidence/client-cyclonedx.json"
+        working-directory: client
+
+      # ─────────────────────────────────────────────────────────────
+      # Trivy filesystem scan (snapshot for this release)
+      # ─────────────────────────────────────────────────────────────
+      - name: Trivy filesystem scan (JSON)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          skip-dirs: 'node_modules,client/node_modules,server/node_modules,client/dist,server/dist'
+          format: json
+          output: evidence/trivy-fs.json
+
+      # ─────────────────────────────────────────────────────────────
+      # Release manifest — the one-page pointer index
+      # ─────────────────────────────────────────────────────────────
+      - name: Write release manifest
+        run: |
+          cat > evidence/MANIFEST.md <<EOF
+          # Release Evidence — ${{ steps.tag.outputs.tag }}
+
+          - **Tag**: ${{ steps.tag.outputs.tag }}
+          - **Commit SHA**: ${{ steps.meta.outputs.sha }}
+          - **Short SHA**: ${{ steps.meta.outputs.sha_short }}
+          - **Archived at**: ${{ steps.meta.outputs.timestamp }}
+          - **Workflow run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ## Release notes
+
+          ${{ steps.meta.outputs.release_notes }}
+
+          ## Contents of this archive
+
+          | File | Purpose |
+          |---|---|
+          | server-cyclonedx.json | CycloneDX SBOM for server package tree |
+          | client-cyclonedx.json | CycloneDX SBOM for client package tree |
+          | server-npm-audit.json | Server dependency audit at time of release |
+          | client-npm-audit.json | Client dependency audit at time of release |
+          | trivy-fs.json | Trivy filesystem scan of repo state at this SHA |
+
+          ## Cross-references
+
+          - CodeQL results for this SHA: see the "Security" tab of the repository.
+          - Gitleaks scan for this SHA: see the workflow run linked above.
+          - SOC 2 controls that this evidence supports: \`docs/SOC2_CONTROLS.md\`.
+          - Where this file lives long-term: \`docs/compliance/evidence/\` — a
+            future post-release step will copy this bundle there.
+          EOF
+
+      # ─────────────────────────────────────────────────────────────
+      # Upload
+      # ─────────────────────────────────────────────────────────────
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ steps.tag.outputs.tag }}
+          path: evidence/
+          retention-days: 400
+
+      - name: Attach evidence to GitHub Release
+        # Only runs when triggered by tag push, not workflow_dispatch.
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            evidence/MANIFEST.md
+            evidence/server-cyclonedx.json
+            evidence/client-cyclonedx.json
+            evidence/server-npm-audit.json
+            evidence/client-npm-audit.json
+            evidence/trivy-fs.json
+          fail_on_unmatched_files: false

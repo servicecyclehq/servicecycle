@@ -1,0 +1,63 @@
+# Gitleaks configuration for ServiceCycle
+# https://github.com/gitleaks/gitleaks
+#
+# Purpose: prevent false positives on known-safe fixtures.
+# Custom rules are added additively via `[[rules]]`.
+
+title = "ServiceCycle Gitleaks config"
+
+# Extend the default ruleset (recommended).
+# Docs: https://github.com/gitleaks/gitleaks/blob/master/README.md#configuration
+[extend]
+useDefault = true
+
+# ─────────────────────────────────────────────────────────────────────────
+# Global allowlist — files that Gitleaks should not scan
+# ─────────────────────────────────────────────────────────────────────────
+[allowlist]
+description = "Global false-positive allowlist"
+
+# Files with known example / documentation values only.
+paths = [
+  '''server/\.env\.example$''',
+  '''client/\.env\.example$''',
+  '''\.env\.example$''',
+  # All security + compliance docs reference env var names + rotation keys
+  # as documentation. They are not secrets.
+  '''docs/security/.*\.md$''',
+  '''docs/compliance/.*\.md$''',
+  '''docs/SOC2_.*\.md$''',
+  '''docs/DEPLOY_RUNBOOK\.md$''',
+  '''docs/INCIDENT_RESPONSE\.md$''',
+  '''docs/CHANGE_REVIEW_CHECKLIST\.md$''',
+  '''docs/DATA_ROOM_INDEX\.md$''',
+  '''docs/VENDOR_SECURITY_REVIEW\.md$''',
+  '''docs/RISK_REGISTER\.md$''',
+  '''docs/PERSONNEL_SECURITY\.md$''',
+  '''docs/OFFBOARDING\.md$''',
+  '''docs/CODE_OF_CONDUCT\.md$''',
+  '''docs/AUDIT_LOG_ARCHITECTURE\.md$''',
+  '''docs/SECURITY_TRUST_PACK\.md$''',
+  '''CHANGELOG\.md$''',
+  '''SECURITY\.md$''',
+  # SBOM listing — package hashes, not credentials.
+  '''server/sbom/cyclonedx\.json$''',
+  # This config itself.
+  '''\.gitleaks\.toml$''',
+]
+
+# Known-safe patterns that appear in code as placeholders / test values.
+regexes = [
+  '''test-secret-minimum-32-chars-long-for-ci-!!''',
+  '''AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=''',
+  '''your-.*-here''',
+  '''change-me-in-prod''',
+  '''example[_-]?(key|secret|token)''',
+]
+
+# ─────────────────────────────────────────────────────────────────────────
+# Custom rules — SC-specific patterns
+# ─────────────────────────────────────────────────────────────────────────
+
+# Nothing custom yet. Default rules cover AWS, GCP, generic API keys,
+# private keys, JWTs, database URLs, etc.

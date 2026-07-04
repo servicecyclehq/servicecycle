@@ -1,0 +1,101 @@
+name: Release Tag (auto)
+
+# SOC 2 CC8.1 — every merge to main that bumps `server/package.json` version
+# creates a matching `v<version>` git tag. Downstream:
+#   - `release-evidence.yml` fires on the new tag and archives the audit bundle.
+#   - `deploy.yml` deploys the release (independent of this workflow).
+#
+# Manual dispatch supported for creating a tag out-of-band.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/package.json'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Explicit version to tag (e.g. 0.1.3). If omitted, uses server/package.json version.'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Create release tag if version changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use PAT if needed to allow tag push to trigger downstream workflows.
+          # GITHUB_TOKEN can push tags but downstream tag-triggered workflows
+          # from token-created tags are gated. See:
+          # https://docs.github.com/en/actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(node -p "require('./server/package.json').version")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether tag already exists
+        id: exists
+        run: |
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.tag }} already exists — skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure git identity
+        if: steps.exists.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Extract Unreleased notes from CHANGELOG.md
+        if: steps.exists.outputs.exists == 'false'
+        id: notes
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            # Pull everything under [Unreleased] up to the next section.
+            NOTES=$(awk '
+              /^## \[Unreleased\]/ { capture=1; next }
+              capture && /^## \[/ { exit }
+              capture { print }
+            ' CHANGELOG.md)
+          else
+            NOTES="Release ${{ steps.version.outputs.tag }}"
+          fi
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.exists.outputs.exists == 'false'
+        run: |
+          git tag -a "${{ steps.version.outputs.tag }}" -m "${{ steps.notes.outputs.notes }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        if: steps.exists.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: ${{ steps.notes.outputs.notes }}
+          draft: false
+          prerelease: false

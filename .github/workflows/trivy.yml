@@ -1,0 +1,119 @@
+name: Trivy (container + fs scan)
+
+# SOC 2 CC7.1 — vulnerability scanning of container image, OS packages,
+# and filesystem dependencies. Trivy is free and open-source.
+#
+# Two jobs:
+#   1. fs-scan  — scans the repository filesystem for CVEs in package manifests.
+#                 Runs on every push and PR.
+#   2. image-scan — builds the server Docker image and scans it for OS-package
+#                   and app-dependency CVEs. Runs on push to main + weekly.
+#
+# Both jobs fail on HIGH/CRITICAL findings, with an ignorable-findings file
+# at `.trivyignore` for accepted risks (documented in
+# `docs/security/DEPENDENCY_DECISIONS.md` when they arise).
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  schedule:
+    # Weekly deep scan on Tuesday 07:00 UTC — catches newly-disclosed CVEs
+    # in dependencies that haven't changed since last commit.
+    - cron: '0 7 * * 2'
+
+concurrency:
+  group: trivy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # Filesystem scan — fast, runs on every push
+  # ─────────────────────────────────────────────────────────────────────
+  fs-scan:
+    name: Filesystem scan (package manifests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          # Fail the build on HIGH or CRITICAL findings.
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          # Skip node_modules; we scan the manifests, not vendored copies.
+          skip-dirs: 'node_modules,client/node_modules,server/node_modules,client/dist,server/dist'
+          format: table
+
+      - name: Upload Trivy results (SARIF)
+        # Runs even on failure so findings show up in Security tab.
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          skip-dirs: 'node_modules,client/node_modules,server/node_modules,client/dist,server/dist'
+          format: sarif
+          output: trivy-fs.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Image scan — builds the actual prod image and scans it.
+  # Runs on push to main + weekly (not on every branch push, to keep CI fast).
+  # ─────────────────────────────────────────────────────────────────────
+  image-scan:
+    name: Container image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build server image
+        # Use the same Dockerfile as prod so scan reflects reality.
+        run: docker build -t servicecycle-server:scan -f server/Dockerfile server
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: servicecycle-server:scan
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          # Ignore unfixed CVEs — nothing we can do about them at scan time;
+          # they're tracked separately and revisited in the monthly metrics.
+          ignore-unfixed: true
+          format: table
+
+      - name: Upload Trivy image results (SARIF)
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: servicecycle-server:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-image.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image

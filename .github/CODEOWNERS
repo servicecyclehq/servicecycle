@@ -1,0 +1,50 @@
+# CODEOWNERS — SOC 2 CC1 evidence that ownership of source is deliberate.
+#
+# ServiceCycle is a solo-founder company at this stage. All code is owned
+# by @claudedussy — this file documents that explicitly (auditors want to
+# see it, not infer it).
+#
+# When a second person receives commit access, add them here with the
+# specific paths they own, and record the change in
+# docs/security/SECURITY_DECISIONS.md.
+
+# ─────────────────────────────────────────────────────────────────────────
+# Global default
+# ─────────────────────────────────────────────────────────────────────────
+* @claudedussy
+
+# ─────────────────────────────────────────────────────────────────────────
+# High-sensitivity paths — flagged explicitly so any future co-owner
+# addition is a conscious choice.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Auth + tenant scoping
+/server/middleware/auth.ts       @claudedussy
+/server/middleware/roles.ts      @claudedussy
+/server/middleware/apiKeyAuth.ts @claudedussy
+/server/routes/auth.ts           @claudedussy
+/server/routes/sso.ts            @claudedussy
+
+# Encryption + backup crypto
+/server/lib/docCrypto.ts     @claudedussy
+/server/lib/backupCrypto.ts  @claudedussy
+/server/lib/totp.ts          @claudedussy
+
+# Audit chain
+/server/lib/activityLog.ts       @claudedussy
+/server/lib/activityLogChain.ts  @claudedussy
+
+# Deployment + CI + workflows
+/.github/                @claudedussy
+/server/Dockerfile       @claudedussy
+/client/Dockerfile       @claudedussy
+/docker-compose.yml      @claudedussy
+/docker-compose.prod.yml @claudedussy
+
+# Compliance + security docs
+/docs/security/     @claudedussy
+/docs/compliance/   @claudedussy
+/docs/SOC2_*        @claudedussy
+/docs/INCIDENT_*    @claudedussy
+/SECURITY.md        @claudedussy
+/CHANGELOG.md       @claudedussy

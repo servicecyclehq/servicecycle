@@ -1,0 +1,57 @@
+name: SBOM (auto-generate)
+
+# SOC 2 CC7.1 — software bill of materials for supply-chain transparency.
+# Generates CycloneDX SBOMs for server and client on every push to main,
+# and on every release tag. Uploads as workflow artifacts (30-day retention)
+# and commits `server/sbom/cyclonedx.json` refreshed via the manual "sbom:sync"
+# path.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    name: Generate CycloneDX SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        target: [server, client]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ matrix.target }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ matrix.target }}
+
+      - name: Generate CycloneDX SBOM
+        # Use @cyclonedx/cyclonedx-npm which is the CycloneDX-maintained tool.
+        # Fallback to @cyclonedx/bom if the newer package isn't available.
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm@2 \
+            --output-file "cyclonedx.json" \
+            --output-format JSON \
+            || npx --yes @cyclonedx/bom@4 \
+              --output "cyclonedx.json"
+        working-directory: ${{ matrix.target }}
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.target }}-${{ github.sha }}
+          path: ${{ matrix.target }}/cyclonedx.json
+          retention-days: 90

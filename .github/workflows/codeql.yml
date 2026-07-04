@@ -1,0 +1,58 @@
+name: CodeQL (SAST)
+
+# SOC 2 CC7.1 — static application security testing.
+# Scans TypeScript/JavaScript for known vulnerability patterns.
+# Free for public repos and free tier of private (via GitHub Advanced Security
+# on Enterprise plans; on personal / small private repos, CodeQL analysis is
+# free — but the code-scanning UI features may be limited).
+#
+# If this fails to run on a private repo without GHAS, we downgrade the trigger
+# to be manual-only until a GHAS license is available.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly deep scan on Monday 07:00 UTC.
+    - cron: '0 7 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Use the default query suite plus the security-and-quality set.
+          # security-extended catches more issues but has more false positives.
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'
