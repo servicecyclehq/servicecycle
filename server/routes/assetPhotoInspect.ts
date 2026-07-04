@@ -457,11 +457,15 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
       imageBuffer: img.buffer,
       mediaType:   img.mimeType,
       prompt:      `${OCR_SYSTEM}\n\nRead this equipment nameplate and respond with ONLY the JSON object described above.`,
-      // gemini-2.5-flash is a thinking model — reasoning tokens draw down the
-      // SAME output budget, so 512 silently truncated the JSON on denser
-      // plates (response came back cut off → JSON.parse failed). 1536 leaves
-      // room for the model to think AND still emit the ~150-token object.
-      maxTokens:   1536,
+      // gemini-2.5-flash is a THINKING model and its reasoning tokens bill
+      // against maxOutputTokens. The V7 evidence-string prompt (value+confidence+
+      // sourceText per field × 10 fields) roughly doubled the JSON, so 1536
+      // truncated it mid-object on any multi-field plate → JSON.parse failed →
+      // 500 (2026-07-04: read rate fell to 1/7, only the near-blank plate fit).
+      // 8192 leaves ample room for thinking AND the full nested object;
+      // responseMimeType forces JSON mode (valid, fence-free, escaped output).
+      maxTokens:        8192,
+      responseMimeType: 'application/json',
     });
 
     let parsed: any;

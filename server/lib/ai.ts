@@ -320,7 +320,7 @@ async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSy
 // demo can set AI_VISION_PROVIDER=gemini and provide a Gemini key for the
 // vision path only.
 
-async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTokens = 4096, settings = {} }) {
+async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTokens = 4096, settings = {}, responseMimeType }) {
   const s = resolveSettings(settings);
 
   let visionProvider = s.provider;
@@ -359,7 +359,7 @@ async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt
     // tier. Only on quota exhaustion — a structural error (bad image, auth)
     // surfaces immediately. Configurable via AI_VISION_FALLBACK (default groq).
     try {
-      return await _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s });
+      return await _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s, responseMimeType });
     } catch (err: any) {
       const exhausted = _isGeminiQuotaError(err) || /exhausted their free-tier/i.test(err?.message || '');
       const fb = (process.env.AI_VISION_FALLBACK || 'groq').toLowerCase();
@@ -658,7 +658,7 @@ async function _geminiComplete({ system, user, maxTokens, s }) {
   throw lastError || new Error('[ai][gemini] all cascade models exhausted their free-tier quotas for today');
 }
 
-async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s }) {
+async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s, responseMimeType }) {
   let GoogleGenerativeAI;
   try { ({ GoogleGenerativeAI } = require('@google/generative-ai')); } catch {
     throw new Error('[ai] @google/generative-ai not installed. Run: npm install @google/generative-ai');
@@ -679,7 +679,15 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s }) {
             { text: prompt },
           ],
         }],
-        generationConfig: { maxOutputTokens: maxTokens },
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          // JSON mode (opt-in per caller). Gemini 2.5 Flash is a THINKING model
+          // whose reasoning tokens bill against maxOutputTokens; without a
+          // forced mimetype it also wraps/fences output. responseMimeType makes
+          // the model emit a single valid, escaped JSON object — the caller is
+          // still responsible for a generous maxTokens so thinking + JSON fit.
+          ...(responseMimeType ? { responseMimeType } : {}),
+        },
       });
       if (i > 0) {
         console.log(`[ai][gemini] image cascade ${cascade[0]} → ${modelName} after ${i} quota-exhausted hop(s)`);
