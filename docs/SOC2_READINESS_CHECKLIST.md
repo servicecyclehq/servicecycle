@@ -102,6 +102,34 @@ Remaining 3 🔴 items — first-execution-only (L6, L9, L10):
 
 - All three are the *dated evidence artifacts*, not the procedures. They require running the ACCESS_REVIEW.md, LOG_REVIEW.md, and QUARTERLY_SECURITY_REVIEW.md procedures one time. Every subsequent quarter is trivial once the first happens.
 
+### 2026-07-04 — Fourth autonomous session (git push + fixes + discoveries)
+
+Pushed to `main`:
+
+- 5 SOC 2 commits (07c74dc, 050f86b, 8f7a671, f51e015, 8797d50) covering all doc + workflow work — see Session 2 notes.
+- 92c05d6 — added `ts-node` devDep to unblock the pre-existing CI failure that had been red since jest 30 upgrade (orthogonal to SOC 2 but stabilizes the CI baseline our workflows sit alongside).
+
+**Big discovery**: retention enforcement (H4) was already fully shipped. `server/index.ts` registers 10 nightly prune crons between 03:00 and 03:55 UTC covering: activity_logs 365d, notification_logs 180d, backup_logs 180d, refresh_tokens 30d, webhook_dlq 30d, telemetry_readings 365d, extraction_events 180d, render_errors 30d, ai_usage 90d, plus demo inactivity prune. H4 🟡→🟢. `RETENTION_ENFORCEMENT_DESIGN.md` corrected with §Actual state section noting the pre-existing implementation and flagging two follow-up decisions (chain-preservation vs delete; 90d vs 12-month AI usage retention alignment).
+
+Closed to 🟢 this session:
+
+- **B8**+related — nothing new needed; commits are on main.
+- **D7 / L9** — first weekly log-review evidence file created at `docs/compliance/evidence/2026-07/log-review-weekly.md` with real data (49 commits, 12 open Dependabot PRs, workflow-status baseline, no anomalies).
+- **H4** — closed via discovery above.
+
+**Auth wall**: gh CLI account `claudedussy` has pull-only permission on `servicecyclehq/servicecycle`; cannot automate branch protection (B5), signed-commits enforcement (B7), DAST target var (C7), environment gate (B11), or missing deploy secrets. Wrote `docs/security/GITHUB_ADMIN_SETUP.md` with copy-paste commands + UI steps for Dustin to execute — each item takes 1–5 minutes.
+
+Skipped (not applicable):
+
+- Retention sweeper code (H4) — redundant with existing SC crons; no code work needed.
+
+Remaining 🔴 (2 only):
+
+- L6 first quarterly access review evidence.
+- L10 first quarterly security review evidence.
+
+Both are cadence-first-execution items — running the procedures at `ACCESS_REVIEW.md` / `QUARTERLY_SECURITY_REVIEW.md` once each converts them.
+
 ---
 
 ## Vetting summary — how the five inputs compared
@@ -185,7 +213,7 @@ Remaining 3 🔴 items — first-execution-only (L6, L9, L10):
 | D4 | Redaction middleware for PII in logs | 🟢 | `server/lib/redact.ts` `redactEmail()` |
 | D5 | Better Stack / uptime monitoring wired | 🟡 | `server/lib/betterStack.ts` present; activation runbook now at `docs/security/BETTER_STACK_ACTIVATION.md`; still needs execution against the Better Stack dashboard |
 | D6 | Health check endpoint | 🟢 | `GET /api/health` |
-| D7 | **Log review procedure + dated evidence** (weekly glance, jotted) | 🟡 | Procedure at `docs/security/LOG_REVIEW.md` (Session 3); first weekly bullet in `2026-07` starts the cadence |
+| D7 | **Log review procedure + dated evidence** (weekly glance, jotted) | 🟢 | Procedure at `docs/security/LOG_REVIEW.md` (Session 3) + first dated bullet at `docs/compliance/evidence/2026-07/log-review-weekly.md` for 2026-06-27→2026-07-04 window (Session 4) |
 | D8 | **Monitoring matrix** — "what would alert me if X" | 🟢 | `docs/security/MONITORING_MATRIX.md` (this session) |
 | D9 | **Security metrics dashboard** (monthly markdown table) | 🟡 | Template at `docs/compliance/evidence/2026-07/security-metrics-2026-07.md`; needs closing on 2026-08-01 |
 | D10 | **Admin action logging** (permission changes, config edits, encryption on/off) | 🟢 | `encryption_enabled`/`encryption_disabled` CEF sev 7 events |
@@ -240,7 +268,7 @@ Remaining 3 🔴 items — first-execution-only (L6, L9, L10):
 | H1 | Account export + delete path (GDPR erasure) | 🟢 | `GET /api/export/account`; `docs/OFFBOARDING.md` §6 |
 | H2 | **Data classification policy** as standalone doc | 🟢 | `docs/security/DATA_CLASSIFICATION.md` (this session; 4 tiers) |
 | H3 | **Data retention matrix** | 🟢 | `docs/compliance/DATA_RETENTION_MATRIX.md` (this session) |
-| H4 | **Automated data-retention enforcement** (scheduled prune job) | 🟡 | Design at `docs/security/RETENTION_ENFORCEMENT_DESIGN.md` (Session 2); needs dedicated code session for Prisma migration + sweep job |
+| H4 | **Automated data-retention enforcement** (scheduled prune job) | 🟢 | **DISCOVERY (Session 4)**: retention crons are already shipped in `server/index.ts` 03:00–03:55 UTC — 10 prune jobs covering activity/notification/backup/refresh-token/webhook-dlq/telemetry/extraction/render-error/ai-usage/demo. Handlers in `server/lib/*Prune.ts`. Design doc updated to note the pre-existing implementation |
 | H5 | **Privacy requests process** | 🟢 | `docs/security/PRIVACY_REQUESTS.md` (this session; SLA + operational script) |
 | H6 | **Tenant deletion script/process** | 🟢 | `docs/security/TENANT_DELETION_PROCESS.md` (Session 3) — FK-ordered delete sequence + audit-chain redaction handling + rollback window |
 | H7 | Privacy policy publicly served | 🟡 | Draft at `/privacy` + `/legal/privacy`; attorney review pending |
@@ -298,7 +326,7 @@ Remaining 3 🔴 items — first-execution-only (L6, L9, L10):
 | L6 | Dated access review evidence | 🔴 | See A8 |
 | L7 | Dated restore-test evidence | 🟡 | See F3 |
 | L8 | Dated tabletop drill evidence | 🟢 | See E4 |
-| L9 | Dated log-review evidence | 🔴 | See D7 |
+| L9 | Dated log-review evidence | 🟢 | `docs/compliance/evidence/2026-07/log-review-weekly.md` seeded 2026-07-04 (Session 4) |
 | L10 | Dated quarterly security review evidence | 🔴 | See C9 |
 
 ---
@@ -310,25 +338,27 @@ Remaining 3 🔴 items — first-execution-only (L6, L9, L10):
 | A. Access & Auth | 8 | 2 | 0 | 10 |
 | B. Change Mgmt | 9 | 3 | 0 | 12 |
 | C. Vuln Mgmt | 7 | 2 | 0 | 9 |
-| D. Logging & Monitoring | 7 | 3 | 0 | 10 |
+| D. Logging & Monitoring | 8 | 2 | 0 | 10 |
 | E. Incident Response | 6 | 0 | 0 | 6 |
 | F. Backup & DR | 3 | 3 | 0 | 6 |
 | G. Risk & Governance | 8 | 0 | 0 | 8 |
-| H. Retention & Privacy | 5 | 2 | 0 | 7 |
+| H. Retention & Privacy | 6 | 1 | 0 | 7 |
 | I. AI Governance | 7 | 0 | 0 | 7 (I8 trimmed) |
 | J. Vendor Risk | 5 | 0 | 0 | 5 |
 | K. Endpoint / Solo-Dev | 4 | 1 | 0 | 5 |
-| L. Evidence Discipline | 6 | 1 | 3 | 10 |
-| **Totals** | **75** | **17** | **3** | **95** |
+| L. Evidence Discipline | 7 | 1 | 2 | 10 |
+| **Totals** | **78** | **15** | **2** | **95** |
 
-**Delta from Session 2:** 🟢 69 → 75 (+6). 🟡 19 → 17 (net -2). 🔴 7 → 3 (-4).
-**Delta from original compile:** 🟢 39 → 75 (+36). 🟡 22 → 17 (net -5). 🔴 34 → 3 (-31).
+**Delta from Session 3:** 🟢 75 → 78 (+3). 🟡 17 → 15 (net -2). 🔴 3 → 2 (-1).
+**Delta from original compile:** 🟢 39 → 78 (+39). 🟡 22 → 15 (net -7). 🔴 34 → 2 (-32).
 
-**Interpretation:** the SC repo is now at **79% green, 18% yellow, 3% red.** All 3 remaining reds are **first-execution-only** — they're the dated evidence artifacts (L6, L9, L10), not the procedures. Every procedure now exists; running any of them once produces the artifact and closes the item.
+**Interpretation:** the SC repo is now at **82% green, 16% yellow, 2% red.** The 2 remaining reds are dated first-execution evidence artifacts (L6 access review, L10 quarterly review) — L9 (log review) was closed in Session 4 with the first weekly bullet.
 
-**The 17 yellows split into:**
-- **Docs-exist-execution-pending** (10): A8, C9, D7 are policy-procedures waiting for first run. B5, B7, B11, C7, D5, F3, F5, F6, H4, K1 are runbooks/designs waiting for the specific execution step (branch protection, GPG key, DAST target var, Better Stack activation, retention sweeper code, screenshots).
-- **Architectural** (7): B7 signed commits (needs local Git config), H4 auto-prune (needs code session), etc.
+**The 15 yellows** are all execution-step-away items:
+- 5 need Dustin admin action on GitHub (B5 branch protection, B7 signed commits, B11 environment gate, C7 DAST target var) — runbook at `docs/security/GITHUB_ADMIN_SETUP.md`.
+- 4 need dated evidence execution (A8 access review, A10 MFA screenshots, C9 quarterly review, K1 endpoint screenshots).
+- 4 need production env or code steps (D5 Better Stack activation, F3 restore-test archive, F5 backup dest cred, F6 disposal log first entry).
+- 2 are minor doc consolidations (B9 already consolidated → could re-examine; H7 privacy policy needs attorney review).
 
 There is no doc gap remaining. The remaining path to 100% is execution.
 

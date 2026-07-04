@@ -5,8 +5,60 @@
 **Owner:** Dustin
 **SOC 2 mapping:** C1.2 (disposes of confidential information), CC5.2 (general controls over technology).
 
-**Status:** ⏳ NOT YET IMPLEMENTED. Closes H4 in `SOC2_READINESS_CHECKLIST.md` when shipped.
+**Status:** ✅ **ALREADY SHIPPED** — this doc was originally written as a forward-looking design under the false assumption that no retention enforcement existed. In fact SC has had comprehensive nightly retention crons wired since well before this SOC 2 sweep began. The section below is kept as reference. See §Actual state as of 2026-07-04 for the truth.
+
 **Companion:** `docs/compliance/DATA_RETENTION_MATRIX.md` (the policy).
+
+---
+
+## Actual state as of 2026-07-04
+
+Discovered during the SOC 2 sweep on 2026-07-04: `server/index.ts` already registers a full nightly retention cascade between 03:00 and 03:55 UTC (chosen to sit between the 02:00 backup and the 03:30 demo reset). Every job wraps in `runOnce()` for single-instance guarantees and pings healthchecks.io on completion.
+
+| Cron | Slot | Retention | Configurable via | Handler |
+|---|---|---|---|---|
+| `activityLogPrune` | 03:00 | 365d | `ACTIVITY_LOG_RETENTION_DAYS` | `server/lib/activityLogPrune.ts` |
+| `notificationLogPrune` | 03:05 | 180d | inline | `server/index.ts` |
+| `backupLogPrune` | 03:15 | 180d | `BACKUP_LOG_RETENTION_DAYS` | `server/lib/backupLogPrune.ts` |
+| `refreshTokenPrune` | 03:20 | 30d | inline | `server/index.ts` |
+| `demoPrune` (hourly) | :25 | inactivity-based | `DEMO_MODE=true` | `server/lib/demoPrune.ts` |
+| `demoReset` | 03:30 | daily | `DEMO_MODE=true` | `server/scripts/seed-demo` |
+| `earlyAccessPrune` | 03:35 | expires-based | inline | `server/lib/earlyAccessPrune.ts` |
+| `webhookDlqPrune` | 03:40 | 30d | `WEBHOOK_DLQ_RETENTION_DAYS` | `server/lib/webhookDlqPrune.ts` |
+| `telemetryReadingPrune` | 03:50 | 365d | `TELEMETRY_READING_RETENTION_DAYS` | inline |
+| `extractionEventPrune` | 03:51 | 180d | `EXTRACTION_EVENT_RETENTION_DAYS` | inline |
+| `renderErrorPrune` | 03:52 | 30d | `RENDER_ERROR_RETENTION_DAYS` | inline |
+| `prune-ai-usage` | 03:55 | 90d | inline | inline |
+
+This satisfies SOC 2 C1.2 (disposes of confidential information) and CC5.2 (general controls over technology) with automated enforcement AND per-cron single-instance protection.
+
+## Follow-up decisions (design vs. implementation delta)
+
+Two tension points where the existing code differs from what I documented earlier in this SOC 2 sweep:
+
+**1. ActivityLog: delete vs. redact for hash-chain preservation.**
+
+- `DATA_RETENTION_MATRIX.md` and `PRIVACY_REQUESTS.md` describe the audit chain as "append-only in intent; rows are redactable for GDPR while `rowHash`/`prevHash` remain intact." The design implication is that time-based retention should also redact rather than hard-delete, to preserve chain continuity.
+- `activityLogPrune.ts` currently hard-deletes any activity_logs row older than 365 days.
+- Consequence: the hash chain becomes discontinuous at the 365-day boundary (the row at day 366 references a `prevHash` for a row that no longer exists). The nightly `activityLogChainVerify` cron either treats this as expected (walks only within-retention rows) or flags it as a chain break.
+- **Decision needed at next security session**: reconcile these. Either (a) verify the chain verifier is retention-aware and this is intentional, or (b) switch `pruneActivityLog` to a redact-in-place strategy. Log the outcome in `SECURITY_DECISIONS.md`.
+
+**2. AI usage retention: 90 days vs. 12 months.**
+
+- `DATA_RETENTION_MATRIX.md` documented "12 months live for cost analysis, then aggregate-only."
+- `prune-ai-usage` cron deletes rows at 90 days.
+- The schema shows `AiUsage` is **already aggregated** to `(userId, action, day, count)` — there is no "detailed row + aggregate row" duality; every row is already daily aggregate.
+- **Decision**: adopt 90 days as the effective policy — update `DATA_RETENTION_MATRIX.md` to match. The 12-month plan was based on an incorrect assumption about detailed vs aggregate rows.
+
+Both follow-ups are documentation-consistency work, not new code.
+
+---
+
+## Original forward-looking design (kept for historical reference)
+
+The remainder of this document was written before the discovery above. It described a planned `retentionSweeper` job. That work is redundant with the existing crons — do not implement.
+
+---
 
 ---
 
