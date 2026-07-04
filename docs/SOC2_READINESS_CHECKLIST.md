@@ -222,7 +222,7 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 | B2 | PR template with secure-coding checklist | 🟢 | `.github/pull_request_template.md` includes tenancy, secrets, migration checks |
 | B3 | CI: tsc + jest unit + npm audit + smoke tests | 🟢 | `.github/workflows/ci.yml` |
 | B4 | Dependabot on server, client, Actions | 🟢 | `.github/dependabot.yml` |
-| B5 | **Branch protection** (required PR, required status checks) | 🟡 | Solo-dev; compensating control now documented in `RISK_ACCEPTANCE_LOG.md` RAR-006 + `CHANGE_REVIEW_CHECKLIST.md` v1.1 |
+| B5 | **Branch protection** (required PR, required status checks) | 🟢 | **LIVE on main (Session 8)** — required checks: `Scan for secrets`, `Analyze (javascript-typescript)`, `Filesystem scan (package manifests)`. Linear history, no force push, no deletions, required conversation resolution. `enforce_admins: false` per RAR-006 solo-dev emergency-fix path |
 | B6 | **CODEOWNERS** file | 🟢 | `.github/CODEOWNERS` (Session 2) |
 | B7 | **Signed commits** (GPG or Sigstore) | 🟡 | `verify-signed-commits.yml` + `docs/security/SIGNED_COMMITS.md` (Session 2); needs local GPG/SSH setup + branch protection enable |
 | B8 | **Release tagging automation + CHANGELOG** | 🟢 | `release-tag.yml` (Session 2) + `CHANGELOG.md` (Session 1) |
