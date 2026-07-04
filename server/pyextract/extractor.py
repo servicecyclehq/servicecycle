@@ -915,15 +915,21 @@ _BUS_INLINE_ROW_RE = re.compile(
     # Match "A-G: 15200      B-G: 14100      C-G: 16800" on one line — three
     # phase-labeled values. The phase key is a single letter (A/B/C/N/H/X)
     # optionally followed by "-G" (to-ground) or "-<letter>" (line-to-line).
+    # 2026-07-04: also tolerate an OPTIONAL unit token BETWEEN phase-value
+    # pairs — a real report line often reads "A-B: 850 M? B-C: 720 M? C-A: 910"
+    # where the unit repeats. Without this, the third phase (C-A) is dropped
+    # because the M? isn't whitespace. Group names stay the same.
     r"^(?P<A>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
     r"(?P<Av>-?\d[\d,]*(?:\.\d+)?)"
+    r"(?:\s*(?:M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|uΩ|u\?|udhm|mΩ|Ω|kΩ|%|V|A|kV|VDC|VAC|sec|ms|Hz))?"
     r"[\s\t]+"
     r"(?P<B>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
     r"(?P<Bv>-?\d[\d,]*(?:\.\d+)?)"
+    r"(?:\s*(?:M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|uΩ|u\?|udhm|mΩ|Ω|kΩ|%|V|A|kV|VDC|VAC|sec|ms|Hz))?"
     r"[\s\t]+"
     r"(?P<C>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
     r"(?P<Cv>-?\d[\d,]*(?:\.\d+)?)",
-    re.MULTILINE,
+    re.MULTILINE | re.IGNORECASE,
 )
 
 
@@ -940,23 +946,57 @@ def _bus_inline_readings(text):
     if not text:
         return []
     out = []
+    # Precompile a fallback: capture the unit token if it appears BETWEEN
+    # phase-value pairs in the row itself (report_007 pattern:
+    # "A-B: 850 M? B-C: 720 M? C-A: 910" carries M? in-line but has no
+    # "(MΩ)" header). Uses the first unit token found in the row.
+    _ROW_UNIT_RE = re.compile(
+        r"(?:M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|uΩ|u\?|udhm|mΩ|Ω|kΩ|%|V|A|kV|VDC|VAC|sec|ms|Hz)",
+        re.I,
+    )
+
     for row in _BUS_INLINE_ROW_RE.finditer(text):
         # Find the nearest unit-in-parens header line before this row (must be
         # within 200 chars; further away and the association is unsafe).
         window_start = max(0, row.start() - 200)
         header_win = text[window_start: row.start()]
         hdr_ms = list(_BUS_INLINE_UNIT_HDR_RE.finditer(header_win))
-        if not hdr_ms:
-            continue
-        hdr = hdr_ms[-1]  # nearest to the row
-        label = hdr.group(1).strip().rstrip(":-,.").strip()
-        unit_raw = hdr.group(2)
-        unit = normalize_unit(unit_raw)
+        label = None
+        unit = None
+        if hdr_ms:
+            hdr = hdr_ms[-1]  # nearest to the row
+            label = hdr.group(1).strip().rstrip(":-,.").strip()
+            unit_raw = hdr.group(2)
+            unit = normalize_unit(unit_raw)
+        else:
+            # Fallback (2026-07-04): no unit-in-parens header, but the ROW
+            # itself carries a unit token (report_007: "A-B: 850 M? B-C: ..."
+            # under a header of "BUS INSULATION RESISTANCE @ 1000 VDC" that
+            # names the measurement but omits the parenthesised unit). Use
+            # the first unit token found in the row and take the closest
+            # non-blank preceding line as the label.
+            row_text = text[row.start(): row.end()]
+            um = _ROW_UNIT_RE.search(row_text)
+            if not um:
+                continue
+            unit = normalize_unit(um.group(0))
+            # Walk backwards to the most recent non-blank line for the label.
+            hdr_lines = [ln for ln in header_win.split("\n") if ln.strip()]
+            if not hdr_lines:
+                continue
+            candidate = hdr_lines[-1].strip()
+            # Strip a trailing "@ <test conditions>" if any so the label
+            # classifies cleanly (e.g. "BUS INSULATION RESISTANCE @ 1000 VDC"
+            # -> "BUS INSULATION RESISTANCE").
+            candidate = re.sub(r"\s*@.*$", "", candidate).strip()
+            if len(candidate) < 4:
+                continue
+            label = candidate
         # Reject if the label carries no known measurement token — a random
         # "(MΩ)" line without "insulation" / "resistance" / "megger" nearby
         # is not enough to blindly classify the row.
         mt, crit, u, kind = _classify(label, unit)
-        if mt == "unknown":
+        if mt == "unknown" or mt.endswith("_reading") or mt in ("reading","resistance"):
             continue
         for key_ph, key_val in (("A", "Av"), ("B", "Bv"), ("C", "Cv")):
             ph_raw = row.group(key_ph)
@@ -1076,7 +1116,17 @@ def _phase_context_readings(text):
 # row label ("A") is a phase; the measurementType comes from the line ABOVE
 # the header.
 _PHASE_GRID_HDR_RE = re.compile(
-    r"^\s*PHASE\s+(?:AS[- ]?FOUND|MEASURED|VALUE|READING|ACTUAL)\s+"
+    # The value column may be labeled either descriptively ("AS-FOUND",
+    # "MEASURED") or by unit ("µΩ", "uOhm", "udhm", "sec", "MΩ", "%").
+    # 2026-07-04: value-column token is CAPTURED as group(1) so
+    # _phase_grid_readings can use it as the row unit when no unit-in-parens
+    # header exists on a preceding line (report_007: header is "MAIN BUS
+    # JOINT RESISTANCE (DLRO)" which carries the LABEL but not the unit;
+    # the unit is right here in "PHASE uOhm EXPECTED RESULT").
+    r"^\s*PHASE\s+"
+    r"(AS[- ]?FOUND|MEASURED|VALUE|READING|ACTUAL|"
+    r"M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|µ\s?Ohm|uΩ|u\s?Ohm|uohm|u\?|udhm|"
+    r"mΩ|m\s?Ohm|mohm|Ω|Ohm|kΩ|k\s?Ohm|kohm|%|V|A|kV|VDC|VAC|sec|ms|Hz)\s+"
     r"(?:EXPECTED|LIMIT|SPEC|ACCEPTANCE)?\s*(?:RESULT|OUTCOME|PASS/?FAIL)?\s*$",
     re.I | re.MULTILINE,
 )
@@ -1107,17 +1157,42 @@ def _phase_grid_readings(text):
     if not text:
         return []
     out = []
+    # Descriptive column labels are NOT units — the caller must then fall back
+    # to a parens-unit header on a preceding line. Otherwise the captured
+    # header token IS the row unit.
+    _DESCRIPTIVE = {"as-found", "asfound", "measured", "value", "reading", "actual"}
     for hdr in _PHASE_GRID_HDR_RE.finditer(text):
-        ctx_start = max(0, hdr.start() - 150)
+        ctx_start = max(0, hdr.start() - 200)
         ctx = text[ctx_start: hdr.start()]
-        ctx_hdr = list(_BUS_INLINE_UNIT_HDR_RE.finditer(ctx))
-        if not ctx_hdr:
-            continue
-        ch = ctx_hdr[-1]
-        label = ch.group(1).strip().rstrip(":-,.").strip()
-        unit = normalize_unit(ch.group(2))
+        hdr_token = (hdr.group(1) or "").strip()
+        hdr_norm = re.sub(r"\s+", "", hdr_token).lower()
+        # Case A: header value column is a UNIT (uOhm / µΩ / MΩ / sec / %).
+        # Use it as the row unit; find the LABEL from the closest preceding
+        # non-blank line (stripped of trailing parenthetical like "(DLRO)").
+        if hdr_norm not in _DESCRIPTIVE:
+            unit = normalize_unit(hdr_token)
+            lines = [ln for ln in ctx.split("\n") if ln.strip()]
+            if not lines:
+                continue
+            label = lines[-1].strip()
+            label = re.sub(r"\s*\([^)]*\)\s*$", "", label).strip()
+            label = re.sub(r"\s*@.*$", "", label).strip()
+            if len(label) < 4:
+                continue
+        # Case B: header value column is descriptive — need a parens-unit
+        # header on a preceding line (original behavior).
+        else:
+            ctx_hdr = list(_BUS_INLINE_UNIT_HDR_RE.finditer(ctx))
+            if not ctx_hdr:
+                continue
+            ch = ctx_hdr[-1]
+            label = ch.group(1).strip().rstrip(":-,.").strip()
+            unit = normalize_unit(ch.group(2))
         mt, crit, u, kind = _classify(label, unit)
-        if mt == "unknown":
+        # Only emit when the label classified to a specific type — a
+        # generic *_reading fallback would let this pass hijack rows the
+        # inline pass already handles.
+        if mt == "unknown" or mt.endswith("_reading") or mt in ("reading","resistance"):
             continue
         # Collect rows starting from just after the header until a blank line
         # or a new heading. Stop after 6 rows (over-generous for A/B/C/N).

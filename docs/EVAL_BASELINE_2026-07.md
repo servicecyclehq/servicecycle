@@ -4,6 +4,81 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-04 update — column-header inference expansions (+GT canonicalization)
+
+Four surgical follow-ups after the OCR-noise-tolerant units update. Each targets
+a specific pattern class the earlier column-header passes missed; combined they
+lift clean-tier parser to 100% and partial parser 75% → 88%.
+
+**Fix 1 — `_BUS_INLINE_ROW_RE` tolerates a unit token between phase-value pairs.**
+Real reports write `A-B: 850 M? B-C: 720 M? C-A: 910` where the unit repeats.
+The old row regex required plain whitespace between value and next phase, so
+the third phase (C-A) was silently dropped. Added an optional unit token in the
+alternation between each phase-value pair. Also added `re.IGNORECASE` so the
+regex handles mixed-case phase letters on OCR output.
+
+**Fix 2 — `_bus_inline_readings` fallback for no-parens-unit headers.**
+When the header line names the measurement but omits the parenthesised unit
+(`BUS INSULATION RESISTANCE @ 1000 VDC` — report_007), the old function
+returned nothing. Fallback: if no `_BUS_INLINE_UNIT_HDR_RE` match is found,
+grab the unit from a unit token IN THE ROW itself and use the closest
+preceding non-blank line as the label (stripped of trailing `@ ...`
+test-conditions phrase). Emits only when the label classifies to a specific
+type — a generic `*_reading` fallback would let this pass hijack rows the
+inline pass already handles.
+
+**Fix 3 — `_PHASE_GRID_HDR_RE` captures the value-column token; `_phase_grid_readings`
+handles both descriptive AND unit column labels.** Real reports label the
+value column either descriptively (`AS-FOUND`, `MEASURED`) or by unit
+(`PHASE uOhm EXPECTED RESULT` — report_007's contact-resistance grid). The
+header regex now CAPTURES the token so `_phase_grid_readings` can use it as
+the row unit when no unit-in-parens header exists on a preceding line. Also
+extended the accepted unit vocabulary to include `uOhm|uohm|µohm|mohm|kohm|
+ohm` — the ASCII-spelled variants of the ohm symbol that real PowerDB forms
+use interchangeably with `Ω`.
+
+**Fix 4 — Golden-set GT canonicalization (`neta_synthetic_test_reports.json`).**
+The GT for reports 018 and 019 (VLF tan delta rows) called the measurement
+`power_factor`, but the canonical NETA type — and the type the TS pipeline
+uses (`aiTestReportExtract` / `commitTestReport` / `dobleImport`) — is
+`dissipation_factor`. Updated GT in BOTH `measurements` (top-level) and
+`groundTruth.measurements` sections. Not a code change; a GT correction.
+
+**Recall delta (deterministic, no AI, no new deps):**
+
+| Tier | Before | After | Δ |
+|---|---|---|---|
+| clean parser | 97% | **100%** | +3pp |
+| clean OCR-path | 31% | **50%** | +19pp |
+| partial_ocr parser | 72% | **88%** | +16pp |
+| partial_ocr OCR-path | 68% | **85%** | +17pp |
+| garbled_ocr parser | 10% | 10% | 0 |
+| garbled_ocr OCR-path | 0% | 0% | 0 (render noise still the floor) |
+
+What moved on partial (per-report):
+
+- Report 011: 100% (unchanged, already at 100%).
+- Report 015: 100% (unchanged).
+- Report 007 (bus-inline `A-B: 850 M?` + `PHASE uOhm` grid): 40% → **100%**.
+- Report 018 clean (dissipation_factor GT fix): 75% → 100%.
+- Report 019 (dissipation_factor GT + bus-inline fallback): 67% → **100%**.
+
+Still open:
+
+- Report 004 (partial_ocr, `H-G 0 --` / `X-G 11200 26400` two-value-per-row
+  under a `1 MIN | 10 MIN (MQ)` column header): 50%. Needs a dedicated
+  column-time-series pass — different pattern shape from the current
+  `_bus_inline_readings` (which requires three phases per line).
+- Report 003 partial (67%) — power_factor + pi already caught; missing the
+  H-G 3850 IR reading which uses the same H-G/X-G column format as 004.
+- Garbled tier — all reports below 25% except 005 (50%). Real barrier is the
+  render noise the synthetic corpus produces, not the extractor; needs a
+  better OCR engine (RapidOCR investigation ongoing; see
+  `servicecycle-morning-parser-2026-07-04` memory for the deferred
+  fuzzy-matching layer design).
+
+218/218 jest tests still green. tsc clean.
+
 ## 2026-07-04 update — OCR-noise-tolerant units + tesseract PSM 6 / scale 3
 
 Two related fixes that together unlock ~25 percentage points on the
