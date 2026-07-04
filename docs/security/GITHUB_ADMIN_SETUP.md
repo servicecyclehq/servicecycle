@@ -95,15 +95,15 @@ The self-approval loop feels silly at solo stage but produces the audit artifact
 
 Not SOC 2 scope but has been failing since 2026-07-03. Needs the following repo secrets:
 
-- `SC_DROPLET_SSH_KEY` — the private SSH key content that grants access to the droplet
-- `SC_DROPLET_HOST` — droplet IP or DNS name (`198.211.99.45`)
-- `SC_DROPLET_USER` — usually `root`
+- `SC_SSH_KEY` — the private SSH key content that grants access to the droplet
+- `SC_SSH_HOST` — droplet IP or DNS name (`198.211.99.45`)
+- `SC_SSH_USER` — usually `root`
 
 **Via gh CLI:**
 ```bash
-gh secret set SC_DROPLET_SSH_KEY --repo servicecyclehq/servicecycle < ~/.ssh/id_ed25519
-gh secret set SC_DROPLET_HOST --body "198.211.99.45" --repo servicecyclehq/servicecycle
-gh secret set SC_DROPLET_USER --body "root" --repo servicecyclehq/servicecycle
+gh secret set SC_SSH_KEY --repo servicecyclehq/servicecycle < ~/.ssh/id_ed25519
+gh secret set SC_SSH_HOST --body "198.211.99.45" --repo servicecyclehq/servicecycle
+gh secret set SC_SSH_USER --body "root" --repo servicecyclehq/servicecycle
 ```
 
 ## Verification

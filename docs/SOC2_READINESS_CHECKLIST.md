@@ -150,6 +150,24 @@ Score: **🟢 78 / 🟡 16 / 🔴 1** (82% green, 17% yellow, 1% red).
 
 Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SECURITY_REVIEW.md` once closes it.
 
+### 2026-07-04 — Sixth autonomous session (last red closed; execution kit complete)
+
+**Zero red items remain.** Every SOC 2 control has either shipped or been scaffolded with a clear closing path.
+
+Advanced to 🟡 (from 🔴):
+
+- **L10** — scaffolded evidence file at `docs/compliance/evidence/2026-Q3/quarterly-security-review-2026-07-04.md`. Same pattern as L6 in Session 5: pre-populated 13-item checklist, artifact TODO list, "when this file is complete" close-out steps. Dustin ticks + signs.
+
+New / advanced execution kit:
+
+- **C9** — same file (L10 and C9 co-close on that evidence artifact).
+- **D9** — `security-metrics-2026-07.md` populated with real trailing-30-day data pulled from `gh run list`: 240 workflow runs, 84 pre-existing Deploy failures, 77 pre-existing CI failures, SOC 2 workflows Gitleaks/CodeQL/SBOM 8/8 green, verify-signed 7/7, Trivy 5/3 (3 failures pre-tuning). Full month-close on 2026-08-01 via the scheduled cadence task.
+- **F6** — first-month template at `docs/compliance/evidence/2026-07/secure-disposal-2026-07.md` with 10-cron retention table matching `RETENTION_ENFORCEMENT_DESIGN.md` §Actual state. Closes at month-end.
+- **New: `docs/security/README.md`** — narrative entry point for anyone opening the security folder cold. Categorized: Policies, Procedures, Runbooks, Inventories, Design docs, Audit reports, Evidence, Cadence at a glance, "when something changes" checklists.
+- **Fix**: `GITHUB_ADMIN_SETUP.md` corrected — deploy.yml uses `SC_SSH_KEY` / `SC_SSH_HOST` / `SC_SSH_USER` (I had documented `SC_DROPLET_*`). Log-review evidence + this doc updated to match.
+
+Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidence work is complete. The remaining path to 100% is execution by the founder.
+
 ---
 
 ## Vetting summary — how the five inputs compared
@@ -219,7 +237,7 @@ Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SE
 | C6 | **Container scanning (Trivy)** in CI | 🟢 | `.github/workflows/trivy.yml` + `.trivyignore` (Session 2) |
 | C7 | **DAST (OWASP ZAP baseline)** weekly against staging | 🟡 | `.github/workflows/dast-zap.yml` (Session 2); runs only when `DAST_TARGET_URL` var is set |
 | C8 | **Vulnerability remediation SLA** (Critical ≤24h, High ≤7d, Med ≤30d, Low next sprint) | 🟢 | Documented in `SOC2_CONTROLS.md` CC4.2 |
-| C9 | **Manual quarterly security review** (users, admins, secrets, keys, domains, certs, DNS, GH perms) with dated evidence | 🟡 | Procedure at `docs/security/QUARTERLY_SECURITY_REVIEW.md` (Session 3); target first execution Q3 2026 |
+| C9 | **Manual quarterly security review** (users, admins, secrets, keys, domains, certs, DNS, GH perms) with dated evidence | 🟡 | Procedure at `docs/security/QUARTERLY_SECURITY_REVIEW.md` (Session 3); scaffolded evidence file at `docs/compliance/evidence/2026-Q3/quarterly-security-review-2026-07-04.md` (Session 6) — Dustin ticks the 13-item checklist to close |
 
 ---
 
@@ -235,7 +253,7 @@ Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SE
 | D6 | Health check endpoint | 🟢 | `GET /api/health` |
 | D7 | **Log review procedure + dated evidence** (weekly glance, jotted) | 🟢 | Procedure at `docs/security/LOG_REVIEW.md` (Session 3) + first dated bullet at `docs/compliance/evidence/2026-07/log-review-weekly.md` for 2026-06-27→2026-07-04 window (Session 4) |
 | D8 | **Monitoring matrix** — "what would alert me if X" | 🟢 | `docs/security/MONITORING_MATRIX.md` (this session) |
-| D9 | **Security metrics dashboard** (monthly markdown table) | 🟡 | Template at `docs/compliance/evidence/2026-07/security-metrics-2026-07.md`; needs closing on 2026-08-01 |
+| D9 | **Security metrics dashboard** (monthly markdown table) | 🟡 | Baseline populated with real 30-day data at `docs/compliance/evidence/2026-07/security-metrics-2026-07.md` (Session 6); full month-close on 2026-08-01 via monthly scheduled cadence task |
 | D10 | **Admin action logging** (permission changes, config edits, encryption on/off) | 🟢 | `encryption_enabled`/`encryption_disabled` CEF sev 7 events |
 
 ---
@@ -262,7 +280,7 @@ Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SE
 | F3 | **Dated restore-test evidence log** | 🟡 | Test runs; results not archived to `docs/compliance/evidence/YYYY-MM/restore-test-YYYY-MM-DD.md` yet |
 | F4 | RTO ~2h / RPO ~24h documented | 🟢 | `SOC2_CONTROLS.md` CC9.1 |
 | F5 | **Backup destination credentials configured** | 🟡 | Needs prod env update |
-| F6 | **Secure disposal log** for old backups + old logs | 🟡 | Design + cadence at `docs/security/SECURE_DISPOSAL_LOG.md` (Session 2); needs first monthly evidence entry |
+| F6 | **Secure disposal log** for old backups + old logs | 🟡 | Cadence doc + first-month template at `docs/compliance/evidence/2026-07/secure-disposal-2026-07.md` (Session 6); closes at month-end 2026-08-01 |
 
 ---
 
@@ -347,7 +365,7 @@ Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SE
 | L7 | Dated restore-test evidence | 🟡 | See F3 |
 | L8 | Dated tabletop drill evidence | 🟢 | See E4 |
 | L9 | Dated log-review evidence | 🟢 | `docs/compliance/evidence/2026-07/log-review-weekly.md` seeded 2026-07-04 (Session 4) |
-| L10 | Dated quarterly security review evidence | 🔴 | See C9 |
+| L10 | Dated quarterly security review evidence | 🟡 | Scaffolded at `docs/compliance/evidence/2026-Q3/quarterly-security-review-2026-07-04.md` (Session 6); needs Dustin's checkbox walkthrough + sign-off to close to 🟢 |
 
 ---
 
@@ -366,13 +384,13 @@ Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SE
 | I. AI Governance | 7 | 0 | 0 | 7 (I8 trimmed) |
 | J. Vendor Risk | 5 | 0 | 0 | 5 |
 | K. Endpoint / Solo-Dev | 4 | 1 | 0 | 5 |
-| L. Evidence Discipline | 7 | 2 | 1 | 10 |
-| **Totals** | **78** | **16** | **1** | **95** |
+| L. Evidence Discipline | 7 | 3 | 0 | 10 |
+| **Totals** | **78** | **17** | **0** | **95** |
 
-**Delta from Session 3:** 🟢 75 → 78 (+3). 🟡 17 → 16 (net -1). 🔴 3 → 1 (-2).
-**Delta from original compile:** 🟢 39 → 78 (+39). 🟡 22 → 16 (net -6). 🔴 34 → 1 (-33).
+**Delta from Session 5:** 🟢 78 → 78 (=). 🟡 16 → 17 (+1). 🔴 1 → 0 (-1).
+**Delta from original compile:** 🟢 39 → 78 (+39). 🟡 22 → 17 (net -5). 🔴 34 → 0 (-34).
 
-**Interpretation:** the SC repo is now at **82% green, 17% yellow, 1% red.** The 1 remaining red is L10 first quarterly security review evidence — L6 was scaffolded to yellow in Session 5. L9 (log review) closed in Session 4 with the first weekly bullet.
+**Interpretation:** the SC repo is now at **82% green, 18% yellow, 0% red.** ✨ **No red items remain.** Every SOC 2 control across A–L is either done or documented with a specific execution path. The 17 yellows each need one of: an admin gh command (5 items), a screenshot or checkbox pass by the founder (7 items), a production env change (3 items), or an attorney review (1 item — H7 privacy).
 
 **The 15 yellows** are all execution-step-away items:
 - 5 need Dustin admin action on GitHub (B5 branch protection, B7 signed commits, B11 environment gate, C7 DAST target var) — runbook at `docs/security/GITHUB_ADMIN_SETUP.md`.
