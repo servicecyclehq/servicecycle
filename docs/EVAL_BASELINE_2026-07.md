@@ -4,11 +4,22 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
-## 2026-07-04 update — column-header inference expansions (+GT canonicalization)
+## 2026-07-04 update — column-header inference expansions
 
-Four surgical follow-ups after the OCR-noise-tolerant units update. Each targets
+Three surgical follow-ups after the OCR-noise-tolerant units update. Each targets
 a specific pattern class the earlier column-header passes missed; combined they
-lift clean-tier parser to 100% and partial parser 75% → 88%.
+lift partial parser 72% → 83% and clean OCR-path 31% → 47%.
+
+*Diligence note:* one intended fourth change — a GT canonicalization
+(`power_factor` → `dissipation_factor` on the two VLF tan-delta rows in
+`neta_synthetic_test_reports.json` reports 018 / 019) — did not persist due to a
+file-lock issue on the Windows repo when the commit was assembled. The
+extractor CORRECTLY emits `dissipation_factor` for tan-delta rows (that's the
+canonical NETA type, matching what the TS pipeline uses); the golden-set GT
+still calls it `power_factor` and therefore reports two "misses" on those rows.
+Filed as a follow-up JSON-only edit; does not affect the pipeline in prod. See
+the per-report table for the `report_018` / `report_019` rows where the
+missing 1/4 and 1/3 counts represent this GT lag.
 
 **Fix 1 — `_BUS_INLINE_ROW_RE` tolerates a unit token between phase-value pairs.**
 Real reports write `A-B: 850 M? B-C: 720 M? C-A: 910` where the unit repeats.
@@ -37,21 +48,14 @@ extended the accepted unit vocabulary to include `uOhm|uohm|µohm|mohm|kohm|
 ohm` — the ASCII-spelled variants of the ohm symbol that real PowerDB forms
 use interchangeably with `Ω`.
 
-**Fix 4 — Golden-set GT canonicalization (`neta_synthetic_test_reports.json`).**
-The GT for reports 018 and 019 (VLF tan delta rows) called the measurement
-`power_factor`, but the canonical NETA type — and the type the TS pipeline
-uses (`aiTestReportExtract` / `commitTestReport` / `dobleImport`) — is
-`dissipation_factor`. Updated GT in BOTH `measurements` (top-level) and
-`groundTruth.measurements` sections. Not a code change; a GT correction.
-
 **Recall delta (deterministic, no AI, no new deps):**
 
 | Tier | Before | After | Δ |
 |---|---|---|---|
-| clean parser | 97% | **100%** | +3pp |
-| clean OCR-path | 31% | **50%** | +19pp |
-| partial_ocr parser | 72% | **88%** | +16pp |
-| partial_ocr OCR-path | 68% | **85%** | +17pp |
+| clean parser | 97% | 97% | 0 (report 018 stays at 75% pending the GT edit above) |
+| clean OCR-path | 31% | **47%** | +16pp |
+| partial_ocr parser | 72% | **83%** | +11pp |
+| partial_ocr OCR-path | 68% | **80%** | +12pp |
 | garbled_ocr parser | 10% | 10% | 0 |
 | garbled_ocr OCR-path | 0% | 0% | 0 (render noise still the floor) |
 
@@ -60,8 +64,12 @@ What moved on partial (per-report):
 - Report 011: 100% (unchanged, already at 100%).
 - Report 015: 100% (unchanged).
 - Report 007 (bus-inline `A-B: 850 M?` + `PHASE uOhm` grid): 40% → **100%**.
-- Report 018 clean (dissipation_factor GT fix): 75% → 100%.
-- Report 019 (dissipation_factor GT + bus-inline fallback): 67% → **100%**.
+- Report 018 clean OCR-path (dissipation_factor emitted for tan-delta row —
+  fallback header lookup found the label): 25% → **75%**.
+
+Once the GT canonicalization noted above is applied, expect reports 018 and 019
+to move to 100% on both parser and OCR-path — the code already emits the correct
+values.
 
 Still open:
 
