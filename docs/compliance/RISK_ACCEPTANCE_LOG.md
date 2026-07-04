@@ -69,6 +69,18 @@ Each row is an accepted-risk record. Append only; if an accepted risk becomes mi
 - **Accepted date:** 2026-07-04
 - **Reconsider by:** on hiring the second person with production access.
 
+### RAR-008 — Audit chain verifier not yet retention-aware
+
+- **Risk:** `activityLogPrune.ts` hard-deletes activity_logs older than 365 days; `verifyAccount` in `activityLogChain.ts` expects the chain to start from `prevHash: null`. After the first real prune fires on production data, the verifier will report a stable chain break at the oldest surviving row.
+- **Why accepted:** SC's first commit was 2026-06-06; the 365-day mark lands on 2027-06-06. The prune has never actually deleted a production row yet. Time-boxed acceptance.
+- **Compensating controls:**
+  - Nightly `activityLogChainVerify` cron already logs breaks + pushes to Better Stack (via `activityLogChain.ts` line 311).
+  - RAR-001 already accepts DB + app-server insider tampering as residual — the retention-aware fix does not materially widen that surface.
+- **Approver:** Dustin.
+- **Accepted date:** 2026-07-04.
+- **Reconsider by:** 2027-03-01 (Q1 2027) — must ship retention-aware verifier before 2027-06-06.
+- **Cross-linked:** `docs/security/SECURITY_DECISIONS.md` 2026-07-04 audit-chain retention entry; `docs/security/RETENTION_ENFORCEMENT_DESIGN.md` §Follow-up.
+
 ### RAR-007 — No formal DAST scanning yet
 
 - **Risk:** SAST + `npm audit` + Dependabot cover static and dependency vulns; no dynamic scanner runs against a live surface.
