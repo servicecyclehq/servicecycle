@@ -130,6 +130,26 @@ Remaining 🔴 (2 only):
 
 Both are cadence-first-execution items — running the procedures at `ACCESS_REVIEW.md` / `QUARTERLY_SECURITY_REVIEW.md` once each converts them.
 
+### 2026-07-04 — Fifth autonomous session (design reconciliation + scaffolding + monthly automation)
+
+Closed to 🟢 / advanced to 🟡:
+
+- **L6** 🔴 → 🟡 — scaffolded evidence file at `docs/compliance/evidence/2026-Q3/access-review-2026-07-04.md`. Contains vendor-account checklist (8 accounts), MFA-check "how to" per vendor, in-app admin SQL query, SSH fingerprint check command, artifact TODO list. Founder attaches screenshots + ticks checkboxes to close to 🟢.
+- **New:** `docs/SOC2_ONE_PAGER.md` — executive summary of SOC 2 posture for the acquirer diligence pack (aligns with GTM = acquisition).
+
+Design tensions reconciled (documentation only, no code):
+
+- **RAR-008 accepted risk logged** — `activityLogPrune.ts` hard-deletes at 365d but `verifyAccount` in `activityLogChain.ts` expects a chain starting from `prevHash: null`. False chain-break will trigger on the first prune fire after 2027-06-06 (365 days from SC's first commit 2026-06-06). Reconsider by 2027-03-01 — must ship retention-aware verifier before June 2027 or the nightly verifier alerts Better Stack every night.
+- **AiUsage retention corrected** — `DATA_RETENTION_MATRIX.md` updated to 90d (matching `prune-ai-usage` cron at 03:55 UTC) instead of the 12-month figure my initial draft assumed. The AiUsage schema is already daily-aggregated `(userId, action, day, count)` — no aggregation layer needed.
+
+Automation:
+
+- **Monthly SOC 2 cadence scheduled task** created (`servicecycle-soc2-monthly-cadence`, runs 1st of each month at 09:00 CT). Reads current-month evidence folder, flags any unfilled placeholders, warns if quarter-end is due, scans accepted risks + accepted CVEs for reconsider-by dates in a 30-day window, checks that restore-test + disposal-log evidence exist for the just-ended month.
+
+Score: **🟢 78 / 🟡 16 / 🔴 1** (82% green, 17% yellow, 1% red).
+
+Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SECURITY_REVIEW.md` once closes it.
+
 ---
 
 ## Vetting summary — how the five inputs compared
@@ -162,7 +182,7 @@ Both are cadence-first-execution items — running the procedures at `ACCESS_REV
 | A5 | Instant token revocation on password change | 🟢 | `tokenEpoch` monotonic counter |
 | A6 | **Authentication matrix** — every route × auth requirement | 🟢 | Implicit in `server/middleware/auth.ts` + roles; formalized in `SOC2_CONTROLS.md` CC6.1 |
 | A7 | **Permissions matrix** — feature × role table | 🟢 | `docs/security/PERMISSIONS_MATRIX.md` (this session) |
-| A8 | **Quarterly access review** with dated evidence | 🟡 | Procedure at `docs/security/ACCESS_REVIEW.md` (Session 3); first execution converts to 🟢 |
+| A8 | **Quarterly access review** with dated evidence | 🟡 | Procedure at `docs/security/ACCESS_REVIEW.md` (Session 3); scaffolded evidence file at `docs/compliance/evidence/2026-Q3/access-review-2026-07-04.md` (Session 5) — Dustin fills in screenshots + checkboxes to close |
 | A9 | **Session management** (timeouts, refresh rotation, reuse detection) | 🟢 | `docs/security/SESSION_MANAGEMENT.md` (this session); idle-timeout gap acknowledged with compensating controls |
 | A10 | **MFA everywhere with proof** (GitHub, DO, DNS, GH, email, Cloudflare) | 🟡 | Presumed enabled; needs dated screenshots in `docs/compliance/evidence/YYYY-MM/` |
 
@@ -323,7 +343,7 @@ Both are cadence-first-execution items — running the procedures at `ACCESS_REV
 | L3 | **Data Room Index** cross-referencing every SOC 2 control → file | 🟢 | `docs/DATA_ROOM_INDEX.md` |
 | L4 | Policy version + effective date + next review date + approved-by headers | 🟢 | All new docs use the pattern; `docs/OFFBOARDING.md` retrofit added (Session 2); remaining docs already had partial headers |
 | L5 | `CHANGELOG.md` (human-readable, not just git log) | 🟢 | Root `CHANGELOG.md` seeded (this session) |
-| L6 | Dated access review evidence | 🔴 | See A8 |
+| L6 | Dated access review evidence | 🟡 | Scaffolded at `docs/compliance/evidence/2026-Q3/access-review-2026-07-04.md` (Session 5); needs Dustin's screenshots to close to 🟢 |
 | L7 | Dated restore-test evidence | 🟡 | See F3 |
 | L8 | Dated tabletop drill evidence | 🟢 | See E4 |
 | L9 | Dated log-review evidence | 🟢 | `docs/compliance/evidence/2026-07/log-review-weekly.md` seeded 2026-07-04 (Session 4) |
@@ -346,13 +366,13 @@ Both are cadence-first-execution items — running the procedures at `ACCESS_REV
 | I. AI Governance | 7 | 0 | 0 | 7 (I8 trimmed) |
 | J. Vendor Risk | 5 | 0 | 0 | 5 |
 | K. Endpoint / Solo-Dev | 4 | 1 | 0 | 5 |
-| L. Evidence Discipline | 7 | 1 | 2 | 10 |
-| **Totals** | **78** | **15** | **2** | **95** |
+| L. Evidence Discipline | 7 | 2 | 1 | 10 |
+| **Totals** | **78** | **16** | **1** | **95** |
 
-**Delta from Session 3:** 🟢 75 → 78 (+3). 🟡 17 → 15 (net -2). 🔴 3 → 2 (-1).
-**Delta from original compile:** 🟢 39 → 78 (+39). 🟡 22 → 15 (net -7). 🔴 34 → 2 (-32).
+**Delta from Session 3:** 🟢 75 → 78 (+3). 🟡 17 → 16 (net -1). 🔴 3 → 1 (-2).
+**Delta from original compile:** 🟢 39 → 78 (+39). 🟡 22 → 16 (net -6). 🔴 34 → 1 (-33).
 
-**Interpretation:** the SC repo is now at **82% green, 16% yellow, 2% red.** The 2 remaining reds are dated first-execution evidence artifacts (L6 access review, L10 quarterly review) — L9 (log review) was closed in Session 4 with the first weekly bullet.
+**Interpretation:** the SC repo is now at **82% green, 17% yellow, 1% red.** The 1 remaining red is L10 first quarterly security review evidence — L6 was scaffolded to yellow in Session 5. L9 (log review) closed in Session 4 with the first weekly bullet.
 
 **The 15 yellows** are all execution-step-away items:
 - 5 need Dustin admin action on GitHub (B5 branch protection, B7 signed commits, B11 environment gate, C7 DAST target var) — runbook at `docs/security/GITHUB_ADMIN_SETUP.md`.
