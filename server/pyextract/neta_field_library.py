@@ -98,11 +98,21 @@ RESULT_TOKENS = {
 
 _UNIT_NORM = [
     (re.compile(r"^(u\s?ohm|uohm|uΩ|µΩ|micro)", re.I), "µΩ"),
+    # OCR-corruption aliases for µΩ (tesseract renders Ω as "?" or garbles the
+    # micro sign). Added 2026-07-04 alongside the extractor's _UNIT expansion;
+    # see servicecycle-morning-parser session for eval-movement evidence.
+    (re.compile(r"^(u\?|udhm)$", re.I), "µΩ"),
     # milli -- CASE-SENSITIVE lowercase m, BEFORE the mega rule, so a milliohm
     # reading is never normalized up to megohm (a 1e9 error). 'mohm'/'mΩ'
     # (lowercase) and 'milliohm' map to mΩ; capital 'M...' falls through to mega.
     (re.compile(r"^(milliohm|mΩ|m\s?ohm|mohm)$"), "mΩ"),
     (re.compile(r"^(M\s?Ω|MΩ|Mohm|megohm|meg)", re.I), "MΩ"),
+    # OCR-corruption aliases for MΩ. "M?" is by far the most common tesseract
+    # rendering of MΩ (Ω → ?); the others (M0hm / Nchm / MOhm / Mchm) are
+    # variants observed on the golden set reports 005 / 007 / 019 partial+
+    # garbled renders. Added 2026-07-04; verified to move partial_ocr recall
+    # 43% → 68% on the eval.
+    (re.compile(r"^(M\?|M0hm|Nchm|MOhm|Mchm)$", re.I), "MΩ"),
     (re.compile(r"^(k\s?ohm|kohm|kΩ)", re.I), "kΩ"),
     (re.compile(r"^(ohm|Ω)$", re.I), "Ω"),
     (re.compile(r"ppm", re.I), "ppm"),

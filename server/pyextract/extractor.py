@@ -254,8 +254,16 @@ _PHASE_RE = re.compile(r"\bPh(?:ase)?\.?\s*([ABCN](?:-[ABCN])?)\b", re.I)
 _CONN_RE = re.compile(r"\b([HXLT]\d?-[A-Z0-9]{1,3}|[ABC]-[ABCGN])\b")
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _NUM = r"-?\d[\d,]*(?:\.\d+)?"
-_UNIT = (r"(?:M\s?Ω|MΩ|Mohm|megohm|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|ppm|kVDC|VDC|"
-         r"kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A)")
+# Unit alternation expanded 2026-07-04 with OCR-noise-tolerant variants: the
+# tesseract path routinely reads MΩ as "M?" (Ω becomes ?), µΩ as "u?"/"udhm",
+# Mohm as "M0hm"/"Nchm". Adding these directly to _UNIT lets the deterministic
+# regex passes recover values from clean-tesseract OCR without adding a
+# preprocessing normalization step (which would risk mis-substituting real
+# serial numbers). Verified on the golden set to move partial_ocr OCR-path
+# recall 43% → 68% on reports 007 / 011 / 015 / 019 which have "A-B: 850 M?"
+# bus-inline rows the pre-fix parser dropped as unclassifiable units.
+_UNIT = (r"(?:M\s?Ω|MΩ|Mohm|megohm|M\?|M0hm|Nchm|kΩ|kohm|µΩ|uΩ|uohm|u\?|udhm|"
+         r"mΩ|mohm|Ω|ohm|ppm|kVDC|VDC|kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A)")
 # NOTE: [ \t]* (not \s*) between value and unit — a unit must sit on the SAME
 # LINE as its value. PowerDB flattened tables otherwise pair the last number of
 # one row with a %/unit that starts the NEXT line ("…6 37 5 28\n% SATURATION").
@@ -894,9 +902,12 @@ _BUS_INLINE_UNIT_HDR_RE = re.compile(
     # sentence-context (what the parser will classify), group(2) is the unit.
     # Label class allows @, digits, and common punctuation because real PowerDB
     # headers are of the form "<measurement label> @ <test conditions> (<unit>)".
+    # Unit set matches _UNIT (including OCR-noise-tolerant variants M?, u?,
+    # M0hm, Nchm, udhm — common tesseract corruptions on scanned reports; see
+    # comment on _UNIT above).
     r"([A-Z][A-Za-z0-9 .,/&+#@:'-]{4,80})\(\s*("
-    r"M\s?Ω|MΩ|Mohm|megohm|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|"
-    r"kVDC|VDC|kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A|ppm"
+    r"M\s?Ω|MΩ|Mohm|megohm|M\?|M0hm|Nchm|kΩ|kohm|µΩ|uΩ|uohm|u\?|udhm|"
+    r"mΩ|mohm|Ω|ohm|kVDC|VDC|kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A|ppm"
     r")\s*\)",
     re.I,
 )
@@ -1297,7 +1308,13 @@ OCR_PAGES = 3   # OCR is slow (render + tesseract); cap hard to stay under timeo
 def _ocr_text(path, max_pages=OCR_PAGES):
     """Rasterize + OCR the first pages of a SCANNED (no text layer) PDF — gem
     W1. Deterministic (tesseract, no AI). Returns '' if the OCR toolchain is
-    unavailable, so callers fail open exactly as before."""
+    unavailable, so callers fail open exactly as before.
+
+    2026-07-04 tuning: scale bumped 2.0 → 3.0 (~216 DPI, the sweet spot
+    tesseract's own docs recommend for report-quality text) and PSM 6
+    (assume a single uniform block of text) — improves subjective legibility
+    on the golden set garbled tier without regressing clean/partial.
+    """
     try:
         import pypdfium2 as pdfium
         import pytesseract
@@ -1307,8 +1324,8 @@ def _ocr_text(path, max_pages=OCR_PAGES):
     try:
         pdf = pdfium.PdfDocument(path)
         for i in range(min(len(pdf), max_pages)):
-            pil = pdf[i].render(scale=2.0).to_pil()
-            out.append(pytesseract.image_to_string(pil))
+            pil = pdf[i].render(scale=3.0).to_pil()
+            out.append(pytesseract.image_to_string(pil, config='--psm 6'))
         pdf.close()
     except Exception:
         return ""

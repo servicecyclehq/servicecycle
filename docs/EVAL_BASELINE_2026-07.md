@@ -4,6 +4,76 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-04 update — OCR-noise-tolerant units + tesseract PSM 6 / scale 3
+
+Two related fixes that together unlock ~25 percentage points on the
+partial-OCR tier without adding a single Docker dependency. Investigating
+the RapidOCR second-reader plan surfaced that the actual barrier for the
+scanned/partial tiers was not the OCR engine — it was the extractor's
+regex passes silently dropping every unit token that tesseract rendered as
+"M?", "u?", "M0hm", "Nchm", or "udhm" (all common corruptions of MΩ / µΩ /
+Mohm when Ω or µ don't survive the scan-simulation JPEG artifacts).
+
+1. **`_UNIT_NORM` OCR-corruption aliases** (`neta_field_library.py`) —
+   added two new entries: `M\?|M0hm|Nchm|MOhm|Mchm` → `MΩ`, and
+   `u\?|udhm` → `µΩ`. Placed AFTER the exact `MΩ|Mohm|megohm|meg` rule so
+   real megohm strings still normalize first; ordered such that a legit
+   `mΩ` (millohm) can never accidentally match the MΩ alias (the exact
+   `^m…$` rule fires first — same care as the pre-existing milliohm
+   guard).
+2. **`_UNIT` + `_BUS_INLINE_UNIT_HDR_RE` alternation expansion**
+   (`extractor.py`) — added the same OCR-tolerant tokens to the inline
+   value+unit regex and to the bus-inline unit-header regex so `_INLINE_RE`
+   and `_bus_inline_readings` both match `A-B: 850 M?` style rows the
+   pre-fix parser dropped.
+3. **`_ocr_text` tesseract tuning** (`extractor.py`) — bumped
+   `pypdfium2.render(scale=…)` from 2.0 → 3.0 (≈216 DPI, tesseract's own
+   recommendation) and set `--psm 6` (single uniform block of text). This
+   change on its own moved no eval numbers (the synthetic renders were
+   already legible enough for tesseract's defaults on partial), but stays
+   in as a quality-of-life bump for real-scan PDFs — verified subjectively
+   cleaner output on all garbled-tier reports and no regression on clean
+   or partial.
+
+**Recall delta (deterministic, no AI, no new deps):**
+
+| Tier | Before | After | Δ |
+|---|---|---|---|
+| clean | 97% | 97% | 0 (no regression) |
+| partial_ocr parser | 47% | **72%** | +25pp |
+| partial_ocr OCR-path | 43% | **68%** | +25pp |
+| garbled_ocr | 5% | **10%** | +5pp |
+| garbled_ocr OCR-path | 0% | 0% | 0 (parser saw more but renders too noisy for the full pipe) |
+
+What moved on the partial tier:
+
+- Report 007 (`A-B: 850 M? B-C: 720 M?` bus-inline): 0% → 40% (was
+  producing generic-slug measurements; now insulation_resistance).
+- Report 011: 50% → 100%.
+- Report 015: 60% → 80%.
+- Report 019 (`A-G: 38000 M? B-G: 4200 M?` cable IR): 0% → 67%.
+
+Garbled tier: report 005 moved 25% → 50%.
+
+**What was tried and rejected (RapidOCR):** Prototyped
+`rapidocr-onnxruntime==1.4.4` + `img2table` + `opencv-python-headless`
+(~150 MB Debian wheel footprint, all Apache-2.0 / MIT). Two variants both
+failed the hard eval gate: concat-with-tesseract left the eval flat
+because RapidOCR's output has words smashed together (`KVA3750`,
+`MFR:SQUARED`, `M0hm`); RapidOCR-primary REGRESSED partial_ocr 43% → 21%
+because the cleaner-looking text has different digit-vs-letter
+confusions than tesseract's, and even light de-smashing broke real
+tokens. Concluded that RapidOCR needs a fuzzy value/unit matching layer
+in the extractor (a real design project) before it can move the eval —
+NOT a one-off patch. Meanwhile the OCR-noise-tolerant unit aliases
+turned out to be the actual win. Full context:
+`servicecycle-morning-parser-2026-07-04` memory.
+
+Verified: 218/218 across the five relevant jest suites still green after
+the vocab expansion (nameplateValidators, nameplateOcrContract,
+ingestGateDomainValidators, adminAiCapsWhitelist, measurementSanity).
+tsc clean.
+
 ## 2026-07-04 update — trip_time, VLF tan delta, `_INLINE_RE` case-insensitivity
 
 Three targeted fixes on the deterministic parser to close the remaining
