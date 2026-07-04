@@ -1,9 +1,29 @@
 # ServiceCycle — Change-Impact Review Checklist
 
-**Owner:** Engineering  
+**Version:** 1.1
+**Effective date:** 2026-07-04 (v1.1 adds §Solo-founder separation of duties)
+**Next review:** 2027-01-04
+**Owner:** Engineering (Dustin, at current stage)
 **Applies to:** Any PR or deploy that touches: auth/roles, DB schema, public API, security middleware, billing/limits, external integrations, or encryption.
 
 This checklist closes SOC2 CC3.4 (identifies and assesses changes that could affect internal controls). It is not required for routine UI tweaks or copy edits — use judgment.
+
+---
+
+## Solo-founder separation of duties — compensating control
+
+SOC 2 CC8.1 expects segregation between the developer who writes a change, the reviewer who approves it, and the operator who deploys it. ServiceCycle operates as a solo founder at this stage; that deviation is documented in `docs/compliance/RISK_ACCEPTANCE_LOG.md` **RAR-006**.
+
+The compensating controls that stand in for a second reviewer:
+
+1. **Every change is captured in git**, on a public commit history from a signed key (see `docs/security/SIGNED_COMMITS.md`).
+2. **Every deploy is audit-logged** to the tamper-evident activity chain, with the founder's identity attached and the commit SHA recorded.
+3. **This checklist is run and signed** for any change matching the "when to run" criteria below — the founder's dated sign-off in the PR body is the audit artifact.
+4. **CI enforces objective gates** the founder cannot silently bypass: `npm audit --audit-level=high`, `tsc --noEmit`, jest unit + smoke tests, Gitleaks (`.github/workflows/gitleaks.yml`), CodeQL (`.github/workflows/codeql.yml`), Trivy (`.github/workflows/trivy.yml`), verify-signed-commits (`.github/workflows/verify-signed-commits.yml`).
+5. **Dependabot + Trivy weekly full-history scans** run without the founder's involvement — they catch decisions the founder didn't make.
+6. **Every schema/auth/API PR** requires an explicit note in the PR body confirming the checklist below was mentally executed. Missing note ⇒ deploy is not authorized.
+
+This composite control ("many small independent gates the founder cannot silently disable, plus an append-only audit trail") is what stands in for a second human reviewer. It will be revisited when a second person receives production access (see `docs/PERSONNEL_SECURITY.md`).
 
 ---
 

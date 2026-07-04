@@ -1,5 +1,11 @@
 # Data Export & Offboarding (No Lock-In)
 
+**Version:** 1.1
+**Effective date:** 2026-06-25 (v1.1 header added 2026-07-04)
+**Next review:** 2027-06-25
+**Owner:** Dustin
+**SOC 2 mapping:** C1.2 (disposes of confidential information), P3–P4 (data subject rights).
+
 ServiceCycle is built so your data is always yours and always portable. There is
 no proprietary format and no lock-in.
 
