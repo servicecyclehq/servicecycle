@@ -265,7 +265,23 @@ async function aiFillReadingsFromImage(imageBuffer: Buffer, opts: any = {}) {
   const attempt = async (settings: any, tag: string) => {
     let resp: any;
     try {
-      resp = await ai.completeWithImage({ imageBuffer: processed, mediaType: 'image/jpeg', prompt: VISION_PROMPT, maxTokens: opts.maxTokens || 3072, settings });
+      // Gemini 2.5 flash is a THINKING model — reasoning tokens bill against
+      // maxOutputTokens, so a tight budget silently truncates the JSON body
+      // (2026-07-04: the nameplate route's 919d389 fix generalized). The test-
+      // report JSON is a variable-length array of measurements, so undersizing
+      // stops the pipeline mid-report on a busy PowerDB and the try/catch below
+      // silently returns null → the deterministic-only path with no gap-fill.
+      // 8192 leaves ample room for thinking + a full array. responseMimeType
+      // opts into Gemini JSON mode (fence-free, syntactically valid). Anthropic
+      // and Groq paths ignore responseMimeType (Groq already forces json_object).
+      resp = await ai.completeWithImage({
+        imageBuffer:      processed,
+        mediaType:        'image/jpeg',
+        prompt:           VISION_PROMPT,
+        maxTokens:        opts.maxTokens || 8192,
+        responseMimeType: 'application/json',
+        settings,
+      });
     } catch (e: any) {
       console.warn(`[aiTestReport] vision call failed (${tag}):`, e && e.message ? e.message.slice(0, 200) : String(e));
       return null;

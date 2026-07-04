@@ -162,6 +162,100 @@ function piRecompute(measurements: any[], out: DomainFinding[]): void {
   }
 }
 
+// ── 4b. Temperature-correction consistency (IEEE-43 IR temp-correction) ─────
+// Insulation-resistance readings are commonly reported both RAW (at the
+// reading temperature) and CORRECTED to a 40 °C reference via the IEEE-43
+// convention IR_40 = IR_raw × 0.5^((40 − T)/10). When BOTH values appear on
+// the report AND the temperature is known, this reconciles them: a
+// disagreement flags for review because one of the three (raw, corrected,
+// temperature) was misread.
+//
+// POSTURE: never asserts compliance, never rewrites a value. Silently no-ops
+// unless it can find a raw + corrected pair AND a plausible temperature —
+// absence of evidence is not a flag.
+//
+// Pairing rule: two insulation_resistance rows with the same phase are
+// treated as a raw/corrected pair when ONE label mentions "corrected" (or
+// "@ 40" / "reference") and the OTHER either mentions "raw" / "measured" /
+// "as found" or lacks any correction qualifier. Ambiguous singletons don't
+// pair. The extractor may eventually thread paired values on a single row
+// (measurement.correctedValue + measurement.temperatureC); this validator
+// prefers those when present.
+const CORR_LABEL_RE = /\b(corrected|@\s*40|to\s*40|reference|40\s*°?\s*c)\b/;
+const RAW_LABEL_RE  = /\b(raw|measured|as\s*[- ]?found|uncorrected)\b/;
+
+function tempCorrectionFactor(tempC: number): number {
+  // IEEE-43 approximation: doubles per −10 °C from the 40 °C reference.
+  return Math.pow(0.5, (40 - tempC) / 10);
+}
+
+function tempCorrection(measurements: any[], ctx: DomainContext, out: DomainFinding[]): void {
+  // Temperature source: per-row wins over meta-level (a row on a mixed report
+  // may have its own temperature stamp), but meta is the common case since
+  // the header carries the one-per-report ambient reading.
+  const metaTempC = numVal((ctx.meta && (ctx.meta as any).ambientTempC));
+  const insulation = measurements.filter((m) => m && m.measurementType === 'insulation_resistance');
+  if (!insulation.length) return;
+
+  // Case A — single row carries paired values on itself.
+  for (const m of insulation) {
+    const raw       = numVal(m.asFoundValue);
+    const corrected = numVal(m.correctedValue);
+    const rowTempC  = numVal(m.temperatureC);
+    const tempC     = rowTempC != null ? rowTempC : metaTempC;
+    if (raw == null || corrected == null || tempC == null || raw === 0) continue;
+    const expected = raw * tempCorrectionFactor(tempC);
+    if (expected === 0) continue;
+    const relErr = Math.abs(corrected - expected) / expected;
+    if (relErr > 0.10) {
+      out.push({
+        code: 'temp_correction_mismatch',
+        severity: 'warning',
+        message: `Insulation resistance temperature-correction mismatch (${m.phase || 'no phase'}): reported raw ${raw} + corrected ${corrected} at ${tempC} °C predicts corrected ≈ ${expected.toFixed(1)} (IEEE-43). Verify the temperature or one of the readings.`,
+      });
+    }
+  }
+
+  // Case B — separate rows for raw and corrected. Pair by phase.
+  const byPhase = new Map<string, any[]>();
+  for (const m of insulation) {
+    const key = String(m.phase || '').toLowerCase();
+    if (!byPhase.has(key)) byPhase.set(key, []);
+    byPhase.get(key)!.push(m);
+  }
+  for (const [, rows] of byPhase) {
+    if (rows.length < 2) continue;
+    const raws       = rows.filter((r) => RAW_LABEL_RE.test(lab(r)) || (!CORR_LABEL_RE.test(lab(r))));
+    const correcteds = rows.filter((r) => CORR_LABEL_RE.test(lab(r)));
+    if (!raws.length || !correcteds.length) continue;
+    for (const rawRow of raws) {
+      const raw = numVal(rawRow.asFoundValue);
+      if (raw == null || raw === 0) continue;
+      const rowTempC = numVal(rawRow.temperatureC);
+      const tempC = rowTempC != null ? rowTempC : metaTempC;
+      if (tempC == null) continue;
+      const expected = raw * tempCorrectionFactor(tempC);
+      if (expected === 0) continue;
+      for (const corRow of correcteds) {
+        if (corRow === rawRow) continue;
+        const corrected = numVal(corRow.asFoundValue);
+        if (corrected == null) continue;
+        const relErr = Math.abs(corrected - expected) / expected;
+        if (relErr > 0.10) {
+          out.push({
+            code: 'temp_correction_mismatch',
+            severity: 'warning',
+            message: `Insulation resistance temperature-correction mismatch (${rawRow.phase || 'no phase'}): raw ${raw} + corrected ${corrected} at ${tempC} °C predicts corrected ≈ ${expected.toFixed(1)} (IEEE-43). Verify the temperature or one of the readings.`,
+          });
+          // Only flag the first mismatched pair per phase — avoid spamming
+          // findings on a report that lists many phase permutations.
+          break;
+        }
+      }
+    }
+  }
+}
+
 // ── 5. Report-verdict cross-check ────────────────────────────────────────────
 // The extractor already recovers the report's own PASS/FAIL. If the printed
 // verdict disagrees with the verdict computed from the readings (any RED =>
@@ -169,8 +263,14 @@ function piRecompute(measurements: any[], out: DomainFinding[]): void {
 function normalizeVerdict(v: any): 'PASS' | 'FAIL' | null {
   const s = String(v || '').trim().toLowerCase();
   if (!s) return null;
-  if (/^(pass|passed|green|ok|accept|acceptable|satisfactory)$/.test(s)) return 'PASS';
-  if (/^(fail|failed|red|reject|rejected|unacceptable|defective)$/.test(s)) return 'FAIL';
+  // Vocabulary aligned with extractor.py _REPORT_VERDICT_RE / _RESULT_RE — the
+  // extractor emits whichever printed token the report used ("PASS" / "SAT" /
+  // "SATISFACTORY" / etc.), and this canonicalizes them to PASS or FAIL.
+  // MARGINAL / DEFICIENT are deliberately unmapped: the report's own author
+  // did not commit either way and we would rather return null (no cross-check
+  // fires) than force one side.
+  if (/^(pass|passed|green|ok|accept|acceptable|satisfactory|sat)$/.test(s)) return 'PASS';
+  if (/^(fail|failed|red|reject|rejected|unacceptable|defective|unsatisfactory|unsat)$/.test(s)) return 'FAIL';
   return null;
 }
 
@@ -219,11 +319,10 @@ function completeness(measurements: any[], ctx: DomainContext, out: DomainFindin
  * Run all domain consistency checks over a full measurement set.
  * Pure and total (never throws). Returns [] when everything is consistent.
  *
- * NOTE (temperature-correction recompute): the review also lists a raw-vs-
- * corrected IR temp-correction check. It is intentionally deferred — the current
- * measurement shape does not reliably carry the reference temperature paired to
- * a raw/corrected IR pair, so a recompute would either no-op or false-positive.
- * Tracked as a follow-up; add here once the extractor threads temperature through.
+ * The temp-correction check is active when the extractor supplied
+ * `ctx.meta.ambientTempC` (or per-row `temperatureC`) AND the report carries
+ * a raw + corrected insulation-resistance pair (either as two rows or as a
+ * single row with `correctedValue`). Otherwise it silently no-ops.
  */
 export function checkDomainConsistency(measurements: any[], ctx: DomainContext = {}): DomainFinding[] {
   const out: DomainFinding[] = [];
@@ -233,6 +332,7 @@ export function checkDomainConsistency(measurements: any[], ctx: DomainContext =
     acetylene(list, out);
     tdcgChecksum(list, out);
     piRecompute(list, out);
+    tempCorrection(list, ctx, out);
     verdictCrossCheck(list, ctx, out);
     completeness(list, ctx, out);
   } catch {

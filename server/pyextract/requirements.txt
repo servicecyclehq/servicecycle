@@ -2,18 +2,20 @@
 # Pin versions to prevent silent regressions on Docker rebuild.
 # To update: test with new version, update this file, rebuild Docker image.
 #
-# All packages must be available as pre-built wheels (--only-binary=:all:)
-# for the alpine linux/amd64 target. If a new version drops wheel support,
-# the Docker build will fail loudly rather than silently compiling from source.
+# Runtime image is node:20-slim (Debian) as of commit c652578 — all packages
+# resolve against manylinux/glibc wheels. If a new version drops wheel support
+# for the runtime target, the Docker build will fail loudly rather than
+# silently compiling from source.
 
 pdfplumber==0.11.4
 pypdf==4.3.1
 pytesseract==0.3.13
 Pillow>=10.4.0,<12.0
-# pypdfium2 is intentionally omitted: it ships only manylinux (glibc) wheels and
-# cannot be imported on Alpine musl. pdfplumber will pull it in as a transitive
-# dep (pip install succeeds because the wheel downloads fine), but the Dockerfile
-# wraps the import check in a fail-open block so a pypdfium2 ImportError on musl
-# is logged as a warning rather than failing the build. Machine-readable PDF
-# text extraction (pdfplumber + pdfminer.six) still works; scanned-PDF OCR falls
-# back to the pdfjs parser. To restore full OCR, switch to node:20-slim (Debian).
+# pypdfium2 is not pinned explicitly — pdfplumber pulls it as a transitive dep
+# and Debian ships the manylinux wheel, so the pdfplumber PowerDB grid parser
+# + Tesseract OCR now RUN in prod. Prior to c652578 the image was node:20-alpine
+# and pypdfium2 had no musl wheel, so the deterministic extractor was inert and
+# ingest silently fell back to the pdfjs parser + AI gap-fill. If you ever
+# switch the runtime image back to Alpine, this comment (and the extractor
+# gating) must both be revisited — see docs/PDF_INGESTION_SYNTHESIS_2026-07-03.md
+# §2 and docs/PROD_REALITY_AUDIT_2026-07-04.md for the incident history.

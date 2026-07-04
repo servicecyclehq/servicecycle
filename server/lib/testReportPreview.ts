@@ -168,6 +168,18 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
       serialNumber: f.serialNumber || null, model: f.model || null,
       manufacturer: f.manufacturer || null, testDate: f.testDate || null,
       vendor: f.vendor || null, techName: f.techName || null,
+      // Report-level overall verdict (extractor.py:_extract_report_verdict).
+      // Populated so ingestConfidenceGate's report-verdict cross-check (already
+      // wired via domainValidators.verdictCrossCheck, but inert prior to this
+      // change because no code path populated the field) fires on a
+      // printed-vs-computed disagreement. Preserved as the raw uppercased token
+      // — normalizeVerdict() in lib/domainValidators.ts:169 handles the
+      // PASS/FAIL / GREEN/RED / SATISFACTORY → canonical mapping.
+      reportResult: py.report_result || null,
+      // Reference/ambient/test temperature in °C — feeds
+      // domainValidators.tempCorrection when the report also carries paired
+      // raw + corrected IR readings. Advisory only.
+      ambientTempC: (py.ambient_temp_c === null || py.ambient_temp_c === undefined) ? null : Number(py.ambient_temp_c),
     };
     measurements = py.measurements.map((x: any) => {
       let pf = ['GREEN', 'YELLOW', 'RED'].includes(x.passFail) ? x.passFail : null;

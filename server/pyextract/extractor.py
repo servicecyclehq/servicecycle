@@ -263,6 +263,91 @@ _INLINE_RE = re.compile(r"([A-Za-z][\w .,/&()+#-]{0,28}?)[ \t]*[:=]?[ \t]*(" + _
 _EXPECT_RE = re.compile(r"(?:Expected|Limit|Min(?:imum)?|Spec|Acceptance|Nameplate)\.?\s*[:=]?\s*([<>]=?\s*[\d.]+\s*[A-Za-zΩµ%]*)", re.I)
 _RESULT_RE = re.compile(r"\b(GREEN|YELLOW|RED|PASS(?:ED)?|FAIL(?:ED)?|MARGINAL|SAT|UNSAT|ACCEPTABLE|DEFICIENT)\b", re.I)
 
+# Report-LEVEL overall verdict (feeds domainValidators.verdictCrossCheck).
+# Matches phrasing conventions across NETA/PowerDB/Megger/Doble cover pages:
+#   Overall Result: PASS
+#   Final Verdict: FAIL
+#   Report Status - SATISFACTORY
+#   Test Result:  FAILED
+#   Test Outcome  ACCEPTABLE
+# Deliberately narrow: (a) requires an "overall / final / report / test" qualifier
+# so per-measurement PASS/FAIL rows never accidentally hijack the report-level
+# read; (b) allows an optional separator ([:.\-|—] / whitespace) between label
+# and value; (c) captures the same token vocabulary as _RESULT_RE so downstream
+# normalizeVerdict() (lib/domainValidators.ts:169) can canonicalize both paths.
+_REPORT_VERDICT_RE = re.compile(
+    r"(?:^|\n)\s*"
+    r"(?:overall(?:\s+test)?\s+(?:result|verdict|outcome|status)"
+    r"|final\s+(?:result|verdict|outcome|status|assessment)"
+    r"|report\s+(?:result|verdict|outcome|status)"
+    r"|test\s+(?:result|verdict|outcome|status))"
+    r"\s*[:.\-|—]?\s*"
+    r"(GREEN|YELLOW|RED|PASS(?:ED)?|FAIL(?:ED)?|MARGINAL|SAT|UNSAT|ACCEPTABLE|DEFICIENT|SATISFACTORY|UNSATISFACTORY)"
+    r"\b",
+    re.I,
+)
+
+
+# Reference/ambient temperature — powers domainValidators.tempCorrection.
+# NETA/PowerDB/Doble/Megger cover pages report the reading temperature under
+# any of "Ambient Temperature", "Test Temperature", "Winding Temperature",
+# "Reference Temperature", "Oil Temperature". The IEEE-43 temperature-correction
+# formula uses whichever the report says the readings were taken at; we surface
+# the number without picking sides between them — the validator only uses it
+# when the report also carries BOTH a raw and a corrected value on the same
+# measurement type + phase (so a wrong temperature label degrades gracefully
+# into "no pair to check" rather than a false-positive flag).
+_TEMP_C_RE = re.compile(
+    r"(?:ambient|test|reference|winding|oil|top[- ]oil|liquid)\s*(?:temp\.?|temperature)"
+    r"\s*[:\-]?\s*"
+    r"(-?\d{1,3}(?:\.\d+)?)\s*(?:°\s*)?"
+    r"(C|F|Celsius|Fahrenheit)?\b",
+    re.I,
+)
+
+
+def _extract_ambient_temp(text: str):
+    """Recover the report's ambient/test temperature in °C, if present.
+
+    Handles °C and °F (converted). Returns a float or None. Never raises.
+    """
+    if not text:
+        return None
+    m = _TEMP_C_RE.search(text)
+    if not m:
+        return None
+    try:
+        val = float(m.group(1))
+    except (TypeError, ValueError):
+        return None
+    unit = (m.group(2) or "C").strip().upper()
+    if unit.startswith("F"):
+        val = (val - 32.0) * 5.0 / 9.0
+    # Physically-plausible sanity guard: real electrical maintenance readings
+    # sit in [-40, 120] °C. Anything else is almost certainly a false grab
+    # (a serial-number fragment, a torque spec) — better to no-op than to
+    # anchor the temp-correction validator on garbage.
+    if val < -40.0 or val > 120.0:
+        return None
+    return round(val, 1)
+
+
+def _extract_report_verdict(text: str):
+    """Recover the report's own printed OVERALL result, if present.
+
+    Returns a canonical string ("PASS" / "FAIL" / raw token like "MARGINAL") or
+    None. The domain-consistency validator normalizes further; this function's
+    job is only to surface the raw label so the cross-check can fire. Cheap
+    (a single regex over the assembled text) and always safe — nothing here
+    changes measurements, only enriches meta.
+    """
+    if not text:
+        return None
+    m = _REPORT_VERDICT_RE.search(text)
+    if not m:
+        return None
+    return m.group(1).upper()
+
 # Infer a measurementType from a unit when the label is unknown. Only the
 # DIAGNOSTIC units (insulation/contact/winding resistance, DGA) get a semantic
 # NETA type — those are unambiguous and safe to feed the trend/deficiency
@@ -788,6 +873,173 @@ def _pf_readings(text):
     return out
 
 
+# ── Column-header inference passes (report 006/014/017/018 class) ───────────
+# Two closely-related PowerDB layouts the earlier passes missed and the eval
+# baseline (docs/EVAL_BASELINE_2026-07.md) flagged: (a) bus-to-ground insulation
+# rows written inline as "A-G: 15200  B-G: 14100  C-G: 16800" under a "(MΩ)"
+# unit header line; (b) contact-resistance / trip-time grids where the row
+# labels are just phase letters (A / B / C) and the measurement label lives on
+# a PRECEDING line ("CONTACT RESISTANCE - DLRO (µΩ)"). Both share the same
+# gap: the parser needs to INFER the measurement type from a nearby line
+# instead of from the row itself.
+_BUS_INLINE_UNIT_HDR_RE = re.compile(
+    # match a header line containing a measurement keyword AND a parenthesized
+    # unit — e.g. "BUS INSULATION RESISTANCE @ 2500 VDC (MΩ)". Group(1) is the
+    # sentence-context (what the parser will classify), group(2) is the unit.
+    # Label class allows @, digits, and common punctuation because real PowerDB
+    # headers are of the form "<measurement label> @ <test conditions> (<unit>)".
+    r"([A-Z][A-Za-z0-9 .,/&+#@:'-]{4,80})\(\s*("
+    r"M\s?Ω|MΩ|Mohm|megohm|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|"
+    r"kVDC|VDC|kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A|ppm"
+    r")\s*\)",
+    re.I,
+)
+_BUS_INLINE_ROW_RE = re.compile(
+    # Match "A-G: 15200      B-G: 14100      C-G: 16800" on one line — three
+    # phase-labeled values. The phase key is a single letter (A/B/C/N/H/X)
+    # optionally followed by "-G" (to-ground) or "-<letter>" (line-to-line).
+    r"^(?P<A>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
+    r"(?P<Av>-?\d[\d,]*(?:\.\d+)?)"
+    r"[\s\t]+"
+    r"(?P<B>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
+    r"(?P<Bv>-?\d[\d,]*(?:\.\d+)?)"
+    r"[\s\t]+"
+    r"(?P<C>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
+    r"(?P<Cv>-?\d[\d,]*(?:\.\d+)?)",
+    re.MULTILINE,
+)
+
+
+def _bus_inline_readings(text):
+    """Recover the "A-G: 15200  B-G: 14100  C-G: 16800" bus-inline layout
+    (reports 006, 018 in the golden set). Requires a unit-in-parens header line
+    within the preceding ~200 chars — a bare "A-G: 42 B-G: 51 C-G: 60" without
+    the "(µΩ)" header stays UNparsed rather than being misclassified.
+
+    Returns a list of measurement dicts in the same shape as _inline_readings.
+    Confidence is 0.7 (slightly below the ruled-table 0.85) — the header-context
+    inference is one hop of indirection so a wrong header degrades gracefully.
+    """
+    if not text:
+        return []
+    out = []
+    for row in _BUS_INLINE_ROW_RE.finditer(text):
+        # Find the nearest unit-in-parens header line before this row (must be
+        # within 200 chars; further away and the association is unsafe).
+        window_start = max(0, row.start() - 200)
+        header_win = text[window_start: row.start()]
+        hdr_ms = list(_BUS_INLINE_UNIT_HDR_RE.finditer(header_win))
+        if not hdr_ms:
+            continue
+        hdr = hdr_ms[-1]  # nearest to the row
+        label = hdr.group(1).strip().rstrip(":-,.").strip()
+        unit_raw = hdr.group(2)
+        unit = normalize_unit(unit_raw)
+        # Reject if the label carries no known measurement token — a random
+        # "(MΩ)" line without "insulation" / "resistance" / "megger" nearby
+        # is not enough to blindly classify the row.
+        mt, crit, u, kind = _classify(label, unit)
+        if mt == "unknown":
+            continue
+        for key_ph, key_val in (("A", "Av"), ("B", "Bv"), ("C", "Cv")):
+            ph_raw = row.group(key_ph)
+            phase = _phase_of(ph_raw) or ph_raw[:1].upper()
+            try:
+                val = float(row.group(key_val).replace(",", ""))
+            except (TypeError, ValueError):
+                continue
+            out.append({
+                "measurementType": mt,
+                "label":           label.title(),
+                "phase":           phase,
+                "asFoundValue":    val,
+                "asFoundUnit":     u,
+                "expectedRange":   None,
+                "passFail":        None,
+                "critical":        crit,
+                "kind":            kind,
+                "confidence":      0.7,
+                "_off":            row.start(),
+            })
+    return out
+
+
+# Phase-column table under a "(µΩ)" / "(mΩ)" / "(sec)" context line — the
+# PHASE / AS-FOUND / EXPECTED / RESULT grid with no description column. The
+# row label ("A") is a phase; the measurementType comes from the line ABOVE
+# the header.
+_PHASE_GRID_HDR_RE = re.compile(
+    r"^\s*PHASE\s+(?:AS[- ]?FOUND|MEASURED|VALUE|READING|ACTUAL)\s+"
+    r"(?:EXPECTED|LIMIT|SPEC|ACCEPTANCE)?\s*(?:RESULT|OUTCOME|PASS/?FAIL)?\s*$",
+    re.I | re.MULTILINE,
+)
+_PHASE_GRID_ROW_RE = re.compile(
+    r"^\s*(?P<ph>[ABCN])\s+"
+    r"(?P<val>-?\d[\d,]*(?:\.\d+)?)"
+    r"(?:\s+(?P<expected>[<>]=?\s*[\d.]+\s*[A-Za-zΩµ%°]*))?"
+    r"(?:\s+(?P<result>PASS(?:ED)?|FAIL(?:ED)?|GREEN|YELLOW|RED|MARGINAL|"
+    r"INVESTIGATE(?:\s*-\s*(?:GREEN|YELLOW|RED))?|SAT|UNSAT|ACCEPTABLE|DEFICIENT))?"
+    r"\s*$",
+    re.I | re.MULTILINE,
+)
+
+
+def _phase_grid_readings(text):
+    """Recover the PHASE / AS-FOUND / EXPECTED / RESULT grid where rows carry
+    only a phase letter and the measurementType lives on the line above the
+    header (reports 014, 017 in the golden set).
+
+    Two anchors required — an inference-only pass without both would too
+    easily hijack random tables:
+      - the header line "PHASE  AS-FOUND  EXPECTED  RESULT"
+      - a unit-in-parens context line within the ~150 chars before that header
+        that classifies to a known measurementType
+    Otherwise no measurements are emitted. Confidence 0.75 (mid-tier — the
+    row values themselves are unambiguous, but the type inference is one hop).
+    """
+    if not text:
+        return []
+    out = []
+    for hdr in _PHASE_GRID_HDR_RE.finditer(text):
+        ctx_start = max(0, hdr.start() - 150)
+        ctx = text[ctx_start: hdr.start()]
+        ctx_hdr = list(_BUS_INLINE_UNIT_HDR_RE.finditer(ctx))
+        if not ctx_hdr:
+            continue
+        ch = ctx_hdr[-1]
+        label = ch.group(1).strip().rstrip(":-,.").strip()
+        unit = normalize_unit(ch.group(2))
+        mt, crit, u, kind = _classify(label, unit)
+        if mt == "unknown":
+            continue
+        # Collect rows starting from just after the header until a blank line
+        # or a new heading. Stop after 6 rows (over-generous for A/B/C/N).
+        after = text[hdr.end(): hdr.end() + 400]
+        for row in _PHASE_GRID_ROW_RE.finditer(after):
+            phase = row.group("ph").upper()
+            try:
+                val = float(row.group("val").replace(",", ""))
+            except (TypeError, ValueError):
+                continue
+            expected = (row.group("expected") or "").strip() or None
+            result_raw = (row.group("result") or "").strip()
+            pf = parse_value("result", result_raw) if result_raw else None
+            out.append({
+                "measurementType": mt,
+                "label":           label.title(),
+                "phase":           phase,
+                "asFoundValue":    val,
+                "asFoundUnit":     u,
+                "expectedRange":   expected,
+                "passFail":        pf,
+                "critical":        crit,
+                "kind":            kind,
+                "confidence":      0.75,
+                "_off":            hdr.start() + row.start(),
+            })
+    return out
+
+
 # A NETA/PowerDB job report covers many devices, each opening with a
 # "SUBSTATION <id> POSITION <id>" block. This is the boundary the one-upload =
 # one-facility split (#1) keys on.
@@ -841,8 +1093,16 @@ def extract_measurements(cells, page_tables, full_text=""):
     dga_out = _dga_readings(full_text)                   # DGA <=LIMIT-anchored table rows (report_002 class)
     pi_out = _pi_readings(full_text)                     # polarization index (ratio — no unit)
     pf_out = _pf_readings(full_text)                     # PF-block table rows (Doble M4100)
+    # Column-header inference for two more PowerDB layouts (docs/EVAL_BASELINE_
+    # 2026-07.md flagged reports 006/014/017/018 as 0% recall): the "A-G: 15200
+    # B-G: 14100 C-G: 16800" bus-inline row under a "(MΩ)" header, and the
+    # PHASE / AS-FOUND / EXPECTED / RESULT grid whose measurementType lives on
+    # the line above the header. Both require a unit-in-parens header nearby to
+    # classify, so a random column table can't hijack them.
+    bus_out = _bus_inline_readings(full_text)            # A-G/B-G/C-G bus-inline layout
+    phase_grid_out = _phase_grid_readings(full_text)     # PHASE / AS-FOUND / EXPECTED grid
     inline_out = _inline_readings(full_text)             # general value+unit pass (post-nameplate-suppression)
-    combined = table_out + grid_out + dga_out + pi_out + pf_out + inline_out
+    combined = table_out + grid_out + dga_out + pi_out + pf_out + bus_out + phase_grid_out + inline_out
     # Which (type, value, unit) triples already have a PHASED reading (from the
     # richer column-table pass) — used to drop the inline pass's phase-less
     # duplicate of the same value.
@@ -993,9 +1253,23 @@ def extract_fields(path: str, mode: str = "all"):
     _raw_spans, sections = _build_sections(text)
     asset_sections = max(1, len(sections))
 
+    # Report-level overall verdict — powers domainValidators.verdictCrossCheck.
+    # Populated as `meta.reportResult` on the preview (lib/testReportPreview.ts)
+    # so the ingestConfidenceGate cross-check (which was already wired but
+    # inert because nothing populated the field) can fire on printed vs
+    # computed disagreement.
+    report_result = _extract_report_verdict(text)
+
+    # Ambient / test temperature (°C) — feeds domainValidators.tempCorrection
+    # when the report also carries paired raw + corrected IR readings. Only
+    # advisory; a missing value silently no-ops the check.
+    ambient_temp_c = _extract_ambient_temp(text)
+
     return {"fields": header, "measurements": measurements, "full_text": text,
             "ocr": ocr_used, "asset_sections": asset_sections,
             "sections": sections,
             "page_count": page_count, "pages_scanned": pages_scanned,
             "text_pages": text_pages,
+            "report_result": report_result,
+            "ambient_temp_c": ambient_temp_c,
             "truncated": truncated}

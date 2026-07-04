@@ -381,7 +381,16 @@ async function inspectPhoto({ imageBuffer, mediaType = 'image/jpeg', context }) 
       imageBuffer: processed,
       mediaType:   'image/jpeg', // always JPEG after the sharp pipeline
       prompt,
-      maxTokens:   2000,
+      // Gemini 2.5-flash reasoning tokens bill against maxOutputTokens, so the
+      // old 2000 silently truncated the JSON on complex condition/nameplate
+      // photos (2026-07-04: nameplate route hit the same trap in 919d389;
+      // generalized here per docs/PDF_INGESTION_SYNTHESIS_2026-07-03 and the
+      // ingestion-hardening memory). 8192 leaves ample headroom.
+      // responseMimeType opts into Gemini JSON mode; Anthropic/Groq ignore it
+      // (Groq forces json_object; Anthropic returns prose the tolerant
+      // extractJsonBlock already handles).
+      maxTokens:        8192,
+      responseMimeType: 'application/json',
     }),
     LLM_TIMEOUT_MS,
     'photo inspection LLM call',

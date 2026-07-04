@@ -249,7 +249,19 @@ function firstNonNull(...vals: any[]): any { for (const v of vals) if (v != null
 
 // Run the vision model on ONE image buffer and normalize the result.
 async function visionExtractOne(buffer: Buffer, mediaType: string, settings: any): Promise<any> {
-  const out = await ai.completeWithImage({ imageBuffer: buffer, mediaType, prompt: VISION_PROMPT, maxTokens: 8192, settings });
+  // maxTokens 8192 already sized generously for a full one-line JSON body;
+  // responseMimeType opts into Gemini 2.5-flash JSON mode so thinking tokens
+  // don't consume the JSON budget mid-emission (2026-07-04: nameplate route
+  // hit the truncation-trap; see 919d389 + docs/PDF_INGESTION_SYNTHESIS_2026-07-03).
+  // Anthropic/Groq paths ignore responseMimeType (Groq forces json_object).
+  const out = await ai.completeWithImage({
+    imageBuffer:      buffer,
+    mediaType,
+    prompt:           VISION_PROMPT,
+    maxTokens:        8192,
+    responseMimeType: 'application/json',
+    settings,
+  });
   const text = out && out.text ? out.text : '';
   let parsed: any;
   try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }

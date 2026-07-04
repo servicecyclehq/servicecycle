@@ -181,7 +181,19 @@ export async function extractDeviceFromPhoto(opts: { buffer: Buffer; mimeType?: 
   const { buffer, mimeType, settings = {} } = opts;
   let out: any;
   try {
-    out = await ai.completeWithImage({ imageBuffer: buffer, mediaType: normalizeMedia(mimeType), prompt: PHOTO_PROMPT, maxTokens: 1500, settings });
+    // Gemini 2.5 flash reasoning tokens bill against maxOutputTokens, so 1500
+    // truncated the JSON on any multi-setting trip unit (nameplate route hit
+    // the same trap — see 919d389). 8192 leaves room for thinking + the full
+    // PHOTO_CONTRACT with all 6 trip settings. responseMimeType opts into
+    // Gemini JSON mode. Anthropic/Groq ignore it (Groq forces json_object).
+    out = await ai.completeWithImage({
+      imageBuffer:      buffer,
+      mediaType:        normalizeMedia(mimeType),
+      prompt:           PHOTO_PROMPT,
+      maxTokens:        8192,
+      responseMimeType: 'application/json',
+      settings,
+    });
   } catch (e: any) {
     return { device: null, warnings: ['Photo read failed: ' + (e && e.message ? e.message : String(e))], promptVersion: PHOTO_PROMPT_VERSION, rawJsonText: '' };
   }

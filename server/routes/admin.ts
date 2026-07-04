@@ -211,16 +211,19 @@ router.use('/early-access', requireAdmin, denyOnDemo, earlyAccessRouter);
 //   - users: [{ userId, name, count }] for non-zero users today
 //
 // PUT  /api/admin/ai-caps
-//   Body: { caps: { extract?: N, ask?: N, brief?: N, brief_search?: N } }
+//   Body: { caps: { ingest_extract?: N, ask?: N, maintenance_brief?: N,
+//                   narrate?: N, photo_inspect?: N, nameplate_scan?: N } }
 //   N = null|'' removes the override; N >= 0 sets it; N = 0 blocks entirely.
-
-const AI_CAP_ACTIONS = [
-  { action: 'extract',      label: 'PDF & Nameplate Extraction (shared)' },
-  { action: 'ask',          label: 'Ask ServiceCycle Assistant' },
-  { action: 'brief',        label: 'Maintenance Brief Generation' },
-  { action: 'brief_search', label: 'Brief Web-Search Enrichment (Tavily)' },
-  { action: 'narrate',      label: 'AI Report Narration' },  // v0.68.0 (audit Medium)
-];
+//
+// The whitelist lives in lib/aiCapActions.ts so it can be diff-locked in a
+// unit test against the real meter action names (routes/aiUsage.ts:26).
+// Prior to 2026-07-04 this list held three stale keys — `extract`, `brief`,
+// `brief_search` — none of which any code path ever metered, so setting them
+// via the admin UI wrote AccountSetting rows that were silently inert while
+// the caps that actually govern demo throttling (`nameplate_scan`,
+// `photo_inspect`, `ingest_extract`, `maintenance_brief`) were not tunable
+// per-account without direct SQL.
+const { AI_CAP_ACTIONS } = require('../lib/aiCapActions');
 
 router.get('/ai-caps', requireAdmin, async (req, res) => {
   const accountId = req.user.accountId;
