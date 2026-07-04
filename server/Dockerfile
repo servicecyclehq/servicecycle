@@ -26,13 +26,17 @@
 #
 
 # -- Stage 1: deps ------------------------------------------------------------
-FROM node:20-alpine AS deps
+# Debian (node:20-slim), NOT Alpine: the Prisma engine generated here must match
+# the runtime libc (glibc), and the extractor's pypdfium2 needs manylinux wheels.
+FROM node:20-slim AS deps
 
 WORKDIR /app
 
 # Build deps for native modules (sharp, bcryptjs etc.). Discarded at end of
 # the deps stage â€” never copied into runtime.
-RUN apk add --no-cache python3 make g++ openssl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 make g++ openssl \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 # `npm ci` is reproducible and fails fast on lockfile drift. We keep dev deps
@@ -51,20 +55,24 @@ RUN npm prune --omit=dev
 
 
 # -- Stage 2: runtime ---------------------------------------------------------
-FROM node:20-alpine AS runtime
+FROM node:20-slim AS runtime
 
 # Runtime-only system deps:
 #   openssl            â€” Prisma probes for libssl at boot
 #   postgresql-client  â€” pg_dump used by lib/backup.js (cron 02:00)
 #   wget               â€” HEALTHCHECK
-RUN apk add --no-cache openssl postgresql-client wget \
- && rm -rf /var/cache/apk/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      openssl postgresql-client wget \
+      python3 python3-pip tesseract-ocr \
+ && rm -rf /var/lib/apt/lists/*
 
-# Python extractor is DISABLED on Alpine (pypdfium2 has no musl wheel).
-# Ingest falls back to the pdfjs parser automatically. Re-enable by switching
-# to node:20-slim (Debian) and restoring the pyextract RUN block.
-# COPY pyextract/requirements.txt /app/pyextract/requirements.txt
-# RUN apk add python3 py3-pip tesseract-ocr && pip install -r /app/pyextract/requirements.txt
+# Python extractor ENABLED on Debian: pypdfium2 ships manylinux/glibc wheels
+# (unlike Alpine/musl), so pdfplumber's PowerDB grid parser + Tesseract OCR run
+# in prod instead of falling back to the pdfjs parser. --break-system-packages is
+# the container-appropriate way past Debian bookworm's PEP-668 lock. requirements
+# copied first so this layer caches independently of the app source.
+COPY pyextract/requirements.txt /app/pyextract/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /app/pyextract/requirements.txt
 
 # Run as the unprivileged `node` user shipped in the base image.
 # /app is owned by node so the process can write to ./uploads and ./backups
