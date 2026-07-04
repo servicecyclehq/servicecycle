@@ -150,6 +150,14 @@ Score: **🟢 78 / 🟡 16 / 🔴 1** (82% green, 17% yellow, 1% red).
 
 Only remaining 🔴 = L10 first quarterly security review. Running `QUARTERLY_SECURITY_REVIEW.md` once closes it.
 
+### 2026-07-04 — Seventh autonomous session (final integrations)
+
+- **`deploy.yml`** — added `environment: production` reference. Once Dustin creates the environment in Settings → Environments and adds protection rules (required reviewer, wait timer), the gate applies automatically. Advances B11 setup.
+- **`DATA_ROOM_INDEX.md`** — expanded §4 Security and compliance from 9 entries to 40+ across Executive artifacts / Policies / Procedures + runbooks / Inventories / Design docs / Evidence / Audit reports / CI security stack sections. Every new doc from Sessions 1–6 is now discoverable from the diligence index.
+- **`restore-test-2026-07.md`** — scaffolded first-month restore-test evidence file so the automated 2026-07-05 cron output only needs to be pasted in. F3 + L7 advance.
+
+Score: **🟢 78 / 🟡 17 / 🔴 0** unchanged from Session 6. Every yellow now has either a runbook, a scaffolded evidence file, or both. Autonomous work is fully complete.
+
 ### 2026-07-04 — Sixth autonomous session (last red closed; execution kit complete)
 
 **Zero red items remain.** Every SOC 2 control has either shipped or been scaffolded with a clear closing path.
@@ -220,7 +228,7 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 | B8 | **Release tagging automation + CHANGELOG** | 🟢 | `release-tag.yml` (Session 2) + `CHANGELOG.md` (Session 1) |
 | B9 | **Release verification checklist** (tests pass, scans pass, migration reviewed, rollback documented) | 🟢 | `docs/security/RELEASE_VERIFICATION.md` (Session 3) consolidated checklist + PR-body sign-off stub |
 | B10 | **Dependency approval process** (purpose, maintainer, last update, CVEs, approver) | 🟢 | `docs/security/DEPENDENCY_DECISIONS.md` (Session 2) |
-| B11 | **Environment approvals for deploys** | 🟡 | Deploy triggers on main push; no GH Environment gate |
+| B11 | **Environment approvals for deploys** | 🟡 | `deploy.yml` now references `environment: production` (Session 7); once Dustin creates the env in Settings → Environments + adds required-reviewer / wait-timer rules, gate is automatic |
 | B12 | **Solo-dev separation-of-duties exception** documented | 🟢 | `CHANGE_REVIEW_CHECKLIST.md` v1.1 §Solo-founder + `RAR-006` (Session 2) |
 
 ---
@@ -277,7 +285,7 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 |---|---|---|---|
 | F1 | Nightly encrypted pg_dump to S3, 30-day retention | 🟢 | `server/lib/backup.ts`, `server/lib/backupCrypto.ts` |
 | F2 | Automated monthly restore test | 🟢 | `server/lib/restoreTest.ts` |
-| F3 | **Dated restore-test evidence log** | 🟡 | Test runs; results not archived to `docs/compliance/evidence/YYYY-MM/restore-test-YYYY-MM-DD.md` yet |
+| F3 | **Dated restore-test evidence log** | 🟡 | July template scaffolded at `docs/compliance/evidence/2026-07/restore-test-2026-07.md` (Session 7); closes when Dustin pastes cron output after 2026-07-05 automated run |
 | F4 | RTO ~2h / RPO ~24h documented | 🟢 | `SOC2_CONTROLS.md` CC9.1 |
 | F5 | **Backup destination credentials configured** | 🟡 | Needs prod env update |
 | F6 | **Secure disposal log** for old backups + old logs | 🟡 | Cadence doc + first-month template at `docs/compliance/evidence/2026-07/secure-disposal-2026-07.md` (Session 6); closes at month-end 2026-08-01 |
@@ -362,7 +370,7 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 | L4 | Policy version + effective date + next review date + approved-by headers | 🟢 | All new docs use the pattern; `docs/OFFBOARDING.md` retrofit added (Session 2); remaining docs already had partial headers |
 | L5 | `CHANGELOG.md` (human-readable, not just git log) | 🟢 | Root `CHANGELOG.md` seeded (this session) |
 | L6 | Dated access review evidence | 🟡 | Scaffolded at `docs/compliance/evidence/2026-Q3/access-review-2026-07-04.md` (Session 5); needs Dustin's screenshots to close to 🟢 |
-| L7 | Dated restore-test evidence | 🟡 | See F3 |
+| L7 | Dated restore-test evidence | 🟡 | Scaffolded at `docs/compliance/evidence/2026-07/restore-test-2026-07.md` (Session 7); auto-closes with the 2026-07-05 cron output paste |
 | L8 | Dated tabletop drill evidence | 🟢 | See E4 |
 | L9 | Dated log-review evidence | 🟢 | `docs/compliance/evidence/2026-07/log-review-weekly.md` seeded 2026-07-04 (Session 4) |
 | L10 | Dated quarterly security review evidence | 🟡 | Scaffolded at `docs/compliance/evidence/2026-Q3/quarterly-security-review-2026-07-04.md` (Session 6); needs Dustin's checkbox walkthrough + sign-off to close to 🟢 |

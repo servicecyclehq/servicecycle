@@ -26,6 +26,13 @@ jobs:
     if: ${{ !contains(github.event.head_commit.message, '[skip deploy]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # SOC 2 CC8.1 — environment gate.
+    # Once the `production` environment is created in Settings → Environments,
+    # any protection rules (required reviewers, wait timer) automatically apply.
+    # If the environment does not exist, the job runs immediately with no gate,
+    # so this line is a no-op until the environment is configured. Setup steps
+    # in docs/security/GITHUB_ADMIN_SETUP.md §4.
+    environment: production
     steps:
       # TODO: pin to SHA digest for supply chain security
       - uses: actions/checkout@v4
