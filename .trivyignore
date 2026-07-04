@@ -32,3 +32,13 @@ CVE-2025-64512  # pdfminer.six < 20251107
 CVE-2025-70559  # pdfminer.six < 20251230
 CVE-2026-25990  # pillow < 12.1.1: OOB write via crafted image
 CVE-2026-40192  # pillow < 12.2.0: decompression-bomb DoS
+CVE-2026-42311  # pillow < 12.2.0: additional; same acceptance batch
+
+# Dockerfile misconfig — client/Dockerfile.prod runs the nginx master as
+# root to bind port 80. Standard nginx image behavior. Nginx worker processes
+# drop privileges to the `nginx` user automatically. Container is deployed
+# behind Cloudflare + host nginx, so port 80 in-container is not
+# customer-facing. Reconsider at post-demo hardening: switch to
+# nginxinc/nginx-unprivileged:1.25-alpine (binds to 8080, runs as UID 101)
+# and update docker-compose port mapping accordingly.
+DS-0002  # nginx-master-as-root — client/Dockerfile.prod

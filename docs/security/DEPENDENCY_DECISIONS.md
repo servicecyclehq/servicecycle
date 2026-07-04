@@ -130,6 +130,24 @@ First run of `.github/workflows/trivy.yml` surfaced 6 base-image CVEs (Debian bo
 - **Approver**: Dustin.
 - **Trivy ignore entries**: added to `.trivyignore` with cross-reference here.
 
+**Additional CVE surfaced on second scan (pillow):**
+
+- **CVE**: [CVE-2026-42311](https://nvd.nist.gov/vuln/detail/CVE-2026-42311) — pillow (< 12.2.0)
+- **Same acceptance rationale** as the pillow entries above; added to `.trivyignore` in the same batch.
+
+**Dockerfile misconfiguration accepted:**
+
+- **Trivy rule**: `DS-0002` — Dockerfile must specify a non-root `USER`.
+- **Affected file**: `client/Dockerfile.prod`.
+- **Why accept**: standard nginx official-image behavior — master process needs root to bind port 80; worker processes drop privileges to the `nginx` user automatically. Container is deployed behind Cloudflare + host nginx, so in-container port 80 is not customer-facing.
+- **Compensating controls**:
+  - Container runs as non-root worker (nginx drops privileges post-bind).
+  - `no-new-privileges` in `docker-compose.yml` security_opt.
+  - Cloudflare fronts every request; direct-to-origin is basic-auth'd for demo.
+- **Reconsider by**: 2026-08-31 — switch to `nginxinc/nginx-unprivileged:1.25-alpine` (binds to 8080, runs as UID 101 by default) and update `docker-compose.yml` port mapping. Deferred until post-demo to avoid churn.
+- **Approver**: Dustin.
+- **`.trivyignore` entry**: `DS-0002` with cross-reference here.
+
 **Suppressed classes (no CVE, redundant tooling):**
 
 - Trivy fs-scan secret detection disabled via `scanners: vuln,misconfig`. Rationale: Gitleaks (`.github/workflows/gitleaks.yml`) is the authoritative secret scanner. Trivy fs was flagging a `serviceAccountEmail` form placeholder in `client/src/components/settings/CloudConnectorsSection.jsx` as a "gcp-service-account" secret — a documented false positive.
