@@ -160,7 +160,12 @@ MEASUREMENT_LIBRARY = [
     {"type": "turns_ratio_error", "labels": ["% error", "percent error", "% deviation"], "unit": "%", "kind": "D", "bad": "up"},
     {"type": "excitation_current", "labels": ["excitation current", "exciting current", "i exc", "iexc"], "unit": "mA", "kind": "D", "bad": "delta"},
     {"type": "winding_resistance", "labels": ["winding resistance", "measured resistance", "corrected to 85"], "unit": "mΩ", "kind": "D", "bad": "delta"},
-    {"type": "power_factor", "labels": ["power factor", "% power factor", "dissipation factor", "tan delta", "chl", "chg", "clg"], "unit": "%", "kind": "D", "bad": "up"},
+    # 2026-07-04: "tan delta" and "dissipation factor" REMOVED from this
+    # entry — they were conflating a distinct measurement (dissipation
+    # factor / VLF tan delta on cables) with transformer power_factor tests.
+    # The canonical NETA / TS-pipeline type is dissipation_factor and it now
+    # has its own entry below. Doble bushing C1/C2 tests remain here.
+    {"type": "power_factor", "labels": ["power factor", "% power factor", "chl", "chg", "clg"], "unit": "%", "kind": "D", "bad": "up"},
     {"type": "capacitance", "labels": ["capacitance"], "unit": "pF", "kind": "D", "bad": "delta"},
     {"type": "bushing_c1_power_factor", "labels": ["c1 power factor", "bushing c1"], "unit": "%", "kind": "D", "bad": "up"},
     {"type": "hot_collar_watts", "labels": ["hot collar"], "unit": "W", "kind": "D", "bad": "up"},
@@ -189,7 +194,17 @@ MEASUREMENT_LIBRARY = [
     {"type": "instantaneous_pickup_measured", "labels": ["instantaneous", "ipu", "inst. pu", "trip / no trip"], "unit": "A", "kind": "D", "bad": "delta"},
     {"type": "ground_fault_pickup_measured", "labels": ["ground fault", "gfpu", "grd. flt."], "unit": "A", "kind": "D", "bad": "delta"},
     {"type": "tank_loss_index", "labels": ["tank loss index", "tli"], "unit": "W", "kind": "D", "bad": "up"},
-    {"type": "open_close_timing", "labels": ["open / close times", "trip time", "timing"], "unit": "ms", "kind": "D", "bad": "delta"},
+    # "trip time" REMOVED from this entry 2026-07-04 — it collides with the
+    # canonical NETA `trip_time` measurement (breaker primary-injection trip
+    # timing in seconds). `open_close_timing` is specifically about
+    # mechanism-cycle open/close speeds in milliseconds. See the trip_time
+    # entry immediately below.
+    {"type": "open_close_timing", "labels": ["open / close times", "timing"], "unit": "ms", "kind": "D", "bad": "delta"},
+    # Primary-injection trip timing — reports 014 / 017 use the phrase
+    # "PHASE A TRIP TIME: 42.5 SEC". Critical (a slow trip is a safety
+    # finding). Unit stays sec here; ms readings would classify as
+    # open_close_timing above.
+    {"type": "trip_time", "labels": ["trip time", "trip test"], "unit": "sec", "kind": "D", "bad": "up"},
     {"type": "contact_travel", "labels": ["contact travel", "wipe", "gap"], "unit": "in", "kind": "D", "bad": "delta"},
     {"type": "vacuum_integrity", "labels": ["vacuum integrity", "vacuum bottle"], "unit": "pass/fail", "kind": "D", "bad": "cat"},
     {"type": "oil_dielectric", "labels": ["oil dielectric"], "unit": "kV", "kind": "D", "bad": "down"},
@@ -205,7 +220,13 @@ MEASUREMENT_LIBRARY = [
     {"type": "setting_time_dial", "labels": ["time dial"], "unit": None, "kind": "R", "bad": None},
     # cable
     {"type": "vlf_withstand_result", "labels": ["vlf", "breakdown yes no", "time to failure", "withstand"], "unit": "pass/fail", "kind": "D", "bad": "cat"},
-    {"type": "tan_delta", "labels": ["tan delta"], "unit": "1e-3", "kind": "D", "bad": "up"},
+    # 2026-07-04: renamed tan_delta -> dissipation_factor to match the
+    # canonical vocabulary used throughout the TS pipeline
+    # (aiTestReportExtract, commitTestReport, dobleImport). Added VLF variants
+    # so the "VLF TAN DELTA @ 1.5 UO" heading on cable reports (report_018)
+    # classifies correctly instead of falling through to percent_reading. Kept
+    # "tan delta" first so the longest-match sort still finds this entry.
+    {"type": "dissipation_factor", "labels": ["vlf tan delta", "tan delta", "tan-delta", "tan-δ", "dissipation factor"], "unit": "%", "kind": "D", "bad": "up"},
     {"type": "tan_delta_tip_up", "labels": ["tip up", "delta td"], "unit": "1e-3", "kind": "D", "bad": "up"},
     {"type": "dc_hipot_leakage", "labels": ["microamps"], "unit": "µA", "kind": "D", "bad": "up"},
     {"type": "shield_resistance", "labels": ["shield resistance", "concentric neutral"], "unit": "Ω", "kind": "D", "bad": "up"},

@@ -4,6 +4,69 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-04 update — trip_time, VLF tan delta, `_INLINE_RE` case-insensitivity
+
+Three targeted fixes on the deterministic parser to close the remaining
+per-report gaps flagged in the previous baseline update:
+
+1. **`_INLINE_RE` case-insensitivity (`re.I`)** — PowerDB / NETA plates use
+   all-caps units (SEC / HZ / V / A). The alternation was case-sensitive so
+   "42.5 SEC" and every uppercase-unit reading silently failed the inline
+   pass. Verified via `_INLINE_RE.finditer` on the actual golden-set line
+   for report 014's trip time row.
+2. **`trip_time` VOCAB fix in `neta_field_library.py`** — MEASUREMENT_LIBRARY
+   line 192 had `"trip time"` listed under `open_close_timing` (a distinct
+   mechanism-cycle measurement in milliseconds). That was hijacking the
+   canonical NETA `trip_time` classification (primary-injection trip timing
+   in seconds — critical). Fix: removed `"trip time"` from
+   `open_close_timing.labels` and added a new `trip_time` entry.
+3. **`dissipation_factor` VOCAB fix + `_phase_context_readings` pass** —
+   MEASUREMENT_LIBRARY line 208 had `tan_delta` type with only the `"tan
+   delta"` label AND MEASUREMENT_LIBRARY line 163 had `power_factor` with
+   both `"tan delta"` and `"dissipation factor"` as labels, so any tan-delta
+   reading was classifying as `power_factor` (wrong). Fix: canonicalized to
+   `dissipation_factor` type (matches the TS pipeline —
+   `aiTestReportExtract`, `commitTestReport`, `dobleImport`), added `"vlf
+   tan delta"` label, and stripped `"tan delta"` / `"dissipation factor"`
+   from the `power_factor` entry. Then added a new `_phase_context_readings`
+   pass in `extractor.py` for single-phase-per-line rows like
+   `PHASE A: 0.12 %` under a preceding `"VLF TAN DELTA @ 1.5 UO"` header
+   (report 018's format — one phase per line, not the A-G/B-G/C-G tri-phase
+   inline). The pass walks backward to the most recent non-blank line for
+   the label, strips any trailing `(test-conditions)` parenthetical, and
+   classifies. Only emits when the label classifies to a **specific**
+   measurement type (never a generic `*_reading` fallback) so it can't
+   hijack rows the general inline pass already handles.
+4. **Generic-type suppression in `extract_measurements`** — a specific type
+   (`dissipation_factor`, `trip_time`, `insulation_resistance`, ...) always
+   wins over a generic `*_reading` fallback at the same `(phase, value,
+   unit)`. Prior to this suppression, report 018's `_phase_context_readings`
+   correctly emitted `dissipation_factor A 0.12 %` but the general
+   `_inline_readings` also emitted `percent_reading A 0.12 %` — both
+   survived because their `measurementType`s differed. Now the generic one
+   is dropped.
+
+**Recall delta (parser recall):**
+
+| Tier | Before | After | Δ |
+|---|---|---|---|
+| clean | 91% | **97%** | +6pp |
+| partial_ocr | 40% | **47%** | +7pp |
+| garbled_ocr | 5% | 5% | 0 (render noise floor) |
+| clean OCR-path | 25% | 31% | +6pp |
+
+What moved:
+
+- Report 014 (`PHASE A TRIP TIME: 42.5 SEC ...`): 3/4 → 4/4 (trip_time now caught).
+- Report 017 (`PHASE B TRIP TIME: 0.310 SEC ...`): 3/4 → 4/4 (trip_time now caught).
+- Report 018 (`VLF TAN DELTA @ 1.5 UO (0.1 HZ)` / `PHASE A: 0.12 %`): 3/4 → 4/4
+  (dissipation_factor now caught via the new phase-context pass).
+- No regression on previously-green reports.
+
+Verified: 218/218 across five jest suites (nameplateValidators,
+nameplateOcrContract, ingestGateDomainValidators, adminAiCapsWhitelist,
+measurementSanity) still green after the vocabulary fixes. tsc clean.
+
 ## 2026-07-04 update — column-header inference (bus-inline + phase-column grids)
 
 Added two more inference passes in `server/pyextract/extractor.py` (`_bus_inline_readings`

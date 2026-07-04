@@ -259,7 +259,13 @@ _UNIT = (r"(?:M\s?Ω|MΩ|Mohm|megohm|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|ppm|
 # NOTE: [ \t]* (not \s*) between value and unit — a unit must sit on the SAME
 # LINE as its value. PowerDB flattened tables otherwise pair the last number of
 # one row with a %/unit that starts the NEXT line ("…6 37 5 28\n% SATURATION").
-_INLINE_RE = re.compile(r"([A-Za-z][\w .,/&()+#-]{0,28}?)[ \t]*[:=]?[ \t]*(" + _NUM + r")[ \t]*(" + _UNIT + r")(?![A-Za-z0-9])")
+# re.I 2026-07-04: PowerDB / NETA plates use all-caps units (SEC, HZ, V, A);
+# the case-sensitive alternation was silently dropping "42.5 SEC" and every
+# other uppercase-unit reading in reports 014 / 017 (trip time) — verified via
+# _INLINE_RE.finditer on the actual golden-set line. Single-letter units (V, A)
+# case-insensitive matches lowercase (v, a) too — fine on nameplate readings
+# and post-nameplate-suppression the /i flag adds no known false-positive class.
+_INLINE_RE = re.compile(r"([A-Za-z][\w .,/&()+#-]{0,28}?)[ \t]*[:=]?[ \t]*(" + _NUM + r")[ \t]*(" + _UNIT + r")(?![A-Za-z0-9])", re.I)
 _EXPECT_RE = re.compile(r"(?:Expected|Limit|Min(?:imum)?|Spec|Acceptance|Nameplate)\.?\s*[:=]?\s*([<>]=?\s*[\d.]+\s*[A-Za-zΩµ%]*)", re.I)
 _RESULT_RE = re.compile(r"\b(GREEN|YELLOW|RED|PASS(?:ED)?|FAIL(?:ED)?|MARGINAL|SAT|UNSAT|ACCEPTABLE|DEFICIENT)\b", re.I)
 
@@ -964,6 +970,96 @@ def _bus_inline_readings(text):
     return out
 
 
+# Single-phase-per-line readings under a "<label> (<unit>)" context header
+# (report_018 VLF tan delta pattern). The line is
+#     PHASE A: 0.12 %      EXPECTED: <=0.5 %      PASS
+# where the label ("VLF TAN DELTA") lives on a preceding line and the row
+# carries only the phase + value + unit. Neither `_inline_readings` (label is
+# "PHASE A", classifies to percent_reading) nor `_bus_inline_readings` (needs
+# three phases in one line) fires. This pass fills the gap by taking the
+# type from the nearest preceding unit-in-parens header (within ~250 chars).
+_PHASE_LINE_RE = re.compile(
+    r"^\s*PHASE\s+(?P<ph>[ABCN])\s*[:=]?\s*"
+    r"(?P<val>-?\d[\d,]*(?:\.\d+)?)\s*"
+    r"(?P<unit>M\s?Ω|MΩ|Mohm|megohm|kΩ|kohm|µΩ|uΩ|uohm|mΩ|mohm|Ω|ohm|"
+    r"ppm|kVDC|VDC|kVAC|VAC|kV|kA|mA|sec|secs|ms|Hz|°C|°F|%|V|A)"
+    r"(?![A-Za-z0-9])",
+    re.I | re.MULTILINE,
+)
+
+
+def _phase_context_readings(text):
+    """Recover single-phase-per-line readings under a preceding header line
+    (report_018 VLF tan delta case). The header may or may not carry a
+    unit-in-parens — for VLF tan delta the parens hold the TEST FREQUENCY
+    ("(0.1 HZ)"), not the reading's unit. So the classifier runs on the
+    header label alone; a match against MEASUREMENT_LIBRARY / VOCAB is
+    required, otherwise no measurements are emitted (never guess a type).
+
+    Confidence 0.7 — the row's type was inferred from a preceding line so
+    a wrong header degrades gracefully to no emission.
+    """
+    if not text:
+        return []
+    out = []
+    for row in _PHASE_LINE_RE.finditer(text):
+        # Walk backwards to the most recent non-blank line before the row.
+        # Stop at the first non-empty preceding line — that's the label the
+        # row inherits from (matches how PowerDB / NETA layout works: a
+        # section header on its own line, then per-phase rows immediately
+        # below).
+        line_start = text.rfind("\n", 0, row.start())
+        if line_start == -1: line_start = 0
+        # Cap the lookback at ~250 chars so a distant unrelated header can't
+        # hijack the row.
+        window_start = max(0, line_start - 250)
+        header_win = text[window_start: line_start]
+        # Split the header window into lines, iterate bottom-up, use the
+        # first non-blank one.
+        header_label = None
+        for line in reversed([ln for ln in header_win.split("\n") if ln.strip()]):
+            # Strip any trailing "(...)" parenthetical — it's often test
+            # conditions ("(0.1 HZ)" / "@ 2500 VDC") not the reading unit —
+            # and normalize whitespace/casing. What's left should still be a
+            # classifiable label.
+            candidate = re.sub(r"\([^)]*\)", "", line).strip()
+            # A candidate is only a header if it lacks a leading "PHASE X"
+            # token (otherwise we'd inherit type from a previous phase row
+            # and infinite-cascade into wrong classifications).
+            if re.match(r"^\s*PHASE\s+[ABCN]\b", candidate, re.I):
+                continue
+            if len(candidate) >= 4:
+                header_label = candidate
+                break
+        if not header_label:
+            continue
+        row_unit = normalize_unit(row.group("unit"))
+        mt, crit, u, kind = _classify(header_label, row_unit)
+        # Only emit when the LABEL classified to a known measurement type.
+        # A generic *_reading fallback here would let this pass hijack rows
+        # the general inline pass already handles better.
+        if mt in ("unknown", "reading") or mt.endswith("_reading"):
+            continue
+        try:
+            val = float(row.group("val").replace(",", ""))
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "measurementType": mt,
+            "label":           header_label.title(),
+            "phase":           row.group("ph").upper(),
+            "asFoundValue":    val,
+            "asFoundUnit":     u or row_unit,
+            "expectedRange":   None,
+            "passFail":        None,
+            "critical":        crit,
+            "kind":            kind,
+            "confidence":      0.7,
+            "_off":            row.start(),
+        })
+    return out
+
+
 # Phase-column table under a "(µΩ)" / "(mΩ)" / "(sec)" context line — the
 # PHASE / AS-FOUND / EXPECTED / RESULT grid with no description column. The
 # row label ("A") is a phase; the measurementType comes from the line ABOVE
@@ -1101,8 +1197,9 @@ def extract_measurements(cells, page_tables, full_text=""):
     # classify, so a random column table can't hijack them.
     bus_out = _bus_inline_readings(full_text)            # A-G/B-G/C-G bus-inline layout
     phase_grid_out = _phase_grid_readings(full_text)     # PHASE / AS-FOUND / EXPECTED grid
+    phase_ctx_out = _phase_context_readings(full_text)   # single-phase-per-line under a context header (VLF tan delta)
     inline_out = _inline_readings(full_text)             # general value+unit pass (post-nameplate-suppression)
-    combined = table_out + grid_out + dga_out + pi_out + pf_out + bus_out + phase_grid_out + inline_out
+    combined = table_out + grid_out + dga_out + pi_out + pf_out + bus_out + phase_grid_out + phase_ctx_out + inline_out
     # Which (type, value, unit) triples already have a PHASED reading (from the
     # richer column-table pass) — used to drop the inline pass's phase-less
     # duplicate of the same value.
@@ -1110,6 +1207,31 @@ def extract_measurements(cells, page_tables, full_text=""):
     for m in combined:
         if m.get("phase"):
             phased.add((m.get("measurementType"), m.get("asFoundValue"), m.get("asFoundUnit")))
+
+    # 2026-07-04: a specific-type reading (dissipation_factor, insulation_resistance,
+    # trip_time, ...) at a given (phase, value, unit) SHOULD win over a generic
+    # fallback (*_reading, or a slug from the unknown-label fallback) at the same
+    # place. Prior to this suppression, report_018's `_phase_context_readings`
+    # correctly classified "0.12 %" on PHASE A as dissipation_factor but the
+    # inline pass ALSO emitted it as percent_reading; both rows survived because
+    # their measurementTypes differed. Compute the "specific keys" set first,
+    # then drop any generic-typed reading that duplicates them at (phase, val, unit).
+    def _is_generic_type(t):
+        # Fallback types from _classify: *_reading (voltage_reading, current_reading,
+        # time_reading, percent_reading, temperature_reading, frequency_reading),
+        # bare "resistance"/"reading", or a slug from the unknown-label branch
+        # (short lowercase identifier). Specific NETA types (contact_resistance,
+        # insulation_resistance, dissipation_factor, trip_time, dissolved_gas,
+        # polarization_index, power_factor, etc.) never end with "_reading" and
+        # aren't the bare "resistance"/"reading" strings.
+        if not t: return True
+        return t.endswith("_reading") or t in ("reading", "resistance")
+
+    specific_phase_val_unit = set()
+    for m in combined:
+        if not _is_generic_type(m.get("measurementType")):
+            specific_phase_val_unit.add((m.get("phase"), m.get("asFoundValue"), m.get("asFoundUnit")))
+
     combined.sort(key=lambda m: -m.get("confidence", 0))   # best first
     seen = set()
     out = []
@@ -1117,6 +1239,12 @@ def extract_measurements(cells, page_tables, full_text=""):
         tvu = (m.get("measurementType"), m.get("asFoundValue"), m.get("asFoundUnit"))
         if not m.get("phase") and tvu in phased:
             continue   # inline duplicate of a phased column-table reading
+        # Drop a generic-type reading when a specific-type reading exists at the
+        # same (phase, value, unit). The specific one is a strictly better
+        # classification of the same value.
+        if _is_generic_type(m.get("measurementType")):
+            if (m.get("phase"), m.get("asFoundValue"), m.get("asFoundUnit")) in specific_phase_val_unit:
+                continue
         k = (m.get("measurementType"), m.get("phase"), m.get("asFoundValue"), m.get("asFoundUnit"))
         if k in seen:
             continue
