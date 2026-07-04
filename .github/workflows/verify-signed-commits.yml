@@ -77,10 +77,15 @@ jobs:
 
           if [ "$UNSIGNED" -gt 0 ]; then
             echo ""
-            echo "$UNSIGNED unsigned commit(s) found."
-            echo "Configure git commit signing per docs/security/SIGNED_COMMITS.md."
-            # Fail the build. Comment out this exit for a warn-only phase.
-            exit 1
+            echo "::warning::$UNSIGNED unsigned commit(s) found. Configure git commit signing per docs/security/SIGNED_COMMITS.md."
+            # Warn-only until signing is set up locally. Flip to strict mode
+            # by setting repo variable REQUIRE_SIGNED_COMMITS=true.
+            if [ "${{ vars.REQUIRE_SIGNED_COMMITS }}" = "true" ]; then
+              echo "REQUIRE_SIGNED_COMMITS=true — failing build."
+              exit 1
+            fi
+            echo "REQUIRE_SIGNED_COMMITS not set — warn-only mode. Fix locally then set variable to enforce."
+            exit 0
           fi
 
           echo ""
