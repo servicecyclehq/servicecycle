@@ -42,6 +42,17 @@ export const STD_KVA_3PH = [
   2500, 3000, 3750, 5000, 7500, 10000, 12500, 15000, 20000, 25000, 30000,
 ];
 
+// IEC 60076 preferred sizes (dry + oil-filled transformers built to the IEC
+// ladder rather than the ANSI/IEEE ladder). Real plates in the field carry
+// these ratings — a validator that only knows the IEEE ladder false-flags every
+// import. Sources: IEC 60076-1 Table 4 (preferred rated powers), Schneider
+// Trihal / MTZ series catalogs. Added 2026-07-04 after the ~50% FP rate on the
+// live 36-image run.
+export const STD_KVA_IEC = [
+  25, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 630, 800, 1250, 1600,
+  2500, 3150, 4000, 6300, 8000,
+];
+
 // ANSI C84.1 system-nominal voltages PLUS NEMA MG-1 motor UTILIZATION voltages
 // (115/230/460/575). A voltage validator that only knows system voltages
 // false-flags every motor plate. Values in volts.
@@ -141,6 +152,24 @@ function downgrade(confidence: Record<string, string>, field: string): void {
   confidence[field] = 'low';
 }
 
+/**
+ * Soft downgrade — 'high' → 'medium', 'medium' stays, 'low' stays. Used for
+ * "the value is plausible in isolation but its source snippet doesn't confirm
+ * it" and "off-ladder kVA that might be a legitimate specialty size" — signals
+ * that suggest a second look but are not the hard cross-field-mismatch class.
+ *
+ * Recorded policy (2026-07-04 calibration): the hard `downgrade` to 'low' is
+ * reserved for a confirmed cross-field mismatch (kVA snippet contains a Hz
+ * label, kva == frequency value duplicate, √3·V·A/1000 vs kVA off by >20%,
+ * frequency not in {50, 60}). Everything else uses this softer path so the
+ * review queue stays scannable.
+ */
+function softDowngrade(confidence: Record<string, string>, field: string): void {
+  const cur = confidence[field];
+  if (cur === 'high') confidence[field] = 'medium';
+  // 'medium' and 'low' remain unchanged
+}
+
 // ── The validator ───────────────────────────────────────────────────────────
 
 /**
@@ -223,22 +252,33 @@ export function checkNameplateConsistency(
   }
 
   // ── V2: kVA standard-ladder check ────────────────────────────────────────
+  // Accepts IEEE C57.12 (1φ + 3φ) AND IEC 60076 preferred sizes. Real plates
+  // built to the IEC ladder (63/80/160/630/1250/…) would false-flag against
+  // ANSI-only, so the IEC set was added 2026-07-04 after live traffic showed
+  // FPs on legitimate specialty ratings.
+  //
+  // Uses softDowngrade (medium, not low): even a genuine off-ladder plate is
+  // a soft signal — plenty of legitimate specialty ratings exist. The hard
+  // catches for the kVA class are V1 (duplicate w/ frequency) and V4 (physics
+  // violation vs V·A) which stay on downgrade → low.
   if (kvaNum != null && kvaNum > 0) {
     let onSomeLadder = false;
     if (phasesN === 1) {
-      onSomeLadder = onLadder(kvaNum, STD_KVA_1PH);
+      onSomeLadder = onLadder(kvaNum, STD_KVA_1PH) || onLadder(kvaNum, STD_KVA_IEC);
     } else if (phasesN === 3) {
-      onSomeLadder = onLadder(kvaNum, STD_KVA_3PH);
+      onSomeLadder = onLadder(kvaNum, STD_KVA_3PH) || onLadder(kvaNum, STD_KVA_IEC);
     } else {
-      // Phases unknown — accept membership in EITHER ladder.
-      onSomeLadder = onLadder(kvaNum, STD_KVA_1PH) || onLadder(kvaNum, STD_KVA_3PH);
+      // Phases unknown — accept membership in ANY ladder.
+      onSomeLadder = onLadder(kvaNum, STD_KVA_1PH)
+                  || onLadder(kvaNum, STD_KVA_3PH)
+                  || onLadder(kvaNum, STD_KVA_IEC);
     }
     if (!onSomeLadder) {
-      downgrade(confidence, 'kva');
+      softDowngrade(confidence, 'kva');
       out.push({
         field:   'kva',
         code:    'kva_not_standard_size',
-        message: `kVA ${kvaNum} is not on the IEEE C57.12 standard-size ladder — verify (specialty sizes exist; confirm the plate)`,
+        message: `kVA ${kvaNum} is not on the IEEE C57.12 or IEC 60076 standard-size ladder — verify (specialty sizes exist; confirm the plate)`,
       });
     }
   }
@@ -304,6 +344,11 @@ export function checkNameplateConsistency(
   // ── V6: year-adjacency check ────────────────────────────────────────────
   // If the year value appears as a 4-digit substring of serialNumber or model,
   // the OCR may have grabbed a model-fragment as the manufacture year.
+  //
+  // Uses softDowngrade (medium, not low): many manufacturers legitimately
+  // encode the manufacture year in the serial number ("SN-2015-1234-XYZ" is
+  // real). Flag for a look, don't force review — the FP rate on the live
+  // 36-image run made this the second-largest source of noise after V7.
   if (yearNum != null && yearNum >= 1900 && yearNum <= 2100) {
     const yearStr = String(Math.trunc(yearNum));
     const serial = String(fields.serialNumber ?? '');
@@ -311,11 +356,11 @@ export function checkNameplateConsistency(
     const inSerial = serial.length > 0 && serial.includes(yearStr) && serial !== yearStr;
     const inModel  = model.length > 0  && model.includes(yearStr)  && model !== yearStr;
     if (inSerial || inModel) {
-      downgrade(confidence, 'year');
+      softDowngrade(confidence, 'year');
       out.push({
         field:   'year',
         code:    'year_may_be_model_fragment',
-        message: `Year ${yearStr} appears inside the ${inSerial ? 'serial number' : 'model'} — verify the year line`,
+        message: `Year ${yearStr} appears inside the ${inSerial ? 'serial number' : 'model'} — verify (some manufacturers encode the year in the serial)`,
       });
     }
   }
@@ -324,22 +369,88 @@ export function checkNameplateConsistency(
 }
 
 /**
- * V7 — Evidence-string check.
+ * V7 — Evidence-string check (2026-07-04 calibrated).
  *
  * Requires the model to have returned, per field, the verbatim nameplate
  * snippet it read the value from (see the ocrNameplateWithEvidence contract
- * in routes/assetPhotoInspect.ts). This is a deterministic check: the
- * evidence for `kva` must contain a kVA-family unit token AND must not
- * contain "Hz|HERTZ|CYCLES"; amperage evidence must contain "A|AMP"; etc.
+ * in routes/assetPhotoInspect.ts). Three-way outcome:
  *
- * Missing evidence for a field with a value → downgrade to 'low' with reason
- * 'no_evidence' (weaker signal than a contradicted evidence — we cap at
- * medium to reflect the ambiguity). A CONTRADICTED evidence (unit keyword
- * mismatch) → 'low' with reason 'evidence_label_mismatch'.
+ *   (a) POSITIVE match — the snippet mentions THIS field's unit family
+ *       (broad synonym set below). PASS. No downgrade.
+ *   (b) FOREIGN match — the snippet mentions ONLY another field's unit
+ *       family (kVA field with a "60 Hz" snippet — the s03 / s36 case).
+ *       Hard downgrade to 'low' with 'evidence_label_mismatch'. This is
+ *       THE catch the layer exists for; must survive every calibration.
+ *   (c) NEITHER — the snippet has no recognized unit token. SOFT downgrade
+ *       to 'medium' with 'no_unit_in_evidence'. Reasonable snippets like
+ *       "480 V AC 3PH 60Hz" match the positive; snippets that pulled just
+ *       the value ("60") get a soft "verify" not a hard flag.
+ *
+ * Missing evidence for a value → SOFT downgrade to 'medium' + 'no_evidence'.
+ * Absence of evidence is weaker than contradiction (unchanged from prior).
+ *
+ * WHY the vocabulary was broadened (2026-07-04): a live 36-image run flagged
+ * ~50% of successful reads because the accepted set was too narrow —
+ * "60 CYCLES" (legacy Hz), "480 VAC" (glued), "9.3 AMPS", "AMPERES", "KV-A"
+ * all failed the old strict-boundary regexes. The new vocabulary accepts
+ * every real-plate variant Dustin catalogued while keeping cross-family
+ * exclusion strict (a "60 Hz" snippet still cannot pass for kVA).
  *
  * If the caller has no evidence map (older client / model regressed), the
  * validator no-ops.
  */
+
+// Positive vocabulary per field. Case-insensitive. Handles glued forms
+// (480VAC, 9.3AMPS, 60CYCLES) via the (?<![A-Za-z]) lookbehind — a letter
+// before the unit rejects (SERVICE, IMPACT), a digit or start-of-string
+// accepts. Right-side lookaheads keep VAC from being read as V+AC bleed and
+// KVAR from matching KVA.
+//
+// Each regex is documented with the tokens it accepts. Case-insensitive
+// throughout (/i), so KVA and kVA and kva all pass on every entry.
+const UNIT_POSITIVE: Record<string, RegExp> = {
+  // KVA family: KVA, KV-A, KV A, KVA., MVA, KILOVOLT-AMP(ERE)(S), MEGAVOLT-AMP
+  // Negative lookahead (?![RC]) rejects KVAR (reactive volt-amperes; a
+  // separate quantity on some plates) and KVAC (rare instrument shorthand).
+  kva:       /(?<![A-Za-z])(?:K\s*V[\s\-.]?A(?![RC])|M\s*V\s*A|KILO[\s\-.]?VOLT[\s\-.]?AMP(?:ERES?|S)?|MEGA[\s\-.]?VOLT[\s\-.]?AMP(?:ERES?|S)?)(?![A-Za-z])/i,
+
+  // Voltage: V, VOLT, VOLTS, VOLTAGE, VAC, VDC, KV, KILOVOLT(S).
+  // "KV" is voltage; "KVA" is the kVA family — the negative lookahead
+  // (?![\s\-.]?A) on KV rejects KV-A and KV.A and "KV A". Same treatment on
+  // KILOVOLT so "KILOVOLT-AMP" doesn't false-positive here.
+  voltage:   /(?<![A-Za-z])(?:V(?:OLT(?:AGE|S)?|AC|DC)?|K\s*V(?![\s\-.]?A)|KILO[\s\-.]?VOLTS?(?![\s\-.]?AMP))(?![A-Za-z])/i,
+
+  // Amperage: A, AMP, AMPS, AMPERE, AMPERES, MA, MILLIAMP(ERE)(S).
+  amperage:  /(?<![A-Za-z])(?:A(?:MP(?:ERES?|S)?)?|M\s*A|MILLI[\s\-.]?AMP(?:ERES?|S)?)(?![A-Za-z])/i,
+
+  // Frequency: Hz, HZ, HERTZ, CYCLE, CYCLES, CYCLE/SEC, CPS, C/S, ~ (used on
+  // old European plates for AC). "HRZ" / "HRTZ" tolerated for OCR noise.
+  // NOTE: standalone HZ needs its own alternative — "H[EA]?RT?Z" requires the
+  // R, which "Hz" doesn't have. Missing this broke the s03 hard-catch (kva
+  // snippet of "60 Hz" wasn't recognized as frequency).
+  frequency: /(?<![A-Za-z])(?:HZ|H[EA]?RT?Z|HERTZ|CYCLES?(?:\/SEC)?|CPS|C\/S)(?![A-Za-z])|(?<=\d\s?)~/i,
+
+  // Year: a plausible 4-digit manufacture year (19xx or 20xx). Purely a
+  // "the snippet contains SOMETHING year-shaped" check; V6 in
+  // checkNameplateConsistency handles the year-in-serial catch separately.
+  year:      /(?<!\d)(?:19|20)\d{2}(?!\d)/,
+};
+
+/**
+ * Detect which unit families the snippet mentions. A snippet like
+ * "480V 3PH 60Hz" mentions both voltage and frequency — that's fine for
+ * either field's snippet, because a positive match on the field's OWN
+ * family is all that's required (a legit source snippet often contains the
+ * whole nameplate line).
+ */
+function detectFamilies(snippet: string): Set<string> {
+  const fams = new Set<string>();
+  for (const [field, re] of Object.entries(UNIT_POSITIVE)) {
+    if (re.test(snippet)) fams.add(field);
+  }
+  return fams;
+}
+
 export function checkNameplateEvidence(
   fields:     Record<string, any>,
   confidence: Record<string, string>,
@@ -348,21 +459,15 @@ export function checkNameplateEvidence(
   const out: NameplateFinding[] = [];
   if (!evidence || typeof evidence !== 'object') return out;
 
-  const RULES: Record<string, { must: RegExp; mustNot?: RegExp; label: string }> = {
-    kva:       { must: /\bkVA\b|\bkva\b|KVA/i, mustNot: /Hz|HERTZ|CYCLES/i,               label: 'kVA' },
-    voltage:   { must: /\bV(?:OLT)?S?\b/i,     mustNot: /\bHz\b|\bA\b|\bAMP/i,             label: 'volts' },
-    amperage:  { must: /\bA(?:MP)?S?\b/i,      mustNot: /\bHz\b|\bV(?:OLT)?\b|\bKVA\b/i,   label: 'amps' },
-    frequency: { must: /Hz|HERTZ|CYCLES/i,     mustNot: /\bKVA\b|\bAMP/i,                  label: 'Hz' },
-    year:      { must: /(19|20)\d{2}/,         label: 'year' },
-  };
+  const CHECKED = ['kva', 'voltage', 'amperage', 'frequency', 'year'];
 
-  for (const [field, rule] of Object.entries(RULES)) {
+  for (const field of CHECKED) {
     const value = fields[field];
     if (value == null || value === '') continue;
     const snippet = evidence[field];
+
+    // ── Case 1: no snippet at all — SOFT downgrade to medium ──────────────
     if (snippet == null || String(snippet).trim() === '') {
-      // No evidence — cap confidence at 'medium' rather than dropping to low.
-      // Absence of evidence is weaker than contradiction.
       if (confidence[field] === 'high') {
         confidence[field] = 'medium';
         out.push({
@@ -373,15 +478,35 @@ export function checkNameplateEvidence(
       }
       continue;
     }
+
     const snip = String(snippet);
-    const hasMust = rule.must.test(snip);
-    const hasMustNot = rule.mustNot ? rule.mustNot.test(snip) : false;
-    if (!hasMust || hasMustNot) {
+    const fams = detectFamilies(snip);
+
+    // ── Case 2: positive match — snippet contains THIS field's unit ───────
+    if (fams.has(field)) continue; // PASS — no finding, no downgrade
+
+    // ── Case 3: foreign match — snippet contains ONLY another field's unit
+    //           (kVA snippet says "60 Hz" — the s03/s36 case). HARD 'low'. ─
+    const foreignFams = [...fams].filter((f) => f !== field);
+    if (foreignFams.length > 0) {
       downgrade(confidence, field);
       out.push({
         field,
         code:    'evidence_label_mismatch',
-        message: `Source snippet for ${field} does not contain the expected ${rule.label} label${hasMustNot ? ' (contains a conflicting unit)' : ''} — verify`,
+        message: `Source snippet for ${field} contains a ${foreignFams.join('/')} unit rather than the expected ${field} label — likely read from the wrong line`,
+      });
+      continue;
+    }
+
+    // ── Case 4: no recognized unit token — SOFT downgrade to medium ───────
+    // The snippet is present but doesn't mention any known unit family. That
+    // is a soft "verify" (the snippet is thin, not contradictory).
+    if (confidence[field] === 'high') {
+      confidence[field] = 'medium';
+      out.push({
+        field,
+        code:    'no_unit_in_evidence',
+        message: `Source snippet for ${field} contains no recognized unit token — verify`,
       });
     }
   }
@@ -394,8 +519,10 @@ export function checkNameplateEvidence(
 module.exports = {
   STD_KVA_1PH,
   STD_KVA_3PH,
+  STD_KVA_IEC,
   STD_VOLTAGES,
   STD_FREQ,
+  UNIT_POSITIVE,
   parseVoltageComponents,
   checkNameplateConsistency,
   checkNameplateEvidence,

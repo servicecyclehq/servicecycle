@@ -114,12 +114,28 @@ describe('V2 — kVA standard-ladder', () => {
     const out = checkNameplateConsistency(fields, conf);
     expect(out.some((f) => f.code === 'kva_not_standard_size')).toBe(false);
   });
-  test('60 kVA is OFF the ladder on BOTH ladders (catches the observed bug)', () => {
+  test('60 kVA is OFF every ladder (IEEE 1φ, IEEE 3φ, IEC) — SOFT downgrade to medium', () => {
+    // 2026-07-04 calibration: V2 uses softDowngrade (medium, not low) because
+    // legitimate specialty ratings exist. The hard "60 kva plate" catch comes
+    // from V1 (kva == frequency value) and V4 (√3·V·A/1000 mismatch) — this
+    // test isolates V2 alone.
     const fields = { kva: 60, phases: 3 };
     const conf = fresh(fields);
     const out = checkNameplateConsistency(fields, conf);
-    expect(conf.kva).toBe('low');
+    expect(conf.kva).toBe('medium');
     expect(out.some((f) => f.code === 'kva_not_standard_size')).toBe(true);
+  });
+
+  test('IEC-ladder specialty sizes (63, 80, 160, 630, 1250) pass V2 — no flag', () => {
+    // Real IEC 60076 dry / oil transformer plates carry these ratings.
+    // Pre-calibration they false-flagged against the ANSI-only ladder.
+    for (const kva of [63, 80, 160, 630, 1250]) {
+      const fields = { kva, phases: 3 };
+      const conf = fresh(fields);
+      const out = checkNameplateConsistency(fields, conf);
+      expect(out.some((f) => f.code === 'kva_not_standard_size'))
+        .toBe(false);
+    }
   });
   test('112.5 kVA (decimal-formatted plate) is on ladder', () => {
     const fields = { kva: 112.50, phases: 3 };
@@ -224,18 +240,21 @@ describe('V5 — frequency set', () => {
 });
 
 describe('V6 — year-adjacency check', () => {
-  test('year that appears inside serial → flagged', () => {
+  test('year that appears inside serial → SOFT downgrade to medium', () => {
+    // 2026-07-04 calibration: many manufacturers legitimately encode the
+    // manufacture year in the serial. V6 is a soft "verify" (medium), NOT a
+    // hard flag (low). The finding still fires so the tech gets a tooltip.
     const fields = { year: 2008, serialNumber: 'ABC-2008-XYZ' };
     const conf = fresh(fields);
     const out = checkNameplateConsistency(fields, conf);
-    expect(conf.year).toBe('low');
+    expect(conf.year).toBe('medium');
     expect(out.some((f) => f.code === 'year_may_be_model_fragment')).toBe(true);
   });
-  test('year that appears inside model → flagged', () => {
+  test('year that appears inside model → SOFT downgrade to medium', () => {
     const fields = { year: 1998, model: 'ATV1998-100' };
     const conf = fresh(fields);
     checkNameplateConsistency(fields, conf);
-    expect(conf.year).toBe('low');
+    expect(conf.year).toBe('medium');
   });
   test('year distinct from model → not flagged', () => {
     const fields = { year: 2015, model: 'TRAF-2500', serialNumber: 'A2C-39471-B' };
@@ -347,5 +366,216 @@ describe('V7 — evidence-string check', () => {
     const ev = { frequency: '60 kVA' };  // wrong label
     checkNameplateEvidence(fields, conf, ev);
     expect(conf.frequency).toBe('low');
+  });
+});
+
+// ── 2026-07-04 calibration: broaden accepted vocabulary. Prompt goal:
+//    cut the ~50% FP rate observed on the live 36-image run WITHOUT losing
+//    the s03/s36 kVA==Hz-line hard catch. Regression-lock: hard catch stays;
+//    every legitimate unit variant passes. ──────────────────────────────────
+describe('V7 — 2026-07-04 vocabulary calibration', () => {
+  // Helper: run V7 in isolation on a single-field snippet + return the finding
+  // codes (if any) and the resulting confidence. Every case starts at 'high'.
+  function runOne(field, value, sourceText) {
+    const fields = { [field]: value };
+    const conf   = { [field]: 'high' };
+    const codes  = checkNameplateEvidence(fields, conf, { [field]: sourceText })
+      .map((f) => f.code);
+    return { conf: conf[field], codes };
+  }
+
+  // ── Frequency variants (the CYCLE/CYCLES/CPS/~/C-S vocabulary gap) ───────
+  describe('frequency accepts legacy + international variants', () => {
+    test.each([
+      ['60 CYCLE',   '60 CYCLE'],                 // singular — real on 1950s plates
+      ['60 CYCLES',  '60 CYCLES'],                // plural — the observed 36-image miss
+      ['60 CPS',     '60 CPS'],                   // cycles per second — legacy shorthand
+      ['60 C/S',     '60 C/S'],                   // same, formatted with slash
+      ['60Hz',       '60Hz'],                     // glued
+      ['60 Hz',      '60 Hz'],                    // canonical (baseline)
+      ['60 HERTZ',   '60 HERTZ'],                 // spelled out
+      ['50/60 Hz',   '50/60 Hz'],                 // dual
+      ['60~',        '60~'],                      // European AC symbol
+    ])('%s → passes (no downgrade, no flag)', (_desc, snippet) => {
+      const { conf, codes } = runOne('frequency', '60 Hz', snippet);
+      expect(conf).toBe('high');
+      expect(codes).toEqual([]);
+    });
+  });
+
+  // ── Voltage variants (VOLTS/VAC/VDC/KV — glued + spaced) ─────────────────
+  describe('voltage accepts VAC / VDC / VOLTS / VOLTAGE / KV, glued or spaced', () => {
+    test.each([
+      ['480V',         '480V'],
+      ['480 V',        '480 V'],
+      ['480VAC',       '480VAC'],              // glued VAC (the observed miss)
+      ['480 VAC',      '480 VAC'],
+      ['480 VDC',      '480 VDC'],
+      ['480 VOLTS',    '480 VOLTS'],
+      ['480 VOLT',     '480 VOLT'],
+      ['13.8 KV',      '13.8 KV'],
+      ['13.8KV',       '13.8KV'],
+      ['13.8 KILOVOLTS', '13.8 KILOVOLTS'],
+      ['NAMEPLATE VOLTAGE 480V 3PH 60HZ', 'NAMEPLATE VOLTAGE 480V 3PH 60HZ'],
+    ])('%s → passes', (_desc, snippet) => {
+      const { conf, codes } = runOne('voltage', '480V', snippet);
+      expect(conf).toBe('high');
+      expect(codes).toEqual([]);
+    });
+  });
+
+  // ── Amperage variants (AMP/AMPS/AMPERE/AMPERES/MA — glued + spaced) ──────
+  describe('amperage accepts AMP / AMPS / AMPERES / MA, glued or spaced', () => {
+    test.each([
+      ['9.3 A',       '9.3 A'],
+      ['9.3A',        '9.3A'],
+      ['9.3 AMP',     '9.3 AMP'],
+      ['9.3 AMPS',    '9.3 AMPS'],
+      ['9.3AMPS',     '9.3AMPS'],                  // glued
+      ['9.3 AMPERE',  '9.3 AMPERE'],
+      ['9.3 AMPERES', '9.3 AMPERES'],
+      ['50 MA',       '50 MA'],
+      ['50 MILLIAMPS','50 MILLIAMPS'],
+    ])('%s → passes', (_desc, snippet) => {
+      const { conf, codes } = runOne('amperage', 9.3, snippet);
+      expect(conf).toBe('high');
+      expect(codes).toEqual([]);
+    });
+  });
+
+  // ── kVA variants (KVA/KV-A/KVA./MVA/KILOVOLT-AMP) ────────────────────────
+  describe('kva accepts KVA / KV-A / MVA / KILOVOLT-AMPERES', () => {
+    test.each([
+      ['75 KVA',                 '75 KVA'],
+      ['75KVA',                  '75KVA'],
+      ['75 kVA',                 '75 kVA'],
+      ['75 KV-A',                '75 KV-A'],
+      ['75 KV A',                '75 KV A'],
+      ['75 KVA.',                '75 KVA.'],
+      ['2 MVA',                  '2 MVA'],
+      ['75 KILOVOLT-AMPERES',    '75 KILOVOLT-AMPERES'],
+      ['75 KILOVOLT AMPS',       '75 KILOVOLT AMPS'],
+    ])('%s → passes', (_desc, snippet) => {
+      const { conf, codes } = runOne('kva', 75, snippet);
+      expect(conf).toBe('high');
+      expect(codes).toEqual([]);
+    });
+
+    test('KVAR (reactive volt-amperes) does NOT count as kVA family', () => {
+      // KVAR is a distinct quantity on power-factor plates. If the model's
+      // kVA snippet only mentions KVAR, treat it as no-unit (soft) — not a
+      // positive KVA match.
+      const { conf, codes } = runOne('kva', 75, '15 KVAR');
+      // 15 KVAR — no positive family, no foreign family → soft medium.
+      expect(conf).toBe('medium');
+      expect(codes).toContain('no_unit_in_evidence');
+    });
+  });
+
+  // ── HARD CATCH regression-lock: the s03/s36 case must STILL flag ─────────
+  describe('REGRESSION-LOCK: cross-family mismatch stays hard (low)', () => {
+    test('kva field with a "60 Hz" snippet → HARD low + evidence_label_mismatch', () => {
+      // THIS IS THE WHOLE POINT of the layer. If broadening synonyms ever
+      // makes a "60 Hz" line acceptable for kva, s03/s36 fails silently.
+      const { conf, codes } = runOne('kva', 60, '60 Hz');
+      expect(conf).toBe('low');
+      expect(codes).toContain('evidence_label_mismatch');
+    });
+    test('kva field with a "60 CYCLES" snippet → still HARD low (calibration didn\'t leak)', () => {
+      // Even after adding CYCLES as a legit frequency synonym, a kva
+      // snippet containing ONLY a frequency unit must still hard-flag.
+      const { conf, codes } = runOne('kva', 60, '60 CYCLES');
+      expect(conf).toBe('low');
+      expect(codes).toContain('evidence_label_mismatch');
+    });
+    test('voltage field with a "9.3 AMPS" snippet → HARD low', () => {
+      const { conf, codes } = runOne('voltage', 480, '9.3 AMPS');
+      expect(conf).toBe('low');
+      expect(codes).toContain('evidence_label_mismatch');
+    });
+    test('amperage field with a "480 VAC" snippet → HARD low', () => {
+      const { conf, codes } = runOne('amperage', 480, '480 VAC');
+      expect(conf).toBe('low');
+      expect(codes).toContain('evidence_label_mismatch');
+    });
+    test('frequency field with a "60 KVA" snippet → HARD low', () => {
+      const { conf, codes } = runOne('frequency', 60, '60 KVA');
+      expect(conf).toBe('low');
+      expect(codes).toContain('evidence_label_mismatch');
+    });
+  });
+
+  // ── SOFT case: snippet lacks any recognized unit but isn't cross-family ─
+  describe('SOFT case: no recognized unit token → medium, not low', () => {
+    test('kva field with a bare number snippet → medium + no_unit_in_evidence', () => {
+      const { conf, codes } = runOne('kva', 75, '75');
+      expect(conf).toBe('medium');
+      expect(codes).toContain('no_unit_in_evidence');
+    });
+    test('voltage field with prose that has no unit → medium', () => {
+      const { conf, codes } = runOne('voltage', 480, 'RATED PRIMARY 480');
+      expect(conf).toBe('medium');
+      expect(codes).toContain('no_unit_in_evidence');
+    });
+  });
+
+  // ── Word-boundary rejection: real-word Vs, As shouldn't false-positive ──
+  describe('letter-glued words don\'t count as unit tokens (SERVICE / IMPACT)', () => {
+    test('voltage snippet "SERVICE ENTRANCE 480" — no V unit found → soft medium', () => {
+      // "SERVICE" contains V but with letters on both sides — the (?<![A-Za-z])
+      // lookbehind rejects it. "480" is a bare number. Result: no unit token
+      // recognized anywhere → SOFT medium.
+      const { conf, codes } = runOne('voltage', 480, 'SERVICE ENTRANCE 480');
+      expect(conf).toBe('medium');
+      expect(codes).toContain('no_unit_in_evidence');
+    });
+    test('amperage snippet "IMPACT" contains A but is not amp family', () => {
+      const { conf, codes } = runOne('amperage', 9.3, 'IMPACT RATED 9.3');
+      expect(conf).toBe('medium');
+      expect(codes).toContain('no_unit_in_evidence');
+    });
+  });
+
+  // ── Snippets with BOTH positive AND foreign: still pass. Real plates
+  //    often carry a whole line like "480V 3PH 60HZ" as the source snippet
+  //    for the voltage field — that's a positive match for voltage AND
+  //    frequency, but the field's own family matches so we PASS. ──────────
+  describe('positive-plus-foreign: real-plate line snippets still pass', () => {
+    test('voltage snippet "480V 3PH 60HZ" → passes (voltage family matched)', () => {
+      const { conf, codes } = runOne('voltage', 480, '480V 3PH 60HZ');
+      expect(conf).toBe('high');
+      expect(codes).toEqual([]);
+    });
+    test('frequency snippet "480V 3PH 60HZ" → passes (frequency matched)', () => {
+      const { conf, codes } = runOne('frequency', 60, '480V 3PH 60HZ');
+      expect(conf).toBe('high');
+      expect(codes).toEqual([]);
+    });
+    test('kva snippet "75 KVA 480V 3PH 60HZ" → passes (kva matched)', () => {
+      const { conf, codes } = runOne('kva', 75, '75 KVA 480V 3PH 60HZ');
+      expect(conf).toBe('high');
+      expect(codes).toEqual([]);
+    });
+  });
+
+  // ── Whole-response happy path: the s01-class legit plate has zero flags ─
+  test('legit multi-field plate: zero V7 findings, all confidences stay high', () => {
+    const fields = {
+      kva: 75, voltage: '480V', amperage: 90.2, phases: 3,
+      frequency: '60 Hz', year: 2015,
+    };
+    const conf = fresh(fields);
+    const ev = {
+      kva:       '75 KVA',
+      voltage:   '480V',
+      amperage:  '90.2 A',
+      frequency: '60 Hz',
+      year:      'MFG DATE: 2015',
+    };
+    const out = checkNameplateEvidence(fields, conf, ev);
+    expect(out).toEqual([]);
+    for (const k of ['kva', 'voltage', 'amperage', 'frequency', 'year']) {
+      expect(conf[k]).toBe('high');
+    }
   });
 });
