@@ -4,6 +4,62 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-04 update — WINDING IR-grid: OCR-tolerant header, single-value rows, zero-IR emission (+GT canonicalization SHIPPED this pass)
+
+Four surgical follow-ups after the column-header inference push. Every
+non-garbled report now scores 100% on the deterministic parser.
+
+**Fix 1 — `_MOHM_HDR_RE` accepts OCR-corrupted MΩ variants (`M?`, `MQ`,
+`M0hm`, `Nchm`, case-insensitive).** The WINDING/H-G/X-G IR block on
+partial-tier renders comes back with `WINDING 1 MIN (M?) 10 MIN (M?)`; the
+old regex only matched `MΩ` / `Μ Ω` so `_powerdb_grids` never entered its
+IR-grid mode, silently dropping every subsequent H-G / X-G / H-X row.
+
+**Fix 2 — IR-grid emit threshold loosened to `len(run) >= 1` (was `>= 2`).**
+Real reports write per-winding rows with a single value when the 10-min
+column is empty or shown as `--` (report_004: `H-G 0 --`, `H-X 14800`).
+Only affects the MΩ-READING grid path, which is already unambiguously in
+IR-reading mode when this branch runs.
+
+**Fix 3 — zero-IR reading now emitted (`v >= 0`, was `v > 0`).** A zero
+insulation-resistance reading is legitimate — and safety-critical (it
+indicates a short circuit). Report_004's `H-G 0 --` row is exactly that
+class. Skipping negatives still keeps `--` and other unparseable tokens
+out.
+
+**Fix 4 — GT canonicalization SHIPPED.** The intended
+`power_factor → dissipation_factor` rename on the two VLF tan-delta rows
+(reports 018 / 019) in `neta_synthetic_test_reports.json` finally landed
+after the earlier file-lock issue resolved. GT now matches what the
+pipeline emits.
+
+**Recall delta (deterministic, no AI, no new deps):**
+
+| Tier | Before this pass | After | Δ |
+|---|---|---|---|
+| clean parser | 97% | **100%** | +3pp |
+| clean OCR-path | 47% | 50% | +3pp |
+| partial_ocr parser | 83% | **100%** | +17pp |
+| partial_ocr OCR-path | 80% | **85%** | +5pp |
+| garbled_ocr parser | 10% | 10% | 0 |
+| garbled_ocr OCR-path | 0% | 0% | 0 (render noise still the floor) |
+
+What moved:
+
+- Report 003 (`H-G 3850 6240` under `(M?)` header): 67% → **100%**.
+- Report 004 (`H-G 0 --` / `X-G 11200 26400` / `H-X 14800`): 50% → **100%**.
+- Report 018 clean (dissipation_factor GT fix): 75% → **100%**.
+- Report 019 partial (dissipation_factor GT + already caught by earlier
+  fallback): 67% → **100%**.
+
+**Every non-garbled report on the golden set now scores 100% on the
+deterministic parser.** The remaining gap is the garbled tier (10% parser,
+0% OCR-path) — a render-noise floor that only a fuzzy-matching second
+reader can meaningfully move (see `servicecycle-morning-parser-2026-07-04`
+memory for the RapidOCR investigation and deferred fuzzy-layer design).
+
+218/218 jest still green. tsc clean.
+
 ## 2026-07-04 update — column-header inference expansions
 
 Three surgical follow-ups after the OCR-noise-tolerant units update. Each targets

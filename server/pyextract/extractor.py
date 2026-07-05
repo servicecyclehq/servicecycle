@@ -573,7 +573,12 @@ def _column_tables(page_tables):
 # header signatures. NOTE: PowerDB renders megohm as GREEK capital Mu + Ω
 # ("Μ Ω" / "ΜΩ", U+039C), which no Latin-M regex matches.
 _NUMTOK_RE = re.compile(r"-?[\d,]+(?:\.\d+)?")
-_MOHM_HDR_RE = re.compile(r"Μ\s?Ω|MΩ")
+# 2026-07-04: OCR-noise-tolerant variants added so scanned reports whose
+# "(MΩ)" header rendered as "(M?)" or "(MQ)" still trigger the IR-grid mode.
+# The Ω on tesseract's 4.x line commonly comes back as "?" or "Q"; without
+# these aliases the WINDING/H-G/X-G IR blocks in reports 003 / 004 were
+# silently dropped even when the numbers themselves read cleanly.
+_MOHM_HDR_RE = re.compile(r"Μ\s?Ω|MΩ|M\?|MQ|M0hm|Nchm", re.I)
 _UNITCOL_RE = re.compile(r"\(([A-Za-zµ%]+)\)")
 _DGA_ROW_RE = re.compile(
     r"^\*?\s*([A-Za-z][A-Za-z0-9 /.]*?)\s*\((ppm|ppb)\)\s*:?\s*"
@@ -685,10 +690,21 @@ def _powerdb_grids(text):
             label = " ".join(lbl).strip("':")
             if re.search(r"READING|COUNTER|WIRING|COMMENT", label, re.I):
                 continue               # counter/boilerplate rows, not readings
-            if lbl and len(lbl) <= 4 and len(run) >= 2:
+            # 2026-07-04: `len(run) >= 1` (was `>= 2`) — real PowerDB reports
+            # commonly have per-winding rows with just the 1-min value when
+            # the 10-min column is empty or shown as "--" (report_004:
+            # "H-G 0 --", "H-X 14800"). We are inside the MΩ-READING grid
+            # mode (triggered by an MΩ / M? / MQ header) so a single numeric
+            # row is unambiguously an IR reading.
+            if lbl and len(lbl) <= 4 and len(run) >= 1:
                 for t in run[:6]:      # ≤3 phases × (reading, 20°C-corrected)
                     v = _tofloat(t)
-                    if v is not None and v > 0:
+                    # 2026-07-04: `v >= 0` (was `v > 0`). A zero IR reading is
+                    # a legitimate — and safety-critical — value (indicates a
+                    # short circuit); report_004's H-G row is exactly that
+                    # case. Skipping negatives still keeps "--" and other
+                    # unparseable tokens out.
+                    if v is not None and v >= 0:
                         out.append(_grid_rec("insulation_resistance", label, v,
                                              "MΩ", "D", False, 0.75, loff))
                 extra = run[6:]        # µΩ pole-resistance block beside the IR grid

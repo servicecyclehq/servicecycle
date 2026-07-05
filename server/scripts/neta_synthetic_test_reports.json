@@ -568,7 +568,7 @@
       { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 45000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
       { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 52000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
       { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 48500, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
-      { "measurementType": "power_factor", "phase": "A", "asFoundValue": 0.12, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
+      { "measurementType": "dissipation_factor", "phase": "A", "asFoundValue": 0.12, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
     ],
     "textQuality": "clean",
     "extractedText": "POWERDB TEST FORMS\nMEDIUM VOLTAGE CABLE TEST REPORT\nJOB NO: 18-0781        TEST DATE: 09/13/2018       AMB: 23 C\nCIRCUIT: FEEDER F-6, SUB 1 TO MCC-6          LENGTH: 420 FT\n\nCABLE DATA\nMANUFACTURER: OKONITE       TYPE: OKOGUARD-URO 15KV 500 KCMIL\nREEL/SERIAL NO: OKN-R55082-3       YEAR: 2001\nINSULATION: EPR 220 MIL     RATED: 15 KV (CIRCUIT: 13800 V)     AMPACITY: 310 A\n\nINSULATION RESISTANCE - MEGGER S1-5010 @ 5000 VDC (MΩ)\nA-G: 45000      B-G: 52000      C-G: 48500\nMINIMUM ACCEPTABLE: >=1000 MΩ       RESULT: PASS\n\nVLF TAN DELTA @ 1.5 UO (0.1 HZ)\nPHASE A: 0.12 %      EXPECTED: <=0.5 %      PASS\n\nOVERALL CONDITION: ACCEPTABLE - GREEN",
@@ -581,7 +581,7 @@
         { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 45000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
         { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 52000, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
         { "measurementType": "insulation_resistance", "phase": "C", "asFoundValue": 48500, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
-        { "measurementType": "power_factor", "phase": "A", "asFoundValue": 0.12, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
+        { "measurementType": "dissipation_factor", "phase": "A", "asFoundValue": 0.12, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
       ]
     }
   },
@@ -600,7 +600,7 @@
     "measurements": [
       { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 38000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
       { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 4200, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "YELLOW", "critical": false },
-      { "measurementType": "power_factor", "phase": "B", "asFoundValue": 1.4, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "RED", "critical": true }
+      { "measurementType": "dissipation_factor", "phase": "B", "asFoundValue": 1.4, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "RED", "critical": true }
     ],
     "textQuality": "partial_ocr",
     "extractedText": "POWERDB TEST FORMS\nMEDIUM VOLTAGE CABLE TEST REPORT\nJOB: 22-1290     DATE: 11/08/2022\nCIRCUIT: 34.5KV TIE LINE, SUB N1 TO SUB S2\nMANUFACTURER: PRYSMIAN      TYPE: AIRGUARD 35KV 750 KCMIL EPR\nREEL/SERIAL: PRY-07-88231        YEAR: 2007\nRATED: 35 KV (CIRCUIT 34500 V)      AMPACITY: 420 A\n\nINSULATION RESISTANCE @ 5000 VDC\nA-G: 38000 M?      B-G: 4200 M?      C-G:\nMINIMUM: >=5000 MOhm\nA: PASS     B: INVESTIGATE - YELLOW     C: NOT TESTED - ELBOW INACCESSIBLE\n\nVLF TAN DELTA @ 1.5 UO\nPHASE B: 1.40 %      EXPECTED: <=0.5 %      FAIL - RED\nTD TIP-UP B: HIGH - water tree degradation suspected\nRECOMMENDATION: REPLACE B-PHASE CONDUCTOR",
@@ -612,7 +612,7 @@
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": "A", "asFoundValue": 38000, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
         { "measurementType": "insulation_resistance", "phase": "B", "asFoundValue": 4200, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "YELLOW", "critical": false },
-        { "measurementType": "power_factor", "phase": "B", "asFoundValue": 1.4, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "RED", "critical": true }
+        { "measurementType": "dissipation_factor", "phase": "B", "asFoundValue": 1.4, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "RED", "critical": true }
       ]
     }
   },
