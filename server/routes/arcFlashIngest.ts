@@ -149,6 +149,52 @@ function intOrNull(v: any): number | null {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
 }
 
+// [F1] Parse the free-form study date the AI extraction pulled from the
+// document (`systemMeta.studyMeta.date`, e.g. "March 2021", "3/15/2021",
+// "2021-03-15", "Q3/2021"). Returns null — never a guess — when the string
+// doesn't resolve to a plausible calendar date, so callers can tell "we read
+// a real date" apart from "we have nothing" instead of silently treating an
+// unparseable string as today's date.
+function parseExtractedStudyDate(raw: any): Date | null {
+  if (raw == null) return null;
+  const t = String(raw).trim();
+  if (!t) return null;
+
+  const sane = (d: Date): Date | null => {
+    if (Number.isNaN(d.getTime())) return null;
+    const y = d.getFullYear();
+    const nowY = new Date().getFullYear();
+    // Reject obviously-wrong years (OCR digit noise, placeholder values) —
+    // a study can't predate modern power systems or postdate "now" by more
+    // than a year (clock skew / in-progress study).
+    return y >= 1980 && y <= nowY + 1 ? d : null;
+  };
+
+  // ISO yyyy-mm-dd(...)
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) { const d = sane(new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`)); if (d) return d; }
+
+  // m/d/yyyy or m-d-yyyy
+  m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
+  if (m) { const d = sane(new Date(`${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}T00:00:00`)); if (d) return d; }
+
+  // "March 2021" / "March 15, 2021" / "15 March 2021" — let the JS date
+  // parser handle named-month formats (requires both letters and a 4-digit
+  // year present so we don't misfire on unrelated text).
+  if (/[A-Za-z]{3,}/.test(t) && /\d{4}/.test(t)) {
+    const d = sane(new Date(t));
+    if (d) return d;
+  }
+
+  // Bare 4-digit year ("2021") — better than nothing, resolves to Jan 1.
+  m = t.match(/^(\d{4})$/);
+  if (m) { const d = sane(new Date(`${m[1]}-01-01T00:00:00`)); if (d) return d; }
+
+  // Anything else (e.g. "Q3/2021", "TBD") is genuinely unparseable — return
+  // null rather than guess.
+  return null;
+}
+
 // Parse a nominal-voltage label ("480V", "13.8kV", "208") to volts (for the
 // DANGER test: >40 cal/cm2 OR >600 V, per NFPA 70E labeling).
 function voltsOf(raw: any): number | null {
@@ -564,6 +610,12 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     // ingest status flip all commit together (or roll back as one).
     let feedsWired = 0;
     let studyId: string | null = null;
+    // [F1] Where the produced study's performedDate actually came from —
+    // set inside the transaction below, read afterward for the audit log +
+    // API response so a caller can tell a real captured date apart from an
+    // unverified placeholder.
+    let studyDateSource: 'client' | 'extracted' | 'unverified_default' = 'unverified_default';
+    let studyDateRaw: string | null = null;
     let boundCount = 0;
     await prisma.$transaction(async (txn: any) => {
       // PEN-7-7: Re-check status inside the transaction to prevent a concurrent
@@ -607,15 +659,31 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     // Optional: spin up a SystemStudy from the extracted inputs and bind buses.
     if (req.body && req.body.createStudy) {
       const studyType = req.body.studyType === 'one_line_review' ? 'one_line_review' : 'arc_flash';
-      const performed = req.body.performedDate ? new Date(req.body.performedDate) : new Date();
       const sm = (ingest.systemMeta || {}) as any;
+      studyDateRaw = (sm.studyMeta && sm.studyMeta.date) || null;
+      // [F1] Prefer an explicit client-supplied date, then the date the AI
+      // extraction actually read off the document, and ONLY THEN fall back to
+      // "today" — and when we fall back, say so (notes + activity log below)
+      // instead of silently asserting a study performed just now is current.
+      let performed: Date;
+      if (req.body.performedDate) {
+        performed = new Date(req.body.performedDate);
+        studyDateSource = 'client';
+      } else {
+        const extracted = parseExtractedStudyDate(studyDateRaw);
+        if (extracted) { performed = extracted; studyDateSource = 'extracted'; }
+        else { performed = new Date(); studyDateSource = 'unverified_default'; }
+      }
+      const dateWarning = studyDateSource === 'unverified_default'
+        ? `⚠️ Study date could not be read from the source document${studyDateRaw ? ` ("${studyDateRaw}" did not parse as a date)` : ''} — the confirm date was used as a placeholder. Verify the actual performed date against the report and correct it above.\n\n`
+        : '';
       const study = await txn.systemStudy.create({
         data: {
           accountId, siteId: ingest.siteId, studyType,
           performedDate: performed, expiresAt: new Date(performed.getFullYear() + 5, performed.getMonth(), performed.getDate()),
-          performedBy: (sm.studyMeta && sm.studyMeta.peName) || null, method: (sm.studyMeta && sm.studyMeta.method) || 'IEEE 1584-2018',
+          performedBy: (sm.studyMeta && sm.studyMeta.peName) || null, method: (sm.studyMeta && sm.studyMeta.method) || null,
           peName: (sm.studyMeta && sm.studyMeta.peName) || null, trigger: 'system_change',
-          notes: `Created from ingested ${ingest.sourceType === 'study_report' ? 'study report' : 'one-line'} (${ingest.fileName || 'upload'}).`,
+          notes: `${dateWarning}Created from ingested ${ingest.sourceType === 'study_report' ? 'study report' : 'one-line'} (${ingest.fileName || 'upload'}).`,
         },
         select: { id: true },
       });
@@ -697,9 +765,24 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
         // it carries AI-extracted numbers unless a qualified person re-verifies.
         peSignedOff: !!peOnStudy,
       },
+      // [F1] Durable, audited record of where the study's performedDate came
+      // from — 'client' (explicit request field), 'extracted' (parsed from
+      // the document's own studyMeta.date), or 'unverified_default' (nothing
+      // usable was found/parsed, so the confirm-time date was written as a
+      // placeholder and flagged in the study's notes for manual correction).
+      studyDate: studyId ? { source: studyDateSource, extractedRaw: studyDateRaw } : null,
     });
 
-    res.json({ success: true, data: { ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount } });
+    res.json({
+      success: true,
+      data: {
+        ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount,
+        // Lets any caller (current confirmMsg text, or future UI) warn the
+        // user when the study date is an unverified placeholder rather than
+        // a value actually read from the source document.
+        studyDateSource: studyId ? studyDateSource : null,
+      },
+    });
   } catch (e: any) {
     // PEN-7-7: concurrent double-confirm detected inside the transaction.
     if (e?._alreadyConfirmed) return res.status(409).json({ success: false, error: 'Ingest already confirmed' });
