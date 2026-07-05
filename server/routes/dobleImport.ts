@@ -36,7 +36,7 @@ const crypto = require('crypto');
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
 const { resolveAsset } = require('../lib/assetIdentity');
-const { commitAssetReadings, inferEquipmentType } = require('../lib/commitTestReport');
+const { commitAssetReadings, inferEquipmentType, resolveTestDate } = require('../lib/commitTestReport');
 const { writeLog } = require('../lib/activityLog');
 const {
   parseDobleExport, toCommitMeasurements, assetTestDate, DOBLE_SCHEMA_VERSION,
@@ -301,12 +301,15 @@ router.post('/commit', requireManager, handleUpload, async (req: any, res: any) 
         }
 
         const isoDate = assetTestDate(asset);
-        const when = isoDate ? new Date(isoDate + 'T00:00:00Z') : new Date();
+        // [W8] Same fallback-masks-capture shape as the PowerDB/PDF path: no
+        // parseable test date across the asset's tests silently became "now"
+        // with nothing recording that the date was fabricated.
+        const { when, dateSource } = resolveTestDate(isoDate ? isoDate + 'T00:00:00Z' : null);
 
         // Same writer the PowerDB/PDF path uses -> unified pool. We tag the WO
         // notes with the Doble marker + fingerprint for provenance + de-dupe.
         const r = await commitAssetReadings(tx, {
-          accountId, assetId: targetId, when,
+          accountId, assetId: targetId, when, dateSource,
           vendor: 'Doble import', techName: asset.tests[0]?.technician || undefined,
           measurements,
         });

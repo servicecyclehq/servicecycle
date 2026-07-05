@@ -102,6 +102,8 @@ export type CanonicalType =
   | 'insulation_resistance'
   | 'excitation_current'
   | 'dissolved_gas'
+  | 'contact_resistance'
+  | 'trip_time'
   | 'measurement';
 
 // Test-type token (from XML @type or CSV "Test Type") -> canonical.
@@ -113,7 +115,21 @@ const TEST_TYPE_ALIASES: Array<[RegExp, CanonicalType]> = [
   [/exciting|excitation/i, 'excitation_current'],
   [/insulation|megger|\bir\b/i, 'insulation_resistance'],
   [/\bdga\b|dissolved[\s_-]*gas|gas[\s_-]*in[\s_-]*oil/i, 'dissolved_gas'],
+  // [W8] Doble also makes breaker-timing/CRM test sets (TDR-90/similar) whose
+  // exports flow through this same importer. These two canonical types were
+  // previously unrecognized entirely -- a report using either test type fell
+  // through to the generic 'measurement' bucket with the critical safety flag
+  // silently lost (see CRITICAL_TYPES below), same shape as testReportParse.ts's
+  // MEASUREMENT_VOCAB critical flags for contact_resistance/trip_time.
+  [/contact[\s_-]*resist|\bcrm\b|\bductor\b/i, 'contact_resistance'],
+  [/trip[\s_-]*(?:time|test)|timing[\s_-]*test|operating[\s_-]*time/i, 'trip_time'],
 ];
+
+// [W8] Mirrors testReportParse.ts's MEASUREMENT_VOCAB `critical: true` flags.
+// A RED reading of a critical type becomes an IMMEDIATE deficiency (vs.
+// RECOMMENDED); toCommitMeasurements() previously emitted no `critical` field
+// at all, so every Doble-imported RED reading was silently downgraded.
+const CRITICAL_TYPES: ReadonlySet<CanonicalType> = new Set(['contact_resistance', 'trip_time']);
 
 // A handful of DGA gas tokens so a lab row named only by gas (H2, CH4 ...) is
 // still recognized as a dissolved-gas reading even if the test-type column is
@@ -485,6 +501,17 @@ function parseXml(text: string): DobleParseResult {
       for (const te of effectiveTests) {
         const rawTestType = te.attrs['type'] || te.attrs['testtype'] || te.attrs['name'] || '';
         const testVoltage = te.attrs['voltage'] || te.attrs['testvoltage'] || sessionVoltage || null;
+        // [W8] canonicalType() silently returns the generic 'measurement'
+        // fallback for any test-type token it doesn't recognize -- readings
+        // then lose type-specific PASS/FAIL floors, trend tracking, and (for
+        // contact-resistance/trip-time) the critical-severity flag, with no
+        // trace that anything was unrecognized. Check once per <Test> block
+        // (test-type alone, matching the Doble-vendor vocabulary this
+        // importer knows) so an unmapped test type surfaces as a review flag
+        // instead of a silent generic bucket.
+        if (rawTestType && canonicalType(rawTestType) === 'measurement') {
+          perIssues.push(`Unrecognized test type "${rawTestType}" -- readings filed as generic "measurement" (no type-specific PASS/FAIL floor, trend tracking, or critical-severity flag) unless individually recognized by gas name.`);
+        }
         const readingEls = findElements(te.inner, 'Reading');
         if (readingEls.length === 0) {
           // A <Test> with no <Reading> children carries nothing usable.
@@ -616,6 +643,12 @@ function parseCsv(text: string): DobleParseResult {
     if (sess.testDate && !iso.ok) bucket.issues.add(`Unrecognized test date "${sess.testDate}" -- kept verbatim.`);
 
     const canon = canonicalType(rawTestType, rd.name);
+    // [W8] Same unmapped-type flag as the XML path above. `bucket.issues` is a
+    // Set so an identical message across many rows of the same unrecognized
+    // test type collapses to one entry (no spam).
+    if (rawTestType && canonicalType(rawTestType) === 'measurement') {
+      bucket.issues.add(`Unrecognized test type "${rawTestType}" -- readings filed as generic "measurement" (no type-specific PASS/FAIL floor, trend tracking, or critical-severity flag) unless individually recognized by gas name.`);
+    }
     const testKey = `${(rawTestType || canon).toLowerCase()}|${iso.iso || sess.testDate || ''}`;
     if (!bucket.tests.has(testKey)) {
       bucket.tests.set(testKey, {
@@ -680,7 +713,7 @@ export function toCommitMeasurements(asset: DobleAssetImport): Array<{
   measurementType: string; phase: string | null; asFoundValue: number | null;
   asFoundUnit: string | null; passFail: 'GREEN' | 'YELLOW' | 'RED' | null;
   expectedRange: string | null; testVoltage: string | null; label: string;
-  notes: string | null;
+  notes: string | null; critical: boolean;
 }> {
   const out: any[] = [];
   for (const t of asset.tests) {
@@ -695,6 +728,10 @@ export function toCommitMeasurements(asset: DobleAssetImport): Array<{
         testVoltage: r.testVoltage,
         label: [r.rawTestType || t.testType, r.name].filter(Boolean).join(' '),
         notes: `[doble:${DOBLE_SCHEMA_VERSION}] ${t.testType}${r.name ? ` / ${r.name}` : ''}${r.rawValue != null ? ` = ${r.rawValue}${r.unit || ''}` : ''}`,
+        // [W8] See CRITICAL_TYPES -- without this, commitAssetReadings'
+        // severityFor() always treated a Doble RED as RECOMMENDED, never
+        // IMMEDIATE, even for a failed timing/contact-resistance test.
+        critical: CRITICAL_TYPES.has(r.measurementType as CanonicalType),
       });
     }
   }

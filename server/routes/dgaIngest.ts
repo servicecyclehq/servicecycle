@@ -101,7 +101,10 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
           co2: gases.co2 ?? null, o2: gases.o2 ?? null, n2: gases.n2 ?? null,
           ieeeStatus: evaluation.ieeeStatus, faultCode: evaluation.faultCode,
           resultRating: evaluation.resultRating,
-          notes: `[ingest:dga] TDCG ${Math.round(evaluation.tdcg)} ppm; IEEE C57.104 legacy 4-condition screen (estimate) — Condition ${evaluation.overallCondition}${evaluation.faultLabel ? `; ${evaluation.faultLabel}` : ''}.`,
+          // [W8] TDCG sums missing gases as 0 ppm (see dgaEvaluate.ts
+          // missingGases) -- a partial panel must never read as an
+          // unqualified, complete-panel TDCG in the record.
+          notes: `[ingest:dga] TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.missingGases.length ? ` (PARTIAL PANEL -- ${evaluation.missingGases.join(', ').toUpperCase()} not reported, treated as 0 ppm)` : ''}; IEEE C57.104 legacy 4-condition screen (estimate) — Condition ${evaluation.overallCondition}${evaluation.faultLabel ? `; ${evaluation.faultLabel}` : ''}.`,
         },
         select: { id: true, sampleDate: true, ieeeStatus: true, faultCode: true, resultRating: true },
       });
@@ -128,7 +131,7 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
           await tx.deficiency.create({
             data: {
               accountId: req.user.accountId, assetId: asset.id, severity: sev as any,
-              description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104 legacy 4-condition screen, estimate) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}. IEEE C57.104 Status ${evaluation.ieeeStatus} — ${evaluation.overallCondition >= 3 ? 'Action Required: immediate investigation.' : 'Increased monitoring required.'}`,
+              description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104 legacy 4-condition screen, estimate) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.missingGases.length ? ` (PARTIAL PANEL -- ${evaluation.missingGases.join(', ').toUpperCase()} not reported)` : ''}${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}. IEEE C57.104 Status ${evaluation.ieeeStatus} — ${evaluation.overallCondition >= 3 ? 'Action Required: immediate investigation.' : 'Increased monitoring required.'}`,
               correctiveAction: evaluation.overallCondition >= 3
                 ? 'Action Required per IEEE C57.104 Status 3/4 — schedule immediate retest and electrical/internal inspection.'
                 : 'Increase DGA sampling frequency and trend the key gases.',

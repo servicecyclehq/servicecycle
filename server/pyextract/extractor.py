@@ -668,7 +668,12 @@ def _powerdb_grids(text):
             if len(run) == len(unit_cols):
                 mi = next(i for i, u in enumerate(unit_cols) if u.startswith("megohm"))
                 v = _tofloat(run[mi])
-                if v is not None and v > 0:
+                # 2026-07-05 (W8): `v >= 0` (was `v > 0`) -- same fix as the
+                # MΩ-READING grid path below (2026-07-04): a zero IR reading is
+                # a legitimate, safety-critical value (indicates a short
+                # circuit), not something to silently drop. Skipping negatives
+                # still keeps "--" and other unparseable tokens out.
+                if v is not None and v >= 0:
                     out.append(_grid_rec("insulation_resistance",
                                          ctx or "Insulation Resistance", v, "MΩ",
                                          "D", False, 0.7, loff))

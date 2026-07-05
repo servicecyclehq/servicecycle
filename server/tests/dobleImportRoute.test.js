@@ -117,6 +117,9 @@ jest.mock('../lib/prisma', () => {
 
 // commitAssetReadings mocked: records that it ran (inside the tx) and returns a
 // deterministic per-asset summary. The route then stamps the marker onto the WO.
+// resolveTestDate mocked with the SAME semantics as the real lib/commitTestReport
+// helper (W8, 2026-07-05): the doble route now calls it to flag a fabricated
+// "now" fallback when the export carries no parseable test date.
 jest.mock('../lib/commitTestReport', () => ({
   commitAssetReadings: jest.fn(async (tx, p) => {
     const state = globalThis.__dobleRouteState;
@@ -130,6 +133,14 @@ jest.mock('../lib/commitTestReport', () => ({
       sanityFlags: 0,
       deficiencyBySeverity: { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 },
     };
+  }),
+  inferEquipmentType: jest.fn(() => 'SWITCHGEAR'),
+  resolveTestDate: jest.fn((raw) => {
+    if (raw != null && raw !== '') {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) return { when: d, dateSource: null };
+    }
+    return { when: new Date(), dateSource: 'unverified_default' };
   }),
 }));
 

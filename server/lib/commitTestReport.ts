@@ -29,6 +29,23 @@ class HttpableError extends Error {
   constructor(status: number, message: string) { super(message); this.httpStatus = status; }
 }
 
+// [W8] Every ingest commit path (PDF /commit, /bulk-commit, email-in
+// commitPreviewSections, Doble commit) independently wrote the same
+// `raw ? new Date(raw) : new Date()` fallback: when no date could be parsed
+// from the source, the WorkOrder silently gets "now" (commit time) with
+// nothing distinguishing it from a real report-stated date. A report
+// processed weeks late (backlog, email delay) then mislabels WHEN the test
+// actually happened -- exactly the fallback-masks-capture shape already
+// fixed for SystemStudy.studyDateSource. One helper, used everywhere, plus a
+// WorkOrder.testDateSource column so the fallback is honestly flagged.
+function resolveTestDate(raw: any): { when: Date; dateSource: string | null } {
+  if (raw != null && raw !== '') {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return { when: d, dateSource: null };
+  }
+  return { when: new Date(), dateSource: 'unverified_default' };
+}
+
 // A reading is "usable" (can complete a WO / roll schedules) if it carries a
 // numeric value OR an explicit pass/fail. Mirrors the guard inside
 // commitAssetReadings so callers can pre-filter empty sections.
@@ -43,6 +60,14 @@ function hasUsableReading(measurements: any[]): boolean {
 // auto-created deficiency cites a basis rather than an unexplained flag.
 const IEEE43_FLOOR_TYPES = new Set(['polarization_index', 'dielectric_absorption_ratio']);
 function passFailBasis(x: any, _passFail: string): string {
+  // [W8] testReportParse.ts's Layer-2 physical-plausibility gate forces
+  // passFail='RED' and sets sanityNote when a value is outside a physically
+  // possible envelope -- that RED did NOT come from the report's own result
+  // column (it may have printed GREEN, or nothing at all). Citing "basis:
+  // test-report result column" in that case is a false attribution the
+  // deficiency reader would reasonably rely on. Check this first: it
+  // overrides whatever the report printed, same as the gate itself does.
+  if (x.sanityNote) return `basis: automated plausibility check (${x.sanityNote}) -- not the report's stated result`;
   if (x.expectedRange) return `basis: report limit ${x.expectedRange}`;
   if (IEEE43_FLOOR_TYPES.has(String(x.measurementType))) return 'basis: IEEE 43 acceptance floor';
   return 'basis: test-report result column';
@@ -52,11 +77,12 @@ function passFailBasis(x: any, _passFail: string): string {
 // + auto Deficiency rows (hard pass/fail + year-over-year trend flag). `db` is a
 // prisma client OR a $transaction client. Returns the per-asset summary.
 async function commitAssetReadings(db: any, p: {
-  accountId: string; assetId: string; when: Date;
+  accountId: string; assetId: string; when: Date; dateSource?: string | null;
   vendor?: string; techName?: string; measurements: any[];
   isAcceptanceTest?: boolean;
 }) {
   const { accountId, assetId, when, vendor, techName, measurements } = p;
+  const dateSource = p.dateSource ?? null;
   const isAcceptanceTest = !!p.isAcceptanceTest;
   const { checkMeasurementSanity } = require('./measurementSanity');
 
@@ -66,7 +92,7 @@ async function commitAssetReadings(db: any, p: {
 
   const wo = await db.workOrder.create({
     data: { accountId, assetId, status: 'COMPLETE', scheduledDate: when, completedDate: when,
-            isAcceptanceTest,
+            isAcceptanceTest, testDateSource: dateSource,
             notes: `[ingest:test_report]${isAcceptanceTest ? '[acceptance]' : ''} Test report ingest${vendor ? ` -- ${vendor}` : ''}${techName ? ` (${techName})` : ''}` },
     select: { id: true },
   });
@@ -106,6 +132,13 @@ async function commitAssetReadings(db: any, p: {
         // function already READS x.label below for deficiency text -- it
         // was just never persisted on the row itself until now.
         label: x.label || null,
+        // [W8] testReportParse.ts's physical-plausibility gate computes this
+        // (the reason a value was forced to RED) and the bulk-preview UI
+        // already surfaces it to the reviewer -- but it was dropped between
+        // preview and persistence, so the committed row (and any deficiency
+        // built from it) carried no trace of why. passFailBasis() below
+        // reads it back off `x` to give the auto-deficiency an honest basis.
+        sanityNote: x.sanityNote || null,
       },
     });
     measurementsCreated++;
@@ -220,7 +253,7 @@ async function commitPreviewSections(p: {
 }) {
   const { accountId, siteId, preview, originalName } = p;
   const meta = preview?.meta || {};
-  const when = meta.testDate && !isNaN(new Date(meta.testDate).getTime()) ? new Date(meta.testDate) : new Date();
+  const { when, dateSource } = resolveTestDate(meta.testDate);
   const vendor = meta.vendor || undefined;
   const techName = meta.techName || undefined;
   const allMeasurements: any[] = Array.isArray(preview?.measurements) ? preview.measurements : [];
@@ -237,11 +270,18 @@ async function commitPreviewSections(p: {
       if (sec.assetMatch?.id) {
         units.push({ measurements: ms, assetId: sec.assetMatch.id, label });
       } else {
+        // [W8] Use the flag-preserving inference so a keyword-guessed type
+        // (SWITCHGEAR fallback or a matched-but-uncertain rule) is honestly
+        // marked on the created asset -- see Asset.equipmentTypeSource.
+        // An explicit reviewer-set sec.equipmentType always counts as verified.
+        const typeRes = sec.equipmentType
+          ? { type: sec.equipmentType, matched: true }
+          : inferEquipmentTypeResult(sec.label, sec.position, sec.substation, idx === 0 ? meta.model : null, idx === 0 ? meta.manufacturer : null);
         units.push({
           measurements: ms, label,
           createAsset: {
-            // Honor an explicit type from a reviewer's edit; otherwise infer.
-            equipmentType: sec.equipmentType || inferEquipmentType(sec.label, sec.position, sec.substation, idx === 0 ? meta.model : null, idx === 0 ? meta.manufacturer : null),
+            equipmentType: typeRes.type,
+            equipmentTypeSource: typeRes.matched ? null : 'unverified_default',
             manufacturer: idx === 0 ? (meta.manufacturer || null) : null,
             model:        idx === 0 ? (meta.model || null) : null,
             serialNumber: idx === 0 ? (meta.serialNumber || null) : null,
@@ -255,11 +295,14 @@ async function commitPreviewSections(p: {
     if (preview?.assetMatch?.id) {
       units.push({ measurements: allMeasurements, assetId: preview.assetMatch.id, label });
     } else {
+      const typeRes = meta.equipmentType
+        ? { type: meta.equipmentType, matched: true }
+        : inferEquipmentTypeResult(meta.model, meta.manufacturer, originalName);
       units.push({
         measurements: allMeasurements, label,
         createAsset: {
-          // Honor an explicit type from a reviewer's edit; otherwise infer.
-          equipmentType: meta.equipmentType || inferEquipmentType(meta.model, meta.manufacturer, originalName),
+          equipmentType: typeRes.type,
+          equipmentTypeSource: typeRes.matched ? null : 'unverified_default',
           manufacturer: meta.manufacturer || null, model: meta.model || null, serialNumber: meta.serialNumber || null,
           namePosition: null,
         },
@@ -286,14 +329,14 @@ async function commitPreviewSections(p: {
         const c = u.createAsset;
         const na = await tx.asset.create({
           data: {
-            accountId, siteId, equipmentType: c.equipmentType,
+            accountId, siteId, equipmentType: c.equipmentType, equipmentTypeSource: c.equipmentTypeSource ?? null,
             manufacturer: c.manufacturer, model: c.model, serialNumber: c.serialNumber,
           },
           select: { id: true },
         });
         targetId = na.id; created = true;
       }
-      const r = await commitAssetReadings(tx, { accountId, assetId: targetId, when, vendor, techName, measurements: u.measurements });
+      const r = await commitAssetReadings(tx, { accountId, assetId: targetId, when, dateSource, vendor, techName, measurements: u.measurements });
       out.push({ ...r, created, label: u.label });
     }
     return out;
@@ -309,6 +352,6 @@ async function commitPreviewSections(p: {
   return { ...totals, sections: results, skipped: units.length - committable.length };
 }
 
-module.exports = { commitAssetReadings, commitPreviewSections, inferEquipmentType, inferEquipmentTypeResult, hasUsableReading, HttpableError, BAD_DIRECTION, TREND_PCT };
+module.exports = { commitAssetReadings, commitPreviewSections, inferEquipmentType, inferEquipmentTypeResult, hasUsableReading, HttpableError, BAD_DIRECTION, TREND_PCT, resolveTestDate };
 
 export {};

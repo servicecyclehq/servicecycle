@@ -271,6 +271,14 @@ function parseTestReport(rawText: string) {
           testVoltage: testV,
           passFail: rowResult,
           critical: vocab.critical,
+          // [W8] `unit` extraction failed for this segment; unitForTable is
+          // the vocab's HARDCODED default, not something read off the report
+          // -- if the report actually used a different scale (e.g. kΩ instead
+          // of the vocab's µΩ) this silently mislabels the value with no
+          // signal downstream. A below-threshold confidence routes it through
+          // ingestConfidenceGate.ts's existing per-reading floor to review,
+          // same mechanism already used for AI/OCR-uncertain readings.
+          ...(unit ? {} : { confidence: 0.5 }),
         });
       }
       continue;
@@ -300,6 +308,8 @@ function parseTestReport(rawText: string) {
       testVoltage: testV,
       passFail: result,        // GREEN | YELLOW | RED | null
       critical: vocab.critical,
+      // [W8] Same unit-fallback confidence downgrade as the table-rows path above.
+      ...(unit ? {} : { confidence: 0.5 }),
     });
   }
 

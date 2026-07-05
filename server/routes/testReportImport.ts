@@ -122,6 +122,17 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
 // (shared with the #6 email-in auto-commit worker).
 const { commitAssetReadings, HttpableError } = require('../lib/commitTestReport');
 
+// [W8] A supplied-but-unparseable testDate stays a hard 400 (below) -- that's
+// a client bug worth surfacing loudly. An ABSENT testDate is the fallback-
+// masks-capture case: silently defaulting to "now" with no signal mislabels
+// WHEN a backlogged/delayed report's test actually happened. This helper only
+// covers the absent case; the explicit-but-invalid case is still validated
+// inline at each call site so existing error-response behavior is unchanged.
+function resolveWhen(raw: any): { when: Date; dateSource: string | null } {
+  if (!raw) return { when: new Date(), dateSource: 'unverified_default' };
+  return { when: new Date(raw), dateSource: null };
+}
+
 // #14 contractor bulk ingest: oem_admin may ingest into a fleet customer
 // account via targetAccountId (validated in lib/oemTargetAccount).
 const { resolveTargetAccount } = require('../lib/oemTargetAccount');
@@ -151,7 +162,7 @@ router.post('/commit', async (req: any, res: any) => {
     catch (e: any) { return res.status(e.httpStatus || 400).json({ success: false, error: e.message }); }
     const { assetId, testDate, vendor, techName, measurements, sections, extractionId, corrections, reviewMs } = req.body;
     const isAcceptanceTest = !!req.body.isAcceptanceTest; // #27 year-0 baseline (whole report)
-    const when = testDate ? new Date(testDate) : new Date();
+    const { when, dateSource } = resolveWhen(testDate);
     if (isNaN(when.getTime())) return res.status(400).json({ success: false, error: 'Invalid testDate' });
 
     // â”€â”€ Multi-section path (#1): one upload â†’ many assets, atomically â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -189,7 +200,7 @@ router.post('/commit', async (req: any, res: any) => {
             });
             targetId = na.id; created = true;
           }
-          const r = await commitAssetReadings(tx, { accountId, assetId: targetId, when, vendor, techName, measurements: s.measurements, isAcceptanceTest });
+          const r = await commitAssetReadings(tx, { accountId, assetId: targetId, when, dateSource, vendor, techName, measurements: s.measurements, isAcceptanceTest });
           out.push({ ...r, created, label: s.label || null });
         }
         return out;
@@ -227,7 +238,7 @@ router.post('/commit', async (req: any, res: any) => {
     const asset = await prisma.asset.findFirst({ where: { id: assetId, accountId, archivedAt: null }, select: { id: true } });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
-    const r = await commitAssetReadings(prisma, { accountId, assetId, when, vendor, techName, measurements, isAcceptanceTest });
+    const r = await commitAssetReadings(prisma, { accountId, assetId, when, dateSource, vendor, techName, measurements, isAcceptanceTest });
 
     // #4 correction capture: stamp the extraction row from preview with the
     // commit outcome + the human's field-level edits. Older clients that don't
@@ -374,7 +385,7 @@ router.post('/bulk-commit', async (req: any, res: any) => {
         if (!Array.isArray(it.measurements) || it.measurements.length === 0) {
           throw new HttpableError(400, 'measurements required');
         }
-        const when = it.testDate ? new Date(it.testDate) : new Date();
+        const { when, dateSource } = resolveWhen(it.testDate);
         if (isNaN(when.getTime())) throw new HttpableError(400, 'Invalid testDate');
         // TENANCY: scope the asset to the resolved account. A cross-tenant
         // assetId matches nothing here -> 404 for THIS item only.
@@ -382,7 +393,7 @@ router.post('/bulk-commit', async (req: any, res: any) => {
         if (!asset) throw new HttpableError(404, 'Asset not found');
 
         const r = await commitAssetReadings(prisma, {
-          accountId, assetId: it.assetId, when,
+          accountId, assetId: it.assetId, when, dateSource,
           vendor: it.vendor, techName: it.techName,
           measurements: it.measurements, isAcceptanceTest: !!it.isAcceptanceTest,
         });

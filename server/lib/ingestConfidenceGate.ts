@@ -170,8 +170,9 @@ function evaluateIngestGate(preview: any, opts: { threshold?: any; originalName?
   }
 
   // Build the units the same way commitPreviewSections does.
+  const isMultiSection = Array.isArray(preview?.sections) && preview.sections.length > 1;
   const units: Array<Parameters<typeof evaluateUnit>[1]> = [];
-  if (Array.isArray(preview?.sections) && preview.sections.length > 1) {
+  if (isMultiSection) {
     preview.sections.forEach((sec: any, idx: number) => {
       const ms = unitMeasurements(preview, sec.measurementIndices);
       if (!ms.length) return;
@@ -241,6 +242,24 @@ function evaluateIngestGate(preview: any, opts: { threshold?: any; originalName?
   // rewrite a value. Must never break the gate — degrade to prior scoring.
   try {
     const { checkDomainConsistency } = require('./domainValidators');
+    // [W8, investigated 2026-07-05 -- NOT wired, flagged for Dustin]
+    // domainValidators.completeness() reads ctx.meta.equipmentType ||
+    // ctx.equipmentType to flag e.g. a "switchgear" report with no
+    // contact_resistance reading -- but `preview.meta` never carries
+    // equipmentType in production, so this check has been a permanent no-op
+    // (a genuine fallback-masks-capture shape: a coverage check that looks
+    // active but never fires). Tried wiring it to the same equipmentType
+    // inference commitPreviewSections uses at commit time and it broke
+    // __tests__/routes/ingestReviewGate.test.ts's green-path fixture (a
+    // switchgear insulation-resistance-only report, which IS a common,
+    // legitimate real-world scope -- IR and contact-resistance are often
+    // separate test visits/intervals). REQUIRED_BY_TYPE's "this equipment
+    // type must have this reading IN THIS REPORT" heuristic is stronger than
+    // real NETA practice supports and would manufacture false-positive
+    // review friction against the product's frictionless-ingest posture.
+    // Needs Dustin's call: loosen REQUIRED_BY_TYPE (e.g. only fire when an
+    // asset has NEVER had that reading type across any report) before this
+    // is safe to wire live.
     const findings = checkDomainConsistency(allMeasurements, {
       meta: preview?.meta || {},
       reportVerdict: (preview?.meta && preview.meta.reportResult) || preview?.reportVerdict || null,

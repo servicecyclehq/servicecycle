@@ -823,6 +823,14 @@ model Asset {
   areaId                        String?
   positionId                    String?
   equipmentType                 EquipmentType
+  // [W8] Provenance for equipmentType on assets auto-created from ingest (no
+  // human picked the type). Null = a human chose it (manual create, or a
+  // reviewer-edited card) — trustworthy. 'unverified_default' = the ingest
+  // path fell back to a keyword-guess (or the SWITCHGEAR catch-all) because
+  // nothing in the report matched a known equipment keyword; the type may be
+  // wrong and downstream domain-completeness checks should discount it. Mirrors
+  // SystemStudy.studyDateSource's null=trustworthy design (2026-07-05 census).
+  equipmentTypeSource           String?
   manufacturer                  String?
   model                         String?
   serialNumber                  String?
@@ -1114,6 +1122,13 @@ model WorkOrder {
   // baseline event and the ingest path skips YoY trend flags on it.
   isAcceptanceTest Boolean          @default(false)
   reportPdfUrl     String? // contractor-issued test report (also attachable via Document)
+  // [W8] Provenance for completedDate/scheduledDate on ingest-created WOs. Null
+  // = a real date came from the report (or a human picked it) — trustworthy.
+  // 'unverified_default' = the ingest path could not parse a date from the
+  // source and fell back to "now" (commit time), which silently mislabels
+  // when the test actually happened. Mirrors SystemStudy.studyDateSource /
+  // Asset.equipmentTypeSource (2026-07-05 W8 fallback-masks-capture hunt).
+  testDateSource   String?
   notes            String?
   // ── Work order classification ─────────────────────────────────────────────
   // Set at creation: PREVENTIVE when scheduleId is set, CORRECTIVE otherwise.
@@ -1219,6 +1234,15 @@ model TestMeasurement {
   // priority 1 (repair immediately) â€¦ 4 (possible deficiency).
   loadPercent      Decimal?      @db.Decimal(5, 1)
   severityPriority Int?
+  // [W8] Set when the pre-commit physical-plausibility gate (lib/measurementSanity
+  // checkMeasurement, Layer 2) forced passFail to RED because the value was
+  // outside a physically-possible envelope — NOT because the report's own
+  // result column said RED. Previously this reason (testReportParse.ts's
+  // m.sanityNote) was computed, surfaced in the bulk-preview UI, then silently
+  // dropped at persistence with no trace of WHY the row is RED. Read by
+  // passFailBasis() in commitTestReport.ts to give the auto-created deficiency
+  // an honest basis instead of falsely citing "the test-report result column."
+  sanityNote       String?
   notes            String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt

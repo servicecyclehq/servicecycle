@@ -57,6 +57,14 @@ export interface DgaEvaluation {
   perGas: Record<string, { value: number; condition: number }>;
   faultCode: string | null;           // coarse key-gas hint (PD/T1/T2/T3/D1/D2)
   faultLabel: string | null;
+  // [W8] A gas missing from the input (lab didn't test it, or ingest failed to
+  // capture it) is treated as 0 ppm by the TDCG sum below with nothing
+  // distinguishing "confirmed zero" from "never measured" -- a genuinely
+  // partial panel can understate TDCG and look like a clean Condition-1 oil
+  // when one of the 6 combustible gases was simply never reported. Callers
+  // (routes/dgaIngest.ts) surface this so TDCG is never presented as if it
+  // came from a complete panel when it didn't.
+  missingGases: GasKey[];
 }
 
 /** Coarse key-gas fault hint. Deliberately conservative; a full Duval triangle
@@ -90,6 +98,7 @@ function keyGasFault(g: Gases): { code: string; label: string } | null {
 }
 
 export function evaluateDga(g: Gases): DgaEvaluation {
+  const missingGases = TDCG_GASES.filter((k) => g[k] == null);
   const tdcg = TDCG_GASES.reduce((s, k) => s + (g[k] ?? 0), 0);
   const perGas: Record<string, { value: number; condition: number }> = {};
   let worst = 1;
@@ -133,5 +142,6 @@ export function evaluateDga(g: Gases): DgaEvaluation {
     perGas,
     faultCode: fault?.code ?? null,
     faultLabel: fault?.label ?? null,
+    missingGases,
   };
 }
