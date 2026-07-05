@@ -224,4 +224,26 @@ describeOrSkip('extractor.py golden-pattern regression locks (2026-07-04 passes)
       expect(ir.length).toBe(0);
     });
   });
+
+  test('"AVG OPEN TIME" classifies as trip_time, not the generic time_reading fallback (report_015 gap, fixed 2026-07-05)', () => {
+    // MEASUREMENT_LIBRARY previously only recognized "trip time"/"trip test"
+    // for this type. report_015's real PowerDB phrasing ("AVG OPEN TIME: ...
+    // SEC") named the same NETA measurement (breaker contact-opening time)
+    // differently, so classify_label() found no match and _classify() fell
+    // through to the ambiguous unit-based "time_reading" type -- silently
+    // missing the golden-set's `trip_time` groundTruth entry (found while
+    // investigating the partial-tier parser-recall gap, see
+    // servicecycle-overnight-parser-2026-07-05). "open time" is now a
+    // trip_time label alias.
+    const text = [
+      'TIMING TEST - OPEN',
+      'AVG OPEN TIME: 0.071 SEC      EXPECTED: <=0.06',
+      'RESULT: SLOW - YELLOW / lubricate mechanism',
+    ].join('\n');
+    const out = runExtractMeasurements(text);
+    const tt = out.filter((m) => m.measurementType === 'trip_time');
+    expect(tt.length).toBeGreaterThanOrEqual(1);
+    expect(tt.some((m) => m.asFoundValue === 0.071)).toBe(true);
+    expect(out.some((m) => m.measurementType === 'time_reading')).toBe(false);
+  });
 });

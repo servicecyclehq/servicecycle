@@ -214,7 +214,20 @@ MEASUREMENT_LIBRARY = [
     # "PHASE A TRIP TIME: 42.5 SEC". Critical (a slow trip is a safety
     # finding). Unit stays sec here; ms readings would classify as
     # open_close_timing above.
-    {"type": "trip_time", "labels": ["trip time", "trip test"], "unit": "sec", "kind": "D", "bad": "up"},
+    #
+    # "open time" added 2026-07-05: report_015 phrases this same measurement
+    # as "AVG OPEN TIME: 0.071 SEC" (a breaker's contact-opening/trip time in
+    # seconds is the same NETA measurement as "trip time" — a slow OPEN TIME
+    # is the identical safety finding). Without this alias, classify_label()
+    # found no library match and _classify() fell through to the generic
+    # unit-based "time_reading" type, which doesn't match groundTruth's
+    # "trip_time" entry (found investigating the partial-tier parser-recall
+    # gap in servicecycle-overnight-parser-2026-07-05 — 4/5 report_015
+    # measurements matched, this was the missing 5th). "close time" is the
+    # natural counterpart but has no failing golden-set report demonstrating
+    # the same gap yet — deliberately not added speculatively; add it if/when
+    # a report surfaces that specific miss.
+    {"type": "trip_time", "labels": ["trip time", "trip test", "open time"], "unit": "sec", "kind": "D", "bad": "up"},
     {"type": "contact_travel", "labels": ["contact travel", "wipe", "gap"], "unit": "in", "kind": "D", "bad": "delta"},
     {"type": "vacuum_integrity", "labels": ["vacuum integrity", "vacuum bottle"], "unit": "pass/fail", "kind": "D", "bad": "cat"},
     {"type": "oil_dielectric", "labels": ["oil dielectric"], "unit": "kV", "kind": "D", "bad": "down"},
