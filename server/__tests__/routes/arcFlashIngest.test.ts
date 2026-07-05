@@ -148,4 +148,20 @@ describe('arc-flash ingest → gap → review', () => {
     const swgrAsset = assets.find((a: any) => a.equipmentType === 'SWITCHGEAR');
     expect(mccAsset.fedFromAssetId).toBe(swgrAsset.id);
   });
+
+  // [W3] The one-line PNG this whole ingest was uploaded from should now be
+  // linked to the produced study (reportFileKey, set at confirm) and
+  // resolved to a servable URL on every asset the study covers — see
+  // docs/scoping/audits/afx-scenario-preservation.md, W3 near-term fix.
+  test('W3: source document is linked to the produced study and resolves per-asset', async () => {
+    const study = await prisma.systemStudy.findUnique({ where: { id: (await prisma.arcFlashIngest.findUnique({ where: { id: ingestId } })).producedStudyId } });
+    expect(study.reportFileKey).toBeTruthy();
+    expect(study.reportPdfUrl).toBeNull(); // never wrote a fake URL into the manual-entry field
+
+    const assets = await prisma.asset.findMany({ where: { accountId: manager.accountId, siteId } });
+    const swgrAsset = assets.find((a: any) => a.equipmentType === 'SWITCHGEAR');
+    const res = await request(app).get(`/api/arc-flash/asset/${swgrAsset.id}`).set('Authorization', auth(manager));
+    expect(res.status).toBe(200);
+    expect(res.body.data.current.study.sourceDocumentUrl).toBe(`/api/documents/file?key=${encodeURIComponent(study.reportFileKey)}`);
+  });
 });

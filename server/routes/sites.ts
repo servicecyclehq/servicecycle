@@ -25,6 +25,7 @@ const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
 const { resolveTargetAccount } = require('../lib/oemTargetAccount');
 const { resolveDownstreamAssetIds } = require('../lib/powerPath');
+const { getFileUrl } = require('../lib/storage');
 
 // ─── Activity logging helper ──────────────────────────────────────────────────
 // Non-fatal fire-and-forget. Site-level events have no assetId — the log row
@@ -689,6 +690,19 @@ router.get('/:siteId/studies', async (req, res) => {
         _count:       { select: { coveredAssets: true } },
       },
     });
+
+    // [W3] Alongside the raw reportPdfUrl (manually-typed external link,
+    // unchanged), resolve reportFileKey (set at arc-flash ingest confirm)
+    // into one servable sourceDocumentUrl per study, at read time — never
+    // cached, since an S3 destination's resolved URL is a short-lived
+    // presigned link. reportPdfUrl still wins if a user has since typed one.
+    for (const st of studies as any[]) {
+      st.sourceDocumentUrl = st.reportPdfUrl
+        ? st.reportPdfUrl
+        : st.reportFileKey
+          ? await getFileUrl(st.reportFileKey).then((r: any) => r.url).catch(() => null)
+          : null;
+    }
 
     res.json({ success: true, data: { studies } });
   } catch (err) {

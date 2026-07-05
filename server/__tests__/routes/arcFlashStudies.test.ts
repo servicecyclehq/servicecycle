@@ -195,4 +195,40 @@ describe('#25 IEEE 1584 inputs, DANGER classification, and per-asset trend', () 
   });
 });
 
+// [W3] docs/scoping/audits/afx-scenario-preservation.md near-term fix: the
+// study list must resolve a source document link two ways — a manually
+// typed reportPdfUrl (unchanged contract, wins if present) or an
+// ingest-linked reportFileKey (resolved to a servable URL at read time,
+// never baked in — an S3 destination's resolved URL is short-lived).
+describe('#25 W3 study source-document link', () => {
+  test('reportFileKey resolves to a servable URL when no manual reportPdfUrl is set', async () => {
+    const s = await request(app).post(`/api/sites/${siteId}/studies`).set('Authorization', auth(manager))
+      .send({ studyType: 'arc_flash', performedDate: '2025-03-01', method: 'IEEE 1584-2018' });
+    const sId = s.body.data.study.id;
+    await prisma.systemStudy.update({ where: { id: sId }, data: { reportFileKey: `${manager.accountId}/arc-flash/fake-key.pdf` } });
+
+    const res = await request(app).get(`/api/sites/${siteId}/studies`).set('Authorization', auth(manager));
+    const row = res.body.data.studies.find((x: any) => x.id === sId);
+    expect(row.reportPdfUrl).toBeNull();
+    expect(row.sourceDocumentUrl).toBe(`/api/documents/file?key=${encodeURIComponent(`${manager.accountId}/arc-flash/fake-key.pdf`)}`);
+  });
+
+  test('a manually-typed reportPdfUrl wins over a linked reportFileKey', async () => {
+    const s = await request(app).post(`/api/sites/${siteId}/studies`).set('Authorization', auth(manager))
+      .send({ studyType: 'arc_flash', performedDate: '2025-03-01', method: 'IEEE 1584-2018', reportPdfUrl: 'https://example.com/study.pdf' });
+    const sId = s.body.data.study.id;
+    await prisma.systemStudy.update({ where: { id: sId }, data: { reportFileKey: `${manager.accountId}/arc-flash/fake-key-2.pdf` } });
+
+    const res = await request(app).get(`/api/sites/${siteId}/studies`).set('Authorization', auth(manager));
+    const row = res.body.data.studies.find((x: any) => x.id === sId);
+    expect(row.sourceDocumentUrl).toBe('https://example.com/study.pdf');
+  });
+
+  test('neither set: sourceDocumentUrl is null, no crash', async () => {
+    const res = await request(app).get(`/api/sites/${siteId}/studies`).set('Authorization', auth(manager));
+    const row = res.body.data.studies.find((x: any) => x.id === studyId); // the very first study created in this file, never got a report link
+    expect(row.sourceDocumentUrl).toBeNull();
+  });
+});
+
 export {};

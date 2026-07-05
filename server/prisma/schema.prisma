@@ -1369,7 +1369,15 @@ model SystemStudy {
   // Why a re-study happened before the 5yr clock: "system_change",
   // "utility_change", "scheduled" â€” free-form for PoC.
   trigger        String?
-  reportPdfUrl   String?
+  reportPdfUrl   String? // user-typed external URL, rendered as a raw <a href> (SiteDetail.jsx)
+  // [W3] Internal storage key for the source PDF this study was ingested
+  // from (routes/arcFlashIngest.ts confirm), when it came through the
+  // arc-flash ingest pipeline rather than a manually-typed reportPdfUrl.
+  // Deliberately a SEPARATE field, not written into reportPdfUrl: a storage
+  // key is not a URL, and for S3 destinations lib/storage.getFileUrl()
+  // returns a short-lived (15-60 min) presigned URL, so resolution must
+  // happen at READ time on every request, never baked in once at confirm.
+  reportFileKey  String?
   notes          String?
   supersededById String? // newer study that replaces this one
   createdAt      DateTime @default(now())

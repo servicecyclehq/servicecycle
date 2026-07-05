@@ -25,7 +25,7 @@ const multer = require('multer');
 const { requireManager } = require('../middleware/roles');
 import prisma from '../lib/prisma';
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
-const { uploadFile } = require('../lib/storage');
+const { uploadFile, getFileUrl } = require('../lib/storage');
 const { extractArcFlashDocument } = require('../lib/arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('../lib/arcFlashGap');
 const { buildCollectionTasks, extractDeviceFromPhoto } = require('../lib/arcFlashDevice');
@@ -684,6 +684,11 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
           performedBy: (sm.studyMeta && sm.studyMeta.peName) || null, method: (sm.studyMeta && sm.studyMeta.method) || null,
           peName: (sm.studyMeta && sm.studyMeta.peName) || null, trigger: 'system_change',
           notes: `${dateWarning}Created from ingested ${ingest.sourceType === 'study_report' ? 'study report' : 'one-line'} (${ingest.fileName || 'upload'}).`,
+          // [W3] Link the source PDF this study was ingested from (asset-precise
+          // via the existing SystemStudyAsset relation bound below) — a raw
+          // storage key, resolved to a URL at READ time, never here (see the
+          // reportFileKey schema comment for why).
+          reportFileKey: ingest.fileKey || null,
         },
         select: { id: true },
       });
@@ -1297,8 +1302,32 @@ function studyAssetOut(s: any) {
       id: st.id, studyType: st.studyType, performedDate: st.performedDate, expiresAt: st.expiresAt,
       method: st.method, peName: st.peName, peLicense: st.peLicense, superseded: !!st.supersededById,
       sourceModel: st.sourceModel ? sourceModelOut(st.sourceModel) : null,
+      // [W3] Raw fields passed through; resolveSourceDocUrl() (async, only run
+      // for the winning "current" row — see GET /asset/:assetId) turns
+      // whichever is present into one servable sourceDocumentUrl.
+      reportPdfUrl: st.reportPdfUrl || null, reportFileKey: st.reportFileKey || null,
     },
   };
+}
+
+// [W3] Resolve a study's linked source document to one servable URL: prefer
+// the manually-typed reportPdfUrl (external link, use as-is); otherwise, if
+// an ingest-confirm linked a reportFileKey, resolve it through storage at
+// READ time (never cached/baked in — see the schema comment on why). Pure
+// passthrough (null) when neither is present.
+async function resolveSourceDocUrl(study: any): Promise<string | null> {
+  if (!study) return null;
+  if (study.reportPdfUrl) return study.reportPdfUrl;
+  if (study.reportFileKey) {
+    try {
+      const { url } = await getFileUrl(study.reportFileKey);
+      return url;
+    } catch (e) {
+      console.error('resolveSourceDocUrl error:', e);
+      return null;
+    }
+  }
+  return null;
 }
 
 // Map a flattened studyAssetOut row + the asset's equipment type into the shape
@@ -1323,7 +1352,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
     const [studyAssetsRaw, devices, tasks, tests, customValues, incidents] = await Promise.all([
       prisma.systemStudyAsset.findMany({
         where: { assetId: asset.id, accountId },
-        include: { study: { select: { id: true, studyType: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true } } },
+        include: { study: { select: { id: true, studyType: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true, reportPdfUrl: true, reportFileKey: true } } },
         orderBy: { createdAt: 'desc' },
       }),
       prisma.protectiveDevice.findMany({ where: { assetId: asset.id, accountId, status: 'active' }, orderBy: { createdAt: 'desc' } }),
@@ -1354,6 +1383,10 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
     });
     const current = sorted[0] || null;
     const danger = current ? (((current.incidentEnergyCalCm2 != null && current.incidentEnergyCalCm2 > 40) || (voltsOf(current.nominalVoltage) || 0) > 600)) : false;
+    // [W3] Only resolve the source-document URL for the winning row — this is
+    // the one thing the Arc Flash tab actually displays; no point resolving
+    // (and for S3, presigning) every superseded row on every page load.
+    if (current) (current as any).study.sourceDocumentUrl = await resolveSourceDocUrl(current.study);
 
     res.json({
       success: true,
