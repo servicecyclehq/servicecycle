@@ -33,6 +33,11 @@ const ACCOUNT_FEATURE_KEYS = [
   "neta_full_battery",    // bulk-apply the full NETA test battery
                           // (OFF = lean manufacturer / 70B program only)
   "parts_module",         // spare-parts catalog + per-asset inventory — default ON (opt-out)
+  "edms",                 // Phase 1 scaffold (2026-07-05, docs/scoping/EDMS_MODULE_SCOPE_2026-07-04.md):
+                          // drawing/document-management module (revisions, annotations,
+                          // seal verification). No routes/UI wired to this flag yet — it
+                          // exists so Phase 2 (routes + revision UI) can gate on it without
+                          // a second migration. Default OFF.
 ];
 
 // Most features are opt-in (default OFF). parts_module is opt-out (default ON).
