@@ -1545,6 +1545,16 @@ app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 app.use('/api/installed-base', authenticateToken, installedBaseRoutes);
 app.use('/api/protection-curves', authenticateToken, protectionCurveRoutes);
 
+// -- EDMS (drawing management) — PLACEHOLDER, feat/edms-phase-1 branch only --
+// Phase 1 (2026-07-05) ships schema + storage foundation ONLY: no routes
+// exist yet. When Phase 2 adds them (docs/scoping/EDMS_MODULE_SCOPE_2026-07-04.md
+// §19), mount here gated the same way installedBase/protectionCurves are,
+// PLUS an accountFeatures('edms') check per request (see lib/accountFeatures.ts) --
+// e.g.:
+//   app.use('/api/drawings', authenticateToken, requireAccountFeature('edms'), drawingRoutes);
+// This comment is intentionally the only trace of that in this file tonight —
+// no route, no requireAccountFeature helper, no drawingRoutes module exist yet.
+
 // ── Access Blockers — missing-access / open-items blocker log ─────────────────
 app.use('/api/access-blockers', authenticateToken, require('./routes/accessBlockers'));
 

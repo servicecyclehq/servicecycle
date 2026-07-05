@@ -310,6 +310,11 @@ model Account {
   // Secret is generated server-side and shown once; never re-surfaced.
   importWebhookUrl         String? // HTTPS URL; stored encrypted
   importWebhookSecret      String? // 32-byte hex; stored encrypted; HMAC-SHA256 signing key
+  // EDMS Phase 1 scaffold (2026-07-05, feat/edms-phase-1 branch, not merged):
+  // tenant-wide EDMS config -- default retention policy, staleness thresholds,
+  // PE-seal display prefs. Not read by any code yet -- see
+  // EDMS_MODULE_SCOPE_2026-07-04.md §5/§15.
+  edmsSettings             Json?
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 
@@ -705,6 +710,12 @@ model Site {
   oneLineDiagramOnFile Boolean   @default(false)
   oneLineDiagramDate   DateTime?
   archivedAt          DateTime? // soft-delete; assets keep their siteId
+  // EDMS Phase 1 scaffold (2026-07-05, feat/edms-phase-1 branch, not merged):
+  // tenant-configurable drawing retention rule for this site, e.g.
+  // {"mode":"keepAllRevisions"} | {"mode":"keepLastN","n":5} |
+  // {"mode":"keepUntilYears","years":7}. Not read by any code yet -- see
+  // EDMS_MODULE_SCOPE_2026-07-04.md §12.
+  retentionPolicy     Json?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -1736,6 +1747,12 @@ model Document {
   // uploading a copy isn't practical. When set, filePath = '__external__' and
   // the serve route redirects instead of streaming bytes.
   externalUrl String?
+  // EDMS Phase 1 scaffold (2026-07-05, feat/edms-phase-1 branch, not merged):
+  // points at the DrawingRevision that is this document's current published
+  // revision. Nullable during migration (Phase 2 backfill sets it retroactively
+  // for every existing Document -- see EDMS_MODULE_SCOPE_2026-07-04.md §14).
+  // No code reads this field yet.
+  currentRevisionId String?
 
   asset      Asset?             @relation(fields: [assetId], references: [id])
   site       Site?              @relation(fields: [siteId], references: [id], onDelete: SetNull)
@@ -1752,6 +1769,154 @@ model Document {
   // download triggers a full table scan.
   @@index([accountId, filePath])
   @@map("documents")
+}
+
+// ─── EDMS Phase 1 scaffold (2026-07-05) ─────────────────────────────────────
+// docs/scoping/EDMS_MODULE_SCOPE_2026-07-04.md §5/§19 Phase 1: schema +
+// storage foundation only. NOT wired to any route, NOT wired to any UI, NOT
+// merged to main. Lives on branch feat/edms-phase-1 until Dustin reviews.
+//
+// Scalar-FK-only pattern (same as ProtectionCurve, 2026-07-05 dbd8386): every
+// cross-model reference below is a plain String column with NO Prisma
+// `@relation` attribute. This is deliberate, not an oversight -- adding real
+// relations means also touching Document/User/Asset's back-relation arrays,
+// which is unnecessary risk for a branch that has zero consumers yet. Phase 2
+// (when routes + a revision UI actually land) is the right time to decide
+// whether real relations earn their keep.
+//
+// Document.currentRevisionId / Site.retentionPolicy / Account.edmsSettings
+// (added below, on those models) are the only touches to existing tables --
+// all nullable, all additive, matching the migration.sql in this same commit.
+
+model DrawingRevision {
+  id                String    @id @default(uuid())
+  accountId         String
+  documentId        String
+  revNo             Int
+  storageKey        String
+  sha256            String
+  sizeBytes         Int
+  sourceFormat      String    @default("pdf") // "pdf" | "dwg" | "dxf" | "image"
+  createdAt         DateTime  @default(now())
+  createdBy         String
+  effectiveDate     DateTime?
+  supersededDate    DateTime?
+  supersededByRevNo Int?
+  workflowState     String    @default("draft") // draft | review | published | superseded
+  approvedBy        String?
+  approvedAt        DateTime?
+  rejectionNote     String?
+  revisionNote      String?
+  isSealed          Boolean   @default(false)
+  sealDetails       Json? // pyHanko validation summary (see also DrawingRevisionSeal for the full record)
+  originalSourceKey String? // stored alongside the converted PDF when source was DWG/DXF
+  originalFormat    String?
+  immutable         Boolean   @default(true) // R2 bucket lock will enforce this in Phase 6; not yet wired
+
+  @@unique([documentId, revNo])
+  @@index([accountId])
+  @@index([documentId])
+  @@index([workflowState])
+  @@map("drawing_revisions")
+}
+
+model DrawingAnnotation {
+  id         String    @id @default(uuid())
+  accountId  String
+  revisionId String
+  authorId   String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  page       Int
+  geometry   Json // {type: "circle|arrow|freehand|text", coords: [...], style: {...}}
+  text       String?
+  resolvedAt DateTime?
+  resolvedBy String?
+
+  @@index([accountId])
+  @@index([revisionId])
+  @@map("drawing_annotations")
+}
+
+model DrawingSymbolLink {
+  id          String   @id @default(uuid())
+  accountId   String
+  revisionId  String
+  page        Int
+  boundingBox Json // {x, y, w, h} on the page, normalized 0-1
+  assetId     String
+  linkedBy    String
+  linkedAt    DateTime @default(now())
+
+  @@index([accountId])
+  @@index([revisionId, page])
+  @@index([assetId])
+  @@map("drawing_symbol_links")
+}
+
+model DrawingShareLink {
+  id          String    @id @default(uuid())
+  accountId   String
+  revisionId  String
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  requireAuth Boolean   @default(false)
+  canComment  Boolean   @default(false)
+  revokedAt   DateTime?
+  accessLog   Json      @default("[]") // array of {viewedAt, ip, userAgent}
+
+  @@index([accountId])
+  @@index([revisionId])
+  @@index([expiresAt])
+  @@map("drawing_share_links")
+}
+
+// text/tsvector split: `text` is a normal Prisma-managed column (written by
+// the extraction pipeline); `tsvector` is a Postgres GENERATED column Prisma
+// cannot express, so it's declared Unsupported (excluded from Prisma Client
+// entirely) and created by hand in migration.sql alongside its GIN index --
+// see docs/scoping/EDMS_MODULE_SCOPE_2026-07-04.md §5 "GIN index migration".
+model DrawingPageText {
+  id               String                  @id @default(uuid())
+  accountId        String
+  revisionId       String
+  page             Int
+  text             String
+  tsvector         Unsupported("tsvector")?
+  extractedAt      DateTime                @default(now())
+  extractionMethod String // "pdf_text_layer" | "tesseract" | "rapidocr" | "gemini_vision"
+
+  @@index([accountId])
+  @@index([revisionId])
+  @@map("drawing_page_texts")
+}
+
+// Full pyHanko validation record. DrawingRevision.sealDetails carries a
+// lightweight summary for quick reads; this table is the audit-grade detail
+// (cert chain, OCSP/CRL check, per-signer breakdown) referenced by
+// docs/scoping/EDMS_MODULE_SCOPE_2026-07-04.md §11. Nothing calls pyHanko yet
+// (Phase 5) -- this table exists now purely so Phase 5 doesn't need its own
+// migration.
+model DrawingRevisionSeal {
+  id                 String    @id @default(uuid())
+  accountId           String
+  revisionId          String
+  signatureIndex      Int       @default(0) // a PDF can carry multiple signatures
+  signerCommonName    String?
+  signerOrg           String?
+  peLicenseNumber     String?
+  certChainValid      Boolean?
+  timestampValid      Boolean?
+  revocationStatus    String? // "good" | "revoked" | "unknown" | "check_failed"
+  selfSignedCert      Boolean   @default(false) // flags e.g. FL's third-party-CA requirement
+  validationOutcome   String // "verified" | "invalid" | "unsealed_attested"
+  rawResult           Json? // full pyHanko output, for audit/debugging
+  validatedAt         DateTime  @default(now())
+
+  @@index([accountId])
+  @@index([revisionId])
+  @@map("drawing_revision_seals")
 }
 
 model Communication {
