@@ -26,7 +26,9 @@
       "testDate": "2022-06-14",
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 12500, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 28800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 9340, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 21400, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
         { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.31, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false },
         { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.34, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "GREEN", "critical": false }
       ]
@@ -59,8 +61,12 @@
       "testDate": "2023-09-08",
       "measurements": [
         { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 1240, "asFoundUnit": "ppm", "expectedRange": "<=100", "passFail": "RED", "critical": true },
+        { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 318, "asFoundUnit": "ppm", "expectedRange": "<=120", "passFail": "YELLOW", "critical": false },
         { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 38, "asFoundUnit": "ppm", "expectedRange": "<=1", "passFail": "RED", "critical": true },
         { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 405, "asFoundUnit": "ppm", "expectedRange": "<=50", "passFail": "RED", "critical": true },
+        { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 44, "asFoundUnit": "ppm", "expectedRange": "<=65", "passFail": "GREEN", "critical": false },
+        { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 472, "asFoundUnit": "ppm", "expectedRange": "<=350", "passFail": "YELLOW", "critical": false },
+        { "measurementType": "dissolved_gas", "phase": null, "asFoundValue": 3920, "asFoundUnit": "ppm", "expectedRange": "<=2500", "passFail": "YELLOW", "critical": false },
         { "measurementType": "power_factor", "phase": null, "asFoundValue": 2.14, "asFoundUnit": "%", "expectedRange": "<=1.0", "passFail": "RED", "critical": true }
       ]
     }
@@ -91,6 +97,7 @@
       "testDate": "2021-04-22",
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 3850, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 6240, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
         { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.62, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false },
         { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.68, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
       ]
@@ -124,6 +131,7 @@
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 0, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "RED", "critical": true },
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 11200, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 26400, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 14800, "asFoundUnit": "MΩ", "expectedRange": ">=5000", "passFail": "GREEN", "critical": false },
         { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.71, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
       ]
@@ -156,6 +164,7 @@
       "testDate": "2020-08-17",
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 6800, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 16300, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 5210, "asFoundUnit": "MΩ", "expectedRange": ">=1000", "passFail": "GREEN", "critical": false },
         { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.4, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false },
         { "measurementType": "power_factor", "phase": null, "asFoundValue": 0.83, "asFoundUnit": "%", "expectedRange": "<=0.5", "passFail": "YELLOW", "critical": false }
@@ -325,6 +334,7 @@
       "testDate": "2023-02-27",
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 850, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 3570, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
         { "measurementType": "polarization_index", "phase": null, "asFoundValue": 4.2, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false }
       ]
     }
@@ -354,6 +364,7 @@
       "testDate": "2024-01-16",
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 42, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "RED", "critical": true },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 109, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
         { "measurementType": "polarization_index", "phase": null, "asFoundValue": 2.6, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "GREEN", "critical": false }
       ]
     }
@@ -383,6 +394,7 @@
       "testDate": "2015-06-09",
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 145, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 276, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "GREEN", "critical": false },
         { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.9, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false }
       ]
     }
@@ -412,6 +424,7 @@
       "testDate": "2019-08-24",
       "measurements": [
         { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 1.2, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "RED", "critical": true },
+        { "measurementType": "insulation_resistance", "phase": null, "asFoundValue": 1.3, "asFoundUnit": "MΩ", "expectedRange": ">=100", "passFail": "RED", "critical": true },
         { "measurementType": "polarization_index", "phase": null, "asFoundValue": 1.1, "asFoundUnit": "ratio", "expectedRange": ">=2.0", "passFail": "YELLOW", "critical": false }
       ]
     }
