@@ -416,6 +416,16 @@ model IngestJob {
   result          Json? // the preview payload (same shape as POST /preview data)
   error           String?
   attempts        Int             @default(0)
+  // 2026-07-05 (§11 A2 Half 1 -- queue-side checkpoint plumbing only; the
+  // parser itself does not yet resume from a page, that is Half 2, a future
+  // session). `lastGoodPage` is the last page the extractor confirmed it
+  // finished; a retried job passes it to the builder as a `resumeFrom` hint
+  // today the builder call is a stub that only LOGS having received the hint
+  // (see lib/ingestWorker.ts). `pageProgress` mirrors the same info in a
+  // richer shape ({ totalPages, pagesCompleted, lastError }) for a future
+  // polling UI. Both null until a job actually runs.
+  lastGoodPage    Int?
+  pageProgress    Json?
   // Confidence-gate review (auto-commit safety). The worker scores the parsed
   // preview: high-confidence identity + readings auto-commit; anything below the
   // bar parks as needs_review for human approval. `gate` stores the decision

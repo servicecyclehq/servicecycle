@@ -87,10 +87,21 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
     const buffer = await downloadFile(job.fileKey);
 
     await prisma.ingestJob.update({ where: { id: job.id }, data: { progress: 40, phase: 'parsing' } });
+    // 2026-07-05 (§11 A2 Half 1): pass the last confirmed-good page from a
+    // prior attempt as a `resumeFrom` hint. THIS IS SCAFFOLDING ONLY --
+    // buildTestReportPreview / extract_fields() do not yet know how to
+    // actually resume mid-document (that contract change, extract_fields()
+    // yielding per-page, is Half 2 -- a future supervised session). Today the
+    // hint is accepted and logged so the queue-side plumbing is in place
+    // before the parser-side change lands; it has zero effect on the parse.
+    if (job.lastGoodPage != null) {
+      console.log(`[ingestWorker] job ${job.id}: resumeFrom=${job.lastGoodPage} received (parser support pending, Half 2 -- no-op today)`);
+    }
     const result = await buildPreview(buffer, {
       accountId: job.targetAccountId || job.accountId,
       userId:    job.createdById || job.accountId,
       originalName: job.fileName || undefined,
+      resumeFrom: job.lastGoodPage ?? undefined,
     });
 
     // Confidence gate (email-in / backfill, i.e. hands-off autoCommit jobs).
@@ -154,9 +165,22 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
       }
     }
 
+    // 2026-07-05 (§11 A2 Half 1): a successful job implies every page the
+    // extractor scanned was "good" -- record the checkpoint so a future
+    // Half-2 resume path (or just operator visibility into how much of a
+    // large document was actually read) has real data. `pageCount` is
+    // `null` when the extractor didn't report a page count (e.g. the pdfjs
+    // fallback path); in that case leave the checkpoint fields null rather
+    // than writing a misleading 0/undefined.
+    const totalPages = (result as any)?.pageCount ?? null;
+    const pagesScanned = (result as any)?.pagesScanned ?? totalPages;
+    const checkpoint = totalPages != null
+      ? { lastGoodPage: totalPages, pageProgress: { totalPages, pagesCompleted: pagesScanned, lastError: null } }
+      : {};
+
     await prisma.ingestJob.update({
       where: { id: job.id },
-      data:  { status: 'done', progress: 100, phase: 'ready', result, gate: gate || undefined, error: null, finishedAt: new Date() },
+      data:  { status: 'done', progress: 100, phase: 'ready', result, gate: gate || undefined, error: null, finishedAt: new Date(), ...checkpoint },
     });
 
     // Best-effort completion breadcrumb (the "we'll notify you" hook). Never
@@ -174,11 +198,19 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
     const msg = e && e.message ? String(e.message).slice(0, 500) : 'ingest failed';
     // Retry by requeueing while attempts remain; otherwise fail terminally.
     const terminal = (job.attempts || 1) >= MAX_ATTEMPTS;
+    // 2026-07-05 (§11 A2 Half 1): best-effort checkpoint on failure. The
+    // extractor doesn't yet report a partial page count on a thrown
+    // exception (that plumbing is Half 2), so `lastGoodPage` is left exactly
+    // as it was on this job -- i.e. whatever a PRIOR successful attempt
+    // already recorded, never overwritten with a guess. `pageProgress.lastError`
+    // is still recorded so a future polling UI has something to show even
+    // when the resume checkpoint itself can't move.
+    const pageProgress = { lastError: msg };
     await prisma.ingestJob.update({
       where: { id: job.id },
       data: terminal
-        ? { status: 'failed', error: msg, phase: 'failed', finishedAt: new Date() }
-        : { status: 'queued', error: msg, phase: 'retry pending', startedAt: null },
+        ? { status: 'failed', error: msg, phase: 'failed', finishedAt: new Date(), pageProgress }
+        : { status: 'queued', error: msg, phase: 'retry pending', startedAt: null, pageProgress },
     });
     if (terminal) console.error(`[ingestWorker] job ${job.id} failed permanently:`, msg);
     return 'failed';
