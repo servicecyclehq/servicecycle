@@ -312,20 +312,28 @@ that work isn't done twice):
    `buildFillUpdates` writes voltage + cable fields only); capture as-left
    values (NETA MTS 5.4 requires both as-found and as-left; only as-found is
    captured today).
-3. **Raw source document promotion into the site document library.**
+3. **Raw source document linking — asset-precise, not just site-wide.**
    Confirmed 2026-07-05: arc-flash source PDFs ARE durably saved today
    (`uploadFile()` call in `routes/arcFlashIngest.ts:256`, keyed to the site)
-   — they are not lost. But the file lives only as `ArcFlashIngest.fileKey`
-   on the ingest/draft table; it is never promoted into the general
-   `Document` model (schema.prisma:1766) that powers the site's document
-   library / "most recent file for this site" browsing surface. `DocType`
-   (schema.prisma:217) has no arc-flash-study category. Net effect: the
-   original study PDF an engineer would want to pull up on site is on disk
-   but effectively undiscoverable through the normal document UI. Fix: on
-   ingest confirm, also create a `Document` row (siteId, a new `arc_flash_study`
-   `DocType` value, provenance) pointing at the same storage key, so it
-   surfaces alongside one-lines and test reports like any other site
-   document.
+   — they are not lost. Better than that: `SystemStudy` (schema.prisma:1372)
+   already has a `reportPdfUrl String?` field, clearly built for exactly this
+   purpose. But the confirm handler that creates a `SystemStudy`
+   (`routes/arcFlashIngest.ts:612-621`) never populates it, even though
+   `ingest.fileKey` — the original file's storage key — is in scope at that
+   exact call site. `ArcFlashAssetTab.jsx` has no code referencing it either.
+   Built, never wired. Fix (small, precise): at confirm, set
+   `reportPdfUrl` from `ingest.fileKey`; add a "view original study PDF" link
+   on the Arc Flash tab of every asset the study covers, via the existing
+   `SystemStudyAsset` relationship — this gives exact per-asset precision
+   (a tech sees the one PDF that produced that asset's numbers) for free,
+   no new join table needed. Secondary/complementary: also promote into the
+   general `Document` model (schema.prisma:1766, siteId-scoped — the existing
+   `GET /documents/asset/:assetId` query at `routes/documents.ts:356-360`
+   already unions `assetId` and site-level docs, so this would surface
+   automatically) so the file is also discoverable via the general site
+   document library, for whole-site review rather than one-asset lookup.
+   `DocType` (schema.prisma:217) needs a new `arc_flash_study` value for that
+   path.
 4. **Eval/golden-set fidelity audit.** Found in passing: the golden test
    corpus's own ground truth already under-represents reality in at least one
    case (a DGA sample's ground truth lists 3 of 8 gases present in the
@@ -352,14 +360,23 @@ that work isn't done twice):
    them, SC derives them from NFPA 70E Table 130.4 by voltage and labels the
    source (`shockLimitedApproachSource: 'study' | 'table130_4'`,
    `arcFlashLabelDoc.ts:90-91`) rather than leaving them blank or guessing.
-   Remaining gap, low priority: if a source study reports a *site-specific*
-   shock boundary that differs from the standard table (uncommon but
-   possible), that override isn't captured from the PDF today — the table
-   fallback is the only path. Any *other* newly-captured field from item 2
-   that should reach an asset template or detail page (not just the label)
-   still needs its own UI pass with visual review before shipping — capture
-   in the database is not the same as a field being visible anywhere a user
-   looks.
+   Remaining gap: if a source study reports a *site-specific* shock boundary
+   that differs from the standard table, that override isn't captured from
+   the PDF today — the table fallback is the only path currently wired.
+   **Correction (2026-07-05, Dustin):** a working fallback does not
+   deprioritize capturing the real value — SC is a data-capture engine first;
+   if a report states a value, that value gets captured, full stop, whether
+   or not a reasonable default already covers the common case. This item is
+   in scope at the same priority as everything else in this program, not a
+   "nice to have." More generally: any other place in the pipeline where a
+   computed/derived/default value stands in for something a source document
+   already states is the same class of gap and should be hunted for, not
+   just this one instance — flag any further ones found during item 2's
+   implementation rather than assuming this was the only one. Any *other*
+   newly-captured field from item 2 that should reach an asset template or
+   detail page (not just the label) still needs its own UI pass with visual
+   review before shipping — capture in the database is not the same as a
+   field being visible anywhere a user looks.
 7. **Historical backfill — deferred, not currently needed.** All of the
    above is a forward-looking fix. Re-ingesting already-uploaded source
    documents against the improved pipeline would only matter once there is
