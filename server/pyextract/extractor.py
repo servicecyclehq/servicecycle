@@ -590,7 +590,7 @@ _NUMTOK_RE = re.compile(r"-?[\d,]+(?:\.\d+)?")
 # The Ω on tesseract's 4.x line commonly comes back as "?" or "Q"; without
 # these aliases the WINDING/H-G/X-G IR blocks in reports 003 / 004 were
 # silently dropped even when the numbers themselves read cleanly.
-_MOHM_HDR_RE = re.compile(r"Μ\s?Ω|MΩ|M\?|MQ|M0hm|Nchm", re.I)
+_MOHM_HDR_RE = re.compile(r"Μ\s?Ω|MΩ|M\?|MQ|M0hm|Mohm|Nchm", re.I)
 _UNITCOL_RE = re.compile(r"\(([A-Za-zµ%]+)\)")
 _DGA_ROW_RE = re.compile(
     r"^\*?\s*([A-Za-z][A-Za-z0-9 /.]*?)\s*\((ppm|ppb)\)\s*:?\s*"
@@ -1341,7 +1341,77 @@ def _section_for_offset(off, raw_spans):
     return idx
 
 
+# ── Garbled-tier structural normalization (2026-07-05) ──────────────────────
+# The golden-set garbled tier (reports 005/008/012/016/020, parser recall
+# stuck at 10% since the 2026-07-04 morning session) was previously attacked
+# with a digit-confusable fix (_ocr_noise_fix, since reverted -- see
+# INGESTION_ARCHITECTURE.md / the 2026-07-05 overnight recap) that targeted
+# 0<->O confusion WITHIN a numeric token. That fix produced zero eval
+# movement because it targeted the wrong axis: reading the actual golden
+# fixtures shows the real corruption is structural, not per-digit:
+#
+#   1. Whole-WORD letter-O -> digit-0 substitution in LABEL/header text
+#      (P0WERDB, INSULATI0N, C0NTACT, 0VERALL, M0DEL, D0BLE, ...). The
+#      numeric VALUES read fine (6800, 5210, 0.83) -- it's the label/header
+#      words feeding classify_label()/MEASUREMENT_LIBRARY lookups that don't
+#      match because they're not spelled correctly.
+#   2. A value split across a hard line-wrap mid-digit-run: "H-G 68\n00
+#      M0hm..." is the real value 6800 rendered as "68" then "00" on the
+#      next line -- a rendering/line-break artifact, not a misread digit.
+#
+# Both are fixed here as a narrow, reversible TEXT normalization applied once
+# before any label/measurement parsing runs, rather than patching every
+# individual regex to tolerate the corruption piecemeal.
+_OCR_ZERO_AS_O_RE = re.compile(
+    r"(?<=[A-Za-z])0(?=[A-Za-z])"    # letter-0-letter, e.g. P0WERDB, M0DEL
+    r"|(?<=[A-Za-z])0\b"             # letter-0-boundary, e.g. DLR0, C0NDITI0N's trailing case
+    r"|\b0(?=[A-Za-z])"              # boundary-0-letter, e.g. 0VERALL, 0ILTEMP
+)
+# Deliberately excludes 0-flanked-by-digit (real numbers like "6800", "2018")
+# and 0-flanked-by-boundary-on-both-sides (a bare "0" token) -- a 0 only gets
+# rewritten when it's actually touching a letter, which never happens in a
+# genuine number. Alphanumeric IDs where 0 sits between a letter and a DIGIT
+# (e.g. serial "SW93-C0182-B") are also left untouched (only one side is a
+# letter; the other is a digit, not a letter-or-boundary), since that shape
+# is ambiguous and not what this fix targets.
+
+# Narrow Ω (omega) -> plain "O" misread, seen ONLY inside a unit parenthetical
+# ("DLR0 (uO)" for "(µΩ)"). Scoped tightly to u/µ/M immediately followed by a
+# bare "O" inside parens -- nowhere near broad enough to touch prose "O"s.
+_OCR_OMEGA_AS_O_RE = re.compile(r"\(([uµM])O\)")
+
+# A value's digits split by a hard line-wrap: a short (1-3 digit) run ending
+# a line with nothing else after it, immediately followed by another short
+# digit run starting the next line. Capped at 3 digits/side so it can only
+# ever rejoin what looks like a wrapped token, never swallow an unrelated
+# multi-digit reading that legitimately opens the next line. The exact
+# capture boundary doesn't affect correctness (see the fix's own dev notes):
+# the substitution only deletes the newline/whitespace GAP between two
+# digit runs, so any digits outside the match stay exactly where they were.
+_OCR_WRAPPED_NUMBER_RE = re.compile(r"(\d{1,3})[ \t]*\n[ \t]*(\d{1,3})(?=\D|$)")
+
+
+def _ocr_garbled_normalize(text):
+    """Best-effort repair of the two garbled-tier corruption patterns above.
+    Idempotent and safe to run on already-clean text -- both regexes require
+    a specific corruption signature (a 0 touching a letter; a digit run
+    ending one line and another starting the very next) that simply doesn't
+    occur in correctly-OCR'd or digital-text-layer PDFs, so this is a no-op
+    on the clean/partial tiers (verified via the eval harness, not assumed).
+    """
+    if not text:
+        return text
+    text = _OCR_OMEGA_AS_O_RE.sub(lambda m: "(%sΩ)" % ("µ" if m.group(1) in ("u", "µ") else "M"), text)
+    text = _OCR_ZERO_AS_O_RE.sub("O", text)
+    prev = None
+    while prev != text:                    # a value can wrap more than once
+        prev = text
+        text = _OCR_WRAPPED_NUMBER_RE.sub(r"\1\2", text)
+    return text
+
+
 def extract_measurements(cells, page_tables, full_text=""):
+    full_text = _ocr_garbled_normalize(full_text)
     table_out = _column_tables(page_tables)              # clean column tables
     grid_out = _powerdb_grids(full_text)                 # PowerDB unit-in-header grids
     dga_out = _dga_readings(full_text)                   # DGA <=LIMIT-anchored table rows (report_002 class)
@@ -1565,6 +1635,13 @@ def extract_fields(path: str, mode: str = "all", resume_from: int = None):
     # in this pipeline uses U+03A9 GREEK OMEGA / U+00B5 — normalize once here so
     # "Μ Ω" megohm headers and µΩ readings actually match.
     text = text.replace("Ω", "Ω").replace("μ", "µ")
+
+    # A2-adjacent garbled-tier fix (2026-07-05): normalize the whole-word O<->0
+    # OCR corruption + line-wrapped-value split (see _ocr_garbled_normalize's
+    # docstring above extract_measurements) so extract_header()'s label
+    # matching benefits too. Idempotent -- extract_measurements() re-applies
+    # it to its own input regardless, so this is purely additive here.
+    text = _ocr_garbled_normalize(text)
 
     header = extract_header(cells, text)
     measurements = extract_measurements(cells, line_tables, text)  # already deduped
