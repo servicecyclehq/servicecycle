@@ -258,6 +258,7 @@ const lotoRoutes            = require('./routes/loto');
 const disasterEventRoutes   = require('./routes/disasterEvents');
 const arcFlashIncidentRoutes = require('./routes/arcFlashIncidents'); // ESP-5 arc-flash incident register
 const installedBaseRoutes   = require('./routes/installedBase'); // IBI: fleet benchmarks + modernization pipeline + attach-rate
+const protectionCurveRoutes = require('./routes/protectionCurves'); // TCC backend prep (2026-07-05, §10 A3) — schema+API only, no UI yet
 const leaveBehindRoutes     = require('./routes/leaveBehind');
 const { authenticateApiKey, apiKeyLimiter } = require('./middleware/apiKeyAuth');
 const { requestId }                      = require('./middleware/requestId'); // v0.37.1 W5 MT-129
@@ -1542,6 +1543,7 @@ app.use('/api/quote-requests', authenticateToken, quoteRequestRoutes);
 
 // -- Installed-Base Intelligence - fleet benchmarks / modernization pipeline / attach-rate --
 app.use('/api/installed-base', authenticateToken, installedBaseRoutes);
+app.use('/api/protection-curves', authenticateToken, protectionCurveRoutes);
 
 // ── Access Blockers — missing-access / open-items blocker log ─────────────────
 app.use('/api/access-blockers', authenticateToken, require('./routes/accessBlockers'));

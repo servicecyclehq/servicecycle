@@ -3249,6 +3249,48 @@ model DeviceTestRecord {
   @@map("device_test_records")
 }
 
+// --- Protection coordination curves (TCC) ----------------------------------
+// 2026-07-05 backend prep for the interactive TCC visualization (A3). Scalar
+// FKs only (pure-append migration), matching ArcFlashCollectionTask /
+// ArcFlashIncident above.
+//
+// IMPORTANT — read docs/scoping/audits/tcc-curve-source-availability.md
+// before assuming this table is populated by AFX import: it is NOT. Audited
+// 2026-07-05 and confirmed that none of SC's existing ingestion paths (AFX
+// v1/v1.2, the results-CSV round-trip, the AI-vision one-line extractor, or
+// the SKM/EasyPower/ETAP tool templates) carry or expose actual curve POINT
+// data — they carry computed incident-energy/PPE RESULTS and device
+// nameplate/trip-SETTINGS (see ProtectiveDevice.settings above), which are
+// the *input* to a TCC, not the curve itself. `dataSource` exists precisely
+// so every row is honest about where its points came from — a licensed PE
+// reviewing a printed TCC needs to know whether a curve is a real
+// manufacturer curve or a class-typical estimate from arcFlashTccLibrary.ts.
+model ProtectionCurve {
+  id                 String    @id @default(uuid())
+  accountId          String
+  assetId            String? // the protected bus/asset, once known
+  protectiveDeviceId String? // -> ProtectiveDevice, if this curve belongs to a collected device
+  source             String    @default("manual") // skm | easypower | etap | manual
+  deviceLabel        String // human label, e.g. "Main CB 52-M1" (mirrors ProtectiveDevice.label)
+  deviceModel        String?
+  curveType          String    @default("breaker") // relay | fuse | breaker | tcc
+  // Provenance of the actual point data below — see the model comment above.
+  // 'tcc_library_estimate' rows are backed by arcFlashTccLibrary.ts's
+  // class-typical clearing time, NOT a digitized manufacturer curve.
+  dataSource         String    @default("manual") // manual | manufacturer_pdf | afx_import | tcc_library_estimate
+  curvePoints        Json? // array of { current: number, time: number } — null/empty until populated
+  settings           Json? // pickup, timeDial, instantaneous, etc. — mirrors ProtectiveDevice.settings shape
+  sourceDocumentId   String? // -> Document, the ingested study/curve source, if any
+  createdById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([assetId])
+  @@index([protectiveDeviceId])
+  @@map("protection_curves")
+}
+
 // --- Arc-flash incident / near-miss register -------------------------------
 // Slice: a MANUAL event log the customer creates (SC detects nothing). On log,
 // SC snapshots the bus's current arc-flash data state so the record is self-
