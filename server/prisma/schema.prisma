@@ -382,6 +382,11 @@ model Account {
   assetPartRequirements AssetPartRequirement[]
   workOrderPartUsages  WorkOrderPartUsage[]
 
+  // A4 work-order chat + photo annotation (2026-07-05, docs/scoping/audits/
+  // wo-chat-annotation-research.md Option 2) -- backend-only slice, no UI yet.
+  workOrderComments   WorkOrderComment[]
+  documentAnnotations DocumentAnnotation[]
+
   @@index([enterpriseGroupId])
   @@map("accounts")
 }
@@ -575,6 +580,8 @@ model User {
   ackedTelemetryNotifs    TelemetryNotification[] @relation("TelemetryNotificationAck")
   ssoHandoffs             SsoHandoff[]
   assignedWorkOrders      WorkOrder[]             @relation("WorkOrderAssignee")
+  workOrderComments       WorkOrderComment[]
+  documentAnnotations     DocumentAnnotation[]
 
   // SCIM upsert key: (directory, externalId) is unique per directory. Both
   // NULL for password users — Postgres NULLs are distinct so no collision.
@@ -1136,6 +1143,7 @@ model WorkOrder {
   labSamples   LabSample[]
   documents    Document[]
   partsUsed    WorkOrderPartUsage[]
+  comments     WorkOrderComment[]
 
   @@index([accountId])
   @@index([accountId, status])
@@ -1146,6 +1154,37 @@ model WorkOrder {
   @@index([contractorId])
   @@index([assignedUserId])
   @@map("work_orders")
+}
+
+// ─── Work-order comments (A4, 2026-07-05) ──────────────────────────────────
+// docs/scoping/audits/wo-chat-annotation-research.md Option 1/2: a flat
+// per-WorkOrder comment feed, deliberately NOT merged into the hash-chained
+// ActivityLog (that chain's value is immutability of compliance facts; a
+// free-form, editable/soft-deletable chat feed is a different kind of data
+// -- see the memo's §3e). Comment creation fires a summary ActivityLog event
+// (action: 'work_order_comment_added') from the route layer so auditors get
+// a tamper-evident breadcrumb without the mutable body living in the chain.
+// Backend-only for now -- no UI, no client changes (see task scoping: no-UI
+// -without-visual-review).
+model WorkOrderComment {
+  id          String    @id @default(uuid())
+  accountId   String
+  workOrderId String
+  authorId    String
+  body        String    @db.VarChar(4000)
+  createdAt   DateTime  @default(now())
+  editedAt    DateTime?
+  // Soft delete, mirrors TestMeasurement's evidence-retention pattern --
+  // never truly gone, just excluded from reads.
+  deletedAt   DateTime?
+
+  account   Account   @relation(fields: [accountId], references: [id])
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id])
+
+  @@index([accountId])
+  @@index([workOrderId, createdAt])
+  @@map("work_order_comments")
 }
 
 // â”€â”€â”€ Test Measurements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1757,9 +1796,10 @@ model Document {
   asset      Asset?             @relation(fields: [assetId], references: [id])
   site       Site?              @relation(fields: [siteId], references: [id], onDelete: SetNull)
   workOrder  WorkOrder?         @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
-  account    Account            @relation(fields: [accountId], references: [id])
-  uploader   User               @relation("Uploader", fields: [uploadedBy], references: [id])
-  ingestions IngestionSession[]
+  account     Account              @relation(fields: [accountId], references: [id])
+  uploader    User                 @relation("Uploader", fields: [uploadedBy], references: [id])
+  ingestions  IngestionSession[]
+  annotations DocumentAnnotation[]
 
   @@index([accountId])
   @@index([assetId])
@@ -1769,6 +1809,38 @@ model Document {
   // download triggers a full table scan.
   @@index([accountId, filePath])
   @@map("documents")
+}
+
+// ─── Document (photo) annotation (A4, 2026-07-05) ──────────────────────────
+// docs/scoping/audits/wo-chat-annotation-research.md Option 2 / §3d Option C:
+// simple tap-to-pin markers on a photo, stored as a strict subset of the
+// vector-shape JSON shape so v2 (arrows/freehand) needs zero migration --
+// only new `type` values the (future) UI validates and renders. x/y are
+// 0-1 fractions of image width/height (not pixels) so a pin survives any
+// client-side resize/thumbnail rendering. No new upload path -- annotations
+// are pure metadata on top of the existing Document/storage.ts pipeline.
+// Never auto-flattened into the image; a baked-in export (if ever needed for
+// a PDF leave-behind report) would be a separate, explicit operation.
+// Backend-only for now -- no UI, no client changes.
+model DocumentAnnotation {
+  id         String    @id @default(uuid())
+  accountId  String
+  documentId String
+  authorId   String
+  // [{ type: "pin", x: 0.42, y: 0.61, text: "cracked bushing" }, ...]
+  // v1 route validation only accepts type:"pin"; "arrow"/"text" are reserved
+  // for v2 and rejected for now (see routes/documents.ts).
+  shapes     Json
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  account  Account  @relation(fields: [accountId], references: [id])
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id])
+
+  @@index([accountId])
+  @@index([documentId])
+  @@map("document_annotations")
 }
 
 // ─── EDMS Phase 1 scaffold (2026-07-05) ─────────────────────────────────────

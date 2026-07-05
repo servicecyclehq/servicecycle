@@ -1488,6 +1488,154 @@ router.delete('/:id/parts/:usageId', requireManager, async (req, res) => {
   }
 });
 
+// ─── Work-order comments (A4, 2026-07-05) ───────────────────────────────────
+// docs/scoping/audits/wo-chat-annotation-research.md Option 2: a flat,
+// non-hash-chained comment feed (see WorkOrderComment's schema comment for
+// why this is deliberately NOT folded into the ActivityLog chain). Backend
+// only -- no UI wiring yet.
+//
+// PUT/DELETE address a comment directly by its own id (not nested under
+// /:id/comments/:cid) so a client never needs to know the parent work order
+// id to edit/delete a comment it already has in hand -- same flat-addressing
+// shape the rest of this file uses for /parts/:usageId.
+
+// ─── GET /api/work-orders/:id/comments ──────────────────────────────────────
+router.get('/:id/comments', async (req, res) => {
+  try {
+    const wo = await prisma.workOrder.findFirst({
+      where:  { id: req.params.id, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const comments = await prisma.workOrderComment.findMany({
+      where:   { workOrderId: req.params.id, accountId: req.user.accountId, deletedAt: null },
+      include: { author: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return res.json({ success: true, data: { comments } });
+  } catch (err) {
+    console.error('List work order comments error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to list comments' });
+  }
+});
+
+// ─── POST /api/work-orders/:id/comments ─────────────────────────────────────
+// Body: { body }. Fires a summary ActivityLog event on success (see schema
+// comment on WorkOrderComment) -- the mutable comment body itself never
+// enters the hash chain.
+router.post('/:id/comments', requireManager, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+    if (!body) return res.status(400).json({ success: false, error: 'body is required' });
+    if (body.length > 4000) {
+      return res.status(400).json({ success: false, error: 'body must be 4000 characters or fewer' });
+    }
+
+    const wo = await prisma.workOrder.findFirst({
+      where:  { id, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const comment = await prisma.workOrderComment.create({
+      data: {
+        accountId:   req.user.accountId,
+        workOrderId: id,
+        authorId:    req.user.id,
+        body,
+      },
+      include: { author: { select: { id: true, name: true } } },
+    });
+
+    writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    'work_order_comment_added',
+      details:   { commentId: comment.id, workOrderId: id },
+    }).catch(() => {});
+
+    return res.status(201).json({ success: true, data: { comment } });
+  } catch (err) {
+    console.error('Add work order comment error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to add comment' });
+  }
+});
+
+// ─── PUT /api/work-orders/comments/:cid ─────────────────────────────────────
+// Editable by the comment's own author, or by a manager/admin (moderation).
+router.put('/comments/:cid', async (req, res) => {
+  try {
+    const { cid } = req.params;
+    const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+    if (!body) return res.status(400).json({ success: false, error: 'body is required' });
+    if (body.length > 4000) {
+      return res.status(400).json({ success: false, error: 'body must be 4000 characters or fewer' });
+    }
+
+    const existing = await prisma.workOrderComment.findFirst({
+      where: { id: cid, accountId: req.user.accountId, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Comment not found' });
+
+    const isOwner = existing.authorId === req.user.id;
+    const isModerator = req.user.role === 'admin' || req.user.role === 'manager';
+    if (!isOwner && !isModerator) {
+      return res.status(403).json({ success: false, error: 'Not authorized to edit this comment' });
+    }
+
+    const comment = await prisma.workOrderComment.update({
+      where:   { id: cid },
+      data:    { body, editedAt: new Date() },
+      include: { author: { select: { id: true, name: true } } },
+    });
+
+    return res.json({ success: true, data: { comment } });
+  } catch (err) {
+    console.error('Edit work order comment error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to edit comment' });
+  }
+});
+
+// ─── DELETE /api/work-orders/comments/:cid ──────────────────────────────────
+// Soft delete (mirrors TestMeasurement's evidence-retention convention) --
+// author or manager/admin only. Fires an ActivityLog breadcrumb.
+router.delete('/comments/:cid', async (req, res) => {
+  try {
+    const { cid } = req.params;
+
+    const existing = await prisma.workOrderComment.findFirst({
+      where: { id: cid, accountId: req.user.accountId, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Comment not found' });
+
+    const isOwner = existing.authorId === req.user.id;
+    const isModerator = req.user.role === 'admin' || req.user.role === 'manager';
+    if (!isOwner && !isModerator) {
+      return res.status(403).json({ success: false, error: 'Not authorized to delete this comment' });
+    }
+
+    await prisma.workOrderComment.update({
+      where: { id: cid },
+      data:  { deletedAt: new Date() },
+    });
+
+    writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    'work_order_comment_deleted',
+      details:   { commentId: cid, workOrderId: existing.workOrderId },
+    }).catch(() => {});
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Delete work order comment error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to delete comment' });
+  }
+});
+
 module.exports = router;
 
 export {};

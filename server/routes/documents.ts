@@ -683,6 +683,154 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
   }
 });
 
+// ─── Document (photo) annotation (A4, 2026-07-05) ───────────────────────────
+// docs/scoping/audits/wo-chat-annotation-research.md Option 2 / §3d Option C:
+// simple tap-to-pin markers. No new upload path -- pure metadata on top of
+// the existing Document/storage.ts pipeline. v1 validation only accepts
+// {type:"pin", x, y, text?}; "arrow"/"text" shape types are reserved for a
+// later UI pass and rejected here for now, matching the DocumentAnnotation
+// schema comment (the JSON column itself already accommodates them so v2
+// needs zero migration -- only a validation change). Backend only, no UI yet.
+const MAX_ANNOTATION_SHAPES = 50;
+const MAX_ANNOTATION_TEXT_LEN = 500;
+
+function validatePinShapes(shapes) {
+  if (!Array.isArray(shapes) || shapes.length === 0) {
+    return { error: 'shapes must be a non-empty array' };
+  }
+  if (shapes.length > MAX_ANNOTATION_SHAPES) {
+    return { error: `shapes cannot exceed ${MAX_ANNOTATION_SHAPES} entries` };
+  }
+  const cleaned = [];
+  for (const s of shapes) {
+    if (!s || typeof s !== 'object') return { error: 'each shape must be an object' };
+    if (s.type !== 'pin') {
+      return { error: `unsupported shape type "${s.type}" -- only "pin" is accepted in v1` };
+    }
+    const x = Number(s.x);
+    const y = Number(s.y);
+    if (!Number.isFinite(x) || x < 0 || x > 1 || !Number.isFinite(y) || y < 0 || y > 1) {
+      return { error: 'pin x/y must be numbers between 0 and 1 (fraction of image size)' };
+    }
+    let text;
+    if (s.text !== undefined && s.text !== null) {
+      if (typeof s.text !== 'string' || s.text.length > MAX_ANNOTATION_TEXT_LEN) {
+        return { error: `pin text must be a string of ${MAX_ANNOTATION_TEXT_LEN} characters or fewer` };
+      }
+      text = s.text;
+    }
+    cleaned.push(text !== undefined ? { type: 'pin', x, y, text } : { type: 'pin', x, y });
+  }
+  return { shapes: cleaned };
+}
+
+// ─── GET /api/documents/:documentId/annotations ─────────────────────────────
+router.get('/:documentId/annotations', async (req, res) => {
+  try {
+    const doc = await prisma.document.findFirst({
+      where:  { id: req.params.documentId, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const annotations = await prisma.documentAnnotation.findMany({
+      where:   { documentId: doc.id, accountId: req.user.accountId, deletedAt: null },
+      include: { author: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return res.json({ success: true, data: { annotations } });
+  } catch (err) {
+    console.error('[documents/:id/annotations GET]', err);
+    return res.status(500).json({ success: false, error: 'Failed to list annotations' });
+  }
+});
+
+// ─── POST /api/documents/:documentId/annotations ────────────────────────────
+// Body: { shapes: [{ type:"pin", x, y, text? }, ...] }
+router.post('/:documentId/annotations', async (req, res) => {
+  try {
+    const doc = await prisma.document.findFirst({
+      where:  { id: req.params.documentId, accountId: req.user.accountId },
+      select: { id: true },
+    });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const validated = validatePinShapes(req.body?.shapes);
+    if (validated.error) return res.status(400).json({ success: false, error: validated.error });
+
+    const annotation = await prisma.documentAnnotation.create({
+      data: {
+        accountId:  req.user.accountId,
+        documentId: doc.id,
+        authorId:   req.user.id,
+        shapes:     validated.shapes,
+      },
+      include: { author: { select: { id: true, name: true } } },
+    });
+    return res.status(201).json({ success: true, data: { annotation } });
+  } catch (err) {
+    console.error('[documents/:id/annotations POST]', err);
+    return res.status(500).json({ success: false, error: 'Failed to create annotation' });
+  }
+});
+
+// ─── PUT /api/documents/annotations/:annotationId ───────────────────────────
+// Replaces `shapes` wholesale. Editable by the annotation's own author, or by
+// a manager/admin (moderation) -- same rule as WorkOrderComment.
+router.put('/annotations/:annotationId', async (req, res) => {
+  try {
+    const existing = await prisma.documentAnnotation.findFirst({
+      where: { id: req.params.annotationId, accountId: req.user.accountId, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Annotation not found' });
+
+    const isOwner = existing.authorId === req.user.id;
+    const isModerator = req.user.role === 'admin' || req.user.role === 'manager';
+    if (!isOwner && !isModerator) {
+      return res.status(403).json({ success: false, error: 'Not authorized to edit this annotation' });
+    }
+
+    const validated = validatePinShapes(req.body?.shapes);
+    if (validated.error) return res.status(400).json({ success: false, error: validated.error });
+
+    const annotation = await prisma.documentAnnotation.update({
+      where:   { id: existing.id },
+      data:    { shapes: validated.shapes },
+      include: { author: { select: { id: true, name: true } } },
+    });
+    return res.json({ success: true, data: { annotation } });
+  } catch (err) {
+    console.error('[documents/annotations/:id PUT]', err);
+    return res.status(500).json({ success: false, error: 'Failed to edit annotation' });
+  }
+});
+
+// ─── DELETE /api/documents/annotations/:annotationId ────────────────────────
+// Soft delete -- author or manager/admin only.
+router.delete('/annotations/:annotationId', async (req, res) => {
+  try {
+    const existing = await prisma.documentAnnotation.findFirst({
+      where: { id: req.params.annotationId, accountId: req.user.accountId, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: 'Annotation not found' });
+
+    const isOwner = existing.authorId === req.user.id;
+    const isModerator = req.user.role === 'admin' || req.user.role === 'manager';
+    if (!isOwner && !isModerator) {
+      return res.status(403).json({ success: false, error: 'Not authorized to delete this annotation' });
+    }
+
+    await prisma.documentAnnotation.update({
+      where: { id: existing.id },
+      data:  { deletedAt: new Date() },
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[documents/annotations/:id DELETE]', err);
+    return res.status(500).json({ success: false, error: 'Failed to delete annotation' });
+  }
+});
+
 module.exports = router;
 
 export {};

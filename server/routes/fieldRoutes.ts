@@ -518,6 +518,71 @@ router.post('/work-orders/:id/complete', requireFieldWriter, async (req, res) =>
   }
 });
 
+// ─── GET/POST /api/field/work-orders/:id/comments ─────────────────────────────
+// A4 (2026-07-05) field-labor mirror of routes/workOrders.ts's comment feed --
+// same WorkOrderComment table, scoped via resolveScopedWorkOrder so a
+// field_tech only sees/posts on their own assigned work orders. Edit/delete
+// are intentionally NOT mirrored here for v1 (manager-only, via the main
+// /api/work-orders/comments/:cid surface) -- a tech leaving a note shouldn't
+// need to revise history; moderation stays a manager action.
+router.get('/work-orders/:id/comments', async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.id))) {
+      return res.status(400).json({ success: false, error: 'id must be a uuid' });
+    }
+    const wo = await resolveScopedWorkOrder(req.user, req.params.id);
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const comments = await prisma.workOrderComment.findMany({
+      where:   { workOrderId: wo.id, accountId: req.user.accountId, deletedAt: null },
+      include: { author: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ success: true, data: { comments } });
+  } catch (err) {
+    console.error('Field list comments error:', err);
+    res.status(500).json({ success: false, error: 'Failed to list comments' });
+  }
+});
+
+router.post('/work-orders/:id/comments', requireFieldWriter, async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.id))) {
+      return res.status(400).json({ success: false, error: 'id must be a uuid' });
+    }
+    const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+    if (!body) return res.status(400).json({ success: false, error: 'body is required' });
+    if (body.length > 4000) {
+      return res.status(400).json({ success: false, error: 'body must be 4000 characters or fewer' });
+    }
+
+    const wo = await resolveScopedWorkOrder(req.user, req.params.id);
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+
+    const comment = await prisma.workOrderComment.create({
+      data: {
+        accountId:   req.user.accountId,
+        workOrderId: wo.id,
+        authorId:    req.user.id,
+        body,
+      },
+      include: { author: { select: { id: true, name: true } } },
+    });
+
+    writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    'work_order_comment_added',
+      details:   { commentId: comment.id, workOrderId: wo.id },
+    }).catch(() => {});
+
+    res.status(201).json({ success: true, data: { comment } });
+  } catch (err) {
+    console.error('Field add comment error:', err);
+    res.status(500).json({ success: false, error: 'Failed to add comment' });
+  }
+});
+
 // ─── POST /api/field/deficiencies ─────────────────────────────────────────────
 // Report a finding against an in-scope asset.
 const SEVERITIES = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
