@@ -2,6 +2,10 @@
 
 Official TypeScript/JavaScript SDK for the ServiceCycle Public API.
 
+Prefer Python? See [`python/`](./python) — a 1:1-behavior port (same auth,
+retries, error taxonomy, idempotency) for integrators and consultancies who
+script via Python (PowerFactory DPL / CYME CymPy style workflows).
+
 ## Install
 
 ```bash
