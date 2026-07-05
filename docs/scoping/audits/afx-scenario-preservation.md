@@ -334,6 +334,126 @@ that work isn't done twice):
    document library, for whole-site review rather than one-asset lookup.
    `DocType` (schema.prisma:217) needs a new `arc_flash_study` value for that
    path.
+
+   **One-line diagrams need the same asset-level precision (2026-07-05,
+   Dustin).** Checked whether the mechanism exists: it doesn't, not yet.
+   `DocumentAnnotation` (schema.prisma:1825) supports pin/arrow/text markup on
+   a document but has no `assetId` — it's not an asset-linking mechanism. The
+   "manual tap-to-link a one-line symbol to an asset" capability referenced in
+   prior EDMS scoping is schema-scaffolded only, on the unmerged
+   `feat/edms-phase-1` branch, and is explicitly documented there as "NOT
+   wired to any route, NOT wired to any UI." So today a one-line is either
+   blanket site-wide (`Document.siteId` set, shows on every asset per
+   `routes/documents.ts:356-360`) or not linked at all — there is no
+   "this one-line specifically includes assets A, B, C" relationship yet.
+   Two-part plan, since the full symbol-tap-link system is real Phase-2 EDMS
+   work (already separately flagged as needing Dustin's own kickoff — too big
+   to sequence solo):
+   - **Near-term, small, reuses existing plumbing:** when a one-line is
+     processed through arc-flash ingest and creates/matches assets
+     (`routes/arcFlashIngest.ts:576-591`), that confirm step already has
+     `ingest.fileKey` in scope at the exact moment it touches each asset —
+     link the source document to each specific asset right there, the same
+     pattern as the `reportPdfUrl` fix above. Covers every one-line that goes
+     through the AI ingest/bus-extraction flow, which is the common path.
+   - **For one-lines uploaded as plain documents** (not through arc-flash
+     ingest — no per-bus data to hook into): needs a real but modest addition,
+     a `DocumentAsset` many-to-many join (today's `Document.assetId` is a
+     single nullable field, one document can't point at many assets) plus a
+     small UI affordance letting the uploader tag which assets a one-line
+     covers. Smaller and sooner than the full auto-detect-symbols EDMS vision,
+     but still new schema, not just "finish the wiring" — sequence
+     accordingly.
+
+---
+
+## Fallback-masks-capture hunt (2026-07-05, same-day follow-up)
+
+Per Dustin's direction after the shock-boundary correction: before building
+further, hunt for every other instance of the same pattern (a computed/
+default/table value silently standing in for a real value a source document
+could state) across the arc-flash pipeline specifically. Independently
+verified pass, every claim grounded in a real file read. Ranked by safety/
+trust impact; full per-file detail in session memory
+(`servicecycle-a2-and-backlog-2026-07-05` / this session's continuation).
+
+1. **(HIGH) Confirmed study date is silently replaced by "today."**
+   `routes/arcFlashIngest.ts:610`: `performedDate` defaults to `new Date()`
+   whenever the client doesn't send one — and the client
+   (`ArcFlashIngestPanel.jsx:317`) never does. The worst part: the study date
+   IS already extracted (`arcFlashExtract.ts:47` asks for `studyMeta.date`,
+   it gets normalized and stored in `ingest.systemMeta`) — nothing ever reads
+   it back out at confirm. Effect: `expiresAt` (performed + 5yr) is computed
+   from the wrong date, study-age confidence scoring always reads "brand
+   new," and the NFPA 70E-2024 "does this study predate the current edition"
+   check can never fire correctly. A genuinely old study can look freshly
+   dated. Fix: read `sm.studyMeta.date` when present at confirm; this is a
+   one-line change with an outsized correctness impact — do this first.
+2. **(HIGH) A whole field class has zero capture path anywhere — not even
+   manual entry.** Shock boundaries (the known case), `requiredArcRatingCalCm2`,
+   `ppeMethod`, enclosure dimensions, `arcingCurrentReducedKA` (the actual
+   reduced-arcing-current *value* a study prints — distinct from
+   `governingScenario`, which is a legitimate calculation, not a capture gap),
+   and the mitigation/enclosure flags are copied at confirm
+   (`routes/arcFlashIngest.ts:662-670`) from ingest-bus fields that literally
+   no code path ever populates — not AI extraction, not the results-CSV
+   import, not either AFX form, not the vendor tool crosswalks, and not even
+   the one manual human-entry endpoint (`routes/sites.ts:946-1010`), which
+   doesn't accept most of these fields at all. A PE holding the physical
+   study cannot type these numbers into ServiceCycle today. `ppeMethod`
+   specifically then gets silently *inferred* from whether incident energy is
+   present, which can mislabel a PPE-category-method study as an
+   incident-energy-method one. Fix: add these fields to the AI extraction
+   contract + results-CSV aliases + the manual entry endpoint together, since
+   they're the same shape of fix in the same handful of files.
+3. **(MEDIUM-HIGH) Method defaults to the current NFPA edition, defeating the
+   outdated-method check.** `routes/arcFlashIngest.ts:616`:
+   `method || 'IEEE 1584-2018'`. Fires exactly when extraction fails to read
+   the method off the document — disproportionately old or low-quality scans,
+   i.e. precisely the studies most likely to actually be outdated — and then
+   asserts they're current. The regulatory-staleness check
+   (`arcFlashRegulatory.ts`) can never flag a study whose method wasn't
+   extracted. Anti-conservative default on the one check whose entire job is
+   catching this.
+4. **(MEDIUM) AFX import silently defaults an unrecognized equipment type to
+   SWITCHGEAR**, discarding a `matched:false` flag the library already
+   computes specifically to prevent this (`arcFlashAfxMultiTable.ts:426-439`
+   vs. the one production caller at `routes/arcFlashIngest.ts:2224`, which
+   drops the flag). Contrast: the AI-extraction path handles the same
+   situation honestly (unmapped → null + a review warning). Equipment type
+   drives downstream typical-value defaults, so a wrong silent guess
+   propagates.
+5. **(MEDIUM) Utility fault current: extracted, shown once, never durably
+   stored** — this is the same bug already identified and slated for the
+   Phase 0 fix (item 2 above); the hunt re-confirmed it and traced the
+   knock-on effect: the `bus_fault_gt_source` sanity cross-check
+   (`arcFlashSanity.ts`) is permanently inert on every AI-ingested study
+   because the field it needs is never populated that way.
+6. **(LOW-MEDIUM) A bare "breaker" with no trip-unit type is assumed
+   fixed-trip**, which marks protective-device data collection as satisfied
+   and skips the follow-up task — but the extraction contract never asks for
+   trip-unit type in the first place, so a document-stated electronic
+   LSIG unit is indistinguishable from "unknown" and never gets pursued.
+   Unlike the IEEE-typical defaults elsewhere (which are honestly flagged
+   `status:'defaulted'`), this one isn't surfaced at all.
+7. **(LOW) The public QR label doesn't carry the same source-provenance
+   flag the printed PDF label does** for table-derived shock boundaries — a
+   worker scanning the sticker can't tell a study-stated value from a
+   standard-table one, while the printed label explicitly says "per Table
+   130.4 — confirm against the study."
+
+**Checked and clean** (no instance of the pattern): `arcFlashConfidence.ts`,
+`arcFlashSanity.ts`'s own constants (used only to check values, not replace
+them), `arcFlashDevice.ts` (defaults unknown hazard to DANGER — correct
+conservative direction), `arcFlashMitigation.ts`'s reduction-% handling,
+`arcFlashRiskScore.ts`, `arcFlashTccLibrary.ts` (typicals are explicitly
+flagged "verify against the published TCC"), `arcFlashResultsImport.ts`, and
+`SystemStudyAsset`'s schema defaults (none exist on any hazard field). The
+IEEE 1584 gap/electrode/working-distance typicals in `arcFlashGap.ts` are the
+*honest* version of a default — capture is attempted first, and the fallback
+is visibly flagged `status:'defaulted'` when it fires. Not a bug; the pattern
+to watch for is an *unflagged* default standing in for an *attempted-but-not-
+attempted* capture.
 4. **Eval/golden-set fidelity audit.** Found in passing: the golden test
    corpus's own ground truth already under-represents reality in at least one
    case (a DGA sample's ground truth lists 3 of 8 gases present in the
