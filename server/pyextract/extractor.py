@@ -991,11 +991,45 @@ def _bus_inline_readings(text):
             # names the measurement but omits the parenthesised unit). Use
             # the first unit token found in the row and take the closest
             # non-blank preceding line as the label.
+            #
+            # 2026-07-05 fix: `_ROW_UNIT_RE` includes bare single-letter units
+            # ("A", "V") in its alternation, which — searched from position 0
+            # over the WHOLE row — matched the leading phase-pair letter
+            # itself (e.g. the "A" in "A-G: 15200  B-G: 14100  C-G: 16800"),
+            # mislabeling insulation-resistance readings as Amps. This is the
+            # bug flagged in servicecycle-overnight-parser-2026-07-05.
+            #
+            # An earlier attempted fix anchored the search to start AFTER the
+            # first numeric token (skipping "A-G: 15200" before searching),
+            # which correctly stops the false "A" match -- but reports 006/018
+            # normally take the `if hdr_ms:` branch above (their real headers
+            # DO carry a parenthesised unit); they only fall into THIS branch
+            # when real OCR noise garbles the header past
+            # `_BUS_INLINE_UNIT_HDR_RE`'s recognition. In that degraded case
+            # there is no genuine inline unit token in the row at all (unlike
+            # report_007's true fallback shape), so the anchored search finds
+            # nothing, `um` stays None, and the old `continue` dropped the
+            # entire row -- regressing clean-tier OCR-path recall on exactly
+            # those two reports (006: 50%->0%, 018: 100%->25%) instead of
+            # fixing the mislabel.
+            #
+            # The actual fix: still anchor the search past the first numeric
+            # token (kills the false "A"/"V" phase-letter match), but instead
+            # of dropping the row when no inline unit is found, pass
+            # unit=None through to `_classify()` below. `_classify()` already
+            # prefers a full MEASUREMENT_LIBRARY label match's canonical unit
+            # whenever no unit was supplied (`nu or e["unit"]` at line ~410) --
+            # so "BUS INSULATION RESISTANCE" (even OCR-garbled but still
+            # recognizable to `classify_label`) now correctly resolves to
+            # MΩ via the label, rather than via a guessed/wrong row token.
+            # If the label DOESN'T confidently classify either, the existing
+            # downstream check (`mt in ("reading","resistance") or
+            # mt.endswith("_reading")`) still safely rejects the row -- same
+            # safety net as before, just reached via a different path.
             row_text = text[row.start(): row.end()]
-            um = _ROW_UNIT_RE.search(row_text)
-            if not um:
-                continue
-            unit = normalize_unit(um.group(0))
+            _first_num = _NUMTOK_RE.search(row_text)
+            um = _ROW_UNIT_RE.search(row_text, _first_num.end() if _first_num else 0)
+            unit = normalize_unit(um.group(0)) if um else None
             # Walk backwards to the most recent non-blank line for the label.
             hdr_lines = [ln for ln in header_win.split("\n") if ln.strip()]
             if not hdr_lines:
@@ -1008,6 +1042,16 @@ def _bus_inline_readings(text):
             if len(candidate) < 4:
                 continue
             label = candidate
+            # Guard for the unit=None case above: don't let an unrecognized
+            # label ride through on a null unit just because the row
+            # structurally matched three phase-value pairs. Require a real
+            # MEASUREMENT_LIBRARY match before trusting `_classify()` to fill
+            # in the unit from the label alone -- otherwise this is exactly
+            # as blind as the "not um: continue" case used to be, just
+            # reached differently. (When a unit token WAS found, this check
+            # is skipped -- that's the report_007 shape, unchanged.)
+            if unit is None and classify_label(label) is None:
+                continue
         # Reject if the label carries no known measurement token — a random
         # "(MΩ)" line without "insulation" / "resistance" / "megger" nearby
         # is not enough to blindly classify the row.

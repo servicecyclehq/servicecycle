@@ -96,14 +96,58 @@ describeOrSkip('extractor.py golden-pattern regression locks (2026-07-04 passes)
     expect(byPhase['A-B']).toBe(850);
     expect(byPhase['B-C']).toBe(720);
     expect(byPhase['C-A']).toBe(910);
-    // NOTE (found 2026-07-05, not fixed tonight -- see recap memory): the
-    // fallback's own-row unit search can match the leading phase letter
-    // ("A" in "A-B") as a bare Amps unit token before it reaches the real
-    // "M?" later in the row, so `asFoundUnit` on this pass's own entries may
-    // read "A" instead of "MΩ" even though `measurementType` (driven by the
-    // LABEL, not the unit) is correctly "insulation_resistance" and the
-    // VALUES are correct. Deliberately not asserted here so this lock
-    // doesn't need updating the day someone fixes it.
+    // FIXED 2026-07-05 (see servicecycle-overnight-parser-2026-07-05 recap):
+    // the fallback's own-row unit search used to match the leading phase
+    // letter ("A" in "A-B") as a bare Amps unit token before it reached the
+    // real "M?" later in the row, so `asFoundUnit` read "A" instead of "MΩ"
+    // even though `measurementType` (driven by the LABEL) was already
+    // correct. The search is now anchored to start after the first numeric
+    // token, so it lands on the real inline "M?" instead of the phase
+    // letter -- this assertion is the regression lock for that fix.
+    expect(ir.every((m) => m.asFoundUnit === 'MΩ')).toBe(true);
+  });
+
+  test('_bus_inline_readings: OCR-garbled header (no parens unit AND no inline unit) still resolves the correct unit via the label (report_006/018 shape)', () => {
+    // Simulates what real tesseract noise does to reports 006/018: the
+    // header's "(MΩ)" parenthetical is garbled past recognition (unlike the
+    // OCR-tolerant M?/MQ/M0hm/Nchm aliases _BUS_INLINE_UNIT_HDR_RE already
+    // handles -- this is a HEADER LINE so mangled that even those aliases
+    // don't match), AND the row itself carries no inline unit token at all
+    // (unlike report_007's shape above). Before the 2026-07-05 fix, this
+    // would either mislabel the row as Amps (via the false "A-G" match) or,
+    // under the interim broken fix, drop the row entirely. Now: the row's
+    // own numeric-anchored unit search correctly finds nothing, unit=None
+    // flows into _classify(), and the label "BUS INSULATION RESISTANCE"
+    // still resolves via MEASUREMENT_LIBRARY to the correct MΩ default.
+    const text = [
+      'LOW VOLTAGE SWITCHGEAR TEST REPORT',
+      'BUS INSULATION RESISTANCE @@ 1Ill###garbled###',
+      'A-G: 15200      B-G: 14100      C-G: 16800',
+      'MINIMUM: >=100 MOhm      RESULT: PASS',
+    ].join('\n');
+    const out = runExtractMeasurements(text);
+    const ir = out.filter((m) => m.measurementType === 'insulation_resistance');
+    const byPhase = {};
+    for (const m of ir) byPhase[m.phase] = m.asFoundValue;
+    expect(byPhase['A-G']).toBe(15200);
+    expect(byPhase['B-G']).toBe(14100);
+    expect(byPhase['C-G']).toBe(16800);
+    expect(ir.every((m) => m.asFoundUnit === 'MΩ')).toBe(true);
+  });
+
+  test('_bus_inline_readings: no header AND no inline unit AND an unrecognized label -- row is safely dropped (negative control)', () => {
+    // Same structural shape (three phase-value pairs, no unit anywhere) but
+    // the preceding line is not a known NETA measurement label. Confirms the
+    // 2026-07-05 fix's classify_label() guard still rejects rows it can't
+    // confidently classify, rather than emitting a generic reading with a
+    // null unit -- preserving the original conservative "when in doubt, drop
+    // it" behavior for genuinely ambiguous rows.
+    const text = [
+      'SOME UNRELATED SECTION HEADER TEXT',
+      'A-G: 15200      B-G: 14100      C-G: 16800',
+    ].join('\n');
+    const out = runExtractMeasurements(text);
+    expect(out.filter((m) => m.phase === 'A-G' || m.phase === 'B-G' || m.phase === 'C-G').length).toBe(0);
   });
 
   test('_phase_grid_readings: unit-column mode recovers a PHASE / <unit> / EXPECTED / RESULT grid (report_007 shape)', () => {
