@@ -35,6 +35,20 @@ def main():
             "pages_scanned": r.get("pages_scanned"),
             "text_pages": r.get("text_pages"),
             "truncated": bool(r.get("truncated")),
+            # 2026-07-05 fix: extract_fields() has returned these two keys
+            # since commit 83cb831 ("report-verdict + temp-correction
+            # validators activated"), but this CLI entrypoint never forwarded
+            # them -- testReportPreview.ts:178/182 read py.report_result /
+            # py.ambient_temp_c directly off this JSON, so both were always
+            # undefined -> reportResult/ambientTempC always null in
+            # production, silently disabling domainValidators.verdictCrossCheck
+            # and .tempCorrection for every report that goes through the
+            # deterministic (non-AI) path. No jest suite caught this because
+            # testReportPreview's own tests mock runDeterministic() entirely
+            # (so they exercise the merge logic against an already-correct
+            # fixture, never the real run.py subprocess).
+            "report_result": r.get("report_result"),
+            "ambient_temp_c": r.get("ambient_temp_c"),
         }, default=str))
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)}))
