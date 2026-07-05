@@ -1479,13 +1479,38 @@ def _ocr_text(path, max_pages=OCR_PAGES):
     return "\n".join(out)
 
 
-def extract_fields(path: str, mode: str = "all"):
+def extract_fields(path: str, mode: str = "all", resume_from: int = None):
+    """
+    A2 Half 2 (2026-07-05, Option A per Dustin): `resume_from` is threaded
+    end-to-end from IngestJob.lastGoodPage (lib/ingestWorker.ts) but does NOT
+    skip any pages -- every attempt re-reads the WHOLE document from page 1
+    (no incremental merge across attempts; the pipeline's own extraction is
+    cheap enough that skipping isn't worth the risk of a real partial-merge
+    contract change to extract_measurements()). It is accepted purely for
+    observability -- echoed back as `resumed_from` in the return dict so a
+    retry is distinguishable from a first attempt in logs/telemetry.
+
+    The actual resilience win is the try/except below: a single page that
+    raises (corrupt page object, a pdfplumber bug on one specific page) no
+    longer takes down the ENTIRE extraction. Previously any per-page
+    exception propagated out of the `with pdfplumber.open()` block uncaught,
+    so a job that got 140/150 pages in with zero problems lost ALL 140 pages
+    of already-good work the instant page 141 threw -- run.py's outer
+    try/except caught it but returned {"ok": false} with zero partial data,
+    so a retry (however well the resume hint was plumbed) had nothing to
+    build on. Now that failure is caught, `pages_scanned`/`truncated` (and
+    the new `page_error`) honestly reflect where we stopped, and
+    header/measurement extraction still runs on whatever text was already
+    collected -- so a retry has a real floor to improve on instead of a
+    total loss.
+    """
     cells, line_tables, full_text = [], [], []
     table_settings = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
     page_count = 0
     pages_scanned = 0
     text_pages = 0
     truncated = False
+    page_error = None
     started = time.monotonic()
     with pdfplumber.open(path) as pdf:
         page_count = len(pdf.pages)
@@ -1497,22 +1522,31 @@ def extract_fields(path: str, mode: str = "all"):
             if i > 0 and (time.monotonic() - started) > TEXT_TIME_BUDGET_S:
                 truncated = True
                 break
-            _ptxt = page.extract_text() or ""
-            # Per-page text-layer signal: count pages that carry real text so a
-            # machine-readable cover sheet in front of a scanned body does not
-            # make the whole document look text-based. Feeds the silent-empty
-            # guard in ingestConfidenceGate (text_pages < page_count => scan).
-            if len(_ptxt.strip()) >= 40:
-                text_pages += 1
-            full_text.append(_ptxt)
-            pages_scanned = i + 1
-            if i < MAX_CELL_PAGES:
-                cells.extend(_page_cells(page))
-            if i < MAX_TABLE_PAGES:
-                try:
-                    line_tables.extend(page.extract_tables(table_settings) or [])
-                except Exception:
-                    pass
+            try:
+                _ptxt = page.extract_text() or ""
+                # Per-page text-layer signal: count pages that carry real text so a
+                # machine-readable cover sheet in front of a scanned body does not
+                # make the whole document look text-based. Feeds the silent-empty
+                # guard in ingestConfidenceGate (text_pages < page_count => scan).
+                if len(_ptxt.strip()) >= 40:
+                    text_pages += 1
+                full_text.append(_ptxt)
+                pages_scanned = i + 1
+                if i < MAX_CELL_PAGES:
+                    cells.extend(_page_cells(page))
+                if i < MAX_TABLE_PAGES:
+                    try:
+                        line_tables.extend(page.extract_tables(table_settings) or [])
+                    except Exception:
+                        pass
+            except Exception as e:
+                # A2 Half 2: a single bad page stops the sweep (pdfplumber's
+                # internal state past a raised page isn't trustworthy) but no
+                # longer discards pages 1..i-1 -- record where we stopped so a
+                # retry has an honest floor instead of a total loss.
+                truncated = True
+                page_error = "page %d: %s" % (i + 1, e)
+                break
     # If MAX_TEXT_PAGES itself (not the clock) capped a longer document, that's
     # also truncation — flag it so the UI/telemetry know coverage is partial.
     if pages_scanned < page_count:
@@ -1564,4 +1598,6 @@ def extract_fields(path: str, mode: str = "all"):
             "text_pages": text_pages,
             "report_result": report_result,
             "ambient_temp_c": ambient_temp_c,
-            "truncated": truncated}
+            "truncated": truncated,
+            "page_error": page_error,
+            "resumed_from": resume_from}

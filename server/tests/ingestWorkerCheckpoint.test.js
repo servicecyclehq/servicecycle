@@ -58,14 +58,52 @@ describe('runIngestJob — resumeFrom hint passthrough', () => {
 });
 
 describe('runIngestJob — checkpoint on success', () => {
-  test('records lastGoodPage + pageProgress from the result pageCount/pagesScanned', async () => {
+  test('records lastGoodPage from pagesScanned (NOT the raw pageCount) + pageProgress', async () => {
+    // A2 Half 2 correctness fix (2026-07-05): lastGoodPage used to be written
+    // as the raw pageCount (12) unconditionally. That was only ever truthful
+    // pre-Half-2, when a per-page exception always took the FAILURE branch
+    // below -- reaching this success branch implied every page was scanned.
+    // Now extract_fields() can catch a per-page exception and still return
+    // normally (truncated, pagesScanned < pageCount) -- see
+    // pyextract/extractor.py's docstring -- so lastGoodPage must reflect
+    // pagesScanned (how far we actually got), not the document's total page
+    // count. This test's pageCount(12) != pagesScanned(10) on purpose to
+    // catch a regression back to the old (wrong) behavior.
     prisma.ingestJob.update.mockClear();
-    const builder = jest.fn(async () => ({ measurements: [], pageCount: 12, pagesScanned: 10 }));
+    const builder = jest.fn(async () => ({ measurements: [], pageCount: 12, pagesScanned: 10, truncated: true, pageError: null }));
     await runIngestJob(baseJob(), builder);
     const doneCall = prisma.ingestJob.update.mock.calls.find((c) => c[0].data.status === 'done');
     expect(doneCall).toBeTruthy();
+    expect(doneCall[0].data.lastGoodPage).toBe(10);
+    expect(doneCall[0].data.pageProgress).toEqual({ totalPages: 12, pagesCompleted: 10, lastError: null, truncated: true });
+  });
+
+  test('records a clean (non-truncated) completion when pagesScanned === pageCount', async () => {
+    prisma.ingestJob.update.mockClear();
+    const builder = jest.fn(async () => ({ measurements: [], pageCount: 12, pagesScanned: 12, truncated: false }));
+    await runIngestJob(baseJob(), builder);
+    const doneCall = prisma.ingestJob.update.mock.calls.find((c) => c[0].data.status === 'done');
     expect(doneCall[0].data.lastGoodPage).toBe(12);
-    expect(doneCall[0].data.pageProgress).toEqual({ totalPages: 12, pagesCompleted: 10, lastError: null });
+    expect(doneCall[0].data.pageProgress).toEqual({ totalPages: 12, pagesCompleted: 12, lastError: null, truncated: false });
+  });
+
+  test('A2 Half 2: a caught per-page exception still completes the job, with the page error preserved as pageProgress.lastError', async () => {
+    // The actual resilience win: extract_fields() no longer throws when one
+    // page in a large document is bad -- it returns normally with whatever
+    // it collected before the bad page, so the job still finishes (not
+    // 'failed') and the checkpoint records exactly where it stopped.
+    prisma.ingestJob.update.mockClear();
+    const builder = jest.fn(async () => ({
+      measurements: [], pageCount: 150, pagesScanned: 46, truncated: true,
+      pageError: 'page 47: division by zero',
+    }));
+    await runIngestJob(baseJob({ lastGoodPage: null }), builder);
+    const doneCall = prisma.ingestJob.update.mock.calls.find((c) => c[0].data.status === 'done');
+    expect(doneCall).toBeTruthy();
+    expect(doneCall[0].data.lastGoodPage).toBe(46);
+    expect(doneCall[0].data.pageProgress).toEqual({
+      totalPages: 150, pagesCompleted: 46, lastError: 'page 47: division by zero', truncated: true,
+    });
   });
 
   test('leaves checkpoint fields absent when the result carries no pageCount (e.g. pdfjs fallback)', async () => {

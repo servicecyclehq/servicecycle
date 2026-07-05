@@ -19,7 +19,13 @@ const RUN = path.join(__dirname, '..', 'pyextract', 'run.py');
 const TIMEOUT_MS = parseInt(process.env.PYEXTRACT_TIMEOUT_MS || '45000', 10);
 
 // Run the Python extractor on a PDF buffer. Async, non-blocking, fail-open.
-function runDeterministic(buffer) {
+// A2 Half 2 (2026-07-05): `options.resumeFrom` (IngestJob.lastGoodPage) is
+// forwarded as `--resume-from N`. Per the Option-A design, this does NOT skip
+// pages -- see extract_fields()'s docstring in pyextract/extractor.py -- it's
+// passed through purely so retries are distinguishable in output/logs.
+function runDeterministic(buffer, options) {
+  const resumeFrom = options && options.resumeFrom;
+  const extraArgs = (resumeFrom != null) ? ['--resume-from', String(resumeFrom)] : [];
   return new Promise((resolve) => {
     let tmp = null;
     try {
@@ -28,7 +34,7 @@ function runDeterministic(buffer) {
     } catch (e) {
       return resolve({ ok: false, error: 'tmp-write: ' + (e && e.message) });
     }
-    execFile(PY, [RUN, tmp],
+    execFile(PY, [RUN, tmp, ...extraArgs],
       { timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
       (err, stdout) => {
         try { fs.unlinkSync(tmp); } catch (_) { /* tmpfs reaps anyway */ }

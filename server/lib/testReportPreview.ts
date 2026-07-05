@@ -123,6 +123,10 @@ interface BuildPreviewOpts {
   userId: string;
   originalName?: string;
   mimetype?: string;
+  // A2 Half 2 (2026-07-05): IngestJob.lastGoodPage from a retried job, passed
+  // through to runDeterministic -> run.py --resume-from. Option-A semantics:
+  // does not skip pages, forwarded purely for retry observability.
+  resumeFrom?: number;
 }
 
 /**
@@ -152,8 +156,12 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   let assetSections = 1, ocr = false;
   let pageCount: number | null = null, pagesScanned: number | null = null, truncated = false;
   let textPages: number | null = null;
+  // A2 Half 2: named page-error (if the sweep stopped on a bad page rather
+  // than a budget/page-cap) surfaced for operator visibility, echoed through
+  // to ingestWorker's pageProgress checkpoint.
+  let pageError: string | null = null;
   let sectionDefs: any[] = [];
-  const py = await runDeterministic(buffer);
+  const py = await runDeterministic(buffer, { resumeFrom: opts.resumeFrom });
   if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
     source = py.ocr ? 'pdfplumber-ocr' : 'pdfplumber';
     assetSections = py.asset_sections || 1;
@@ -162,6 +170,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     pagesScanned = py.pages_scanned ?? null;
     textPages = py.text_pages ?? null;
     truncated = !!py.truncated;
+    pageError = py.page_error ?? null;
     ocr = !!py.ocr;
     const f = py.fields || {};
     meta = {
@@ -312,7 +321,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   return {
     meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, sections, ocr, aiUsed, aiAdded,
     visionUsed, visionAdded,
-    pageCount, pagesScanned, textPages, truncated, extractionId, photoOfPaper,
+    pageCount, pagesScanned, textPages, truncated, pageError, extractionId, photoOfPaper,
     priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
   };
 }

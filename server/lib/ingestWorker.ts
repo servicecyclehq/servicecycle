@@ -87,15 +87,19 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
     const buffer = await downloadFile(job.fileKey);
 
     await prisma.ingestJob.update({ where: { id: job.id }, data: { progress: 40, phase: 'parsing' } });
-    // 2026-07-05 (§11 A2 Half 1): pass the last confirmed-good page from a
-    // prior attempt as a `resumeFrom` hint. THIS IS SCAFFOLDING ONLY --
-    // buildTestReportPreview / extract_fields() do not yet know how to
-    // actually resume mid-document (that contract change, extract_fields()
-    // yielding per-page, is Half 2 -- a future supervised session). Today the
-    // hint is accepted and logged so the queue-side plumbing is in place
-    // before the parser-side change lands; it has zero effect on the parse.
+    // 2026-07-05 (§11 A2 Half 1 + Half 2, Option A per Dustin): pass the last
+    // confirmed-good page from a prior attempt as a `resumeFrom` hint. As of
+    // Half 2 this reaches run.py (--resume-from) and extract_fields(), but per
+    // the Option-A design it does NOT skip pages or merge partial state --
+    // every attempt still re-reads the whole document from page 1 (see
+    // extract_fields()'s docstring in pyextract/extractor.py for the full
+    // rationale). What DOES change: extract_fields() now catches a per-page
+    // exception instead of losing all prior pages' work when one page throws,
+    // so a retry has a real floor to improve on. The hint itself is threaded
+    // through purely for retry observability (logged here, echoed back as
+    // `resumed_from` in the parser output).
     if (job.lastGoodPage != null) {
-      console.log(`[ingestWorker] job ${job.id}: resumeFrom=${job.lastGoodPage} received (parser support pending, Half 2 -- no-op today)`);
+      console.log(`[ingestWorker] job ${job.id}: resumeFrom=${job.lastGoodPage} (retry attempt; full re-read, no page-skip -- see extract_fields() docstring)`);
     }
     const result = await buildPreview(buffer, {
       accountId: job.targetAccountId || job.accountId,
@@ -165,17 +169,36 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
       }
     }
 
-    // 2026-07-05 (§11 A2 Half 1): a successful job implies every page the
-    // extractor scanned was "good" -- record the checkpoint so a future
-    // Half-2 resume path (or just operator visibility into how much of a
-    // large document was actually read) has real data. `pageCount` is
-    // `null` when the extractor didn't report a page count (e.g. the pdfjs
-    // fallback path); in that case leave the checkpoint fields null rather
-    // than writing a misleading 0/undefined.
+    // 2026-07-05 (§11 A2 Half 1 + Half 2): record the checkpoint so a retry's
+    // resumeFrom hint (and operator visibility into how much of a large
+    // document was actually read) has real data. `pageCount` is `null` when
+    // the extractor didn't report a page count (e.g. the pdfjs fallback
+    // path); in that case leave the checkpoint fields null rather than
+    // writing a misleading 0/undefined.
+    //
+    // Half-2 correctness fix: this used to record `lastGoodPage: totalPages`
+    // (the document's full page count) on every success, which was only
+    // truthful because pre-Half-2 a per-page exception always took the
+    // FAILURE branch below -- reaching this success branch implied every
+    // page was scanned. Now that extract_fields() catches a per-page
+    // exception and still returns normally (see its docstring), a job can
+    // land here `truncated` with `pagesScanned < pageCount` (page_error set).
+    // Recording `pagesScanned` instead of the raw page count keeps
+    // `lastGoodPage` honest in that case; the two values are identical in
+    // every case that completes without a page-level error, so this is a
+    // strict correctness improvement with no behavior change for the
+    // already-passing path.
     const totalPages = (result as any)?.pageCount ?? null;
     const pagesScanned = (result as any)?.pagesScanned ?? totalPages;
     const checkpoint = totalPages != null
-      ? { lastGoodPage: totalPages, pageProgress: { totalPages, pagesCompleted: pagesScanned, lastError: null } }
+      ? {
+          lastGoodPage: pagesScanned,
+          pageProgress: {
+            totalPages, pagesCompleted: pagesScanned,
+            lastError: (result as any)?.pageError ?? null,
+            truncated: !!(result as any)?.truncated,
+          },
+        }
       : {};
 
     await prisma.ingestJob.update({
