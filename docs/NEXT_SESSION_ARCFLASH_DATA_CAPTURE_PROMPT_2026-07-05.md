@@ -1,12 +1,14 @@
-# Next session — Arc-flash data-completeness program (Phase 0 + decision-gated build)
+# Task: continue the ServiceCycle arc-flash data-completeness program
 
-**Model: Sonnet** (claude-sonnet-5) as the driving model. This work is a mix
-of small precise fixes and a couple of real decision points with me — not a
-long unsupervised run, so there's no reason to pay for Opus on the driver
-seat. Use **fable** subagents for any research/verification/adversarial-review
-pass, same as last session — it's what caught a factual error and two subtly
-wrong "already built" claims before they became implementation bugs. Don't
-skip that step when you get to W1 or W2 below.
+This is a work order, not a reference document — start executing it now,
+beginning with "Read first" below, then Part 1. Don't stop to ask what I
+want done with this; the plan and the parts to build are spelled out below.
+Stop and come back to me only at the point Part 3 says to.
+
+Use **fable** subagents for any research/verification/adversarial-review
+pass, same as the session that produced this plan — it's what caught a
+factual error and two subtly-wrong "already built" claims before they became
+implementation bugs. Don't skip that step when you get to W1 or W2 below.
 
 **Repo constraint (standing rule, not optional):** work only in the
 ServiceCycle repo (`C:\Users\ddeni\Desktop\ServiceCycle`). Never touch
