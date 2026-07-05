@@ -169,6 +169,44 @@ async function uploadFile(accountId, assetId, filename, buffer, mimeType) {
   return { storageKey: key, sizeBytes: buffer.length };
 }
 
+/**
+ * Upload a file buffer to an EXPLICIT storage key, instead of one generated
+ * by `buildStorageKey()`. Added 2026-07-05 for the EDMS backfill script
+ * (server/scripts/backfillDrawingRevisions.ts), which needs the documented
+ * `{accountId}/drawings/{documentId}/rev-{N}.pdf` keying scheme rather than
+ * the generic `{accountId}/{assetId|misc}/{timestamp}_{filename}` shape
+ * `uploadFile()` always produces. Same s3/local branches as `uploadFile()`,
+ * just parameterized on the key. `resolveLocalPath()` still guards against
+ * path traversal on the local branch regardless of what key is passed in.
+ *
+ * @param {string} key      — full storage key, e.g. "acct1/drawings/doc1/rev-1.pdf"
+ * @param {Buffer} buffer   — file bytes
+ * @param {string} mimeType — MIME type
+ * @returns {{ storageKey: string, sizeBytes: number }}
+ */
+async function putAtKey(key, buffer, mimeType) {
+  if (!key || typeof key !== 'string') throw new Error('putAtKey: key is required');
+  const dest = getDest();
+
+  if (dest === 's3') {
+    if (!s3Configured()) throw new Error('STORAGE_DEST is set to "s3" but S3 credentials are not configured.');
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    await getS3Client().send(new PutObjectCommand({
+      Bucket:      process.env.STORAGE_S3_BUCKET,
+      Key:         key,
+      Body:        buffer,
+      ContentType: mimeType === 'text/plain' ? 'application/octet-stream' : (mimeType || 'application/octet-stream'),
+    }));
+  } else {
+    // local filesystem — resolveLocalPath() throws on path-traversal attempts
+    const filePath = resolveLocalPath(key);
+    await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    await fsp.writeFile(filePath, buffer);
+  }
+
+  return { storageKey: key, sizeBytes: buffer.length };
+}
+
 // ── Download ──────────────────────────────────────────────────────────────────
 
 /**
@@ -269,6 +307,7 @@ async function getFileUrl(storageKey, filename = null, ttlSeconds = null) {
 
 module.exports = {
   uploadFile,
+  putAtKey,
   downloadFile,
   deleteFile,
   getFileUrl,

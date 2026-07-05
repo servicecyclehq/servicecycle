@@ -18,7 +18,7 @@
  * this script is meant to:
  *   1. Read the current bytes from Document.filePath via lib/storage.downloadFile.
  *   2. Compute SHA-256.
- *   3. Copy to the new EDMS keying scheme (see KNOWN GAP below).
+ *   3. Copy to the new EDMS keying scheme via lib/storage.putAtKey().
  *   4. VERIFY SHA-256 after the copy.
  *   5. Extract text (pdfplumber/tesseract, reusing the existing pyextract
  *      sidecar the same way lib/ingestWorker + lib/testReportPreview do) into
@@ -30,16 +30,13 @@
  * lib/ingestWorker.ts so this is safe to run in a rolling/multi-instance
  * deploy without double-processing a Document.
  *
- * KNOWN GAP (flagging honestly rather than papering over it): lib/storage.ts's
- * `uploadFile(accountId, assetId, filename, buffer, mimeType)` always derives
- * its own storage key via `buildStorageKey()` -- there is no primitive today
- * to upload to an EXPLICIT key. The EDMS scope doc's keying scheme
- * (`{accountId}/drawings/{documentId}/rev-{N}.pdf`, §6) needs one. This script
- * calls a `putAtKey()` helper that DOES NOT YET EXIST -- Phase 2 needs to add
- * it to lib/storage.ts (a small addition: same s3/local branch as uploadFile,
- * but taking the key as a parameter instead of generating one). Left as a
- * clearly-marked TODO rather than silently working around it, since working
- * around it would mean the backfilled keys don't match the documented scheme.
+ * 2026-07-05 update: `lib/storage.putAtKey()` now exists (added same day as
+ * this note) so steps 1-4 + 6-7 are implemented for real below. Step 5 (text
+ * extraction into DrawingPageText, needed for EDMS Phase 3 full-text search)
+ * is DELIBERATELY NOT implemented yet -- it needs its own design pass on
+ * how to shell into pyextract per-document without blocking this script's
+ * claim loop, and isn't required for the revision pointer / currentRevisionId
+ * migration to be correct. Flagged as a follow-up, not silently skipped.
  *
  * Usage (once Phase 2 actually lands and this is wired for real):
  *   npx tsx scripts/backfillDrawingRevisions.ts --dry-run           (default; report only)
@@ -54,7 +51,7 @@
 
 const crypto = require('crypto');
 const prisma = require('../lib/prisma').default;
-const { downloadFile } = require('../lib/storage');
+const { downloadFile, putAtKey } = require('../lib/storage');
 
 const BACKFILL_DOC_TYPES = ['one_line', 'schematic', 'as_built', 'panel_schedule'];
 const BATCH_SIZE = 25;
@@ -116,29 +113,37 @@ async function backfillOneDocument(documentId: string, opts: any): Promise<{ doc
   const buffer = await downloadFile(doc.filePath);
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
 
-  // TODO(Phase 2): replace with storage.putAtKey(storageKey, buffer, doc.fileType)
-  // once that primitive exists (see header KNOWN GAP). Constructing the
-  // intended key now so the eventual swap is a one-line change.
   const storageKey = `${doc.accountId}/drawings/${doc.id}/rev-1.pdf`;
-  throw new Error(
-    `backfillOneDocument: storage.putAtKey() does not exist yet (documentId=${documentId}, ` +
-    `intended key=${storageKey}). This script is scaffolding only -- see the ` +
-    'KNOWN GAP note at the top of this file. Not safe to run until that lands.',
-  );
+  await putAtKey(storageKey, buffer, doc.fileType);
 
-  // Intended remainder of the flow (unreachable until the TODO above is
-  // resolved -- left in place so Phase 2 has the actual shape to fill in):
-  //
-  // await prisma.$transaction(async (tx) => {
-  //   const revision = await tx.drawingRevision.create({ data: {
-  //     accountId: doc.accountId, documentId: doc.id, revNo: 1,
-  //     storageKey, sha256, sizeBytes: buffer.length, sourceFormat: 'pdf',
-  //     createdBy: doc.uploadedBy, createdAt: doc.uploadedAt,
-  //     workflowState: 'published', approvedBy: doc.uploadedBy, approvedAt: doc.uploadedAt,
-  //   } });
-  //   await tx.document.update({ where: { id: doc.id }, data: { currentRevisionId: revision.id } });
-  // });
-  // return { documentId, status: 'backfilled' };
+  // VERIFY step (per header §14 step 4): re-download what we just wrote and
+  // confirm the SHA-256 matches before we ever point currentRevisionId at it.
+  // putAtKey() has no built-in verification, so this script does it explicitly
+  // rather than trusting a bare write.
+  const verifyBuffer = await downloadFile(storageKey);
+  const verifySha256 = crypto.createHash('sha256').update(verifyBuffer).digest('hex');
+  if (verifySha256 !== sha256) {
+    throw new Error(
+      `backfillOneDocument: post-write SHA-256 mismatch for documentId=${documentId} ` +
+      `key=${storageKey} (expected ${sha256}, got ${verifySha256}). Refusing to create ` +
+      'a DrawingRevision pointing at a possibly-corrupt copy.',
+    );
+  }
+
+  const revision = await prisma.$transaction(async (tx: any) => {
+    const rev = await tx.drawingRevision.create({ data: {
+      accountId: doc.accountId, documentId: doc.id, revNo: 1,
+      storageKey, sha256, sizeBytes: buffer.length, sourceFormat: 'pdf',
+      createdBy: doc.uploadedBy, createdAt: doc.uploadedAt,
+      workflowState: 'published', approvedBy: doc.uploadedBy, approvedAt: doc.uploadedAt,
+    } });
+    await tx.document.update({ where: { id: doc.id }, data: { currentRevisionId: rev.id } });
+    return rev;
+  });
+
+  // Step 5 (DrawingPageText extraction) is deliberately NOT done here -- see
+  // the 2026-07-05 header note. currentRevisionId is correct without it.
+  return { documentId, status: 'backfilled', reason: `revisionId=${revision.id}` };
 }
 
 async function main() {
