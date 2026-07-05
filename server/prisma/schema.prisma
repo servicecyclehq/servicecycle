@@ -1196,6 +1196,15 @@ model TestMeasurement {
   workOrderId      String
   measurementType  String // "insulation_resistance", "contact_resistance", "ttr", ...
   phase            String? // "A" | "B" | "C" | "N" | "A-B" ... free-form per test type
+  // [W2] Reading identity the extractor already computes but historically
+  // discarded before persistence -- e.g. DGA gas species ("Hydrogen (H2)"),
+  // winding pair ("H-G" / "X-G"), test mode ("CH+CHL GST"), or a battery
+  // cell position. One flexible free-text column, not a per-domain
+  // structured set (docs/scoping/audits/afx-scenario-preservation.md, W2 --
+  // approved 2026-07-05): populated by whichever extraction/ingest path
+  // knows the reading's identity; null when a reading genuinely has none
+  // (e.g. a single scalar power-factor result for the whole asset).
+  label            String?
   asFoundValue     Decimal?      @db.Decimal(16, 4)
   asFoundUnit      String? // "MÎ©", "ÂµÎ©", "Â°C", ...
   asLeftValue      Decimal?      @db.Decimal(16, 4)

@@ -101,6 +101,11 @@ async function commitAssetReadings(db: any, p: {
         expectedRange: x.expectedRange || null,
         testVoltage: x.testVoltage || null,
         notes: x.notes || null,
+        // [W2] The extractor already computes this identity (DGA gas
+        // species, winding pair, PF test mode, battery cell) and this same
+        // function already READS x.label below for deficiency text -- it
+        // was just never persisted on the row itself until now.
+        label: x.label || null,
       },
     });
     measurementsCreated++;
