@@ -36,6 +36,7 @@ const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const {
   INCIDENT_TYPES, WORK_TYPES, STATUSES, normEnum, incidentOut,
 } = require('../lib/arcFlashIncident');
+const { scoreBusConfidence, pickDeviceSource } = require('../lib/arcFlashConfidence');
 
 const router: Router = Router();
 
@@ -120,7 +121,7 @@ router.post('/', requireRole(['admin', 'manager', 'viewer']), async (req: any, r
         const { buildStudyStateSnapshot } = require('../lib/arcFlashIncident');
         const rows = await prisma.systemStudyAsset.findMany({
           where: { assetId, accountId },
-          include: { study: { select: { performedDate: true, expiresAt: true, supersededById: true, peName: true, method: true } } },
+          include: { study: { select: { performedDate: true, expiresAt: true, supersededById: true, peName: true, method: true, studyDateSource: true } } },
         });
         // Current binding: non-superseded study wins, then newest performedDate.
         const current = rows.slice().sort((a: any, b: any) => {
@@ -129,10 +130,27 @@ router.post('/', requireRole(['admin', 'manager', 'viewer']), async (req: any, r
           return new Date(b.study?.performedDate || 0).getTime() - new Date(a.study?.performedDate || 0).getTime();
         })[0] || null;
         if (current) {
+          // [F-I1] Compute the same deterministic confidence score the Arc Flash
+          // tab shows (GET /asset/:assetId) — previously this snapshot always
+          // wrote confidenceScore/Band as null because nothing here ever attached
+          // a `.confidence` object, silently discarding the signal the incident
+          // record's own shape says it should capture.
+          const assetRow = await prisma.asset.findFirst({ where: { id: assetId, accountId }, select: { equipmentType: true } });
+          const [devices, tests] = await Promise.all([
+            prisma.protectiveDevice.findMany({ where: { assetId, accountId, status: 'active' } }),
+            prisma.deviceTestRecord.findMany({ where: { assetId, accountId }, take: 50 }),
+          ]);
+          const confidence = scoreBusConfidence({
+            bus: current,
+            study: { performedDate: current.study?.performedDate, expiresAt: current.study?.expiresAt, superseded: !!current.study?.supersededById },
+            deviceSource: pickDeviceSource(devices),
+            driftFlagged: tests.some((t: any) => t.driftFlagged),
+          });
           // buildStudyStateSnapshot reads study.superseded; SystemStudy exposes
           // supersededById — normalize so the snapshot's studySuperseded is correct.
           studyStateSnapshot = buildStudyStateSnapshot({
             ...current,
+            confidence,
             study: current.study ? { ...current.study, superseded: !!current.study.supersededById } : null,
           });
         }
@@ -149,7 +167,10 @@ router.post('/', requireRole(['admin', 'manager', 'viewer']), async (req: any, r
         siteId:             siteId   || null,
         assetId:            assetId  || null,
         busName:            busName  || null,
-        incidentType:       normEnum(incidentType, INCIDENT_TYPES, 'near_miss'),
+        // [F-I3] An unrecognized incidentType string must not silently downgrade
+        // to 'near_miss' — the least-severe classification. 'other' is the
+        // honest "we don't know the category" bucket already in INCIDENT_TYPES.
+        incidentType:       normEnum(incidentType, INCIDENT_TYPES, 'other'),
         occurredAt:         occurredAt ? new Date(occurredAt) : null,
         description:        description.trim(),
         injury:             injury === true || injury === 'true',

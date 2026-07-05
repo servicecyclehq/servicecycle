@@ -1387,6 +1387,17 @@ model SystemStudy {
   // returns a short-lived (15-60 min) presigned URL, so resolution must
   // happen at READ time on every request, never baked in once at confirm.
   reportFileKey  String?
+  // [F-P4/root-cause] Where performedDate actually came from: 'client' |
+  // 'extracted' | 'unverified_default'. Set at confirm time (routes/
+  // arcFlashIngest.ts) alongside the F1 date-parsing fix. Nullable/no default
+  // so every pre-existing study (created before this column existed) reads
+  // as null rather than retroactively (and wrongly) flagged as unverified --
+  // only 'unverified_default' should ever trigger extra caution downstream;
+  // null/'client'/'extracted' are all treated as trustworthy. Consumers that
+  // assert study currency from performedDate (regulatory check, incident
+  // snapshot, search expiry, permit issuance gate) should check this before
+  // treating performedDate as a real captured value.
+  studyDateSource String?
   notes          String?
   supersededById String? // newer study that replaces this one
   createdAt      DateTime @default(now())

@@ -53,6 +53,13 @@ export function validatePermitIssuance(
   if (!study) reasons.push('No arc-flash study is bound to this equipment.');
   if (study && study.supersededById) reasons.push('The bound study has been superseded by a newer revision.');
   if (study && study.expiresAt && new Date(study.expiresAt).getTime() < asOf.getTime()) reasons.push('The arc-flash study has expired (re-evaluation overdue).');
+  // [F-P4] An unverified placeholder performedDate (routes/arcFlashIngest.ts F1
+  // fix — studyDateSource === 'unverified_default') makes the expiresAt check
+  // above unreliable in either direction: expiresAt is computed FROM the
+  // placeholder, so a genuinely old study could read as "not expired." Treat
+  // this with the same caution as an expired study — block issuance rather
+  // than silently trusting a date nobody has verified.
+  if (study && study.studyDateSource === 'unverified_default') reasons.push('The study’s performed date could not be read from the source document and was recorded as a placeholder — verify the real date before issuing a permit off this study.');
   const ie = num(bus && bus.incidentEnergyCalCm2);
   const volts = parseVolts(bus && bus.nominalVoltage);
   if (ie == null && volts == null) reasons.push('No incident energy or system voltage on record for this bus.');
@@ -98,8 +105,20 @@ export function buildEnergizedWorkPermit(ctx: {
   const asOf = ctx.asOf || new Date();
   const ie = num(bus && bus.incidentEnergyCalCm2);
   const volts = parseVolts(bus && bus.nominalVoltage);
-  const danger = ie != null && ie > 40;
   const validation = validatePermitIssuance(bus, study, asOf, { unreviewedDrift: ctx.unreviewedDrift, driftReason: ctx.driftReason });
+  // [F-P3] Prefer the bus's own stored labelSeverity (the same value the
+  // label/one-line/search surfaces show) over recomputing — the prior
+  // recompute here (`ie > 40` only) was narrower than the canonical rule
+  // (also DANGER above 600V) used everywhere else, so a bus could show
+  // DANGER on its label but WARNING on its permit. Only falls back to
+  // computing when nothing is stored (e.g. a v1 API caller that never
+  // fetched labelSeverity).
+  const storedSeverity = bus && bus.labelSeverity ? String(bus.labelSeverity).toLowerCase() : null;
+  const hazardClass = storedSeverity === 'danger' ? 'DANGER'
+    : storedSeverity === 'warning' ? 'WARNING'
+    : ((ie != null && ie > 40) || (volts != null && volts > 600)) ? 'DANGER'
+    : (ie != null || volts != null) ? 'WARNING'
+    : null;
 
   const permit = {
     generatedAt: asOf.toISOString(),
@@ -118,7 +137,7 @@ export function buildEnergizedWorkPermit(ctx: {
       shockRestrictedApproachIn: num(bus?.shockRestrictedApproachIn),
       ppeCategory: bus?.ppeCategory ?? null,
       requiredArcRatingCalCm2: num(bus?.requiredArcRatingCalCm2),
-      hazardClass: danger ? 'DANGER' : (ie != null || volts != null ? 'WARNING' : null),
+      hazardClass,
     },
     study: {
       performedDate: study?.performedDate || null,

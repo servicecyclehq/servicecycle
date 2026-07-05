@@ -1,0 +1,22 @@
+-- [F-P4/root-cause] Persist studyDateSource structurally on SystemStudy (2026-07-05).
+-- Additive only: one new nullable column, no changes to any existing table.
+--
+-- Closes a gap the coverage census found repeated across four consumers: the F1
+-- fix (docs/scoping/audits/afx-scenario-preservation.md) already computes
+-- studyDateSource in-memory at confirm time ('client' | 'extracted' |
+-- 'unverified_default') but only ever wrote it into free-text notes + the audit
+-- log -- never a real column. That meant the regulatory-currency check (R1),
+-- the incident evidentiary snapshot (F-I2), search expiry/confidence (S1), and
+-- the energized-work-permit issuance gate (F-P4) could all silently treat a
+-- confirm-day placeholder date as a verified study date. This column lets each
+-- of those consumers check the flag instead of assuming performedDate is
+-- always real.
+--
+-- Nullable, no default: every pre-existing study reads as NULL, which is
+-- treated as trustworthy (same as 'client'/'extracted') -- only the literal
+-- value 'unverified_default' should trigger extra caution. This avoids
+-- retroactively (and wrongly) flagging production studies that predate this
+-- column as unverified.
+
+-- AlterTable
+ALTER TABLE "system_studies" ADD COLUMN "studyDateSource" TEXT;

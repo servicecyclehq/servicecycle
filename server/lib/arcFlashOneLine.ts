@@ -32,6 +32,17 @@ function voltsOf(raw: any): number | null {
 export interface OneLineNode {
   id: string; name: string; equipmentType: string | null; nominalVoltage: string | null;
   incidentEnergyCalCm2: number | null; labelSeverity: string | null; fedFromId: string | null; level: number;
+  // [F-O1] True when labelSeverity above was COMPUTED here (no stored value on
+  // the row) rather than read from the study. An inferred severity must not
+  // render indistinguishably from a real study-derived label — that silently
+  // masks "this bus has no study yet" as if it were labeled.
+  labelSeverityInferred: boolean;
+  // [F-O2] True when the asset had a fedFromAssetId that does NOT resolve
+  // within this query's asset set (cross-site feed, or the upstream asset
+  // wasn't returned) — the edge is dropped and the node renders as level-0,
+  // which looks identical to "this is a real power source." That's an
+  // affirmative topology claim that isn't on file; flag it instead of hiding it.
+  feedUnresolved: boolean;
 }
 
 /**
@@ -64,7 +75,9 @@ export function buildOneLine(assets: any[]): { nodes: OneLineNode[]; edges: Arra
     nominalVoltage: a.nominalVoltage || null,
     incidentEnergyCalCm2: num(a.incidentEnergyCalCm2),
     labelSeverity: a.labelSeverity || (((num(a.incidentEnergyCalCm2) || 0) > 40 || (voltsOf(a.nominalVoltage) || 0) > 600) ? 'danger' : (a.incidentEnergyCalCm2 != null || a.nominalVoltage ? 'warning' : null)),
+    labelSeverityInferred: !a.labelSeverity,
     fedFromId: a.fedFromAssetId && ids.has(a.fedFromAssetId) ? a.fedFromAssetId : null,
+    feedUnresolved: !!(a.fedFromAssetId && !ids.has(a.fedFromAssetId)),
     level: levelOf(a.id, new Set()),
   }));
 

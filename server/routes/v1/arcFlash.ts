@@ -136,10 +136,32 @@ router.get('/work-order-precheck', async (req: any, res: any) => {
   if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
   const rows = await prisma.systemStudyAsset.findMany({
     where: { assetId: asset.id, accountId },
-    include: { study: { select: { performedDate: true, expiresAt: true, peName: true, method: true, supersededById: true } } },
+    include: { study: { select: { performedDate: true, expiresAt: true, peName: true, method: true, supersededById: true, studyDateSource: true } } },
   });
   const current = currentRowOf(rows);
-  const permit = buildEnergizedWorkPermit({ bus: current || { busName: null }, study: current?.study || null, asset });
+  // [F-P1] This v1 endpoint previously never checked for post-study protective-
+  // device drift at all — the internal GET /asset/:assetId/permit route (server/
+  // routes/arcFlashIngest.ts) does, so a CMMS/EAM integration syncing THIS
+  // endpoint could get canIssue:true on a bus the in-app permit view would
+  // correctly block. Same detection logic, same reasoning: a device setting
+  // collected after the study date means clearing time (and so incident
+  // energy) may have changed since the study ran.
+  let unreviewedDrift = false;
+  let driftReason: string | undefined;
+  const studyPerformed = current?.study?.performedDate ? new Date(current.study.performedDate) : null;
+  if (studyPerformed && !Number.isNaN(studyPerformed.getTime())) {
+    const driftedDevice = await prisma.protectiveDevice.findFirst({
+      where: { assetId: asset.id, accountId, status: 'active', settingsCollectedAt: { gt: studyPerformed } },
+      select: { id: true, label: true, settingsCollectedAt: true },
+    });
+    if (driftedDevice) {
+      unreviewedDrift = true;
+      driftReason = `A protective-device setting (${driftedDevice.label || 'device'}) was collected after the study date — clearing time may have changed, so the incident energy needs re-verification by a qualified person before issuing.`;
+    }
+  }
+  // [F-P2] Pass accountId so the permit's audit-log write actually fires (no
+  // req.user on an API-key-authed route, so userId is intentionally omitted).
+  const permit = buildEnergizedWorkPermit({ bus: current || { busName: null }, study: current?.study || null, asset, unreviewedDrift, driftReason, accountId });
   res.json({ assetId: asset.id, canIssue: permit.validation.canIssue, reasons: permit.validation.reasons, hazard: permit.hazard, study: permit.study, disclaimer: SC_DATA_LAYER_DISCLAIMER });
 });
 

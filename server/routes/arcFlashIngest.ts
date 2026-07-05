@@ -436,9 +436,20 @@ router.get('/ingest/:id/drift', async (req: any, res: any) => {
 
     // The prior confirmed revision = the most recent OTHER confirmed ingest for
     // this site, confirmed before this one's reference time.
-    const ref = ingest.confirmedAt || ingest.createdAt;
+    // [D2] Only bound by confirmedAt when THIS ingest is itself already
+    // confirmed (a real point in the confirmed timeline to compare "before").
+    // For an unconfirmed draft, falling back to createdAt as the bound was
+    // wrong: a sibling ingest created earlier but confirmed AFTER this draft
+    // was created (a realistic ordering — drafts can sit unconfirmed while
+    // another gets reviewed and confirmed first) would be invisible, so the
+    // drift preview would falsely report "no prior revision — this is the
+    // baseline" for a site that already has a confirmed study. A draft has no
+    // fixed position in the confirmed timeline yet, so any confirmed sibling
+    // (not just ones confirmed before its creation) is a valid comparison.
+    const priorWhere: any = { accountId, siteId: ingest.siteId, status: 'confirmed', id: { not: ingest.id } };
+    if (ingest.confirmedAt) priorWhere.confirmedAt = { lt: ingest.confirmedAt };
     const prior = await prisma.arcFlashIngest.findFirst({
-      where: { accountId, siteId: ingest.siteId, status: 'confirmed', id: { not: ingest.id }, confirmedAt: { lt: ref } },
+      where: priorWhere,
       orderBy: { confirmedAt: 'desc' },
       select: { id: true, confirmedAt: true },
     });
@@ -689,6 +700,12 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
           // storage key, resolved to a URL at READ time, never here (see the
           // reportFileKey schema comment for why).
           reportFileKey: ingest.fileKey || null,
+          // [F-P4/root-cause] Persist the F1 date-provenance flag structurally
+          // (was previously only in notes text + the audit log) so downstream
+          // consumers (regulatory check, incident snapshot, search, permit
+          // gate) can tell a real captured date apart from a confirm-day
+          // placeholder without re-parsing notes.
+          studyDateSource,
         },
         select: { id: true },
       });
@@ -1301,6 +1318,7 @@ function studyAssetOut(s: any) {
     study: {
       id: st.id, studyType: st.studyType, performedDate: st.performedDate, expiresAt: st.expiresAt,
       method: st.method, peName: st.peName, peLicense: st.peLicense, superseded: !!st.supersededById,
+      studyDateSource: st.studyDateSource || null,
       sourceModel: st.sourceModel ? sourceModelOut(st.sourceModel) : null,
       // [W3] Raw fields passed through; resolveSourceDocUrl() (async, only run
       // for the winning "current" row — see GET /asset/:assetId) turns
@@ -1352,7 +1370,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
     const [studyAssetsRaw, devices, tasks, tests, customValues, incidents] = await Promise.all([
       prisma.systemStudyAsset.findMany({
         where: { assetId: asset.id, accountId },
-        include: { study: { select: { id: true, studyType: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true, reportPdfUrl: true, reportFileKey: true } } },
+        include: { study: { select: { id: true, studyType: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true, reportPdfUrl: true, reportFileKey: true, studyDateSource: true } } },
         orderBy: { createdAt: 'desc' },
       }),
       prisma.protectiveDevice.findMany({ where: { assetId: asset.id, accountId, status: 'active' }, orderBy: { createdAt: 'desc' } }),
@@ -1422,7 +1440,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
 router.post('/asset/:assetId/incidents', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
-    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true, siteId: true } });
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true, siteId: true, equipmentType: true } });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
     const b = req.body || {};
     if (!b.description || typeof b.description !== 'string' || !b.description.trim()) {
@@ -1431,12 +1449,29 @@ router.post('/asset/:assetId/incidents', requireManager, async (req: any, res: a
     // Snapshot the current label/study at log time.
     const rows = await prisma.systemStudyAsset.findMany({
       where: { assetId: asset.id, accountId },
-      include: { study: { select: { performedDate: true, expiresAt: true, supersededById: true } } },
+      include: { study: { select: { performedDate: true, expiresAt: true, supersededById: true, studyDateSource: true } } },
       orderBy: { createdAt: 'desc' },
     });
     const currentRaw = currentStudyAssetRow(rows);
     const current = currentRaw ? studyAssetOut(currentRaw) : null;
-    const snapshot = buildStudyStateSnapshot(current);
+    // [F-I1] Attach the same deterministic confidence score the Arc Flash tab
+    // computes — previously nothing here ever set `.confidence`, so this
+    // snapshot's confidenceScore/Band were always null regardless of what the
+    // tab displayed at that same moment.
+    let confidence: any = null;
+    if (currentRaw) {
+      const [devices, tests] = await Promise.all([
+        prisma.protectiveDevice.findMany({ where: { assetId: asset.id, accountId, status: 'active' } }),
+        prisma.deviceTestRecord.findMany({ where: { assetId: asset.id, accountId }, take: 50 }),
+      ]);
+      confidence = scoreBusConfidence({
+        bus: busFromStudyAssetRow(currentRaw, asset.equipmentType),
+        study: { performedDate: current?.study?.performedDate, expiresAt: current?.study?.expiresAt, superseded: current?.study?.superseded },
+        deviceSource: pickDeviceSource(devices),
+        driftFlagged: tests.some((t: any) => t.driftFlagged),
+      });
+    }
+    const snapshot = buildStudyStateSnapshot(current ? { ...current, confidence } : null);
     const occurredAt = b.occurredAt ? new Date(b.occurredAt) : null;
     const created = await prisma.arcFlashIncident.create({
       data: {
@@ -1445,7 +1480,9 @@ router.post('/asset/:assetId/incidents', requireManager, async (req: any, res: a
         assetId: asset.id,
         systemStudyAssetId: currentRaw?.id || null,
         busName: current?.busName || null,
-        incidentType: normIncidentEnum(b.incidentType, INCIDENT_TYPES, 'near_miss'),
+        // [F-I3] An unrecognized incidentType must not silently downgrade to
+        // 'near_miss' (least-severe) — 'other' is the honest unknown bucket.
+        incidentType: normIncidentEnum(b.incidentType, INCIDENT_TYPES, 'other'),
         occurredAt: occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : null,
         description: String(b.description).slice(0, 5000),
         injury: !!b.injury,
@@ -1558,7 +1595,7 @@ router.get('/asset/:assetId/timeline', async (req: any, res: any) => {
     const asset = await prisma.asset.findFirst({ where: { id: req.params.assetId, accountId }, select: { id: true } });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
     const [studyAssets, deviceTests, devices] = await Promise.all([
-      prisma.systemStudyAsset.findMany({ where: { assetId: asset.id, accountId }, include: { study: { select: { performedDate: true, peName: true } } } }),
+      prisma.systemStudyAsset.findMany({ where: { assetId: asset.id, accountId }, include: { study: { select: { performedDate: true, peName: true, studyDateSource: true } } } }),
       prisma.deviceTestRecord.findMany({ where: { assetId: asset.id, accountId }, take: 200 }),
       prisma.protectiveDevice.findMany({ where: { assetId: asset.id, accountId }, take: 200 }),
     ]);
@@ -1581,7 +1618,7 @@ router.get('/asset/:assetId/permit', async (req: any, res: any) => {
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
     const rows = await prisma.systemStudyAsset.findMany({
       where: { assetId: asset.id, accountId },
-      include: { study: { select: { performedDate: true, expiresAt: true, peName: true, method: true, supersededById: true } } },
+      include: { study: { select: { performedDate: true, expiresAt: true, peName: true, method: true, supersededById: true, studyDateSource: true } } },
     });
     const current = currentStudyAssetRow(rows);
     if (!current) return res.status(400).json({ success: false, error: 'No bound study for this asset.' });
@@ -1591,6 +1628,9 @@ router.get('/asset/:assetId/permit', async (req: any, res: any) => {
       workingDistanceIn: numOrNull(current.workingDistanceIn), shockLimitedApproachIn: numOrNull(current.shockLimitedApproachIn),
       shockRestrictedApproachIn: numOrNull(current.shockRestrictedApproachIn), ppeCategory: current.ppeCategory,
       requiredArcRatingCalCm2: numOrNull(current.requiredArcRatingCalCm2),
+      // [F-P3] Needed so buildEnergizedWorkPermit can prefer the stored
+      // severity over a narrower recompute.
+      labelSeverity: current.labelSeverity || null,
     };
     // [LEGAL-8-12] Detect an unreviewed system change since the study that
     // date/supersession can't see: a protective device on this asset whose
@@ -1610,7 +1650,11 @@ router.get('/asset/:assetId/permit', async (req: any, res: any) => {
         driftReason = `A protective-device setting (${driftedDevice.label || 'device'}) was collected after the study date — clearing time may have changed, so the incident energy needs re-verification by a qualified person before issuing.`;
       }
     }
-    const permit = buildEnergizedWorkPermit({ bus: busShape, study: current.study, asset, unreviewedDrift, driftReason });
+    // [F-P2] Pass userId/accountId so the permit's own audit-log write actually
+    // fires — previously this call omitted both, so writeActivityLog's guard
+    // (`if (ctx.userId || ctx.accountId)`) never ran and every permit
+    // generation went unlogged despite the audit intent in the code/comments.
+    const permit = buildEnergizedWorkPermit({ bus: busShape, study: current.study, asset, unreviewedDrift, driftReason, userId: req.user.id, accountId });
     res.json({ success: true, data: { permit } });
   } catch (e) {
     console.error('arc-flash permit error:', e);
@@ -1953,17 +1997,23 @@ router.get('/regulatory-review', requireManager, async (req: any, res: any) => {
     const accountId = req.user.accountId;
     const studies = await prisma.systemStudy.findMany({
       where: { accountId, supersededById: null, studyType: 'arc_flash' },
-      select: { id: true, performedDate: true, expiresAt: true, method: true, peName: true },
+      select: { id: true, performedDate: true, expiresAt: true, method: true, peName: true, studyDateSource: true },
       take: 2000,
     });
     const flagged: any[] = [];
     for (const s of studies) {
-      const status = assessRegulatoryStatus(s);
+      // [R2] calcMethod lives per-bus on SystemStudyAsset, not on SystemStudy —
+      // the prior version passed only SystemStudy fields, so assessRegulatoryStatus's
+      // structured-calcMethod branch could never fire. Pull it from the bound
+      // buses (any bus stating a calcMethod is enough to know the study's basis).
+      const buses = await prisma.systemStudyAsset.findMany({ where: { studyId: s.id, accountId }, select: { calcMethod: true } });
+      const calcMethod = buses.find((b: any) => b.calcMethod)?.calcMethod || null;
+      const status = assessRegulatoryStatus({ ...s, calcMethod });
       if (!status.outdated) continue;
-      const assetCount = await prisma.systemStudyAsset.count({ where: { studyId: s.id, accountId } });
       flagged.push({
         studyId: s.id, performedDate: s.performedDate, expiresAt: s.expiresAt, method: s.method, peName: s.peName,
-        ieeeEdition: status.ieeeEdition, reasons: status.reasons, assetCount,
+        ieeeEdition: status.ieeeEdition, reasons: status.reasons, assetCount: buses.length,
+        dateUnverified: status.dateUnverified, indeterminate: status.indeterminate,
       });
     }
     flagged.sort((a, b) => new Date(a.performedDate || 0).getTime() - new Date(b.performedDate || 0).getTime());
@@ -1982,26 +2032,35 @@ router.get('/regulatory-review', requireManager, async (req: any, res: any) => {
 router.get('/export', requireManager, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
-    const where: any = { accountId, study: { supersededById: null } };
+    // [F-E2] studyType wasn't filtered — a site with short_circuit/coordination/
+    // one_line_review studies bound to the same SystemStudyAsset rows could leak
+    // non-arc-flash rows into what's presented as the arc-flash model export.
+    const where: any = { accountId, study: { supersededById: null, studyType: 'arc_flash' } };
     if (req.query.siteId) where.asset = { siteId: String(req.query.siteId) };
+    const EXPORT_ROW_CAP = 5000;
     const rows = await prisma.systemStudyAsset.findMany({
       where,
       include: {
-        study: { select: { sourceModel: true } },
+        study: { select: { sourceModel: true, performedDate: true, method: true, peName: true } },
         asset: { select: { equipmentType: true, siteId: true, site: { select: { name: true } } } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take: EXPORT_ROW_CAP,
     });
+    // [F-E2] A silently-truncated "complete model" export is worse than an
+    // obviously-incomplete one — flag it rather than letting a >5000-row
+    // account quietly get a partial file with no indication rows are missing.
+    const truncated = rows.length >= EXPORT_ROW_CAP;
     const records = buildExportRows(rows);
 
     if (String(req.query.format || 'csv').toLowerCase() === 'json') {
-      return res.json({ success: true, data: { columns: EXPORT_COLUMNS.map(([key, label]: any) => ({ key, label })), records } });
+      return res.json({ success: true, data: { columns: EXPORT_COLUMNS.map(([key, label]: any) => ({ key, label })), records, truncated } });
     }
     const csv = toCsv(records);
     const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="arc-flash-model-${stamp}.csv"`);
+    if (truncated) res.setHeader('X-Export-Truncated', 'true');
     res.send(csv);
   } catch (e) {
     console.error('arc-flash export error:', e);
@@ -2695,7 +2754,7 @@ router.get('/search', async (req: any, res: any) => {
       prisma.systemStudyAsset.findMany({
         where: { accountId, study: { supersededById: null } },
         include: {
-          study: { select: { performedDate: true, expiresAt: true, sourceModel: { select: { utilityMaxFaultKA: true } } } },
+          study: { select: { performedDate: true, expiresAt: true, studyDateSource: true, sourceModel: { select: { utilityMaxFaultKA: true } } } },
           asset: { select: { id: true, equipmentType: true, site: { select: { name: true } } } },
         },
         take: 3000,
@@ -2720,11 +2779,34 @@ router.get('/search', async (req: any, res: any) => {
         nominalVoltage: r.nominalVoltage, incidentEnergyCalCm2: ie, labelSeverity: sev, readiness: g.readiness,
         confidence: { score: conf.score, band: conf.band },
         expired, expiringSoon: r.study?.expiresAt ? (!expired && new Date(r.study.expiresAt) <= soon) : false,
+        // [S1] Was `expired`/`expiringSoon`/`confidence` above computed off a
+        // real captured performedDate, or a confirm-day placeholder (F1 fix)?
+        // Without this, a study whose date failed extraction reads as
+        // fresh/not-expired for 5 years with no indication anywhere in search.
+        studyDateUnverified: r.study?.studyDateSource === 'unverified_default',
       };
     });
 
+    // [S2] An IE filter ("over 8 cal") silently treats unknown incident energy
+    // the same as "definitely under the threshold" — the row just disappears
+    // with no count of how many were excluded for lack of data vs a real
+    // non-match. Surface that count so "0 results" doesn't read as "this
+    // facility has no hazard" when it may just mean "no data yet."
+    const ieFilterActive = parsed.filters.ieMin != null || parsed.filters.ieMax != null;
+    let ieIndeterminateCount = 0;
+    if (ieFilterActive) {
+      const filtersNoIe = { ...parsed.filters, ieMin: undefined, ieMax: undefined };
+      ieIndeterminateCount = enriched.filter((row: any) => row.incidentEnergyCalCm2 == null && matchRow(row, filtersNoIe)).length;
+    }
+
     const matched = enriched.filter((row: any) => matchRow(row, parsed.filters));
-    res.json({ success: true, data: { query: q, interpreted: parsed.recognized, unrecognized: parsed.unrecognized, total: matched.length, matched: matched.slice(0, 500) } });
+    res.json({
+      success: true,
+      data: {
+        query: q, interpreted: parsed.recognized, unrecognized: parsed.unrecognized, total: matched.length, matched: matched.slice(0, 500),
+        ieIndeterminateCount,
+      },
+    });
   } catch (e) {
     console.error('arc-flash search error:', e);
     res.status(500).json({ success: false, error: 'Failed to run arc-flash search' });

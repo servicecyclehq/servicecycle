@@ -45,6 +45,11 @@ function buildStudyStateSnapshot(current: any, asOf: Date = new Date()): any {
     requiredArcRatingCalCm2: num(current.requiredArcRatingCalCm2),
     labelSeverity: current.labelSeverity ?? null,
     studyPerformedDate: study.performedDate ?? null,
+    // [F-I2] Was studyPerformedDate above actually read from the source
+    // document, or is it a confirm-day placeholder (routes/arcFlashIngest.ts
+    // F1 fix)? Without this the evidentiary snapshot asserts a placeholder as
+    // fact with no way for a later reader (insurer/OSHA bundle) to tell.
+    studyDateUnverified: study.studyDateSource === 'unverified_default',
     studyExpiresAt: expiresAt,
     studyExpired,
     studySuperseded: !!study.superseded,

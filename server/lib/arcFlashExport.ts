@@ -61,6 +61,24 @@ export const EXPORT_COLUMNS: Array<[string, string]> = [
   ['arcFlashBoundaryIn', 'Arc Flash Boundary (in)'],
   ['ppeCategory', 'PPE Category'],
   ['requiredArcRatingCalCm2', 'Required Arc Rating (cal/cm2)'],
+  // [F-E1] Previously captured on SystemStudyAsset/SystemStudy but silently
+  // dropped on export — a PE re-importing this file was missing data SC
+  // already had. NOTE: arcingCurrentReducedKA/governingScenario (the
+  // dual-scenario record) are deliberately still excluded — flattening them
+  // into single columns here would misrepresent the scenario data; that's
+  // W5 (AFX multi-scenario schema) scope, not a column-list fix.
+  ['calcMethod', 'Calc Method'],
+  ['ppeMethod', 'PPE Method'],
+  ['labelSeverity', 'Label Severity'],
+  ['shockLimitedApproachIn', 'Shock Limited Approach (in)'],
+  ['shockRestrictedApproachIn', 'Shock Restricted Approach (in)'],
+  ['upstreamDevice', 'Upstream Device (raw)'],
+  ['enclosureHeightMm', 'Enclosure Height (mm)'],
+  ['enclosureWidthMm', 'Enclosure Width (mm)'],
+  ['enclosureDepthMm', 'Enclosure Depth (mm)'],
+  ['studyPerformedDate', 'Study Performed Date'],
+  ['studyMethod', 'Study Method'],
+  ['studyPeName', 'Study PE Name'],
 ];
 
 /**
@@ -106,6 +124,19 @@ export function buildExportRows(rows: any[]): any[] {
       arcFlashBoundaryIn: num(s.arcFlashBoundaryIn),
       ppeCategory: s.ppeCategory ?? '',
       requiredArcRatingCalCm2: num(s.requiredArcRatingCalCm2),
+      // [F-E1] See EXPORT_COLUMNS note — single-value fields only.
+      calcMethod: s.calcMethod || '',
+      ppeMethod: s.ppeMethod || '',
+      labelSeverity: s.labelSeverity || '',
+      shockLimitedApproachIn: num(s.shockLimitedApproachIn),
+      shockRestrictedApproachIn: num(s.shockRestrictedApproachIn),
+      upstreamDevice: s.upstreamDevice || '',
+      enclosureHeightMm: num(s.enclosureHeightMm),
+      enclosureWidthMm: num(s.enclosureWidthMm),
+      enclosureDepthMm: num(s.enclosureDepthMm),
+      studyPerformedDate: s.study?.performedDate ? new Date(s.study.performedDate).toISOString().slice(0, 10) : '',
+      studyMethod: s.study?.method || '',
+      studyPeName: s.study?.peName || '',
     };
   });
 }

@@ -5,7 +5,9 @@ const { EXPORT_COLUMNS } = require('../lib/arcFlashExport');
 describe('AFX spec', () => {
   test('versioned, standards-anchored, with required identity + voltage', () => {
     const spec = buildAfxSpec();
-    expect(spec.afxVersion).toBe('1.0');
+    // [F-E1] Bumped 1.0 -> 1.1: 12 additive/optional fields added so the
+    // export stops silently dropping already-captured data (see arcFlashAfx.ts).
+    expect(spec.afxVersion).toBe('1.1');
     expect(spec.standardsBasis).toEqual(expect.arrayContaining(['IEEE 1584-2018']));
     const req = spec.fields.filter(f => f.required).map(f => f.key).sort();
     expect(req).toEqual(['busName', 'nominalVoltageV']);

@@ -14,7 +14,16 @@
  * SC ran the IEEE 1584 calculation.
  */
 
-const AFX_VERSION = '1.0';
+// [F-E1] 1.0 -> 1.1: added 12 fields that were already captured on
+// SystemStudyAsset/SystemStudy but previously silently dropped on export
+// (calcMethod, ppeMethod, labelSeverity, shock approach distances,
+// upstreamDevice raw text, enclosure dims, study performedDate/method/peName).
+// All additive + optional — no existing field changed meaning or was removed,
+// so this is backward compatible; the version bump exists so a consumer that
+// branches on afxVersion can detect the new columns exist. Still excludes the
+// dual-scenario fields (arcingCurrentReducedKA/governingScenario) — that's a
+// real schema-shape question (W5), not a column-list fix.
+const AFX_VERSION = '1.1';
 
 // Value-level aliases tolerated on import (vendor spellings of the same value).
 // e.g. ARCAD writes the standard VCBB electrode config as "VCCB".
@@ -74,6 +83,20 @@ const AFX_FIELDS: any[] = [
   { key: 'arcFlashBoundaryIn', header: 'Arc Flash Boundary (in)', group: 'label_output', unit: 'in', type: 'number', standard: 'NFPA 70E 130.5(H)', required: false },
   { key: 'ppeCategory', header: 'PPE Category', group: 'label_output', type: 'number', standard: 'NFPA 70E 130.5(H)', required: false },
   { key: 'requiredArcRatingCalCm2', header: 'Required Arc Rating (cal/cm2)', group: 'label_output', unit: 'cal/cm2', type: 'number', standard: 'NFPA 70E 130.5(H)', required: false },
+
+  // [F-E1] v1.1 additions — already captured, previously dropped on export.
+  { key: 'calcMethod', header: 'Calc Method', group: 'ieee1584_input', type: 'string', standard: 'IEEE 1584-2018', required: false },
+  { key: 'ppeMethod', header: 'PPE Method', group: 'label_output', type: 'string', standard: 'NFPA 70E 130.5(H)', required: false },
+  { key: 'labelSeverity', header: 'Label Severity', group: 'label_output', type: 'enum', enum: ['danger', 'warning'], standard: 'NFPA 70E 130.5(H)', required: false },
+  { key: 'shockLimitedApproachIn', header: 'Shock Limited Approach (in)', group: 'label_output', unit: 'in', type: 'number', standard: 'NFPA 70E Table 130.4(C)(a)', required: false },
+  { key: 'shockRestrictedApproachIn', header: 'Shock Restricted Approach (in)', group: 'label_output', unit: 'in', type: 'number', standard: 'NFPA 70E Table 130.4(C)(b)', required: false },
+  { key: 'upstreamDevice', header: 'Upstream Device (raw)', group: 'protective_device', type: 'string', standard: null, required: false },
+  { key: 'enclosureHeightMm', header: 'Enclosure Height (mm)', group: 'ieee1584_input', unit: 'mm', type: 'number', standard: 'IEEE 1584-2018', required: false },
+  { key: 'enclosureWidthMm', header: 'Enclosure Width (mm)', group: 'ieee1584_input', unit: 'mm', type: 'number', standard: 'IEEE 1584-2018', required: false },
+  { key: 'enclosureDepthMm', header: 'Enclosure Depth (mm)', group: 'ieee1584_input', unit: 'mm', type: 'number', standard: 'IEEE 1584-2018', required: false },
+  { key: 'studyPerformedDate', header: 'Study Performed Date', group: 'study_meta', type: 'string', standard: null, required: false },
+  { key: 'studyMethod', header: 'Study Method', group: 'study_meta', type: 'string', standard: null, required: false },
+  { key: 'studyPeName', header: 'Study PE Name', group: 'study_meta', type: 'string', standard: null, required: false },
 ];
 
 const GROUPS: Record<string, string> = {
@@ -83,6 +106,7 @@ const GROUPS: Record<string, string> = {
   cable: 'Feeder cable / conduit',
   source_model: 'Utility / transformer source model',
   label_output: 'NFPA 70E 130.5(H) label outputs (captured, not computed by SC)',
+  study_meta: 'Study context — when it was performed, calculation method, and the responsible PE',
 };
 
 function buildAfxSpec(): any {

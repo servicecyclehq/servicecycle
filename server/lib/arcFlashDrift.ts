@@ -112,6 +112,13 @@ export interface DriftReport {
   maxPctDelta: number | null;
   busChanges: BusDrift[];
   summary: string;
+  // [D1] Bus-name keys (post-normalize: trim+lowercase, so blank/null names all
+  // collapse to '') that had MORE THAN ONE bus on either side of the diff.
+  // Those rows can't be matched 1:1 by name (which prior row corresponds to
+  // which current row?), so they are excluded from busChanges/field-diffing
+  // below rather than one silently overwriting another in the lookup map —
+  // which could hide a real material change to an unnamed/duplicate-named bus.
+  duplicateKeyWarnings: Array<{ key: string; priorCount: number; currentCount: number }>;
 }
 
 /**
@@ -123,28 +130,57 @@ export function diffIngestRevisions(prior: { id?: string; confirmedAt?: any; bus
     return {
       hasPrior: false, comparedToIngestId: null, comparedToConfirmedAt: null,
       addedCount: 0, removedCount: 0, changedCount: 0, materialChange: false, reStudyRecommended: false,
-      maxPctDelta: null, busChanges: [],
+      maxPctDelta: null, busChanges: [], duplicateKeyWarnings: [],
       summary: 'No prior confirmed revision for this site — this is the baseline.',
     };
   }
 
-  const priorByKey = new Map<string, any>();
-  for (const b of prior.buses || []) priorByKey.set(busKey(b.busName), b);
-  const curByKey = new Map<string, any>();
-  for (const b of current.buses || []) curByKey.set(busKey(b.busName), b);
+  // [D1] Group by key instead of a single-value Map so a name collision
+  // (most commonly: multiple blank/null busName rows all keying to '') is
+  // DETECTED rather than one row silently overwriting another before the
+  // diff even runs.
+  const priorGroups = new Map<string, any[]>();
+  for (const b of prior.buses || []) {
+    const k = busKey(b.busName);
+    const arr = priorGroups.get(k); if (arr) arr.push(b); else priorGroups.set(k, [b]);
+  }
+  const curGroups = new Map<string, any[]>();
+  for (const b of current.buses || []) {
+    const k = busKey(b.busName);
+    const arr = curGroups.get(k); if (arr) arr.push(b); else curGroups.set(k, [b]);
+  }
 
   const busChanges: BusDrift[] = [];
+  const duplicateKeyWarnings: Array<{ key: string; priorCount: number; currentCount: number }> = [];
   let addedCount = 0, removedCount = 0, changedCount = 0;
   let maxPctDelta: number | null = null;
 
-  // Added + changed (iterate current).
-  for (const [k, cur] of curByKey) {
-    const prev = priorByKey.get(k);
-    if (!prev) {
+  const allKeys = new Set<string>([...priorGroups.keys(), ...curGroups.keys()]);
+  for (const k of allKeys) {
+    const priors = priorGroups.get(k) || [];
+    const curs = curGroups.get(k) || [];
+
+    // Ambiguous: more than one bus on either side shares this key — can't be
+    // matched 1:1 by name, so don't guess. Report instead of silently diffing
+    // (or silently ignoring) an arbitrary pairing.
+    if (priors.length > 1 || curs.length > 1) {
+      duplicateKeyWarnings.push({ key: k, priorCount: priors.length, currentCount: curs.length });
+      continue;
+    }
+
+    const prev = priors[0];
+    const cur = curs[0];
+    if (cur && !prev) {
       addedCount++;
       busChanges.push({ busName: cur.busName || '(unnamed)', change: 'added', fields: [], maxPct: null });
       continue;
     }
+    if (prev && !cur) {
+      removedCount++;
+      busChanges.push({ busName: prev.busName || '(unnamed)', change: 'removed', fields: [], maxPct: null });
+      continue;
+    }
+    if (!prev || !cur) continue; // both empty — unreachable (key wouldn't exist), defensive only
     const fields = diffBus(prev, cur);
     if (fields.length) {
       changedCount++;
@@ -154,15 +190,11 @@ export function diffIngestRevisions(prior: { id?: string; confirmedAt?: any; bus
       busChanges.push({ busName: cur.busName || '(unnamed)', change: 'changed', fields, maxPct: busMax });
     }
   }
-  // Removed (in prior, gone from current).
-  for (const [k, prev] of priorByKey) {
-    if (!curByKey.has(k)) {
-      removedCount++;
-      busChanges.push({ busName: prev.busName || '(unnamed)', change: 'removed', fields: [], maxPct: null });
-    }
-  }
 
-  const materialChange = addedCount > 0 || removedCount > 0 || changedCount > 0;
+  // A duplicate-key group means SOME bus went undiffed — that can't honestly
+  // read as "no material change," so it forces a review even with zero
+  // detected field changes among the cleanly-matched buses.
+  const materialChange = addedCount > 0 || removedCount > 0 || changedCount > 0 || duplicateKeyWarnings.length > 0;
   const reStudyRecommended = materialChange;
 
   return {
@@ -170,14 +202,19 @@ export function diffIngestRevisions(prior: { id?: string; confirmedAt?: any; bus
     comparedToIngestId: prior.id || null,
     comparedToConfirmedAt: prior.confirmedAt ?? null,
     addedCount, removedCount, changedCount, materialChange, reStudyRecommended, maxPctDelta,
-    busChanges,
-    summary: buildSummary({ addedCount, removedCount, changedCount, maxPctDelta }),
+    busChanges, duplicateKeyWarnings,
+    summary: buildSummary({ addedCount, removedCount, changedCount, maxPctDelta, duplicateKeyWarnings }),
   };
 }
 
-function buildSummary(r: { addedCount: number; removedCount: number; changedCount: number; maxPctDelta: number | null }): string {
+function buildSummary(r: { addedCount: number; removedCount: number; changedCount: number; maxPctDelta: number | null; duplicateKeyWarnings: Array<{ key: string; priorCount: number; currentCount: number }> }): string {
+  const dupNote = r.duplicateKeyWarnings.length
+    ? ` ${r.duplicateKeyWarnings.length} bus name${r.duplicateKeyWarnings.length === 1 ? '' : 's'} (e.g. blank/duplicate names) could not be matched 1:1 between revisions and were excluded from the diff — verify those manually.`
+    : '';
   if (!r.addedCount && !r.removedCount && !r.changedCount) {
-    return 'No material change vs the prior confirmed revision — the study still reflects the field.';
+    return r.duplicateKeyWarnings.length
+      ? `No material change detected among the matchable buses vs the prior confirmed revision, but${dupNote}`
+      : 'No material change vs the prior confirmed revision — the study still reflects the field.';
   }
   const parts: string[] = [];
   if (r.changedCount) parts.push(`${r.changedCount} bus${r.changedCount === 1 ? '' : 'es'} changed`);
@@ -185,5 +222,5 @@ function buildSummary(r: { addedCount: number; removedCount: number; changedCoun
   if (r.removedCount) parts.push(`${r.removedCount} removed`);
   const head = parts.join(', ');
   const pct = r.maxPctDelta != null ? ` (up to ${r.maxPctDelta}% off a modeled input)` : '';
-  return `${head}${pct} vs the prior confirmed revision — re-study recommended.`;
+  return `${head}${pct} vs the prior confirmed revision — re-study recommended.${dupNote}`;
 }
