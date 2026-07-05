@@ -27,7 +27,20 @@ DTYPE_PATTERNS = {
 # Header / nameplate fields on a test report. dtype drives validation.
 HEADER_FIELDS = [
     {"key": "serialNumber", "dtype": "serial", "labels": ["serial number", "serial no", "serial #", "serial", "s/n", "sn"]},
-    {"key": "model",        "dtype": "id",     "labels": ["model number", "model no", "model", "catalog number", "catalog no", "cat no", "type/model", "part/style no"]},
+    # "type" added 2026-07-05 (bare, no qualifier) -- PowerDB's own Form 14000
+    # (Bus Duct) nameplate block is documented as "MANUFACTURER, TYPE, VOLTAGE
+    # CLASS..." (docs/research/powerdb-templates/cable_mv_hv.md line 39), and
+    # cable reports commonly use a standalone "TYPE:" for the product/catalog
+    # descriptor (report_018: "MANUFACTURER: OKONITE  TYPE: OKOGUARD-URO 15KV
+    # 500 KCMIL" -- previously had NO model label match at all, model field
+    # came back empty). Listed LAST so more specific labels always win first.
+    # KNOWN EDGE CASE: the generic lookbehind extract_header() applies to every
+    # label is only `(?<![A-Za-z])`, so this bare "type" alias COULD mis-bind
+    # to "EQUIPMENT TYPE:" / "DEVICE TYPE:" / "APPARATUS TYPE:" text if a
+    # document has one of those AND a separate standalone "TYPE:" nameplate
+    # field. No golden-set report exercises that combination today; flagging
+    # rather than silently risking it.
+    {"key": "model",        "dtype": "id",     "labels": ["model number", "model no", "model", "catalog number", "catalog no", "cat no", "type/model", "part/style no", "type"]},
     {"key": "manufacturer", "dtype": "name",   "labels": ["manufacturer", "mfr"]},
     {"key": "testDate",     "dtype": "date",   "labels": ["test date", "date of test", "date tested", "date"]},
     {"key": "vendor",       "dtype": "name",   "labels": ["vendor", "test company", "tested by company", "service provider", "company"]},

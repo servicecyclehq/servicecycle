@@ -182,12 +182,24 @@ def _hdr_reject(raw):
 
 def _cut_allcaps(raw):
     """Stop a value at the next ALL-CAPS word (PowerDB labels/section headers
-    are uppercase), so 'Ferranti Packard YEAR 1958 BUSHING' -> 'Ferranti Packard'."""
+    are uppercase), so 'Ferranti Packard YEAR 1958 BUSHING' -> 'Ferranti Packard'.
+
+    2026-07-05 fix: exempt tokens that contain a digit from the cutoff. Real
+    PowerDB/NETA nameplate documents are themselves entirely upper-case, so
+    the original heuristic couldn't tell a genuine section-header word (YEAR,
+    BUSHING, PANEL -- always pure alphabetic) from the second+ word of a
+    multi-word catalog/model number (PG800-LSI, AKR-30 -- almost always mixed
+    alnum). Model/catalog identifiers routinely carry digits; section-header
+    label words don't, so digit-presence is a cheap, reliable discriminator.
+    Found via report_017 ("MODEL: POWERPACT PG800-LSI" was truncating to just
+    "POWERPACT", missing the eval harness's field-accuracy check) -- verified
+    the original 'Ferranti Packard YEAR 1958 BUSHING' example still cuts at
+    YEAR exactly as before (no digit in that token)."""
     toks = raw.split()
     keep = []
     for i, t in enumerate(toks):
         core = re.sub(r"[^A-Za-z]", "", t)
-        if i > 0 and len(core) >= 3 and core.isupper():
+        if i > 0 and len(core) >= 3 and core.isupper() and not any(ch.isdigit() for ch in t):
             break
         keep.append(t)
     return " ".join(keep).strip(" ,.-:|")
