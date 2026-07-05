@@ -264,3 +264,109 @@ scenario selection/defaulting logic) rather than a single migration PR.
   compatibility for existing AFX consumers) and not purely an internal
   implementation detail — it should be scoped and reviewed as such rather than
   slipped in as a quiet schema patch.
+
+---
+
+## Program scope expansion (2026-07-05, same-day follow-up)
+
+Dustin's read on this finding: "there's 0 reason to NOT keep all the data
+points... we're absolutely changing this." A same-day working session then
+asked the obvious next question — is scenario-collapse the *only* place SC
+under-captures source data, or a symptom of a wider pattern? It's the latter.
+Two independent research passes (cross-verified) found the same
+extract-more-than-we-store shape repeated across arc-flash (~15 separate drop
+points, not just scenarios) and across every other test-report type SC
+ingests (DGA, insulation resistance/PI, power factor, TTR, battery). This
+section captures the resulting program so it isn't lost as a one-off finding.
+Full per-field detail lives in session memory (`servicecycle` project memory,
+2026-07-05 data-completeness audit); this section is the durable pointer.
+
+**Sequenced workstreams** (order chosen to de-risk: infrastructure the later
+steps depend on comes first; the biggest structural change — scenario
+preservation itself — comes after the cheaper, additive safety-net fixes so
+that work isn't done twice):
+
+1. **Ingestion architecture: native PDF input + structure-aware chunking.**
+   Today's arc-flash vision path rasterizes each page to a PNG and makes one
+   Gemini call per page (`rasterizePdf` + per-page loop, `arcFlashExtract.ts:363`),
+   capped at 4 pages — not a Gemini limit (Gemini natively reads PDFs up to
+   ~1,000 pages in one call, ~258 tokens/page) but a workaround for the
+   inefficient one-call-per-page design colliding with the free-tier quota
+   (gemini-2.5-flash: 5 RPM / 250 RPD). Fix: send the native PDF directly;
+   only fall back to multi-call chunking for documents dense enough to risk
+   the 65,536-token output ceiling; when chunking, cut at structural
+   boundaries (table/entity edges), not fixed page counts, so no
+   table/chart/bus-block is ever split across two calls — removes the need
+   for overlap-and-reconcile logic in the common case. This is foundational:
+   the per-field capture fixes below are worth little if the underlying call
+   still silently truncates a long document.
+2. **Per-field capture fixes (the "safety net" pass).** Additive, low-risk,
+   eval-gated, no schema redesign: add a catch-all field to hold anything not
+   yet in a named column; stop discarding the reading-identity label (gas
+   species, winding pair, PF test mode, time point) at the `TestMeasurement`
+   commit step; capture full DGA history instead of newest-sample-only; fix
+   the utility-fault-current key mismatch (`arcFlashExtract.ts` writes
+   `serviceFaultCurrentKA`, `arcFlashIngest.ts` confirm path reads a
+   different key — extracted value never lands); fix AFX multi-table import
+   silently not persisting incident energy (`arcFlashAfxMultiTable.ts`
+   `buildFillUpdates` writes voltage + cable fields only); capture as-left
+   values (NETA MTS 5.4 requires both as-found and as-left; only as-found is
+   captured today).
+3. **Raw source document promotion into the site document library.**
+   Confirmed 2026-07-05: arc-flash source PDFs ARE durably saved today
+   (`uploadFile()` call in `routes/arcFlashIngest.ts:256`, keyed to the site)
+   — they are not lost. But the file lives only as `ArcFlashIngest.fileKey`
+   on the ingest/draft table; it is never promoted into the general
+   `Document` model (schema.prisma:1766) that powers the site's document
+   library / "most recent file for this site" browsing surface. `DocType`
+   (schema.prisma:217) has no arc-flash-study category. Net effect: the
+   original study PDF an engineer would want to pull up on site is on disk
+   but effectively undiscoverable through the normal document UI. Fix: on
+   ingest confirm, also create a `Document` row (siteId, a new `arc_flash_study`
+   `DocType` value, provenance) pointing at the same storage key, so it
+   surfaces alongside one-lines and test reports like any other site
+   document.
+4. **Eval/golden-set fidelity audit.** Found in passing: the golden test
+   corpus's own ground truth already under-represents reality in at least one
+   case (a DGA sample's ground truth lists 3 of 8 gases present in the
+   synthetic report). A parser fix that hits "100% recall" against an
+   incomplete ground truth is a false signal. Needs its own pass auditing the
+   corpus itself before/alongside item 2, or later fixes will look complete
+   when they aren't.
+5. **AFX true multi-scenario schema + read-path redesign.** This is the
+   original finding above — schema + migration
+   (`@@unique([studyId, assetId])` → include a scenario dimension), a
+   decision at every "current row" call site (7+ files) for what "current"
+   means when scenarios diverge, an AFX v2 spec bump, and vendor-template
+   verification (SKM/EasyPower/ETAP multi-scenario export format is
+   currently unverified — see "Fix scope estimate" above). Sequenced after
+   items 1-2 because the same schema-change discipline and eval-gating apply,
+   and because item 2's `TestMeasurement`-style safety-net pattern may inform
+   how the AFX scenario dimension gets modeled.
+6. **Label/UI field-completeness verification.** Spot-checked 2026-07-05:
+   better shape than expected. Both the printed PDF label (`arcFlashLabelDoc.ts`)
+   and the public QR label page (`PublicArcFlashLabel.jsx`) already carry
+   every NFPA 70E §130.5(H)-required field (nominal voltage, arc-flash
+   boundary, incident energy + working distance, PPE category), plus shock
+   approach boundaries with a working fallback: when a study doesn't report
+   them, SC derives them from NFPA 70E Table 130.4 by voltage and labels the
+   source (`shockLimitedApproachSource: 'study' | 'table130_4'`,
+   `arcFlashLabelDoc.ts:90-91`) rather than leaving them blank or guessing.
+   Remaining gap, low priority: if a source study reports a *site-specific*
+   shock boundary that differs from the standard table (uncommon but
+   possible), that override isn't captured from the PDF today — the table
+   fallback is the only path. Any *other* newly-captured field from item 2
+   that should reach an asset template or detail page (not just the label)
+   still needs its own UI pass with visual review before shipping — capture
+   in the database is not the same as a field being visible anywhere a user
+   looks.
+7. **Historical backfill — deferred, not currently needed.** All of the
+   above is a forward-looking fix. Re-ingesting already-uploaded source
+   documents against the improved pipeline would only matter once there is
+   real customer data ingested under the old pipeline; as of 2026-07-05 there
+   isn't (pre-first-customer). Revisit if/when that changes.
+
+**Explicit non-goal, reconfirmed:** none of this widens SC's PPE posture.
+Every new field is captured because a *sealed study or standard reference
+table* states it — SC still never computes or asserts what PPE a worker
+should use (see [[servicecycle-ppe-liability-posture]]). Data points only.
