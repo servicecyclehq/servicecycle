@@ -185,7 +185,19 @@ export async function runQemwAlerts(): Promise<QemwAlertResult> {
 
     // Email the tech directly if they have an email, plus account admins
     const admins = await prisma.user.findMany({
-      where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: null } },
+      // [2026-07-06 fallback-masks-capture fix] User.email is a required,
+      // non-nullable, unique column -- `{ not: null }` against a non-nullable
+      // Prisma field throws PrismaClientValidationError ("Argument `not` must
+      // not be null") UNCONDITIONALLY, every single call, regardless of what
+      // rows exist. The daily cron in index.ts wraps runQemwAlerts() in a
+      // try/catch that only console.errors, so this has been silently
+      // crashing the ENTIRE function (both expiry alerts and compliance-gap
+      // detection) every time it reached this line -- the whole QEMW alert
+      // feature has likely never successfully completed a run against an
+      // account with a qualifying technician. `{ not: '' }` preserves the
+      // original defensive intent (skip a blank/placeholder email) without
+      // the invalid-argument crash.
+      where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: '' } },
       select: { email: true },
     });
 
@@ -298,7 +310,8 @@ export async function runQemwAlerts(): Promise<QemwAlertResult> {
       where: { id: accountId }, select: { companyName: true },
     });
     const admins = await prisma.user.findMany({
-      where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: null } },
+      // see the matching fix + comment on the expiry-alert admin lookup above
+      where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: '' } },
       select: { id: true, email: true },
     });
     if (admins.length === 0) { skipped++; continue; }

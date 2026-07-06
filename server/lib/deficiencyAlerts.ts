@@ -178,12 +178,18 @@ export async function runDeficiencyAlerts(): Promise<DeficiencyAlertResult> {
     });
 
     // Notify once per tier per account per recipient today
+    // [2026-07-06 fallback-masks-capture fix] User.email is required/
+    // non-nullable/unique -- `{ not: null }` against a non-nullable Prisma
+    // field throws PrismaClientValidationError unconditionally on every call
+    // (see the same bug + full writeup in lib/qemwAlerts.ts). `{ not: '' }`
+    // preserves the original defensive intent without the invalid-argument
+    // crash.
     const recipients = await prisma.user.findMany({
       where: {
         accountId,
         role: { in: ['admin', 'manager'] },
         isActive: true,
-        email: { not: null },
+        email: { not: '' },
       },
       select: { id: true, email: true },
     });

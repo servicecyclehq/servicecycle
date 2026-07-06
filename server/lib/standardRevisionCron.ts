@@ -147,8 +147,14 @@ export async function runStandardRevisionCron(): Promise<StandardRevisionCronRes
       const account = await prisma.account.findUnique({
         where: { id: accountId }, select: { companyName: true },
       });
+      // [2026-07-06 fallback-masks-capture fix] User.email is required/
+      // non-nullable/unique -- `{ not: null }` against a non-nullable Prisma
+      // field throws PrismaClientValidationError unconditionally on every
+      // call (see the same bug + full writeup in lib/qemwAlerts.ts).
+      // `{ not: '' }` preserves the original defensive intent without the
+      // invalid-argument crash.
       const admins = await prisma.user.findMany({
-        where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: null } },
+        where: { accountId, role: { in: ['admin', 'manager'] }, isActive: true, email: { not: '' } },
         select: { email: true },
       });
       if (admins.length === 0) { skipped++; continue; }
