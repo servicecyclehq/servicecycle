@@ -174,7 +174,25 @@ router.get('/callback', async (req: any, res: any) => {
     const profile = await ssoPolis.fetchUserInfo(cfg, token.access_token);
 
     // ── Cross-tenant isolation (threat T1) ───────────────────────────────────
-    if (profile.requested && profile.requested.tenant && profile.requested.tenant !== connection.polisTenant) {
+    // FAIL CLOSED if requested.tenant is missing rather than silently skipping
+    // the check. Verified 2026-07-06 directly against Polis's real source
+    // (boxyhq/jackson v26.2.0, npm/src/controller/oauth.ts, the exact tag our
+    // own docs/security/SSO_DESIGN.md cites) rather than relying solely on our
+    // own "source-verified, not live-captured" caveat there: every connection-
+    // resolution branch in authorize() sets requestedTenant to a real, non-
+    // empty value before `if (requestedTenant) requested.tenant = requestedTenant`
+    // runs, for both SP-initiated (OIDC/SAML, via tenant+product, encoded
+    // client_id, or federated app) and IdP-initiated SAML flows, and that value
+    // is carried unchanged through session -> code -> token -> userinfo. We
+    // always send `tenant` on /authorize (buildAuthorizeUrl call above), so a
+    // resolved connection with no requested.tenant should never happen; if it
+    // ever does (future Polis change, or a connection somehow configured with
+    // an empty-string tenant) this now rejects instead of quietly bypassing
+    // the check.
+    if (!profile.requested || !profile.requested.tenant) {
+      return failRedirect(res, 'tenant_missing_from_profile');
+    }
+    if (profile.requested.tenant !== connection.polisTenant) {
       return failRedirect(res, 'tenant_mismatch');
     }
     const profEmail = String(profile.email || '').trim().toLowerCase();

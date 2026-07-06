@@ -213,6 +213,22 @@ test('requested.tenant mismatch -> rejected', async () => {
   expect(res.headers.location).toContain('/login?sso_error=unavailable');
 });
 
+test('requested.tenant MISSING entirely -> rejected (fail closed, 2026-07-06)', async () => {
+  // No `requested` key at all on the userinfo profile -- e.g. a future Polis
+  // change, or a connection resolved via some path that doesn't populate it.
+  ssoPolis.fetchUserInfo.mockResolvedValue({ id: 'pNR', email: `nr-${randomBytes(6).toString('hex')}@a.test` });
+  const st = await makeState();
+  const res = await request(app).get('/api/sso/callback').query({ code: 'c', state: st.state });
+  expect(res.headers.location).toContain('/login?sso_error=unavailable');
+});
+
+test('requested present but requested.tenant MISSING -> rejected (fail closed, 2026-07-06)', async () => {
+  ssoPolis.fetchUserInfo.mockResolvedValue({ id: 'pNR2', email: `nr2-${randomBytes(6).toString('hex')}@a.test`, requested: {} });
+  const st = await makeState();
+  const res = await request(app).get('/api/sso/callback').query({ code: 'c', state: st.state });
+  expect(res.headers.location).toContain('/login?sso_error=unavailable');
+});
+
 test('JIT disabled -> unknown user blocked, no account created', async () => {
   process.env.SSO_JIT_PROVISIONING = '';
   const email = `nojit-${randomBytes(6).toString('hex')}@a.test`;
