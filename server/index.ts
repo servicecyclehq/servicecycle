@@ -884,6 +884,22 @@ const publicParseLimiter = rateLimit({
   message: { success: false, error: 'Too many reports from this network — try again in an hour or create a free account.' },
 });
 
+// [2026-07-06 pentest finding, Low] Public token-lookup endpoints (auditor/
+// insurer share links, arc-flash QR/NFC label portal) have no credential
+// besides a high-entropy token in the URL, and previously had no rate limit
+// at all beyond a bare token.length floor -- defense-in-depth against online
+// token enumeration in case a token generator is ever weakened. Mirrors the
+// publicParseLimiter pattern just above.
+const publicTokenLookupLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max:      30,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator:    _clientIpKey,
+  handler: rateLimitHandler, // (D2) Retry-After
+  message: { success: false, error: 'Too many requests from this network — please wait a moment and try again.' },
+});
+
 // v0.67.10 (audit High, 2026-05-22): per-IP rate limit STACKED on top
 // of per-user limiters for AI endpoints. Without this, a /register
 // cycle that creates a fresh user every minute resets the per-user
@@ -1525,10 +1541,10 @@ app.use('/api/invite', partnerInvitePublicRoutes);
 const shareLinkRoutes = require('./routes/shareLinks');
 app.use('/api/share-links', authenticateToken, shareLinkRoutes);
 const shareLinkPublicRoutes = require('./routes/shareLinkPublic');
-app.use('/api/public/share', shareLinkPublicRoutes); // no auth — token is the credential
+app.use('/api/public/share', publicTokenLookupLimiter, shareLinkPublicRoutes); // no auth — token is the credential
 // Arc-flash QR/NFC label portal (Slice 3.5c) — public read of the live label.
 const arcFlashLabelPublicRoutes = require('./routes/arcFlashLabelPublic');
-app.use('/api/public/arc-flash-label', arcFlashLabelPublicRoutes); // no auth — token is the credential
+app.use('/api/public/arc-flash-label', publicTokenLookupLimiter, arcFlashLabelPublicRoutes); // no auth — token is the credential
 
 // Phase 2 — revenue-attribution dashboard (closed-loop engagement → pipeline → $)
 const revenueAttributionRoutes = require('./routes/revenueAttribution');
