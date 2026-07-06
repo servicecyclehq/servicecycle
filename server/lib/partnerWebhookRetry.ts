@@ -15,9 +15,9 @@ export {};
  * On final failure (attempt 3 reached), logs a warning and leaves the record.
  */
 
-const { createHmac } = require('crypto');
+const { randomUUID } = require('crypto');
 const prisma = require('./prisma').default;
-const { postJsonToValidatedUrl } = require('./webhook');
+const { postJsonToValidatedUrl, signPayload } = require('./webhook');
 
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
@@ -98,7 +98,15 @@ async function runWebhookRetryCron(): Promise<RetryResult> {
       data:             log.payload,
     });
 
-    const sig = createHmac('sha256', partnerOrg.webhookSecret).update(body).digest('hex');
+    // [2026-07-06 signing-unification fix] Was a body-only HMAC -- no
+    // timestamp, no replay window. Switched to lib/webhook.ts's
+    // signPayload() over "<timestamp>.<body>", matching the fix applied to
+    // firePartnerWebhook (lib/partnerEvents.ts) and the fleetDashboard
+    // webhook-test route. No live partner integrators exist today, so
+    // there's no wire-format compat to preserve.
+    const timestamp  = String(Math.floor(Date.now() / 1000));
+    const deliveryId = randomUUID();
+    const sig        = signPayload(body, timestamp, partnerOrg.webhookSecret);
 
     try {
       // [2026-07-06 SSRF fix] Same gap as firePartnerWebhook: raw fetch()
@@ -110,8 +118,10 @@ async function runWebhookRetryCron(): Promise<RetryResult> {
         url: partnerOrg.webhookUrl,
         body,
         headers: {
-          'Content-Type': 'application/json',
-          'X-ServiceCycle-Signature': `sha256=${sig}`,
+          'Content-Type':               'application/json',
+          'X-ServiceCycle-Signature':   sig,
+          'X-ServiceCycle-Timestamp':   timestamp,
+          'X-ServiceCycle-Delivery-Id': deliveryId,
         },
         timeoutMs: 5000,
       });

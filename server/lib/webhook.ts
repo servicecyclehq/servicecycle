@@ -348,15 +348,18 @@ async function postOnce({ url, addresses, body, signature, timestamp, deliveryId
   });
 }
 
-// ── Generic hardened POST for OTHER callers with their own payload/signature
-//    contracts (partner-webhook delivery predates this module and is
-//    intentionally NOT unified onto the timestamped signature scheme above --
-//    that would be a breaking wire-format change for existing partner
-//    integrators. See lib/partnerEvents.ts, lib/partnerWebhookRetry.ts,
-//    routes/fleetDashboard.ts webhook-test.) Runs the EXACT same SSRF
-//    defenses (HTTPS-only, private/metadata-IP block, DNS-rebind-safe IP
-//    pinning, no redirects) as deliverWebhook() above, but the caller
-//    supplies its own headers + body verbatim -- no payload shape assumed.
+// ── Generic hardened POST for OTHER callers with their own payload shape ─────
+//    (partner-webhook delivery: lib/partnerEvents.ts, lib/partnerWebhookRetry.ts,
+//    routes/fleetDashboard.ts webhook-test). As of 2026-07-06 these callers
+//    ALSO sign with this module's signPayload() over "<timestamp>.<body>" --
+//    same scheme as deliverWebhook() below, just built and sent by the
+//    caller since their payload envelope differs (partnerId/eventType/data
+//    vs the alert-engine's flat event fields). No live partner integrators
+//    exist today, so there was no external wire-format contract to preserve
+//    by keeping the old body-only HMAC. Runs the EXACT same SSRF defenses
+//    (HTTPS-only, private/metadata-IP block, DNS-rebind-safe IP pinning, no
+//    redirects) as deliverWebhook() above, but the caller supplies its own
+//    headers + body verbatim -- no payload shape assumed.
 async function postJsonToValidatedUrl({ url, body, headers = {}, timeoutMs = DEFAULT_TIMEOUT_MS }) {
   const { valid, reason, addresses } = await validateWebhookUrl(url);
   if (!valid) return { ok: false, reason };

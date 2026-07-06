@@ -14,10 +14,10 @@ export {};
  *   partner_share_overdue_tasks    → TASK_OVERDUE
  */
 
-const { createHmac } = require('crypto');
+const { randomUUID } = require('crypto');
 const prisma = require('./prisma').default;
 const { sendEmail } = require('./email');
-const { postJsonToValidatedUrl } = require('./webhook');
+const { postJsonToValidatedUrl, signPayload } = require('./webhook');
 
 // Map event type → AccountSetting consent key
 const CONSENT_KEYS: Record<string, string> = {
@@ -195,7 +195,17 @@ async function firePartnerWebhook(log: any, partnerOrg: any): Promise<void> {
     data:             log.payload,
   });
 
-  const sig = createHmac('sha256', partnerOrg.webhookSecret).update(body).digest('hex');
+  // [2026-07-06 signing-unification fix] This used to sign with a plain
+  // body-only HMAC -- no timestamp, no replay window, indefinitely
+  // replayable if a signature+payload pair ever leaked. Switched to
+  // lib/webhook.ts's signPayload() over "<timestamp>.<body>", the same
+  // scheme the generic account-level webhooks already use. No live partner
+  // integrators exist today, so there's no wire-format compat to preserve --
+  // matching fix applied to lib/partnerWebhookRetry.ts and the
+  // routes/fleetDashboard.ts webhook-test route.
+  const timestamp  = String(Math.floor(Date.now() / 1000));
+  const deliveryId = randomUUID();
+  const sig        = signPayload(body, timestamp, partnerOrg.webhookSecret);
 
   try {
     // [2026-07-06 SSRF fix] This used to call raw fetch() against an
@@ -205,13 +215,16 @@ async function firePartnerWebhook(log: any, partnerOrg: any): Promise<void> {
     // anywhere. Routes through lib/webhook.ts's already-hardened
     // validateWebhookUrl() + pinned https.request (same defenses the
     // alert-engine webhook path uses) without changing this endpoint's
-    // existing payload shape or signature scheme.
+    // existing payload shape (signature scheme was separately unified onto
+    // signPayload() above).
     const result = await postJsonToValidatedUrl({
       url: partnerOrg.webhookUrl,
       body,
       headers: {
-        'Content-Type': 'application/json',
-        'X-ServiceCycle-Signature': `sha256=${sig}`,
+        'Content-Type':               'application/json',
+        'X-ServiceCycle-Signature':   sig,
+        'X-ServiceCycle-Timestamp':   timestamp,
+        'X-ServiceCycle-Delivery-Id': deliveryId,
       },
       timeoutMs: 5000,
     });

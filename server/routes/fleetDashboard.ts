@@ -15,7 +15,7 @@ import prisma from '../lib/prisma';
 const { requireOemAdmin } = require('../middleware/roles');
 const { buildComplianceGap } = require('../lib/complianceReport');
 const { buildPortfolioRank } = require('../lib/portfolioRank');
-const { validateWebhookUrl, postJsonToValidatedUrl } = require('../lib/webhook');
+const { validateWebhookUrl, postJsonToValidatedUrl, signPayload } = require('../lib/webhook');
 
 const DAY_MS = 86_400_000;
 
@@ -1132,7 +1132,15 @@ router.post('/settings/webhook-test', async (req: any, res: any) => {
       timestamp: new Date().toISOString(),
       partnerId: partnerOrgId,
     });
-    const sig = crypto.createHmac('sha256', org.webhookSecret).update(body).digest('hex');
+    // [2026-07-06 signing-unification fix] Was a body-only HMAC with no
+    // timestamp/replay protection -- switched to lib/webhook.ts's
+    // signPayload() so a test-send signs exactly the way a real delivery
+    // now does (see lib/partnerEvents.ts firePartnerWebhook +
+    // lib/partnerWebhookRetry.ts for the matching change). No live partner
+    // integrators exist today, so there's no wire-format compat to preserve.
+    const timestamp  = String(Math.floor(Date.now() / 1000));
+    const deliveryId = crypto.randomUUID();
+    const signature  = signPayload(body, timestamp, org.webhookSecret);
 
     // [2026-07-06 SSRF fix] PATCH /settings already validates webhookUrl at
     // save time (PEN-1 above), but that's a write-time check -- a low-TTL
@@ -1145,7 +1153,9 @@ router.post('/settings/webhook-test', async (req: any, res: any) => {
       body,
       headers: {
         'Content-Type': 'application/json',
-        'X-ServiceCycle-Signature': `sha256=${sig}`,
+        'X-ServiceCycle-Signature':   signature,
+        'X-ServiceCycle-Timestamp':   timestamp,
+        'X-ServiceCycle-Delivery-Id': deliveryId,
       },
       timeoutMs: 5000,
     });
