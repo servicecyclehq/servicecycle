@@ -63,10 +63,14 @@ export const EXPORT_COLUMNS: Array<[string, string]> = [
   ['requiredArcRatingCalCm2', 'Required Arc Rating (cal/cm2)'],
   // [F-E1] Previously captured on SystemStudyAsset/SystemStudy but silently
   // dropped on export — a PE re-importing this file was missing data SC
-  // already had. NOTE: arcingCurrentReducedKA/governingScenario (the
-  // dual-scenario record) are deliberately still excluded — flattening them
-  // into single columns here would misrepresent the scenario data; that's
-  // W5 (AFX multi-scenario schema) scope, not a column-list fix.
+  // already had.
+  // [W5, resolved 2026-07-05] There is no separate second incident-energy/PPE
+  // result to export — IEEE 1584 governing-scenario calc only ever stores ONE
+  // extra pair of fields describing the non-winning (full vs. reduced arcing
+  // current) case: the reduced-scenario's arcing current, and which scenario
+  // actually governed. That's a flat 2-column addition, not a schema redesign.
+  ['arcingCurrentReducedKA', 'Arcing Current Reduced (kA)'],
+  ['governingScenario', 'Governing Scenario'],
   ['calcMethod', 'Calc Method'],
   ['ppeMethod', 'PPE Method'],
   ['labelSeverity', 'Label Severity'],
@@ -124,7 +128,9 @@ export function buildExportRows(rows: any[]): any[] {
       arcFlashBoundaryIn: num(s.arcFlashBoundaryIn),
       ppeCategory: s.ppeCategory ?? '',
       requiredArcRatingCalCm2: num(s.requiredArcRatingCalCm2),
-      // [F-E1] See EXPORT_COLUMNS note — single-value fields only.
+      // [F-E1]/[W5] See EXPORT_COLUMNS notes.
+      arcingCurrentReducedKA: num(s.arcingCurrentReducedKA),
+      governingScenario: s.governingScenario || '',
       calcMethod: s.calcMethod || '',
       ppeMethod: s.ppeMethod || '',
       labelSeverity: s.labelSeverity || '',

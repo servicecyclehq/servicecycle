@@ -414,12 +414,22 @@ router.get('/ingest/:id', async (req: any, res: any) => {
 
 // Shape a bus row for the drift engine (Decimals -> numbers; keep the topology +
 // device fields the diff compares).
+// [D3, resolved 2026-07-05] Previously tracked 9 fields while busForGap (the
+// calc-completeness check, above) tracked 14 -- missing electrodeConfig,
+// conductorGapMm, workingDistanceIn, cableLengthFt, cableSize, all of which
+// directly feed the incident-energy calculation. A re-import that changed
+// only one of those 5 would report "no material change" even though a real
+// calc input changed. Added so a geometry change now triggers a re-study flag
+// same as a device/topology change does.
 function busForDrift(b: any) {
   return {
     busName: b.busName, nominalVoltage: b.nominalVoltage,
     boltedFaultCurrentKA: numOrNull(b.boltedFaultCurrentKA), clearingTimeMs: numOrNull(b.clearingTimeMs),
     deviceRatingA: numOrNull(b.deviceRatingA), deviceType: b.deviceType, tripUnitType: b.tripUnitType,
     fedFromBusName: b.fedFromBusName, deviceSettings: b.deviceSettings,
+    electrodeConfig: b.electrodeConfig, conductorGapMm: numOrNull(b.conductorGapMm),
+    workingDistanceIn: numOrNull(b.workingDistanceIn), cableLengthFt: numOrNull(b.cableLengthFt),
+    cableSize: b.cableSize,
   };
 }
 

@@ -36,10 +36,15 @@ function cleanGases(input: any): Record<string, number> {
 }
 
 /** Merge parsed-from-text gases under explicit structured gases. */
-function resolveGases(body: any): { gases: Record<string, number>; sampleDate: string | null; labName: string | null } {
+function resolveGases(body: any): { gases: Record<string, number>; sampleDate: string | null; labName: string | null; reportedTdcg: number | null } {
   const structured = cleanGases(body?.gases);
   let sampleDate: string | null = typeof body?.sampleDate === 'string' ? body.sampleDate : null;
   let labName: string | null = typeof body?.labName === 'string' ? body.labName : null;
+  // [Resolved 2026-07-05] Explicit structured input wins, same precedence as
+  // sampleDate/labName above; falls back to whatever parseDgaText finds in
+  // free-form report text.
+  let reportedTdcg: number | null = Number.isFinite(Number(body?.reportedTdcg)) && body?.reportedTdcg !== '' && body?.reportedTdcg != null
+    ? Number(body.reportedTdcg) : null;
   if (typeof body?.reportText === 'string' && body.reportText.trim()) {
     const parsed = parseDgaText(body.reportText);
     for (const [k, v] of Object.entries(parsed.gases)) {
@@ -47,8 +52,9 @@ function resolveGases(body: any): { gases: Record<string, number>; sampleDate: s
     }
     if (!sampleDate) sampleDate = parsed.sampleDate;
     if (!labName) labName = parsed.labName;
+    if (reportedTdcg == null) reportedTdcg = parsed.reportedTdcg;
   }
-  return { gases: structured, sampleDate, labName };
+  return { gases: structured, sampleDate, labName, reportedTdcg };
 }
 
 async function ownAsset(req: any) {
@@ -60,11 +66,11 @@ router.post('/:id/dga/preview', requireViewer, async (req: any, res: any) => {
   try {
     const asset = await ownAsset(req);
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
-    const { gases, sampleDate, labName } = resolveGases(req.body || {});
+    const { gases, sampleDate, labName, reportedTdcg } = resolveGases(req.body || {});
     if (Object.keys(gases).length === 0) {
       return res.status(400).json({ success: false, error: 'No gas values found. Provide gas readings or report text.' });
     }
-    const evaluation = evaluateDga(gases);
+    const evaluation = evaluateDga(gases, reportedTdcg);
     return res.json({ success: true, data: { gases, sampleDate, labName, evaluation } });
   } catch (err: any) {
     console.error('[dga/preview]', err?.message || err);
@@ -82,14 +88,14 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
   try {
     const asset = await ownAsset(req);
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
-    const { gases, sampleDate, labName } = resolveGases(req.body || {});
+    const { gases, sampleDate, labName, reportedTdcg } = resolveGases(req.body || {});
     if (Object.keys(gases).length === 0) {
       return res.status(400).json({ success: false, error: 'No gas values to record.' });
     }
     const when = sampleDate ? new Date(sampleDate) : new Date();
     if (Number.isNaN(when.getTime())) return res.status(400).json({ success: false, error: 'Invalid sampleDate' });
 
-    const evaluation = evaluateDga(gases);
+    const evaluation = evaluateDga(gases, reportedTdcg);
 
     const result = await prisma.$transaction(async (tx: any) => {
       const sample = await tx.labSample.create({
@@ -104,7 +110,12 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
           // [W8] TDCG sums missing gases as 0 ppm (see dgaEvaluate.ts
           // missingGases) -- a partial panel must never read as an
           // unqualified, complete-panel TDCG in the record.
-          notes: `[ingest:dga] TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.missingGases.length ? ` (PARTIAL PANEL -- ${evaluation.missingGases.join(', ').toUpperCase()} not reported, treated as 0 ppm)` : ''}; IEEE C57.104 legacy 4-condition screen (estimate) — Condition ${evaluation.overallCondition}${evaluation.faultLabel ? `; ${evaluation.faultLabel}` : ''}.`,
+          // [Resolved 2026-07-05] When the report states its own TDCG, that
+          // value is now authoritative (evaluation.tdcg) per Dustin's
+          // "reports take precedence, we're not the engineering firm" call --
+          // but a real disagreement with our recomputed sum is still
+          // surfaced, never silently dropped either way.
+          notes: `[ingest:dga] TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.tdcgSource === 'reported' ? ' (report-stated)' : ''}${evaluation.missingGases.length ? ` (PARTIAL PANEL -- ${evaluation.missingGases.join(', ').toUpperCase()} not reported, treated as 0 ppm)` : ''}${evaluation.tdcgDiscrepancyPct != null && evaluation.tdcgDiscrepancyPct >= 10 ? ` [NOTE: report-stated TDCG differs from the recomputed sum (${Math.round(evaluation.computedTdcg)} ppm) by ${evaluation.tdcgDiscrepancyPct}% -- verify gas list matches]` : ''}; IEEE C57.104 legacy 4-condition screen (estimate) — Condition ${evaluation.overallCondition}${evaluation.faultLabel ? `; ${evaluation.faultLabel}` : ''}.`,
         },
         select: { id: true, sampleDate: true, ieeeStatus: true, faultCode: true, resultRating: true },
       });
@@ -131,7 +142,7 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
           await tx.deficiency.create({
             data: {
               accountId: req.user.accountId, assetId: asset.id, severity: sev as any,
-              description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104 legacy 4-condition screen, estimate) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.missingGases.length ? ` (PARTIAL PANEL -- ${evaluation.missingGases.join(', ').toUpperCase()} not reported)` : ''}${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}. IEEE C57.104 Status ${evaluation.ieeeStatus} — ${evaluation.overallCondition >= 3 ? 'Action Required: immediate investigation.' : 'Increased monitoring required.'}`,
+              description: `DGA Condition ${evaluation.overallCondition} (IEEE C57.104 legacy 4-condition screen, estimate) — TDCG ${Math.round(evaluation.tdcg)} ppm${evaluation.tdcgSource === 'reported' ? ' (report-stated)' : ''}${evaluation.missingGases.length ? ` (PARTIAL PANEL -- ${evaluation.missingGases.join(', ').toUpperCase()} not reported)` : ''}${evaluation.tdcgDiscrepancyPct != null && evaluation.tdcgDiscrepancyPct >= 10 ? ` [report TDCG vs. recomputed sum differ by ${evaluation.tdcgDiscrepancyPct}% -- verify gas list]` : ''}${evaluation.faultLabel ? `, ${evaluation.faultLabel} (${evaluation.faultCode})` : ''}. IEEE C57.104 Status ${evaluation.ieeeStatus} — ${evaluation.overallCondition >= 3 ? 'Action Required: immediate investigation.' : 'Increased monitoring required.'}`,
               correctiveAction: evaluation.overallCondition >= 3
                 ? 'Action Required per IEEE C57.104 Status 3/4 — schedule immediate retest and electrical/internal inspection.'
                 : 'Increase DGA sampling frequency and trend the key gases.',

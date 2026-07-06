@@ -43,7 +43,23 @@ function findValueFor(text: string, alias: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function parseDgaText(text: string): { gases: Gases; sampleDate: string | null; labName: string | null } {
+// TDCG (Total Dissolved Combustible Gas) is a derived summary figure, not one
+// of the 9 individual gases -- kept separate from ALIASES/GasKey. [Resolved
+// 2026-07-05, Dustin's call: "reports, if certified/stamped, need to take
+// precedence... we're a data org, not an engineering firm."] Captures the
+// report's OWN stated TDCG so dgaEvaluate.ts can prefer it over always
+// recomputing from individual gases -- previously never captured at all.
+const TDCG_ALIASES = ['total dissolved combustible gas', 'total combustible gas', 'tdcg'];
+
+function findTdcg(text: string): number | null {
+  for (const a of TDCG_ALIASES) {
+    const v = findValueFor(text, a);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+export function parseDgaText(text: string): { gases: Gases; sampleDate: string | null; labName: string | null; reportedTdcg: number | null } {
   const src = String(text || '');
   const gases: Gases = {};
   const used = new Set<GasKey>();
@@ -54,6 +70,7 @@ export function parseDgaText(text: string): { gases: Gases; sampleDate: string |
       if (v != null) { gases[key] = v; used.add(key); break; }
     }
   }
+  const reportedTdcg = findTdcg(src);
 
   // Sample date — first ISO or US date.
   let sampleDate: string | null = null;
@@ -70,5 +87,5 @@ export function parseDgaText(text: string): { gases: Gases; sampleDate: string |
   const lab = /(SDMyers|S\.?D\.? Myers|Doble|ESCO|Weidmann|TJ\|H2b|[A-Z][A-Za-z&. ]*Laborator(?:y|ies))/.exec(src);
   if (lab) labName = lab[1].trim().slice(0, 80);
 
-  return { gases, sampleDate, labName };
+  return { gases, sampleDate, labName, reportedTdcg };
 }

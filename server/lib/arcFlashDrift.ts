@@ -98,6 +98,16 @@ function diffBus(prior: any, current: any): FieldChange[] {
   push(diffCategorical('Trip unit', 'tripUnitType', prior.tripUnitType, current.tripUnitType));
   push(diffCategorical('Feed source (topology)', 'fedFromBusName', prior.fedFromBusName, current.fedFromBusName));
   push(diffSettings(prior.deviceSettings, current.deviceSettings));
+  // [D3, resolved 2026-07-05] These 5 feed the incident-energy calculation
+  // directly (same fields busForGap already requires for calc-completeness)
+  // but were previously untracked here, so a geometry-only change could pass
+  // as "no material change." Same materiality threshold as the other numeric
+  // inputs above (10% relative-change tolerance via diffNumeric).
+  push(diffCategorical('Electrode configuration', 'electrodeConfig', prior.electrodeConfig, current.electrodeConfig));
+  push(diffNumeric('Conductor gap', 'conductorGapMm', prior.conductorGapMm, current.conductorGapMm, num));
+  push(diffNumeric('Working distance', 'workingDistanceIn', prior.workingDistanceIn, current.workingDistanceIn, num));
+  push(diffNumeric('Cable length', 'cableLengthFt', prior.cableLengthFt, current.cableLengthFt, num));
+  push(diffCategorical('Cable size', 'cableSize', prior.cableSize, current.cableSize));
   return changes;
 }
 

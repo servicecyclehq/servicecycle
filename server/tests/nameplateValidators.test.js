@@ -366,14 +366,27 @@ describe('V7 — evidence-string check', () => {
     checkNameplateEvidence(fields, conf, ev);
     expect(conf.kva).toBe('medium');
   });
-  test('no evidence map at all → no-op', () => {
+  // [Resolved 2026-07-05, Dustin's call: "throw a red flag to the tech to
+  // review and/or manually enter the data" — the Gemini->Groq fallback makes
+  // total evidence-absence a live, everyday case, not just an old client.]
+  test('no evidence map at all → soft-flags every high-confidence field for review', () => {
     const fields = { kva: 75 };
     const conf = { kva: 'high' };
     const out1 = checkNameplateEvidence(fields, conf, null);
-    const out2 = checkNameplateEvidence(fields, conf, undefined);
-    expect(out1).toEqual([]);
-    expect(out2).toEqual([]);
-    expect(conf.kva).toBe('high');
+    expect(out1.some((f) => f.code === 'no_evidence_map' && f.field === 'kva')).toBe(true);
+    expect(conf.kva).toBe('medium');
+
+    const conf2 = { kva: 'high' };
+    const out2 = checkNameplateEvidence(fields, conf2, undefined);
+    expect(out2.some((f) => f.code === 'no_evidence_map' && f.field === 'kva')).toBe(true);
+    expect(conf2.kva).toBe('medium');
+  });
+  test('no evidence map at all → does not touch a field that is already low/medium', () => {
+    const fields = { kva: 75 };
+    const conf = { kva: 'low' };
+    const out = checkNameplateEvidence(fields, conf, null);
+    expect(out).toEqual([]);
+    expect(conf.kva).toBe('low');
   });
   test('voltage snippet with correct "V" token → passes', () => {
     const fields = { voltage: '480V' };

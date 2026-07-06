@@ -1578,8 +1578,50 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
       if (v !== null && v !== undefined && String(v).trim() !== '') values[k] = v;
     }
 
-    const prevScan: any = (asset.nameplateData && typeof asset.nameplateData === 'object')
-      ? (asset.nameplateData as any)._scan : null;
+    const prevNameplateData: any = (asset.nameplateData && typeof asset.nameplateData === 'object')
+      ? (asset.nameplateData as any) : null;
+    const prevScan: any = prevNameplateData ? prevNameplateData._scan : null;
+
+    // [Resolved 2026-07-05, Dustin's call: "if the tech clears it there's
+    // likely a reason... is there some sort of indicator we can make that
+    // says data was here but the tech removed it and needs to manually
+    // reenter it."] Previously a blanked field was silently indistinguishable
+    // from a field that was never populated -- the JSON blob just rebuilds
+    // fresh each save, so the old value evaporates with no record, and (for
+    // manufacturer/model/serialNumber specifically) the top-level Asset
+    // column is left untouched with no signal it wasn't reconfirmed this
+    // scan. Detect: the field was part of THIS submission (present in
+    // `fields`, so the tech's form actually included it) but blank, AND the
+    // asset had a real prior value for it. Keep the old top-level column
+    // value in place (nothing downstream breaks) but stamp who/when it was
+    // cleared + what it used to be, so it reads as "needs re-entry," not
+    // "verified today." A field that was simply never sent this submission
+    // (not in `fields` at all) is NOT touched here -- that's a client that
+    // didn't include the field, not a tech decision to clear it.
+    //
+    // Carried forward across saves (not just detected fresh each time): once
+    // flagged, the SAME original priorValue/clearedAt/clearedBy persists on
+    // every subsequent save until the tech actually re-enters a real value
+    // for that field -- otherwise a second partial save (that doesn't resend
+    // the field at all) would silently drop the flag with nothing resolved.
+    const priorClearedFields: Record<string, any> = (prevScan && prevScan.clearedFields && typeof prevScan.clearedFields === 'object')
+      ? prevScan.clearedFields : {};
+    const clearedFields: Record<string, { priorValue: any; clearedAt: string; clearedBy: string }> = {};
+    for (const k of Object.keys(priorClearedFields)) {
+      if (values[k] !== undefined) continue; // re-entered this save -- flag resolves itself
+      clearedFields[k] = priorClearedFields[k];
+    }
+    for (const k of NP_KEYS) {
+      if (!(k in fields)) continue;
+      const v = fields[k];
+      const isBlank = v === null || v === undefined || String(v).trim() === '';
+      if (!isBlank) continue;
+      const priorValue = prevNameplateData ? prevNameplateData[k] : null;
+      const priorHasValue = priorValue !== null && priorValue !== undefined && String(priorValue).trim() !== '';
+      if (priorHasValue) {
+        clearedFields[k] = { priorValue, clearedAt: new Date().toISOString(), clearedBy: req.user.id };
+      }
+    }
 
     let photoKey: string | null = prevScan?.photoKey || null;
     let photoDocId: string | null = prevScan?.photoDocumentId || null;
@@ -1646,6 +1688,7 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
         // there was no prior photo either, photoStale is false/omitted but
         // photoUploadFailed still records that a photo was expected here.
         ...(photoUploadFailed ? { photoUploadFailed: true, photoStale: !!photoDocId } : {}),
+        ...(Object.keys(clearedFields).length ? { clearedFields } : {}),
         // aiRead = the model's original read + confidence + model id, kept
         // verbatim for future confidence calibration (isotonic-style,
         // per-field precision by tier). Optional — best-effort payload.

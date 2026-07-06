@@ -18,12 +18,14 @@
 // SystemStudyAsset/SystemStudy but previously silently dropped on export
 // (calcMethod, ppeMethod, labelSeverity, shock approach distances,
 // upstreamDevice raw text, enclosure dims, study performedDate/method/peName).
-// All additive + optional — no existing field changed meaning or was removed,
-// so this is backward compatible; the version bump exists so a consumer that
-// branches on afxVersion can detect the new columns exist. Still excludes the
-// dual-scenario fields (arcingCurrentReducedKA/governingScenario) — that's a
-// real schema-shape question (W5), not a column-list fix.
-const AFX_VERSION = '1.1';
+// [W5] 1.1 -> 1.2: added arcingCurrentReducedKA + governingScenario. There is
+// no separate second incident-energy/PPE result — IEEE 1584's governing-
+// scenario calc only stores one extra pair describing the non-winning (full
+// vs. reduced arcing current) case, so this is a flat 2-field addition, not a
+// schema redesign. All additive + optional — no existing field changed
+// meaning or was removed, so both bumps are backward compatible; the version
+// exists so a consumer that branches on afxVersion can detect new columns.
+const AFX_VERSION = '1.2';
 
 // Value-level aliases tolerated on import (vendor spellings of the same value).
 // e.g. ARCAD writes the standard VCBB electrode config as "VCCB".
@@ -83,6 +85,11 @@ const AFX_FIELDS: any[] = [
   { key: 'arcFlashBoundaryIn', header: 'Arc Flash Boundary (in)', group: 'label_output', unit: 'in', type: 'number', standard: 'NFPA 70E 130.5(H)', required: false },
   { key: 'ppeCategory', header: 'PPE Category', group: 'label_output', type: 'number', standard: 'NFPA 70E 130.5(H)', required: false },
   { key: 'requiredArcRatingCalCm2', header: 'Required Arc Rating (cal/cm2)', group: 'label_output', unit: 'cal/cm2', type: 'number', standard: 'NFPA 70E 130.5(H)', required: false },
+
+  // [W5] v1.2 addition — the non-winning IEEE 1584 scenario's arcing current
+  // + which scenario governed. Not a second full result set (see AFX_VERSION note).
+  { key: 'arcingCurrentReducedKA', header: 'Arcing Current Reduced (kA)', group: 'ieee1584_input', unit: 'kA', type: 'number', standard: 'IEEE 1584-2018', required: false },
+  { key: 'governingScenario', header: 'Governing Scenario', group: 'ieee1584_input', type: 'enum', enum: ['full', 'reduced'], standard: 'IEEE 1584-2018', required: false },
 
   // [F-E1] v1.1 additions — already captured, previously dropped on export.
   { key: 'calcMethod', header: 'Calc Method', group: 'ieee1584_input', type: 'string', standard: 'IEEE 1584-2018', required: false },

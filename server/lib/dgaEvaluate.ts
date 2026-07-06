@@ -51,6 +51,21 @@ function conditionFor(value: number, band: [number, number, number]): number {
 
 export interface DgaEvaluation {
   tdcg: number;
+  // [Resolved 2026-07-05, Dustin's call: "reports, if certified/stamped, need
+  // to take precedence... we're a data org, not an engineering firm."] tdcg
+  // above is now the AUTHORITATIVE value used for the condition screen below:
+  // the report's own stated TDCG when the caller supplies one and it parses
+  // as a valid non-negative number, else the recomputed sum (unchanged prior
+  // behavior). computedTdcg is always the recomputed sum regardless of source,
+  // so a real disagreement between what the lab stated and what we'd compute
+  // from the individual gases is never silently thrown away -- see
+  // tdcgDiscrepancyPct.
+  tdcgSource: 'reported' | 'computed';
+  computedTdcg: number;
+  // % difference between a reported TDCG and the recomputed sum, vs the
+  // recomputed sum's magnitude. null when there's no reported value to
+  // compare, or the recomputed sum is 0 (division undefined).
+  tdcgDiscrepancyPct: number | null;
   overallCondition: number;            // 1..4 (worst gas incl. TDCG)
   ieeeStatus: number;                  // mirror of overallCondition (1..4)
   resultRating: 'GREEN' | 'YELLOW' | 'RED';
@@ -97,9 +112,15 @@ function keyGasFault(g: Gases): { code: string; label: string } | null {
   return null;
 }
 
-export function evaluateDga(g: Gases): DgaEvaluation {
+export function evaluateDga(g: Gases, reportedTdcg?: number | null): DgaEvaluation {
   const missingGases = TDCG_GASES.filter((k) => g[k] == null);
-  const tdcg = TDCG_GASES.reduce((s, k) => s + (g[k] ?? 0), 0);
+  const computedTdcg = TDCG_GASES.reduce((s, k) => s + (g[k] ?? 0), 0);
+  const hasReported = reportedTdcg != null && Number.isFinite(reportedTdcg) && (reportedTdcg as number) >= 0;
+  const tdcg = hasReported ? (reportedTdcg as number) : computedTdcg;
+  const tdcgSource: 'reported' | 'computed' = hasReported ? 'reported' : 'computed';
+  const tdcgDiscrepancyPct = hasReported && computedTdcg > 0
+    ? Math.round((Math.abs((reportedTdcg as number) - computedTdcg) / computedTdcg) * 1000) / 10
+    : null;
   const perGas: Record<string, { value: number; condition: number }> = {};
   let worst = 1;
 
@@ -136,6 +157,9 @@ export function evaluateDga(g: Gases): DgaEvaluation {
 
   return {
     tdcg,
+    tdcgSource,
+    computedTdcg,
+    tdcgDiscrepancyPct,
     overallCondition: worst,
     ieeeStatus: worst,
     resultRating,

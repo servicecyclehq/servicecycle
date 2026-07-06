@@ -472,14 +472,25 @@ export function checkNameplateEvidence(
   evidence:   Record<string, string> | null | undefined,
 ): NameplateFinding[] {
   const out: NameplateFinding[] = [];
-  if (!evidence || typeof evidence !== 'object') return out;
+
+  // [V7, resolved 2026-07-05] Previously no-op'd here on total evidence-map
+  // absence, documented as "older client / model regressed." But the
+  // Gemini->Groq cascade fallback is a live, everyday way "model regressed"
+  // can happen now, not just a legacy-client compatibility case -- silently
+  // skipping the whole check meant a scan that fell back to a model with no
+  // evidence support got the SAME trust as one that positively confirmed
+  // every field. Now treated as "no snippet for every field" (same soft
+  // downgrade Case 1 already applies per-field below) instead of a no-op, so
+  // a tech sees every previously-high-confidence field flagged for manual
+  // review instead of nothing at all.
+  const hasEvidenceMap = !!evidence && typeof evidence === 'object';
 
   const CHECKED = ['kva', 'voltage', 'amperage', 'frequency', 'year'];
 
   for (const field of CHECKED) {
     const value = fields[field];
     if (value == null || value === '') continue;
-    const snippet = evidence[field];
+    const snippet = hasEvidenceMap ? (evidence as Record<string, string>)[field] : null;
 
     // ── Case 1: no snippet at all — SOFT downgrade to medium ──────────────
     if (snippet == null || String(snippet).trim() === '') {
@@ -487,8 +498,10 @@ export function checkNameplateEvidence(
         confidence[field] = 'medium';
         out.push({
           field,
-          code:    'no_evidence',
-          message: `Model provided no source snippet for ${field} — verify`,
+          code:    hasEvidenceMap ? 'no_evidence' : 'no_evidence_map',
+          message: hasEvidenceMap
+            ? `Model provided no source snippet for ${field} — verify`
+            : `Scan returned no source-evidence map at all (older client or model fallback) — ${field} could not be cross-checked, verify manually`,
         });
       }
       continue;

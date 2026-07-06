@@ -62,7 +62,16 @@ export function validatePermitIssuance(
   if (study && study.studyDateSource === 'unverified_default') reasons.push('The study’s performed date could not be read from the source document and was recorded as a placeholder — verify the real date before issuing a permit off this study.');
   const ie = num(bus && bus.incidentEnergyCalCm2);
   const volts = parseVolts(bus && bus.nominalVoltage);
-  if (ie == null && volts == null) reasons.push('No incident energy or system voltage on record for this bus.');
+  // [F-P5, resolved 2026-07-05 per NFPA 70E 130.2(B)(2)] The permit's required
+  // elements include the documented arc-flash risk-assessment RESULT (incident
+  // energy or PPE category) -- the standard doesn't carve out "skip this if
+  // voltage-only." A null incidentEnergyCalCm2 means the assessment was never
+  // performed for this bus, not that it came back negligible, so it blocks
+  // issuance regardless of whether nominalVoltage happens to be on record
+  // (previously only blocked when BOTH were missing, letting a voltage-only
+  // bus through with a blank hazard section on an "OK to issue" permit).
+  if (ie == null) reasons.push('No incident-energy analysis on record for this bus -- NFPA 70E 130.2(B)(2) requires the arc-flash risk assessment result to be documented before a permit can be issued.');
+  else if (volts == null) reasons.push('No system voltage on record for this bus.');
   const unreviewedDrift = !!(opts && opts.unreviewedDrift);
   if (unreviewedDrift) {
     reasons.push((opts && opts.driftReason) || 'A system change has been detected since the study date (unreviewed). The incident energy may no longer be valid — re-study or have a qualified person clear the drift before issuing.');
