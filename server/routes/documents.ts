@@ -686,43 +686,11 @@ router.post('/upload', requireManager, uploadSingle('file'), async (req, res) =>
 // ─── Document (photo) annotation (A4, 2026-07-05) ───────────────────────────
 // docs/scoping/audits/wo-chat-annotation-research.md Option 2 / §3d Option C:
 // simple tap-to-pin markers. No new upload path -- pure metadata on top of
-// the existing Document/storage.ts pipeline. v1 validation only accepts
-// {type:"pin", x, y, text?}; "arrow"/"text" shape types are reserved for a
-// later UI pass and rejected here for now, matching the DocumentAnnotation
-// schema comment (the JSON column itself already accommodates them so v2
-// needs zero migration -- only a validation change). Backend only, no UI yet.
-const MAX_ANNOTATION_SHAPES = 50;
-const MAX_ANNOTATION_TEXT_LEN = 500;
-
-function validatePinShapes(shapes) {
-  if (!Array.isArray(shapes) || shapes.length === 0) {
-    return { error: 'shapes must be a non-empty array' };
-  }
-  if (shapes.length > MAX_ANNOTATION_SHAPES) {
-    return { error: `shapes cannot exceed ${MAX_ANNOTATION_SHAPES} entries` };
-  }
-  const cleaned = [];
-  for (const s of shapes) {
-    if (!s || typeof s !== 'object') return { error: 'each shape must be an object' };
-    if (s.type !== 'pin') {
-      return { error: `unsupported shape type "${s.type}" -- only "pin" is accepted in v1` };
-    }
-    const x = Number(s.x);
-    const y = Number(s.y);
-    if (!Number.isFinite(x) || x < 0 || x > 1 || !Number.isFinite(y) || y < 0 || y > 1) {
-      return { error: 'pin x/y must be numbers between 0 and 1 (fraction of image size)' };
-    }
-    let text;
-    if (s.text !== undefined && s.text !== null) {
-      if (typeof s.text !== 'string' || s.text.length > MAX_ANNOTATION_TEXT_LEN) {
-        return { error: `pin text must be a string of ${MAX_ANNOTATION_TEXT_LEN} characters or fewer` };
-      }
-      text = s.text;
-    }
-    cleaned.push(text !== undefined ? { type: 'pin', x, y, text } : { type: 'pin', x, y });
-  }
-  return { shapes: cleaned };
-}
+// the existing Document/storage.ts pipeline. Backend only, no UI yet.
+// [2026-07-06] validatePinShapes moved to lib/documentAnnotations.ts so
+// routes/fieldRoutes.ts's field-scoped annotation endpoints (see below) share
+// the exact same validation instead of a second, independently-drifting copy.
+const { validatePinShapes } = require('../lib/documentAnnotations');
 
 // ─── GET /api/documents/:documentId/annotations ─────────────────────────────
 router.get('/:documentId/annotations', async (req, res) => {

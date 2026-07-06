@@ -30,6 +30,7 @@ const { regapIngestBusAfterDevice } = require('../lib/arcFlashDevice');
 const { downloadFile } = require('../lib/storage');
 const { decrypt } = require('../lib/docCrypto');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
+const { validatePinShapes } = require('../lib/documentAnnotations');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -580,6 +581,87 @@ router.post('/work-orders/:id/comments', requireFieldWriter, async (req, res) =>
   } catch (err) {
     console.error('Field add comment error:', err);
     res.status(500).json({ success: false, error: 'Failed to add comment' });
+  }
+});
+
+// ─── Document annotations, scoped to the tech's own assigned work ───────────
+// [2026-07-06] Dustin, live: field techs should be able to leave notes on
+// their own job's documents. routes/documents.ts's annotation endpoints are
+// manager-gated AND live under /api/documents, which field_tech is
+// default-denied on entirely (lib/fieldRoleScope.ts) -- opening that whole
+// path would expose every other /api/documents route to field_tech, not just
+// annotations. Instead this mirrors the /work-orders/:id/comments pattern
+// directly above: a field-scoped endpoint that only reaches a document tied
+// to a work order the tech is actually assigned to (documentId AND
+// workOrderId must both match), reusing the exact same shape validation as
+// the manager-facing route (lib/documentAnnotations.ts). Edit/delete are
+// intentionally NOT mirrored here for v1 -- same call as WorkOrderComment
+// above: a tech leaving a note shouldn't need to revise history, moderation
+// stays a manager action via the main /api/documents/annotations surface.
+async function resolveScopedWorkOrderDocument(user, workOrderId, documentId) {
+  const wo = await resolveScopedWorkOrder(user, workOrderId);
+  if (!wo) return { wo: null, doc: null };
+  const doc = await prisma.document.findFirst({
+    where: { id: documentId, accountId: user.accountId, workOrderId: wo.id },
+    select: { id: true },
+  });
+  return { wo, doc };
+}
+
+router.get('/work-orders/:id/documents/:documentId/annotations', async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.id)) || !UUID_RE.test(String(req.params.documentId))) {
+      return res.status(400).json({ success: false, error: 'id and documentId must be uuids' });
+    }
+    const { wo, doc } = await resolveScopedWorkOrderDocument(req.user, req.params.id, req.params.documentId);
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const annotations = await prisma.documentAnnotation.findMany({
+      where:   { documentId: doc.id, accountId: req.user.accountId, deletedAt: null },
+      include: { author: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ success: true, data: { annotations } });
+  } catch (err) {
+    console.error('Field list document annotations error:', err);
+    res.status(500).json({ success: false, error: 'Failed to list annotations' });
+  }
+});
+
+router.post('/work-orders/:id/documents/:documentId/annotations', requireFieldWriter, async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.id)) || !UUID_RE.test(String(req.params.documentId))) {
+      return res.status(400).json({ success: false, error: 'id and documentId must be uuids' });
+    }
+    const { wo, doc } = await resolveScopedWorkOrderDocument(req.user, req.params.id, req.params.documentId);
+    if (!wo) return res.status(404).json({ success: false, error: 'Work order not found' });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const validated = validatePinShapes(req.body?.shapes);
+    if (validated.error) return res.status(400).json({ success: false, error: validated.error });
+
+    const annotation = await prisma.documentAnnotation.create({
+      data: {
+        accountId:  req.user.accountId,
+        documentId: doc.id,
+        authorId:   req.user.id,
+        shapes:     validated.shapes,
+      },
+      include: { author: { select: { id: true, name: true } } },
+    });
+
+    writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    'document_annotation_added',
+      details:   { annotationId: annotation.id, documentId: doc.id, workOrderId: wo.id, method: 'field' },
+    }).catch(() => {});
+
+    res.status(201).json({ success: true, data: { annotation } });
+  } catch (err) {
+    console.error('Field add document annotation error:', err);
+    res.status(500).json({ success: false, error: 'Failed to create annotation' });
   }
 });
 

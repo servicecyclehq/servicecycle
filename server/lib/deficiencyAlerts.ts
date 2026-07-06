@@ -152,9 +152,20 @@ export async function runDeficiencyAlerts(): Promise<DeficiencyAlertResult> {
       assetId: true,
       description: true,
       createdAt: true,
+      // [2026-07-06 fallback-masks-capture fix] Asset has no `name` column
+      // (see lib/assetIdentity.ts's assetLabel() / lib/webhook.ts's local
+      // equivalent -- the canonical display label is manufacturer+model,
+      // falling back to equipmentType). Selecting a nonexistent field throws
+      // PrismaClientValidationError on EVERY call, before this query even
+      // returns -- meaning runDeficiencyAlerts() crashed before it could
+      // reach the (separately fixed) recipient-lookup line below, for any
+      // account that actually had a qualifying IMMEDIATE deficiency. Found
+      // while writing the first-ever regression test for this function.
       asset: {
         select: {
-          name: true,
+          manufacturer: true,
+          model: true,
+          equipmentType: true,
           site: { select: { name: true } },
         },
       },
@@ -203,7 +214,7 @@ export async function runDeficiencyAlerts(): Promise<DeficiencyAlertResult> {
       if (tiered.length === 0) { skipped++; continue; }
 
       const items: DefItem[] = tiered.map((d) => ({
-        assetName:   d.asset?.name ?? 'Unknown asset',
+        assetName:   [d.asset?.manufacturer, d.asset?.model].filter(Boolean).join(' ') || d.asset?.equipmentType || 'Unknown asset',
         description: d.description.slice(0, 120),
         ageLabel:    ageLabel(ageDays(d.createdAt)),
         site:        d.asset?.site?.name ?? null,
@@ -230,7 +241,14 @@ export async function runDeficiencyAlerts(): Promise<DeficiencyAlertResult> {
         try {
           await sendEmail({ to: user.email, subject, html });
           emailsSent++;
-          prisma.notificationLog.create({
+          // [2026-07-06] Was fire-and-forget (no await) -- the only sibling
+          // cron with this asymmetry (qemwAlerts/arcFlashIntegrity/
+          // standardRevisionCron all await their NotificationLog write).
+          // That meant runDeficiencyAlerts() could return before the dedup
+          // row was guaranteed to land, an unnecessary race for what's a
+          // single fast insert (not a blocking network call) -- awaiting it
+          // costs nothing and matches the established convention.
+          await prisma.notificationLog.create({
             data: {
               accountId,
               userId: user.id,
@@ -244,7 +262,7 @@ export async function runDeficiencyAlerts(): Promise<DeficiencyAlertResult> {
           console.log(`[deficiencyAlerts] Sent tier=${tierDays}d to ${redactEmail(user.email)} (${tiered.length} items)`);
         } catch (err: any) {
           console.error(`[deficiencyAlerts] Failed to send to ${redactEmail(user.email)}:`, err.message);
-          prisma.notificationLog.create({
+          await prisma.notificationLog.create({
             data: {
               accountId,
               userId: user.id,
