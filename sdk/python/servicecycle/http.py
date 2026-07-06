@@ -28,6 +28,35 @@ DEFAULT_BASE_URL = "https://servicecycle.app/api/v1"
 DEFAULT_MAX_RETRIES = 3
 
 
+class _StripAuthOnCrossOriginRedirect(urllib.request.HTTPRedirectHandler):
+    """[2026-07-05] Python's stdlib redirect_request() resends the ORIGINAL
+    request's headers -- including Authorization -- to whatever Location a
+    redirect names, with no origin check at all (confirmed against the
+    urllib.request docs: "Headers added to a request are also added to
+    redirected requests"). This is unlike the TS sibling SDK, which rides on
+    the platform fetch() / undici -- those strip Authorization on a
+    cross-origin redirect per the WHATWG Fetch spec. Since this SDK's only
+    intended target is the ServiceCycle API itself, any redirect to a
+    different origin is unexpected; strip the API key rather than silently
+    resending it to a host the caller never configured (DNS compromise,
+    misconfigured base_url pointed at a proxy, open-redirect bug, etc.).
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is None:
+            return None
+        orig = urllib.parse.urlsplit(req.full_url)
+        dest = urllib.parse.urlsplit(newurl)
+        if (orig.scheme, orig.hostname, orig.port) != (dest.scheme, dest.hostname, dest.port):
+            new_req.remove_header("Authorization")
+        return new_req
+
+
+# Built once -- the handler is stateless, no need to rebuild per request.
+_REDIRECT_SAFE_OPENER = urllib.request.build_opener(_StripAuthOnCrossOriginRedirect)
+
+
 def _build_url(base_url: str, path: str, params: Optional[Dict[str, Any]] = None) -> str:
     url = base_url.rstrip("/") + "/" + path.lstrip("/")
     if params:
@@ -74,7 +103,7 @@ class HttpClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with _REDIRECT_SAFE_OPENER.open(req, timeout=self.timeout) as resp:
                 raw = resp.read()
                 return json.loads(raw) if raw else None
         except urllib.error.HTTPError as e:
