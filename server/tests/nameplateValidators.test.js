@@ -41,13 +41,35 @@ describe('parseVoltageComponents', () => {
   test('multi-tap with dash', () => {
     expect(parseVoltageComponents('4160-480V')).toEqual([4160, 480]);
   });
-  test('kV suffix applies to all components', () => {
+  test('single kV value scales', () => {
     expect(parseVoltageComponents('13.8kV')).toEqual([13800]);
   });
   test('empty / null', () => {
     expect(parseVoltageComponents(null)).toEqual([]);
     expect(parseVoltageComponents('')).toEqual([]);
     expect(parseVoltageComponents('   ')).toEqual([]);
+  });
+
+  // REGRESSION-LOCK (2026-07-05, W8-nameplate fallback hunt): each
+  // component's OWN unit wins -- a whole-string kV flag must NOT scale a
+  // component that explicitly says "V". Before this fix, "13.8kV/480V"
+  // silently produced [13800, 480000] (the LV secondary off by 1000x)
+  // instead of the correct [13800, 480].
+  describe('mixed kV/V components -- each component keeps its own unit', () => {
+    test('HV primary (kV) + LV secondary (V) in one field', () => {
+      expect(parseVoltageComponents('13.8kV/480V')).toEqual([13800, 480]);
+    });
+    test('kV first, bare V-side second stays unscaled (not inflated 1000x)', () => {
+      expect(parseVoltageComponents('4.16kV-480')).toEqual([4160, 480]);
+    });
+    test('a bare component does NOT inherit kV from a later explicit-kV component', () => {
+      // Conservative by design: under-scaling a rare same-side multi-tap
+      // label (13.8 stays 13.8, not 13800) is safer than the alternative of
+      // inferring kV and risking over-scaling a genuine low-voltage value.
+      // The under-scaled 13.8 still gets caught by V3's standard-voltage-
+      // class check downstream, so it isn't a silent miss either way.
+      expect(parseVoltageComponents('13.8/12.47kV')).toEqual([13.8, 12470]);
+    });
   });
 });
 

@@ -1539,17 +1539,38 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
     });
     if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
 
+    // [W8-nameplate] `fields`/`confidence` are the REVIEWED VALUES the tech
+    // just confirmed on screen -- the entire point of this endpoint. A parse
+    // failure here (truncated multipart body, client bug, proxy mangling)
+    // used to be silently tolerated by defaulting to `{}`, which persisted
+    // an EMPTY nameplateData and still returned `{success:true}` --
+    // indistinguishable from "the tech reviewed and there was nothing to
+    // save." That is a real capture loss disguised as success, so a
+    // genuinely malformed payload now 400s instead. An OMITTED `fields`
+    // field (not sent at all) is left tolerant -- {} -- since that is a
+    // legitimate "nothing changed" shape some older/lighter clients may send.
     let fields: any = {}, confidence: any = {};
-    try { fields = JSON.parse(req.body?.fields || '{}'); } catch (_e) { /* tolerate */ }
-    try { confidence = JSON.parse(req.body?.confidence || '{}'); } catch (_e) { /* tolerate */ }
+    if (req.body?.fields !== undefined) {
+      try { fields = JSON.parse(req.body.fields); }
+      catch (_e) { return res.status(400).json({ success: false, error: 'Invalid fields payload -- could not parse JSON.' }); }
+    }
+    if (req.body?.confidence !== undefined) {
+      try { confidence = JSON.parse(req.body.confidence); }
+      catch (_e) { return res.status(400).json({ success: false, error: 'Invalid confidence payload -- could not parse JSON.' }); }
+    }
 
     // Ground-truth capture (2026-07-03 nameplate review §2.2 H5, §5 #5): the
     // client sends the ORIGINAL AI read + which fields the tech edited so the
     // correction diff persists as free training/calibration data. Payloads
-    // are best-effort — a client that omits them still saves normally.
+    // are best-effort — a client that omits them still saves normally. Unlike
+    // `fields` above, a parse failure here does NOT block the save (the
+    // reviewed values are what matters); it only loses the calibration diff
+    // for this one save, so it's logged rather than fully silent.
     let aiRead: any = null, touched: any = {};
-    try { aiRead = req.body?.aiRead ? JSON.parse(req.body.aiRead) : null; } catch (_e) { aiRead = null; }
-    try { touched = req.body?.touched ? JSON.parse(req.body.touched) : {}; } catch (_e) { touched = {}; }
+    try { aiRead = req.body?.aiRead ? JSON.parse(req.body.aiRead) : null; }
+    catch (_e: any) { console.warn('[nameplate] aiRead payload failed to parse -- correction-diff calibration data lost for this save:', _e?.message); aiRead = null; }
+    try { touched = req.body?.touched ? JSON.parse(req.body.touched) : {}; }
+    catch (_e: any) { console.warn('[nameplate] touched payload failed to parse:', _e?.message); touched = {}; }
 
     const values: any = {};
     for (const k of NP_KEYS) {
@@ -1562,6 +1583,16 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
 
     let photoKey: string | null = prevScan?.photoKey || null;
     let photoDocId: string | null = prevScan?.photoDocumentId || null;
+    // [W8-nameplate] When a NEW photo was uploaded with this save but its
+    // persist fails, the code falls back to whatever photo (if any) was
+    // already on the asset — the fields/confidence being saved are from
+    // THIS scan, but the attached photo would silently be from an EARLIER
+    // one (or absent entirely). That's a real evidence/data mismatch: a
+    // future reviewer sees a saved nameplate paired with a photo that
+    // doesn't actually correspond to it. Non-fatal to the save (the tech's
+    // reviewed values still matter more than the photo), but now flagged in
+    // `_scan` so it isn't silently indistinguishable from a normal save.
+    let photoUploadFailed = false;
     if (req.file?.buffer?.length) {
       try {
         const { normalizeImage } = require('../lib/imageNormalize');
@@ -1577,7 +1608,10 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
           await _deleteNameplatePhoto(accountId, prevScan.photoDocumentId);
         }
         photoKey = storageKey; photoDocId = doc.id;
-      } catch (e: any) { console.error('[nameplate] photo persist failed (non-fatal):', e?.message); }
+      } catch (e: any) {
+        console.error('[nameplate] photo persist failed (non-fatal):', e?.message);
+        photoUploadFailed = true;
+      }
     }
 
     // Build the diff: fields where the tech's saved value differs from the
@@ -1606,6 +1640,12 @@ router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (
       _scan: {
         confidence, photoDocumentId: photoDocId, photoKey,
         scannedAt: new Date().toISOString(), scannedBy: req.user.id,
+        // [W8-nameplate] Set only when a new photo was attempted and failed
+        // to persist. photoStale=true means the photoDocumentId/photoKey
+        // above are carried over from an EARLIER scan, not this one; when
+        // there was no prior photo either, photoStale is false/omitted but
+        // photoUploadFailed still records that a photo was expected here.
+        ...(photoUploadFailed ? { photoUploadFailed: true, photoStale: !!photoDocId } : {}),
         // aiRead = the model's original read + confidence + model id, kept
         // verbatim for future confidence calibration (isotonic-style,
         // per-field precision by tier). Optional — best-effort payload.

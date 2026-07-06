@@ -97,23 +97,38 @@ function parseVoltageNumber(s: any): number | null {
  * "4160-480V"     → [4160, 480]
  * "480Y/277"      → [480, 277]
  * "13.8kV/480V"   → [13800, 480]
- * "480"           → [480]
- * Components carry the string's kV-flag: if ANY "kV" appears in the string,
- * ALL sub-values are treated as kV. Real dual-voltage nameplates never mix
- * kV and V in one field — they say "13.8kV / 480V" as two labels.
+ * "4.16kV-480"    → [4160, 480]
+ * "13.8kV"        → [13800]
+ *
+ * [W8-nameplate, 2026-07-05] A component only scales ×1000 when IT ITSELF
+ * is followed by "kV" — never inferred from another component in the same
+ * string. The previous implementation used ONE whole-string kV flag for
+ * EVERY component, so "13.8kV/480V" (a real HV-primary/LV-secondary label)
+ * silently produced [13800, 480000] instead of the documented [13800, 480]
+ * — the LV secondary read 1000x high and fed straight into every downstream
+ * consistency check (V3 voltage-class, V4 the VA-relationship equation).
+ *
+ * This deliberately does NOT infer kV for a bare (unit-less) component from
+ * a LATER kV suffix (e.g. a same-side multi-tap label like "13.8/12.47kV"
+ * would under-scale the first number to 13.8) — that convention is rarer,
+ * and a bare low value like 13.8 still gets caught by V3's standard-voltage-
+ * class check downstream. Silently OVER-scaling a legitimate explicit "V"
+ * component is the worse failure mode (a wrong value with no signal at all),
+ * so the conservative per-component-only rule is the safer default.
  */
 export function parseVoltageComponents(s: any): number[] {
   const str = String(s ?? '').trim();
   if (!str) return [];
-  const isKv = /kv/i.test(str);
-  // Split on /, -, comma, whitespace, letters (V, Y, D, etc.)
-  const parts = str.split(/[\/\-,\s]+|[A-Za-z]+/).filter(Boolean);
+  // Capture each number plus its immediately-following run of non-digit
+  // characters (its "unit tail") BEFORE that tail is discarded as a delimiter.
+  const tokenRe = /(\d+(?:\.\d+)?)([^\d]*)/g;
   const out: number[] = [];
-  for (const p of parts) {
-    const n = parseFloat(p);
-    if (Number.isFinite(n) && n > 0) {
-      out.push(isKv ? n * 1000 : n);
-    }
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(str)) !== null) {
+    const n = parseFloat(m[1]);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    const tail = m[2] || '';
+    out.push(/kv/i.test(tail) ? n * 1000 : n);
   }
   return out;
 }
