@@ -2095,7 +2095,9 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // attemptCount reaches 10 the row is left alone until the daily
     // prune at day 30 deletes it.
     // v0.68.1 (audit Medium): daily DLQ-depth alarm. Counts
-    // OutboundWebhookDLQ per account; if any account has > 1000 rows
+    // OutboundWebhookDLQ per account; if any account has > 100 rows
+    // (matches the actual filter + log line below -- this comment
+    // previously said "> 1000", a stale mismatch with the real threshold)
     // we logEvent('webhook_dlq_high', {...}) so Better Stack pages.
     // Catches an integrator whose receiver has been silently failing
     // for days -- the prune cron would eventually delete the rows at

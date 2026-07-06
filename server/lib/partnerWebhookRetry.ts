@@ -17,6 +17,7 @@ export {};
 
 const { createHmac } = require('crypto');
 const prisma = require('./prisma').default;
+const { postJsonToValidatedUrl } = require('./webhook');
 
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
@@ -68,6 +69,26 @@ async function runWebhookRetryCron(): Promise<RetryResult> {
   for (const log of eligible) {
     const partnerOrg = log.partnerOrg;
 
+    // [2026-07-06 fallback-masks-capture fix] `webhookSecret ?? ''` let a
+    // missing secret silently sign with an EMPTY string instead of refusing
+    // delivery -- an attacker who somehow blanked webhookSecret (or a data
+    // issue that nulled it) would get a "valid-looking" signature the
+    // receiving end could trivially forge/verify against a known empty key.
+    // firePartnerWebhook (lib/partnerEvents.ts) already guards this; this
+    // cron path didn't. Skip (not "failed", since retrying won't help until
+    // an admin re-sets the secret via the settings PATCH, which always
+    // rotates a real one) and record the same failure bookkeeping.
+    if (!partnerOrg.webhookSecret) {
+      console.warn(`[webhookRetry] Log ${log.id} skipped: partner org ${partnerOrg.id} has no webhookSecret configured.`);
+      const newAttempts = log.webhookAttempts + 1;
+      await prisma.partnerEventLog.update({
+        where: { id: log.id },
+        data: { webhookAttempts: newAttempts, webhookLastFailedAt: new Date() },
+      });
+      if (newAttempts >= MAX_ATTEMPTS) exhausted++; else failed++;
+      continue;
+    }
+
     const body = JSON.stringify({
       partnerId:        partnerOrg.id,
       eventType:        log.eventType,
@@ -77,20 +98,25 @@ async function runWebhookRetryCron(): Promise<RetryResult> {
       data:             log.payload,
     });
 
-    const sig = createHmac('sha256', partnerOrg.webhookSecret ?? '').update(body).digest('hex');
+    const sig = createHmac('sha256', partnerOrg.webhookSecret).update(body).digest('hex');
 
     try {
-      const resp = await fetch(partnerOrg.webhookUrl, {
-        method: 'POST',
+      // [2026-07-06 SSRF fix] Same gap as firePartnerWebhook: raw fetch()
+      // against an admin-configured URL with no SSRF defense. Routes
+      // through the same hardened path (HTTPS-only, private/metadata-IP
+      // block, DNS-rebind-safe IP pinning) without changing the wire
+      // contract.
+      const result = await postJsonToValidatedUrl({
+        url: partnerOrg.webhookUrl,
+        body,
         headers: {
           'Content-Type': 'application/json',
           'X-ServiceCycle-Signature': `sha256=${sig}`,
         },
-        body,
-        signal: AbortSignal.timeout(5000),
+        timeoutMs: 5000,
       });
 
-      if (resp.ok) {
+      if (result.ok) {
         await prisma.partnerEventLog.update({
           where: { id: log.id },
           data: { webhookSentAt: new Date() },
@@ -107,7 +133,7 @@ async function runWebhookRetryCron(): Promise<RetryResult> {
         });
         if (newAttempts >= MAX_ATTEMPTS) {
           console.warn(
-            `[webhookRetry] Log ${log.id} exhausted ${MAX_ATTEMPTS} attempts (last HTTP ${resp.status}). Giving up.`
+            `[webhookRetry] Log ${log.id} exhausted ${MAX_ATTEMPTS} attempts (last: ${result.status ?? result.reason}). Giving up.`
           );
           exhausted++;
         } else {

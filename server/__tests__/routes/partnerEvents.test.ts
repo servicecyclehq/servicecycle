@@ -5,12 +5,24 @@
  *   - IMMEDIATE_DEFICIENCY immediate email
  *   - webhook fires with HMAC signature
  *   - webhook failure increments webhookAttempts, does not throw
+ *
+ * [2026-07-06] lib/webhook's postJsonToValidatedUrl (SSRF-hardened: HTTPS-only
+ * + private/metadata-IP block + DNS-rebind-safe IP pinning) replaced firePartnerWebhook's
+ * raw fetch() call. Mocking global.fetch no longer intercepts delivery -- these
+ * tests now mock lib/webhook itself, same as the SSRF check would in real
+ * delivery (real DNS resolution against a *.invalid fixture host would
+ * otherwise fail closed before ever reaching the "server").
  */
 
 import '../helpers/setup';
 
 import { createTestUser } from '../helpers/auth';
 import { createTestPartnerOrg, createTestAccount } from '../helpers/seed';
+
+jest.mock('../../lib/webhook', () => ({
+  postJsonToValidatedUrl: jest.fn(),
+}));
+const { postJsonToValidatedUrl } = require('../../lib/webhook');
 
 let prisma: any;
 let emitPartnerEvent: any;
@@ -143,18 +155,15 @@ test('webhook fires when webhookUrl is set — HMAC signature header present', a
   toDelete.push({ model: 'account', id: account.id });
   await enableConsent(account.id, 'partner_share_inspections');
 
-  // Mock global fetch
-  const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
-  (global as any).fetch = fetchMock;
+  (postJsonToValidatedUrl as jest.Mock).mockReset().mockResolvedValue({ ok: true, status: 200 });
 
   await emitPartnerEvent(account.id, 'INSPECTION_COMPLETED', { assetName: 'Relay' });
   await new Promise(r => setTimeout(r, 200));
 
-  expect(fetchMock).toHaveBeenCalled();
-  const [, options] = fetchMock.mock.calls[0];
-  expect(options.headers['X-ServiceCycle-Signature']).toMatch(/^sha256=/);
-
-  delete (global as any).fetch;
+  expect(postJsonToValidatedUrl).toHaveBeenCalled();
+  const [callArgs] = (postJsonToValidatedUrl as jest.Mock).mock.calls[0];
+  expect(callArgs.url).toBe('https://example.invalid/hook');
+  expect(callArgs.headers['X-ServiceCycle-Signature']).toMatch(/^sha256=/);
 });
 
 test('webhook failure → webhookAttempts incremented, webhookLastFailedAt set, no throw', async () => {
@@ -167,8 +176,8 @@ test('webhook failure → webhookAttempts incremented, webhookLastFailedAt set, 
   toDelete.push({ model: 'account', id: account.id });
   await enableConsent(account.id, 'partner_share_inspections');
 
-  // Mock fetch to simulate network failure
-  (global as any).fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+  // Simulate a network failure (or an SSRF block -- same { ok: false } shape).
+  (postJsonToValidatedUrl as jest.Mock).mockReset().mockResolvedValue({ ok: false, reason: 'network-error' });
 
   // Should NOT throw
   await expect(
@@ -184,6 +193,4 @@ test('webhook failure → webhookAttempts incremented, webhookLastFailedAt set, 
   expect(log.webhookAttempts).toBeGreaterThan(0);
   expect(log.webhookLastFailedAt).not.toBeNull();
   if (log) toDelete.push({ model: 'partnerEventLog', id: log.id });
-
-  delete (global as any).fetch;
 });

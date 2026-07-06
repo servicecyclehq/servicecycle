@@ -31,6 +31,8 @@ import '../helpers/setup';
 import { createTestUser, type TestUser } from '../helpers/auth';
 
 const ssoPolis = require('../../lib/ssoPolis');
+const http = require('http');
+const { generateKeyPair, exportJWK, SignJWT } = require('jose');
 
 let app: any;
 let prisma: any;
@@ -38,18 +40,62 @@ let adminA: TestUser, adminB: TestUser;
 let connA: any;
 const createdUserIds: string[] = [];
 
+// [2026-07-06 stale-test fix] server/routes/sso.ts fails CLOSED when the
+// token exchange returns no id_token (INFOSEC-8-3/DD-8-11) -- these tests
+// used to omit id_token entirely, which meant every test below was silently
+// exercising the id_token_missing rejection path's incidental side effects,
+// not the real fail-closed production code. Mirrors tests/ssoIdToken.test.js's
+// pattern: a real RS256 keypair served over a throwaway local JWKS endpoint,
+// no live Polis required.
+const ISS = 'https://polis.test.internal';
+let jwksServer: any;
+let jwksPort: number;
+let signingKey: any;
+
+function jwksUri() {
+  return `http://localhost:${jwksPort}/jwks`;
+}
+
+async function signIdToken(nonce: string) {
+  return new SignJWT({ nonce, email: 'sso-fixture@a.test' })
+    .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
+    .setIssuer(ISS)
+    .setAudience('any-aud') // production callback doesn't pass expectedAud (separately flagged as a gap) -- unused here
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(signingKey);
+}
+
 beforeAll(async () => {
   app = require('../../index').default ?? require('../../index');
   prisma = require('../../lib/prisma').default;
   adminA = await createTestUser('admin');
   adminB = await createTestUser('admin');
   connA = await prisma.ssoConnection.create({ data: { accountId: adminA.accountId, protocol: 'saml', polisTenant: `acct_${adminA.accountId}` } });
-});
+
+  const { publicKey, privateKey } = await generateKeyPair('RS256');
+  signingKey = privateKey;
+  const jwk: any = await exportJWK(publicKey);
+  jwk.kid = 'test-key'; jwk.alg = 'RS256'; jwk.use = 'sig';
+  jwksServer = http.createServer((_req: any, res: any) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ keys: [jwk] }));
+  });
+  await new Promise<void>((resolve) => jwksServer.listen(0, resolve));
+  jwksPort = jwksServer.address().port;
+}, 20000); // DB fixture setup + RSA keypair generation can exceed jest's 5s default hook timeout
 
 beforeEach(() => {
   ssoPolis.exchangeCodeForToken.mockReset();
   ssoPolis.fetchUserInfo.mockReset();
-  ssoPolis.exchangeCodeForToken.mockResolvedValue({ access_token: 'tok', token_type: 'bearer' }); // no id_token
+  ssoPolis.getOidcDiscovery.mockReset();
+  ssoPolis.getOidcDiscovery.mockResolvedValue({ issuer: ISS, jwks_uri: jwksUri() });
+  // Placeholder default (unsigned nonce) -- makeState() below overwrites this
+  // with an id_token bound to that test's own random login-state nonce. No
+  // current test skips makeState(), but this keeps the default "id_token
+  // present" rather than silently reintroducing the missing-id_token gap if
+  // a future test forgets to call it.
+  ssoPolis.exchangeCodeForToken.mockResolvedValue({ access_token: 'tok', token_type: 'bearer' });
 });
 
 afterAll(async () => {
@@ -62,18 +108,27 @@ afterAll(async () => {
   try { await prisma.user.delete({ where: { id: adminB.id } }); } catch {}
   try { await prisma.account.delete({ where: { id: adminA.accountId } }); } catch {}
   try { await prisma.account.delete({ where: { id: adminB.accountId } }); } catch {}
+  if (jwksServer) { await new Promise<void>((resolve) => jwksServer.close(() => resolve())); }
   await prisma.$disconnect();
-});
+}, 20000);
 
 async function makeState(opts: { expired?: boolean } = {}) {
   const state = 's_' + randomBytes(12).toString('hex');
-  return prisma.ssoLoginState.create({
+  const nonce = 'n_' + randomBytes(8).toString('hex');
+  const st = await prisma.ssoLoginState.create({
     data: {
-      state, nonce: 'n_' + randomBytes(8).toString('hex'), codeVerifier: 'v_' + randomBytes(8).toString('hex'),
+      state, nonce, codeVerifier: 'v_' + randomBytes(8).toString('hex'),
       accountId: adminA.accountId, connectionId: connA.id, redirectTo: '/dashboard',
       expiresAt: new Date(Date.now() + (opts.expired ? -1000 : 600000)),
     },
   });
+  // Bind exchangeCodeForToken's id_token to THIS state's nonce so the
+  // production fail-closed id_token validation (server/routes/sso.ts) passes
+  // for every test using this helper, regardless of call order.
+  ssoPolis.exchangeCodeForToken.mockResolvedValue({
+    access_token: 'tok', token_type: 'bearer', id_token: await signIdToken(nonce),
+  });
+  return st;
 }
 
 test('happy path: provisions a JIT user (default viewer) + issues a handoff', async () => {

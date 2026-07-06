@@ -17,6 +17,7 @@ export {};
 const { createHmac } = require('crypto');
 const prisma = require('./prisma').default;
 const { sendEmail } = require('./email');
+const { postJsonToValidatedUrl } = require('./webhook');
 
 // Map event type → AccountSetting consent key
 const CONSENT_KEYS: Record<string, string> = {
@@ -197,19 +198,27 @@ async function firePartnerWebhook(log: any, partnerOrg: any): Promise<void> {
   const sig = createHmac('sha256', partnerOrg.webhookSecret).update(body).digest('hex');
 
   try {
-    const resp = await fetch(partnerOrg.webhookUrl, {
-      method: 'POST',
+    // [2026-07-06 SSRF fix] This used to call raw fetch() against an
+    // OEM-partner-admin-configured URL with zero SSRF defense -- no HTTPS
+    // requirement, no private/metadata-IP check, no DNS-rebind pinning, and
+    // fetch()'s default redirect-following could bounce the request
+    // anywhere. Routes through lib/webhook.ts's already-hardened
+    // validateWebhookUrl() + pinned https.request (same defenses the
+    // alert-engine webhook path uses) without changing this endpoint's
+    // existing payload shape or signature scheme.
+    const result = await postJsonToValidatedUrl({
+      url: partnerOrg.webhookUrl,
+      body,
       headers: {
         'Content-Type': 'application/json',
         'X-ServiceCycle-Signature': `sha256=${sig}`,
       },
-      body,
-      signal: AbortSignal.timeout(5000),
+      timeoutMs: 5000,
     });
 
-    if (!resp.ok) {
-      // Non-2xx response — record failure, do not throw.
-      console.error(`[partnerEvents] webhook responded ${resp.status} for log ${log.id}`);
+    if (!result.ok) {
+      // Non-2xx response (or blocked/network failure) — record failure, do not throw.
+      console.error(`[partnerEvents] webhook ${result.status ? `responded ${result.status}` : (result.reason || 'failed')} for log ${log.id}`);
       await prisma.partnerEventLog.update({
         where: { id: log.id },
         data: {
@@ -225,7 +234,7 @@ async function firePartnerWebhook(log: any, partnerOrg: any): Promise<void> {
       data: { webhookSentAt: new Date() },
     });
   } catch (err: any) {
-    // Network error or timeout — record failure, do NOT throw (fire-and-forget).
+    // Unexpected error — record failure, do NOT throw (fire-and-forget).
     console.error(`[partnerEvents] webhook delivery failed for log ${log.id}:`, err.message);
     try {
       await prisma.partnerEventLog.update({

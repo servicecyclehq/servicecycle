@@ -15,7 +15,7 @@ import prisma from '../lib/prisma';
 const { requireOemAdmin } = require('../middleware/roles');
 const { buildComplianceGap } = require('../lib/complianceReport');
 const { buildPortfolioRank } = require('../lib/portfolioRank');
-const { validateWebhookUrl } = require('../lib/webhook');
+const { validateWebhookUrl, postJsonToValidatedUrl } = require('../lib/webhook');
 
 const DAY_MS = 86_400_000;
 
@@ -1134,17 +1134,23 @@ router.post('/settings/webhook-test', async (req: any, res: any) => {
     });
     const sig = crypto.createHmac('sha256', org.webhookSecret).update(body).digest('hex');
 
-    const resp = await fetch(org.webhookUrl, {
-      method: 'POST',
+    // [2026-07-06 SSRF fix] PATCH /settings already validates webhookUrl at
+    // save time (PEN-1 above), but that's a write-time check -- a low-TTL
+    // DNS record can rebind between then and this test-send (or any later
+    // delivery). Re-validate now and pin the connection to the freshly
+    // vetted IPs, same as the alert-engine webhook path and the partner
+    // event/retry delivery paths.
+    const result = await postJsonToValidatedUrl({
+      url: org.webhookUrl,
+      body,
       headers: {
         'Content-Type': 'application/json',
         'X-ServiceCycle-Signature': `sha256=${sig}`,
       },
-      body,
-      signal: AbortSignal.timeout(5000),
+      timeoutMs: 5000,
     });
 
-    res.json({ success: resp.ok, statusCode: resp.status });
+    res.json({ success: result.ok, statusCode: result.status, reason: result.ok ? undefined : result.reason });
   } catch (err: any) {
     console.error('[fleet/settings/webhook-test]', err);
     res.status(500).json({ error: 'Webhook test failed', detail: err.message });

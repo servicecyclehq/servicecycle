@@ -14,7 +14,7 @@ const { writeLog: writeActivityLog } = require('../lib/activityLog');
  *
  * DLQ (v0.37.1 W5 MT-132):
  *   GET    /dlq           — list failed deliveries for the account
- *   POST   /dlq/:id/retry — replay a DLQ row through deliverWebhook again
+ *   POST   /dlq/:id/retry — replay a DLQ row's exact persisted payload (single attempt)
  *   DELETE /dlq/:id       — purge a DLQ row (operator-initiated)
  *
  * Security:
@@ -36,7 +36,8 @@ const { z }  = require('zod');
 import prisma from '../lib/prisma';
 const { requireAdmin } = require('../middleware/roles');
 const { encrypt, decryptIfEncrypted } = require('../lib/crypto');
-const { validateWebhookUrl, deliverWebhook, buildTestPayload, signPayload, postOnce } = require('../lib/webhook');
+const { validateWebhookUrl, buildTestPayload, signPayload, postOnce } = require('../lib/webhook');
+const { persistFailedDelivery } = require('../lib/webhookDlq');
 
 const MAX_ENDPOINTS_PER_ACCOUNT = 5;
 
@@ -139,50 +140,65 @@ router.post('/dlq/:id/retry', async (req, res) => {
 
     const url    = decryptIfEncrypted(endpoint.url);
     const secret = decryptIfEncrypted(endpoint.hmacSecret);
-    const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
-    // Replay through deliverWebhook with a synthetic alertItem derived from
-    // the persisted payload. The payload's asset id may point to an asset
-    // that's been deleted/archived since the original failure — the
-    // receiving end will see the same payload it would have seen before,
-    // which is the right semantic for "retry the original delivery".
-    // NOTE: the alertItem shape below mirrors lib/webhook.js#buildPayload's
-    // current input; keep the two in sync when the asset-shaped payload
-    // lands there. payload.contractId is the legacy DLQ-row spelling.
-    const payload: any = row.payload || {};
-    const alertItem: any = {
-      contract: {
-        id:           payload.assetId || payload.contractId || row.deliveryId,
-        product:      payload.product || null,
-        vendor:       payload.vendor ? { name: payload.vendor } : null,
-        endDate:      payload.endDate || null,
-        cancelByDate: payload.cancelByDate || null,
-      },
-      alertType:     payload.alertType || 'renewal',
-      daysUntil:     payload.daysUntil || 0,
-      paymentAmount: payload.paymentAmount || null,
-    };
+    // [2026-07-06 fallback-masks-capture fix] This used to reconstruct a
+    // synthetic `alertItem` in a stale "contract renewal" shape (.contract /
+    // .vendor / .endDate) that predates buildPayload()'s CURRENT .schedule /
+    // .asset shape, then replayed it through deliverWebhook(). buildPayload()
+    // reads `asset.id` with no optional chaining, so an alertItem with no
+    // `.asset` at all threw a TypeError on every single call -- every DLQ
+    // retry 500'd unconditionally, regardless of whether the receiving
+    // endpoint was even reachable. The comment above this code even flagged
+    // its own fragility ("keep the two in sync") -- exactly the kind of
+    // stale-assumption gap this fix removes by not reconstructing anything:
+    // replay the EXACT persisted `row.payload` bytes, which is the actually
+    // correct semantic for "retry the original delivery."
+    const body      = JSON.stringify(row.payload || {});
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const signature = signPayload(body, timestamp, secret);
+    const deliveryId = row.deliveryId || crypto.randomUUID();
 
-    const result = await deliverWebhook({
-      url,
-      hmacSecret:        secret,
-      alertItem,
-      appUrl,
-      accountId,
-      webhookEndpointId: endpoint.id,
-    });
-
-    // If the retry succeeded, purge the original DLQ row.
-    if (result.ok) {
-      await prisma.outboundWebhookDLQ.delete({ where: { id: row.id } }).catch(() => {});
+    // SSRF (F-SSRF-REBIND): validate + pin, same as /:id/test below. The
+    // endpoint's URL was vetted at create/update time, but a low-TTL domain
+    // can rebind between then and this retry (which may run long after the
+    // original failure) -- re-validate at delivery time and connect only to
+    // the freshly vetted IPs.
+    const { valid, addresses, reason: ssrfReason } = await validateWebhookUrl(url).catch(() => ({ valid: false, reason: 'validation-error' }));
+    if (!valid) {
+      return res.status(400).json({ success: false, error: `Blocked: ${ssrfReason}` });
     }
 
+    const sendResult = await postOnce({ url, addresses, body, signature, timestamp, deliveryId, timeoutMs: 5000 });
+
+    if (sendResult.ok) {
+      await prisma.outboundWebhookDLQ.delete({ where: { id: row.id } }).catch(() => {});
+      return res.json({ success: true, attempts: 1, status: sendResult.status });
+    }
+
+    // Failed again -- record a fresh DLQ entry (mirrors deliverWebhook's own
+    // exhaustion-persistence behavior) so the failure history/lastError is
+    // preserved for the next retry attempt; the original row is left as-is.
+    let dlqRowId: string | undefined;
+    const persisted = await persistFailedDelivery({
+      accountId,
+      webhookEndpointId: endpoint.id,
+      deliveryId,
+      eventType:     row.eventType,
+      targetUrl:     url,
+      payload:       row.payload,
+      attemptCount:  (row.attemptCount || 0) + 1,
+      lastError:     sendResult.reason || null,
+      lastStatus:    sendResult.status || null,
+      firstFailedAt: row.firstFailedAt || new Date(),
+    });
+    if (persisted) dlqRowId = persisted.id;
+
     return res.json({
-      success:  result.ok,
-      attempts: result.attempts,
-      status:   result.status,
-      reason:   result.reason,
-      dlqRowId: result.dlqRowId, // new DLQ row id if the retry also failed
+      success:  false,
+      attempts: 1,
+      status:   sendResult.status,
+      reason:   sendResult.reason,
+      dlqRowId,
     });
   } catch (err) {
     console.error('[webhooks] POST /dlq/:id/retry error:', err.message);

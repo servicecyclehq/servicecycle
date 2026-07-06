@@ -152,11 +152,20 @@ async function processEvent(ev: any, dir: any): Promise<string> {
         });
       }
     }
+    // [2026-07-06 fallback-masks-capture fix] `isActive: true` used to be
+    // unconditional here, so ANY update event for an existing user -- even a
+    // name-only profile change that doesn't mention `active` at all -- would
+    // silently reactivate a user a PRIOR event had legitimately deactivated.
+    // scim.ts now preserves true/false/absent as distinct values; only an
+    // EXPLICIT active:true is treated as a real reactivation signal. An
+    // absent field leaves isActive untouched (mirrors the "never
+    // auto-downgrade on absence" posture already used for role mapping below).
+    const reactivate = ev.active === true;
     await prisma.user.update({
       where: { id: user.id },
       data: {
         name,
-        isActive: true,
+        ...(reactivate ? { isActive: true } : {}),
         ...(setSsoManaged ? { ssoManaged: true } : {}),
         scimDirectoryId: dir.id,
         scimExternalId: scimUserId || user.scimExternalId,

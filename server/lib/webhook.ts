@@ -348,6 +348,63 @@ async function postOnce({ url, addresses, body, signature, timestamp, deliveryId
   });
 }
 
+// ── Generic hardened POST for OTHER callers with their own payload/signature
+//    contracts (partner-webhook delivery predates this module and is
+//    intentionally NOT unified onto the timestamped signature scheme above --
+//    that would be a breaking wire-format change for existing partner
+//    integrators. See lib/partnerEvents.ts, lib/partnerWebhookRetry.ts,
+//    routes/fleetDashboard.ts webhook-test.) Runs the EXACT same SSRF
+//    defenses (HTTPS-only, private/metadata-IP block, DNS-rebind-safe IP
+//    pinning, no redirects) as deliverWebhook() above, but the caller
+//    supplies its own headers + body verbatim -- no payload shape assumed.
+async function postJsonToValidatedUrl({ url, body, headers = {}, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  const { valid, reason, addresses } = await validateWebhookUrl(url);
+  if (!valid) return { ok: false, reason };
+
+  let u;
+  try { u = new URL(url); } catch { return { ok: false, reason: 'invalid-url' }; }
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; resolve(r); } };
+
+    const req = https.request(
+      {
+        protocol:   'https:',
+        hostname:   u.hostname,
+        servername: u.hostname,
+        port:       u.port || 443,
+        path:       (u.pathname || '/') + (u.search || ''),
+        method:     'POST',
+        headers:    { ...headers, 'Content-Length': Buffer.byteLength(body) },
+        timeout:    timeoutMs,
+        lookup:     pinnedLookup(addresses),
+      },
+      (res) => {
+        const status = res.statusCode;
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { if (data.length < 200) data += c; });
+        res.on('end', () => {
+          if (status >= 200 && status < 300) return done({ ok: true, status });
+          if (status >= 300 && status < 400) {
+            return done({ ok: false, status, reason: `redirect-blocked (HTTP ${status})` });
+          }
+          return done({ ok: false, status, reason: (data || `HTTP ${status}`).slice(0, 200) });
+        });
+      }
+    );
+
+    req.on('timeout', () => { req.destroy(new Error('timeout')); });
+    req.on('error', (err) => {
+      done({ ok: false, reason: err && err.message === 'timeout' ? 'timeout' : ((err && err.message) || 'network-error') });
+    });
+
+    req.write(body);
+    req.end();
+  });
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Delivery (retry + DLQ landing) ────────────────────────────────────────────
@@ -469,6 +526,9 @@ module.exports = {
   postOnce,
   // F-SSRF-REBIND: exposed for unit tests
   pinnedLookup,
+  // 2026-07-06: exposed for callers with their own payload/signature contract
+  // (partner-webhook delivery) that still need the same SSRF hardening.
+  postJsonToValidatedUrl,
 };
 
 export {};

@@ -160,9 +160,19 @@ export async function runQemwAlerts(): Promise<QemwAlertResult> {
 
     expiryAlerts++;
     const accountId   = tech.contractor.accountId;
-    const template    = `qemw_expiry_${tier}d`;
+    // [2026-07-06 fallback-masks-capture fix] template used to be
+    // `qemw_expiry_${tier}d` with no technician identity in it at all, and
+    // the dedup lookup below only filters on (accountId, template). An
+    // account with MULTIPLE technicians crossing the same tier within the
+    // same 5-day window would alert the FIRST tech, then silently skip
+    // every OTHER tech at that account+tier as a "duplicate" -- they were
+    // never notified at all, and their own cert-expiry alert was masked by
+    // an unrelated technician's already-sent row. Folding tech.id into the
+    // template scopes the dedup per-technician (no schema change needed;
+    // template is not parsed/matched anywhere else in the codebase).
+    const template    = `qemw_expiry_${tier}d_${tech.id}`;
 
-    // Dedup: already sent this tier for this tech in the last 5 days?
+    // Dedup: already sent this tier for THIS tech in the last 5 days?
     const alreadySent = await prisma.notificationLog.findFirst({
       where: {
         accountId,

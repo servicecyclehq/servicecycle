@@ -33,7 +33,7 @@ export interface ScimUserEvent {
   email: string | null;
   firstName: string | null;
   lastName: string | null;
-  active: boolean;
+  active: boolean | null; // null = field absent from the payload (distinct from an explicit true/false)
   // present on group.user_added / group.user_removed
   group?: { id: string; name: string } | null;
   raw: any;
@@ -130,7 +130,14 @@ function normalizeScimEvent(event: any): ScimNormalizedEvent | null {
       email: data.email != null ? String(data.email) : null,
       firstName: data.first_name != null ? String(data.first_name) : null,
       lastName: data.last_name != null ? String(data.last_name) : null,
-      active: data.active !== false, // default-active unless explicitly false
+      // [2026-07-06 fallback-masks-capture fix] Previously `data.active !== false`,
+      // which collapsed "field explicitly true" and "field absent entirely"
+      // into the same value. That made it impossible for the route handler to
+      // tell a genuine reactivation signal apart from a partial update (e.g. a
+      // name-only change) that simply doesn't mention `active` at all -- see
+      // routes/ssoScim.ts's create/update branch for the consumer-side fix.
+      // Preserve the tri-state; only an explicit boolean counts.
+      active: typeof data.active === 'boolean' ? data.active : null,
       group: data.group && data.group.id ? { id: String(data.group.id), name: String(data.group.name ?? '') } : null,
       raw: data.raw ?? null,
     };
