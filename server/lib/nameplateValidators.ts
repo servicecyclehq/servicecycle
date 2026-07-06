@@ -78,20 +78,6 @@ export interface NameplateFinding {
 // ── Value parsers ───────────────────────────────────────────────────────────
 
 /**
- * Parse the numeric core out of a voltage string. Handles kV suffix and
- * multi-voltage strings ("480/277V" → returns 480; the first component).
- * For multi-component checks (V3), use parseVoltageComponents() below.
- */
-function parseVoltageNumber(s: any): number | null {
-  const str = String(s ?? '').trim();
-  if (!str) return null;
-  const isKv = /kv/i.test(str);
-  const raw = parseFloat(str);
-  if (!Number.isFinite(raw)) return null;
-  return isKv ? raw * 1000 : raw;
-}
-
-/**
  * Split a multi-voltage string into every numeric component (volts).
  * "480/277V"      → [480, 277]
  * "4160-480V"     → [4160, 480]

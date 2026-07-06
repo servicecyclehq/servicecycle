@@ -421,10 +421,26 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 **Interpretation:** the SC repo is now at **84% green, 16% yellow, 0% red.** Every SOC 2 control across A–L is done or has a documented execution path. The remaining 15 yellows need one of: screenshot/checkbox pass by the founder (7 items), a production env change (3 items — Better Stack, backup dest, deploy SSH key setup), local GPG config (1 item — B7), env-rules configuration in GH UI (1 item — B11), attorney review (1 item — H7), or automated month-end close-out (2 items — D9, F6).
 
 **The 15 yellows** are all execution-step-away items:
-- 5 need Dustin admin action on GitHub (B5 branch protection, B7 signed commits, B11 environment gate, C7 DAST target var) — runbook at `docs/security/GITHUB_ADMIN_SETUP.md`.
-- 4 need dated evidence execution (A8 access review, A10 MFA screenshots, C9 quarterly review, K1 endpoint screenshots).
-- 4 need production env or code steps (D5 Better Stack activation, F3 restore-test archive, F5 backup dest cred, F6 disposal log first entry).
-- 2 are minor doc consolidations (B9 already consolidated → could re-examine; H7 privacy policy needs attorney review).
+- [2026-07-05 review fix] B5 branch protection and C7 DAST target var were
+  closed to 🟢 in Session 8 (see the callouts above and the Summary
+  scoreboard, which already reflects 80🟢/15🟡) — removed from this
+  breakdown, which had gone stale and still listed them as open.
+- 2 need Dustin admin action on GitHub (B7 signed commits — local GPG/SSH
+  setup, B11 environment gate — reviewer/wait-timer rules in Settings →
+  Environments) — runbook at `docs/security/GITHUB_ADMIN_SETUP.md`.
+- 6 need dated evidence execution — a screenshot/checkbox pass by the founder
+  (A8 access review, A10 MFA screenshots, C9 quarterly review, K1 endpoint
+  screenshots, L6 access review evidence, L10 quarterly review evidence — L6/
+  A8 and L10/C9 are the same underlying evidence file referenced from two
+  checklist sections).
+- 2 auto-close once Dustin pastes the already-scheduled cron output (F3
+  restore-test archive, L7 restore-test evidence — same evidence file, two
+  sections).
+- 2 need a production env or credential step (D5 Better Stack activation, F5
+  backup destination credentials).
+- 2 auto-close at month-end 2026-08-01 with no action needed before then (D9
+  security metrics full-month close, F6 secure disposal log first entry).
+- 1 needs attorney review (H7 privacy policy).
 
 There is no doc gap remaining. The remaining path to 100% is execution.
 

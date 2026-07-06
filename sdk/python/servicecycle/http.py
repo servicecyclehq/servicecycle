@@ -91,7 +91,17 @@ class HttpClient:
                 if attempt >= self.max_retries:
                     raise RateLimitError(0)
                 retry_after = e.headers.get("Retry-After") if e.headers else None
-                delay_s = float(retry_after) if retry_after else 60.0
+                # [2026-07-05 review fix] Mirrors the TS SDK fix: unbounded
+                # Retry-After let a misbehaving/malicious server hang the
+                # client indefinitely, and a non-numeric header raised an
+                # uncaught ValueError here (worse than the JS NaN case).
+                # Clamp to a sane (0, 60]s window; fall back to 60s when
+                # absent, non-numeric, or non-positive.
+                try:
+                    _parsed = float(retry_after) if retry_after else None
+                except (TypeError, ValueError):
+                    _parsed = None
+                delay_s = min(_parsed, 60.0) if _parsed and _parsed > 0 else 60.0
                 time.sleep(delay_s)
                 return self._request(method, path, params=params, body=body,
                                       idempotency_key=idempotency_key, attempt=attempt + 1)

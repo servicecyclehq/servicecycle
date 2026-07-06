@@ -621,6 +621,23 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     if (missingType.length) {
       return res.status(400).json({ success: false, error: `Set an equipment type before confirming: ${missingType.map((b: any) => b.busName).join(', ')}` });
     }
+    // [2026-07-05 review fix] A client-supplied performedDate was passed
+    // straight to `new Date(...)` below with no validity/range check (unlike
+    // `parseExtractedStudyDate()` on the AI-extracted path, which already
+    // sanity-bounds to 1980..now+1) -- an invalid string produced an
+    // Invalid Date that would only surface as a Prisma 500 deep inside the
+    // transaction, while `studyDateSource='client'` now asserts this date is
+    // TRUSTED. Reject it up front instead.
+    if (req.body.performedDate) {
+      const d = new Date(req.body.performedDate);
+      const nowY = new Date().getFullYear();
+      // Same sanity bound as parseExtractedStudyDate()'s `sane()` helper
+      // above (1980..nowYear+1) — kept identical so the client-supplied path
+      // isn't stricter or looser than the AI-extracted path for no reason.
+      if (Number.isNaN(d.getTime()) || d.getFullYear() < 1980 || d.getFullYear() > nowY + 1) {
+        return res.status(400).json({ success: false, error: 'performedDate must be a valid date, roughly within 1980 and next year.' });
+      }
+    }
 
     const accountId = req.user.accountId;
     const nameToAssetId = new Map<string, string>();
@@ -1415,6 +1432,13 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
     // the one thing the Arc Flash tab actually displays; no point resolving
     // (and for S3, presigning) every superseded row on every page load.
     if (current) (current as any).study.sourceDocumentUrl = await resolveSourceDocUrl(current.study);
+    // [2026-07-05 review fix] `reportFileKey` is an internal storage key
+    // (embeds the account + key scheme) that studyAssetOut() passes through
+    // on every row so resolveSourceDocUrl() above can read it -- it was then
+    // shipped to the client verbatim on every row, even though only the
+    // resolved `sourceDocumentUrl` (set on `current` only) is ever used by
+    // the UI. Strip it before the response goes out.
+    for (const sRow of studyAssets) { if (sRow.study) delete sRow.study.reportFileKey; }
 
     res.json({
       success: true,

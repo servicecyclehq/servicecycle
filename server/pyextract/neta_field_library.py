@@ -34,12 +34,13 @@ HEADER_FIELDS = [
     # descriptor (report_018: "MANUFACTURER: OKONITE  TYPE: OKOGUARD-URO 15KV
     # 500 KCMIL" -- previously had NO model label match at all, model field
     # came back empty). Listed LAST so more specific labels always win first.
-    # KNOWN EDGE CASE: the generic lookbehind extract_header() applies to every
-    # label is only `(?<![A-Za-z])`, so this bare "type" alias COULD mis-bind
-    # to "EQUIPMENT TYPE:" / "DEVICE TYPE:" / "APPARATUS TYPE:" text if a
-    # document has one of those AND a separate standalone "TYPE:" nameplate
-    # field. No golden-set report exercises that combination today; flagging
-    # rather than silently risking it.
+    # RESOLVED 2026-07-05 (was flagged as a known edge case): the generic
+    # lookbehind extract_header() applies to every label is only
+    # `(?<![A-Za-z])`, which doesn't stop this bare "type" alias from
+    # mis-binding to "EQUIPMENT TYPE:" / "DEVICE TYPE:" / "APPARATUS TYPE:"
+    # text (a SPACE precedes "TYPE" there too, satisfying the generic guard).
+    # extract_header() in extractor.py now adds extra negative lookbehinds
+    # for exactly this label to close the gap -- see the comment there.
     {"key": "model",        "dtype": "id",     "labels": ["model number", "model no", "model", "catalog number", "catalog no", "cat no", "type/model", "part/style no", "type"]},
     {"key": "manufacturer", "dtype": "name",   "labels": ["manufacturer", "mfr"]},
     {"key": "testDate",     "dtype": "date",   "labels": ["test date", "date of test", "date tested", "date"]},

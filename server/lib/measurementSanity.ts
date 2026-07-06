@@ -88,15 +88,29 @@ function numVal(v: any): number | null {
 /**
  * Parse a voltage string that may include unit suffixes.
  * Handles: "480", "480V", "480 VAC", "4.16kV", "4160V", "13.8 kV"
+ *
+ * [2026-07-05 review fix] Previously tested /kv/i against the WHOLE string,
+ * so a multi-voltage string with the kV unit on a LATER component (e.g.
+ * "480V/13.8kV") would incorrectly scale the FIRST captured number by 1000
+ * (480 → 480,000) just because "kV" appeared somewhere later in the string.
+ * This is the same 1000x LV-inflation bug already found + fixed in
+ * nameplateValidators.ts's parseVoltageComponents() — this is that
+ * function's sibling in the test-report ingest path and had the identical
+ * bug. Now only the unit tail immediately following the captured number is
+ * checked, matching the per-component approach.
  */
 function parseVoltage(s: any): number | null {
   const str = String(s || '').trim();
-  const isKv = /kv/i.test(str);
-  // parseFloat handles leading minus signs and stops at trailing non-numeric chars
-  // ("480V" → 480, "4.16kV" → 4.16, "-480" → -480).  Do NOT strip with /[^0-9.]/ first
-  // — that removes the minus sign and turns negative values into positive ones.
-  const raw = parseFloat(str);
+  // Capture the first number plus its immediately-following unit tail
+  // (stops at the next digit, so "480V/13.8kV" tail is "V/", not "V/13.8kV").
+  // parseFloat-equivalent handling of the leading minus sign is preserved by
+  // capturing it inside the numeric group — do NOT strip with /[^0-9.]/ first,
+  // that removes the minus sign and turns negative values into positive ones.
+  const m = /(-?\d+(?:\.\d+)?)([^\d]*)/.exec(str);
+  if (!m) return null;
+  const raw = parseFloat(m[1]);
   if (!Number.isFinite(raw)) return null;
+  const isKv = /kv/i.test(m[2] || '');
   return isKv ? raw * 1000 : raw;
 }
 

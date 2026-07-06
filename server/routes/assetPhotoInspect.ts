@@ -448,7 +448,16 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
     const { normalizeImage } = require('../lib/imageNormalize');
     let img: any;
     try { img = await normalizeImage(req.file.buffer, req.file.mimetype); }
-    catch (ne: any) { return res.status(400).json({ success: false, error: ne.message || 'Could not process that image.' }); }
+    catch (ne: any) {
+      // [2026-07-05 review fix] meterScan() already incremented the daily
+      // nameplate-scan count above, BEFORE this try block starts. Every OTHER
+      // failure path reaches the outer catch (below) which refunds the slot,
+      // but this inner catch used to return directly -- a corrupt/undecodable
+      // upload burned a scan and gave the tech nothing back for it. Refund
+      // here too so the ordering matches every other failure path.
+      void refundScan(userId, 'nameplate_scan', accountId);
+      return res.status(400).json({ success: false, error: ne.message || 'Could not process that image.' });
+    }
 
     // completeWithImage routes by provider (gemini → _geminiImage) and uses
     // ONLY `prompt` for images — settings.system is ignored — so the JSON
@@ -536,11 +545,22 @@ router.post('/ocr-nameplate', aiPreGate, aiIpLimiter, ocrLimiter, ocrUploadMiddl
       reasons[f.field].push(f.message);
     }
 
-    const assetId = (req.body?.assetId || '').trim();
-    if (assetId) {
-      void logActivity(assetId, userId, accountId, 'nameplate_ocr', {
-        manufacturer: fields.manufacturer, model: fields.model,
-      });
+    // [2026-07-05 review fix, S1] This route never looked up the asset at
+    // all (unlike /photo-inspect above, which checks accountId ownership
+    // before touching assetId anywhere) -- a client could pass ANY uuid here
+    // and get an ActivityLog row written against another tenant's asset,
+    // polluting that account's audit trail. Verify the asset actually
+    // belongs to this account before logging; an unowned/nonexistent id is
+    // silently skipped (this is a best-effort log, not a hard gate on the
+    // OCR result itself, which the tech already received above).
+    const assetIdRaw = (req.body?.assetId || '').trim();
+    if (assetIdRaw) {
+      const _ownedAsset = await prisma.asset.findFirst({ where: { id: assetIdRaw, accountId }, select: { id: true } }).catch(() => null);
+      if (_ownedAsset) {
+        void logActivity(assetIdRaw, userId, accountId, 'nameplate_ocr', {
+          manufacturer: fields.manufacturer, model: fields.model,
+        });
+      }
     }
 
     // #4 telemetry: nameplate OCR is a scan path too — log engine/coverage/

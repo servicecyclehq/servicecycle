@@ -80,7 +80,16 @@ export class HttpClient {
         throw new RateLimitError(0);
       }
       const retryAfterHeader = response.headers.get('Retry-After');
-      const retryAfterSeconds = retryAfterHeader ? parseFloat(retryAfterHeader) : 60;
+      // [2026-07-05 review fix] Unbounded: a misbehaving or malicious server
+      // sending "Retry-After: 999999" made every SDK call hang indefinitely,
+      // and a non-numeric header produced NaN -> sleep(NaN) resolves as an
+      // effectively-zero-delay hot-retry loop instead of backing off. Clamp
+      // to a sane (0, 60]s window; fall back to 60s when absent, non-numeric,
+      // or non-positive.
+      const _parsedRetryAfter = retryAfterHeader ? parseFloat(retryAfterHeader) : NaN;
+      const retryAfterSeconds = Number.isFinite(_parsedRetryAfter) && _parsedRetryAfter > 0
+        ? Math.min(_parsedRetryAfter, 60)
+        : 60;
       const retryAfterMs = Math.ceil(retryAfterSeconds * 1000);
       await sleep(retryAfterMs);
       return this.request<T>(method, path, params, body, idempotencyKey, attempt + 1);

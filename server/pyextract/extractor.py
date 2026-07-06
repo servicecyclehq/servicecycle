@@ -246,8 +246,18 @@ def extract_header(cells, text):
         if f["key"] in out:
             continue
         for lbl in f["labels"]:
+            # [2026-07-05 review fix] c3591d4 added a bare "type" alias for
+            # the model field and self-flagged a known edge case: the shared
+            # `(?<![A-Za-z])` guard below only rejects a label glued directly
+            # to a preceding LETTER -- it does nothing against "EQUIPMENT
+            # TYPE:" / "DEVICE TYPE:" / "APPARATUS TYPE:", since a SPACE
+            # (not a letter) precedes "TYPE" there too, so those qualified
+            # fields would mis-bind to the model field. Extra negative
+            # lookbehinds close that specific gap without touching any other
+            # label's matching behavior.
+            extra_neg = r"(?<!EQUIPMENT )(?<!DEVICE )(?<!APPARATUS )" if lbl == "type" else ""
             pat = re.compile(
-                r"(?<![A-Za-z])" + re.escape(lbl) +
+                extra_neg + r"(?<![A-Za-z])" + re.escape(lbl) +
                 r"\s*[:#]?\s*(.+?)(?=\s{2,}|\s+(?:" + stop_alt + r")\b\s*[:#]|[\r\n]|$)",
                 re.I)
             m = pat.search(text)
@@ -983,8 +993,17 @@ def _bus_inline_readings(text):
     # phase-value pairs in the row itself (report_007 pattern:
     # "A-B: 850 M? B-C: 720 M? C-A: 910" carries M? in-line but has no
     # "(MΩ)" header). Uses the first unit token found in the row.
+    # 2026-07-05 review fix: dropped bare "V"/"A" from this alternation.
+    # `_ROW_UNIT_RE.search()` below starts past the FIRST number in the row,
+    # but a phase-pair row like "A-B: 850  B-C: 720  C-A: 910" still has a
+    # bare "A" later (inside "C-A") that the old alternation matched as a
+    # unit -- the exact Amps-mislabel bug 669ae6d meant to close, one token
+    # later. Bare V/A aren't needed here: when no genuine inline unit is
+    # found, `unit` stays None and `_classify()` below already recovers the
+    # correct canonical unit from the label match (see the long comment
+    # above), so removing them closes the false-positive path for free.
     _ROW_UNIT_RE = re.compile(
-        r"(?:M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|uΩ|u\?|udhm|mΩ|Ω|kΩ|%|V|A|kV|VDC|VAC|sec|ms|Hz)",
+        r"(?:M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|uΩ|u\?|udhm|mΩ|Ω|kΩ|%|kV|VDC|VAC|sec|ms|Hz)",
         re.I,
     )
 
@@ -1200,10 +1219,16 @@ _PHASE_GRID_HDR_RE = re.compile(
     # header exists on a preceding line (report_007: header is "MAIN BUS
     # JOINT RESISTANCE (DLRO)" which carries the LABEL but not the unit;
     # the unit is right here in "PHASE uOhm EXPECTED RESULT").
+    # 2026-07-05 review fix: dropped bare "V"/"A" from the alternation --
+    # every trailing group here is OPTIONAL, so a lone section header like
+    # "PHASE A" (not a real grid header at all) matched the whole regex,
+    # treating "A" as a genuine unit (Amps) and misassociating whatever text
+    # preceded it as the label. kV/VDC/VAC (multi-char, not a bare phase
+    # letter) are unaffected and stay.
     r"^\s*PHASE\s+"
     r"(AS[- ]?FOUND|MEASURED|VALUE|READING|ACTUAL|"
     r"M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|µ\s?Ohm|uΩ|u\s?Ohm|uohm|u\?|udhm|"
-    r"mΩ|m\s?Ohm|mohm|Ω|Ohm|kΩ|k\s?Ohm|kohm|%|V|A|kV|VDC|VAC|sec|ms|Hz)\s+"
+    r"mΩ|m\s?Ohm|mohm|Ω|Ohm|kΩ|k\s?Ohm|kohm|%|kV|VDC|VAC|sec|ms|Hz)\s+"
     r"(?:EXPECTED|LIMIT|SPEC|ACCEPTANCE)?\s*(?:RESULT|OUTCOME|PASS/?FAIL)?\s*$",
     re.I | re.MULTILINE,
 )
@@ -1369,8 +1394,8 @@ def _section_for_offset(off, raw_spans):
 # individual regex to tolerate the corruption piecemeal.
 _OCR_ZERO_AS_O_RE = re.compile(
     r"(?<=[A-Za-z])0(?=[A-Za-z])"    # letter-0-letter, e.g. P0WERDB, M0DEL
-    r"|(?<=[A-Za-z])0\b"             # letter-0-boundary, e.g. DLR0, C0NDITI0N's trailing case
-    r"|\b0(?=[A-Za-z])"              # boundary-0-letter, e.g. 0VERALL, 0ILTEMP
+    r"|(?<=[A-Za-z]{2})0\b"          # letter-letter-0-boundary, e.g. DLR0
+    r"|\b0(?=[A-Za-z]{2,})"          # boundary-0-letter-letter, e.g. 0VERALL, 0ILTEMP
 )
 # Deliberately excludes 0-flanked-by-digit (real numbers like "6800", "2018")
 # and 0-flanked-by-boundary-on-both-sides (a bare "0" token) -- a 0 only gets
@@ -1379,6 +1404,22 @@ _OCR_ZERO_AS_O_RE = re.compile(
 # (e.g. serial "SW93-C0182-B") are also left untouched (only one side is a
 # letter; the other is a digit, not a letter-or-boundary), since that shape
 # is ambiguous and not what this fix targets.
+#
+# 2026-07-05 review fix: cases 2 and 3 now require AT LEAST 2 letters on the
+# word side (2 before the trailing 0; 2+ after the leading 0), not just 1.
+# The old 1-letter versions corrupted real transformer bushing designators
+# (H0, X0, N0 -- standard IEEE C57.12 neutral-bushing labels, exactly 1
+# letter + trailing 0) into H0->HO/X0->XO, and safety-critical ZERO readings
+# glued to their unit with no space ("0V", OCR "0MΩ") into "OV"/"OMΩ" --
+# silently destroying exactly the kind of genuine-zero reading `v >= 0`
+# (fixed elsewhere the same day) exists to preserve, since a value that's
+# been turned into a letter never reaches the numeric parser at all. Real
+# garbled words this fix targets (DLR0->DLRO, 0VERALL->OVERALL, 0ILTEMP-
+# >OILTEMP) all have 2+ letters on the word side, so they're unaffected.
+# (Python's `re` requires fixed-width lookbehind, hence `{2}` not `{2,}` on
+# the lookbehind case -- it still means "at least 2", since if 3+ letters
+# actually precede the 0, the immediate last-2-char window is still all
+# letters and the lookbehind still matches.)
 
 # Narrow Ω (omega) -> plain "O" misread, seen ONLY inside a unit parenthetical
 # ("DLR0 (uO)" for "(µΩ)"). Scoped tightly to u/µ/M immediately followed by a
@@ -1393,7 +1434,19 @@ _OCR_OMEGA_AS_O_RE = re.compile(r"\(([uµM])O\)")
 # capture boundary doesn't affect correctness (see the fix's own dev notes):
 # the substitution only deletes the newline/whitespace GAP between two
 # digit runs, so any digits outside the match stay exactly where they were.
-_OCR_WRAPPED_NUMBER_RE = re.compile(r"(\d{1,3})[ \t]*\n[ \t]*(\d{1,3})(?=\D|$)")
+#
+# 2026-07-05 review fix: added `(?<!\d)` before group 1. Without it, group 1
+# could match just the TAIL of a longer digit run that happens to sit right
+# before a newline on CLEAN text -- e.g. "JOB NO: 18-0781\n09/13/2018" (a job
+# number followed by a date on the next line) let "781" (the last 3 digits
+# of "0781") match as group 1, then "09" as group 2, silently corrupting it
+# to "18-078109/13/2018". Same failure mode on "YEAR: 2001\n13.8 KV" ->
+# "200113.8 KV". The lookbehind requires group 1 to be the START of its
+# digit run (not preceded by another digit), so a run longer than 3 digits
+# can never be partially consumed from the middle -- the genuine garbled
+# case ("68\n00" -> "6800", each side already <=3 digits with a real digit
+# boundary before it) is untouched.
+_OCR_WRAPPED_NUMBER_RE = re.compile(r"(?<!\d)(\d{1,3})[ \t]*\n[ \t]*(\d{1,3})(?=\D|$)")
 
 
 def _ocr_garbled_normalize(text):

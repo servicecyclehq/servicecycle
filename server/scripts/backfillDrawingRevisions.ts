@@ -73,29 +73,54 @@ function writesAreArmed(opts: any): boolean {
   return !opts.dryRun && process.env.EDMS_BACKFILL_ENABLE === 'true';
 }
 
-async function claimNextDocumentId(accountId: string | null): Promise<string | null> {
-  const accountClause = accountId ? `AND "accountId" = '${accountId.replace(/'/g, '')}'` : '';
-  // NOTE: same FOR UPDATE SKIP LOCKED pattern as lib/ingestWorker.ts's
-  // claimNextJobId -- safe under a rolling/multi-instance deploy. Documents
-  // don't have a 'status' column to flip, so this claims by selecting an
-  // eligible id under a row lock and relying on the caller to set
-  // currentRevisionId (which removes it from future eligibility) inside the
-  // same transaction as the rest of the backfill work for that row.
-  const rows: any[] = await prisma.$queryRawUnsafe(
-    `SELECT "id" FROM "documents"
-      WHERE "currentRevisionId" IS NULL
-        AND "docType" = ANY($1)
-        ${accountClause}
-      ORDER BY "uploadedAt" ASC
-      FOR UPDATE SKIP LOCKED
-      LIMIT 1`,
-    BACKFILL_DOC_TYPES,
-  );
-  return rows && rows.length ? rows[0].id : null;
+// [2026-07-05 review fix -- SQL parameterization] accountId was interpolated
+// directly into the query text after a naive `.replace(/'/g, '')` strip --
+// a blocklist-style "sanitization" that is the wrong tool even when it
+// happens to be safe today (every caller of this script passes a UUID).
+// $queryRawUnsafe already supports real positional parameters ($1, $2, ...)
+// -- accountId now travels as one instead of being spliced into the SQL text.
+//
+// [2026-07-05 review fix -- transaction boundary] This function used to run
+// the SELECT ... FOR UPDATE SKIP LOCKED as its own standalone statement,
+// separate from backfillOneDocument's later writes. A `FOR UPDATE` row lock
+// only lives as long as the transaction that took it -- $queryRawUnsafe with
+// no explicit transaction wrapper autocommits after the SELECT, so the lock
+// was released before backfillOneDocument ever started. The header comment's
+// claimed guarantee ("safe under a rolling/multi-instance deploy... relying
+// on the caller to set currentRevisionId... inside the SAME transaction as
+// the rest of the backfill work") was never actually true -- two instances
+// could both claim the same document id and both write a DrawingRevision
+// for it. The claim SELECT and the whole backfill (including the storage
+// I/O and the final writes) now run inside ONE transaction per document, so
+// the lock is held for the full duration and a second instance's SKIP LOCKED
+// genuinely skips this row until the first instance commits (at which point
+// currentRevisionId is set and the WHERE clause excludes it anyway).
+async function claimAndBackfillNext(accountId: string | null, opts: any): Promise<{ documentId: string; status: string; reason?: string } | null> {
+  return prisma.$transaction(async (tx: any) => {
+    const params: any[] = [BACKFILL_DOC_TYPES];
+    let accountClause = '';
+    if (accountId) {
+      params.push(accountId);
+      accountClause = `AND "accountId" = $${params.length}`;
+    }
+    const rows: any[] = await tx.$queryRawUnsafe(
+      `SELECT "id" FROM "documents"
+        WHERE "currentRevisionId" IS NULL
+          AND "docType" = ANY($1)
+          ${accountClause}
+        ORDER BY "uploadedAt" ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1`,
+      ...params,
+    );
+    const documentId = rows && rows.length ? rows[0].id : null;
+    if (!documentId) return null;
+    return backfillOneDocument(documentId, opts, tx);
+  }, { timeout: 60_000 }); // storage I/O (download/copy/verify) runs inside this tx; default 5s prisma timeout is too tight for that
 }
 
-async function backfillOneDocument(documentId: string, opts: any): Promise<{ documentId: string; status: string; reason?: string }> {
-  const doc = await prisma.document.findUnique({ where: { id: documentId } });
+async function backfillOneDocument(documentId: string, opts: any, tx: any = prisma): Promise<{ documentId: string; status: string; reason?: string }> {
+  const doc = await tx.document.findUnique({ where: { id: documentId } });
   if (!doc) return { documentId, status: 'skipped', reason: 'not found' };
   if (doc.currentRevisionId) return { documentId, status: 'skipped', reason: 'already backfilled' };
   if (doc.filePath === '__external__') return { documentId, status: 'skipped', reason: 'external-URL document, no bytes to copy' };
@@ -130,20 +155,17 @@ async function backfillOneDocument(documentId: string, opts: any): Promise<{ doc
     );
   }
 
-  const revision = await prisma.$transaction(async (tx: any) => {
-    const rev = await tx.drawingRevision.create({ data: {
-      accountId: doc.accountId, documentId: doc.id, revNo: 1,
-      storageKey, sha256, sizeBytes: buffer.length, sourceFormat: 'pdf',
-      createdBy: doc.uploadedBy, createdAt: doc.uploadedAt,
-      workflowState: 'published', approvedBy: doc.uploadedBy, approvedAt: doc.uploadedAt,
-    } });
-    await tx.document.update({ where: { id: doc.id }, data: { currentRevisionId: rev.id } });
-    return rev;
-  });
+  const rev = await tx.drawingRevision.create({ data: {
+    accountId: doc.accountId, documentId: doc.id, revNo: 1,
+    storageKey, sha256, sizeBytes: buffer.length, sourceFormat: 'pdf',
+    createdBy: doc.uploadedBy, createdAt: doc.uploadedAt,
+    workflowState: 'published', approvedBy: doc.uploadedBy, approvedAt: doc.uploadedAt,
+  } });
+  await tx.document.update({ where: { id: doc.id }, data: { currentRevisionId: rev.id } });
 
   // Step 5 (DrawingPageText extraction) is deliberately NOT done here -- see
   // the 2026-07-05 header note. currentRevisionId is correct without it.
-  return { documentId, status: 'backfilled', reason: `revisionId=${revision.id}` };
+  return { documentId, status: 'backfilled', reason: `revisionId=${rev.id}` };
 }
 
 async function main() {
@@ -153,14 +175,15 @@ async function main() {
   const results: any[] = [];
   const limit = opts.limit ?? BATCH_SIZE;
   for (let i = 0; i < limit; i++) {
-    const id = await claimNextDocumentId(opts.accountId);
-    if (!id) break;
+    let claimed: { documentId: string; status: string; reason?: string } | null = null;
     try {
-      results.push(await backfillOneDocument(id, opts));
+      claimed = await claimAndBackfillNext(opts.accountId, opts);
     } catch (e: any) {
-      results.push({ documentId: id, status: 'error', reason: e && e.message ? e.message : String(e) });
-      break; // stop on first error in dry-run-of-real-thing mode; don't mask a systemic issue
+      results.push({ documentId: null, status: 'error', reason: e && e.message ? e.message : String(e) });
+      break; // stop on first error; don't mask a systemic issue
     }
+    if (!claimed) break;
+    results.push(claimed);
   }
 
   console.log(JSON.stringify(results, null, 2));
@@ -171,6 +194,6 @@ if (require.main === module) {
   main().catch((e) => { console.error('[backfillDrawingRevisions] fatal:', e); process.exitCode = 1; });
 }
 
-module.exports = { parseArgs, writesAreArmed, claimNextDocumentId, backfillOneDocument };
+module.exports = { parseArgs, writesAreArmed, claimAndBackfillNext, backfillOneDocument };
 
 export {};

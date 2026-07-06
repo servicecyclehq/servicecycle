@@ -99,9 +99,19 @@ Not SOC 2 scope but has been failing since 2026-07-03. Needs the following repo 
 - `SC_SSH_HOST` — droplet IP or DNS name (`198.211.99.45`)
 - `SC_SSH_USER` — usually `root`
 
+**Use a dedicated deploy-only key, not your personal/signing key.** The
+example below used to read from `~/.ssh/id_ed25519` — that's the same
+general-purpose key used for git commit signing (see
+`docs/security/SIGNED_COMMITS.md`) and everyday SSH auth. Uploading it as a
+CI secret means a leaked Actions secret compromises your personal git
+identity too, not just droplet-deploy access. Generate (or use the existing)
+`id_ed25519_sc_deploy` key instead — scoped to this one purpose, revocable
+independently by removing it from the droplet's `authorized_keys` without
+touching your personal key at all.
+
 **Via gh CLI:**
 ```bash
-gh secret set SC_SSH_KEY --repo servicecyclehq/servicecycle < ~/.ssh/id_ed25519
+gh secret set SC_SSH_KEY --repo servicecyclehq/servicecycle < ~/.ssh/id_ed25519_sc_deploy
 gh secret set SC_SSH_HOST --body "198.211.99.45" --repo servicecyclehq/servicecycle
 gh secret set SC_SSH_USER --body "root" --repo servicecyclehq/servicecycle
 ```

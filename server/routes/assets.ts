@@ -1517,9 +1517,39 @@ router.get('/:id/activity', async (req, res) => {
 // (back-compat with the brief + seeds) and stash the confidence map + the saved
 // photo reference under a reserved `_scan` key. DELETE clears it for the
 // "attached to the wrong asset" case (delete here → re-scan on the right one).
-const _npMulter = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+// [2026-07-05 review fix, S2] No fileFilter meant ANY file type was accepted
+// under the "image" field name -- the sibling nameplate/photo upload path
+// (routes/assetPhotoInspect.ts photoUpload) restricts to JPEG/PNG/WebP/HEIC;
+// this one didn't, so an arbitrary file could be normalized/stored as a
+// "nameplate photo" document. Mirrors the same accepted-type set.
+const _NP_ACCEPTED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+const _npMulter = require('multer')({
+  storage: require('multer').memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const mt = (file.mimetype || '').toLowerCase();
+    const heicName = /\.heic$|\.heif$/i.test(file.originalname || '');
+    if (_NP_ACCEPTED_MIME.has(mt) || heicName) return cb(null, true);
+    return cb(new Error('Only JPEG, PNG, WebP, or HEIC images are accepted.'));
+  },
+});
 const { uploadFile: _npUpload, deleteFile: _npDelete } = require('../lib/storage');
 const NP_KEYS = ['manufacturer','model','serialNumber','voltage','kva','amperage','phases','frequency','year','enclosureRating'];
+
+// A fileFilter rejection is an Error passed to next(err), which would
+// otherwise fall through to the generic 5xx JSON error handler in index.ts
+// (correct client-facing shape, but wrong status + noisy 5xx telemetry for
+// what is really a 400-level upload-validation failure). Mirrors
+// assetPhotoInspect.ts's photoUploadMiddleware wrapper.
+function _npUploadMiddleware(req: any, res: any, next: any) {
+  _npMulter.single('image')(req, res, (err: any) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Image too large — 10MB maximum.' : (err.message || 'Upload failed.');
+      return res.status(400).json({ success: false, error: msg });
+    }
+    return next();
+  });
+}
 
 async function _deleteNameplatePhoto(accountId: string, documentId: string) {
   try {
@@ -1530,7 +1560,7 @@ async function _deleteNameplatePhoto(accountId: string, documentId: string) {
   } catch (e: any) { console.error('[nameplate] prior photo delete failed:', e?.message); }
 }
 
-router.post('/:id/nameplate', requireManager, _npMulter.single('image'), async (req: any, res: any) => {
+router.post('/:id/nameplate', requireManager, _npUploadMiddleware, async (req: any, res: any) => {
   try {
     const accountId = req.user.accountId;
     const asset = await prisma.asset.findFirst({

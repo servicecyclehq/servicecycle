@@ -140,8 +140,17 @@ router.post('/', requireRole(['admin', 'manager', 'viewer']), async (req: any, r
             prisma.protectiveDevice.findMany({ where: { assetId, accountId, status: 'active' } }),
             prisma.deviceTestRecord.findMany({ where: { assetId, accountId }, take: 50 }),
           ]);
+          // [2026-07-05 review fix] `assetRow` was fetched but never used --
+          // the raw `current` row has no `equipmentTypeGuess`, so
+          // `analyzeBusGaps` (inside scoreBusConfidence) always scored
+          // completeness under the generic 'other' equipment family here,
+          // even though `routes/arcFlashIngest.ts`'s sibling snapshot path
+          // (`busFromStudyAssetRow`) correctly attaches it. That let this
+          // incident-time confidence snapshot diverge from what the Arc
+          // Flash tab showed at the same moment -- the exact mismatch F-I1
+          // was meant to close, on a record meant for insurer/OSHA bundles.
           const confidence = scoreBusConfidence({
-            bus: current,
+            bus: { ...current, equipmentTypeGuess: assetRow?.equipmentType },
             study: { performedDate: current.study?.performedDate, expiresAt: current.study?.expiresAt, superseded: !!current.study?.supersededById },
             deviceSource: pickDeviceSource(devices),
             driftFlagged: tests.some((t: any) => t.driftFlagged),

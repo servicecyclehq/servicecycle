@@ -41,22 +41,34 @@ jobs:
 
       - name: Resolve tag
         id: tag
+        # [2026-07-05 review fix] github.event.inputs.tag is free-text
+        # supplied by whoever dispatches this workflow -- interpolating it
+        # directly into a `run:` script is a script-injection vector (GitHub
+        # expands `${{ }}` as raw text before the shell runs). Routed through
+        # `env:` so the shell sees an ordinary variable, not literal script text.
+        env:
+          TAG_INPUT: ${{ github.event.inputs.tag }}
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG_INPUT" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Collect metadata
         id: meta
+        # [2026-07-05 review fix] steps.tag.outputs.tag ultimately derives from
+        # the same free-text workflow_dispatch input as above -- same
+        # env-indirection treatment.
+        env:
+          RESOLVED_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           {
             echo "sha=$(git rev-parse HEAD)"
             echo "sha_short=$(git rev-parse --short HEAD)"
             echo "timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo "release_notes<<EOF"
-            git tag -l --format='%(contents)' "${{ steps.tag.outputs.tag }}" \
+            git tag -l --format='%(contents)' "$RESOLVED_TAG" \
               | sed '/^-----BEGIN PGP SIGNATURE-----$/,$d'
             echo "EOF"
           } >> "$GITHUB_OUTPUT"

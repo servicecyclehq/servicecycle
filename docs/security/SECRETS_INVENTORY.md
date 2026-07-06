@@ -28,6 +28,12 @@
 | `GROQ_API_KEY` | Free-tier fallback | ServiceCycle-owned | 6 months | Droplet `.env`; password manager |
 | Customer BYO Anthropic / OpenAI / Gemini keys | Paid-tier LLM calls per customer | Customer | Customer's responsibility | Encrypted per-account with MASTER_KEY-derived key |
 
+## GitHub Personal Access Tokens
+
+| Token | Scope | Purpose | Owner | Rotation cadence | Stored where |
+|---|---|---|---|---|---|
+| `servicecyclehq` PAT (`admin:true`) | Repo admin (branch protection, environment creation) | Used via `GH_TOKEN` env var (never echoed to logs) for admin-only `gh`/API operations that the day-to-day `claudedussy` `gh auth` login (pull-only) can't perform — e.g. enabling B5 branch protection, creating the `production` environment for B11. Surfaced via `git credential fill`, not typed directly. | Dustin | 12 months, or immediately if ever exposed in a log/output | Git credential manager; password manager |
+
 ## Platform credentials (not in .env — external accounts)
 
 | Account | Owner | MFA on? | Rotation cadence | Stored where |

@@ -30,9 +30,14 @@ CVE-2026-3833   # libgnutls30: policy bypass, case sensitivity (base image)
 # reconsider at next PDF pipeline refresh, target Q3 2026.
 CVE-2025-64512  # pdfminer.six < 20251107
 CVE-2025-70559  # pdfminer.six < 20251230
-CVE-2026-25990  # pillow < 12.1.1: OOB write via crafted image
-CVE-2026-40192  # pillow < 12.2.0: decompression-bomb DoS
-CVE-2026-42311  # pillow < 12.2.0: additional; same acceptance batch
+# [2026-07-05] pillow CVEs (CVE-2026-25990 fixed 12.1.1; CVE-2026-40192 and
+# CVE-2026-42311 fixed 12.2.0) REMOVED from this accept-list -- the
+# server/pyextract/requirements.txt pin was bumped to Pillow>=12.2.0,<13.0
+# (was >=10.4.0,<12.0, which had been blocking the fix from ever landing).
+# Verified against the golden-set extraction eval with zero regressions; see
+# docs/security/DEPENDENCY_DECISIONS.md. The scan should now pass on these
+# three without an ignore entry -- if it doesn't, that's a real regression,
+# not something to re-accept.
 
 # Dockerfile misconfig — client/Dockerfile.prod runs the nginx master as
 # root to bind port 80. Standard nginx image behavior. Nginx worker processes

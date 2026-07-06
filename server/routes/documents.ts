@@ -747,7 +747,13 @@ router.get('/:documentId/annotations', async (req, res) => {
 
 // ─── POST /api/documents/:documentId/annotations ────────────────────────────
 // Body: { shapes: [{ type:"pin", x, y, text? }, ...] }
-router.post('/:documentId/annotations', async (req, res) => {
+// [2026-07-05 review fix] This route had NO role gate at all -- a consultant
+// (read-only-with-attribution by design, see middleware/roles.ts) could
+// create an annotation, becoming its "owner" for the PUT/DELETE ownership
+// check below, which contradicts the in-app "read-only" promise. requireManager
+// matches the sibling POST /:id/comments gate on WorkOrderComment (this
+// route's PUT/DELETE docstrings already say "same rule as WorkOrderComment").
+router.post('/:documentId/annotations', requireManager, async (req, res) => {
   try {
     const doc = await prisma.document.findFirst({
       where:  { id: req.params.documentId, accountId: req.user.accountId },

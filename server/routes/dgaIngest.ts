@@ -43,8 +43,22 @@ function resolveGases(body: any): { gases: Record<string, number>; sampleDate: s
   // [Resolved 2026-07-05] Explicit structured input wins, same precedence as
   // sampleDate/labName above; falls back to whatever parseDgaText finds in
   // free-form report text.
-  let reportedTdcg: number | null = Number.isFinite(Number(body?.reportedTdcg)) && body?.reportedTdcg !== '' && body?.reportedTdcg != null
-    ? Number(body.reportedTdcg) : null;
+  // [2026-07-05 review fix] The original `Number.isFinite(Number(x)) && x
+  // !== '' && x != null` check let JS's loose numeric coercion turn junk
+  // into an authoritative-looking TDCG: `Number(' ')` is 0 (whitespace isn't
+  // the empty string, so the `!== ''` guard didn't catch it), `Number(true)`
+  // is 1, `Number([5])` is 5 (via toString). Any of those would silently
+  // become the report's "own stated" TDCG and take precedence over the
+  // recomputed sum. Now only a real number, or a non-blank numeric STRING,
+  // is accepted.
+  const rawTdcg = body?.reportedTdcg;
+  let reportedTdcg: number | null = null;
+  if (typeof rawTdcg === 'number' && Number.isFinite(rawTdcg)) {
+    reportedTdcg = rawTdcg;
+  } else if (typeof rawTdcg === 'string' && rawTdcg.trim() !== '') {
+    const n = Number(rawTdcg.trim());
+    if (Number.isFinite(n)) reportedTdcg = n;
+  }
   if (typeof body?.reportText === 'string' && body.reportText.trim()) {
     const parsed = parseDgaText(body.reportText);
     for (const [k, v] of Object.entries(parsed.gases)) {

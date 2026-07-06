@@ -53,7 +53,16 @@ jobs:
           scanners: vuln,misconfig
           severity: HIGH,CRITICAL
           exit-code: '1'
-          ignore-unfixed: true
+          # [2026-07-05 review fix] ignore-unfixed removed from fs-scan (kept
+          # on image-scan below). "Unfixed" makes sense for OS packages baked
+          # into a base image, where there's genuinely nothing to do but wait
+          # for upstream. It does NOT make sense for OUR OWN package.json/
+          # requirements.txt dependencies -- those almost always have an
+          # available bump, and Trivy's advisory-DB attribution of "fixed
+          # version" lags real releases (this is exactly the pillow CVE case
+          # being evaluated separately). Silently ignoring "unfixed" findings
+          # here was masking actionable dependency bumps as if they were the
+          # same kind of "nothing we can do" as an OS package CVE.
           skip-dirs: 'node_modules,client/node_modules,server/node_modules,client/dist,server/dist'
           format: table
 
@@ -66,7 +75,6 @@ jobs:
           scan-ref: .
           scanners: vuln,misconfig
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
           skip-dirs: 'node_modules,client/node_modules,server/node_modules,client/dist,server/dist'
           format: sarif
           output: trivy-fs.sarif

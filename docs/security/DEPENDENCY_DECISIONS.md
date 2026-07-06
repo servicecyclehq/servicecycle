@@ -109,13 +109,11 @@ First run of `.github/workflows/trivy.yml` surfaced 6 base-image CVEs (Debian bo
 - **Approver**: Dustin.
 - **Trivy ignore entries**: added to `.trivyignore` with cross-reference here.
 
-**Python-package CVEs (pdfminer.six, pillow):**
+**Python-package CVEs (pdfminer.six) — still accepted:**
 
 - **CVEs**:
   - [CVE-2025-64512](https://nvd.nist.gov/vuln/detail/CVE-2025-64512) — pdfminer.six < 20251107
   - [CVE-2025-70559](https://nvd.nist.gov/vuln/detail/CVE-2025-70559) — pdfminer.six < 20251230
-  - [CVE-2026-25990](https://nvd.nist.gov/vuln/detail/CVE-2026-25990) — pillow < 12.1.1 out-of-bounds write via crafted image
-  - [CVE-2026-40192](https://nvd.nist.gov/vuln/detail/CVE-2026-40192) — pillow < 12.2.0 decompression-bomb DoS
 - **Affected packages**: `server/pyextract` PDF ingest chain
 - **Vector**: Malicious PDF or image uploaded by an authenticated tenant user
 - **Why accept**:
@@ -130,10 +128,28 @@ First run of `.github/workflows/trivy.yml` surfaced 6 base-image CVEs (Debian bo
 - **Approver**: Dustin.
 - **Trivy ignore entries**: added to `.trivyignore` with cross-reference here.
 
-**Additional CVE surfaced on second scan (pillow):**
+**Pillow CVEs — RESOLVED 2026-07-05 (no longer accepted-risk, actually fixed):**
 
-- **CVE**: [CVE-2026-42311](https://nvd.nist.gov/vuln/detail/CVE-2026-42311) — pillow (< 12.2.0)
-- **Same acceptance rationale** as the pillow entries above; added to `.trivyignore` in the same batch.
+- **CVEs** (previously accepted, now fixed):
+  - [CVE-2026-25990](https://nvd.nist.gov/vuln/detail/CVE-2026-25990) — pillow < 12.1.1 out-of-bounds write via crafted image
+  - [CVE-2026-40192](https://nvd.nist.gov/vuln/detail/CVE-2026-40192) — pillow < 12.2.0 decompression-bomb DoS
+  - [CVE-2026-42311](https://nvd.nist.gov/vuln/detail/CVE-2026-42311) — pillow < 12.2.0, same batch
+- **What changed**: `server/pyextract/requirements.txt`'s Pillow pin was
+  `>=10.4.0,<12.0` — that upper bound was itself blocking these three fixes
+  from ever being picked up on a `pip install`/Docker rebuild, even though
+  the original acceptance rationale assumed a future bump would close them.
+  Bumped to `>=12.2.0,<13.0`.
+- **Verification**: `python scripts/eval_extraction.py` against the
+  synthetic golden-set corpus — clean 100%/46%, partial 95%/0%, garbled
+  45%/0%, identical to the pre-bump baseline (zero regression). The one
+  version-sensitive Pillow API call in this codebase
+  (`Image.BICUBIC` in `scripts/eval_extraction.py`) ran successfully as
+  part of that same eval, confirming it's still valid under 12.2.0.
+- **Removed from `.trivyignore`** — the scan should pass on these three CVE
+  IDs outright now; if it doesn't, treat that as a real regression to
+  investigate, not something to silently re-accept.
+- **Approver**: Dustin (bump executed autonomously per standing "safe,
+  solo-executable fix" authorization; flagging here for visibility).
 
 **Dockerfile misconfiguration accepted:**
 

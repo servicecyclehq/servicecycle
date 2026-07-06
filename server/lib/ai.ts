@@ -622,7 +622,17 @@ function _isGeminiQuotaError(err) {
 function _isGeminiCascadeError(err) {
   if (_isGeminiQuotaError(err)) return true;
   const msg = err?.message || String(err);
-  return /\b404\b|not.?found|NOT_FOUND|is not supported for generateContent|no longer supported|deprecated/i.test(msg);
+  // [2026-07-05 review fix] The bare `not.?found` alternative was broad
+  // enough to match ANY error whose message happened to contain "not found"
+  // (e.g. an unrelated "Asset not found" / filesystem error bubbling up
+  // through the same try/catch) -- that would silently cascade to the next
+  // model and mask a real, unrelated bug behind a generic "all cascade
+  // models exhausted" error instead of surfacing it. Real Gemini model-
+  // retirement 404s always say "models/<name> is not found for API version"
+  // or "is not supported for generateContent" -- require the "not found"
+  // phrase to specifically be about a model, which keeps the real
+  // retirement signal without the false-cascade risk.
+  return /\b404\b|NOT_FOUND|models?\/\S+ is not found|is not supported for generateContent|no longer supported|deprecated/i.test(msg);
 }
 
 async function _geminiComplete({ system, user, maxTokens, s }) {

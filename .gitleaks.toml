@@ -18,26 +18,25 @@ useDefault = true
 description = "Global false-positive allowlist"
 
 # Files with known example / documentation values only.
+#
+# [2026-07-05 review fix] The security + compliance docs (docs/security/*.md,
+# docs/compliance/*.md, docs/SOC2_*.md, and the named docs below) used to be
+# ENTIRELY path-exempted -- "these docs only reference env var names, not
+# secrets" was true when written, but a path exemption doesn't enforce that;
+# it just means gitleaks would silently wave through a real key pasted into
+# ANY of these files by accident, forever, with zero warning -- and these
+# are exactly the files someone drafting compliance evidence is most likely
+# to paste a real value into while writing rotation/runbook instructions.
+# That's the same "a working fallback masks a real capture gap" pattern this
+# whole review night has been hunting for real secrets. Only genuine
+# templates/manifests stay path-exempt below; the security/compliance docs
+# are now actually scanned, with the SPECIFIC placeholder idioms they use
+# (verified by reading them: "(see git log)", "your-x-here", bare env var
+# NAMES, etc.) allowlisted by content in `regexes` instead.
 paths = [
   '''server/\.env\.example$''',
   '''client/\.env\.example$''',
   '''\.env\.example$''',
-  # All security + compliance docs reference env var names + rotation keys
-  # as documentation. They are not secrets.
-  '''docs/security/.*\.md$''',
-  '''docs/compliance/.*\.md$''',
-  '''docs/SOC2_.*\.md$''',
-  '''docs/DEPLOY_RUNBOOK\.md$''',
-  '''docs/INCIDENT_RESPONSE\.md$''',
-  '''docs/CHANGE_REVIEW_CHECKLIST\.md$''',
-  '''docs/DATA_ROOM_INDEX\.md$''',
-  '''docs/VENDOR_SECURITY_REVIEW\.md$''',
-  '''docs/RISK_REGISTER\.md$''',
-  '''docs/PERSONNEL_SECURITY\.md$''',
-  '''docs/OFFBOARDING\.md$''',
-  '''docs/CODE_OF_CONDUCT\.md$''',
-  '''docs/AUDIT_LOG_ARCHITECTURE\.md$''',
-  '''docs/SECURITY_TRUST_PACK\.md$''',
   '''CHANGELOG\.md$''',
   '''SECURITY\.md$''',
   # SBOM listing — package hashes, not credentials.
@@ -53,6 +52,11 @@ regexes = [
   '''your-.*-here''',
   '''change-me-in-prod''',
   '''example[_-]?(key|secret|token)''',
+  # Compliance/runbook doc idioms (docs/security/*.md, docs/compliance/*.md,
+  # docs/SOC2_*.md and friends) -- these reference rotation state and env var
+  # NAMES, never real values.
+  '''\(see git log\)''',
+  '''N/A \(transient\)''',
 ]
 
 # ─────────────────────────────────────────────────────────────────────────

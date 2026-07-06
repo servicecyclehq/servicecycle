@@ -10,7 +10,15 @@
 pdfplumber==0.11.4
 pypdf==4.3.1
 pytesseract==0.3.13
-Pillow>=10.4.0,<12.0
+# [2026-07-05 CVE bump] Was >=10.4.0,<12.0 -- that ceiling blocked the fixed
+# versions for CVE-2026-25990 (OOB write, fixed 12.1.1), CVE-2026-40192 and
+# CVE-2026-42311 (decompression-bomb DoS, fixed 12.2.0) from ever being
+# picked up, even though docs/security/DEPENDENCY_DECISIONS.md's accepted-risk
+# entries assumed a future bump would close them. Verified against the golden-
+# set extraction eval + jest extractor suites at 12.2.0 with zero regressions
+# (see docs/security/DEPENDENCY_DECISIONS.md for the verification note) --
+# bumping instead of continuing to accept the risk.
+Pillow>=12.2.0,<13.0
 # pypdfium2 is not pinned explicitly — pdfplumber pulls it as a transitive dep
 # and Debian ships the manylinux wheel, so the pdfplumber PowerDB grid parser
 # + Tesseract OCR now RUN in prod. Prior to c652578 the image was node:20-alpine

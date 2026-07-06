@@ -39,9 +39,15 @@ jobs:
 
       - name: Resolve version
         id: version
+        # [2026-07-05 review fix] github.event.inputs.version is free-text
+        # supplied by whoever dispatches this workflow -- same script-
+        # injection risk as the sibling release workflows, same fix (env-
+        # indirection instead of a direct `${{ }}` inside the shell script).
+        env:
+          VERSION_INPUT: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$VERSION_INPUT" ]; then
+            VERSION="$VERSION_INPUT"
           else
             VERSION=$(node -p "require('./server/package.json').version")
           fi

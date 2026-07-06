@@ -1592,6 +1592,17 @@ router.put('/comments/:cid', async (req, res) => {
       include: { author: { select: { id: true, name: true } } },
     });
 
+    // [2026-07-05 review fix] POST logs 'work_order_comment_added' and DELETE
+    // logs 'work_order_comment_deleted' -- edits had no corresponding audit
+    // trail entry at all, so a moderator editing someone else's comment body
+    // left no breadcrumb of what changed or who did it.
+    writeActivityLog({
+      accountId: req.user.accountId,
+      userId:    req.user.id,
+      action:    'work_order_comment_edited',
+      details:   { commentId: cid, workOrderId: existing.workOrderId },
+    }).catch(() => {});
+
     return res.json({ success: true, data: { comment } });
   } catch (err) {
     console.error('Edit work order comment error:', err);
