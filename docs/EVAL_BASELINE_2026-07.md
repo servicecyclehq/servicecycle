@@ -4,6 +4,21 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-06 update, part 2 — garbled tier 45% → 96% (5 more fixes, all pure regex)
+
+Continuation of the same-day pass below, after Dustin said "keep going on all 4 gaps." Four more fixes, each gated by a full 20-report eval re-run before moving to the next:
+
+1. **`_phase_lines_after_unit_header`** (new pass) — sibling of `_phase_grid_readings` for reports that go straight from a "`<LABEL> (<UNIT>)`" context line to bare per-phase rows with NO literal "PHASE ... RESULT" header row at all (report 008). Guarded against double-firing on reports 014/017 (which DO have a real PHASE header) by checking no such header sits between the context line and the first phase row.
+2. **`_label_testcond_reading`** (new pass) — recovers a reading that sits right after a glued (no-space) test-condition token on the same line — "BUS INSULATION RESISTANCE 2500VDC 8900 MOhm >=1000 PASS" (report 008). `_inline_readings`'s non-overlapping `finditer` let "2500VDC" (test condition, no space before unit) consume the label, orphaning the real "8900 MOhm" reading with nothing left to backtrack to. No minimum label length — a short real abbreviation like "IR" needed to survive (report 016).
+3. **`_bus_inline_readings` anchor relaxed** — the three-phase-per-line regex required the triplet to open the line (`^`); report 016 has it mid-line after a text+unit prefix ("CONTACT RESISTANCE DLRO µΩ A 41 B 39 C 58"). Relaxed to "line-start OR after whitespace," but a mid-line match only survives if the text right before it ends in a real unit token — checked in code, not regex, since Python's `re` can't do variable-width lookbehind.
+4. **`_inline_dual_min_readings`** (new pass) + **bare "PI" alias** — reports 005/012's "H-G 6800 MOhm 10MIN 16300 PI 2.4" pattern: the 10-min value shares its unit with the 1-min value instead of repeating it, and "PI" (no "POLARIZATION INDEX" phrase) wasn't recognized.
+
+**Result: garbled parser recall 45% → 96%** (clean 100%, partial 95%, both unchanged — zero regression, verified after every single fix via the full 20-report harness). Per-report: 005/008/012/020 now 100%; 016 is 80% (4/5) — its remaining gap is NOT a bug, see below.
+
+**Judgment call, resolved with Dustin:** report 016's "TIMING OPEN 0.064 SEC <=0.06" reading classifies as `open_close_timing`; this golden report's GT expects `trip_time`. Researched the real NETA distinction (ANSI/NETA MTS-2023): "opening/closing time" is the mechanical contact-timing test (coil signal → contact separation, ms/cycles) — `open_close_timing`; "trip time" is the protective-relay/primary-injection response test (seconds, often with an intentional delay curve) — `trip_time`. 64ms fits the mechanical-opening-time profile (typical breaker open time ≈ 2-5 cycles / 33-83ms), so `open_close_timing` is the domain-correct call and this golden report's GT label is the likely outlier. **Decision: leave the vocab as-is** — 96% (not 100%) is accepted as the real ceiling; don't chase the last 4% by miscalibrating production classification to match one synthetic report.
+
+report_013 (partial_ocr, 67%, unrelated pre-existing gap) still not diagnosed — carried forward again.
+
 ## 2026-07-06 update — stale-doc correction + two real classification bugs fixed (garbled tier)
 
 This file's most recent numbers (the "10%" garbled figure quoted below) were never

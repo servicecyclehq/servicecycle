@@ -867,8 +867,14 @@ def _dga_readings(text):
 
 # Polarization index: "POLARIZATION INDEX (H-G): 2.31" — dimensionless ratio,
 # so the general inline pass (requires unit token) will never see it.
+# 2026-07-06: also accept the bare "PI" abbreviation NETA reports commonly use
+# inline right after the 10-min IR value ("10MIN 16300 PI 2.4 >=2.0 PASS" —
+# golden reports 005/012). Scoped to a whole-token `\bPI\b` (word boundaries
+# both sides) immediately followed by a number, same discipline as the other
+# narrow abbreviation aliases in this file — "PI" never appears as a
+# standalone token anywhere else in the golden corpus in an unrelated sense.
 _PI_RE = re.compile(
-    r"POLARIZATION\s+INDEX(?:\s*\(([HXG0-9\-]+)\))?\s*[:=]?\s*"
+    r"(?:POLARIZATION\s+INDEX|\bPI\b)(?:\s*\(([HXG0-9\-]+)\))?\s*[:=]?\s*"
     r"(-?\d+(?:\.\d+)?)",
     re.I,
 )
@@ -898,6 +904,54 @@ def _pi_readings(text):
             "kind":            "D",
             "confidence":      0.9,
             "_off":            m.start(),
+        })
+    return out
+
+
+# 2026-07-06: inline dual-reading IR pattern where the 1-minute value carries
+# its own unit but the 10-minute value that immediately follows on the SAME
+# line does not repeat it — "H-G 6800 MOhm 10MIN 16300 PI 2.4" (golden report
+# 005). This is the single-line phrasing of the same "1 MIN / 10 MIN" WINDING
+# IR reading the column-header grid passes (`_powerdb_grids`) already handle
+# when the two values sit under separate header columns; this targets the
+# inline variant instead. Scoped tightly: only fires when v1 already carries
+# a genuine insulation-resistance unit (MΩ and its OCR-corrupted aliases via
+# `_UNIT`), so it can never misfire on an unrelated "10MIN"-adjacent number —
+# the "1 MIN / 10 MIN" reading pair is an unambiguous NETA/IEEE-43 convention
+# once a megohm unit is already present.
+_INLINE_DUAL_MIN_RE = re.compile(
+    r"(?:-?\d[\d,]*(?:\.\d+)?)\s*(" + _UNIT + r")\s*10\s?MIN\s*"
+    r"(-?\d[\d,]*(?:\.\d+)?)(?![A-Za-z0-9])",
+    re.I,
+)
+
+
+def _inline_dual_min_readings(text):
+    if not text:
+        return []
+    out = []
+    for m in _INLINE_DUAL_MIN_RE.finditer(text):
+        mt, crit, u, kind = _classify("", m.group(1))
+        if mt != "insulation_resistance":
+            continue
+        try:
+            v2 = float(m.group(2).replace(",", ""))
+        except (TypeError, ValueError):
+            continue
+        if v2 < 0:
+            continue
+        out.append({
+            "measurementType": "insulation_resistance",
+            "label":           "Insulation Resistance (10 Min)",
+            "phase":           None,
+            "asFoundValue":    v2,
+            "asFoundUnit":     u,
+            "expectedRange":   None,
+            "passFail":        None,
+            "critical":        crit,
+            "kind":            kind,
+            "confidence":      0.75,
+            "_off":            m.start(2),
         })
     return out
 
@@ -993,7 +1047,16 @@ _BUS_INLINE_ROW_RE = re.compile(
     # pairs — a real report line often reads "A-B: 850 M? B-C: 720 M? C-A: 910"
     # where the unit repeats. Without this, the third phase (C-A) is dropped
     # because the M? isn't whitespace. Group names stay the same.
-    r"^(?P<A>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
+    # 2026-07-06: anchor relaxed from a hard `^` to "line-start OR right after
+    # whitespace" so the triplet can also match mid-line, after a text+unit
+    # label prefix on the SAME line ("CONTACT RESISTANCE DLRO µΩ A 41 B 39
+    # C 58" — golden report 016). The regex alone can't safely require WHAT
+    # precedes it (units vary in length, and Python's `re` only allows
+    # fixed-width lookbehind) — `_bus_inline_readings` below does that check
+    # itself: a mid-line match only survives if the text right before it ends
+    # in a real unit token, otherwise it's discarded before ever reaching
+    # `_classify()`.
+    r"(?:^|(?<=\s))(?P<A>[ABCNHX](?:-[ABCGN])?)\s*[:=]?\s*"
     r"(?P<Av>-?\d[\d,]*(?:\.\d+)?)"
     r"(?:\s*(?:M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|uΩ|u\?|udhm|mΩ|Ω|kΩ|%|V|A|kV|VDC|VAC|sec|ms|Hz))?"
     r"[\s\t]+"
@@ -1037,8 +1100,20 @@ def _bus_inline_readings(text):
         r"(?:M\s?Ω|MΩ|Mohm|M\?|M0hm|Nchm|µΩ|uΩ|u\?|udhm|mΩ|Ω|kΩ|%|kV|VDC|VAC|sec|ms|Hz)",
         re.I,
     )
+    # 2026-07-06: the mid-line tail check for the relaxed anchor above -- a
+    # match that does NOT start at true line-start is only trusted if the
+    # text immediately before it (on the same line) ends in a real unit
+    # token, i.e. "...DLRO µΩ" right before "A 41 B 39 C 58". Reuses `_UNIT`
+    # (the full OCR-tolerant alternation) since a shared line prefix like this
+    # is exactly the same "label + unit" shape every other pass here expects.
+    _MIDLINE_UNIT_TAIL_RE = re.compile(r"(?:" + _UNIT + r")\s*$", re.I)
 
     for row in _BUS_INLINE_ROW_RE.finditer(text):
+        line_start = text.rfind("\n", 0, row.start()) + 1
+        if row.start() != line_start:
+            prefix = text[line_start: row.start()]
+            if not _MIDLINE_UNIT_TAIL_RE.search(prefix):
+                continue
         # Find the nearest unit-in-parens header line before this row (must be
         # within 200 chars; further away and the association is unsafe).
         window_start = max(0, row.start() - 200)
@@ -1355,6 +1430,131 @@ def _phase_grid_readings(text):
     return out
 
 
+# 2026-07-06: sibling of `_phase_grid_readings` for reports that skip the
+# literal "PHASE  AS-FOUND  EXPECTED  RESULT" column-header row entirely —
+# golden report 008 goes straight from a "<LABEL> (<UNIT>)" context line to
+# bare per-phase rows ("A 485000 <=500 PASS", "B 412 <=500 PASS", ...) with no
+# header row naming the columns at all. `_phase_grid_readings` requires
+# `_PHASE_GRID_HDR_RE` to match something, so it never fires here. Reuses the
+# same `_BUS_INLINE_UNIT_HDR_RE` "<label>(<unit>)" header `_bus_inline_readings`
+# already relies on, and the same `_PHASE_GRID_ROW_RE` row shape — just without
+# requiring a "PHASE" row in between. Two guards keep this from double-firing
+# on reports the ORIGINAL pass already handles (014/017, which DO have a real
+# "PHASE ... RESULT" row after their own "(µΩ)" context line): (1) skip if a
+# real PHASE-header row appears before the first phase-row match in the
+# window (that case belongs to `_phase_grid_readings`), and (2) require at
+# least 2 rows with DISTINCT phase letters immediately after the header so a
+# single unrelated "A ..." line elsewhere can't hijack the block.
+def _phase_lines_after_unit_header(text):
+    if not text:
+        return []
+    out = []
+    for hdr in _BUS_INLINE_UNIT_HDR_RE.finditer(text):
+        label = hdr.group(1).strip().rstrip(":-,.").strip()
+        unit = normalize_unit(hdr.group(2))
+        mt, crit, u, kind = _classify(label, unit)
+        if mt == "unknown" or mt.endswith("_reading") or mt in ("reading", "resistance"):
+            continue
+        after = text[hdr.end(): hdr.end() + 400]
+        rows = []
+        seen_phases = set()
+        for row in _PHASE_GRID_ROW_RE.finditer(after):
+            if rows and _PHASE_GRID_HDR_RE.search(after[:row.start()]):
+                break  # a real PHASE header sits between -- let the other pass own it
+            ph = row.group("ph").upper()
+            if ph in seen_phases:
+                break  # repeated phase letter: this block is over
+            seen_phases.add(ph)
+            rows.append(row)
+        if rows and _PHASE_GRID_HDR_RE.search(after[:rows[0].start()]):
+            continue  # a real PHASE header precedes the first row: skip entirely
+        if len(rows) < 2:
+            continue
+        for row in rows:
+            try:
+                val = float(row.group("val").replace(",", ""))
+            except (TypeError, ValueError):
+                continue
+            expected = (row.group("expected") or "").strip() or None
+            result_raw = (row.group("result") or "").strip()
+            pf = parse_value("result", result_raw) if result_raw else None
+            out.append({
+                "measurementType": mt,
+                "label":           label.title(),
+                "phase":           row.group("ph").upper(),
+                "asFoundValue":    val,
+                "asFoundUnit":     u,
+                "expectedRange":   expected,
+                "passFail":        pf,
+                "critical":        crit,
+                "kind":            kind,
+                "confidence":      0.7,
+                "_off":            hdr.start() + row.start(),
+            })
+    return out
+
+
+# 2026-07-06: recovers a reading immediately preceded on the SAME line by a
+# glued (no-space) test-condition token -- "BUS INSULATION RESISTANCE 2500VDC
+# 8900 MOhm >=1000 PASS" (golden report 008). `_inline_readings`'s finditer is
+# non-overlapping, so the FIRST value+unit pair it finds ("2500" + "VDC",
+# tight against each other with no space) consumes the label text, leaving
+# the REAL reading ("8900 MOhm", with a space before its unit -- the
+# consistent convention this corpus uses to distinguish a test condition from
+# an actual reading) with no label left to match against. This targets that
+# exact three-part shape directly: label, then a tight NUM+UNIT test
+# condition, then the real spaced NUM+UNIT reading. Requires the tight token
+# to look like a voltage/current/frequency test condition (the only kinds
+# NETA reports glue to their unit with no space) so it can't misfire on a
+# reading that's simply adjacent to another reading.
+_TESTCOND_UNIT = r"(?:kVDC|kVAC|VDC|VAC|kV|kA|mA|Hz|V|A)"
+_LABEL_TESTCOND_READING_RE = re.compile(
+    r"([A-Za-z][\w .,/&()+#-]{0,40}?)[ \t]*[:=]?[ \t]*"
+    r"-?\d[\d,]*(?:\.\d+)?" + _TESTCOND_UNIT +
+    r"[ \t]+(-?\d[\d,]*(?:\.\d+)?)[ \t]+(" + _UNIT + r")(?![A-Za-z0-9])",
+    re.I,
+)
+
+
+def _label_testcond_reading(text):
+    if not text:
+        return []
+    out = []
+    for m in _LABEL_TESTCOND_READING_RE.finditer(text):
+        label = m.group(1).strip().rstrip(":-,.").strip()
+        # No minimum-length gate on the label (unlike some other passes):
+        # `_classify()` already falls back to a diagnostic unit-based type
+        # (MΩ -> insulation_resistance, µΩ -> contact_resistance, ...)
+        # independent of the label text, and the `unknown` / `*_reading`
+        # rejection right below already screens out a genuinely uninformative
+        # short label paired with an ambiguous unit. A real short abbreviation
+        # like "IR" (golden report 016: "IR 5000VDC 31000 MOhm") would
+        # otherwise be wrongly dropped here.
+        if not label:
+            continue
+        mt, crit, u, kind = _classify(label, m.group(3))
+        if mt == "unknown" or mt.endswith("_reading") or mt in ("reading", "resistance"):
+            continue
+        try:
+            val = float(m.group(2).replace(",", ""))
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "measurementType": mt,
+            "label":           label.title(),
+            "phase":           None,
+            "asFoundValue":    val,
+            "asFoundUnit":     u,
+            "expectedRange":   None,
+            "passFail":        None,
+            "critical":        crit,
+            "kind":            kind,
+            "confidence":      0.75,
+            "_off":            m.start(2),
+        })
+    return out
+
+
 # A NETA/PowerDB job report covers many devices, each opening with a
 # "SUBSTATION <id> POSITION <id>" block. This is the boundary the one-upload =
 # one-facility split (#1) keys on.
@@ -1530,6 +1730,7 @@ def extract_measurements(cells, page_tables, full_text=""):
     dga_out = _dga_readings(full_text)                   # DGA <=LIMIT-anchored table rows (report_002 class)
     pi_out = _pi_readings(full_text)                     # polarization index (ratio — no unit)
     pf_out = _pf_readings(full_text)                     # PF-block table rows (Doble M4100)
+    dual_min_out = _inline_dual_min_readings(full_text)  # inline "10MIN <v2>" IR second value
     # Column-header inference for two more PowerDB layouts (docs/EVAL_BASELINE_
     # 2026-07.md flagged reports 006/014/017/018 as 0% recall): the "A-G: 15200
     # B-G: 14100 C-G: 16800" bus-inline row under a "(MΩ)" header, and the
@@ -1538,9 +1739,11 @@ def extract_measurements(cells, page_tables, full_text=""):
     # classify, so a random column table can't hijack them.
     bus_out = _bus_inline_readings(full_text)            # A-G/B-G/C-G bus-inline layout
     phase_grid_out = _phase_grid_readings(full_text)     # PHASE / AS-FOUND / EXPECTED grid
+    phase_nohdr_out = _phase_lines_after_unit_header(full_text)  # per-phase rows, no "PHASE" header row
+    testcond_out = _label_testcond_reading(full_text)    # reading right after a glued test-condition token
     phase_ctx_out = _phase_context_readings(full_text)   # single-phase-per-line under a context header (VLF tan delta)
     inline_out = _inline_readings(full_text)             # general value+unit pass (post-nameplate-suppression)
-    combined = table_out + grid_out + dga_out + pi_out + pf_out + bus_out + phase_grid_out + phase_ctx_out + inline_out
+    combined = table_out + grid_out + dga_out + pi_out + pf_out + dual_min_out + bus_out + phase_grid_out + phase_nohdr_out + testcond_out + phase_ctx_out + inline_out
     # Which (type, value, unit) triples already have a PHASED reading (from the
     # richer column-table pass) — used to drop the inline pass's phase-less
     # duplicate of the same value.
