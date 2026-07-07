@@ -4,6 +4,63 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-06 update — stale-doc correction + two real classification bugs fixed (garbled tier)
+
+This file's most recent numbers (the "10%" garbled figure quoted below) were never
+re-run after the 2026-07-05 `_ocr_garbled_normalize` structural fix (whole-word
+O↔0 repair + hard-line-wrap digit rejoin) landed same-day in a different
+session. Re-running the harness today shows garbled parser recall is actually
+**45%**, not 10% — the doc was just stale, not wrong when written.
+
+While diagnosing the two garbled reports still stuck at 0% (008, 016), found
+and fixed two real correctness bugs in `server/pyextract/extractor.py`
+(pure regex, no new deps, isolated to the dev-only Python extractor — prod
+does not run this file, see note below):
+
+1. **Unicode confusable in `_MOHM_HDR_RE`.** The regex's "Μ Ω" alternative
+   uses the GREEK CAPITAL MU (U+039C) for the real PowerDB megohm header. Under
+   `re.I`, Python case-folds U+039C to U+03BC (GREEK SMALL LETTER MU) — and
+   U+00B5 MICRO SIGN *also* folds to U+03BC, so the "MEGA-ohm" header regex was
+   transitively matching genuine "(µΩ)" MICRO-ohm headers too. Report 008's
+   contact-resistance block carries exactly that header, which wrongly woke up
+   the mega-ohm IR-grid mode and hijacked the phase rows that followed (rewriting
+   real contact_resistance readings as insulation_resistance). Fixed by scoping
+   the Greek-Mu literal to an exact-case match (`(?-i:Μ)`) so it can never fold
+   against the micro sign.
+2. **`_powerdb_grids` treated an already-complete single reading as a grid
+   header.** Any line containing an MΩ-ish token opened an 8-line "IR grid"
+   window, even when that line already carried its own value + range + verdict
+   (e.g. "8900 MOhm >=1000 PASS") — a real grid header only ever *names* a
+   column, never fully asserts its own reading. That meant the line's own
+   reading was swallowed as a "header" (never emitted) and unrelated readings
+   several lines later got mislabeled as insulation_resistance. Added a guard
+   (`_MOHM_HDR_COMPLETE_READING_RE`) that skips grid-mode entry when the line is
+   already a self-contained reading.
+
+Neither fix moved the garbled recall number (45% → 45%, confirmed via a full
+re-run, all 20 reports) — both were **false-positive removals**, not new
+recall. Report 008 went from emitting 3 *wrong* readings to 0; report 016 lost
+a spurious insulation_resistance mislabel of its trip-time reading. That's a
+real correctness win even at 0% measured recall (bad data no longer flows
+downstream), but the two 0%-recall garbled reports (008, 016) still need
+actual new passes to move: 008's phase rows have no literal "PHASE" header
+row (`_phase_grid_readings` requires one); 016's phase-triplet sits mid-line
+after a text+unit prefix (`_bus_inline_readings`'s `^`-anchor requires the
+triplet to open the line). Both are real, scoped, doable fixes — not
+attempted yet this pass. Also open: report_005/012 miss the second ("10 MIN")
+value in an inline single-line WINDING reading and the bare "PI" abbreviation
+for polarization_index; report_016's timing reading classifies as
+`open_close_timing` where this golden set's GT expects `trip_time` — a
+labeling/vocabulary judgment call, not a bug, and not decided here.
+
+Also confirmed (unrelated to today's changes): `partial_ocr` parser recall is
+currently 95%, not the 100% this doc claims after the 2026-07-04 pass —
+report_013 is at 67%. Not yet diagnosed; flagged for a future session.
+
+Verified via a full re-run of the harness (all 20 reports, 3 tiers) before and
+after each change — see console summary: `clean 100% / partial_ocr 95% /
+garbled_ocr 45%`, no regression on any previously-green report.
+
 ## 2026-07-04 update — WINDING IR-grid: OCR-tolerant header, single-value rows, zero-IR emission (+GT canonicalization SHIPPED this pass)
 
 Four surgical follow-ups after the column-header inference push. Every

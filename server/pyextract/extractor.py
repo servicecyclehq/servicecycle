@@ -600,7 +600,38 @@ _NUMTOK_RE = re.compile(r"-?[\d,]+(?:\.\d+)?")
 # The Ω on tesseract's 4.x line commonly comes back as "?" or "Q"; without
 # these aliases the WINDING/H-G/X-G IR blocks in reports 003 / 004 were
 # silently dropped even when the numbers themselves read cleanly.
-_MOHM_HDR_RE = re.compile(r"Μ\s?Ω|MΩ|M\?|MQ|M0hm|Mohm|Nchm", re.I)
+
+# 2026-07-06 fix: the "Μ" here is the GREEK CAPITAL MU (U+039C), used for the
+# real PowerDB "Μ Ω" megohm header. Under `re.I`, Python's Unicode case
+# folding treats U+039C as equivalent to U+03BC (GREEK SMALL LETTER MU) --
+# and per the Unicode casefolding tables, U+00B5 MICRO SIGN ALSO folds to
+# U+03BC. That transitively makes `Μ\s?Ω` (intended for MEGA-ohm) match
+# "µΩ" (MICRO-ohm) too -- report_008's golden text has a genuine "(µΩ)"
+# contact-resistance header that was wrongly waking up the mega-ohm IR grid
+# (`ir_rows = 8`) and hijacking the unrelated phase rows that followed.
+# `(?-i:Μ)` turns OFF case-folding for just this one literal so it only ever
+# matches the exact capital Mu, never the confusable micro sign -- the other
+# alternatives (Latin "M", "M?", "Mohm", ...) still fold normally.
+_MOHM_HDR_RE = re.compile(r"(?-i:Μ)\s?Ω|MΩ|M\?|MQ|M0hm|Mohm|Nchm", re.I)
+# 2026-07-06 guard: `_MOHM_HDR_RE` is meant to catch a GRID HEADER line (e.g.
+# "WINDING 1 MIN (M?) 10 MIN (M?)") that names an upcoming block of bare
+# label+number rows. But it also matches a line that is already a COMPLETE,
+# self-contained single reading -- "BUS INSULATION RESISTANCE 2500VDC 8900
+# MOhm >=1000 PASS" -- which has its own value, unit, expected-range AND
+# verdict all on one line. Garbled-tier reports (008, 016) hit this: such a
+# line wrongly opened an 8-line IR-grid window that then hijacked whatever
+# UNRELATED reading happened to follow (a contact-resistance phase row, a
+# breaker trip-time line), mislabeling it as insulation_resistance/MΩ and
+# swallowing the real reading on the header line itself (never emitted,
+# because "header" lines are `continue`d, not read as data). A genuine grid
+# header never carries its own range+verdict -- it only NAMES the columns --
+# so requiring the absence of that shape is a safe, narrow way to tell the
+# two apart without touching any of the real WINDING/POLE grid headers in
+# reports 003/004 (verified via the eval harness: no regression there).
+_MOHM_HDR_COMPLETE_READING_RE = re.compile(
+    r"(?:>=|<=)\s*[\d.]+.*\b(?:PASS(?:ED)?|FAIL(?:ED)?|GREEN|YELLOW|RED|MARGINAL|ACCEPTABLE|INVESTIGATE)\b",
+    re.I,
+)
 _UNITCOL_RE = re.compile(r"\(([A-Za-zµ%]+)\)")
 _DGA_ROW_RE = re.compile(
     r"^\*?\s*([A-Za-z][A-Za-z0-9 /.]*?)\s*\((ppm|ppb)\)\s*:?\s*"
@@ -696,7 +727,7 @@ def _powerdb_grids(text):
 
         # 3) Μ Ω READING grids: header "INSULATION POLE 1 ΜΩ (P1-P2) … POLE
         #    RESISTANCE - MICRO-OHMS", rows "POLE TO FRAME 2,000 1,548.00 … 10 12 13"
-        if _MOHM_HDR_RE.search(raw):
+        if _MOHM_HDR_RE.search(raw) and not _MOHM_HDR_COMPLETE_READING_RE.search(raw):
             ir_rows = 8
             ir_micro = "MICRO-OHM" in raw.upper()
             continue
@@ -1426,6 +1457,28 @@ _OCR_ZERO_AS_O_RE = re.compile(
 # bare "O" inside parens -- nowhere near broad enough to touch prose "O"s.
 _OCR_OMEGA_AS_O_RE = re.compile(r"\(([uµM])O\)")
 
+# 2026-07-06 sibling fix: the SAME Ω->O misread also occurs with no
+# parentheses at all -- report_016's golden text reads "DLRO uO A 41 B 39
+# C 58", a bare "uO" token standing in for "µΩ" inline in running text, not
+# inside "(...)". Scoped to a whole-token match (word boundaries on both
+# sides) so it can only ever replace a complete 2-character token, never a
+# substring of a real word -- "uO"/"MO"/"µO" are not standalone English
+# tokens, so this is as narrow as the parenthesized case above, just without
+# requiring the parens. Deliberately excludes bare "O" alone (too broad) and
+# multi-letter tokens (already handled by the word-level 0<->O fix elsewhere).
+_OCR_BARE_OMEGA_AS_O_RE = re.compile(r"\b([uµM])O\b")
+
+# 2026-07-06: trailing OCR-noise glyphs ("~", "#", "|" and combinations) that
+# tesseract hallucinates at the end of a garbled-tier line from scan
+# artifacts/watermarks -- e.g. "PASS ~", "PASS #", "PASS ~#|". These carry no
+# information but sit right where several row regexes anchor on end-of-line
+# (`\s*$`), so a trailing "~" silently fails an otherwise-correct row match.
+# Scoped to ONLY strip a trailing run of these specific glyphs (plus
+# surrounding whitespace) when they are the last thing on the line -- never
+# touches the same characters appearing mid-line (e.g. report_012's
+# "~| retest 6 mo", which is prose, not row noise, and is left alone).
+_OCR_TRAILING_JUNK_RE = re.compile(r"[ \t]+[~#|]+[ \t]*$", re.MULTILINE)
+
 # A value's digits split by a hard line-wrap: a short (1-3 digit) run ending
 # a line with nothing else after it, immediately followed by another short
 # digit run starting the next line. Capped at 3 digits/side so it can only
@@ -1460,7 +1513,9 @@ def _ocr_garbled_normalize(text):
     if not text:
         return text
     text = _OCR_OMEGA_AS_O_RE.sub(lambda m: "(%sΩ)" % ("µ" if m.group(1) in ("u", "µ") else "M"), text)
+    text = _OCR_BARE_OMEGA_AS_O_RE.sub(lambda m: "%sΩ" % ("µ" if m.group(1) in ("u", "µ") else "M"), text)
     text = _OCR_ZERO_AS_O_RE.sub("O", text)
+    text = _OCR_TRAILING_JUNK_RE.sub("", text)
     prev = None
     while prev != text:                    # a value can wrap more than once
         prev = text
