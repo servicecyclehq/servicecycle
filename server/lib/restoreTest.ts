@@ -109,17 +109,37 @@ async function findLatestS3Backup() {
 
 // ── Decrypt + gunzip ─────────────────────────────────────────────────────────
 
+// gzip member header starts with these 2 magic bytes (RFC 1952).
+const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
+
 /**
- * Given a raw backup buffer (encrypted+gzipped or just gzipped), decrypt
- * if needed then strip the outer gzip wrapper, returning the raw pg_dump
- * custom-format bytes that pg_restore understands.
+ * Given a raw backup buffer (encrypted and/or gzipped), decrypt if needed
+ * then strip an outer gzip wrapper IF ONE IS PRESENT, returning the raw
+ * pg_dump custom-format bytes that pg_restore understands.
+ *
+ * 2026-07-06 bug fix: backup.js's H9 change (2026-05-22) switched pg_dump
+ * to --format=custom, which applies its own internal compression, and
+ * stopped gzipping the output (the `gzipBuffer()` helper below became dead
+ * code) -- but kept writing files under the legacy `.sql.gz`/`.sql.gz.enc`
+ * extension, and this function kept unconditionally gunzip-ing. Every real
+ * backup produced since that change is actually a raw pg_dump custom-format
+ * buffer (magic bytes "PGDMP"), not gzip (magic bytes 1F 8B) -- so
+ * gunzipAsync() threw `Z_DATA_ERROR: incorrect header check` on every real
+ * restoreTest run, unconditionally. Confirmed by reproducing against a real
+ * local pg_dump --format=custom file. Fix: only gunzip when the buffer
+ * actually carries the gzip magic header; pass raw custom-format bytes
+ * through untouched. This also keeps old genuinely-gzipped backup files
+ * (from before the H9 change) restorable.
  */
 async function prepareBackupBuffer(buf, isEncrypted) {
   if (isEncrypted) {
     const { decryptBackup } = require('./backupCrypto');
-    buf = decryptBackup(buf); // AES-GCM decrypt -> gzipped custom format
+    buf = decryptBackup(buf); // AES-GCM decrypt -> custom-format bytes (gzipped or not)
   }
-  return gunzipAsync(buf); // strip outer gzip -> raw pg_dump custom format
+  if (buf.length >= 2 && buf.subarray(0, 2).equals(GZIP_MAGIC)) {
+    return gunzipAsync(buf); // legacy gzipped backup -> strip wrapper
+  }
+  return buf; // already raw pg_dump custom-format bytes -- nothing to strip
 }
 
 // ── TOC integrity check ───────────────────────────────────────────────────────
@@ -271,7 +291,20 @@ async function runDeepRestoreTest({ prisma }: any = {}) {
 
     const { PrismaClient } = require('@prisma/client');
     const sidePrisma = new PrismaClient({ datasources: { db: { url: sidecarUrl } } });
-    const models     = ['contract', 'vendor', 'activityLog', 'user', 'accountSetting'];
+    // 2026-07-06 bug fix: this list previously included 'contract' and
+    // 'vendor', which are NOT models in this schema (no such Prisma delegate
+    // exists) -- `prisma.contract.count()` throws `TypeError: Cannot read
+    // properties of undefined (reading 'count')` unconditionally, so this
+    // function crashed on line 1 of the loop every single time it ran,
+    // silently swallowed by the cron's outer try/catch in index.ts. Per the
+    // POP-8-13 comment at the call site, this is "the ONLY job that actually
+    // asserts row counts on a restored dump (the true proof a backup is
+    // recoverable)" -- so this bug meant backup recoverability was UNPROVEN
+    // even on installs that correctly configured PG_TEST_DB_URL. Swapped for
+    // 5 models that actually exist and matter: core business data (asset,
+    // workOrder), the account/user root of the tenancy model, and the audit
+    // trail (activityLog).
+    const models     = ['asset', 'workOrder', 'account', 'user', 'activityLog'];
     const compare    = {};
     let driftHigh    = false;
     try {
