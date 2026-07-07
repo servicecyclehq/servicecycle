@@ -12,6 +12,16 @@
  * tests now mock lib/webhook itself, same as the SSRF check would in real
  * delivery (real DNS resolution against a *.invalid fixture host would
  * otherwise fail closed before ever reaching the "server").
+ *
+ * [2026-07-06, later same day] The mock factory below used to replace the
+ * ENTIRE lib/webhook module with just `{ postJsonToValidatedUrl }`. That was
+ * fine until firePartnerWebhook was switched (same-day signing-unification
+ * work, see servicecycle-batchF-sso-webhook-2026-07-06 memory) to also
+ * import `signPayload` from the same module -- the mock factory silently
+ * dropped it, so every test here started throwing `signPayload is not a
+ * function`. Fixed by spreading jest.requireActual() so signPayload (and
+ * anything else firePartnerWebhook needs from this module) stays real; only
+ * postJsonToValidatedUrl is overridden.
  */
 
 import '../helpers/setup';
@@ -19,9 +29,10 @@ import '../helpers/setup';
 import { createTestUser } from '../helpers/auth';
 import { createTestPartnerOrg, createTestAccount } from '../helpers/seed';
 
-jest.mock('../../lib/webhook', () => ({
-  postJsonToValidatedUrl: jest.fn(),
-}));
+jest.mock('../../lib/webhook', () => {
+  const actual = jest.requireActual('../../lib/webhook');
+  return { ...actual, postJsonToValidatedUrl: jest.fn() };
+});
 const { postJsonToValidatedUrl } = require('../../lib/webhook');
 
 let prisma: any;
