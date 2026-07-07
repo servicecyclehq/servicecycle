@@ -38,10 +38,10 @@ Pre-flight: `git log -1` (HEAD should be `63b7c06` or later on main), `tsc
 
 ## HARD CONSTRAINTS (do not violate)
 
-- **No live AI/Gemini/nameplate scan calls.** The nameplate OCR trickle
-  scheduled task is intentionally paused (Dustin: "will rerun manually once
-  we have the OCR pipeline ready to roll") — do not touch it, do not make live
-  Gemini calls for any reason.
+- **No live AI/Gemini/nameplate scan calls.** The nameplate OCR trickle is
+  DONE — its scheduled task has been disabled and stays that way. Not a
+  candidate for tonight in any form; don't touch it, don't make live Gemini
+  calls for any reason.
 - **No money, no billing, no account/console changes.**
 - **No client-side / UI work** (needs visual review).
 - **No SOC2-adjacent work.** All 15 remaining yellow items need external input
@@ -171,7 +171,7 @@ only if §1 and §2 are in good shape with time left.
 
 ## Do NOT do (leave for a supervised/live session)
 
-- Nameplate OCR trickle (scheduled task paused — Dustin will resume manually).
+- Nameplate OCR trickle — done, task disabled, not a future item.
 - Any SOC2 yellow-item work (Better Stack, attorney review, PAT rotation, SSH
   signing) — all need Dustin live.
 - Any client-side/UI work.
