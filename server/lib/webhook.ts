@@ -174,23 +174,16 @@ async function validateWebhookUrl(url) {
  * @param {string} secret    hex-encoded 32-byte secret
  * @returns {string}         "sha256=<hex>"
  */
-function signPayload(body, timestampOrSecret, maybeSecret) {
-  // Backward-compatible call shape — older callers pass (body, secret) with
-  // no timestamp. They get a signature over body alone so the existing test
-  // payload helpers and one-shot calls still work, but live alert deliveries
-  // (the only production caller) pass the full triple.
-  let body_, ts, secret;
-  if (maybeSecret === undefined) {
-    body_ = body;
-    ts    = null;
-    secret = timestampOrSecret;
-  } else {
-    body_ = body;
-    ts    = timestampOrSecret;
-    secret = maybeSecret;
-  }
+// 2026-07-07: removed the backward-compatible 2-arg (body, secret) call shape
+// (unsigned timestamp, no replay protection). A full-codebase grep confirmed
+// zero remaining callers using it -- every real call site already passes the
+// 3-arg (body, timestamp, secret) form. Flagged as a Low finding in the
+// 2026-07-06 security review (docs/security/SECURITY_REVIEW_2026-07-07.md):
+// the dead branch wasn't itself exploitable, but was an attractive nuisance
+// for a future copy-paste to reintroduce an unsigned-timestamp signature.
+function signPayload(body: string, timestamp: string, secret: string): string {
   const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(ts ? `${ts}.${body_}` : body_, 'utf8');
+  hmac.update(`${timestamp}.${body}`, 'utf8');
   return 'sha256=' + hmac.digest('hex');
 }
 

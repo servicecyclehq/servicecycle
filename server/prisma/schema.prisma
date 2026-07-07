@@ -7,11 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// â”€â”€â”€ Enums â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Enums ───────────────────────────────────────────────────────────────────
 
 // Quote Request: why the customer is asking for a quote.
 enum QuoteDriver {
-  down_now // Asset is down right now â€” triggers EMERGENCY mode
+  down_now // Asset is down right now — triggers EMERGENCY mode
   suspected_failing // Intermittent issues / early warning signs
   failed_inspection // Failed NETA/NFPA inspection or audit finding
   planned_replacement // Scheduled capital replacement project
@@ -31,7 +31,7 @@ enum QuoteRequestStatus {
   requested // Customer submitted; rep has not yet responded
   quoted // Rep sent a quote (quotedAt + quoteNotes populated)
   accepted // Customer accepted the quote
-  declined // Customer declined â€” reason captured (audit/liability trail)
+  declined // Customer declined — reason captured (audit/liability trail)
   draft // Saved by the customer but NOT yet sent (no rep email / partner event)
 }
 
@@ -58,18 +58,18 @@ enum UserRole {
   admin
   manager
   viewer
-  consultant // Maintenance Vendor account manager â€” receives alerts in tandem
-  oem_admin // OEM service org fleet manager â€” cross-account read-only view
-  group_admin // Enterprise group (HoldCo) admin â€” cross-OpCo read-only roll-up over accounts sharing an enterpriseGroupId
-  super_admin // Platform super-admin â€” can manage PartnerOrganizations and bootstrap OEM users
-  field_tech // Field-labor / subcontractor login â€” assigned-jobs-only. NO pricing, NO full customer list. Default-deny everywhere except the assignment-scoped /api/field surface; sees only WorkOrders where assignedUserId = their id.
+  consultant // Maintenance Vendor account manager — receives alerts in tandem
+  oem_admin // OEM service org fleet manager — cross-account read-only view
+  group_admin // Enterprise group (HoldCo) admin — cross-OpCo read-only roll-up over accounts sharing an enterpriseGroupId
+  super_admin // Platform super-admin — can manage PartnerOrganizations and bootstrap OEM users
+  field_tech // Field-labor / subcontractor login — assigned-jobs-only. NO pricing, NO full customer list. Default-deny everywhere except the assignment-scoped /api/field surface; sees only WorkOrders where assignedUserId = their id.
 }
 
 // Equipment taxonomy. Expanded 2026-06-07 from the buyer-priority analysis
 // (most common / most expensive to repair / most infrastructure-critical):
 // the backbone distribution gear, protection/switching devices, cabling,
 // power quality, and safety systems that NFPA 70B / NETA MTS / NFPA 110/99
-// programs actually track. Postgres enums are append-only here â€” never
+// programs actually track. Postgres enums are append-only here — never
 // remove or rename a value without a data migration plan.
 enum EquipmentType {
   TRANSFORMER_LIQUID
@@ -83,26 +83,26 @@ enum EquipmentType {
   MCC
   VFD
   UPS_BATTERY
-  BATTERY_SYSTEM // stationary strings + chargers (switchgear control, telecom) â€” IEEE 450/1188
+  BATTERY_SYSTEM // stationary strings + chargers (switchgear control, telecom) — IEEE 450/1188
   CIRCUIT_BREAKER
-  FUSE_GEAR // fusible switches/fuse cabinets â€” ratings verification + spares
+  FUSE_GEAR // fusible switches/fuse cabinets — ratings verification + spares
   DISCONNECT_SWITCH // air/oil/vacuum switches, load-break, pad-mounted
-  TRANSFER_SWITCH // ATS â€” life-safety critical, NFPA 110/99 monthly transfer tests
-  PROTECTION_RELAY // SEL/GE class â€” calibration vs coordination study
+  TRANSFER_SWITCH // ATS — life-safety critical, NFPA 110/99 monthly transfer tests
+  PROTECTION_RELAY // SEL/GE class — calibration vs coordination study
   GROUND_FAULT_PROTECTION // NEC 230.95 performance testing
   SURGE_ARRESTER
-  CABLE_LV // â‰¤600V feeders â€” IR testing history per run
-  CABLE_MV_HV // medium/high voltage â€” VLF/partial discharge class
-  CABLE_TRAY // structural supports â€” corrosion/loading inspection
+  CABLE_LV // ≤600V feeders — IR testing history per run
+  CABLE_MV_HV // medium/high voltage — VLF/partial discharge class
+  CABLE_TRAY // structural supports — corrosion/loading inspection
   GROUNDING_SYSTEM // fall-of-potential / point-to-point per IEEE 81
-  EMERGENCY_LIGHTING // egress/battery units â€” NFPA 101 monthly/annual tests
+  EMERGENCY_LIGHTING // egress/battery units — NFPA 101 monthly/annual tests
   ARC_FLASH_PANEL
   FIRE_PUMP_CONTROLLER
 }
 
 // NFPA 70B:2023 condition of maintenance ratings.
-// C1 = good (interval Ã—2.5, max 60 months) Â· C2 = fair (base interval)
-// C3 = poor (interval Ã—0.25, max 12 months)
+// C1 = good (interval ×2.5, max 60 months) · C2 = fair (base interval)
+// C3 = poor (interval ×0.25, max 12 months)
 enum ConditionRating {
   C1
   C2
@@ -126,7 +126,7 @@ enum WorkOrderType {
 }
 
 // Shared by NETA decal (work order) and per-measurement pass/fail.
-// GREEN = pass Â· YELLOW = pass with deficiencies noted Â· RED = fail
+// GREEN = pass · YELLOW = pass with deficiencies noted · RED = fail
 enum ResultRating {
   GREEN
   YELLOW
@@ -210,7 +210,7 @@ enum RetentionTier {
   CUSTOM
 }
 
-// Document type classification â€” surfaces documents grouped by purpose on the
+// Document type classification — surfaces documents grouped by purpose on the
 // asset detail page. oem_manual + wiring_diagram cover vendor docs; loto_pdf
 // covers a scanned/printed LOTO procedure (vs. the structured LotoProc model);
 // the rest cover the usual facilities-compliance paper trail.
@@ -254,7 +254,7 @@ enum EnergyType {
   gravity
 }
 
-// â”€â”€â”€ Models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Models ──────────────────────────────────────────────────────────────────
 
 model Account {
   id                       String        @id @default(uuid())
@@ -263,7 +263,7 @@ model Account {
   planType                 PlanType
   planTier                 PlanTier?
   stripeCustomerId         String?
-  // Stripe seam â€” populated by a future Checkout flow + webhook handler.
+  // Stripe seam — populated by a future Checkout flow + webhook handler.
   // Null on self-hosted licensed instances (planType=licensed), which
   // bypass tier enforcement entirely.
   stripeSubscriptionId     String?
@@ -302,10 +302,10 @@ model Account {
   // Data retention tier for PartnerEventLog archival
   retentionTier            RetentionTier @default(STANDARD)
   retentionCustomYears     Int? // used when retentionTier=CUSTOM
-  // Per-tenant total headcount â€” drives cost-per-employee KPI tiles.
+  // Per-tenant total headcount — drives cost-per-employee KPI tiles.
   // Nullable so existing accounts continue to work.
   fteCount                 Int?
-  // Import webhook â€” single per-account endpoint for assets.imported events.
+  // Import webhook — single per-account endpoint for assets.imported events.
   // URL and secret stored encrypted (same AES-256-GCM path as webhookEndpoints).
   // Secret is generated server-side and shown once; never re-surfaced.
   importWebhookUrl         String? // HTTPS URL; stored encrypted
@@ -391,7 +391,7 @@ model Account {
   @@map("accounts")
 }
 
-// â”€â”€â”€ Async ingest jobs (#2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Async ingest jobs (#2) ────────────────────────────────────────────────────
 // Moves facility-scale document ingest off the HTTP request: an upload is stored
 // and enqueued, an in-process worker (lib/ingestWorker) claims it with
 // SELECT ... FOR UPDATE SKIP LOCKED, runs the SHARED buffer->preview builder
@@ -472,7 +472,7 @@ model IngestJob {
   @@map("ingest_jobs")
 }
 
-// â”€â”€â”€ OEM Partner Organizations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── OEM Partner Organizations ───────────────────────────────────────────────
 // Represents an OEM service organization (Eaton, Schneider, ABB, etc.).
 // Customer accounts are linked via partnerOrgId.  Users with role oem_admin
 // on any account in the same partner org get cross-account fleet visibility.
@@ -484,7 +484,7 @@ model PartnerOrganization {
   website            String?
   webhookUrl         String?
   webhookSecret      String? // 32-byte hex; HMAC-SHA256 signing key
-  digestIntervalDays Int      @default(1) // 1â€“7 days; OEM configurable
+  digestIntervalDays Int      @default(1) // 1–7 days; OEM configurable
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -516,7 +516,7 @@ model User {
   twoFactorSecret               String? // AES-256-GCM encrypted TOTP secret
   twoFactorEnabled              Boolean   @default(false)
   twoFactorBackupCodes          String? // JSON array of SHA-256-hashed one-time backup codes
-  twoFactorLastUsedStep         BigInt? // TOTP replay prevention â€” step index of last successful verify
+  twoFactorLastUsedStep         BigInt? // TOTP replay prevention — step index of last successful verify
   featureFlags                  Json? // admin-set feature booleans
   hiddenFeatures                Json? // user-set: features they've personally hidden
   // When true, viewer-role user only sees assets at sites they are assigned
@@ -526,7 +526,7 @@ model User {
   // Persist the OnboardingWizard step on the user row so the wizard resumes
   // across devices.
   onboardingStep                Int       @default(0)
-  // Terms acceptance audit trail â€” populated at registration. Nullable so
+  // Terms acceptance audit trail — populated at registration. Nullable so
   // legacy/seed users continue to work without a backfill ritual.
   acceptedTermsAt               DateTime?
   acceptedTermsVersion          String? // e.g. "tos-2026-05-04, privacy-2026-05-04"
@@ -605,7 +605,7 @@ model User {
 // Cross-device user preferences (saved views, column visibility, other UI
 // state that should follow the user across browsers/devices). One row per
 // (user, key); `value` is Json so callers can stash arbitrary shape without
-// schema churn. Cascades on user delete â€” preferences aren't audit-relevant.
+// schema churn. Cascades on user delete — preferences aren't audit-relevant.
 model UserPreference {
   id        String   @id @default(uuid())
   userId    String
@@ -621,7 +621,7 @@ model UserPreference {
   @@map("user_preferences")
 }
 
-// â”€â”€â”€ Contractors (was Vendor) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Contractors (was Vendor) ─────────────────────────────────────────────────
 // NETA-certified testing contractors who perform maintenance work. The
 // per-account name uniqueness closes the duplicate-create race at the DB
 // level (two concurrent CSV imports for the same contractor name).
@@ -671,17 +671,17 @@ model ContractorTech {
   // ANSI/NETA ETT certification level of this tech. Work orders carry the
   // minimum level required; assignment validation happens at the route layer.
   netaCertLevel               NetaCertLevel?
-  // â”€â”€ Qualification provenance (NFPA 70E 110.2(A)(1) + insurer audits) â”€â”€â”€â”€
+  // ── Qualification provenance (NFPA 70E 110.2(A)(1) + insurer audits) ────
   // qualifiedPersonDesignatedAt: date of the EMPLOYER'S written qualified-
   // person designation (a training certificate alone is insufficient).
-  // trainingExpiresAt: 70E retraining interval â‰¤3 years â€” drives an
+  // trainingExpiresAt: 70E retraining interval ≤3 years — drives an
   // "expiring qualification" surface later.
   // thermographerCertLevel: 'I' | 'II' | 'III' (Infraspection/ASNT model;
   // Level II is the de-facto insurer minimum for signing IR reports).
   qualifiedPersonDesignatedAt DateTime?
   trainingExpiresAt           DateTime?
   thermographerCertLevel      String?
-  // â”€â”€ QEMW credential (ANSI/NETA EMW-2026, approved 2026-01-06) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── QEMW credential (ANSI/NETA EMW-2026, approved 2026-01-06) ────────────
   // ANSI/NETA EMW-2026 created the Qualified Electrical Equipment Maintenance
   // Worker (QEMW) certification. First-mover window ~12-18 months before
   // PowerDB/Accruent builds this. 3-year renewal cycle per the standard.
@@ -700,7 +700,7 @@ model ContractorTech {
   @@map("contractor_techs")
 }
 
-// â”€â”€â”€ Asset Hierarchy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Asset Hierarchy ──────────────────────────────────────────────────────────
 // sites â†’ buildings â†’ areas â†’ equipment_positions â†’ assets
 //
 // The hierarchy is FLEXIBLE: an Asset always belongs to a Site, but the
@@ -777,7 +777,7 @@ model Area {
   id         String   @id @default(uuid())
   accountId  String
   siteId     String
-  buildingId String? // optional â€” small sites may have areas directly under the site
+  buildingId String? // optional — small sites may have areas directly under the site
   name       String
   notes      String?
   createdAt  DateTime @default(now())
@@ -795,14 +795,14 @@ model Area {
   @@map("areas")
 }
 
-// A named physical slot equipment occupies â€” "Substation A, Cubicle 3",
+// A named physical slot equipment occupies — "Substation A, Cubicle 3",
 // "MCC-1 Bucket 4B". Lets an asset swap (replace the transformer) keep the
 // position's history intact.
 model EquipmentPosition {
   id        String   @id @default(uuid())
   accountId String
   siteId    String
-  areaId    String? // optional â€” positions can hang directly off a site
+  areaId    String? // optional — positions can hang directly off a site
   name      String
   code      String? // short designation used on one-lines, e.g. "SWGR-1A"
   notes     String?
@@ -820,7 +820,7 @@ model EquipmentPosition {
   @@map("equipment_positions")
 }
 
-// â”€â”€â”€ Assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Assets ───────────────────────────────────────────────────────────────────
 // A piece of electrical equipment under maintenance management (was Contract
 // in the inherited model).
 
@@ -845,7 +845,7 @@ model Asset {
   serialNumber                  String?
   // Nameplate fields vary wildly by equipment type (kVA + primary/secondary
   // voltage for transformers, kW + RPM for generators, AIC rating for
-  // breakers...) â€” JSONB with per-type Zod validation at the route layer.
+  // breakers...) — JSONB with per-type Zod validation at the route layer.
   nameplateData                 Json?
   installDate                   DateTime?
   lastCommissionedDate          DateTime?
@@ -856,33 +856,33 @@ model Asset {
   conditionEnvironment          ConditionRating @default(C2)
   // Responsible person for this asset. Drives alert routing (owner receives
   // every tier for their assets, in addition to the role matrix) and the
-  // "equipment owner" answer auditors expect. Nullable â€” unowned assets
+  // "equipment owner" answer auditors expect. Nullable — unowned assets
   // fall back to pure role routing.
   ownerId                       String?
   // Electrical topology: the asset this one is FED FROM (its upstream
-  // source). Self-relation forming the power-path graph â€” upstream chain =
+  // source). Self-relation forming the power-path graph — upstream chain =
   // walk fedFrom links to the source; downstream = children of this node.
   // Drives the Power Path card and outage-impact answers ("de-energize this
   // switchgear â†’ these N assets lose power"). Cycle prevention enforced at
   // the route layer (a feed loop is always data-entry error).
   fedFromAssetId                String?
-  // â”€â”€ Risk dimensions (2026-06-07 buyer-priority analysis) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Risk dimensions (2026-06-07 buyer-priority analysis) ──────────────────
   // Three axes beyond the NFPA 70B condition assessment: infrastructure
   // criticality (consequence of failure), financial exposure (repair cost +
   // spare-parts lead time), and resilience posture. These drive the priority
   // dashboard tabs (critical infrastructure / high-value / high-volume) and
-  // sorting on the asset list. All optional â€” unscored assets sort last.
-  // NOTE: criticalityScore (1=low â€¦ 5=failure means injury/shutdown/fines)
+  // sorting on the asset list. All optional — unscored assets sort last.
+  // NOTE: criticalityScore (1=low … 5=failure means injury/shutdown/fines)
   // is INFRASTRUCTURE criticality and deliberately separate from
   // conditionCriticality (the NFPA 70B C1-C3 maintenance-interval axis).
   criticalityScore              Int?
-  // Degradation score (1=good â€¦ 5=severe) on the physical-condition axis.
+  // Degradation score (1=good … 5=severe) on the physical-condition axis.
   // Distinct from conditionPhysical/conditionCriticality/conditionEnvironment
   // (those are NFPA 70B C1-C3 maintenance-interval ratings). This integer
-  // enables the Degradation Priority Score: DPS = conditionScore Ã— criticalityScore
-  // (range 1â€“25, higher = more urgent service needed).
+  // enables the Degradation Priority Score: DPS = conditionScore × criticalityScore
+  // (range 1–25, higher = more urgent service needed).
   conditionScore                Int?
-  // Stored DPS: conditionScore Ã— criticalityScore. Recomputed by the route
+  // Stored DPS: conditionScore × criticalityScore. Recomputed by the route
   // layer whenever either input changes so list queries can ORDER BY without
   // a computed expression. NULL when either factor is NULL.
   priorityScore                 Int?
@@ -895,7 +895,7 @@ model Asset {
   // and the scheduler never re-derive it. Drives interval selection on
   // MaintenanceTaskDefinition (intervalC1/C2/C3Months).
   governingCondition            ConditionRating @default(C2)
-  // NFPA 70B Â§9.3.1: an asset that has missed its last two successive
+  // NFPA 70B §9.3.1: an asset that has missed its last two successive
   // maintenance cycles is treated as Condition 3. Computed by the daily
   // missedCyclePolicy cron as a SEPARATE governing input (worst-of also
   // considers this flag) so it tightens every interval WITHOUT overwriting a
@@ -914,7 +914,7 @@ model Asset {
   isEnergized                   Boolean         @default(true)
   notes                         String?
   archivedAt                    DateTime? // soft-delete; history (work orders, samples) stays addressable
-  // â”€â”€ EOL / Obsolescence (Task 23 â€” Modernization Revenue Engine) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── EOL / Obsolescence (Task 23 — Modernization Revenue Engine) ───────────
   // OEM-published lifecycle dates. When endOfSupport is set the
   // modernizationRiskScore cron normalises over a 5-year window
   // (see lib/modernizationAlerts.ts). When null, the cron falls back to the
@@ -967,9 +967,9 @@ model Asset {
   @@map("assets")
 }
 
-// â”€â”€â”€ Compliance Standards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Compliance Standards ─────────────────────────────────────────────────────
 // Governing standards (NFPA 70B/70E/110, NETA MTS/ATS, IEEE C57.104/43,
-// OSHA 1910-S). GLOBAL â€” no accountId; no public APIs exist for NFPA/NETA
+// OSHA 1910-S). GLOBAL — no accountId; no public APIs exist for NFPA/NETA
 // content so editions are seeded as data and updated via the manual
 // revision workflow (StandardRevisionAlert).
 
@@ -994,14 +994,14 @@ model ComplianceStandard {
   @@map("compliance_standards")
 }
 
-// â”€â”€â”€ Maintenance Task Definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Maintenance Task Definitions ─────────────────────────────────────────────
 // The NFPA 70B / NETA Appendix B interval matrix: what maintenance each
 // equipment type needs and how often, per condition rating.
 //
 // Rows with accountId = NULL are the global seeded matrix shared by all
 // tenants (standards updates patch one place). Rows with accountId set are
 // tenant-defined custom tasks. NOTE: the @@unique below does not constrain
-// global rows in Postgres (NULL != NULL) â€” the seed script enforces
+// global rows in Postgres (NULL != NULL) — the seed script enforces
 // global-row uniqueness by deterministic taskCode upsert.
 
 model MaintenanceTaskDefinition {
@@ -1013,13 +1013,13 @@ model MaintenanceTaskDefinition {
   taskCode              String // stable machine code, e.g. "SWGR_IR_THERMO"
   description           String?
   // Interval in months per NFPA 70B governing condition. C2 is the base
-  // (NETA published) interval; C1 stretches (Ã—2.5, ceiling 60 months);
-  // C3 compresses (Ã—0.25, ceiling 12 months). Stored explicitly rather than
+  // (NETA published) interval; C1 stretches (×2.5, ceiling 60 months);
+  // C3 compresses (×0.25, ceiling 12 months). Stored explicitly rather than
   // derived so seed data can carry the exact NETA Appendix B values.
   intervalC1Months      Int?
   intervalC2Months      Int
   intervalC3Months      Int?
-  requiresOutage        Boolean        @default(false) // de-energized work â€” needs blackout window
+  requiresOutage        Boolean        @default(false) // de-energized work — needs blackout window
   requiresEnergized     Boolean        @default(false) // e.g. IR thermography needs load
   requiresNetaCertified Boolean        @default(false)
   netaCertLevelMin      NetaCertLevel?
@@ -1040,8 +1040,8 @@ model MaintenanceTaskDefinition {
   @@map("maintenance_task_definitions")
 }
 
-// â”€â”€â”€ Maintenance Schedules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// One row per (asset, task) pairing â€” the living recurrence record.
+// ─── Maintenance Schedules ────────────────────────────────────────────────────
+// One row per (asset, task) pairing — the living recurrence record.
 // nextDueDate is stored, recomputed on completion / condition change:
 //   nextDueDate = lastCompletedDate + interval months for the asset's
 //   governing condition (or conditionOverride when set).
@@ -1058,11 +1058,11 @@ model MaintenanceSchedule {
   // customer-side planning notices.
   leadTimeSchedulingDays Int              @default(180)
   leadTimeCustomerDays   Int              @default(90)
-  // Per-schedule condition override â€” e.g. a C1 asset whose battery string
+  // Per-schedule condition override — e.g. a C1 asset whose battery string
   // the engineer insists on treating as C3. Null = use asset.governingCondition.
   conditionOverride      ConditionRating?
   // Provenance for completions recorded without a work order: who actually
-  // performed the task (free text â€” name + employer). WO-based completions
+  // performed the task (free text — name + employer). WO-based completions
   // carry richer provenance on the work order itself.
   lastPerformedByName    String?
   isActive               Boolean          @default(true)
@@ -1086,7 +1086,7 @@ model MaintenanceSchedule {
   @@map("maintenance_schedules")
 }
 
-// â”€â”€â”€ Work Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Work Orders ──────────────────────────────────────────────────────────────
 
 model WorkOrder {
   id               String           @id @default(uuid())
@@ -1114,13 +1114,13 @@ model WorkOrder {
   // NETA MTS as-found / as-left condition of maintenance.
   asFoundCondition ConditionRating?
   asLeftCondition  ConditionRating?
-  // NETA decal color affixed after testing. NOTE: NETA MTS Â§5.5 colors are
+  // NETA decal color affixed after testing. NOTE: NETA MTS §5.5 colors are
   // WHITE (serviceable) / YELLOW (limited service) / RED (non-serviceable);
   // the enum's GREEN value renders as "Serviceable" in the UI.
   netaDecal        ResultRating?
-  // â”€â”€ Test-condition + instrument provenance (NETA MTS Â§5.4.2 #4, Â§5.3) â”€â”€
+  // ── Test-condition + instrument provenance (NETA MTS §5.4.2 #4, §5.3) ──
   // Ambient conditions at test time and the calibrated instruments used.
-  // testEquipment: [{ make, model, serial, calDate }] â€” calibration must be
+  // testEquipment: [{ make, model, serial, calDate }] — calibration must be
   // within 12 months of the test date, NIST-traceable.
   ambientTempC     Decimal?         @db.Decimal(5, 1)
   humidityPct      Decimal?         @db.Decimal(5, 1)
@@ -1211,7 +1211,7 @@ model WorkOrderComment {
   @@map("work_order_comments")
 }
 
-// â”€â”€â”€ Test Measurements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Test Measurements ────────────────────────────────────────────────────────
 // NETA MTS 5.4 requires BOTH as-found and as-left values recorded.
 
 model TestMeasurement {
@@ -1230,17 +1230,17 @@ model TestMeasurement {
   // (e.g. a single scalar power-factor result for the whole asset).
   label            String?
   asFoundValue     Decimal?      @db.Decimal(16, 4)
-  asFoundUnit      String? // "MÎ©", "ÂµÎ©", "Â°C", ...
+  asFoundUnit      String? // "MΩ", "µΩ", "°C", ...
   asLeftValue      Decimal?      @db.Decimal(16, 4)
   asLeftUnit       String?
   passFail         ResultRating?
-  // NETA MTS Â§5.4.2 #8: expected results placed beside actuals for direct
-  // comparison (e.g. "â‰¥100 MÎ© per NETA Table 100.1", "Â±20% of trip curve").
+  // NETA MTS §5.4.2 #8: expected results placed beside actuals for direct
+  // comparison (e.g. "≥100 MΩ per NETA Table 100.1", "±20% of trip curve").
   expectedRange    String?
   testVoltage      String? // applied test voltage, e.g. "1000 V DC"
   // IR thermography fields (Infraspection/NETA): load at scan time must be
-  // recorded (â‰¥40% rule per HSB/Zurich); severityPriority is the NETA Î”T
-  // priority 1 (repair immediately) â€¦ 4 (possible deficiency).
+  // recorded (≥40% rule per HSB/Zurich); severityPriority is the NETA ΔT
+  // priority 1 (repair immediately) … 4 (possible deficiency).
   loadPercent      Decimal?      @db.Decimal(5, 1)
   severityPriority Int?
   // [W8] Set when the pre-commit physical-plausibility gate (lib/measurementSanity
@@ -1268,7 +1268,7 @@ model TestMeasurement {
   @@map("test_measurements")
 }
 
-// â”€â”€â”€ Deficiencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Deficiencies ─────────────────────────────────────────────────────────────
 // Findings from testing/inspection. IMMEDIATE = safety/operation risk now;
 // RECOMMENDED = correct at next opportunity; ADVISORY = monitor.
 
@@ -1298,9 +1298,9 @@ model Deficiency {
   @@map("deficiencies")
 }
 
-// â”€â”€â”€ Incident / protective-device-operation log (#24, NFPA 70B EMP element 9) â”€â”€
+// ─── Incident / protective-device-operation log (#24, NFPA 70B EMP element 9) ──
 // Quick field/asset log of breaker trips, relay operations, and alarms. NFPA
-// 70B requires the program to USE incident feedback (Â§9.3.1 condition criteria
+// 70B requires the program to USE incident feedback (§9.3.1 condition criteria
 // reference unaddressed notifications); this is the ground-truth stream between
 // test cycles that feeds the EMP's incident section and condition assessment.
 
@@ -1312,7 +1312,7 @@ enum IncidentType {
   OTHER
 }
 
-// â”€â”€â”€ Auditor / insurer share link (#21) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Auditor / insurer share link (#21) ───────────────────────────────────────
 // A time-boxed, revocable, read-only token that exposes a watermarked
 // compliance package (honest number + Path-to-100 + latest snapshot) to an
 // underwriter or auditor without giving them an account. No PII beyond the
@@ -1337,9 +1337,9 @@ model ShareLink {
   @@map("share_links")
 }
 
-// â”€â”€â”€ Public parser-as-funnel lead (#17) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Public parser-as-funnel lead (#17) ───────────────────────────────────────
 // A prospect who dropped a report on the public, email-gated parser page. No
-// account yet â€” this is top-of-funnel lead capture. Raw IP is never stored
+// account yet — this is top-of-funnel lead capture. Raw IP is never stored
 // (hashed for abuse tracking only); the parsed report itself is not retained.
 model PublicParseLead {
   id               String   @id @default(uuid())
@@ -1349,7 +1349,7 @@ model PublicParseLead {
   measurementCount Int      @default(0)
   findingsCount    Int      @default(0)
   criticalCount    Int      @default(0)
-  ipHash           String? // sha256 of IP â€” abuse signal, not PII
+  ipHash           String? // sha256 of IP — abuse signal, not PII
   createdAt        DateTime @default(now())
 
   @@index([email])
@@ -1364,7 +1364,7 @@ model IncidentLog {
   type         IncidentType @default(OTHER)
   occurredAt   DateTime
   note         String?
-  // Resolution / acknowledgement â€” an unaddressed incident is a C2/C3 input.
+  // Resolution / acknowledgement — an unaddressed incident is a C2/C3 input.
   resolvedAt   DateTime?
   resolvedById String?
   createdById  String?
@@ -1380,20 +1380,20 @@ model IncidentLog {
   @@map("incident_logs")
 }
 
-// â”€â”€â”€ System Studies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Site-level engineering studies â€” the documents loss-control auditors ask
+// ─── System Studies ───────────────────────────────────────────────────────────
+// Site-level engineering studies — the documents loss-control auditors ask
 // for by name. studyType:
-//   arc_flash       â€” NFPA 70E 130.5 incident-energy analysis; review â‰¤5yr
-//   short_circuit   â€” fault-current study; â‰¤5yr or after system changes
-//   coordination    â€” protective device coordination study; same cadence
-//   one_line_review â€” dated confirmation the one-line diagram reflects the
+//   arc_flash       — NFPA 70E 130.5 incident-energy analysis; review ≤5yr
+//   short_circuit   — fault-current study; ≤5yr or after system changes
+//   coordination    — protective device coordination study; same cadence
+//   one_line_review — dated confirmation the one-line diagram reflects the
 //                     actual system (HSB: update drawings on every change)
 // PE provenance (peName/peLicense) is the consistent insurer expectation
 // for incident-energy and coordination work.
 //
 // Renamed from ArcFlashStudy 2026-06-07 (audit-records research): the model
 // now carries all four study types; the underlying table was renamed in the
-// same migration (fresh-PoC DBs only â€” no production data existed).
+// same migration (fresh-PoC DBs only — no production data existed).
 
 model SystemStudy {
   id             String   @id @default(uuid())
@@ -1409,7 +1409,7 @@ model SystemStudy {
   peName         String?
   peLicense      String?
   // Why a re-study happened before the 5yr clock: "system_change",
-  // "utility_change", "scheduled" â€” free-form for PoC.
+  // "utility_change", "scheduled" — free-form for PoC.
   trigger        String?
   reportPdfUrl   String? // user-typed external URL, rendered as a raw <a href> (SiteDetail.jsx)
   // [W3] Internal storage key for the source PDF this study was ingested
@@ -1449,9 +1449,9 @@ model SystemStudy {
   @@map("system_studies")
 }
 
-// â”€â”€â”€ Arc-flash / system-study asset coverage (#25) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Arc-flash / system-study asset coverage (#25) ─────────────────────────────
 // Binds a SystemStudy (esp. arc_flash) to the assets/buses it covers, carrying
-// the per-bus incident-energy label data NFPA 70E Â§130.5(H) requires posted ON
+// the per-bus incident-energy label data NFPA 70E §130.5(H) requires posted ON
 // the equipment (nominal voltage, arc-flash boundary, incident energy + working
 // distance OR PPE category, plus the study date). Assets are bound directly or
 // expanded down the power-path graph (feedsDownstream). One row per (study,
@@ -1575,13 +1575,13 @@ model StudySourceModel {
   @@map("study_source_models")
 }
 
-// â”€â”€â”€ Audit Visits + Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Audit Visits + Recommendations ───────────────────────────────────────────
 // First-class record of audits: insurance loss-control visits, OSHA
 // inspections, internal pre-audit walkthroughs, customer/AHJ audits.
 // Recommendations (RECs) mirror the carrier workflow: written response
-// expected within 30â€“45 days, completion tracked, consequences escalate.
+// expected within 30–45 days, completion tracked, consequences escalate.
 // Snapshots generated for an audit link back via ComplianceSnapshot.auditVisitId
-// â€” the audit record points at the exact hash-anchored evidence handed over.
+// — the audit record points at the exact hash-anchored evidence handed over.
 
 model AuditVisit {
   id            String    @id @default(uuid())
@@ -1632,7 +1632,7 @@ model AuditRecommendation {
   @@map("audit_recommendations")
 }
 
-// â”€â”€â”€ Lab Samples â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Lab Samples ──────────────────────────────────────────────────────────────
 // DGA / oil quality / fuel analysis results. Gas columns in ppm per
 // IEEE C57.104-2019 dissolved gas analysis. Non-DGA sample types leave the
 // gas columns null and carry results in `resultsData`.
@@ -1642,7 +1642,7 @@ model LabSample {
   accountId    String
   assetId      String
   workOrderId  String? // sample may be pulled during a work order
-  sampleType   String // "dga" | "oil_quality" | "fuel" (string, not enum â€” lab menus grow)
+  sampleType   String // "dga" | "oil_quality" | "fuel" (string, not enum — lab menus grow)
   sampleDate   DateTime
   labName      String?
   // IEEE C57.104 DGA gases, ppm.
@@ -1658,13 +1658,13 @@ model LabSample {
   // reference table applies.
   o2           Decimal?      @db.Decimal(10, 2)
   n2           Decimal?      @db.Decimal(10, 2)
-  // IEEE C57.104-2019 DGA status (1 = normal, 2 = caution â‰¥90th pct,
-  // 3 = action required â‰¥95th pct) and the fault diagnosis code from
+  // IEEE C57.104-2019 DGA status (1 = normal, 2 = caution ≥90th pct,
+  // 3 = action required ≥95th pct) and the fault diagnosis code from
   // Duval/Rogers interpretation (PD, T1, T2, T3, D1, D2).
   ieeeStatus   Int?
   faultCode    String?
   // Non-DGA results (dielectric strength, moisture, acidity, fuel
-  // contamination...) â€” sparse per-type shape, JSONB like nameplateData.
+  // contamination...) — sparse per-type shape, JSONB like nameplateData.
   resultsData  Json?
   resultRating ResultRating?
   reportPdfUrl String?
@@ -1682,7 +1682,7 @@ model LabSample {
   @@map("lab_samples")
 }
 
-// â”€â”€â”€ Blackout Windows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Blackout Windows ─────────────────────────────────────────────────────────
 // Customer-declared downtime windows. The scheduler avoids proposing
 // requiresOutage work outside these, and avoids ALL work inside windows
 // marked as no-work periods (production freeze).
@@ -1694,7 +1694,7 @@ model BlackoutWindow {
   startsAt       DateTime
   endsAt         DateTime
   // true  = this window is WHEN outage work may happen (planned shutdown)
-  // false = this window is a freeze â€” no work may be scheduled inside it
+  // false = this window is a freeze — no work may be scheduled inside it
   isOutageWindow Boolean  @default(true)
   reason         String?
   createdAt      DateTime @default(now())
@@ -1708,9 +1708,9 @@ model BlackoutWindow {
   @@map("blackout_windows")
 }
 
-// â”€â”€â”€ Standard Revision Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Standard Revision Alerts ─────────────────────────────────────────────────
 // When NFPA/NETA publishes a new edition (tracked via email list + manual
-// update workflow â€” no public API), one row is created per account flagging
+// update workflow — no public API), one row is created per account flagging
 // schedules whose intervals may change. Acknowledged per-account by an admin.
 
 model StandardRevisionAlert {
@@ -1734,9 +1734,9 @@ model StandardRevisionAlert {
   @@map("standard_revision_alerts")
 }
 
-// â”€â”€â”€ Compliance Snapshots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Point-in-time audit evidence packs. A snapshot is GENERATED AND STORED â€”
-// never regenerated from live data â€” so "show me your compliance posture
+// ─── Compliance Snapshots ─────────────────────────────────────────────────────
+// Point-in-time audit evidence packs. A snapshot is GENERATED AND STORED —
+// never regenerated from live data — so "show me your compliance posture
 // from March" has a real answer. The PDF's SHA-256 is recorded both here and
 // in an ActivityLog row (action compliance_snapshot_generated), which the
 // per-account tamper-evident hash chain then covers: the snapshot's
@@ -1750,7 +1750,7 @@ model ComplianceSnapshot {
   siteId        String? // null = all sites in the account
   standardCode  String? // e.g. "NFPA 70B"; null = all standards
   // kind: 'compliance' = per-standard evidence pack; 'emp' = the generated
-  // written EMP document (NFPA 70B Â§4.2) â€” same immutable-storage +
+  // written EMP document (NFPA 70B §4.2) — same immutable-storage +
   // hash-chain-anchor pipeline, different renderer.
   kind          String   @default("compliance")
   // When generated for a specific audit, links the evidence to the visit.
@@ -1797,13 +1797,13 @@ model AccessBlocker {
   @@map("access_blockers")
 }
 
-// â”€â”€â”€ Regulatory / Industry News â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Regulatory / Industry News ───────────────────────────────────────────────
 // Items pulled from public RSS feeds (OSHA news releases, electrical trade
 // press) and matched against compliance-relevant terms (NFPA 70B/70E/110,
-// NETA, arc flash, transformer, switchgear...). GLOBAL â€” news is industry-
+// NETA, arc flash, transformer, switchgear...). GLOBAL — news is industry-
 // wide, not tenant data; no accountId. Populated by lib/newsScanner cron
 // (6h) and the manual refresh endpoint. Feeds the /news page and the
-// standard-revision awareness story (KICKOFF: no public NFPA/NETA APIs â€”
+// standard-revision awareness story (KICKOFF: no public NFPA/NETA APIs —
 // monitor via feeds + manual workflow).
 
 model NewsItem {
@@ -1822,7 +1822,7 @@ model NewsItem {
   @@map("news_items")
 }
 
-// â”€â”€â”€ Documents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Documents ────────────────────────────────────────────────────────────────
 
 model Document {
   id          String   @id @default(uuid())
@@ -1837,7 +1837,7 @@ model Document {
   version     Int      @default(1)
   uploadedBy  String
   uploadedAt  DateTime @default(now())
-  // Document classification â€” drives the grouped display on asset detail.
+  // Document classification — drives the grouped display on asset detail.
   // Null means pre-classification (legacy rows): shown under "Other".
   docType     DocType?
   // Provenance: where the document came from / how trustworthy. Defaults to
@@ -2077,10 +2077,10 @@ model Communication {
   @@map("communications")
 }
 
-// â”€â”€â”€ Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Alerts ───────────────────────────────────────────────────────────────────
 // Lead-time tiers per the alert engine matrix:
-//   180d booking window Â· 120d contractor confirm Â· 90d customer planning Â·
-//   60d outage coordination Â· 30d final prep Â· 7d imminent â€” all
+//   180d booking window · 120d contractor confirm · 90d customer planning ·
+//   60d outage coordination · 30d final prep · 7d imminent — all
 //   alertType=maintenance_due with leadDays set.
 //   Overdue/+7d/+30d/+90d escalation rows use overdue/escalation/
 //   regulatory_breach with leadDays null.
@@ -2117,7 +2117,7 @@ model AlertPreference {
   id             String    @id @default(uuid())
   userId         String
   alertType      AlertType
-  // Longer default lead list than typical renewal tooling â€” engineer
+  // Longer default lead list than typical renewal tooling — engineer
   // scheduling on outage work needs the 180/120 day horizon.
   daysBeforeList String    @default("180,120,90,60,30,7")
   emailEnabled   Boolean   @default(true)
@@ -2131,7 +2131,7 @@ model AlertPreference {
   @@map("alert_preferences")
 }
 
-// â”€â”€â”€ Ingestion Sessions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Ingestion Sessions ──────────────────────────────────────────────────────
 // AI-assisted extraction from uploaded PDFs (contractor test reports,
 // nameplate photos, legacy maintenance logs) into structured fields.
 
@@ -2158,12 +2158,12 @@ model IngestionSession {
   @@map("ingestion_sessions")
 }
 
-// â”€â”€â”€ Activity Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Activity Log ─────────────────────────────────────────────────────────────
 
 model ActivityLog {
   id        String   @id @default(uuid())
   assetId   String? // nullable for non-asset audit events
-  userId    String? // nullable â€” login_failed for unknown emails has no associated user
+  userId    String? // nullable — login_failed for unknown emails has no associated user
   // Per-account hash chain. accountId is nullable for cross-tenant events
   // (login_failed for unknown emails); those share a single global chain
   // keyed by NULL.
@@ -2192,7 +2192,7 @@ model ActivityLog {
   @@map("activity_logs")
 }
 
-// â”€â”€â”€ Account Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Account Settings ─────────────────────────────────────────────────────────
 
 model AccountSetting {
   id        String   @id @default(uuid())
@@ -2208,7 +2208,7 @@ model AccountSetting {
   @@map("account_settings")
 }
 
-// â”€â”€â”€ Early-access requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Early-access requests ────────────────────────────────────────────────────
 // Landing-page lead capture via the unauthenticated POST /api/early-access
 // route, rate-limited by the existing apiLimiter anonymous bucket.
 
@@ -2227,7 +2227,7 @@ model EarlyAccessRequest {
   @@map("early_access_requests")
 }
 
-// â”€â”€â”€ AI usage quota â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── AI usage quota ───────────────────────────────────────────────────────────
 // Per-user, per-action, per-day usage tracking. Composite PK enables a
 // single-round-trip atomic upsert via INSERT ... ON CONFLICT DO UPDATE.
 // `day` is a UTC YYYY-MM-DD string; reset on UTC midnight everywhere.
@@ -2245,18 +2245,18 @@ model AiUsage {
   @@map("ai_usage")
 }
 
-// â”€â”€â”€ Extraction telemetry (#4) + report fingerprint / dedupe (#5) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Extraction telemetry (#4) + report fingerprint / dedupe (#5) ──────────────
 // One row per extraction across every ingest + scan path (PDF test-report
 // preview, nameplate OCR, photo inspect). Captures engine / coverage /
 // confidence at extraction time and the human corrections + commit outcome at
-// commit time â€” the proprietary labeled-correction dataset an acquirer
+// commit time — the proprietary labeled-correction dataset an acquirer
 // underwrites ("12k reports, 94% field accuracy, improving monthly"). The
 // sha256 + committedAt pair also powers re-import dedupe (#5): a prior commit of
-// the same bytes in the same account is the "imported 2026-03-03 â€” re-import
+// the same bytes in the same account is the "imported 2026-03-03 — re-import
 // anyway?" signal.
 //
 // Deliberately FK-less (accountId/userId are plain scalars) so the migration is
-// a single additive CREATE TABLE â€” telemetry is fire-and-forget and must never
+// a single additive CREATE TABLE — telemetry is fire-and-forget and must never
 // add write-path coupling or FK contention to the ingest hot path.
 model ExtractionEvent {
   id              String    @id @default(uuid())
@@ -2266,7 +2266,7 @@ model ExtractionEvent {
   engine          String // source: pdfplumber | pdfplumber-ocr | pdfjs | pdfplumber+ai | ai | vision
   ocr             Boolean   @default(false)
   aiUsed          Boolean   @default(false)
-  // Coverage â€” un-backfillable QA signal + honest multi-asset truncation flag.
+  // Coverage — un-backfillable QA signal + honest multi-asset truncation flag.
   pageCount       Int?
   pagesScanned    Int?
   truncated       Boolean   @default(false)
@@ -2280,7 +2280,7 @@ model ExtractionEvent {
   greenCount      Int?
   // Fingerprint / dedupe (#5).
   sha256          String?
-  // Filled at commit â€” correction capture (the labeled training signal).
+  // Filled at commit — correction capture (the labeled training signal).
   committedAt     DateTime?
   fieldsCommitted Int?
   fieldsCorrected Int?
@@ -2295,9 +2295,9 @@ model ExtractionEvent {
   @@map("extraction_events")
 }
 
-// â”€â”€â”€ Consultant Access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Consultant Access ────────────────────────────────────────────────────────
 // Explicit grants allowing a consultant user (Maintenance Vendor account
-// manager) to access a tenant account. Not on by default â€” admin must invite
+// manager) to access a tenant account. Not on by default — admin must invite
 // with consultant role to create a record.
 
 model ConsultantAccess {
@@ -2321,7 +2321,7 @@ model ConsultantAccess {
   @@map("consultant_accesses")
 }
 
-// â”€â”€â”€ User Invites â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── User Invites ─────────────────────────────────────────────────────────────
 
 model UserInvite {
   id         String    @id @default(uuid())
@@ -2342,7 +2342,7 @@ model UserInvite {
   @@map("user_invites")
 }
 
-// â”€â”€â”€ Refresh Tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Refresh Tokens ───────────────────────────────────────────────────────────
 // Rotating refresh tokens (short-lived access tokens + revocable 30-day
 // refresh tokens). tokenHash is SHA-256 of the opaque token value.
 
@@ -2363,7 +2363,7 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// â”€â”€ Backup Logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Backup Logs ───────────────────────────────────────────────────────────────
 // Records each automated and manual backup attempt for audit and UI display.
 
 model BackupLog {
@@ -2384,14 +2384,14 @@ model BackupLog {
   @@map("backup_logs")
 }
 
-// â”€â”€ Instance Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Instance Config ──────────────────────────────────────────────────────────
 // Singleton row holding deployment-wide flags that don't belong to any single
 // tenant Account. Exactly one row exists, with id = 'singleton'.
 
 model InstanceConfig {
   id               String    @id @default("singleton")
   setupCompletedAt DateTime?
-  setupCompletedBy String? // userId of the admin who finished the wizard (no FK â€” survives user deletion)
+  setupCompletedBy String? // userId of the admin who finished the wizard (no FK — survives user deletion)
   demoMode         Boolean   @default(false)
   demoLastResetAt  DateTime?
   createdAt        DateTime  @default(now())
@@ -2437,7 +2437,7 @@ model CustomFieldValue {
   id           String   @id @default(uuid())
   assetId      String
   definitionId String
-  // Single value column â€” text encoded; coerced to native type at the
+  // Single value column — text encoded; coerced to native type at the
   // application boundary on write.
   value        String?
   updatedAt    DateTime @updatedAt
@@ -2450,9 +2450,9 @@ model CustomFieldValue {
   @@map("custom_field_values")
 }
 
-// â”€â”€â”€ API Keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── API Keys ─────────────────────────────────────────────────────────────────
 // Per-account REST API keys for the public v1 API.
-// keyHash is SHA-256 of the plaintext key â€” never stored plaintext.
+// keyHash is SHA-256 of the plaintext key — never stored plaintext.
 
 model ApiKey {
   id         String    @id @default(uuid())
@@ -2494,14 +2494,14 @@ model ApiIdempotencyKey {
   @@map("api_idempotency_keys")
 }
 
-// â”€â”€â”€ Generic Webhook Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Generic Webhook Endpoints ───────────────────────────────────────────────
 // Per-account outbound webhook targets for maintenance-due / overdue /
 // escalation alerts. Each endpoint receives a signed JSON POST whenever the
 // alert engine fires.
 //
 // Security:
 //   - `url` is stored encrypted (via lib/crypto) and validated to https:// +
-//     a public IP/hostname at delivery time (SSRF guard in lib/webhook.js â€”
+//     a public IP/hostname at delivery time (SSRF guard in lib/webhook.js —
 //     fully hardened, do not touch).
 //   - `hmacSecret` is a 32-byte hex secret stored encrypted. Delivered as
 //     sha256=<hex> signature header so the receiving end can verify.
@@ -2523,7 +2523,7 @@ model WebhookEndpoint {
   @@map("webhook_endpoints")
 }
 
-// â”€â”€â”€ Outbound Webhook DLQ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Outbound Webhook DLQ ─────────────────────────────────────────────────────
 // Persists a failed outbound webhook delivery after the in-process retry loop
 // (3 attempts, exponential backoff) exhausts. Admin UI surfaces these for
 // inspection and manual retry; the prune cron purges entries older than 30
@@ -2532,10 +2532,10 @@ model WebhookEndpoint {
 model OutboundWebhookDLQ {
   id                String   @id @default(uuid())
   accountId         String
-  webhookEndpointId String? // NULLable â€” endpoint may be deleted after a delivery fails
+  webhookEndpointId String? // NULLable — endpoint may be deleted after a delivery fails
   deliveryId        String // per-delivery UUID echoed in the delivery-id header
   eventType         String
-  targetUrlMasked   String // scheme://host/â€¦ form; full URL never persisted plaintext
+  targetUrlMasked   String // scheme://host/… form; full URL never persisted plaintext
   payload           Json
   attemptCount      Int      @default(0)
   lastError         String?
@@ -2553,7 +2553,7 @@ model OutboundWebhookDLQ {
   @@map("outbound_webhook_dlq")
 }
 
-// â”€â”€â”€ Notification Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Notification Log ─────────────────────────────────────────────────────────
 // Records every alert digest send attempt (success or failure) so operators
 // can answer "did asset X maintenance alert actually fire + reach the
 // recipient?" without digging through application logs.
@@ -2589,7 +2589,7 @@ model NotificationLog {
 
 model RenderError {
   id             String   @id @default(uuid())
-  // kind discriminator â€” 'render' (ErrorBoundary), 'uncaught'
+  // kind discriminator — 'render' (ErrorBoundary), 'uncaught'
   // (window.onerror), 'promise' (unhandledrejection), 'server' (Express
   // error middleware).
   kind           String   @default("render")
@@ -2616,7 +2616,7 @@ model RenderError {
   @@map("render_errors")
 }
 
-// â”€â”€â”€ Quote Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Quote Requests ───────────────────────────────────────────────────────────
 // Per-asset service quote requests submitted by the customer.
 // The server auto-assembles a full asset dossier so the service rep gets
 // everything they need without asking follow-up questions.
@@ -2625,11 +2625,11 @@ model RenderError {
 // number in large text with "CALL NOW".
 //
 // 5 standard questions (finalised for demo/test):
-//   1. driver          â€” what prompted the request
-//   2. timeline        â€” how urgently is service needed
-//   3. outageAvailable â€” can the asset be de-energised + when
-//   4. budgeted        â€” approved budget vs needs a number for approval
-//   5. attachmentNotes â€” photos, IR scans, test reports (free text for now)
+//   1. driver          — what prompted the request
+//   2. timeline        — how urgently is service needed
+//   3. outageAvailable — can the asset be de-energised + when
+//   4. budgeted        — approved budget vs needs a number for approval
+//   5. attachmentNotes — photos, IR scans, test reports (free text for now)
 //
 // Status lifecycle: requested â†’ quoted â†’ accepted | declined
 
@@ -2642,15 +2642,15 @@ model QuoteRequest {
   driver          QuoteDriver
   timeline        QuoteTimeline
   outageAvailable Boolean? // can the asset be de-energised for service?
-  outageWindow    String? // when â€” free text, e.g. "Saturdays after 10pm"
+  outageWindow    String? // when — free text, e.g. "Saturdays after 10pm"
   budgeted        Boolean? // has budget been approved?
   budgetNotes     String?
   attachmentNotes String? // photos, IR scans, test reports
   emergencyMode   Boolean            @default(false) // true when driver=down_now
-  // System-generated trigger type â€” null when submitted manually by the customer.
+  // System-generated trigger type — null when submitted manually by the customer.
   // Values: MODERNIZATION_EOL | ARC_FLASH_STUDY | QEMW_TRAINING
   triggerType     String?
-  // Full asset dossier snapshot at submission time â€” nameplate, age, open
+  // Full asset dossier snapshot at submission time — nameplate, age, open
   // deficiencies, overdue tasks, downstream topology. Stored so the rep
   // always sees the state of the asset when the request was submitted.
   dossierSnapshot Json?
@@ -2680,12 +2680,12 @@ model QuoteRequest {
   @@map("quote_requests")
 }
 
-// â”€â”€â”€ LOTO â€” Lockout / Tagout Procedures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── LOTO — Lockout / Tagout Procedures ──────────────────────────────────────
 //
 // OSHA 29 CFR 1910.147 requires a written, equipment-specific LOTO procedure
 // for every piece of equipment with more than one energy source or whose
 // complexity justifies a step-by-step record. This model stores the structured
-// procedure directly in the app â€” energy sources and isolation steps are first-
+// procedure directly in the app — energy sources and isolation steps are first-
 // class rows, not a PDF upload. This enables:
 //   - auditable version history (each revision creates a new LotoProc row)
 //   - inline display on the asset detail page without opening a PDF
@@ -2707,7 +2707,7 @@ model LotoProc {
   status       LotoStatus @default(draft)
   // Monotonically incrementing revision counter. Server increments on each PUT.
   version      Int        @default(1)
-  // Approval fields â€” the person who reviewed and activated this revision.
+  // Approval fields — the person who reviewed and activated this revision.
   // Nullable: draft procedures don't need approval; field teams can still read them.
   approvedById String?
   approvedAt   DateTime?
@@ -2732,7 +2732,7 @@ model LotoProc {
 
 // One row per energy source that must be isolated before work begins.
 // Ordering controlled by sortOrder (0-based). OSHA expects all energy sources
-// enumerated â€” the procedure is incomplete until every source is listed.
+// enumerated — the procedure is incomplete until every source is listed.
 model LotoEnergySource {
   id                 String     @id @default(uuid())
   lotoId             String
@@ -2744,7 +2744,7 @@ model LotoEnergySource {
   isolationPoint     String
   // How to isolate: e.g. "Open breaker 14 and apply LOTO hasp + personal lock"
   isolationMethod    String
-  // How to verify zero-energy state: e.g. "Test load terminals with fluke T6 â€” confirm 0V"
+  // How to verify zero-energy state: e.g. "Test load terminals with fluke T6 — confirm 0V"
   verificationMethod String
   sortOrder          Int        @default(0)
 
@@ -2780,11 +2780,11 @@ model LotoStep {
   @@map("loto_steps")
 }
 
-// â”€â”€â”€ Disaster Response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Disaster Response ────────────────────────────────────────────────────────
 // Tracks regional weather events detected via NWS / FEMA feeds AND customer
 // emergency declarations. Regional (system-detected) events have accountId=null
 // and represent events that affect sites across multiple tenant accounts.
-// Customer declarations have accountId set â€” the customer is asserting that
+// Customer declarations have accountId set — the customer is asserting that
 // they are in an emergency and need to jump the service queue.
 //
 // affectedSiteIds: for system events, all Site.ids whose state/region matches
@@ -2802,7 +2802,7 @@ model DisasterEvent {
   eventType       String
   // watch | warning | emergency
   severity        String
-  // Human-readable title â€” NWS event name or customer-provided summary.
+  // Human-readable title — NWS event name or customer-provided summary.
   title           String
   // Affected region description (NWS areaDesc or free-text from customer).
   region          String
@@ -2811,10 +2811,10 @@ model DisasterEvent {
   // Site.id values whose state is in affectedStates (system events) or
   // sites explicitly selected by the declaring customer.
   affectedSiteIds String[]
-  // NWS alert ID (@id field in NWS API response) â€” used for idempotent upsert
+  // NWS alert ID (@id field in NWS API response) — used for idempotent upsert
   // so the scanner never duplicates an in-progress alert across runs.
   nwsAlertId      String?
-  // userId of the customer who clicked "Declare Emergency" â€” null for system events.
+  // userId of the customer who clicked "Declare Emergency" — null for system events.
   declaredBy      String?
   // nws | fema | manual
   source          String    @default("system")
@@ -2898,7 +2898,7 @@ model AssetTemplateTask {
   @@map("asset_template_tasks")
 }
 
-// â”€â”€â”€ Service Rate Card (Task 24 â€” Fleet Modernization Forecast) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Service Rate Card (Task 24 — Fleet Modernization Forecast) ───────────────
 // Platform-level and account-level pricing benchmarks used to project CapEx
 // exposure on the fleet forecast. partnerOrgId=null + accountId=null = global
 // default visible to all. Account-level rows override the global default for
@@ -2908,7 +2908,7 @@ model AssetTemplateTask {
 //   ARC_FLASH_STUDY / SWITCHGEAR_MODERNIZATION / BREAKER_RETROFIT /
 //   TRANSFORMER_REPLACEMENT / RELAY_UPGRADE / INSPECTION / LOAD_STUDY / QEMW_TRAINING
 //
-// Read-only aggregation only â€” no pipeline/win-loss tracking (CRM territory).
+// Read-only aggregation only — no pipeline/win-loss tracking (CRM territory).
 model ServiceRateCard {
   id                String   @id @default(uuid())
   partnerOrgId      String? // null = platform default
@@ -2955,9 +2955,9 @@ model EnterpriseGroup {
   @@map("enterprise_groups")
 }
 
-// â”€â”€â”€ Partner Invites â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Partner Invites ──────────────────────────────────────────────────────────
 // Invitation tokens sent by a PartnerOrganization to link a customer Account.
-// Token is stored as SHA-256 hash â€” plaintext never persisted.
+// Token is stored as SHA-256 hash — plaintext never persisted.
 // Status: PENDING â†’ ACCEPTED (acceptedAt set) | REVOKED (revokedAt set).
 // Resending invalidates the prior token by overwriting tokenHash + expiresAt.
 
@@ -2972,7 +2972,7 @@ model PartnerInvite {
   expiresAt    DateTime
   acceptedAt   DateTime?
   revokedAt    DateTime?
-  accountId    String? // set on accept â€” FK to Account
+  accountId    String? // set on accept — FK to Account
   account      Account?            @relation(fields: [accountId], references: [id])
   createdAt    DateTime            @default(now())
 
@@ -2982,7 +2982,7 @@ model PartnerInvite {
   @@map("partner_invites")
 }
 
-// â”€â”€â”€ Partner Event Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Partner Event Log ────────────────────────────────────────────────────────
 // Append-only log of events fanned out from customer accounts to partner orgs.
 // Archived per customer Account.retentionTier by the nightly archival cron.
 // Soft-archive only: archived=true, never hard-deleted.
@@ -3270,7 +3270,7 @@ model TelemetryNotification {
   @@map("telemetry_notifications")
 }
 
-// â”€â”€â”€ Arc-flash Slice 2: ingest + gap-analysis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Arc-flash Slice 2: ingest + gap-analysis ────────────────────────────────
 // A one-line or study-report upload, extracted by the BYO-AI cascade into a
 // DRAFT system model + per-bus IEEE 1584 gap punch list. Reviewed-and-confirmed
 // before anything touches real assets. Account-scoped at the app layer (scalar
@@ -3635,7 +3635,7 @@ model ArcFlashIncident {
   @@map("arc_flash_incidents")
 }
 
-// â”€â”€ Parts / Spare Inventory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Parts / Spare Inventory ───────────────────────────────────────────────────
 // Part: catalog entry for a spare part or consumable tracked per account.
 // SpareInventory: links a Part to a specific Asset (or Site for site-level stock)
 // with quantity on hand, minimum stocking level, and bin/shelf location.
