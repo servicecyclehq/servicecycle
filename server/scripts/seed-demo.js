@@ -2727,4 +2727,14 @@ if (require.main === module) {
     });
 }
 
-module.exports = { resetAndSeedDemo, seedAccountForUser };
+// 2026-07-07 fallback-masks-capture fix: DEMO_ACCOUNT_ID was NOT exported,
+// so lib/demoPrune.ts's `const { DEMO_ACCOUNT_ID } = require('../scripts/seed-demo')`
+// destructured to `undefined` -- silently disabling BOTH (a) the hard guard
+// against ever pruning the legacy shared demo account, and (b) the
+// `id: { not: DEMO_ACCOUNT_ID }` exclusion filter in pruneInactiveDemoAccounts()'s
+// TTL/cap sweep (Prisma treats `not: undefined` as "no filter", i.e. the legacy
+// account was NEVER actually excluded from the hourly demoPrune cron). The
+// nightly demoReset cron re-seeds it a few hours later, which masked the
+// symptom, but the safety guard itself was dead code. See
+// __tests__/lib/demoPruneCrashPath.test.ts.
+module.exports = { resetAndSeedDemo, seedAccountForUser, DEMO_ACCOUNT_ID };
