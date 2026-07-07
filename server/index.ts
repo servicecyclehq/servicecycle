@@ -2063,9 +2063,14 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     console.log('[Cron] Webhook DLQ prune scheduled — runs daily at 03:40');
 
     // S4-FN-04 (v0.74.1): Document orphan prune -- weekly on Sunday at 05:00 UTC.
-    // Deletes Document rows whose contractId no longer exists in the Contract table
-    // (FK orphans from hard-deletes that bypassed ORM cascade). Uses runOnce so
-    // weekly failures are reported to healthchecks.io rather than swallowed silently.
+    // Deletes Document rows whose assetId/workOrderId no longer exists in the
+    // assets/work_orders tables (FK orphans from hard-deletes that bypassed ORM
+    // cascade -- see lib/documentOrphanPrune.ts). This comment previously said
+    // "contractId"/"Contract table"; neither exists on Document or as a Prisma
+    // model in this schema (2026-07-07 fix, same stale-model-name class as the
+    // restoreTest 'contract'/'vendor' bug found earlier this bug-hunt). Uses
+    // runOnce so weekly failures are reported to healthchecks.io rather than
+    // swallowed silently.
     cron.schedule('0 5 * * 0', () => runOnce('documentOrphanPrune', async () => {
       const result = await pruneDocumentOrphans();
       if (result.deleted > 0) {
@@ -2360,129 +2365,10 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // Auto-creates a QuoteRequest for each qualifying asset. Deduplicates
     // by skipping assets that already have an open (non-declined) quote.
     cron.schedule('30 2 * * *', () => runOnce('serviceOpportunityTrigger', async () => {
-      const ago30 = new Date(Date.now() - 30 * 86_400_000);
-      let created = 0, skipped = 0;
-
-      try {
-        // ── Find system user to act as requester (use first admin per account) ──
-        // We'll batch per account below to avoid a global scan.
-
-        // 1. IMMEDIATE deficiencies open 30+ days
-        const escalatedDefs = await prisma.deficiency.findMany({
-          where: {
-            severity: 'IMMEDIATE',
-            resolvedAt: null,
-            createdAt: { lte: ago30 },
-            asset: { archivedAt: null },
-          },
-          select: {
-            id: true, accountId: true, assetId: true, description: true,
-            asset: { select: { equipmentType: true, manufacturer: true, model: true } },
-          },
-          take: 500,
-        });
-
-        // 2. C3 condition assets (schedule conditionOverride = C3)
-        const c3Schedules = await prisma.maintenanceSchedule.findMany({
-          where: {
-            conditionOverride: 'C3',
-            isActive: true,
-            asset: { archivedAt: null },
-          },
-          select: {
-            accountId: true, assetId: true,
-            asset: { select: { equipmentType: true, manufacturer: true, model: true } },
-          },
-          take: 500,
-        });
-
-        // Build dedup set: assetId of assets already with open quotes
-        const allAssetIds = [
-          ...new Set([
-            ...escalatedDefs.map(d => d.assetId),
-            ...c3Schedules.map(s => s.assetId),
-          ]),
-        ];
-
-        const existingQuotes = await prisma.quoteRequest.findMany({
-          where: {
-            assetId: { in: allAssetIds },
-            status: { in: ['requested', 'quoted'] },
-          },
-          select: { assetId: true, accountId: true },
-        });
-        const quotedSet = new Set(existingQuotes.map(q => `${q.accountId}:${q.assetId}`));
-
-        // Build account → first admin user map for requestedById
-        const accountIds = [...new Set([
-          ...escalatedDefs.map(d => d.accountId),
-          ...c3Schedules.map(s => s.accountId),
-        ])];
-        const adminUsers = await prisma.user.findMany({
-          where: {
-            accountId: { in: accountIds },
-            role: { in: ['admin', 'manager'] },
-            isActive: true,
-          },
-          select: { id: true, accountId: true },
-        });
-        const adminMap = new Map<string, string>();
-        for (const u of adminUsers) {
-          if (!adminMap.has(u.accountId)) adminMap.set(u.accountId, u.id);
-        }
-
-        // Helper: create quote if not already quoted
-        const maybeCreate = async (accountId: string, assetId: string, opts: {
-          driver: string; notes: string;
-        }) => {
-          const key = `${accountId}:${assetId}`;
-          if (quotedSet.has(key)) { skipped++; return; }
-          const requestedById = adminMap.get(accountId);
-          if (!requestedById) { skipped++; return; }
-          quotedSet.add(key); // mark in-memory so dupes in same run don't double-create
-          await prisma.quoteRequest.create({
-            data: {
-              accountId,
-              assetId,
-              requestedById,
-              driver:   opts.driver as any,
-              timeline: 'within_30_days',
-              status:   'requested',
-              notes:    opts.notes,
-              emergencyMode: false,
-            },
-          });
-          created++;
-        };
-
-        // Process escalated deficiencies
-        for (const def of escalatedDefs) {
-          try {
-            await maybeCreate(def.accountId, def.assetId, {
-              driver: 'suspected_failing',
-              notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${def.asset ? `${def.asset.manufacturer || ''} ${def.asset.model || def.asset.equipmentType || 'Unknown Equipment'}`.trim() : def.assetId}.`,
-            });
-          } catch (itemErr) {
-            console.error('[serviceOpportunityTrigger] Failed to create quote request for asset', def.assetId, ':', (itemErr as Error).message);
-          }
-        }
-
-        // Process C3 condition assets
-        for (const sched of c3Schedules) {
-          try {
-            await maybeCreate(sched.accountId, sched.assetId, {
-              driver: 'failed_inspection',
-              notes:  `Auto-triggered: Asset "${sched.asset ? `${sched.asset.manufacturer || ''} ${sched.asset.model || sched.asset.equipmentType || 'Unknown Equipment'}`.trim() : sched.assetId}" in C3 (immediate service required) condition.`,
-            });
-          } catch (itemErr) {
-            console.error('[serviceOpportunityTrigger] Failed to create quote request for asset', sched.assetId, ':', (itemErr as Error).message);
-          }
-        }
-
-        console.log(`[Cron][serviceOpportunityTrigger] Done — created: ${created}, skipped: ${skipped}`);
-      } catch (e) {
-        console.error('[Cron][serviceOpportunityTrigger] Error:', (e as any).message);
-      }
+      // Extracted 2026-07-07 to lib/serviceOpportunityTrigger.ts for testability
+      // (real-DB regression test now covers this cron's own query shape).
+      const { runServiceOpportunityTrigger } = require('./lib/serviceOpportunityTrigger');
+      await runServiceOpportunityTrigger();
     }), { timezone: 'UTC' });
     console.log('[Cron] Service opportunity trigger scheduled — runs daily at 02:30 UTC');
 
