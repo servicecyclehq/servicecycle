@@ -424,6 +424,15 @@ model IngestJob {
   progress        Int             @default(0) // 0-100
   phase           String? // human-readable stage for the polling UI
   result          Json? // the preview payload (same shape as POST /preview data)
+  // [2026-07-07, overnight capture-gap fix] The full text pdfplumber/OCR read
+  // off the document -- separate from `result`, which only ever carries the
+  // post-collapse preview (parsed fields/measurements), never the source text
+  // itself. Populated once, at job completion, so a future pipeline fix can
+  // reprocess an already-uploaded document instead of requiring re-upload.
+  // Deliberately NOT included in the default `select` of the two polling
+  // routes (routes/ingestJobs.ts GET /jobs and GET /jobs/:id) -- it can be
+  // large and the polling UI never needs it, only a future reprocess script.
+  rawText         String? @db.Text
   error           String?
   attempts        Int             @default(0)
   // 2026-07-05 (§11 A2 Half 1 -- queue-side checkpoint plumbing only; the

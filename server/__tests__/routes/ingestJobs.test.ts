@@ -92,6 +92,28 @@ describe('#2 worker queue mechanics', () => {
     expect((done.result as any).source).toBe('fake');
   });
 
+  // 2026-07-07 (overnight capture-gap fix): the builder's rawText should land
+  // on the dedicated IngestJob.rawText column, NOT stay duplicated inside
+  // `result` (the polling payload) -- verifies both the write and the pop.
+  test('persists builder rawText onto IngestJob.rawText, stripped out of result', async () => {
+    const job = await makeJob();
+    const rawTextBuilder = async () => ({
+      measurements: [{ measurementType: 'ir', asFoundValue: 1 }],
+      assetSections: 1, source: 'fake', rawText: 'FULL REPORT TEXT — page 1 of 1',
+    });
+    await worker.processNextIngestJob(rawTextBuilder);
+    const done = await prisma.ingestJob.findUnique({ where: { id: job.id } });
+    expect(done.rawText).toBe('FULL REPORT TEXT — page 1 of 1');
+    expect((done.result as any).rawText).toBeUndefined();
+  });
+
+  test('rawText stays null when the builder does not provide one (pdfjs fallback path)', async () => {
+    const job = await makeJob();
+    await worker.processNextIngestJob(fakeBuilder); // no rawText key at all
+    const done = await prisma.ingestJob.findUnique({ where: { id: job.id } });
+    expect(done.rawText).toBeNull();
+  });
+
   test('claim is atomic: two claims return distinct jobs, third is null', async () => {
     await makeJob();
     await makeJob();

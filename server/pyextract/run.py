@@ -65,6 +65,13 @@ def main():
             # any) that stopped the sweep so pages_scanned/truncated has a reason.
             "resumed_from": r.get("resumed_from"),
             "page_error": r.get("page_error"),
+            # 2026-07-07 (overnight capture-gap fix): extract_fields() has
+            # returned full_text since it was written, but this CLI entrypoint
+            # never forwarded it -- same class of bug as report_result/
+            # ambient_temp_c above (2026-07-05). Forwarded so the ingest
+            # worker can persist it durably (IngestJob.rawText) instead of the
+            # source text vanishing once the preview is built.
+            "full_text": r.get("full_text"),
         }, default=str))
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e)}))

@@ -156,6 +156,15 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   let assetSections = 1, ocr = false;
   let pageCount: number | null = null, pagesScanned: number | null = null, truncated = false;
   let textPages: number | null = null;
+  // 2026-07-07 (overnight capture-gap fix): the raw text pdfplumber/OCR read
+  // off the document, so it can be persisted durably (IngestJob.rawText) even
+  // though `result` itself only ever carries the post-collapse preview. Null
+  // on the pdfjs-fallback path (source === 'pdfjs') -- that path never asked
+  // the Python extractor to run, so there is no full_text to capture; not a
+  // regression, just a narrower fallback path that was already narrower on
+  // every other extraction signal (page counts, ocr flag, etc.) for the same
+  // reason.
+  let rawText: string | null = null;
   // A2 Half 2: named page-error (if the sweep stopped on a bad page rather
   // than a budget/page-cap) surfaced for operator visibility, echoed through
   // to ingestWorker's pageProgress checkpoint.
@@ -172,6 +181,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     truncated = !!py.truncated;
     pageError = py.page_error ?? null;
     ocr = !!py.ocr;
+    rawText = (typeof py.full_text === 'string' && py.full_text.length) ? py.full_text : null;
     const f = py.fields || {};
     meta = {
       serialNumber: f.serialNumber || null, model: f.model || null,
@@ -321,7 +331,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   return {
     meta, assetMatch, assetCandidates, measurements, source, summary, assetSections, sections, ocr, aiUsed, aiAdded,
     visionUsed, visionAdded,
-    pageCount, pagesScanned, textPages, truncated, pageError, extractionId, photoOfPaper,
+    pageCount, pagesScanned, textPages, truncated, pageError, extractionId, photoOfPaper, rawText,
     priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
   };
 }

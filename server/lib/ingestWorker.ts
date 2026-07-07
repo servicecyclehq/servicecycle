@@ -108,6 +108,13 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
       resumeFrom: job.lastGoodPage ?? undefined,
     });
 
+    // 2026-07-07 (overnight capture-gap fix): pull rawText out of the preview
+    // object into its own variable BEFORE it's stored — it belongs in the new
+    // dedicated IngestJob.rawText column (see schema comment), not duplicated
+    // inside `result`, which is what the polling UI fetches on every request.
+    const extractedRawText: string | null = (result as any)?.rawText ?? null;
+    delete (result as any).rawText;
+
     // Confidence gate (email-in / backfill, i.e. hands-off autoCommit jobs).
     // High-confidence parses auto-commit; anything below the bar is parked as
     // needs_review so a human approves before any asset card is written.
@@ -130,7 +137,7 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
     if (job.autoCommit && gate && !gate.autoCommit) {
       await prisma.ingestJob.update({
         where: { id: job.id },
-        data: { status: 'needs_review', gate, progress: 100, phase: 'awaiting review', result, error: null, finishedAt: new Date() },
+        data: { status: 'needs_review', gate, progress: 100, phase: 'awaiting review', result, rawText: extractedRawText, error: null, finishedAt: new Date() },
       });
       await prisma.activityLog.create({
         data: {
@@ -203,7 +210,7 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
 
     await prisma.ingestJob.update({
       where: { id: job.id },
-      data:  { status: 'done', progress: 100, phase: 'ready', result, gate: gate || undefined, error: null, finishedAt: new Date(), ...checkpoint },
+      data:  { status: 'done', progress: 100, phase: 'ready', result, rawText: extractedRawText, gate: gate || undefined, error: null, finishedAt: new Date(), ...checkpoint },
     });
 
     // Best-effort completion breadcrumb (the "we'll notify you" hook). Never
