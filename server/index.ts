@@ -2276,12 +2276,20 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // Deletes render_errors rows older than 30 days. Client-side crash
     // reports are only actionable when recent — 30d covers any deploy window;
     // beyond that they're stale noise. Override: RENDER_ERROR_RETENTION_DAYS.
+    // 2026-07-07 fallback-masks-capture fix: filtered on `createdAt`, but
+    // RenderError has no such column (schema.prisma has `occurredAt`) --
+    // this cron threw PrismaClientValidationError UNCONDITIONALLY on every
+    // run since it was written, silently swallowed by the try/catch below.
+    // RenderError has NEVER actually been pruned; the table has grown
+    // unbounded since inception. Found by a new real-Postgres crash-path
+    // test (__tests__/lib/tier3PruneCronsCrashPath.test.ts), same bug class
+    // as the qemwAlerts/deficiencyAlerts crashes found earlier this session.
     cron.schedule('52 3 * * *', () => runOnce('renderErrorPrune', async () => {
       try {
         const retentionDays = parseInt(process.env.RENDER_ERROR_RETENTION_DAYS || '30', 10);
         const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
         const { count } = await prisma.renderError.deleteMany({
-          where: { createdAt: { lt: cutoff } },
+          where: { occurredAt: { lt: cutoff } },
         });
         if (count > 0) {
           console.log(`[Cron] RenderError prune: deleted ${count} rows older than ${retentionDays}d`);
