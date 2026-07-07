@@ -1,0 +1,131 @@
+# Probo (self-hosted GRC / SOC2 platform) — deploy prep only, NOT deployed.
+#
+# Adapted from Probo's official compose.prod.yaml
+# (https://raw.githubusercontent.com/getprobo/probo/main/compose.prod.yaml,
+# fetched 2026-07-07) with secrets/URLs pulled out to env vars via .env
+# (see generate-secrets.sh in this folder) instead of hardcoded defaults.
+#
+# Requires 4GB RAM / 20GB disk minimum (Probo's own stated floor) — verified
+# 2026-07-07 that neither the SharpEdge droplet (1GB RAM, ~94MB free, already
+# swapping) nor the ServiceCycle droplet (2GB RAM) has headroom for this.
+# Needs its own droplet before this ever runs for real (~$24/mo for a 4GB
+# box) — Dustin's explicit call 2026-07-07: prep only, no spend/deploy yet.
+#
+# To actually use this later: `cp .env.example .env`, run generate-secrets.sh,
+# fill in PROBOD_BASE_URL/SMTP_*, then `docker compose up -d` on a fresh
+# droplet with these two files present.
+
+services:
+  probo:
+    image: "ghcr.io/getprobo/probo:latest"
+    environment:
+      PROBOD_ENCRYPTION_KEY: ${PROBOD_ENCRYPTION_KEY}
+      AUTH_COOKIE_SECRET: ${AUTH_COOKIE_SECRET}
+      AUTH_PASSWORD_PEPPER: ${AUTH_PASSWORD_PEPPER}
+      TRUST_AUTH_TOKEN_SECRET: ${TRUST_AUTH_TOKEN_SECRET}
+
+      PROBOD_BASE_URL: ${PROBOD_BASE_URL}
+      API_ADDR: "0.0.0.0:8080"
+      API_CORS_ALLOWED_ORIGINS: ${PROBOD_BASE_URL}
+
+      PG_ADDR: "postgres:5432"
+      PG_USERNAME: "postgres"
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+      PG_DATABASE: "probod"
+      PG_POOL_SIZE: "50"
+
+      AWS_REGION: "us-east-1"
+      AWS_BUCKET: "probod"
+      AWS_ACCESS_KEY_ID: ${SEAWEEDFS_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${SEAWEEDFS_SECRET_KEY}
+      AWS_ENDPOINT: "http://seaweedfs:8333"
+      AWS_USE_PATH_STYLE: "true"
+
+      METRICS_ADDR: "probo:8081"
+      TRACING_ADDR: ""
+
+      SMTP_ADDR: ${SMTP_ADDR}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_TLS_REQUIRED: "true"
+      MAILER_SENDER_NAME: "ServiceCycle Compliance"
+      MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
+
+      CHROME_DP_ADDR: "chrome:9222"
+    # Bind to localhost only — put nginx/caddy + TLS in front, same pattern
+    # already used for the ServiceCycle droplet (127.0.0.1:PORT->container).
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - "probo-data:/data"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+      chrome:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    image: "postgres:17.4"
+    shm_size: "512m"
+    # Upstream default is shared_buffers=4GB, tuned for a dedicated box with
+    # RAM to spare. On a 4GB droplet running Probo's own containers alongside
+    # it, that alone would starve everything else — this leaves real headroom.
+    command: >
+      postgres -c "shared_buffers=512MB"
+               -c "max_connections=100"
+    volumes:
+      - "postgres-data:/var/lib/postgresql/data:rw"
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: "probod"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # Not exposed to the host — only probo needs it, reached over the
+    # compose network. Upstream's compose.prod.yaml publishes 5432 to the
+    # host; that's unnecessary attack surface for a single-app droplet.
+
+  seaweedfs:
+    image: "chrislusf/seaweedfs:4.13"
+    command: >
+      server
+      -s3
+      -s3.config=/etc/seaweedfs/s3.json
+      -s3.port=8333
+      -volume.max=50
+      -master.volumeSizeLimitMB=1024
+      -dir=/data
+    volumes:
+      - "./seaweedfs-s3-config.json:/etc/seaweedfs/s3.json:ro"
+      - "seaweedfs-data:/data:rw"
+    restart: unless-stopped
+    # Also not exposed to the host — probo reaches it over the compose
+    # network at seaweedfs:8333.
+
+  chrome:
+    image: "chromedp/headless-shell:140.0.7259.2"
+    command:
+      - "--headless"
+      - "--disable-gpu"
+      - "--disable-dev-shm-usage"
+      - "--hide-scrollbars"
+      - "--mute-audio"
+      - "--no-default-browser-check"
+      - "--no-first-run"
+      - "--disable-background-networking"
+      - "--disable-background-timer-throttling"
+      - "--disable-extensions"
+    restart: unless-stopped
+
+volumes:
+  probo-data:
+  postgres-data:
+  seaweedfs-data:
