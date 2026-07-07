@@ -89,6 +89,7 @@
 
 | Report | Date |
 |---|---|
+| [`SECURITY_REVIEW_2026-07-07.md`](SECURITY_REVIEW_2026-07-07.md) | Manual review of partner-webhook signing (621798e) + field_tech document annotations (e26354c) + overnight cron fixes — 0 Critical/High, 1 Low (dead 2-arg signPayload branch) |
 | [`SECURITY_AUDIT_2026-06-20.md`](SECURITY_AUDIT_2026-06-20.md) | Pre-demo security audit |
 | [`../security-audit-2026-06-09.md`](../security-audit-2026-06-09.md) | Earlier audit |
 | [`../DEPENDENCY_AUDIT_2026-06-18.md`](../DEPENDENCY_AUDIT_2026-06-18.md) | Dependency posture snapshot |
