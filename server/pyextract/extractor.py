@@ -919,8 +919,16 @@ def _pi_readings(text):
 # `_UNIT`), so it can never misfire on an unrelated "10MIN"-adjacent number —
 # the "1 MIN / 10 MIN" reading pair is an unambiguous NETA/IEEE-43 convention
 # once a megohm unit is already present.
+# 2026-07-07: added an optional `:?` right after "10 MIN" — report_013's
+# "1 MIN: 1.2 MOhm       10 MIN: 1.3" phrasing puts a colon between the "MIN"
+# label and its value (motor-test PowerDB forms label both the 1-min and
+# 10-min columns with a trailing colon, unlike report 005's bare "10MIN
+# 16300"); the old `\s*` right after MIN only skipped whitespace, so the
+# colon blocked the match and the 10-min reading was silently dropped
+# (partial_ocr tier stuck at 67% on this report). No other golden report's
+# 10-min phrasing uses a colon, so this is additive, not a replacement.
 _INLINE_DUAL_MIN_RE = re.compile(
-    r"(?:-?\d[\d,]*(?:\.\d+)?)\s*(" + _UNIT + r")\s*10\s?MIN\s*"
+    r"(?:-?\d[\d,]*(?:\.\d+)?)\s*(" + _UNIT + r")\s*10\s?MIN:?\s*"
     r"(-?\d[\d,]*(?:\.\d+)?)(?![A-Za-z0-9])",
     re.I,
 )

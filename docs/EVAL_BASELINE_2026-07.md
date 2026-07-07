@@ -4,6 +4,23 @@
 
 Generated against `neta_synthetic_test_reports.json`. Deterministic extractor only (no AI, no network). Reproducible.
 
+## 2026-07-07 update — report_013 gap closed, partial_ocr 95% → 100%
+
+Diagnosed the report_013 (partial_ocr, 67%) gap carried forward from the two
+2026-07-06 updates below. Its text — `1 MIN: 1.2 MOhm       10 MIN: 1.3` — is
+the same single-line "1 MIN / 10 MIN" IR pattern `_inline_dual_min_readings`
+(`_INLINE_DUAL_MIN_RE`) already handles for reports 005/012, except this
+motor-test PowerDB form puts a **colon** right after "10 MIN" before the
+value (`10 MIN: 1.3`), where 005's phrasing has none (`10MIN 16300`). The
+regex's `10\s?MIN\s*` only skipped whitespace after "MIN", so the colon
+blocked the match and the 10-minute reading was silently dropped every time.
+
+**Fix:** added an optional `:?` right after `10\s?MIN` in `_INLINE_DUAL_MIN_RE`
+(`server/pyextract/extractor.py`). Purely additive — no other golden report's
+10-min phrasing uses a colon there, confirmed via a full 20-report re-run
+before/after: **partial_ocr parser recall 95% → 100%** (report_013 now 3/3),
+clean (100%) and garbled_ocr (96%) both unchanged, zero regression.
+
 ## 2026-07-06 update, part 2 — garbled tier 45% → 96% (5 more fixes, all pure regex)
 
 Continuation of the same-day pass below, after Dustin said "keep going on all 4 gaps." Four more fixes, each gated by a full 20-report eval re-run before moving to the next:
