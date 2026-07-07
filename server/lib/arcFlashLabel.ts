@@ -109,6 +109,27 @@ export function labelSnapshot(row: any): any {
   };
 }
 
+// [F7, 2026-07-07] Per-value shock-boundary provenance, split out of
+// labelSnapshot() as its own pure helper -- labelSnapshot()'s shape is
+// deliberately kept === LABEL_FIELDS for clean printed-vs-current diffing
+// (see its own docstring), so it can't also carry the *Source flags without
+// changing what computeLabelMismatch() compares. Mirrors arcFlashLabelDoc.ts's
+// exact source logic (the printed PDF label already does this): a value
+// present on the row itself is 'study'; a value only present after the
+// Table 130.4 fallback is 'table130_4'; no value at all is null.
+export function shockApproachSources(row: any): { shockLimitedApproachSource: 'study' | 'table130_4' | null; shockRestrictedApproachSource: 'study' | 'table130_4' | null } {
+  if (!row) return { shockLimitedApproachSource: null, shockRestrictedApproachSource: null };
+  const t = shockApproachBoundaries(row.nominalVoltage);
+  const limitedStored = num(row.shockLimitedApproachIn);
+  const restrictedStored = num(row.shockRestrictedApproachIn);
+  const limited = limitedStored != null ? limitedStored : t.limitedIn;
+  const restricted = restrictedStored != null ? restrictedStored : t.restrictedIn;
+  return {
+    shockLimitedApproachSource: limited == null ? null : (limitedStored != null ? 'study' : 'table130_4'),
+    shockRestrictedApproachSource: restricted == null ? null : (restrictedStored != null ? 'study' : 'table130_4'),
+  };
+}
+
 function eq(a: any, b: any): boolean {
   if (a == null && b == null) return true;
   if (a == null || b == null) return false;

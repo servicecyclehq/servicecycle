@@ -14,7 +14,7 @@
 
 const router = require('express').Router();
 import prisma from '../lib/prisma';
-const { labelSnapshot, computeLabelMismatch } = require('../lib/arcFlashLabel');
+const { labelSnapshot, computeLabelMismatch, shockApproachSources } = require('../lib/arcFlashLabel');
 
 function currentRow(rows: any[]): any {
   return rows.slice().sort((a: any, b: any) => {
@@ -46,6 +46,16 @@ router.get('/:token', async (req: any, res: any) => {
     const label = labelSnapshot(current);
     const mismatch = computeLabelMismatch(anchor.printedSnapshot, current);
 
+    // [F7, 2026-07-07] labelSnapshot() deliberately omits the *Source flags
+    // (its shape is kept === LABEL_FIELDS for clean mismatch-diffing — see its
+    // own docstring) so this route never surfaced per-value provenance for
+    // shock boundaries, unlike the printed PDF label (arcFlashLabelDoc.ts),
+    // which already flags a table-derived value distinctly from a
+    // study-captured one. The portal only carried a blanket footnote — a
+    // worker couldn't tell WHICH specific number came from the study vs. the
+    // standard table.
+    const { shockLimitedApproachSource, shockRestrictedApproachSource } = shockApproachSources(current);
+
     // [LEGAL-8-11] A printed sticker that no longer matches the current study must
     // NOT read as a normal, valid live label — a worker scanning a stale QR could
     // otherwise trust an out-of-date incident energy / PPE. When the printed
@@ -69,7 +79,13 @@ router.get('/:token', async (req: any, res: any) => {
         busName: current?.busName || null,
         equipmentType: asset?.equipmentType || null,
         site: asset?.site?.name || null,
-        label,
+        // [F7] Additive keys alongside the existing `label` shape (not merged
+        // into labelSnapshot()'s own return -- see comment above). Not yet
+        // rendered by PublicArcFlashLabel.jsx (client/UI change, out of scope
+        // for this backend-only pass) -- available for a future UI pass to
+        // show per-value provenance the same way the printed PDF label does,
+        // instead of only the existing blanket footnote.
+        label: { ...label, shockLimitedApproachSource, shockRestrictedApproachSource },
         study: {
           performedDate: current?.study?.performedDate || null,
           expiresAt: current?.study?.expiresAt || null,

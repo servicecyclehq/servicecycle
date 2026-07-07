@@ -57,6 +57,39 @@ function normDeviceType(v: any): string | null {
   return null;
 }
 
+// [F6, 2026-07-07] The photo-extraction contract used to ask for trip
+// SETTINGS but never asked the model to classify the trip UNIT TYPE itself
+// (none|thermal_magnetic|electronic_lsi|electronic_lsig) -- so a photo of an
+// adjustable electronic LSIG breaker came back with tripUnitType un-set, and
+// arcFlashGap.ts's evalMusts() treats a bare "breaker" with no tripUnitType
+// as fixed-trip (satisfied by type+rating alone), silently skipping the
+// follow-up task to record its LSIG settings. A field tech reading the
+// device's own display/dial layout can usually tell adjustable from fixed at
+// a glance, so this is a askable, not a guessable, gap.
+const TRIP_UNIT_TYPES = new Set(['none', 'thermal_magnetic', 'electronic_lsi', 'electronic_lsig']);
+function normTripUnitType(v: any): string | null {
+  // NOTE: deliberately does not reuse cleanStr() -- "none" is a real,
+  // meaningful enum value here ("this breaker has no trip unit at all"), not
+  // a stand-in for "no data", which is what cleanStr's null-equivalent list
+  // treats it as.
+  if (v == null) return null;
+  const raw = String(v).trim();
+  if (!raw || /^(null|n\/a|na|-|unknown)$/i.test(raw)) return null;
+  const lower = raw.toLowerCase();          // for word-boundary regex checks (keeps spaces/punctuation)
+  const packed = lower.replace(/[\s-]+/g, '_'); // for the exact-enum lookup only
+  if (TRIP_UNIT_TYPES.has(packed)) return packed;
+  if (/\blsig\b/.test(lower)) return 'electronic_lsig';
+  // Word-boundary "lsi" (not "lsig") before the broader ground-fault check,
+  // so phrasing like "LSI (no ground fault)" classifies correctly -- a naive
+  // ground-fault substring match would misfire on the word "ground" even when
+  // explicitly negated.
+  if (/\blsi\b/.test(lower)) return 'electronic_lsi';
+  if (/ground.?fault/.test(lower)) return 'electronic_lsig';
+  if (/electronic|micrologic|digitrip|ekip|digital|adjustable/.test(lower)) return 'electronic_lsi';
+  if (/thermal|magnetic|fixed/.test(lower)) return 'thermal_magnetic';
+  return null;
+}
+
 /**
  * Map a durable ProtectiveDevice (or a collected draft) onto the bus device
  * fields the gap engine reads. sensorRatingA drives the curve; fall back to frame.
@@ -141,10 +174,11 @@ const PHOTO_CONTRACT = `Return STRICT JSON only (no prose, no markdown fences) m
   "partNumber": "string|null",
   "frameRatingA": number_or_null,
   "sensorRatingA": number_or_null,
+  "tripUnitType": "none|thermal_magnetic|electronic_lsi|electronic_lsig|null — for a BREAKER only: \"none\" if it has no trip unit at all (rare), \"thermal_magnetic\" if it's a simple fixed-trip breaker with no digital display or adjustment dials, \"electronic_lsi\" if it has an electronic trip unit / display with Long-time, Short-time, and Instantaneous adjustments but no visible Ground-fault setting, \"electronic_lsig\" if it also has a Ground-fault (G) setting. null if you cannot tell from the photo. Not applicable to a fuse, relay, or switch — leave null.",
   "settings": "object|null — for a breaker: {longTimePickup, longTimeDelay, shortTimePickup, shortTimeDelay, instantaneous, groundFault} reading dial positions / display values; for a fuse: {fuseClass, fuseRatingA}",
   "confidenceNote": "string|null (what was hard to read)"
 }
-Rules: read ONLY what is visible. Use null for anything you cannot read — NEVER guess a rating or a trip setting. Dial positions and displayed setpoints are values; transcribe them as shown.`;
+Rules: read ONLY what is visible. Use null for anything you cannot read — NEVER guess a rating, a trip unit type, or a trip setting. Dial positions and displayed setpoints are values; transcribe them as shown.`;
 
 const PHOTO_PROMPT =
   'This image shows an electrical protective device: a molded-case/insulated-case circuit breaker trip unit (possibly with rotary dials or an electronic display), a fuse, or a protective relay. Read the nameplate and any visible trip settings (dial positions, displayed setpoints). Extract the structured device record for arc-flash data collection. ' +
@@ -160,6 +194,7 @@ function normalizeDevice(parsed: any): any {
     partNumber: cleanStr(r.partNumber),
     frameRatingA: coerceNum(r.frameRatingA),
     sensorRatingA: coerceNum(r.sensorRatingA),
+    tripUnitType: normTripUnitType(r.tripUnitType),
     settings: s && Object.keys(s).length ? s : null,
     confidenceNote: cleanStr(r.confidenceNote),
   };

@@ -43,7 +43,7 @@ const { searchTcc, suggestFromDevice } = require('../lib/arcFlashTccLibrary');
 const { INCIDENT_TYPES, WORK_TYPES, normEnum: normIncidentEnum, buildStudyStateSnapshot, incidentOut, rollupIncidentsBySite } = require('../lib/arcFlashIncident');
 const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
-const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
+const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, mapEquipmentTypeResult, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
 const { normalizeKey: idemNormalizeKey, findStored: idemFindStored, store: idemStore } = require('../lib/apiIdempotency');
 const { listToolTemplates, getToolTemplate, applyTemplate: applyAfxToolTemplate, afxRecordsToTables, rowsFromCsv: afxRowsFromCsv } = require('../lib/afxToolTemplates');
 const normBusKey = (s: any) => String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '');
@@ -2408,6 +2408,14 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
         let applied = 0, created = 0, feedsWired = 0, devicesCreated = 0;
         let createdStudyId: string | null = null;
         const newAssetByKey = new Map<string, string>();
+        // [F4, 2026-07-07] mapEquipmentType() alone silently discards the
+        // `matched` flag mapEquipmentTypeResult() computes specifically to
+        // signal "this raw value didn't recognize as a known equipment type,
+        // SWITCHGEAR is a guess" -- the AI-extraction path (arcFlashExtract.ts)
+        // already surfaces this honestly as a warning; this bulk-import path
+        // was silently guessing instead. Collect unmatched (non-blank) raw
+        // values so the operator can review/correct them post-import.
+        const unmatchedEquipmentTypes: Array<{ busId: string; raw: string }> = [];
 
         for (const u of updates) { await tx.systemStudyAsset.updateMany({ where: { id: u.id, accountId }, data: u.set }); }
         applied = updates.length;
@@ -2429,8 +2437,12 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
             for (const busId of plan.createBuses) {
               const k = normBusKey(busId); const b = busByKey.get(k) || {}; const cable = cableByTo.get(k) || {};
               const voltStr = b.nominalVoltageV != null && b.nominalVoltageV !== '' ? `${b.nominalVoltageV}V` : undefined;
+              const eqResult = mapEquipmentTypeResult(b.equipmentType);
+              if (!eqResult.matched && b.equipmentType != null && String(b.equipmentType).trim() !== '') {
+                unmatchedEquipmentTypes.push({ busId, raw: String(b.equipmentType) });
+              }
               const asset = await tx.asset.create({
-                data: { accountId, siteId: createSiteId, equipmentType: mapEquipmentType(b.equipmentType) as any, nameplateData: { busName: busId, nominalVoltage: voltStr || null, importedFrom: 'afx_import' }, notes: `Created from AFX multi-table import (bus ${busId}).` },
+                data: { accountId, siteId: createSiteId, equipmentType: eqResult.type as any, nameplateData: { busName: busId, nominalVoltage: voltStr || null, importedFrom: 'afx_import' }, notes: `Created from AFX multi-table import (bus ${busId}).` },
                 select: { id: true },
               });
               await tx.systemStudyAsset.create({
@@ -2520,10 +2532,10 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
             }
           }
         }
-        return { applied, created, feedsWired, devicesCreated, createdStudyId };
+        return { applied, created, feedsWired, devicesCreated, createdStudyId, unmatchedEquipmentTypes };
       }, { timeout: 30000 });
 
-      const { applied, created, feedsWired, devicesCreated, createdStudyId } = out;
+      const { applied, created, feedsWired, devicesCreated, createdStudyId, unmatchedEquipmentTypes } = out;
       await logActivity(req.user.id, accountId, 'arc_flash_afx_import_applied', {
         busesUpdated: applied, fieldsSet: summary.fieldsSet, overwritten: summary.overwritten,
         busesCreated: created, feedsWired, devicesCreated, createdStudyId,
@@ -2532,12 +2544,18 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
         // [LEGAL-8-8] Per-bus old->new for every overwritten (previously non-blank)
         // field, so a bulk import that replaces PE-stamped data is reconstructable.
         overwrites: overwriteAudit.slice(0, 500),
+        // [F4] Buses whose raw equipment-type token didn't match a known enum
+        // value and silently defaulted to SWITCHGEAR -- previously untracked.
+        unmatchedEquipmentTypes,
       });
       const parts = [`updated ${applied} existing bus(es)`];
       if (created) parts.push(`created ${created} new`);
       if (devicesCreated) parts.push(`added ${devicesCreated} device(s)`);
-      const note = `Import applied: ${parts.join(', ')}. SC stores collected data and a licensed PE owns the arc-flash calculation. In fill-only mode existing values are preserved; in overwrite mode each replaced value is recorded to the audit log with its prior value.`;
-      const responseBody = { success: true, data: { applied, created, feedsWired, devicesCreated, createdStudyId, summary, note } };
+      let note = `Import applied: ${parts.join(', ')}. SC stores collected data and a licensed PE owns the arc-flash calculation. In fill-only mode existing values are preserved; in overwrite mode each replaced value is recorded to the audit log with its prior value.`;
+      if (unmatchedEquipmentTypes.length) {
+        note += ` ⚠️ ${unmatchedEquipmentTypes.length} new bus(es) had an unrecognized equipment-type value and defaulted to SWITCHGEAR -- review and correct: ${unmatchedEquipmentTypes.map((u: any) => `${u.busId} ("${u.raw}")`).slice(0, 10).join(', ')}${unmatchedEquipmentTypes.length > 10 ? ', ...' : ''}.`;
+      }
+      const responseBody = { success: true, data: { applied, created, feedsWired, devicesCreated, createdStudyId, summary, note, unmatchedEquipmentTypes } };
       idemStore(prisma, { accountId, key: ikey, method: req.method, path: req.path, statusCode: 200, body: responseBody });
       res.json(responseBody);
     } catch (e) {
