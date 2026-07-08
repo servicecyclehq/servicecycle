@@ -36,9 +36,19 @@ COPY prisma ./prisma
 # virtual package and dropped immediately to keep the image lean.
 RUN apk add --no-cache --virtual .build python3 make g++ \
  && npm ci \
+ && npm rebuild sharp esbuild @prisma/client @prisma/engines prisma --foreground-scripts \
  && npx prisma generate \
  && apk del .build \
  && npm cache clean --force
+# ^ .npmrc sets ignore-scripts=true repo-wide (2026-07-08 hardening) -- see
+# server/Dockerfile's fuller comment on the equivalent line for the full
+# audit of which packages' install/postinstall/preinstall scripts matter
+# for a production boot (sharp, esbuild, @prisma/client, @prisma/engines,
+# prisma) vs. which are safely dev-only (unrs-resolver, via jest, pruned
+# here anyway since this is a single npm ci with no --omit=dev split).
+# NOTE: this Dockerfile is not referenced by docker-compose.yml (which
+# builds server/Dockerfile + server/Dockerfile.migrate instead) -- kept
+# in sync for consistency/if it's ever revived, not part of the live path.
 
 # Application source (incl. schemas/*.js, data/, *.ts, tsconfig.json).
 COPY . .

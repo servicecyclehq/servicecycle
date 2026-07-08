@@ -20,7 +20,13 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache python3 make g++ openssl
 COPY package.json package-lock.json ./
-RUN npm ci
+# .npmrc sets ignore-scripts=true repo-wide (2026-07-08 hardening) -- this
+# image only runs `prisma migrate deploy`, so of the packages that need
+# their install/postinstall script to fetch a prebuilt native binary (see
+# server/Dockerfile's fuller comment on the same line), only the Prisma
+# trio actually matters here; sharp/esbuild are never touched by this image.
+RUN npm ci \
+ && npm rebuild @prisma/client @prisma/engines prisma --foreground-scripts
 COPY prisma ./prisma
 RUN npx prisma generate
 RUN npm prune --omit=dev

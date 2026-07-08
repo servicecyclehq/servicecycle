@@ -41,8 +41,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package.json package-lock.json ./
 # `npm ci` is reproducible and fails fast on lockfile drift. We keep dev deps
 # here so prisma generate has access to the prisma CLI without --include=dev
-# tricks downstream.
-RUN npm ci
+# tricks downstream. .npmrc sets ignore-scripts=true repo-wide (2026-07-08
+# AI-code-security hardening) so a compromised/malicious transitive dep can't
+# run arbitrary code at install time -- but that also skips the install/
+# postinstall/preinstall scripts of packages that legitimately need them to
+# fetch a platform-specific prebuilt native binary. Audited node_modules for
+# every package with such a script (server/.npmrc header has the full list,
+# 6 total): of those, sharp, esbuild (tsx's transform engine -- it's in
+# tsx's own dependencies, not devDependencies, so it survives the
+# `npm prune --omit=dev` below), @prisma/client, @prisma/engines, and prisma
+# (CLI) are all reachable from production dependencies and matter here;
+# unrs-resolver is jest-only (`npm ls unrs-resolver --omit=dev` -> empty)
+# and gets pruned away, so it's a local-dev-only concern, not a production
+# one. `npm rebuild <pkg>` explicitly re-runs a named package's lifecycle
+# scripts regardless of the ignore-scripts config (that config only
+# suppresses the *automatic* run during install/ci) -- this is the
+# documented pattern for exactly this ignore-scripts-plus-selective-exception
+# setup.
+RUN npm ci \
+ && npm rebuild sharp esbuild @prisma/client @prisma/engines prisma --foreground-scripts
 
 # Prisma needs the schema present to generate the client. Copy schema only â€”
 # the rest of the source comes in the runtime stage so this layer caches well.
