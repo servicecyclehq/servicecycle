@@ -15,9 +15,10 @@
 // itself.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../api/client';
 import { assetLabel, fmtDate } from '../lib/equipment';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 const NETA_CERT_LEVELS = ['LEVEL_I', 'LEVEL_II', 'LEVEL_III', 'LEVEL_IV'];
 const CERT_LABELS = {
@@ -45,6 +46,11 @@ export default function NewWorkOrderModal({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Audit 2026-07-08 (~9 of 16 dialogs missing useFocusTrap) — named as one
+  // of the two example dialogs in the audit.
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
 
   const label = { display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 };
 
@@ -110,6 +116,7 @@ export default function NewWorkOrderModal({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label="New work order"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{

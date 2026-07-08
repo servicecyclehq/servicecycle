@@ -33,20 +33,33 @@ const ADMIN_EMAIL    = process.env.E2E_ADMIN_EMAIL    || 'admin@demo.local';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'Admin1234!';
 
 // Keep this list in lockstep with smoke.spec.js. If you add a route to one,
-// add it to the other â€” the canonical audit and the canonical deploy gate
+// add it to the other — the canonical audit and the canonical deploy gate
 // should cover the same surface.
+//
+// Audit 2026-07-08 (docs/ACQUISITION_AUDIT_2026-07-08.md §1.6): this list
+// still walked the pre-rebrand contract-SaaS surface (/contracts, /vendors,
+// /budget) — 11 stale routes that now redirect or 404, so the a11y sweep
+// covered the wrong application. Rebuilt against the CURRENT route table in
+// client/src/App.jsx (kept to the same ~11-route scale as before, since this
+// spec screenshots + axe-scans every route in BOTH light and dark mode —
+// doubling the list doubles the run time. smoke.spec.js carries the fuller
+// route list for crash coverage; this one prioritizes breadth across page
+// *types* — list/detail/dialog-heavy/report/admin — over exhaustiveness).
 const PROTECTED_ROUTES = [
-  { path: '/dashboard',          title: 'Dashboard'         },
-  { path: '/contracts',          title: 'Contracts'         },
-  { path: '/contracts/archived', title: 'Archived'          },
-  { path: '/vendors',            title: 'Vendors'           },
-  { path: '/budget',             title: 'Budget'            },
-  { path: '/reports',            title: 'Reports'           },
-  { path: '/alerts',             title: 'Alerts'            },
-  { path: '/news',               title: 'News'              },
-  { path: '/activity',           title: 'Activity Log'      },
-  { path: '/settings',           title: 'Settings'          },
-  { path: '/profile',            title: 'Profile'           },
+  { path: '/dashboard',          title: 'Dashboard'          },
+  { path: '/assets',             title: 'Assets'             },
+  { path: '/assets/archived',    title: 'Archived'           },
+  { path: '/work-orders',        title: 'Work Orders'        },
+  { path: '/deficiencies',       title: 'Deficiencies'       },
+  { path: '/reports',            title: 'Reports'            },
+  { path: '/reports/arc-flash',  title: 'Arc Flash'          },
+  { path: '/review',             title: 'Review Queue'       },
+  { path: '/alerts',             title: 'Alerts'             },
+  { path: '/news',               title: 'News'               },
+  { path: '/activity',           title: 'Activity Log'       },
+  { path: '/settings',           title: 'Settings'           },
+  { path: '/profile',            title: 'Profile'            },
+  { path: '/field',              title: 'Field'              },
 ];
 
 const MODES = ['light', 'dark'];

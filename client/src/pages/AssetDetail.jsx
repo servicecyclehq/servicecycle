@@ -20,13 +20,14 @@
 //   • resolve deficiency     → POST /api/deficiencies/:id/resolve
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import TestingTrendsTab from '../components/TestingTrendsTab';
 import BackLink, { useFromState } from '../components/BackLink';
 import Toast from '../components/Toast';
@@ -187,8 +188,13 @@ function CompleteScheduleModal({ schedule, onClose, onConfirm, busy }) {
   // editable so a historical service can be recorded honestly). This is the
   // manual update path on the asset card; report ingest is the other path.
   const [completedDate, setCompletedDate] = useState(new Date().toISOString().slice(0, 10));
+  // Audit 2026-07-08 (~9 of 16 dialogs missing useFocusTrap): aria-modal
+  // without a real focus trap is worse than nothing.
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label="Mark task complete"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{
@@ -242,9 +248,36 @@ function CompleteScheduleModal({ schedule, onClose, onConfirm, busy }) {
   );
 }
 
-// ── Inline edit form ──────────────────────────────────────────────────────────
-function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
-  const [form, setForm] = useState({
+// ── Unsaved-changes guard shared by the edit form + the page shell below ─────
+// CUST-8-13-style draft persistence (see NewAsset.jsx) applied to the asset
+// edit form: mirror the in-progress edit into sessionStorage (scoped per
+// asset id so editing two different assets in the same tab never collides),
+// paired with a dirty-check + confirm() gate. Covers all three silent-discard
+// vectors the audit reproduced live: the in-form Cancel button / top "Close
+// editor" button, an in-app nav click (e.g. sidebar), and the browser back
+// button — plus a beforeunload handler for the tab-close/refresh case.
+// (audit 2026-07-08, AssetDetail.jsx:540,875)
+function assetEditDraftKey(assetId) {
+  return `sc_asset_edit_draft_v1_${assetId}`;
+}
+function clearAssetEditDraft(assetId) {
+  try { sessionStorage.removeItem(assetEditDraftKey(assetId)); } catch (_e) { /* ignore */ }
+}
+const DISCARD_CONFIRM_OPTS = {
+  title: 'Discard unsaved changes?',
+  message: 'You have unsaved edits on this asset. Leaving now will lose them unless you save first.',
+  confirmLabel: 'Discard changes',
+  cancelLabel: 'Keep editing',
+  danger: true,
+};
+
+// Builders for the edit form's initial state, factored out of the component
+// so the dirty-check below can compare live state against a *fresh* build
+// (from the current asset/fieldDefs) rather than a frozen mount-time
+// snapshot — otherwise late-arriving fieldDefs hydration would false-flag
+// as a user edit the moment it lands.
+function buildAssetForm(asset) {
+  return {
     equipmentType:        asset.equipmentType,
     ownerId:              asset.owner?.id || asset.ownerId || '',
     manufacturer:         asset.manufacturer || '',
@@ -264,23 +297,32 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
     spareLeadTimeWeeks:   asset.spareLeadTimeWeeks != null ? String(asset.spareLeadTimeWeeks) : '',
     redundancyStatus:     asset.redundancyStatus || '',
     requiresPredictiveMaintenance: !!asset.requiresPredictiveMaintenance,
-  });
-  const [nameplate, setNameplate] = useState(() => {
-    const entries = Object.entries(asset.nameplateData || {}).filter(([k]) => !k.startsWith('_'));
-    return entries.length > 0
-      ? entries.map(([key, value]) => ({ key, value: String(value ?? '') }))
-      : [{ key: '', value: '' }];
-  });
-  // Custom field values keyed by definitionId, seeded from the asset's
-  // stored customFieldValues. Only ACTIVE definitions are editable —
-  // archived ones stay read-only in the detail card and are never
-  // submitted (the server rejects writes against archived definitions).
-  const [customFields, setCustomFields] = useState(() => {
-    const stored = new Map((asset.customFieldValues || []).map(v => [v.definitionId, v.value]));
-    const map = {};
-    for (const def of fieldDefs) map[def.id] = stored.get(def.id) ?? '';
-    return map;
-  });
+  };
+}
+function buildAssetNameplate(asset) {
+  const entries = Object.entries(asset.nameplateData || {}).filter(([k]) => !k.startsWith('_'));
+  return entries.length > 0
+    ? entries.map(([key, value]) => ({ key, value: String(value ?? '') }))
+    : [{ key: '', value: '' }];
+}
+// Custom field values keyed by definitionId, seeded from the asset's stored
+// customFieldValues. Only ACTIVE definitions are editable — archived ones
+// stay read-only in the detail card and are never submitted (the server
+// rejects writes against archived definitions).
+function buildAssetCustomFields(asset, fieldDefs) {
+  const stored = new Map((asset.customFieldValues || []).map(v => [v.definitionId, v.value]));
+  const map = {};
+  for (const def of fieldDefs) map[def.id] = stored.get(def.id) ?? '';
+  return map;
+}
+
+// ── Inline edit form ──────────────────────────────────────────────────────────
+function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved, onDirtyChange }) {
+  const confirm = useConfirm();
+  const draftKey = assetEditDraftKey(asset.id);
+  const [form, setForm] = useState(() => buildAssetForm(asset));
+  const [nameplate, setNameplate] = useState(() => buildAssetNameplate(asset));
+  const [customFields, setCustomFields] = useState(() => buildAssetCustomFields(asset, fieldDefs));
   // If the definitions fetch resolves AFTER the form mounts, hydrate the
   // late arrivals from the asset's stored values — but never clobber a key
   // the user has already touched.
@@ -296,6 +338,69 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
   }, [fieldDefs, asset.customFieldValues]);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+
+  // Restore a saved in-progress edit once on mount (e.g. the tab was closed
+  // mid-edit — beforeunload only warns, it can't block a close), mirroring
+  // NewAsset.jsx's sessionStorage draft pattern.
+  const draftRestored = useRef(false);
+  useEffect(() => {
+    if (draftRestored.current) return;
+    draftRestored.current = true;
+    try {
+      const raw = sessionStorage.getItem(draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d && typeof d === 'object') {
+        if (d.form && typeof d.form === 'object') setForm(prev => ({ ...prev, ...d.form }));
+        if (Array.isArray(d.nameplate) && d.nameplate.length) setNameplate(d.nameplate);
+        if (d.customFields && typeof d.customFields === 'object') setCustomFields(prev => ({ ...prev, ...d.customFields }));
+      }
+    } catch (_e) { /* corrupt/blocked storage — ignore, start from the loaded asset */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the in-progress edit as it changes (after the initial restore
+  // pass so we never clobber a saved draft with the freshly-loaded state).
+  useEffect(() => {
+    if (!draftRestored.current) return;
+    try {
+      sessionStorage.setItem(draftKey, JSON.stringify({ form, nameplate, customFields }));
+    } catch (_e) { /* storage full/blocked — non-fatal, draft just won't persist */ }
+  }, [draftKey, form, nameplate, customFields]);
+
+  // Dirty check: compare live state to a FRESH build from asset/fieldDefs
+  // (not a frozen mount-time snapshot), so late-arriving fieldDefs hydration
+  // (the effect above) never false-flags as a user edit.
+  const isDirty =
+    JSON.stringify(form) !== JSON.stringify(buildAssetForm(asset)) ||
+    JSON.stringify(nameplate) !== JSON.stringify(buildAssetNameplate(asset)) ||
+    JSON.stringify(customFields) !== JSON.stringify(buildAssetCustomFields(asset, fieldDefs));
+
+  // Tell the parent shell whether it's safe to close/nav-away without
+  // confirming — the top "Close editor" button and the page-level nav/back
+  // guards live there since they're outside this component's DOM subtree.
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty]);
+
+  // beforeunload: the browser-close/refresh case. Nothing else can catch
+  // this — only the native dialog can, and browsers ignore custom message
+  // text (a fixed "Leave site?" prompt is all any browser shows today).
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  async function handleCancel() {
+    if (isDirty) {
+      if (!(await confirm(DISCARD_CONFIRM_OPTS))) return;
+      clearAssetEditDraft(asset.id);
+    }
+    onCancel();
+  }
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -335,6 +440,7 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
         // Whole map every save — empty strings clear, server upserts the rest.
         ...(fieldDefs.length > 0 ? { customFields } : {}),
       });
+      clearAssetEditDraft(asset.id);
       onSaved(res.data.data.asset);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to save changes.');
@@ -537,7 +643,7 @@ function EditAssetForm({ asset, fieldDefs, members, onCancel, onSaved }) {
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+            <button type="button" className="btn btn-secondary" onClick={handleCancel}>Cancel</button>
           </div>
         </form>
       </div>
@@ -566,6 +672,10 @@ export default function AssetDetail() {
   const [error, setError]     = useState('');
   const [toast, setToast]     = useState(null);
   const [editing, setEditing] = useState(false);
+  // Tracks whether EditAssetForm currently has unsaved changes (fed via its
+  // onDirtyChange prop) — drives the nav-away/back-button/beforeunload
+  // guards below and the top "Close editor" button's confirm gate.
+  const [editDirty, setEditDirty] = useState(false);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'testing'
   const [busy, setBusy]       = useState(false); // serializes row-level actions
   const [activity, setActivity] = useState([]);
@@ -632,6 +742,87 @@ export default function AssetDetail() {
   }, [fetchAsset, fetchActivity]);
 
   const refetchAll = () => { fetchAsset(); fetchActivity(); };
+
+  // ── Unsaved-changes guard (page-level vectors) ────────────────────────────
+  // Only armed while the edit form is open AND actually dirty (editDirty is
+  // fed up from EditAssetForm via onDirtyChange). These three effects cover
+  // the vectors the audit reproduced live: an in-app nav click (sidebar,
+  // breadcrumbs, etc.) and the browser back button; beforeunload covers the
+  // tab-close/refresh case. The in-form Cancel + top "Close editor" button
+  // are handled by their own onClick handlers (handleCancel / toggleEditor).
+  useEffect(() => {
+    if (!editing || !editDirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [editing, editDirty]);
+
+  // In-app nav-away: intercept plain left-clicks on same-origin <a href>
+  // links in the capture phase (fires before React Router's own click
+  // handler) and re-issue the navigation via `navigate()` only once the
+  // user confirms discarding.
+  useEffect(() => {
+    if (!editing || !editDirty) return;
+    const handleClick = (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = e.target?.closest?.('a[href]');
+      if (!anchor || (anchor.target && anchor.target !== '_self')) return;
+      let url;
+      try { url = new URL(anchor.href, window.location.origin); } catch { return; }
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      confirm(DISCARD_CONFIRM_OPTS).then((ok) => {
+        if (!ok) return;
+        clearAssetEditDraft(id);
+        setEditing(false);
+        setEditDirty(false);
+        navigate(url.pathname + url.search + url.hash);
+      });
+    };
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, [editing, editDirty, confirm, navigate, id]);
+
+  // Back button: this app uses plain <BrowserRouter> (not a data router), so
+  // there's no history-block API available (useBlocker/unstable_usePrompt
+  // require a data router). Standard workaround: push a same-URL sentinel
+  // entry while dirty and intercept the popstate it produces. Known minor
+  // limitation: if the user instead confirms discard via the in-app link
+  // guard above, the sentinel entry can be left orphaned one step back in
+  // history — harmless (same URL, no data loss), just an inert extra step.
+  useEffect(() => {
+    if (!editing || !editDirty) return;
+    window.history.pushState({ __scEditGuard: true }, '', window.location.href);
+    const handlePopState = () => {
+      confirm(DISCARD_CONFIRM_OPTS).then((ok) => {
+        if (ok) {
+          window.removeEventListener('popstate', handlePopState);
+          clearAssetEditDraft(id);
+          setEditing(false);
+          setEditDirty(false);
+          window.history.back();
+        } else {
+          window.history.pushState({ __scEditGuard: true }, '', window.location.href);
+        }
+      });
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (window.history.state?.__scEditGuard) window.history.back();
+    };
+  }, [editing, editDirty, confirm, id]);
+
+  async function toggleEditor() {
+    if (editing && editDirty) {
+      if (!(await confirm(DISCARD_CONFIRM_OPTS))) return;
+      clearAssetEditDraft(id);
+    }
+    setEditing(v => !v);
+    setEditDirty(false);
+  }
 
   // ── Actions ────────────────────────────────────────────────────────────────
   async function handleArchiveToggle() {
@@ -824,7 +1015,7 @@ export default function AssetDetail() {
         </div>
         {canWrite && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'flex-start' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setEditing(v => !v)}>
+            <button type="button" className="btn btn-secondary" onClick={toggleEditor}>
               {editing ? 'Close editor' : 'Edit'}
             </button>
             <button
@@ -872,9 +1063,11 @@ export default function AssetDetail() {
             asset={asset}
             fieldDefs={fieldDefs}
             members={members}
-            onCancel={() => setEditing(false)}
+            onDirtyChange={setEditDirty}
+            onCancel={() => { setEditing(false); setEditDirty(false); }}
             onSaved={() => {
               setEditing(false);
+              setEditDirty(false);
               setToast({ message: 'Asset updated.', variant: 'success', duration: 4000 });
               refetchAll();
             }}

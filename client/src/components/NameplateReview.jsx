@@ -14,6 +14,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import api from '../api/client';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -40,6 +41,11 @@ function Spinner({ size = 14, color = '#fff' }) {
 }
 
 export default function NameplateReview({ assetId, assetLabel, onClose, onSaved }) {
+  // Audit 2026-07-08 (NameplateReview.jsx:150-218): this is the phone-first
+  // camera-capture review flow — needed real dialog semantics (role/aria-modal
+  // + a real focus trap + Escape-to-close), not just the div soup it had.
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -148,9 +154,16 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
 
   return (
     <div style={ov} onClick={onClose}>
-      <div style={modal} onClick={e => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="nameplate-review-title"
+        style={modal}
+        onClick={e => e.stopPropagation()}
+      >
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--color-border)' }}>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>Scan nameplate</div>
+          <div id="nameplate-review-title" style={{ fontSize: 17, fontWeight: 700 }}>Scan nameplate</div>
           <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 2 }}>
             Saving to <strong style={{ color: 'var(--color-text)' }}>{assetLabel || 'this asset'}</strong>
           </div>
@@ -201,21 +214,39 @@ export default function NameplateReview({ assetId, assetLabel, onClose, onSaved 
               <div>
                 {FIELDS.map(([k, label]) => {
                   const c = effConf(k);
+                  const inputId = `nameplate-field-${k}`;
+                  const reasonId = `${inputId}-reason`;
                   // Domain-validator findings for this field (kva_equals_frequency,
-                  // kva_not_standard_size, etc.) show up as a native tooltip on
-                  // the confidence dot so the tech knows WHY it's red.
+                  // kva_not_standard_size, etc.) explain WHY it's flagged. Audit
+                  // 2026-07-08: this used to be a title= tooltip on a 10px dot,
+                  // which never fires on touch — this is a phone-first
+                  // camera-capture flow, so the reason now renders as visible
+                  // text under the field (title= kept too, as a bonus for mouse
+                  // users, but it's no longer the only channel).
                   const fieldReasons = (reasons && Array.isArray(reasons[k])) ? reasons[k] : [];
                   const dotTitle = fieldReasons.length ? fieldReasons.join('; ') : LABEL[c];
+                  // Below "AI confident" (high), always show what's wrong so a
+                  // color-only (dot) cue is never the sole signal.
+                  const flagText = c !== 'high' ? (fieldReasons.length ? fieldReasons.join('; ') : LABEL[c]) : null;
                   return (
-                    <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                      <span title={dotTitle} style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: 999, background: DOT[c], cursor: fieldReasons.length ? 'help' : 'default' }} />
-                      <label style={{ flex: '0 0 96px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</label>
-                      <input
-                        value={values[k] ?? ''} onChange={e => setField(k, e.target.value)}
-                        placeholder={c === 'low' ? 'not found — enter manually' : ''}
-                        style={{ flex: 1, padding: '7px 10px', borderRadius: 6, fontSize: 14,
-                          border: `1px solid ${c === 'low' ? 'var(--chip-red-fg)' : c === 'medium' ? 'var(--chip-amber-fg)' : 'var(--color-border)'}`,
-                          background: c === 'low' ? 'var(--chip-red-bg)' : 'var(--color-surface)' }} />
+                    <div key={k} style={{ marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span aria-hidden="true" title={dotTitle} style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: 999, background: DOT[c] }} />
+                        <label htmlFor={inputId} style={{ flex: '0 0 96px', fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</label>
+                        <input
+                          id={inputId}
+                          value={values[k] ?? ''} onChange={e => setField(k, e.target.value)}
+                          placeholder={c === 'low' ? 'not found — enter manually' : ''}
+                          aria-describedby={flagText ? reasonId : undefined}
+                          style={{ flex: 1, padding: '7px 10px', borderRadius: 6, fontSize: 14,
+                            border: `1px solid ${c === 'low' ? 'var(--chip-red-fg)' : c === 'medium' ? 'var(--chip-amber-fg)' : 'var(--color-border)'}`,
+                            background: c === 'low' ? 'var(--chip-red-bg)' : 'var(--color-surface)' }} />
+                      </div>
+                      {flagText && (
+                        <div id={reasonId} style={{ marginLeft: 20, marginTop: 3, fontSize: 11, lineHeight: 1.4, color: c === 'low' ? 'var(--chip-red-fg)' : 'var(--chip-amber-fg)' }}>
+                          {fieldReasons.length ? `Flagged: ${flagText}` : flagText}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -21,7 +21,7 @@
 // grant degrades gracefully.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ClipboardCheck, Plus, Download, ShieldCheck, Pencil, ChevronDown, ChevronRight,
 } from 'lucide-react';
@@ -29,6 +29,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { downloadAuthedFile } from '../api/download';
 import Toast from '../components/Toast';
 import EmptyState from '../components/EmptyState';
@@ -140,6 +141,10 @@ function AuditModal({ audit, sites, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Audit 2026-07-08 (~9 of 16 dialogs missing useFocusTrap).
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
+
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
   async function submit(e) {
@@ -168,6 +173,7 @@ function AuditModal({ audit, sites, onClose, onSaved }) {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label={editing ? 'Edit audit visit' : 'Record audit visit'}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{

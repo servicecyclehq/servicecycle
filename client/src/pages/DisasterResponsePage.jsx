@@ -13,11 +13,12 @@
 //      phone number (from Account.serviceRepPhone).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AlertTriangle, Phone, CheckCircle, Clock, Loader } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import Toast from '../components/Toast';
 
 // ── Severity badge ────────────────────────────────────────────────────────────
@@ -68,6 +69,10 @@ function DeclareModal({ sites, onClose, onDeclared }) {
     setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   }
 
+  // Audit 2026-07-08 (~9 of 16 dialogs missing useFocusTrap).
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim()) { setError('Please describe the emergency.'); return; }
@@ -88,6 +93,7 @@ function DeclareModal({ sites, onClose, onDeclared }) {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label="Declare Emergency"
       style={{
         position: 'fixed', inset: 0, zIndex: 500,

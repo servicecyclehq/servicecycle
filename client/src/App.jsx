@@ -238,8 +238,21 @@ function AppRoutes() {
 
   return (
     <>
-      {/* H5-5 (v0.76.8): offline banner — fixed bottom strip, dismissed automatically when back online */}
-      {!isOnline && (
+      {/* H5-5 (v0.76.8): offline banner — fixed bottom strip, dismissed
+          automatically when back online.
+          Audit 2026-07-08 (App.jsx:242-258 / OfflineBanner.jsx): this used
+          to render on EVERY route with a blanket "changes will sync when
+          you're back online" promise — true for Field Mode (fieldMutate()
+          queues writes to an IndexedDB outbox and replays them), false for
+          the desktop shell (writes there just fail while offline). Once a
+          user is authenticated, Layout.jsx (desktop) and FieldLayout.jsx
+          (field) each mount <OfflineBanner/>, which reports the REAL
+          outbox queue depth instead of a generic promise — so this strip is
+          now scoped to pre-auth/public routes only (login, landing, legal,
+          etc.), where there's no mutation queue to promise a sync for, and
+          worded accordingly. This also fixes the "two banners at once" bug:
+          the two banners are now mutually exclusive by auth state. */}
+      {!isOnline && !user && (
         <div
           role="status"
           aria-live="polite"
@@ -253,7 +266,7 @@ function AppRoutes() {
           }}
         >
           <span aria-hidden="true">📶</span>
-          No internet connection — changes will sync when you are back online.
+          No internet connection — some features may not be available until you're back online.
         </div>
       )}
 

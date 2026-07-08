@@ -6,7 +6,7 @@
 // (admin/manager) → POST /api/contractors. Row click → /contractors/:id.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, HardHat, BadgeCheck } from 'lucide-react';
 import api from '../api/client';
@@ -15,6 +15,7 @@ import EmptyState from '../components/EmptyState';
 import { useFromState } from '../components/BackLink';
 import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 function InHouseBadge() {
   return (
@@ -62,6 +63,10 @@ function AddContractorModal({ onClose, onCreated }) {
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const label = { display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 4 };
 
+  // Audit 2026-07-08 (~9 of 16 dialogs missing useFocusTrap).
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
+
   async function submit(e) {
     e.preventDefault();
     if (!form.name.trim()) { setError('Contractor name is required.'); return; }
@@ -77,6 +82,7 @@ function AddContractorModal({ onClose, onCreated }) {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label="Add contractor"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{

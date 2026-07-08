@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../api/client';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 /**
  * OpportunitiesPage — Revenue Intelligence (super_admin only).
@@ -303,13 +304,10 @@ export default function OpportunitiesPage() {
     setSelected(new Set());
   }
 
-  // Export modal: close on Escape (it also closes on backdrop click).
-  useEffect(() => {
-    if (!exportPrompt) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') setExportPrompt(null); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [exportPrompt]);
+  // Export modal Escape-to-close + focus trap now live in ExportPromptModal
+  // itself (via useFocusTrap) — see the component below. Audit 2026-07-08:
+  // this used to be a standalone Escape-only listener with no Tab-trap or
+  // focus restore, which is what useFocusTrap adds.
 
   function buildCsvRow(key) {
     const entry = rowByKey.get(key); if (!entry) return null;
@@ -500,23 +498,41 @@ export default function OpportunitiesPage() {
 
       {/* Export modal */}
       {exportPrompt && (
-        <div onClick={() => setExportPrompt(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="export-modal-title" onClick={(e) => e.stopPropagation()}
-            style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 480, width: '90%', border: '1px solid var(--color-border)' }}>
-            <h3 id="export-modal-title" style={{ margin: '0 0 10px', fontSize: 'var(--font-size-lg)', color: 'var(--color-text)' }}>Export without all values?</h3>
-            <p style={{ margin: '0 0 18px', fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
-              {exportPrompt.empty} of {exportPrompt.total} selected opportunities have no CRM dollar value entered.
-              Export with $0 for those rows, or go back to enter values?
-            </p>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button onClick={() => setExportPrompt(null)} style={btn('ghost')} autoFocus>Go Back</button>
-              <button onClick={() => finishExport(exportPrompt.rows, 'zero')} style={btn('outline')}>Export with $0</button>
-              <button onClick={() => finishExport(exportPrompt.rows, 'entered')} style={btn('solid')}>Export Entered Values Only</button>
-            </div>
-          </div>
-        </div>
+        <ExportPromptModal
+          prompt={exportPrompt}
+          onClose={() => setExportPrompt(null)}
+          onFinish={finishExport}
+        />
       )}
+    </div>
+  );
+}
+
+// ── Export confirmation modal ────────────────────────────────────────────────
+// Its own component (not inline conditional JSX) so useFocusTrap's
+// mount-effect fires fresh each time the prompt opens — OpportunitiesPage
+// itself never unmounts, so a hook called at its top level would only ever
+// run once and never re-arm on a later open. Audit 2026-07-08 (~9 of 16
+// dialogs missing useFocusTrap).
+function ExportPromptModal({ prompt, onClose, onFinish }) {
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="export-modal-title" onClick={(e) => e.stopPropagation()}
+        style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 480, width: '90%', border: '1px solid var(--color-border)' }}>
+        <h3 id="export-modal-title" style={{ margin: '0 0 10px', fontSize: 'var(--font-size-lg)', color: 'var(--color-text)' }}>Export without all values?</h3>
+        <p style={{ margin: '0 0 18px', fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)' }}>
+          {prompt.empty} of {prompt.total} selected opportunities have no CRM dollar value entered.
+          Export with $0 for those rows, or go back to enter values?
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button onClick={onClose} style={btn('ghost')} autoFocus>Go Back</button>
+          <button onClick={() => onFinish(prompt.rows, 'zero')} style={btn('outline')}>Export with $0</button>
+          <button onClick={() => onFinish(prompt.rows, 'entered')} style={btn('solid')}>Export Entered Values Only</button>
+        </div>
+      </div>
     </div>
   );
 }

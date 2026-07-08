@@ -28,6 +28,7 @@ import BackLink, { useFromState } from '../components/BackLink';
 import Pagination from '../components/Pagination';
 import NewWorkOrderModal from '../components/NewWorkOrderModal';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { SEVERITY_META, assetLabel, fmtDate } from '../lib/equipment';
 
 const SEVERITIES = ['IMMEDIATE', 'RECOMMENDED', 'ADVISORY'];
@@ -88,8 +89,12 @@ function SeverityChip({ severity }) {
 // narrative stays with the finding.
 function ResolveModal({ deficiency, onClose, onConfirm, busy }) {
   const [note, setNote] = useState('');
+  // Audit 2026-07-08 (~9 of 16 dialogs missing useFocusTrap).
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label="Resolve deficiency"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{
@@ -146,8 +151,12 @@ function BulkResolveModal({ count, requireNote, onClose, onConfirm, busy }) {
   const [note, setNote] = useState('');
   const noteTrimmed = note.trim();
   const noteTooShort = requireNote && noteTrimmed.length < 20;
+  // Audit 2026-07-08 (~9 of 16 dialogs missing useFocusTrap).
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose, autoFocus: true });
   return (
     <div
+      ref={dialogRef}
       role="dialog" aria-modal="true" aria-label="Resolve selected deficiencies"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{

@@ -30,6 +30,7 @@ import IncidentLogCard from '../../components/IncidentLogCard';
 import ProvenanceBadge from '../../components/ProvenanceBadge';
 import VoiceCaptureButton from '../../components/field/VoiceCaptureButton';
 import FailedSyncBanner from '../../components/field/FailedSyncBanner';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { DOWNLOAD_DISCLAIMER } from '../../lib/documentDisclaimer';
 import {
   EQUIPMENT_TYPE_LABELS, CONDITION_META, SEVERITY_META, WO_STATUS_META,
@@ -1349,83 +1350,105 @@ export default function FieldAsset() {
 
       {/* ── Bottom-sheet: complete task ────────────────────────────────────── */}
       {sheetSchedule && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Complete task"
-          style={{ position: 'fixed', inset: 0, zIndex: 200 }}
-        >
-          <div
-            onClick={() => !completing && setSheetSchedule(null)}
-            style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }}
-          />
-          <div style={{
-            position: 'absolute', left: 0, right: 0, bottom: 0,
-            background: 'var(--color-surface)', borderRadius: '18px 18px 0 0',
-            padding: '18px 16px calc(18px + env(safe-area-inset-bottom, 0px))',
-            maxWidth: 560, margin: '0 auto', boxSizing: 'border-box',
-            boxShadow: '0 -8px 30px rgba(0,0,0,0.3)',
-          }}>
-            <div aria-hidden="true" style={{
-              width: 44, height: 5, borderRadius: 999, background: 'var(--color-border)',
-              margin: '0 auto 14px',
-            }} />
-            <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--color-text)', lineHeight: 1.3 }}>
-              {sheetSchedule.taskDefinition?.taskName || 'Maintenance task'}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4, marginBottom: 14 }}>
-              Due {fmtDate(sheetSchedule.nextDueDate)}
-              {sheetSchedule.lastCompletedDate ? ` · last done ${fmtDate(sheetSchedule.lastCompletedDate)}` : ''}
-              {sheetSchedule.taskDefinition?.requiresOutage ? ' · ⚠ outage required' : ''}
-            </div>
-
-            <label htmlFor="field-performed-by" style={{
-              display: 'block', fontSize: 13, fontWeight: 700,
-              color: 'var(--color-text-secondary)', marginBottom: 6,
-            }}>
-              Performed by (optional)
-            </label>
-            <input
-              id="field-performed-by"
-              value={performedBy}
-              onChange={e => setPerformedBy(e.target.value)}
-              placeholder="name / employer"
-              disabled={completing}
-              style={{
-                boxSizing: 'border-box', width: '100%', minHeight: 52, padding: '0 14px',
-                fontSize: 16, color: 'var(--color-text)', background: 'var(--color-bg)',
-                border: '1px solid var(--color-border)', borderRadius: 12,
-                outline: 'none', marginBottom: 14,
-              }}
-            />
-
-            <button
-              type="button"
-              onClick={handleComplete}
-              disabled={completing}
-              style={{
-                ...fatBtn, minHeight: 60, border: 'none',
-                background: '#16a34a', color: '#fff', opacity: completing ? 0.7 : 1,
-              }}
-            >
-              {completing ? 'Saving…' : '✓ Mark complete'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSheetSchedule(null)}
-              disabled={completing}
-              style={{
-                ...fatBtn, marginTop: 10, background: 'transparent',
-                color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)',
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <CompleteTaskSheet
+          schedule={sheetSchedule}
+          completing={completing}
+          performedBy={performedBy}
+          onPerformedByChange={setPerformedBy}
+          onComplete={handleComplete}
+          onClose={() => setSheetSchedule(null)}
+        />
       )}
 
       <Toast toast={toast} onClose={() => setToast(null)} />
+    </div>
+  );
+}
+
+// ── Bottom-sheet: complete task ──────────────────────────────────────────────
+// Own component (not inline conditional JSX) so useFocusTrap's mount-effect
+// fires fresh each time the sheet opens — FieldAsset itself never unmounts,
+// so a hook called at its top level would only ever run once and never
+// re-arm on a later open. Audit 2026-07-08 (~9 of 16 dialogs missing
+// useFocusTrap).
+function CompleteTaskSheet({ schedule, completing, performedBy, onPerformedByChange, onComplete, onClose }) {
+  const dialogRef = useRef(null);
+  useFocusTrap(dialogRef, { onClose: () => { if (!completing) onClose(); }, autoFocus: true });
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Complete task"
+      style={{ position: 'fixed', inset: 0, zIndex: 200 }}
+    >
+      <div
+        onClick={() => !completing && onClose()}
+        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }}
+      />
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        background: 'var(--color-surface)', borderRadius: '18px 18px 0 0',
+        padding: '18px 16px calc(18px + env(safe-area-inset-bottom, 0px))',
+        maxWidth: 560, margin: '0 auto', boxSizing: 'border-box',
+        boxShadow: '0 -8px 30px rgba(0,0,0,0.3)',
+      }}>
+        <div aria-hidden="true" style={{
+          width: 44, height: 5, borderRadius: 999, background: 'var(--color-border)',
+          margin: '0 auto 14px',
+        }} />
+        <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--color-text)', lineHeight: 1.3 }}>
+          {schedule.taskDefinition?.taskName || 'Maintenance task'}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4, marginBottom: 14 }}>
+          Due {fmtDate(schedule.nextDueDate)}
+          {schedule.lastCompletedDate ? ` · last done ${fmtDate(schedule.lastCompletedDate)}` : ''}
+          {schedule.taskDefinition?.requiresOutage ? ' · ⚠ outage required' : ''}
+        </div>
+
+        <label htmlFor="field-performed-by" style={{
+          display: 'block', fontSize: 13, fontWeight: 700,
+          color: 'var(--color-text-secondary)', marginBottom: 6,
+        }}>
+          Performed by (optional)
+        </label>
+        <input
+          id="field-performed-by"
+          value={performedBy}
+          onChange={e => onPerformedByChange(e.target.value)}
+          placeholder="name / employer"
+          disabled={completing}
+          style={{
+            boxSizing: 'border-box', width: '100%', minHeight: 52, padding: '0 14px',
+            fontSize: 16, color: 'var(--color-text)', background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)', borderRadius: 12,
+            outline: 'none', marginBottom: 14,
+          }}
+        />
+
+        <button
+          type="button"
+          onClick={onComplete}
+          disabled={completing}
+          style={{
+            ...fatBtn, minHeight: 60, border: 'none',
+            background: '#16a34a', color: '#fff', opacity: completing ? 0.7 : 1,
+          }}
+        >
+          {completing ? 'Saving…' : '✓ Mark complete'}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={completing}
+          style={{
+            ...fatBtn, marginTop: 10, background: 'transparent',
+            color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

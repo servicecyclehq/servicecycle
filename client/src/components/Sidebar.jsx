@@ -16,7 +16,7 @@ import {
   LayoutGrid, Zap, Briefcase, Calendar, Bell, Users, Settings, PieChart,
   Archive, MapPin, ClipboardList, ClipboardCheck, AlertTriangle, Newspaper,
   Smartphone, QrCode, ShieldAlert, Layers, Bolt, UploadCloud, Package, FileText,
-  TrendingUp,
+  TrendingUp, Lock,
 } from 'lucide-react';
 import { downloadAuthedFile } from '../api/download';
 import Toast from './Toast';
@@ -51,6 +51,7 @@ const Icons = {
   fleetView:   <LayoutGrid    {...ICON_PROPS} />,
   parts:       <Package       {...ICON_PROPS} />,
   quotes:      <FileText      {...ICON_PROPS} />,
+  permissions: <Lock          {...ICON_PROPS} />,
 };
 
 function GlobalSearch() {
@@ -929,7 +930,12 @@ export default function Sidebar() {
         {(user?.role === 'admin' || user?.role === 'manager') && (
           <NavGroup id="admin" label={user?.role === 'admin' ? 'Admin' : 'Audit'} openState={openGroups} onToggle={toggleGroup}>
             {/* Activity Log is an audit/observability trail. Team Members and
-                Permissions live under Settings → Users & Roles. */}
+                Permissions ALSO live under Settings → Users & Roles, but audit
+                2026-07-08 (Sidebar.jsx) found /users and /permissions had NO
+                nav entry point at all — only reachable via the dismissable
+                onboarding wizard or by typing the URL. Both routes are
+                admin-only server-side (App.jsx RequireRole roles={['admin']}),
+                so the direct links below are gated the same way. */}
             <NavLink
               to="/activity"
               className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
@@ -939,6 +945,24 @@ export default function Sidebar() {
               </svg>
               Activity Log
             </NavLink>
+            {user?.role === 'admin' && (
+              <NavLink
+                to="/users"
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              >
+                {Icons.users}
+                Team Members
+              </NavLink>
+            )}
+            {user?.role === 'admin' && (
+              <NavLink
+                to="/permissions"
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              >
+                {Icons.permissions}
+                Permissions
+              </NavLink>
+            )}
             {/* Lead-form submissions inbox. Hidden on DEMO_MODE (every sandbox
                 user is auto-provisioned admin; would expose real leads). */}
             {user?.role === 'admin' && !demoMode && (
