@@ -1,0 +1,1135 @@
+openapi: 3.1.0
+
+info:
+  title: ServiceCycle Public API
+  version: 1.0.0
+  description: |
+    **ServiceCycle** is a data-layer platform for electrical-infrastructure maintenance programs.
+    This API exposes equipment records, work order history, arc-flash label data, and the
+    condition-monitoring telemetry surface for integration with CMMS, EAM, and OT systems.
+
+    **Base URL**: `https://<your-servicecycle-host>/api/v1`
+
+    ---
+
+    ## Authentication
+
+    Every endpoint requires an API key issued by a ServiceCycle admin under
+    **Settings → API Keys**. Pass it as a Bearer token:
+
+    ```
+    Authorization: Bearer sc_<your-key>
+    ```
+
+    Keys carry a **scope**: `read` (default) or `write`. Read endpoints accept either scope.
+    Write endpoints (marked 🔒) require `write` scope.
+
+    ---
+
+    ## Rate limits
+
+    60 requests per minute per API key. Responses include `RateLimit-Limit`,
+    `RateLimit-Remaining`, and `RateLimit-Reset` headers. Excess requests receive HTTP 429.
+
+    ---
+
+    ## Pagination
+
+    List endpoints support `?page=` (1-based, default 1) and `?limit=` (default 50, max 100
+    unless noted). All paginated responses include a `pagination` object:
+
+    ```json
+    { "page": 1, "limit": 50, "total": 312, "pages": 7 }
+    ```
+
+    ---
+
+    ## Idempotency (writes)
+
+    All write endpoints accept an optional `Idempotency-Key: <opaque-string>` header.
+    A retried request with the same key replays the original response without creating a
+    duplicate, and sets `Idempotent-Replay: true` in the response headers.
+
+    ---
+
+    ## Versioning
+
+    Every response carries `API-Version: 1`. Additive fields may be added to responses
+    within v1 without a version bump. Breaking changes are reserved for v2.
+
+servers:
+  - url: https://{host}/api/v1
+    variables:
+      host:
+        default: servicecycle.app
+        description: Your ServiceCycle instance hostname
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: >
+        API key issued in Settings → API Keys. Pass as `Authorization: Bearer <key>`.
+        Scope `read` is required for all reads; scope `write` is required for mutation endpoints.
+
+  schemas:
+    Pagination:
+      type: object
+      properties:
+        page:  { type: integer, example: 1 }
+        limit: { type: integer, example: 50 }
+        total: { type: integer, example: 312 }
+        pages: { type: integer, example: 7 }
+      required: [page, limit, total, pages]
+
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:   { type: string }
+      required: [success, error]
+
+    Asset:
+      type: object
+      description: A piece of electrical equipment (transformer, switchgear, relay, etc.).
+      properties:
+        id:                   { type: string, format: uuid }
+        equipmentType:        { type: string, example: TRANSFORMER_LIQUID_FILLED }
+        manufacturer:         { type: string, example: ABB }
+        model:                { type: string }
+        serialNumber:         { type: string }
+        installDate:          { type: string, format: date-time, nullable: true }
+        lastCommissionedDate: { type: string, format: date-time, nullable: true }
+        conditionPhysical:    { type: string, enum: [C1, C2, C3], nullable: true }
+        conditionCriticality: { type: string, enum: [C1, C2, C3], nullable: true }
+        conditionEnvironment: { type: string, enum: [C1, C2, C3], nullable: true }
+        governingCondition:
+          type: string
+          enum: [C1, C2, C3]
+          nullable: true
+          description: "Worst of the three condition axes (NFPA 70B)"
+        inService:  { type: boolean }
+        isEnergized: { type: boolean }
+        notes:      { type: string, nullable: true }
+        createdAt:  { type: string, format: date-time }
+        updatedAt:  { type: string, format: date-time }
+        site:
+          type: object
+          nullable: true
+          properties:
+            id:   { type: string, format: uuid }
+            name: { type: string }
+        position:
+          type: object
+          nullable: true
+          properties:
+            id:   { type: string, format: uuid }
+            name: { type: string }
+            code: { type: string }
+
+    AssetDetail:
+      allOf:
+        - $ref: '#/components/schemas/Asset'
+        - type: object
+          properties:
+            nameplateData:
+              type: object
+              nullable: true
+              description: "Raw nameplate fields from plate scan or manual entry"
+            building:
+              type: object
+              nullable: true
+              properties:
+                id:   { type: string, format: uuid }
+                name: { type: string }
+            area:
+              type: object
+              nullable: true
+              properties:
+                id:   { type: string, format: uuid }
+                name: { type: string }
+            schedules:
+              type: array
+              description: Active maintenance schedules with upcoming due dates
+              items:
+                type: object
+                properties:
+                  id:                { type: string, format: uuid }
+                  taskName:          { type: string }
+                  taskCode:          { type: string }
+                  standardRef:       { type: string }
+                  nextDueDate:       { type: string, format: date-time, nullable: true }
+                  lastCompletedDate: { type: string, format: date-time, nullable: true }
+                  intervalDays:      { type: integer, nullable: true }
+
+    WorkOrder:
+      type: object
+      properties:
+        id:               { type: string, format: uuid }
+        assetId:          { type: string, format: uuid }
+        scheduleId:       { type: string, format: uuid, nullable: true }
+        quoteRequestId:   { type: string, format: uuid, nullable: true }
+        status:           { type: string, enum: [SCHEDULED, IN_PROGRESS, COMPLETE, CANCELLED] }
+        scheduledDate:    { type: string, format: date-time, nullable: true }
+        startedAt:        { type: string, format: date-time, nullable: true }
+        completedDate:    { type: string, format: date-time, nullable: true }
+        asFoundCondition: { type: string, enum: [C1, C2, C3], nullable: true }
+        asLeftCondition:  { type: string, enum: [C1, C2, C3], nullable: true }
+        netaDecal:        { type: string, enum: [GREEN, YELLOW, RED], nullable: true }
+        isAcceptanceTest: { type: boolean }
+        notes:            { type: string, nullable: true }
+        createdAt:        { type: string, format: date-time }
+        updatedAt:        { type: string, format: date-time }
+        asset:
+          type: object
+          properties:
+            id:            { type: string, format: uuid }
+            equipmentType: { type: string }
+            manufacturer:  { type: string, nullable: true }
+            model:         { type: string, nullable: true }
+            serialNumber:  { type: string, nullable: true }
+            site:
+              type: object
+              nullable: true
+              properties:
+                id:   { type: string, format: uuid }
+                name: { type: string }
+
+    Deficiency:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        assetId:     { type: string, format: uuid }
+        workOrderId: { type: string, format: uuid, nullable: true }
+        severity:    { type: string, enum: [IMMEDIATE, RECOMMENDED, ADVISORY] }
+        description: { type: string }
+        correctiveAction: { type: string, nullable: true }
+        resolvedAt:  { type: string, format: date-time, nullable: true }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+        asset:
+          type: object
+          properties:
+            id:            { type: string, format: uuid }
+            equipmentType: { type: string }
+            manufacturer:  { type: string, nullable: true }
+            model:         { type: string, nullable: true }
+            serialNumber:  { type: string, nullable: true }
+            site:
+              type: object
+              nullable: true
+              properties:
+                id:   { type: string, format: uuid }
+                name: { type: string }
+
+    Contractor:
+      type: object
+      properties:
+        id:                { type: string, format: uuid }
+        name:              { type: string }
+        netaAccredited:    { type: boolean, description: "Whether contractor holds NETA accreditation" }
+        notes:             { type: string, nullable: true }
+        supportEmail:      { type: string, format: email, nullable: true }
+        supportPhone:      { type: string, nullable: true }
+        supportPortalUrl:  { type: string, format: uri, nullable: true }
+        portalUrl:         { type: string, format: uri, nullable: true }
+        scoreSupport:      { type: number, nullable: true, description: "Support quality score (0–10)" }
+        scoreSatisfaction: { type: number, nullable: true, description: "Customer satisfaction score (0–10)" }
+        createdAt:         { type: string, format: date-time }
+        updatedAt:         { type: string, format: date-time }
+
+    ArcFlashLabel:
+      type: object
+      description: Current NFPA 70E 130.5(H) label data for one bus/asset.
+      properties:
+        assetId:              { type: string, format: uuid }
+        busName:              { type: string, nullable: true }
+        equipmentType:        { type: string, nullable: true }
+        siteId:               { type: string, format: uuid, nullable: true }
+        site:                 { type: string, nullable: true }
+        nominalVoltage:       { type: string, nullable: true }
+        incidentEnergyCalCm2:
+          type: number
+          nullable: true
+          description: "Incident energy in cal/cm²"
+        arcFlashBoundaryIn:
+          type: number
+          nullable: true
+          description: "Arc-flash boundary in inches"
+        workingDistanceIn:   { type: number, nullable: true }
+        ppeCategory:
+          type: integer
+          nullable: true
+          description: "NFPA 70E PPE category 0–4"
+        requiredArcRatingCalCm2:  { type: number, nullable: true }
+        labelSeverity:       { type: string, enum: [danger, warning], nullable: true }
+        studyPerformedDate:  { type: string, format: date-time, nullable: true }
+        studyExpiresAt:      { type: string, format: date-time, nullable: true }
+        studyExpired:        { type: boolean, nullable: true }
+        disclaimer:
+          type: string
+          description: "NFPA data-layer disclaimer — display on any energized-work surface"
+
+    TelemetryChannel:
+      type: object
+      properties:
+        id:            { type: string, format: uuid }
+        assetId:       { type: string, format: uuid }
+        key:           { type: string, example: winding_temp }
+        label:         { type: string, nullable: true }
+        unit:          { type: string, nullable: true, example: C }
+        warnHigh:      { type: number, nullable: true }
+        critHigh:      { type: number, nullable: true }
+        warnLow:       { type: number, nullable: true }
+        critLow:       { type: number, nullable: true }
+        enabled:       { type: boolean }
+        lastValue:     { type: number, nullable: true }
+        lastStatus:    { type: string, enum: [OK, WARN, CRIT], nullable: true }
+        lastReadingAt: { type: string, format: date-time, nullable: true }
+        createdAt:     { type: string, format: date-time }
+        updatedAt:     { type: string, format: date-time }
+
+    TelemetryReading:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        assetId:    { type: string, format: uuid }
+        channelId:  { type: string, format: uuid }
+        value:      { type: number }
+        unit:       { type: string, nullable: true }
+        status:     { type: string, enum: [OK, WARN, CRIT] }
+        recordedAt: { type: string, format: date-time }
+        source:     { type: string, nullable: true }
+        externalId: { type: string, nullable: true }
+        createdAt:  { type: string, format: date-time }
+
+    TelemetryNotification:
+      type: object
+      properties:
+        id:             { type: string, format: uuid }
+        assetId:        { type: string, format: uuid }
+        channelId:      { type: string, format: uuid }
+        status:         { type: string, enum: [WARN, CRIT] }
+        value:          { type: number }
+        threshold:      { type: number }
+        thresholdKind:  { type: string, enum: [critHigh, critLow, warnHigh, warnLow] }
+        message:        { type: string }
+        acknowledgedAt: { type: string, format: date-time, nullable: true }
+        autoResolved:   { type: boolean }
+        createdAt:      { type: string, format: date-time }
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+
+  # ──────────────────────────────────────────────────────────────
+  # IDENTITY
+  # ──────────────────────────────────────────────────────────────
+
+  /me:
+    get:
+      operationId: getApiKeyIdentity
+      summary: Get API key identity
+      description: >
+        Returns the authenticated API key's metadata — key ID, name, scopes,
+        and the account it belongs to. Use this as a credential health check
+        or to confirm which account a key is scoped to before making resource
+        calls.
+      tags: [Identity]
+      security:
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Key identity and account metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    required: [keyId, keyName, scopes, accountId]
+                    properties:
+                      keyId:
+                        type: string
+                        format: uuid
+                        description: Unique identifier of this API key.
+                      keyName:
+                        type: string
+                        description: Human-readable label assigned when the key was created.
+                      scopes:
+                        type: array
+                        items:
+                          type: string
+                          enum: [read, write]
+                        description: Scopes granted to this key.
+                      accountId:
+                        type: string
+                        format: uuid
+                        description: Account this key is scoped to.
+                      companyName:
+                        type: string
+                        nullable: true
+                        description: Company name of the owning account.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────────────────────
+  # ASSETS
+  # ──────────────────────────────────────────────────────────────
+
+  /assets:
+    get:
+      summary: List assets
+      operationId: listAssets
+      tags: [Assets]
+      description: |
+        Returns a paginated list of assets (electrical equipment). Useful for seeding an
+        external CMMS or finding assets with upcoming maintenance due.
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+        - in: query
+          name: equipmentType
+          description: Filter by equipment type enum value (e.g. TRANSFORMER_LIQUID_FILLED)
+          schema: { type: string }
+        - in: query
+          name: siteId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: governingCondition
+          description: NFPA 70B governing condition (worst axis)
+          schema: { type: string, enum: [C1, C2, C3] }
+        - in: query
+          name: inService
+          schema: { type: string, enum: ['true', 'false'] }
+        - in: query
+          name: dueBefore
+          description: |
+            ISO 8601 date — returns assets with at least one active schedule due on or before
+            this date. Ideal for the nightly "what's coming due" CMMS pull.
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Asset' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '400':
+          description: Invalid query parameters
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '401': { description: Missing or invalid API key }
+
+  /assets/{id}:
+    get:
+      summary: Get asset
+      operationId: getAsset
+      tags: [Assets]
+      description: Returns a single asset with nameplate data, building/area hierarchy, and active maintenance schedules.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/AssetDetail' }
+        '400': { description: Invalid ID format }
+        '401': { description: Missing or invalid API key }
+        '404': { description: Asset not found }
+
+  # ──────────────────────────────────────────────────────────────
+  # CONTRACTORS
+  # ──────────────────────────────────────────────────────────────
+
+  /contractors:
+    get:
+      summary: List contractors
+      operationId: listContractors
+      tags: [Contractors]
+      description: Returns NETA-certified contractors and field technicians associated with this account.
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Contractor' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '401': { description: Missing or invalid API key }
+
+  /contractors/{id}:
+    get:
+      summary: Get contractor
+      operationId: getContractor
+      tags: [Contractors]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/Contractor' }
+        '401': { description: Missing or invalid API key }
+        '404': { description: Contractor not found }
+
+  # ──────────────────────────────────────────────────────────────
+  # WORK ORDERS
+  # ──────────────────────────────────────────────────────────────
+
+  /work-orders:
+    get:
+      summary: List work orders
+      operationId: listWorkOrders
+      tags: [Work Orders]
+      description: Returns a paginated list of work orders. Filter by status or asset.
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+        - in: query
+          name: status
+          schema: { type: string, enum: [SCHEDULED, IN_PROGRESS, COMPLETE, CANCELLED] }
+        - in: query
+          name: assetId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: completedAfter
+          description: ISO 8601 date — returns work orders completed on or after this date
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkOrder' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '400': { description: Invalid query parameters }
+        '401': { description: Missing or invalid API key }
+
+    post:
+      summary: "Create work order \U0001F512"
+      operationId: createWorkOrder
+      tags: [Work Orders]
+      description: |
+        Creates a work order for an asset. Requires the `write` scope.
+
+        **CMMS closed loop:** when `status: COMPLETE` and a `scheduleId` is supplied,
+        the originating NFPA 70B maintenance schedule is automatically rolled forward —
+        the `nextDueDate` advances and the compliance gap closes. This is the write-back
+        half of the CMMS integration (see `docs/api/INTEGRATIONS.md`).
+
+        Supports `Idempotency-Key` — safe to retry on network failure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId]
+              properties:
+                assetId:
+                  type: string
+                  format: uuid
+                scheduleId:
+                  type: string
+                  format: uuid
+                  description: When supplied with status=COMPLETE, rolls the schedule's nextDueDate forward
+                status:
+                  type: string
+                  enum: [SCHEDULED, COMPLETE]
+                  default: COMPLETE
+                completedDate: { type: string, format: date }
+                scheduledDate: { type: string, format: date }
+                asLeftCondition:
+                  type: string
+                  enum: [C1, C2, C3]
+                  description: NFPA 70B condition recorded after the work
+                netaDecal:
+                  type: string
+                  enum: [GREEN, YELLOW, RED]
+                notes: { type: string, maxLength: 5000 }
+      responses:
+        '201':
+          description: Work order created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/WorkOrder' }
+        '400': { description: Validation error }
+        '401': { description: Missing or invalid API key }
+        '403': { description: API key lacks write scope }
+        '404': { description: Asset or schedule not found }
+
+  /work-orders/{id}:
+    get:
+      summary: Get work order
+      operationId: getWorkOrder
+      tags: [Work Orders]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/WorkOrder' }
+        '401': { description: Missing or invalid API key }
+        '404': { description: Work order not found }
+
+  # ──────────────────────────────────────────────────────────────
+  # DEFICIENCIES
+  # ──────────────────────────────────────────────────────────────
+
+  /deficiencies:
+    get:
+      summary: List deficiencies
+      operationId: listDeficiencies
+      tags: [Deficiencies]
+      description: Returns asset deficiencies found during inspections. Filter by status to pull the open list for a CRM case queue.
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+        - in: query
+          name: status
+          schema: { type: string, enum: [open, resolved] }
+        - in: query
+          name: severity
+          schema: { type: string, enum: [IMMEDIATE, RECOMMENDED, ADVISORY] }
+        - in: query
+          name: assetId
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Deficiency' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '401': { description: Missing or invalid API key }
+
+  /deficiencies/{id}:
+    get:
+      summary: Get deficiency
+      operationId: getDeficiency
+      tags: [Deficiencies]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/Deficiency' }
+        '401': { description: Missing or invalid API key }
+        '404': { description: Deficiency not found }
+
+  # ──────────────────────────────────────────────────────────────
+  # ARC FLASH
+  # ──────────────────────────────────────────────────────────────
+
+  /arc-flash/labels:
+    get:
+      summary: List arc-flash labels
+      operationId: listArcFlashLabels
+      tags: [Arc Flash]
+      description: |
+        Returns the current NFPA 70E 130.5(H) arc-flash label for every bus in the account
+        (one row per bus, showing only the current non-superseded study). Filter by site or severity.
+
+        **Important:** ServiceCycle is a data-layer record-keeping tool. Arc-flash energy
+        calculations must be performed by a licensed Professional Engineer using IEEE 1584-compliant
+        software. These labels represent PE-stamped study data stored in ServiceCycle, not values
+        computed by this API.
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+        - in: query
+          name: siteId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: severity
+          schema: { type: string, enum: [danger, warning] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ArcFlashLabel' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '401': { description: Missing or invalid API key }
+
+  /arc-flash/one-line:
+    get:
+      summary: Get power-path graph for a site
+      operationId: getArcFlashOneLine
+      tags: [Arc Flash]
+      description: Returns the power-path topology for a site as an SVG string and a JSON node/edge graph.
+      parameters:
+        - in: query
+          name: siteId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      site:
+                        type: object
+                        properties:
+                          id:   { type: string, format: uuid }
+                          name: { type: string }
+                      svg:   { type: string, description: SVG markup }
+                      nodes: { type: array, items: { type: object } }
+                      edges: { type: array, items: { type: object } }
+        '400': { description: siteId is required }
+        '401': { description: Missing or invalid API key }
+
+  /arc-flash/work-order-precheck:
+    get:
+      summary: Check if a work order can be issued on energized equipment
+      operationId: arcFlashWorkOrderPrecheck
+      tags: [Arc Flash]
+      description: |
+        Returns whether a work order can be issued on an energized asset, based on the currency
+        of its arc-flash study. **Block the work order when `canIssue` is `false`** (study missing,
+        expired, or superseded). The response includes the label data needed to stamp an
+        energized-work permit.
+      parameters:
+        - in: query
+          name: assetId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:   { type: boolean }
+                  assetId:   { type: string, format: uuid }
+                  canIssue:  { type: boolean }
+                  reasons:
+                    type: array
+                    items: { type: string }
+                    description: "Reasons why the work order cannot be issued (empty when canIssue is true)"
+                  hazard:
+                    nullable: true
+                    allOf: [{ $ref: '#/components/schemas/ArcFlashLabel' }]
+                  study:
+                    type: object
+                    nullable: true
+                  disclaimer: { type: string }
+        '400': { description: assetId is required }
+        '401': { description: Missing or invalid API key }
+
+  /arc-flash/devices:
+    post:
+      summary: "Write verified protective-device settings back \U0001F512"
+      operationId: createArcFlashDevice
+      tags: [Arc Flash]
+      description: |
+        When a technician confirms a protective-device setting in the field or CMMS,
+        push it back to ServiceCycle as a durable device record (`source = import`),
+        keeping the arc-flash data layer in sync with the physical plant.
+        Requires the `write` scope. Supports `Idempotency-Key`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId, deviceType]
+              properties:
+                assetId:      { type: string, format: uuid }
+                deviceType:   { type: string, description: "Protective device type (e.g. BREAKER_LV, FUSE_HV)" }
+                manufacturer: { type: string }
+                model:        { type: string }
+                tripSetting:  { type: string }
+                notes:        { type: string }
+      responses:
+        '201':
+          description: Device record created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:    { type: object }
+        '400': { description: Validation error }
+        '401': { description: Missing or invalid API key }
+        '403': { description: API key lacks write scope }
+        '404': { description: Asset not found }
+
+  # ──────────────────────────────────────────────────────────────
+  # TELEMETRY (condition monitoring)
+  # ──────────────────────────────────────────────────────────────
+
+  /telemetry/channels:
+    get:
+      summary: List telemetry channels
+      operationId: listTelemetryChannels
+      tags: [Telemetry]
+      description: Returns all configured condition-monitoring channels with their current status and last reading.
+      parameters:
+        - in: query
+          name: assetId
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TelemetryChannel' }
+        '401': { description: Missing or invalid API key }
+
+    post:
+      summary: "Create or update a telemetry channel \U0001F512"
+      operationId: upsertTelemetryChannel
+      tags: [Telemetry]
+      description: |
+        Creates or updates a condition-monitoring channel by `(assetId, key)`. Configure warn/critical
+        thresholds in HIGH/LOW pairs to cover "higher is worse" signals (temperature, vibration,
+        partial discharge) and "lower is worse" signals (insulation resistance, oil level).
+        Send `null` for a threshold field to clear it. Channels are auto-created on first reading
+        with no thresholds. Requires the `write` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId, key]
+              properties:
+                assetId:  { type: string, format: uuid }
+                key:
+                  type: string
+                  pattern: '^[A-Za-z0-9_.:-]{1,120}$'
+                  example: winding_temp
+                label:    { type: string, maxLength: 160 }
+                unit:     { type: string, maxLength: 40, example: C }
+                warnHigh: { type: number, nullable: true }
+                critHigh: { type: number, nullable: true }
+                warnLow:  { type: number, nullable: true }
+                critLow:  { type: number, nullable: true }
+                enabled:  { type: boolean }
+      responses:
+        '201':
+          description: Channel created or updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/TelemetryChannel' }
+        '400': { description: Validation error }
+        '401': { description: Missing or invalid API key }
+        '403': { description: API key lacks write scope }
+        '404': { description: Asset not found }
+
+  /telemetry/readings:
+    get:
+      summary: List telemetry readings
+      operationId: listTelemetryReadings
+      tags: [Telemetry]
+      description: Returns historical readings, newest first. Max 500 per page.
+      parameters:
+        - in: query
+          name: assetId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: channel
+          description: Channel key (e.g. winding_temp)
+          schema: { type: string }
+        - in: query
+          name: since
+          description: ISO 8601 date — return readings on or after this timestamp
+          schema: { type: string, format: date-time }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 100, maximum: 500 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TelemetryReading' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '400': { description: Invalid query parameters }
+        '401': { description: Missing or invalid API key }
+
+    post:
+      summary: "Ingest readings (batch) \U0001F512"
+      operationId: ingestTelemetryReadings
+      tags: [Telemetry]
+      description: |
+        Ingests up to 1000 readings per request. Channels are auto-created on first read if not
+        pre-configured. Each reading is graded against channel thresholds:
+
+        - **WARN**: creates an in-app alert if none is already open.
+        - **CRIT**: opens an alert AND automatically escalates the asset to **NFPA 70B Condition 2**
+          until the notification is acknowledged or the value recovers. A CRIT breach
+          also triggers an auto-generated quote request if configured.
+
+        The typical edge gateway path:
+        ```
+        PLCs / sensors --> Edge gateway (HiveMQ Edge, Ignition, Node-RED)
+                               --> POST /api/v1/telemetry/readings --> ServiceCycle
+        ```
+
+        Supports `Idempotency-Key`. Use `externalId` per reading for gateway-level dedup.
+        Requires the `write` scope. Full reference: `docs/api/TELEMETRY.md`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [readings]
+              properties:
+                readings:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required: [assetId, channel, value]
+                    properties:
+                      assetId:    { type: string, format: uuid }
+                      channel:    { type: string, example: winding_temp }
+                      value:      { type: number }
+                      unit:       { type: string }
+                      recordedAt:
+                        type: string
+                        format: date-time
+                        description: "Defaults to server time if omitted"
+                      source:     { type: string, maxLength: 120, example: edge-gateway-01 }
+                      externalId:
+                        type: string
+                        maxLength: 200
+                        description: "Gateway-side dedup ID — idempotent across retries"
+      responses:
+        '201':
+          description: Readings ingested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      accepted:   { type: integer }
+                      breaches:   { type: integer, description: "Readings that opened a new WARN/CRIT notification" }
+                      duplicates: { type: integer }
+                      total:      { type: integer }
+                      results:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            assetId:            { type: string, format: uuid }
+                            channel:            { type: string }
+                            accepted:           { type: boolean }
+                            status:             { type: string, enum: [OK, WARN, CRIT] }
+                            duplicate:          { type: boolean }
+                            notificationOpened: { type: boolean }
+                            governingCondition: { type: string, enum: [C1, C2, C3], nullable: true }
+                            error:
+                              type: string
+                              description: "Present only when accepted=false"
+        '400': { description: Validation error }
+        '401': { description: Missing or invalid API key }
+        '403': { description: API key lacks write scope }
+
+  /telemetry/notifications:
+    get:
+      summary: List telemetry notifications
+      operationId: listTelemetryNotifications
+      tags: [Telemetry]
+      description: Returns breach notifications. Defaults to `status=open` (unacknowledged only).
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [open, all], default: open }
+        - in: query
+          name: assetId
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TelemetryNotification' }
+                  count: { type: integer }
+        '401': { description: Missing or invalid API key }
+
+  /telemetry/notifications/{id}/acknowledge:
+    post:
+      summary: "Acknowledge a telemetry notification \U0001F512"
+      operationId: acknowledgeTelemetryNotification
+      tags: [Telemetry]
+      description: |
+        Marks a WARN/CRIT notification as acknowledged. If all open CRIT notifications for the
+        asset are acknowledged and the value has recovered, the asset's auto-C2 flag clears and
+        the governing condition is recomputed. Requires the `write` scope.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Notification acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/TelemetryNotification' }
+        '401': { description: Missing or invalid API key }
+        '403': { description: API key lacks write scope }
+        '404': { description: Notification not found }
+
+tags:
+  - name: Identity
+    description: Credential health check — verify your API key and inspect its scopes
+  - name: Assets
+    description: Electrical equipment records — 25 equipment types, NFPA 70B condition ratings
+  - name: Contractors
+    description: NETA-certified contractors and field technicians with QEMW credential tracking
+  - name: Work Orders
+    description: Maintenance work orders with bi-directional CMMS integration
+  - name: Deficiencies
+    description: Deficiencies found during inspections (IMMEDIATE / RECOMMENDED / ADVISORY)
+  - name: Arc Flash
+    description: IEEE 1584 study data, NFPA 70E 130.5(H) labels, and energized-work precheck
+  - name: Telemetry
+    description: Continuous condition monitoring — ingest readings from edge gateways, configure thresholds, read breach notifications

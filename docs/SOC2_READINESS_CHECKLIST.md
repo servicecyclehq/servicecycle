@@ -224,7 +224,7 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 | A1 | RBAC with least privilege | 🟢 | 8 roles in `server/middleware/roles.ts`; `requireManager` on all writes; tested |
 | A2 | Auth: bcrypt + JWT ≥32 chars + weak-default block | 🟢 | `server/index.ts` startup validation; `server/routes/auth.ts` |
 | A3 | MFA/TOTP with admin enforcement | 🟢 | `server/lib/totp.ts`; `mfaRequiredForAdmins` flag |
-| A4 | SSO / SAML + SCIM | 🟢 | Ory Polis in `server/routes/sso.ts`; dark-by-default |
+| A4 | SSO / SAML + SCIM-brokered directory sync | 🟢 | Ory Polis in `server/routes/sso.ts`; dark-by-default. "SCIM" here is Polis's SCIM implementation pushing directory-change events to ServiceCycle's inbound webhook consumer (`server/routes/ssoScim.ts`) — not a standard SCIM v2 resource-server API exposed by ServiceCycle itself |
 | A5 | Instant token revocation on password change | 🟢 | `tokenEpoch` monotonic counter |
 | A6 | **Authentication matrix** — every route × auth requirement | 🟢 | Implicit in `server/middleware/auth.ts` + roles; formalized in `SOC2_CONTROLS.md` CC6.1 |
 | A7 | **Permissions matrix** — feature × role table | 🟢 | `docs/security/PERMISSIONS_MATRIX.md` (this session) |

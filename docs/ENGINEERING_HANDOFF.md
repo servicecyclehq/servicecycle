@@ -53,7 +53,7 @@ The chain is per-account. If you're doing a data migration that touches Activity
 
 ### High priority
 
-**Single VPS.** Everything runs on one DigitalOcean droplet. The nightly Postgres backup (`pg_dump`) goes to S3, and a restore test runs weekly. RTO ~2h, RPO ~24h. This is fine for demo/early production, but the first infrastructure investment should be DigitalOcean Managed Postgres (removes DB from the single-failure-domain) + a second compute node (removes app from it). The `docker-compose.yml` is already written to support pointing `DATABASE_URL` at an external host — it's a one-line change.
+**Single VPS.** Everything runs on one DigitalOcean droplet. The nightly Postgres backup (`pg_dump`) goes to S3. Two restore-test crons run, both in `server/lib/restoreTest.ts`: a weekly table-of-contents integrity check (`runRestoreTest`, Sundays 04:00 UTC — decrypts, gunzips, and runs `pg_restore --list` against the latest backup) and a monthly deep restore (`runDeepRestoreTest`, 1st of month 05:00 UTC — restores into a sidecar Postgres and diffs row counts). RTO ~2h, RPO ~24h. This is fine for demo/early production, but the first infrastructure investment should be DigitalOcean Managed Postgres (removes DB from the single-failure-domain) + a second compute node (removes app from it). The `docker-compose.yml` is already written to support pointing `DATABASE_URL` at an external host — it's a one-line change.
 
 **AssetDetail.jsx is 1423 lines.** It is the longest file in the client and the most likely to cause merge conflicts and truncation bugs if edited carelessly. Use Python-splice (`python3 -c "..."`) rather than the Edit tool for surgical line replacements in this file. The pattern is documented in `memory/feedback_file_writes.md` for future reference.
 
@@ -63,7 +63,7 @@ The chain is per-account. If you're doing a data migration that touches Activity
 
 ### Medium priority
 
-**Data retention.** There is no scheduled prune job. ActivityLog, TelemetryReading, and DigestLog will grow unboundedly. The data model has soft-delete patterns in places but no time-based expiry. Decide retention windows (suggested: ActivityLog 2y, TelemetryReading 1y, DigestLog 6mo) and add a nightly `DELETE WHERE createdAt < now() - interval` job.
+**Data retention is enforced by cron, not missing.** `server/index.ts` registers 11 daily-or-weekly prune jobs plus an hourly demo-only prune — e.g. `activityLogPrune` (365d, daily 03:00 UTC), `notificationLogPrune` (180d, daily 03:05 UTC), `backupLogPrune` (180d, daily 03:15 UTC), `refreshTokenPrune` (30d, daily 03:20 UTC), `webhookDlqPrune` (30d, daily 03:40 UTC), `telemetryReadingPrune` (365d, daily 03:50 UTC), `extractionEventPrune` (180d, daily 03:51 UTC), `renderErrorPrune` (30d, daily 03:52 UTC), `prune-ai-usage` (90d, daily 03:55 UTC), `earlyAccessPrune` (36mo, daily 03:35 UTC), and `documentOrphanPrune` (weekly, Sunday 05:00 UTC). Full windows are tracked in `docs/compliance/DATA_RETENTION_MATRIX.md`. One real open item: `ActivityLog`'s hash-chain verifier (`lib/activityLogChain.ts`) expects an unbroken chain starting at `prevHash: null`; the 365-day prune will produce a false tamper-alert on accounts whose chain start falls outside the retention window starting ~2027-06 unless a retention-aware verifier ships first — tracked as accepted risk RAR-008 in `docs/compliance/RISK_ACCEPTANCE_LOG.md` (reconsider-by 2027-03-01).
 
 **AI budget guard is advisory.** `server/lib/aiBudgetGuard.ts` tracks token spend against a per-account monthly cap and soft-blocks when the cap is hit. It does not enforce hard limits at the infrastructure level. If Anthropic bills spike, the guard will log warnings but won't stop inference until the next request after it detects the breach.
 
@@ -71,7 +71,7 @@ The chain is per-account. If you're doing a data migration that touches Activity
 
 ### Low priority / deferred by design
 
-**SSO is shipped dark.** Ory Polis OIDC/SAML/SCIM is wired behind the `SSO_ENABLED` env flag. It works; it just isn't exposed in the UI by default. To enable: set `SSO_ENABLED=true` in `.env` and restart. No code changes needed.
+**SSO is shipped dark.** Ory Polis OIDC/SAML is wired behind the `SSO_ENABLED` env flag, with user provisioning/deprovisioning from the IdP handled by Polis's SCIM implementation pushing events to our inbound webhook consumer (`server/routes/ssoScim.ts`) — not a SCIM v2 resource server we expose ourselves. It works; it just isn't exposed in the UI by default. To enable: set `SSO_ENABLED=true` in `.env` and restart. No code changes needed.
 
 **Multi-OpCo / EnterpriseGroup.** The DB schema, RBAC (`group_admin` role), and API routes for HoldCo/OpCo rollups are complete. The client-side EnterpriseGroup management UI is present but minimal. This is intentional — the feature exists for diligence but isn't the demo focus.
 

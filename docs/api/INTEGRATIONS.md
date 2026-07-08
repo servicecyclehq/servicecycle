@@ -18,7 +18,7 @@ flows back to advance the NFPA 70B schedule.
 - **Idempotency (writes):** send `Idempotency-Key: <opaque>`; a retried POST with
   the same key replays the original response (`Idempotent-Replay: true`) and never
   double-creates.
-- **Spec:** machine-readable OpenAPI 3.1 at `/api/openapi.yaml` + Swagger UI at `/api/docs`.
+- **Spec:** machine-readable OpenAPI 3.1 at `/api/v1/openapi.json` (or `/api/v1/openapi.yaml`) + interactive Swagger UI at `/docs/api`.
 
 ### Resources
 

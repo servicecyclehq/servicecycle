@@ -32,10 +32,11 @@ independent of any prior employment relationship.
 
 ## Third-party open-source components
 
-ServiceCycle uses npm packages (server and client) under permissive
-open-source licenses. All production dependencies are licensed under
-MIT, Apache 2.0, BSD, or ISC licenses — none of which impose
-copyleft obligations that would affect a proprietary distribution.
+ServiceCycle uses npm packages (server and client) under overwhelmingly
+permissive open-source licenses (MIT, Apache 2.0, BSD, ISC — none of which
+impose copyleft obligations that would affect a proprietary distribution),
+with one disclosed exception below (LGPL, dynamically linked, no obligation
+attaches for an unshipped SaaS product).
 
 **To generate a complete bill of materials:**
 
@@ -48,7 +49,14 @@ Notable licenses in use:
 - Express, Prisma, React, Vite — MIT
 - PDF.js — Apache 2.0
 - OpenAPI tooling — MIT / Apache 2.0
-- No GPL, AGPL, or LGPL components in production dependencies
+- No GPL or AGPL components in production dependencies. Eight LGPL-3.0-or-later
+  components are present (`@img/sharp-libvips-*`, the prebuilt native-image
+  binaries that ship as optional platform variants of the `sharp` image-processing
+  library — see `server/sbom/cyclonedx.json`). These are dynamically linked shared
+  libraries, and ServiceCycle is operated as a hosted SaaS product, not distributed
+  to end users — the standard basis on which LGPL's copyleft (source-availability/
+  relinking) obligations do not attach for object-code recipients. No LGPL source
+  is modified in this repository.
 
 A periodic `npm audit` confirms no known vulnerabilities in the current
 dependency tree (see `.github/workflows/ci.yml`).
@@ -98,6 +106,7 @@ delivering the product.
 | No outside equity holders or IP licensors | ✅ |
 | Third-party deps: permissive licenses only | ✅ (MIT/Apache/ISC) |
 | No GPL/AGPL in production dependencies | ✅ |
+| LGPL in production dependencies | ⚠️ 8x `@img/sharp-libvips-*` (LGPL-3.0-or-later, dynamically linked, unshipped SaaS — no copyleft obligation attaches; see above) |
 | Domain registered to ForgeRift LLC | ✅ |
 | Trademark: not yet filed | ⚠️ (recommended post-close) |
 | AI-assisted code: ownership vests in human author | ✅ |

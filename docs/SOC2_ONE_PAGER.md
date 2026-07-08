@@ -14,23 +14,23 @@ ServiceCycle is **SOC 2 Type I evidence-ready** as of 2026-07-04. Type II requir
 
 95 controls tracked across 12 categories (access, change management, vulnerability management, logging & monitoring, incident response, backup & DR, risk & governance, data retention & privacy, AI governance, vendor risk, endpoint / solo-dev compensating controls, evidence discipline).
 
-**🟢 78 done · 🟡 15 documented pending single execution step · 🔴 2 pending first quarterly cadence run** (last updated 2026-07-04 after 5-session sweep).
+**🟢 80 done · 🟡 15 documented pending single execution step · 🔴 0** (per `docs/SOC2_READINESS_CHECKLIST.md` summary scoreboard, current as of the 2026-07-08 acquisition audit).
 
-The 2 remaining reds are dated-evidence-first-execution items (first quarterly access review, first quarterly security review) — every procedure is written; running the cadence once closes them.
+Two of the 15 yellows are dated-evidence-first-execution items (first quarterly access review, first quarterly security review) — every procedure is written; running the cadence once closes each to green.
 
 ## What's actually in place
 
 **Security engineering (CC6, CC7):**
 - Tamper-evident audit log (SHA-256 hash chain per account, tested nightly).
-- MFA/TOTP with admin enforcement; SSO + SAML + SCIM (dark-by-default via Ory Polis).
+- MFA/TOTP with admin enforcement; SSO + SAML (dark-by-default via Ory Polis) with SCIM-brokered directory sync — Ory Polis implements SCIM against the IdP and pushes provisioning/deprovisioning events to ServiceCycle's inbound webhook consumer; ServiceCycle does not itself expose a standard SCIM v2 resource-server API.
 - RBAC (8 roles), tenant-scoped queries with integration tests, instant session revocation on password change (`tokenEpoch`).
-- AES-256-GCM per-account envelope encryption for test reports; separate backup encryption key.
+- AES-256-GCM encryption at rest: a single shared `MASTER_KEY` protects secret-bearing columns (BYO storage credentials, etc.) and gates opt-in document encryption (`ENCRYPT_DOCS`, per-document key via HKDF off that same master key for uploaded PDFs/photos). This is master-key encryption, not per-account/per-tenant envelope encryption — there are no per-account data-encryption keys today. Test-report, measurement, and arc-flash business data are plaintext Postgres columns (protected by network/access controls and disk-level hosting encryption, not column-level encryption). Backup encryption uses a separate `BACKUP_ENCRYPTION_KEY`.
 - Rate limiting (per-IP + per-token + per-email lockout); Zod input validation; Helmet headers + CSP + HSTS.
 - CI security stack live on `main`: Gitleaks, CodeQL (SAST), Trivy (fs + container CVE scan), CycloneDX SBOM auto-gen, release-evidence archive on tag, signed-commit verifier.
 
 **Reliability & DR (A1, CC9):**
 - Nightly encrypted `pg_dump` to off-host S3-compatible target (30-day rolling retention, `BACKUP_ENCRYPTION_KEY` client-side).
-- Automated monthly restore test with wire-format verification (`server/lib/restoreTest.ts`).
+- Automated restore testing at two cadences (both in `server/lib/restoreTest.ts`): weekly table-of-contents integrity check + monthly deep restore to a sidecar Postgres with row-count verification.
 - Health check endpoint + Better Stack synthetic monitor + Healthchecks.io heartbeat wired.
 - Documented RTO ~2h / RPO ~24h.
 - 7 per-scenario BC playbooks (droplet outage, DB corruption, Cloudflare outage, GitHub outage, AI provider outage, vendor account compromise, workstation compromise).

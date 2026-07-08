@@ -1,7 +1,7 @@
 # ServiceCycle Security & Trust Pack
 
 **Audience:** enterprise / regulated-customer security reviewers (utilities, large industrials, healthcare).
-**Status:** living document. The substance below is implemented today; SSO/SAML and SCIM are on the roadmap (noted as such).
+**Status:** living document. The substance below is implemented today, including SSO/SAML and Polis-brokered SCIM directory sync (see §3 for exactly what "SCIM" means in this stack).
 
 ---
 
@@ -33,7 +33,7 @@ Every security- and compliance-relevant event is written to a **per-account hash
 - **Two-factor authentication (TOTP):** supported per user; admins can require TOTP enrolment for all admin-role users on an account (`mfaRequiredForAdmins`). TOTP secrets are AES-256-GCM encrypted; replay is prevented by tracking the last used step; hashed one-time backup codes are supported.
 - **Instant token revocation:** access tokens embed a monotonic `tokenEpoch`; password change/reset bumps the epoch and kills every outstanding token immediately.
 - **Multi-tenant isolation:** enforced by account-scoped predicates on every query and FK constraints; covered by an integration test suite (`multiTenantIsolation`, `roleEnforcement`, `tokenEpochRevocation`).
-- **SSO / SAML + SCIM provisioning:** ✅ shipped. Ory Polis-based OIDC + SAML + SCIM via `/auth/sso/*`. Ships dark by default (`SSO_ENABLED` flag); enabled per deployment. SCIM handles automated provisioning/deprovisioning from enterprise IdPs (Okta, Azure AD).
+- **SSO / SAML + SCIM-brokered directory sync:** ✅ shipped. Ory Polis-based OIDC + SAML via `/auth/sso/*`. Ships dark by default (`SSO_ENABLED` flag); enabled per deployment. Automated user provisioning/deprovisioning from enterprise IdPs (Okta, Azure AD) is handled by Ory Polis's SCIM implementation, which pushes directory-change events to ServiceCycle's inbound webhook consumer (`POST /api/sso/scim/webhook`, `server/routes/ssoScim.ts`) — ServiceCycle does not itself expose a standard SCIM v2 resource-server API for an IdP to call directly.
 
 ## 4. AI data flow (BYO-AI)
 
