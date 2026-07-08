@@ -1,8 +1,18 @@
 name: Deploy to ServiceCycle droplet
 
-# Push to main -> auto-deploy server + client to the live demo (servicecycle.app).
-# Add "[skip deploy]" to a commit message to push without deploying.
-# Or trigger manually from the Actions tab (Run workflow).
+# CI (workflow "CI", .github/workflows/ci.yml) completing successfully on
+# main -> auto-deploy server + client to the live demo (servicecycle.app).
+# Add "[skip deploy]" to a commit message to push without deploying (checked
+# against the commit that triggered the CI run, since workflow_run events
+# carry no head_commit of their own on this event).
+# Or trigger manually from the Actions tab (Run workflow) — bypasses the CI
+# gate entirely, same as before.
+#
+# 2026-07-08 acquisition audit (CIO High): deploy previously triggered on
+# EVERY push to main with NO dependency on the CI workflow's outcome — CI was
+# red on 8+ consecutive pushes while auto-deploy kept shipping anyway. Gated
+# via workflow_run + an explicit conclusion check, the standard GH Actions
+# pattern for chaining one workflow on another's result.
 #
 # Required repo secrets (Settings > Secrets and variables > Actions):
 #   SC_SSH_KEY   - private deploy key (no passphrase) authorized on the droplet
@@ -10,7 +20,9 @@ name: Deploy to ServiceCycle droplet
 #   SC_SSH_USER  - root
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -23,7 +35,11 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ !contains(github.event.head_commit.message, '[skip deploy]') }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       !contains(github.event.workflow_run.head_commit.message, '[skip deploy]'))
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # SOC 2 CC8.1 — environment gate.
@@ -32,10 +48,22 @@ jobs:
     # If the environment does not exist, the job runs immediately with no gate,
     # so this line is a no-op until the environment is configured. Setup steps
     # in docs/security/GITHUB_ADMIN_SETUP.md §4.
+    # 2026-07-08 audit: this environment still needs to be CREATED in GitHub
+    # Settings → Environments by a repo admin — that's an admin-only toggle
+    # this change can't flip on its own. Referencing it here means the gate
+    # activates automatically the moment someone with access creates it.
     environment: production
     steps:
       # TODO: pin to SHA digest for supply chain security
       - uses: actions/checkout@v4
+        with:
+          # workflow_run checkouts default to the workflow FILE's ref (the
+          # branch that's currently on main HEAD), not necessarily the exact
+          # commit CI just validated. Pin explicitly to the commit CI ran
+          # against so what's deployed is provably what passed CI. Falls back
+          # to github.ref for the workflow_dispatch (manual) trigger, which
+          # has no workflow_run context.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Set up Node
         # TODO: pin to SHA digest for supply chain security
@@ -50,12 +78,14 @@ jobs:
         env:
           VITE_API_URL: ''
         run: |
+          set -euo pipefail
           npm ci
           npm run build
           test -f dist/index.html || { echo "client build produced no dist/index.html"; exit 1; }
 
       - name: Configure SSH
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.SC_SSH_KEY }}" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
@@ -70,11 +100,18 @@ jobs:
           EOF
 
       - name: Pre-deploy DB backup
+        # `|| echo ... (continuing)` is intentional: a failed pre-deploy dump
+        # shouldn't block deploy, it's a best-effort extra safety copy on top
+        # of the real nightly encrypted backup (lib/backup.ts). set -euo
+        # pipefail still applies to the rest of this step if it ever grows
+        # more than the one guarded line.
         run: |
+          set -euo pipefail
           ssh sc "docker exec servicecycle-db pg_dump -U servicecycle -d servicecycle | gzip > /root/predeploy-ci-$(date +%Y%m%d-%H%M%S).sql.gz" || echo "WARN: backup step failed (continuing)"
 
       - name: Deploy server (rsync source + rebuild container)
         run: |
+          set -euo pipefail
           rsync -az --delete \
             --exclude node_modules --exclude .env --exclude uploads --exclude backups \
             --exclude 'pyextract/__pycache__' \
@@ -83,15 +120,38 @@ jobs:
 
       - name: Deploy client (backup web root + sync dist)
         run: |
+          set -euo pipefail
           ssh sc "cp -a /var/www/servicecycle/html /root/html-backup-ci-$(date +%Y%m%d-%H%M%S)"
           rsync -az --delete --exclude '.well-known' client/dist/ sc:/var/www/servicecycle/html/
 
       - name: Health check
         run: |
+          set -euo pipefail
           sleep 15
           # The droplet's .env sets SERVER_PORT=3002 (host-side mapping; the
           # container listens on 3001 internally). 3001 on the host 404s.
-          code=$(ssh sc "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3002/api/health")
-          echo "api/health -> HTTP $code"
+          # 2026-07-08 audit: checks /api/ready (real prisma $queryRaw SELECT
+          # 1) instead of /api/health (liveness only — returns 200 even
+          # during a DB outage, per the audit's DevOps finding).
+          code=$(ssh sc "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3002/api/ready")
+          echo "api/ready -> HTTP $code"
           test "$code" = "200" || { echo "Health check failed"; exit 1; }
           ssh sc "docker ps --filter name=servicecycle-server --format '{{.Names}} {{.Status}}'"
+
+      - name: Prune old pre-deploy dump artifacts
+        # 2026-07-08 audit (DevOps Low — "unencrypted pg_dump artifacts
+        # accumulating in /root"): the "Pre-deploy DB backup" step above has
+        # written a plaintext-gzip predeploy-ci-*.sql.gz on every deploy since
+        # it was added, with nothing ever cleaning them up — live prod health
+        # checks flagged disk at 77% used partly because of this. These are a
+        # best-effort pre-deploy safety net on top of the REAL nightly
+        # encrypted backup (lib/backup.ts, BACKUP_ENCRYPT=true by default), so
+        # pruning to a short rolling window (rather than wiring cross-runtime
+        # encryption into a raw ssh/bash pipeline for a redundant copy) is the
+        # right effort/risk trade here. Keeps the 5 most recent; runs even if
+        # an earlier step failed so a bad deploy doesn't also leave the
+        # droplet's disk filling up unbounded.
+        if: always()
+        run: |
+          set -euo pipefail
+          ssh sc "cd /root && ls -t predeploy-ci-*.sql.gz 2>/dev/null | tail -n +6 | xargs -r rm -f --" || echo "WARN: prune step failed (non-fatal, will retry next deploy)"

@@ -335,6 +335,177 @@ async function pruneS3Backups() {
   return toDelete.length;
 }
 
+// ── Off-host uploads sync (documents/photos) ──────────────────────────────────
+// 2026-07-08 acquisition audit (DevOps Medium — "uploaded documents have zero
+// automated off-host backup"): everything above this point only ever dumped
+// Postgres. `./uploads` (every customer PDF/photo/nameplate scan) had NO
+// off-host copy at all -- droplet loss meant permanent, unrecoverable
+// document loss, independent of how healthy the DB backup was. This reuses
+// the SAME S3 bucket/credentials/client as the DB backup above (BACKUP_S3_*,
+// getS3()/uploadWithTimeout()) under a distinct 'uploads-sync/' key prefix so
+// it never collides with the 'backups/' prefix pg_dump uses in that bucket --
+// no new credential surface, no new client.
+//
+// Delta sync, not a full re-upload every night: a small local JSON state
+// file (size+mtime per relative path, stored under BACKUP_LOCAL_PATH so it
+// never lands inside the documents directory it's tracking) lets each run
+// skip files that haven't changed since the last successful sync. First run
+// uploads everything that exists locally; every run after that costs roughly
+// what changed that day. S3 PutObject is an overwrite, so a file re-uploaded
+// after a crash mid-sync is harmless (idempotent).
+//
+// NOTE (deployment wiring): unlike runBackup(), this function is not yet
+// called by anything. ALL cron.schedule(...) registration in this codebase
+// lives in one place — server/index.ts, inside the block that first takes a
+// Postgres advisory lock so scheduled jobs run on exactly one instance (see
+// CRON_ADVISORY_LOCK_KEY / runOnce there). That file is intentionally NOT
+// touched by this change (owned by a parallel workstream editing the same
+// region for the sibling once-per-account backup-cron bug). Registering a
+// cron here instead, at module-load time, would bypass that advisory-lock
+// single-instance guard entirely -- exactly the failure mode the engineering
+// guidelines warn about (duplicate/overlapping scheduled runs). The single
+// line needed to wire this in is a `const { runUploadsSync } = require(...)`
+// alongside the existing `runBackup` import and one
+// `cron.schedule('30 2 * * *', () => runOnce('uploadsSync', () => runUploadsSync('cron')), { timezone: 'UTC' })`
+// call next to the existing 02:00 backup cron in index.ts.
+
+function getUploadsLocalPath() {
+  // Mirrors lib/storage.ts's getLocalPath() (not imported directly, to avoid
+  // a cross-module coupling neither file currently has); same env var, same
+  // default-relative-to-lib/ resolution, so this always points at the exact
+  // directory documents are actually written to.
+  return path.resolve(process.env.STORAGE_LOCAL_PATH || path.join(__dirname, '..', 'uploads'));
+}
+
+function getUploadsSyncStatePath() {
+  return path.join(getLocalPath(), '.uploads-sync-state.json');
+}
+
+async function loadUploadsSyncState(): Promise<Record<string, string>> {
+  try {
+    const raw = await fsp.readFile(getUploadsSyncStatePath(), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return {}; // first run, or state file missing/corrupt — re-sync everything
+  }
+}
+
+async function saveUploadsSyncState(state: Record<string, string>): Promise<void> {
+  try {
+    await fsp.mkdir(getLocalPath(), { recursive: true });
+    await fsp.writeFile(getUploadsSyncStatePath(), JSON.stringify(state), 'utf8');
+  } catch (err: any) {
+    console.warn('[uploads-sync] could not persist sync state (next run will re-check every file):', err.message);
+  }
+}
+
+async function walkUploadFiles(dir: string, base: string = dir): Promise<string[]> {
+  let out: string[] = [];
+  let entries;
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true });
+  } catch {
+    return out; // uploads dir doesn't exist locally (e.g. STORAGE_DEST=s3 already) — nothing to sync
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out = out.concat(await walkUploadFiles(full, base));
+    } else if (entry.isFile()) {
+      out.push(path.relative(base, full));
+    }
+  }
+  return out;
+}
+
+/**
+ * Sync every local file under the documents storage directory to the backup
+ * S3 bucket (key prefix 'uploads-sync/'), skipping files whose size+mtime
+ * signature hasn't changed since the last successful sync. No-ops cleanly
+ * (returns { success: true, skipped: true }) when S3 isn't configured or the
+ * account already stores documents in S3 directly (STORAGE_DEST=s3), since
+ * in that case there is no local copy to sync in the first place.
+ */
+async function runUploadsSync(triggeredBy: 'cron' | 'manual' = 'cron') {
+  const pfx = '[uploads-sync]';
+
+  if (!s3Configured()) {
+    const msg = 'BACKUP_S3_* not configured — skipping off-host uploads sync (documents have no off-host copy).';
+    console.warn(pfx, msg);
+    return { success: false, error: msg, skipped: true };
+  }
+
+  const localRoot = getUploadsLocalPath();
+  const files = await walkUploadFiles(localRoot);
+
+  if (files.length === 0) {
+    console.log(`${pfx} no local files under ${localRoot} — nothing to sync.`);
+    return { success: true, uploaded: 0, unchanged: 0, failed: 0, total: 0 };
+  }
+
+  const state = await loadUploadsSyncState();
+  const { PutObjectCommand } = require('@aws-sdk/client-s3');
+  let uploaded = 0, unchanged = 0, failed = 0;
+  const errors: string[] = [];
+
+  for (const relPath of files) {
+    const abs = path.join(localRoot, relPath);
+    let stat;
+    try {
+      stat = await fsp.stat(abs);
+    } catch {
+      continue; // vanished between listing and stat (rare race) — picked up next run
+    }
+    const sig = `${stat.size}:${Math.floor(stat.mtimeMs)}`;
+    if (state[relPath] === sig) {
+      unchanged++;
+      continue;
+    }
+    try {
+      const buf = await fsp.readFile(abs);
+      const key = `uploads-sync/${relPath.split(path.sep).join('/')}`;
+      await uploadWithTimeout(new PutObjectCommand({
+        Bucket:      process.env.BACKUP_S3_BUCKET,
+        Key:         key,
+        Body:        buf,
+        Metadata:    { 'backup-tool': 'servicecycle', 'sync-source': 'uploads' },
+      }));
+      state[relPath] = sig;
+      uploaded++;
+    } catch (err: any) {
+      failed++;
+      errors.push(`${relPath}: ${err.message}`);
+      console.error(`${pfx} failed to sync ${relPath}:`, err.message);
+    }
+  }
+
+  await saveUploadsSyncState(state);
+
+  console.log(`${pfx} done — uploaded ${uploaded}, unchanged ${unchanged}, failed ${failed} (of ${files.length} local files).`);
+
+  if (failed > 0) {
+    const msg = `${failed} of ${files.length} document(s) failed to sync off-host: ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? '…' : ''}`;
+    // BetterStack event only (not an admin email per-account): unlike a DB
+    // backup, this is one global infra-level sync, not scoped to a single
+    // account, so there's no single "the admins for this failure" set to
+    // notify without either picking an arbitrary account or emailing every
+    // tenant admin about an operational issue that isn't theirs. The
+    // BetterStack event is the same "make failures observable, don't swallow
+    // them" bar backup_failed already applies, on the channel actually built
+    // for cross-account operational alerts.
+    try {
+      require('./betterStack').logEvent('uploads_sync_partial_failure', {
+        failed, uploaded, total: files.length, sample: errors.slice(0, 5), triggeredBy,
+      });
+    } catch (bsErr: any) {
+      console.warn(`${pfx} Could not send betterStack uploads_sync_partial_failure event:`, bsErr.message);
+    }
+    return { success: false, uploaded, unchanged, failed, total: files.length, error: msg };
+  }
+
+  return { success: true, uploaded, unchanged, failed, total: files.length };
+}
+
 // ── Failure email ─────────────────────────────────────────────────────────────
 
 async function sendFailureEmail(accountId, error) {
@@ -379,10 +550,19 @@ async function sendFailureEmail(accountId, error) {
 async function runBackup(accountId, triggeredBy = 'cron') {
   const dest = getDestination();
 
+  // S5-FN-11 (v0.74.0): per-account log prefix for grep-ability. Hoisted
+  // above every use (2026-07-08 audit, DevOps High #6): this was previously
+  // declared further down, after the s3-misconfig early-return below, which
+  // referenced it via `${pfx}` first -- a temporal-dead-zone ReferenceError
+  // masked by an @ts-ignore. In practice that meant the 's3' + unconfigured
+  // path threw before ever reaching its own console.warn or its `return`,
+  // so the caller's cron loop saw an uncaught rejection instead of the
+  // intended `{ success: false, error }` result.
+  const pfx = `[backup][${accountId.slice(0,8)}]`;
+
   if (dest === 's3' && !s3Configured()) {
     const msg = 'BACKUP_DEST is set to "s3" but S3 credentials are not configured.';
-    // @ts-ignore -- pfx is initialised before this branch runs at call time
-    console.warn(`${pfx}`, msg);
+    console.warn(pfx, msg);
     return { success: false, error: msg };
   }
 
@@ -394,8 +574,6 @@ async function runBackup(accountId, triggeredBy = 'cron') {
   const filename  = willEncrypt ? `servicecycle-backup-${ts}.sql.gz.enc` : `servicecycle-backup-${ts}.sql.gz`;
   const s3Key     = `backups/${filename}`;
 
-  // S5-FN-11 (v0.74.0): per-account log prefix for grep-ability.
-  const pfx = `[backup][${accountId.slice(0,8)}]`;
   console.log(`${pfx} Starting backup (dest: ${dest}) → ${filename}`);
 
   let gzBuf, localPath, storageKey;
@@ -435,18 +613,75 @@ async function runBackup(accountId, triggeredBy = 'cron') {
     }
 
     // ── 3b. Upload to S3 ─────────────────────────────────────────────────────
+    // 2026-07-08 audit (DevOps High #6): BACKUP_DEST=both promises BOTH a
+    // local copy AND an off-host copy. Previously, an unconfigured or failing
+    // S3 upload here only logged a console.warn and fell through to the
+    // SUCCESS BackupLog write below -- a false-green heartbeat with the
+    // off-host copy silently absent (the ransomware-recovery control this
+    // mode exists for). `s3PartialFailure` tracks that condition so step 4
+    // below can record and alert on it instead of swallowing it.
+    let s3PartialFailure: string | null = null;
     if (dest === 's3' || dest === 'both') {
       if (s3Configured()) {
-        storageKey = await uploadToS3(gzBuf, s3Key);
-        console.log(`${pfx} Uploaded to S3 →`, storageKey);
-        const pruned = await pruneS3Backups();
-        if (pruned > 0) console.log(`${pfx} Pruned ${pruned} old S3 backup(s)`);
+        try {
+          storageKey = await uploadToS3(gzBuf, s3Key);
+          console.log(`${pfx} Uploaded to S3 →`, storageKey);
+          const pruned = await pruneS3Backups();
+          if (pruned > 0) console.log(`${pfx} Pruned ${pruned} old S3 backup(s)`);
+        } catch (s3Err: any) {
+          if (dest === 'both') {
+            // Local copy already written above -- don't let an S3 hiccup
+            // throw into the outer catch, which would mark the ENTIRE run
+            // 'failure' and discard a perfectly good local backup. Record it
+            // as a partial failure instead (below) so it's still visible.
+            s3PartialFailure = s3Err.message || String(s3Err);
+            console.error(`${pfx} S3 upload failed (local copy kept, off-host copy MISSING this run):`, s3PartialFailure);
+          } else {
+            throw s3Err; // dest === 's3': no local fallback -- this IS a full failure
+          }
+        }
+      } else if (dest === 'both') {
+        s3PartialFailure = 'BACKUP_DEST=both but S3 credentials are not configured — off-host copy was NOT written (local copy only).';
+        console.warn(`${pfx} ${s3PartialFailure}`);
       } else {
         console.warn(`${pfx} S3 not configured — skipping S3 upload (local copy kept)`);
       }
     }
 
-    // ── 4. Log success ────────────────────────────────────────────────────────
+    // ── 4. Log result ────────────────────────────────────────────────────────
+    if (s3PartialFailure) {
+      // Genuine partial failure: the DB dump itself succeeded (local copy on
+      // disk), but the off-host redundancy BACKUP_DEST=both is supposed to
+      // guarantee did not happen. Logged as 'failure' (not a silent third
+      // status the admin dashboard's success/failure counts wouldn't tally --
+      // routes/backup.ts only buckets 'success'|'failure') with an error
+      // message that makes the partial nature explicit, plus the same
+      // failure-alerting paths (BetterStack event + admin email) a full
+      // backup failure already gets. No new notification mechanism.
+      const partialMsg = `PARTIAL FAILURE — local backup succeeded; off-host (S3) copy did NOT: ${s3PartialFailure}`;
+      await prisma.backupLog.create({
+        data: {
+          accountId,
+          status:      'failure',
+          filename,
+          sizeBytes:   gzBuf.length,
+          storageKey:  localPath || filename,
+          error:       partialMsg.slice(0, 2000),
+          triggeredBy,
+        },
+      });
+      try {
+        require('./betterStack').logEvent('backup_partial_failure', {
+          accountId, filename, error: s3PartialFailure.slice(0, 500), triggeredBy,
+        });
+      } catch (bsErr: any) {
+        console.warn(`${pfx} Could not send betterStack backup_partial_failure event:`, bsErr.message);
+      }
+      await sendFailureEmail(accountId, partialMsg);
+      console.log(`${pfx} Done (partial — local ok, off-host copy missing).`);
+      return { success: false, partial: true, filename, sizeBytes: gzBuf.length, storageKey, localPath, dest, error: s3PartialFailure };
+    }
+
     await prisma.backupLog.create({
       data: {
         accountId,
@@ -503,7 +738,7 @@ function getBackupConfig() {
 }
 
 module.exports = { runBackup, isConfigured, getBackupConfig,
-  warnIfLocalDest,
+  warnIfLocalDest, runUploadsSync,
 };
 
 export {};

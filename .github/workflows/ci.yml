@@ -17,7 +17,14 @@ jobs:
   test:
     name: tsc + jest + smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 2026-07-08 audit: bumped 15->20 to give the new "Integration tests" step
+    # (measured ~99s locally, budgeted 8min for CI-runner slack) headroom
+    # without pushing the JOB-level timeout close to its ceiling — this file's
+    # own history documents a prior job-level 15min timeout silently eating
+    # 3 steps' worth of log output (see "Unit tests" step comment below).
+    # Per-step timeout-minutes values are unchanged; this only raises the
+    # outer safety net.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -114,6 +121,14 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
 
+      - name: OpenAPI drift check
+        # 2026-07-08 audit (Backend Medium-Low — "OpenAPI drift gate is
+        # disarmed"): `npm run openapi:check` already existed in package.json
+        # but was never wired into CI, so nothing actually enforced it. Runs
+        # right after tsc — needs the generated Prisma client + route files
+        # importable, but no DB/migrations.
+        run: npm run openapi:check
+
       - name: Run DB migrations
         run: npx prisma migrate deploy
 
@@ -177,10 +192,39 @@ jobs:
         # GH Actions will report a specific step's timeout (with whatever
         # output it managed to flush) instead of losing 3 steps' worth of
         # output to the job-level kill the way this investigation did.
+        # --coverage: 2026-07-08 audit (QA Low). Enforces jest.config.ts's
+        # coverageThreshold (a conservative floor, well below the ~44%
+        # measured baseline — see that file's comment). Scoped to this step
+        # only (not the integration project, which is non-blocking below and
+        # would just add noise to a still-being-stabilized number).
         timeout-minutes: 3
         run: |
-          npx jest --selectProjects unit --ci --forceExit \
+          npx jest --selectProjects unit --ci --forceExit --coverage \
             --testPathIgnorePatterns="tests/(health|auth|aiQuota|documentAnnotations|workOrderComments|workOrderTransitions|v1PublicApi|idor|parts|accountExport|loto|quoteRequests|outagePlan|field)\\.test\\.js"
+
+      - name: Integration tests (real DB — non-blocking, see comment)
+        # 2026-07-08 acquisition audit (QA High #9 / W1-H2): this 136-file
+        # project (89 route + 47 lib tests under __tests__/**/*.test.ts,
+        # jest.config.ts's "integration" project) needs a real DB and had
+        # NEVER run in any CI workflow before this — zero continuous signal,
+        # forever, on more than a third of the entire test suite. Wired in
+        # here per the audit's QA/CIO resolution (report §2, Tension 4): "run
+        # it once out-of-band to learn the number... then gate deploys on the
+        # result." That out-of-band run happened during this remediation pass
+        # (same env vars as this job, freshly migrated Postgres): 368/871
+        # individual tests passed across 54/136 suites — roughly 42%, i.e.
+        # genuinely broken, not a handful of flaky tests. Wiring it in as a
+        # hard gate today would fail EVERY future push (including pushes
+        # unrelated to these suites) and likely get muted/ignored within a
+        # week. continue-on-error keeps it visible (an amber warning on every
+        # run, plus the annotation below) without blocking merges/deploys,
+        # until someone works through the backlog of failures — flip this to
+        # a hard gate once the pass rate is actually high.
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          npx jest --selectProjects integration --ci --forceExit \
+            || echo "::warning::Integration project (136 files, __tests__/**) is not fully green — see this step's log for the failure list. Non-blocking by design until the 2026-07-08 audit backlog (~42% pass rate observed) is worked down; do not silently ignore a worsening trend."
 
       - name: Start API server (background — needed for smoke tests)
         # health.test.js and auth.test.js call http://localhost:3001 via

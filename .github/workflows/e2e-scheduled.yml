@@ -1,0 +1,102 @@
+name: E2E (Playwright, scheduled)
+
+# ─────────────────────────────────────────────────────────────────────────
+# 2026-07-08 acquisition audit (QA Medium W1-M9 / CIO Tension 4): Playwright
+# e2e (6 specs incl. axe-core a11y) was completely orphaned from CI —  no
+# workflow referenced it — and playwright.config.js defaults `baseURL` to
+# the LIVE demo (https://servicecycle.app). Wiring it into the existing
+# push-triggered ci.yml would mean every push runs real browser traffic
+# against production; wiring it into deploy.yml would make deploys wait on
+# (and potentially block on) live-prod browser tests. Neither is safe.
+#
+# This is a separate, SCHEDULED workflow instead — same shape as
+# dast-zap.yml's "don't run against prod on every push" pattern — so e2e
+# coverage exists and runs regularly without sitting in anyone's push/deploy
+# critical path. `continue-on-error` at the job level: the audit also found
+# the demo is nginx basic-auth gated (not just app-login gated) and that
+# e2e/smoke.spec.js + e2e/audit.spec.js still assert the pre-rebrand route
+# list (a separate workstream in this same remediation pass owns fixing
+# those route lists) — so a red run here today is expected, not a signal
+# this workflow is broken. Flip continue-on-error off once both of those are
+# resolved and a run has been observed green.
+#
+# Required repo secrets (Settings > Secrets and variables > Actions) IF the
+# target is behind nginx basic-auth (the live demo is):
+#   DEMO_BASIC_AUTH_USER / DEMO_BASIC_AUTH_PASS — embedded into the target
+#   URL's userinfo (Chromium sends these as an HTTP Basic-Auth header on
+#   navigation with no playwright.config.js change needed). If unset, the
+#   run targets the bare URL and will 401 at the network layer before
+#   reaching any app-level assertion — expected, not a workflow bug.
+# Optional: E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD to override the seeded demo
+# admin login the specs use by default.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'      # Weekly Monday 09:00 UTC — doesn't compete with the Wed DAST scan
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target base URL (default: https://servicecycle.app). Do not include credentials here — use the DEMO_BASIC_AUTH_* secrets.'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright e2e + a11y
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # See header comment: known-red until the sibling stale-route-list fix
+    # lands and basic-auth secrets are configured. Keeps this visible
+    # (amber, with an uploaded report) without blocking anything.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve target URL
+        id: target
+        env:
+          TARGET_URL_INPUT: ${{ github.event.inputs.target_url }}
+          BASIC_AUTH_USER: ${{ secrets.DEMO_BASIC_AUTH_USER }}
+          BASIC_AUTH_PASS: ${{ secrets.DEMO_BASIC_AUTH_PASS }}
+        run: |
+          set -euo pipefail
+          BASE="${TARGET_URL_INPUT:-https://servicecycle.app}"
+          if [ -n "$BASIC_AUTH_USER" ] && [ -n "$BASIC_AUTH_PASS" ]; then
+            SCHEME="${BASE%%://*}"
+            REST="${BASE#*://}"
+            BASE="${SCHEME}://${BASIC_AUTH_USER}:${BASIC_AUTH_PASS}@${REST}"
+            echo "::add-mask::$BASIC_AUTH_USER"
+            echo "::add-mask::$BASIC_AUTH_PASS"
+          else
+            echo "::warning::DEMO_BASIC_AUTH_USER/DEMO_BASIC_AUTH_PASS not set — target is nginx basic-auth gated per the 2026-07-08 audit, so this run will likely 401 before reaching any app assertion."
+          fi
+          echo "base_url=$BASE" >> "$GITHUB_OUTPUT"
+
+      - name: Run Playwright e2e suite
+        env:
+          E2E_BASE_URL: ${{ steps.target.outputs.base_url }}
+          CI: 'true'
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_number }}
+          path: playwright-report/
+          retention-days: 30

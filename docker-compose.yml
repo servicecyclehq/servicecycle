@@ -178,6 +178,14 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # 2026-07-08 acquisition audit (CIO/DevOps): docker-compose.ghcr.yml has
+    # had read_only:true on the server service since the Pass-6 hardening
+    # pass; this base compose file (the one prod actually runs, per the
+    # audit) never got it, leaving the filesystem writable at runtime for no
+    # reason -- /tmp is already tmpfs and the only other writes (uploads,
+    # backups) go through the bind mounts below, both of which stay writable
+    # under read_only:true.
+    read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
     deploy:
@@ -263,20 +271,43 @@ services:
       # Document storage. Default is local filesystem; switch to s3 to
       # offload to S3 / R2 / MinIO. STORAGE_S3_* vars only required when
       # STORAGE_DEST=s3.
+      # 2026-07-08 acquisition audit (DevOps High #5): these MUST match the
+      # names lib/storage.ts actually reads (STORAGE_S3_KEY_ID / _SECRET) —
+      # compose `environment:` blocks are whitelists, so a droplet .env using
+      # the code's real var names silently never reached the container while
+      # this said *_ACCESS_KEY_ID / *_SECRET_ACCESS_KEY. Fixed to match code.
       STORAGE_DEST:               ${STORAGE_DEST:-local}
       STORAGE_S3_BUCKET:          ${STORAGE_S3_BUCKET:-}
       STORAGE_S3_REGION:          ${STORAGE_S3_REGION:-}
-      STORAGE_S3_ACCESS_KEY_ID:   ${STORAGE_S3_ACCESS_KEY_ID:-}
-      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY:-}
+      STORAGE_S3_KEY_ID:          ${STORAGE_S3_KEY_ID:-}
+      STORAGE_S3_SECRET:          ${STORAGE_S3_SECRET:-}
       STORAGE_S3_ENDPOINT:        ${STORAGE_S3_ENDPOINT:-}
 
-      # Backup destination. Same model as document storage.
+      # Backup destination. Same model as document storage. Same env-name-drift
+      # fix as STORAGE_S3_* above — lib/backup.ts reads BACKUP_S3_KEY_ID /
+      # BACKUP_S3_SECRET, not the *_ACCESS_KEY_ID / *_SECRET_ACCESS_KEY names
+      # this whitelist used to forward, so off-host backup uploads could
+      # silently no-op even with correctly-named droplet env vars.
       BACKUP_DEST:               ${BACKUP_DEST:-local}
       BACKUP_S3_BUCKET:          ${BACKUP_S3_BUCKET:-}
       BACKUP_S3_REGION:          ${BACKUP_S3_REGION:-}
-      BACKUP_S3_ACCESS_KEY_ID:   ${BACKUP_S3_ACCESS_KEY_ID:-}
-      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_S3_KEY_ID:          ${BACKUP_S3_KEY_ID:-}
+      BACKUP_S3_SECRET:          ${BACKUP_S3_SECRET:-}
       BACKUP_S3_ENDPOINT:        ${BACKUP_S3_ENDPOINT:-}
+
+      # Better Stack (Logtail) log shipping — optional. Was never forwarded in
+      # this (the base, prod-running) compose file, so the activation runbook
+      # couldn't actually work here even with the env vars set correctly on
+      # the droplet (2026-07-08 audit, CISO §1.1 "prod compose can't even ship
+      # the signals"). Names match server/lib/betterStack.ts.
+      BETTERSTACK_INGEST_URL:    ${BETTERSTACK_INGEST_URL:-}
+      BETTERSTACK_SOURCE_TOKEN:  ${BETTERSTACK_SOURCE_TOKEN:-}
+      BETTERSTACK_DEBUG:         ${BETTERSTACK_DEBUG:-}
+
+      # Healthchecks.io cron heartbeats — optional. Same fix as Better Stack
+      # above. Names match server/lib/heartbeat.ts.
+      HEALTHCHECKS_PING_KEY:     ${HEALTHCHECKS_PING_KEY:-}
+      HEALTHCHECKS_DEBUG:        ${HEALTHCHECKS_DEBUG:-}
 
       # Document encryption opt-in. Once enabled and at least one document
       # is encrypted the flag cannot be flipped back without losing data.
@@ -358,6 +389,19 @@ services:
     # shutdown completes. 30s gives Node enough runway to drain in-flight
     # requests and close the Prisma pool cleanly.
     stop_grace_period: 30s
+    # 2026-07-08 acquisition audit (CISO §1.1 / DevOps): ported from
+    # docker-compose.ghcr.yml, which has had this since the /api/ready audit
+    # fix -- this base compose (the one prod runs) previously defined NO
+    # server healthcheck at all, so `docker compose ps` / orchestration never
+    # actually knew whether the API could reach Postgres, only that the Node
+    # process was alive. /api/ready does a real prisma.$queryRaw SELECT 1;
+    # /api/health alone returns 200 even during a DB outage.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3001/api/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     volumes:
       # ./uploads â€” document storage bind mount. Files written here by the
       # server (PDFs, Word docs, images) persist on the HOST so they survive

@@ -146,11 +146,17 @@ services:
       BACKUP_LOG_RETENTION_DAYS:   ${BACKUP_LOG_RETENTION_DAYS:-}
       BACKUP_ENCRYPT: ${BACKUP_ENCRYPT:-true}
 
+      # 2026-07-08 acquisition audit: aligned to what lib/storage.ts actually
+      # reads (STORAGE_S3_KEY_ID / STORAGE_S3_SECRET) -- this file had the
+      # BACKUP_S3_* names right already but carried the same *_ACCESS_KEY_ID /
+      # *_SECRET_ACCESS_KEY drift as docker-compose.yml on the STORAGE_S3_*
+      # side. Compose `environment:` blocks are whitelists, so this was a
+      # silent no-op for any operator using the code's real var names.
       STORAGE_DEST:               ${STORAGE_DEST:-local}
       STORAGE_S3_BUCKET:          ${STORAGE_S3_BUCKET:-}
       STORAGE_S3_REGION:          ${STORAGE_S3_REGION:-}
-      STORAGE_S3_ACCESS_KEY_ID:   ${STORAGE_S3_ACCESS_KEY_ID:-}
-      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY:-}
+      STORAGE_S3_KEY_ID:          ${STORAGE_S3_KEY_ID:-}
+      STORAGE_S3_SECRET:          ${STORAGE_S3_SECRET:-}
       STORAGE_S3_ENDPOINT:        ${STORAGE_S3_ENDPOINT:-}
 
       BACKUP_DEST:               ${BACKUP_DEST:-local}
