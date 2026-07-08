@@ -44,6 +44,8 @@ const earlyAccessRouter = require('../routes/earlyAccess');
 
 let app;
 const trackedIds = new Set();
+let testAccountId;
+let testAdminId;
 
 // GET /list was hardened to authenticateToken + requireAdmin + denyOnDemo
 // (see routes/earlyAccess.ts comment: it was reachable unauthenticated
@@ -51,13 +53,30 @@ const trackedIds = new Set();
 // written. Mint a real admin JWT the same way routes/auth.ts does rather
 // than going through a live login round trip -- this suite intentionally
 // mounts only earlyAccessRouter on a throwaway app, no /api/auth/login
-// exists here. Picks whichever admin the seed created (CI seeds
-// admin@acme.com, local dev seeds admin@demo.local) instead of hardcoding
-// an email so this works against either.
+// exists here. prisma/seed.js is a deliberate no-op (see its own header
+// comment) so CI's DB has no admin user to borrow at this point in the
+// pipeline (before scripts/seed-demo.js ever runs) -- create a disposable
+// one instead of assuming any pre-existing admin exists.
 async function adminBearer() {
-  const admin = await prisma.user.findFirst({ where: { role: 'admin' }, select: { id: true, accountId: true } });
-  if (!admin) throw new Error('adminBearer: no admin user found -- did the DB get seeded?');
-  const token = jwt.sign({ userId: admin.id, accountId: admin.accountId, ep: 0 }, process.env.JWT_SECRET, {
+  if (!testAdminId) {
+    const account = await prisma.account.create({
+      data: { companyName: '__earlyAccessTest__', planType: 'saas' },
+      select: { id: true },
+    });
+    testAccountId = account.id;
+    const admin = await prisma.user.create({
+      data: {
+        accountId: testAccountId,
+        name: 'Early Access Test Admin',
+        email: `__early-access-test-admin-${Date.now()}@example.test`,
+        passwordHash: 'not-a-real-hash-never-used-for-login',
+        role: 'admin',
+      },
+      select: { id: true },
+    });
+    testAdminId = admin.id;
+  }
+  const token = jwt.sign({ userId: testAdminId, accountId: testAccountId, ep: 0 }, process.env.JWT_SECRET, {
     expiresIn: '5m',
     algorithm: 'HS256',
   });
@@ -78,6 +97,8 @@ afterAll(async () => {
   if (trackedIds.size) {
     await prisma.earlyAccessRequest.deleteMany({ where: { id: { in: [...trackedIds] } } });
   }
+  if (testAdminId) await prisma.user.delete({ where: { id: testAdminId } }).catch(() => {});
+  if (testAccountId) await prisma.account.delete({ where: { id: testAccountId } }).catch(() => {});
   await prisma.$disconnect();
 });
 
