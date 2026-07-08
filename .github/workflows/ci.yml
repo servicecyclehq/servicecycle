@@ -135,6 +135,14 @@ jobs:
         # comment) -- with no admin seeded, every smoke-suite login got 503
         # "Instance not yet configured", the very next failure point CI had
         # never been able to reach before today.
+        #
+        # timeout-minutes: measured ~9s locally and in the one all-green CI
+        # run (2026-07-08). A dedicated per-step cap (vs. relying on the
+        # job's 15min timeout-minutes) means a future hang here fails fast
+        # with its OWN "step exceeded max execution time" annotation instead
+        # of silently eating the whole job budget -- see the note on
+        # "Unit tests" below for why this matters.
+        timeout-minutes: 3
         run: node scripts/seed-demo.js
 
       - name: Unit tests (mocked Prisma — no server needed)
@@ -150,6 +158,26 @@ jobs:
         # failing every single push since. CI has been red on every push to
         # main for at least the last 8 commits without anyone noticing —
         # `git log`/PR checks weren't being watched closely enough to catch it.
+        #
+        # timeout-minutes: added 2026-07-08 diagnosing a recurring job-level
+        # 15min timeout (job "tsc + jest + smoke" hit timeout-minutes: 15 on
+        # at least 2 independent pushes, both times going completely silent
+        # -- not even this step's own "##[group]Run npx jest..." line reached
+        # the Actions log -- somewhere between "Seed demo data" finishing and
+        # "Stop background server" starting). Local repro of every step in
+        # this range (seed, unit tests, server boot, smoke tests) with
+        # matching env vars completed in seconds every time, so this is very
+        # likely a CI-environment-specific hang (leading theory: a Postgres
+        # service-container TCP connection silently dropped with no
+        # keepalive, which Prisma's pool won't detect until a query is
+        # attempted and which the OS won't time out on its own for a very
+        # long time) rather than a deterministic code bug. Root cause is
+        # NOT yet confirmed. These three timeout-minutes values are a
+        # diagnostic/fail-fast measure, not a fix: next time this happens,
+        # GH Actions will report a specific step's timeout (with whatever
+        # output it managed to flush) instead of losing 3 steps' worth of
+        # output to the job-level kill the way this investigation did.
+        timeout-minutes: 3
         run: |
           npx jest --selectProjects unit --ci --forceExit \
             --testPathIgnorePatterns="tests/(health|auth|aiQuota|documentAnnotations|workOrderComments|workOrderTransitions|v1PublicApi|idor|parts|accountExport|loto|quoteRequests|outagePlan|field)\\.test\\.js"
@@ -170,20 +198,28 @@ jobs:
           # all and this step's curl health check timed out after its full
           # 30s every run -- the first time CI ever reached this step.
           FORCE_LISTEN: "true"
+        # timeout-minutes + curl --max-time: see "Unit tests" note above --
+        # part of the same diagnostic hardening. The curl calls previously had
+        # no timeout of their own, so a connection that hangs instead of
+        # cleanly refusing/erroring (e.g. the server process stuck mid-boot)
+        # could in principle stretch this 30-iteration loop well past its
+        # intended ~30s. Bounding each curl call means the loop's worst case
+        # is now bounded too, on top of the step-level backstop.
+        timeout-minutes: 2
         run: |
           nohup node node_modules/tsx/dist/cli.mjs index.ts \
             > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
           echo "Server PID: $(cat /tmp/server.pid)"
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
+            if curl -sf --connect-timeout 5 --max-time 10 http://localhost:3001/api/health > /dev/null 2>&1; then
               echo "Server ready after ${i}s"
               break
             fi
             echo "  waiting... (${i}s)"
             sleep 1
           done
-          curl -sf http://localhost:3001/api/health \
+          curl -sf --connect-timeout 5 --max-time 10 http://localhost:3001/api/health \
             || { echo "--- server log ---"; cat /tmp/server.log; exit 1; }
 
       - name: Smoke tests (live server + real DB)
@@ -194,6 +230,11 @@ jobs:
         # tests" step above) belong here too -- they were never reachable by
         # CI before 2026-07-08 because the step above ran before the server
         # existed.
+        #
+        # timeout-minutes: see "Unit tests" note above. Given the most
+        # headroom of the three (6min vs measured low-single-digit-seconds
+        # runtime) since it drives 14 suites of real HTTP + real DB traffic.
+        timeout-minutes: 6
         run: |
           npx jest --selectProjects unit --ci --forceExit \
             --testPathPatterns="tests/(health|auth|aiQuota|documentAnnotations|workOrderComments|workOrderTransitions|v1PublicApi|idor|parts|accountExport|loto|quoteRequests|outagePlan|field)\.test\.js"
