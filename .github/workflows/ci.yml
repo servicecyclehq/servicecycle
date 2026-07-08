@@ -96,11 +96,23 @@ jobs:
         # avoid dev velocity drag from transitive-dep churn.
         run: npm audit --audit-level=high
 
+      - name: Generate Prisma client
+        # MUST run before "TypeScript check": tsc resolves @prisma/client's
+        # generated model types from node_modules, and this used to happen
+        # for free because @prisma/client's own postinstall script silently
+        # ran `prisma generate` right after `npm ci` -- so by the time tsc
+        # ran, the client was already generated (this explicit step just
+        # regenerated it redundantly). Found 2026-07-08 the moment
+        # ignore-scripts=true was enabled (server/.npmrc): that implicit
+        # postinstall-triggered generation stopped happening, tsc ran
+        # against the stale/stub client shipped in the npm package, and
+        # "TypeScript check" started failing on every push. Moving this step
+        # ahead of tsc removes the dependency on that incidental behavior
+        # entirely, regardless of the ignore-scripts setting.
+        run: npx prisma generate
+
       - name: TypeScript check
         run: npx tsc --noEmit
-
-      - name: Generate Prisma client
-        run: npx prisma generate
 
       - name: Run DB migrations
         run: npx prisma migrate deploy
