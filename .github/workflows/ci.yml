@@ -82,6 +82,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Python extractor dependencies
+        # tests/extractorGoldenPatterns.test.js and extractorHeaderPatterns.test.js
+        # shell out to pyextract/extractor.py (`import pdfplumber`), which was
+        # never installed in CI -- found 2026-07-08 chasing an unrelated CI
+        # failure. Mirrors the Dockerfile's runtime install (same
+        # requirements.txt, same --break-system-packages flag for Ubuntu's
+        # PEP-668-locked system Python).
+        run: pip install --break-system-packages -r pyextract/requirements.txt
+
       - name: Security audit (SCA)
         # Fail on high/critical CVEs. moderate+ logged but not blocking to
         # avoid dev velocity drag from transitive-dep churn.
