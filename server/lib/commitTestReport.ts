@@ -139,6 +139,19 @@ async function commitAssetReadings(db: any, p: {
         // built from it) carried no trace of why. passFailBasis() below
         // reads it back off `x` to give the auto-deficiency an honest basis.
         sanityNote: x.sanityNote || null,
+        // [2026-07-08 acquisition audit W2-AI] The preview stage (aiTestReportExtract,
+        // testReportPreview) already stamps every reading with `source`
+        // ('ai' | 'deterministic') and `confidence` -- but this create() never
+        // wrote them, so once committed an AI-vision guess from a blurry photo
+        // was indistinguishable from a deterministically-parsed ruled-table
+        // value, both in the record and in every export. Populate straight off
+        // `x`: 'deterministic' when the extractor didn't stamp a source (the
+        // common/default case, matching aiTestReportExtract's convention that
+        // only AI/vision-recovered readings carry an explicit source), and
+        // confidence only meaningful when source='ai' (schema comment).
+        source: x.source || 'deterministic',
+        confidence: (x.source === 'ai' && x.confidence != null && !isNaN(Number(x.confidence)))
+          ? Number(x.confidence) : null,
       },
     });
     measurementsCreated++;

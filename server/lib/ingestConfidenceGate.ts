@@ -30,11 +30,19 @@
 const { inferEquipmentTypeResult } = require('./commitTestReport');
 
 const DEFAULT_THRESHOLD = 0.85;
+// [2026-07-08 acquisition audit W2-AI] the account-tunable floor was
+// unbounded below DEFAULT_THRESHOLD -- an account could set it near 0 and
+// effectively disable the reading-confidence gate for hands-off auto-commit
+// jobs (identity rules in evaluateUnit still apply, but the whole point of
+// the reading floor is defeated). 0.5 is a coin-flip: below that the
+// reading's own confidence number is no longer meaningfully gating anything.
+const MIN_THRESHOLD = 0.5;
 
 function clampThreshold(t: any): number {
   const n = Number(t);
   if (!isFinite(n) || n <= 0) return DEFAULT_THRESHOLD;
   if (n > 1) return 1;
+  if (n < MIN_THRESHOLD) return MIN_THRESHOLD;
   return n;
 }
 

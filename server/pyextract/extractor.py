@@ -510,9 +510,8 @@ def _inline_readings(text):
         if not toks or stripped >= 2:
             continue
         label = " ".join(toks[-4:])  # keep the last few words, not a whole sentence
-        try:
-            val = float(m.group(2).replace(",", ""))
-        except ValueError:
+        val = _tofloat(m.group(2))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+        if val is None:
             continue
         unit = m.group(3).replace("Μ", "M")   # Greek capital Mu -> Latin M (PowerDB "Μ Ω")
         mt, crit, u, kind = _classify(label, unit)
@@ -644,9 +643,35 @@ def _is_numtok(t):
     return _NUMTOK_RE.fullmatch(t) is not None
 
 
+# 2026-07-08 (acquisition audit W2-AI, ingestion/AI-pipeline batch): a bare
+# `.replace(",", "")` before float() assumes every comma is a US thousands
+# separator. A European-locale decimal comma ("1,5" meaning 1.5) is instead
+# silently misread as "15" -- a 10x error on a safety-relevant NETA reading
+# (insulation resistance, contact resistance, ... all feed pass/fail and
+# trend logic downstream). NETA test reports are US-locale documents (this
+# whole parser already assumes US units/date formats throughout), so the
+# smaller, safer fix is to VALIDATE that a comma-bearing token is genuine US
+# thousands-grouping (every group after the first is exactly 3 digits)
+# before stripping commas, rather than trying to guess a comma-as-decimal
+# interpretation -- which would risk mis-parsing the far more common real
+# "1,500"-style US thousands separator instead. A token that fails
+# validation is almost certainly OCR noise or a non-US export -- returning
+# None (dropped) is the safe failure mode, matching how every caller of
+# _tofloat already treats an unparseable reading (skip the row) rather than
+# risking a silently wrong number reaching an asset record.
+_US_THOUSANDS_RE = re.compile(r"^-?\d{1,3}(,\d{3})*(\.\d+)?$")
+
+
 def _tofloat(t):
+    if t is None:
+        return None
+    t = t.strip()
+    if "," in t:
+        if not _US_THOUSANDS_RE.match(t):
+            return None  # ambiguous locale format (e.g. "1,5") -- reject, don't guess
+        t = t.replace(",", "")
     try:
-        return float(t.replace(",", ""))
+        return float(t)
     except ValueError:
         return None
 
@@ -834,9 +859,8 @@ def _dga_readings(text):
     for m in _DGA_TABLE_ROW_RE.finditer(text or ""):
         name_raw = (m.group(1) or "").strip()
         sym = (m.group(2) or "").strip().upper() or None
-        try:
-            val = float(m.group(3).replace(",", ""))
-        except ValueError:
+        val = _tofloat(m.group(3))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+        if val is None:
             continue
         # Match against known gas name (fuzzy: whitespace-insensitive lowercase)
         key = re.sub(r"\s+", " ", name_raw.lower()).strip()
@@ -942,9 +966,8 @@ def _inline_dual_min_readings(text):
         mt, crit, u, kind = _classify("", m.group(1))
         if mt != "insulation_resistance":
             continue
-        try:
-            v2 = float(m.group(2).replace(",", ""))
-        except (TypeError, ValueError):
+        v2 = _tofloat(m.group(2))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+        if v2 is None:
             continue
         if v2 < 0:
             continue
@@ -1211,9 +1234,8 @@ def _bus_inline_readings(text):
         for key_ph, key_val in (("A", "Av"), ("B", "Bv"), ("C", "Cv")):
             ph_raw = row.group(key_ph)
             phase = _phase_of(ph_raw) or ph_raw[:1].upper()
-            try:
-                val = float(row.group(key_val).replace(",", ""))
-            except (TypeError, ValueError):
+            val = _tofloat(row.group(key_val))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+            if val is None:
                 continue
             out.append({
                 "measurementType": mt,
@@ -1301,9 +1323,8 @@ def _phase_context_readings(text):
         # the general inline pass already handles better.
         if mt in ("unknown", "reading") or mt.endswith("_reading"):
             continue
-        try:
-            val = float(row.group("val").replace(",", ""))
-        except (TypeError, ValueError):
+        val = _tofloat(row.group("val"))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+        if val is None:
             continue
         out.append({
             "measurementType": mt,
@@ -1415,9 +1436,8 @@ def _phase_grid_readings(text):
         after = text[hdr.end(): hdr.end() + 400]
         for row in _PHASE_GRID_ROW_RE.finditer(after):
             phase = row.group("ph").upper()
-            try:
-                val = float(row.group("val").replace(",", ""))
-            except (TypeError, ValueError):
+            val = _tofloat(row.group("val"))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+            if val is None:
                 continue
             expected = (row.group("expected") or "").strip() or None
             result_raw = (row.group("result") or "").strip()
@@ -1479,9 +1499,8 @@ def _phase_lines_after_unit_header(text):
         if len(rows) < 2:
             continue
         for row in rows:
-            try:
-                val = float(row.group("val").replace(",", ""))
-            except (TypeError, ValueError):
+            val = _tofloat(row.group("val"))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+            if val is None:
                 continue
             expected = (row.group("expected") or "").strip() or None
             result_raw = (row.group("result") or "").strip()
@@ -1543,9 +1562,8 @@ def _label_testcond_reading(text):
         mt, crit, u, kind = _classify(label, m.group(3))
         if mt == "unknown" or mt.endswith("_reading") or mt in ("reading", "resistance"):
             continue
-        try:
-            val = float(m.group(2).replace(",", ""))
-        except (TypeError, ValueError):
+        val = _tofloat(m.group(2))  # 2026-07-08 W2-AI: locale-safe (was float(x.replace(",", "")))
+        if val is None:
             continue
         out.append({
             "measurementType": mt,

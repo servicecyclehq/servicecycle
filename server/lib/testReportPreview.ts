@@ -127,6 +127,17 @@ interface BuildPreviewOpts {
   // through to runDeterministic -> run.py --resume-from. Option-A semantics:
   // does not skip pages, forwarded purely for retry observability.
   resumeFrom?: number;
+  // [2026-07-08 acquisition audit W2-AI] set true by hands-off auto-commit
+  // callers (ingestWorker, for email-in/backfill jobs with no human in the
+  // loop). Re-ingest idempotency was advisory-only: `priorImport` below was
+  // computed and shown to a human reviewer in the interactive preview UI,
+  // but nothing stopped an UNATTENDED auto-commit job from re-processing a
+  // duplicate delivery of the exact same bytes (a retried email, a re-sent
+  // webhook) straight into a second work order + reading set. When true, the
+  // returned `duplicateOf` field is populated on a sha256 match against a
+  // PREVIOUSLY COMMITTED import so the caller can park the job for review
+  // instead of silently auto-committing a duplicate.
+  autoCommit?: boolean;
 }
 
 /**
@@ -333,6 +344,14 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     visionUsed, visionAdded,
     pageCount, pagesScanned, textPages, truncated, pageError, extractionId, photoOfPaper, rawText,
     priorImport: priorImport ? { importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted } : null,
+    // [2026-07-08 acquisition audit W2-AI] enforcement signal for autoCommit
+    // callers -- see the BuildPreviewOpts.autoCommit comment above. Only ever
+    // populated when the caller opted in AND a prior COMMITTED import with
+    // the identical sha256 exists; ingestWorker checks this before
+    // committing and parks the job for review instead.
+    duplicateOf: (opts.autoCommit && priorImport)
+      ? { extractionEventId: priorImport.id, importedAt: priorImport.committedAt, readings: priorImport.fieldsCommitted }
+      : null,
   };
 }
 

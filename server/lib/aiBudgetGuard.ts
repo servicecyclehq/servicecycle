@@ -183,6 +183,77 @@ function _cloudflareEffectiveUsd() {
   return _monthlyCloudflare.usdCost + _monthlyCloudflare.reservedUsd;
 }
 
+// [2026-07-08 acquisition audit W2-AI] OPTIONAL per-account/day cap, separate
+// from every gate above (which caps the SHARED provider key/budget in
+// aggregate and says nothing about ONE account inside a multi-tenant
+// instance). Relevant on self-host: a multi-tenant deploy with a single
+// shared provider key has no way today to stop one runaway/misbehaving
+// account from consuming the whole shared budget; on BYO-AI, an operator may
+// still want a sanity cap on an individual account's own key spend. OFF by
+// default (both caps are 0 = disabled) so this is a strict no-op on every
+// existing deployment unless an operator opts in via
+// AI_PER_ACCOUNT_DAILY_CALL_CAP / AI_PER_ACCOUNT_DAILY_TOKEN_CAP. In-process
+// counters only, matching every other tracker in this file (single-droplet;
+// a multi-replica deploy needs a shared store).
+const _accountDailyState = new Map<string, { day: string; calls: number; tokens: number }>();
+
+function _perAccountCallCap(): number {
+  const raw = process.env.AI_PER_ACCOUNT_DAILY_CALL_CAP;
+  if (raw == null || raw === '') return 0; // 0 = disabled
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function _perAccountTokenCap(): number {
+  const raw = process.env.AI_PER_ACCOUNT_DAILY_TOKEN_CAP;
+  if (raw == null || raw === '') return 0;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function _accountState(accountId: string) {
+  const today = _todayUtc();
+  let st = _accountDailyState.get(accountId);
+  if (!st || st.day !== today) {
+    st = { day: today, calls: 0, tokens: 0 };
+    _accountDailyState.set(accountId, st);
+  }
+  return st;
+}
+
+/**
+ * checkAccountAiCap(accountId, estimatedTokens?) — OPTIONAL per-account/day
+ * gate, independent of the shared-service budgets above. A strict no-op
+ * (`{ ok: true }`, nothing consumed) unless an operator has configured
+ * AI_PER_ACCOUNT_DAILY_CALL_CAP and/or AI_PER_ACCOUNT_DAILY_TOKEN_CAP, or
+ * accountId is falsy. Wired into ensureAiBudget() below (runs AFTER the
+ * shared-service gate passes) for the route-driven AI callers; ingest/other
+ * callers with per-account context can call it directly.
+ *
+ * Returns { ok: true, callsToday, callCap, tokensToday, tokenCap } and
+ * consumes one call (+ estimatedTokens, if given) on success, or
+ * { ok: false, reason: 'account_daily_call_cap' | 'account_daily_token_cap',
+ * callsToday, callCap, tokensToday, tokenCap } WITHOUT consuming when a
+ * configured cap is already met/exceeded.
+ */
+function checkAccountAiCap(accountId: string | null | undefined, estimatedTokens = 0) {
+  const callCap = _perAccountCallCap();
+  const tokenCap = _perAccountTokenCap();
+  if (!accountId || (callCap <= 0 && tokenCap <= 0)) return { ok: true };
+
+  const st = _accountState(accountId);
+  if (callCap > 0 && st.calls >= callCap) {
+    return { ok: false, reason: 'account_daily_call_cap', callsToday: st.calls, callCap, tokensToday: st.tokens, tokenCap };
+  }
+  if (tokenCap > 0 && st.tokens >= tokenCap) {
+    return { ok: false, reason: 'account_daily_token_cap', callsToday: st.calls, callCap, tokensToday: st.tokens, tokenCap };
+  }
+
+  st.calls += 1;
+  st.tokens += Math.max(0, Number(estimatedTokens) || 0);
+  return { ok: true, callsToday: st.calls, callCap, tokensToday: st.tokens, tokenCap };
+}
+
 /**
  * checkAndConsume(service) — synchronous gate before every call to that
  * service. `service` defaults to 'gemini' for backward compatibility
@@ -570,7 +641,21 @@ function ensureAiBudget(req, res, service) {
   }
 
   const result = checkAndConsume(svc);
-  if (result.ok) return true;
+  if (result.ok) {
+    // [2026-07-08 acquisition audit W2-AI] optional per-account/day cap, off
+    // by default -- see checkAccountAiCap. Runs AFTER the shared-service gate
+    // passes so an account already over ITS OWN cap doesn't also consume a
+    // shared-service call slot it would then be refused for anyway.
+    const acctResult = checkAccountAiCap(req?.user?.accountId || null);
+    if (acctResult.ok) return true;
+    res.status(503).json({
+      success: false,
+      error:   acctResult.reason,
+      message: 'This account has reached its configured daily AI usage cap. It resets at 00:00 UTC.',
+      data:    acctResult,
+    });
+    return false;
+  }
 
   const errorCode = svc === 'cloudflare'
     ? 'ai_demo_monthly_budget_exhausted'
@@ -746,6 +831,7 @@ rehydrateOnBoot().catch(() => {});
 
 module.exports = {
   checkAndConsume,
+  checkAccountAiCap,
   peek,
   peekAll,
   ensureAiBudget,

@@ -484,6 +484,16 @@ async function _anthropicImage({ imageBuffer, mediaType, prompt, maxTokens, s })
   return { text: _anthropicText(msg), model: s.model };
 }
 
+// [2026-07-08 acquisition audit W2-AI] Anthropic/Cloudflare/Groq call paths
+// already bound their network calls (see the Anthropic client's `timeout:
+// 60_000` below, S3-FN-02); the Gemini and OpenAI/Azure SDK paths did not, so
+// a hung socket on either wedged the single in-process ingest worker
+// indefinitely (the heartbeat can detect it, not survive it). Match
+// Anthropic's existing 60s bound on every provider call below via each SDK's
+// own requestOptions.timeout rather than hand-rolling a Promise.race, since
+// both SDKs expose one.
+const PROVIDER_TIMEOUT_MS = 60_000; // 60s — same bound as the Anthropic client
+
 // ── OpenAI ────────────────────────────────────────────────────────────────────
 
 function _openaiClient(s) {
@@ -491,7 +501,7 @@ function _openaiClient(s) {
   try { OpenAI = require('openai').default || require('openai'); } catch {
     throw new Error('[ai] openai package not installed. Run: npm install openai');
   }
-  return new OpenAI({ apiKey: s.apiKey });
+  return new OpenAI({ apiKey: s.apiKey, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 1 });
 }
 
 async function _openaiComplete({ system, user, maxTokens, s }) {
@@ -538,6 +548,8 @@ function _azureClient(s) {
     baseURL:        `${s.azureEndpoint}/openai/deployments/${s.azureDeployment}`,
     defaultQuery:   { 'api-version': s.azureApiVersion },
     defaultHeaders: { 'api-key': s.apiKey },
+    timeout:        PROVIDER_TIMEOUT_MS,
+    maxRetries:     1,
   });
 }
 
@@ -647,7 +659,9 @@ async function _geminiComplete({ system, user, maxTokens, s }) {
   for (let i = 0; i < cascade.length; i++) {
     const modelName = cascade[i];
     try {
-      const m = genai.getGenerativeModel({ model: modelName, systemInstruction: system });
+      // [2026-07-08 acquisition audit W2-AI] requestOptions.timeout bounds the
+      // underlying fetch — see PROVIDER_TIMEOUT_MS comment above.
+      const m = genai.getGenerativeModel({ model: modelName, systemInstruction: system }, { timeout: PROVIDER_TIMEOUT_MS });
       const result = await m.generateContent({
         contents: [{ role: 'user', parts: [{ text: user }] }],
         generationConfig: { maxOutputTokens: maxTokens },
@@ -680,7 +694,9 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s, resp
   for (let i = 0; i < cascade.length; i++) {
     const modelName = cascade[i];
     try {
-      const m = genai.getGenerativeModel({ model: modelName });
+      // [2026-07-08 acquisition audit W2-AI] requestOptions.timeout bounds the
+      // underlying fetch — see PROVIDER_TIMEOUT_MS comment above.
+      const m = genai.getGenerativeModel({ model: modelName }, { timeout: PROVIDER_TIMEOUT_MS });
       const result = await m.generateContent({
         contents: [{
           role: 'user',

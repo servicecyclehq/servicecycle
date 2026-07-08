@@ -106,6 +106,13 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
       userId:    job.createdById || job.accountId,
       originalName: job.fileName || undefined,
       resumeFrom: job.lastGoodPage ?? undefined,
+      // [2026-07-08 acquisition audit W2-AI] lets the builder populate
+      // `duplicateOf` on a sha256 match against a PREVIOUSLY COMMITTED
+      // import -- checked immediately below, BEFORE the confidence gate /
+      // auto-commit, so a duplicate delivery (retried email, re-sent
+      // webhook) of the exact same bytes is parked for review instead of
+      // silently appending a second work order + reading set.
+      autoCommit: !!job.autoCommit,
     });
 
     // 2026-07-07 (overnight capture-gap fix): pull rawText out of the preview
@@ -114,6 +121,34 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
     // inside `result`, which is what the polling UI fetches on every request.
     const extractedRawText: string | null = (result as any)?.rawText ?? null;
     delete (result as any).rawText;
+
+    // [2026-07-08 acquisition audit W2-AI] Re-ingest idempotency enforcement:
+    // block, don't just advise. testReportPreview only sets `duplicateOf`
+    // when this job opted into autoCommit AND the sha256 matches a prior
+    // COMMITTED import -- park it for a human to confirm intent (re-import on
+    // purpose vs. a duplicate delivery) rather than either silently
+    // re-committing or silently dropping it.
+    const duplicateOf = (result as any)?.duplicateOf ?? null;
+    if (job.autoCommit && duplicateOf) {
+      const dupGate = {
+        autoCommit: false, band: 'yellow',
+        reasons: [`This exact document was already imported on ${duplicateOf.importedAt ? new Date(duplicateOf.importedAt).toISOString() : 'a prior date'} (${duplicateOf.readings ?? '?'} reading(s) committed). Confirm this is an intentional re-import before approving.`],
+        units: [],
+      };
+      (result as any).gate = dupGate;
+      await prisma.ingestJob.update({
+        where: { id: job.id },
+        data: { status: 'needs_review', gate: dupGate, progress: 100, phase: 'duplicate — awaiting review', result, rawText: extractedRawText, error: null, finishedAt: new Date() },
+      });
+      await prisma.activityLog.create({
+        data: {
+          accountId: job.accountId, userId: null, action: 'ingest_job_needs_review',
+          details: { jobId: job.id, kind: job.kind, fileName: job.fileName, band: 'yellow', reasons: dupGate.reasons, duplicateOfExtractionEventId: duplicateOf.extractionEventId },
+        },
+      }).catch(() => {});
+      await _afterGated(job);
+      return 'done';
+    }
 
     // Confidence gate (email-in / backfill, i.e. hands-off autoCommit jobs).
     // High-confidence parses auto-commit; anything below the bar is parked as
@@ -174,6 +209,36 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
         (result as any).autoCommitError = ce && ce.message ? String(ce.message).slice(0, 300) : 'auto-commit failed';
         console.error(`[ingestWorker] auto-commit failed for job ${job.id}:`, (result as any).autoCommitError);
       }
+    }
+
+    // [2026-07-08 acquisition audit W2-AI] An auto-commit failure must NOT
+    // fall through to the generic 'done' write below -- that made a job whose
+    // asset cards were never written (commitPreviewSections runs inside a
+    // $transaction, so a mid-commit throw rolls back the whole thing -- no
+    // partial writes) look identical to a successful ingest to anyone polling
+    // status or the review-queue counters. Park it as needs_review instead:
+    // a human sees the failure and can retry via the SAME approve path in
+    // routes/ingestReview.ts (commitPreviewSections re-runs cleanly against
+    // the same preview since nothing was partially written the first time).
+    if (job.autoCommit && (result as any).autoCommitError) {
+      const failGate = {
+        autoCommit: false, band: 'red',
+        reasons: [`Auto-commit failed: ${(result as any).autoCommitError}`],
+        units: [],
+      };
+      (result as any).gate = failGate;
+      await prisma.ingestJob.update({
+        where: { id: job.id },
+        data: { status: 'needs_review', gate: failGate, progress: 100, phase: 'auto-commit failed — awaiting review', result, rawText: extractedRawText, error: (result as any).autoCommitError, finishedAt: new Date() },
+      });
+      await prisma.activityLog.create({
+        data: {
+          accountId: job.accountId, userId: null, action: 'ingest_job_needs_review',
+          details: { jobId: job.id, kind: job.kind, fileName: job.fileName, band: 'red', reasons: failGate.reasons },
+        },
+      }).catch(() => {});
+      await _afterGated(job);
+      return 'done';
     }
 
     // 2026-07-05 (§11 A2 Half 1 + Half 2): record the checkpoint so a retry's
