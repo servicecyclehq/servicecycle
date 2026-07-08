@@ -1755,8 +1755,19 @@ module.exports = app;
 module.exports.default = app;
 
 // In test mode, skip listen + crons so supertest can use the express app directly.
+// FORCE_LISTEN opts back in while keeping NODE_ENV=test's other relaxations
+// (passwordPolicy.ts's zxcvbn/HIBP bypass in particular) -- CI's "Start API
+// server" step runs this file as a standalone process for the 14 live-server
+// smoke suites, which need a real listening server on PORT but still use
+// known-weak fixture passwords (e.g. "Admin1234!") that a production
+// password policy would reject. Found 2026-07-08: with plain NODE_ENV=test
+// this process never called listen() at all, so the smoke-test step's curl
+// health check spun for its full 30s timeout every run -- the first time CI
+// ever reached this step (the step before it had been silently broken since
+// 2026-06-24; see the "Unit tests" step comment in ci.yml), so this bug had
+// never been surfaced before now.
 let httpServer: any = { close: (cb: any) => { try { cb?.(); } catch {} } };
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' || process.env.FORCE_LISTEN === 'true') {
 httpServer = app.listen(PORT, '0.0.0.0', async () => {
   console.log(`ServiceCycle API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
 

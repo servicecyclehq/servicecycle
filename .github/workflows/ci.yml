@@ -130,6 +130,18 @@ jobs:
         # health.test.js and auth.test.js call http://localhost:3001 via
         # supertest. helpers.js uses TEST_BASE_URL || http://localhost:PORT.
         # tsx is already installed in node_modules.
+        env:
+          # index.ts skips app.listen() when NODE_ENV=test (so supertest can
+          # attach to the exported app in-process instead, in suites that do
+          # that) -- this step needs a REAL listening server for the 14
+          # live-server smoke suites' HTTP calls, while keeping the job-level
+          # NODE_ENV=test for passwordPolicy.ts's test-mode zxcvbn/HIBP
+          # relaxation (the fixture passwords like "Admin1234!" used by these
+          # suites would fail a real password policy otherwise). Found
+          # 2026-07-08: without this, the server process never listened at
+          # all and this step's curl health check timed out after its full
+          # 30s every run -- the first time CI ever reached this step.
+          FORCE_LISTEN: "true"
         run: |
           nohup node node_modules/tsx/dist/cli.mjs index.ts \
             > /tmp/server.log 2>&1 &
