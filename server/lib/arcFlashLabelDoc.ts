@@ -59,7 +59,13 @@ function buildLabelModel(row: any, opts: any = {}): any {
   }
 
   const v = voltsOf(row.nominalVoltage);
-  const danger = ie != null && ie > 40;
+  // NFPA 70E signal-word rule is DANGER at EITHER >40 cal/cm2 OR >600V,
+  // regardless of the other value -- this only checked incident energy.
+  // Found 2026-07-08 via tests/arcFlashLabelDoc.test.js ("DANGER when
+  // voltage > 600 V even at low IE", already asserting the correct rule but
+  // never true against this code): a >600V bus with a low measured IE
+  // printed WARNING instead of DANGER.
+  const danger = (ie != null && ie > 40) || (v != null && v > 600);
   // Method: explicit ppeMethod, else infer (IE present → incident-energy).
   let method = row.ppeMethod;
   if (method !== 'incident_energy' && method !== 'ppe_category') {

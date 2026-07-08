@@ -38,11 +38,31 @@ jest.mock('../lib/prisma', () => {
 
 const express = require('express');
 const request = require('supertest');
+const jwt     = require('jsonwebtoken');
 const prisma  = require('../lib/prisma');
 const earlyAccessRouter = require('../routes/earlyAccess');
 
 let app;
 const trackedIds = new Set();
+
+// GET /list was hardened to authenticateToken + requireAdmin + denyOnDemo
+// (see routes/earlyAccess.ts comment: it was reachable unauthenticated
+// because Express routers match every sub-path) after this test was first
+// written. Mint a real admin JWT the same way routes/auth.ts does rather
+// than going through a live login round trip -- this suite intentionally
+// mounts only earlyAccessRouter on a throwaway app, no /api/auth/login
+// exists here. Picks whichever admin the seed created (CI seeds
+// admin@acme.com, local dev seeds admin@demo.local) instead of hardcoding
+// an email so this works against either.
+async function adminBearer() {
+  const admin = await prisma.user.findFirst({ where: { role: 'admin' }, select: { id: true, accountId: true } });
+  if (!admin) throw new Error('adminBearer: no admin user found -- did the DB get seeded?');
+  const token = jwt.sign({ userId: admin.id, accountId: admin.accountId, ep: 0 }, process.env.JWT_SECRET, {
+    expiresIn: '5m',
+    algorithm: 'HS256',
+  });
+  return `Bearer ${token}`;
+}
 
 beforeAll(() => {
   app = express();
@@ -146,7 +166,7 @@ describe('GET /api/early-access/list', () => {
     });
     trackedIds.add(a.id); trackedIds.add(b.id);
 
-    const res = await request(app).get('/api/early-access/list');
+    const res = await request(app).get('/api/early-access/list').set('Authorization', await adminBearer());
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(Array.isArray(res.body.data.rows)).toBe(true);
