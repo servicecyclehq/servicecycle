@@ -92,6 +92,20 @@ const crypto = require('crypto');
 // rowHash backfill is needed — fresh databases chain from genesis with the
 // new form.
 //
+// [2026-07-08 acquisition-audit fix, W1-M3] accountId + assetId ALSO
+// excluded now, for the same reason userId was: ActivityLog.asset/.account
+// are onDelete: SetNull (schema.prisma), so a legitimate asset/account
+// hard-delete nulls those columns on historical rows and would otherwise
+// read as tampering. Only id/action/details/createdAt remain in the
+// canonical payload. This is a chain-form change — every existing row's
+// rowHash was computed under the OLD canonical() — so it ships together
+// with a one-time full re-anchor (server/scripts/backfill-activity-log-chain.js,
+// re-run against every environment right after this deploy) that resets
+// rowHash/prevHash to NULL and recomputes the whole chain from genesis
+// under the new form. verify-audit-chain.js's canonical()/computeRowHash()
+// MUST be kept byte-for-byte identical to this file (activity-log-chain.test.js
+// guards the shape, not byte-identity — diff the two files by eye on any change).
+//
 // [LEGAL-8-6] `details` is part of the canonical payload, so when a safety
 // mutation writes its changed hazard values (incident energy / PPE / boundary /
 // PE attribution / study date / incident fields) into details with old->new +
@@ -101,9 +115,7 @@ const crypto = require('crypto');
 function canonical(row) {
   const obj = {
     id:         row.id,
-    accountId:  row.accountId === undefined ? null : row.accountId,
-    assetId:    row.assetId === undefined ? null : row.assetId,
-    // userId intentionally omitted — see comment above (audit-2 CR-1)
+    // accountId/assetId intentionally omitted — see 2026-07-08 comment above
     action:     row.action,
     details:    row.details === undefined ? null : row.details,
     // Date.toISOString() pins to millisecond resolution; that's the

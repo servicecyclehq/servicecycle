@@ -2,22 +2,31 @@
  * server/scripts/backfill-activity-log-chain.js
  * ---------------------------------------------
  *
- * One-time backfill for the Pass-6 W4 MT-127 ActivityLog hash chain.
+ * One-time (re-runnable) chain (re)compute for ActivityLog's hash chain.
  *
- * Two passes:
+ * History:
+ *   - Originally the Pass-6 W4 MT-127 backfill, with a Pass 1 that derived
+ *     accountId for historical rows via a `Contract` model. That model no
+ *     longer exists (ServiceCycle's contractId -> assetId conversion), so
+ *     Pass 1 referenced a nonexistent `contractId` column and would throw
+ *     "Unknown field" on first Prisma call — a stale, broken script
+ *     (2026-07-08 acquisition-audit finding W1-L6). Removed below; every
+ *     row has had accountId populated at write time since that conversion.
+ *   - 2026-07-08 acquisition-audit fix W1-M3: canonical() in
+ *     activityLogChain.ts now excludes accountId/assetId (both FK columns
+ *     are onDelete: SetNull, so a legitimate hard-delete used to read as
+ *     tampering). That's a chain-FORM change: every previously-settled
+ *     row's rowHash was computed under the OLD canonical() and will no
+ *     longer match under the new one. This script now does the one-time
+ *     re-anchor: reset every settled row's prevHash/rowHash to NULL, then
+ *     call settleAllPending() to recompute the whole chain from genesis
+ *     under the new canonical() form — exactly the same technique used for
+ *     the earlier userId exclusion (see activityLogChain.ts history).
  *
- *   PASS 1 — Derive accountId for historical rows. The new accountId
- *   column is nullable, but for chain hygiene we want every row tied
- *   to its tenant. Sources, in priority order:
- *     - Contract.accountId via row.contractId
- *     - User.accountId via row.userId
- *     - (fallback) leave NULL — cross-tenant or pre-account event
- *
- *   PASS 2 — Compute the hash chain by calling settleAllPending() in
- *   activityLogChain.js. This walks rows where rowHash IS NULL,
- *   ordered by (createdAt, id), computes prevHash + rowHash, writes back.
- *
- * Idempotent: safe to re-run. Rows already chained are skipped.
+ * Idempotent: safe to re-run. A second run just re-settles an
+ * already-correctly-chained set of rows (wasted work, not wrong work) —
+ * canonical() is a pure function of (id, action, details, createdAt), so
+ * the recomputed hashes are identical either way.
  *
  * Run with:
  *   docker compose exec server node scripts/backfill-activity-log-chain.js
@@ -27,65 +36,22 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const prisma = require('../lib/prisma');
+// lib/prisma.ts uses `export default prisma`, so a bare CJS require() here
+// returns the ES module namespace object, not the client — .default is
+// required (2026-07-08 acquisition-audit fix; this script never actually
+// ran successfully under tsx before, on top of the Contract-field bug fixed
+// above; see backfillDrawingRevisions.ts / seed-powerdb-demo.js for the
+// same correct pattern elsewhere in this directory).
+const prisma = require('../lib/prisma').default;
 const { settleAllPending } = require('../lib/activityLogChain');
 
-async function deriveAccountIds() {
-  console.log('=== Pass 1: derive accountId for historical rows ===');
-
-  const rowsNeedingAccount = await prisma.activityLog.findMany({
-    where:  { accountId: null },
-    select: { id: true, contractId: true, userId: true },
+async function resetSettledRows() {
+  console.log('=== Pass 1: reset settled rows so the chain recomputes under the new canonical() form ===');
+  const result = await prisma.activityLog.updateMany({
+    where: { rowHash: { not: null } },
+    data:  { rowHash: null, prevHash: null },
   });
-  console.log(`Rows without accountId: ${rowsNeedingAccount.length}`);
-
-  if (rowsNeedingAccount.length === 0) return;
-
-  // Batch resolve via two lookup maps (one DB query each, not one per row).
-  const contractIds = [...new Set(rowsNeedingAccount.map(r => r.contractId).filter(Boolean))];
-  const userIds     = [...new Set(rowsNeedingAccount.map(r => r.userId).filter(Boolean))];
-
-  const contracts = contractIds.length
-    ? await prisma.contract.findMany({ where: { id: { in: contractIds } }, select: { id: true, accountId: true } })
-    : [];
-  const users = userIds.length
-    ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, accountId: true } })
-    : [];
-
-  const contractMap = new Map(contracts.map(c => [c.id, c.accountId]));
-  const userMap     = new Map(users.map(u => [u.id, u.accountId]));
-
-  let viaContract = 0, viaUser = 0, leftNull = 0;
-  // Update in batches of 500 to keep transaction size reasonable.
-  const BATCH = 500;
-  for (let i = 0; i < rowsNeedingAccount.length; i += BATCH) {
-    const batch = rowsNeedingAccount.slice(i, i + BATCH);
-    await prisma.$transaction(async (tx) => {
-      for (const row of batch) {
-        let accountId = null;
-        if (row.contractId && contractMap.has(row.contractId)) {
-          accountId = contractMap.get(row.contractId);
-          viaContract++;
-        } else if (row.userId && userMap.has(row.userId)) {
-          accountId = userMap.get(row.userId);
-          viaUser++;
-        } else {
-          leftNull++;
-        }
-        if (accountId) {
-          await tx.activityLog.update({
-            where: { id: row.id },
-            data:  { accountId },
-          });
-        }
-      }
-    }, { timeout: 60_000 });
-    process.stdout.write(`  Batch ${Math.floor(i / BATCH) + 1}/${Math.ceil(rowsNeedingAccount.length / BATCH)} resolved\n`);
-  }
-
-  console.log(`Resolved via contract: ${viaContract}`);
-  console.log(`Resolved via user:     ${viaUser}`);
-  console.log(`Left NULL (anonymous): ${leftNull}`);
+  console.log(`Reset ${result.count} previously-settled rows to pending.`);
 }
 
 async function computeChain() {
@@ -102,15 +68,15 @@ async function computeChain() {
 }
 
 async function main() {
-  console.log('=== ServiceCycle ActivityLog hash-chain backfill (W4 MT-127) ===');
+  console.log('=== ServiceCycle ActivityLog hash-chain re-anchor (2026-07-08 W1-M3 canonical() form change) ===');
   console.log('');
   try {
-    await deriveAccountIds();
+    await resetSettledRows();
     await computeChain();
     console.log('');
-    console.log('=== Backfill complete ===');
+    console.log('=== Re-anchor complete. Run scripts/verify-audit-chain.js against a fresh export to confirm. ===');
   } catch (err) {
-    console.error('Backfill failed:', err);
+    console.error('Re-anchor failed:', err);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

@@ -43,11 +43,14 @@ function stableStringify(v) {
   return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
 }
 
+// [2026-07-08 acquisition-audit fix, W1-M3] accountId/assetId excluded from
+// the canonical payload — MUST stay byte-for-byte identical to canonical()
+// in server/lib/activityLogChain.ts. See that file's 2026-07-08 comment for
+// why (both FKs are onDelete: SetNull; including them meant a legitimate
+// hard-delete of an Asset/Account read as chain tampering).
 function canonical(row) {
   const obj = {
     id:        row.id,
-    accountId: row.accountId === undefined ? null : row.accountId,
-    assetId:   row.assetId === undefined ? null : row.assetId,
     action:    row.action,
     details:   row.details === undefined ? null : row.details,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,

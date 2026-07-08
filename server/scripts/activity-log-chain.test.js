@@ -31,6 +31,16 @@ function makeMockPrisma(initialRows) {
   const rows = initialRows.map(r => ({ ...r }));
 
   return {
+    // 2026-07-08 acquisition-audit fix: settleAccount() batches its updates
+    // via prisma.$transaction(updates[]) (S2-FN-02 batching optimization) —
+    // this mock never implemented it, so any test hitting a >0-row settle
+    // crashed with "prisma.$transaction is not a function" (pre-existing,
+    // unrelated to the canonical() change below). The update() promises are
+    // already in flight by the time $transaction receives them (same as
+    // real Prisma's array-of-promises form), so just await them all.
+    async $transaction(promises) {
+      return Promise.all(promises);
+    },
     activityLog: {
       async findFirst({ where, orderBy, select }) {
         let candidates = rows.filter(r => matches(r, where));
@@ -134,10 +144,16 @@ const nested2 = stableStringify({ x: { a: [3, { m: 2, z: 1 }], d: 1 } });
 assert(nested === nested2, 'order-independent for nested');
 
 console.log('');
-console.log('Test 2 — canonical() round-trips Date to ISO string');
-const c = canonical({ id: 'r1', action: 'test', createdAt: new Date('2026-05-19T12:00:00.000Z'), details: { x: 1 } });
+console.log('Test 2 — canonical() round-trips Date to ISO string, excludes accountId/assetId/userId');
+const c = canonical({ id: 'r1', accountId: 'acc1', assetId: 'asset1', action: 'test', createdAt: new Date('2026-05-19T12:00:00.000Z'), details: { x: 1 } });
 assert(c.includes('"createdAt":"2026-05-19T12:00:00.000Z"'), 'Date serialized to ISO');
-assert(c.includes('"accountId":null'), 'missing accountId becomes null');
+// 2026-07-08 acquisition-audit fix (W1-M3): accountId/assetId are FK columns
+// with onDelete: SetNull, so they're excluded from the hash payload (same
+// reason userId already was) — a legitimate hard-delete must not read as
+// tamper. Assert they're absent, not merely nulled.
+assert(!c.includes('accountId'), 'accountId excluded from canonical payload entirely');
+assert(!c.includes('assetId'), 'assetId excluded from canonical payload entirely');
+assert(!c.includes('userId'), 'userId excluded from canonical payload entirely');
 
 console.log('');
 console.log('Test 3 — computeRowHash produces stable, distinct hashes');

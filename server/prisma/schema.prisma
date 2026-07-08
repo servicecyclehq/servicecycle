@@ -1192,6 +1192,7 @@ model WorkOrder {
   @@index([scheduleId])
   @@index([contractorId])
   @@index([assignedUserId])
+  @@index([assignedTechId]) // 2026-07-08 audit fix W1-L13: missing index
   @@map("work_orders")
 }
 
@@ -1268,6 +1269,16 @@ model TestMeasurement {
   // an honest basis instead of falsely citing "the test-report result column."
   sanityNote       String?
   notes            String?
+  // [2026-07-08 acquisition-audit fix, W1-H3/AI-1] Per-reading provenance,
+  // dropped at commit until now. Mirrors the preview-stage stamp (see
+  // testReportPreview.ts) so a committed reading is traceable back to
+  // whether it was deterministically parsed or AI-recovered, and how
+  // confident that recovery was. Populated by commitTestReport.ts (Batch 3
+  // of the same remediation pass) going forward; NULL on rows committed
+  // before this column existed (pre-2026-07-08), which is itself honest —
+  // there is no retroactive provenance to backfill for those.
+  source           String? // "deterministic" | "ai" | null (pre-existing rows)
+  confidence       Float? // 0.0-1.0, only meaningful when source = "ai"
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   // Forensics/immutability: deleting a reading (evidence) is a SOFT delete -
@@ -2191,7 +2202,12 @@ model ActivityLog {
   prevHash  String?
   rowHash   String?
 
-  asset   Asset?   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  // [2026-07-08 acquisition-audit fix, W1-M3] Was onDelete: Cascade — a hard
+  // delete of an Asset silently destroyed its audit history instead of
+  // preserving it. SetNull (matching .account below) keeps the rows; the
+  // 2026-07-08 canonical() change below excludes assetId/accountId from the
+  // hash payload so a legitimate SetNull no longer reads as chain tampering.
+  asset   Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
   // SetNull cascade on userId so GDPR-erase of a User does not break the
   // transaction; historical rows remain visible with userId=null (already
   // supported by the chain verifier).
@@ -2204,6 +2220,7 @@ model ActivityLog {
   @@index([action, createdAt])
   @@index([accountId, createdAt]) // per-account chain reads
   @@index([rowHash]) // lookup-by-hash for verifier
+  @@index([userId]) // 2026-07-08 audit fix W1-L13: filtered-lookup index was missing
   @@map("activity_logs")
 }
 
@@ -2462,6 +2479,7 @@ model CustomFieldValue {
 
   @@unique([assetId, definitionId])
   @@index([assetId])
+  @@index([definitionId]) // 2026-07-08 audit fix W1-L13: missing index
   @@map("custom_field_values")
 }
 
@@ -2994,6 +3012,7 @@ model PartnerInvite {
   @@index([partnerOrgId])
   @@index([invitedById])
   @@index([inviteeEmail])
+  @@index([accountId]) // 2026-07-08 audit fix W1-L13: missing index on a Restrict FK used by offboarding lookups
   @@map("partner_invites")
 }
 
@@ -3675,10 +3694,21 @@ model Part {
 
   @@index([accountId])
   @@index([accountId, category])
-  @@index([accountId, partNumber])
+  // [2026-07-08 acquisition-audit fix, W1-L5] Was a plain index; CSV-import
+  // TOCTOU could create duplicate part numbers per account. Migration adds
+  // the real UNIQUE constraint (guarded — skips + logs a NOTICE instead of
+  // failing deploy if pre-existing duplicates are found; see migration SQL).
+  @@unique([accountId, partNumber])
   @@map("parts")
 }
 
+// [2026-07-08 acquisition-audit fix, W1-L5] True de-dupe protection for this
+// model is a DB-level expression unique index — COALESCE(assetId,'') /
+// COALESCE(siteId,'') so the "account-wide float" (both null) and
+// "site-level" rows are collision-checked too, not just asset-scoped rows.
+// Prisma's schema DSL can't express an expression index, so it's created by
+// raw SQL in the migration only (see migrations/20260708120000_audit_remediation_batch1).
+// Do not "helpfully" add a plain @@unique here — it would miss the all-null case.
 model SpareInventory {
   id        String   @id @default(uuid())
   accountId String
