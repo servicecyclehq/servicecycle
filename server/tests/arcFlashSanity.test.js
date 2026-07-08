@@ -390,6 +390,107 @@ describe('checkBusContradictions', () => {
   });
 });
 
+  // Regression-lock for the 2026-07-08 acquisition-audit fix: the bolted
+  // fault-current validity envelope must be voltage-class branched the same
+  // way the electrode-gap check already is (500 A-106 kA i.e. 0.5-106 kA for
+  // <=600 V; 200 A-65 kA i.e. 0.2-65 kA for 601 V-15 kV), NOT a flat 0.5-106 kA
+  // window regardless of voltage class.
+  describe('IEEE 1584-2018 fault-current validity bound — voltage-class branched', () => {
+    test('LV (480V) bus below the LV floor of 0.5 kA is flagged', () => {
+      const f = checkBusContradictions({ busName: 'LV-1', nominalVoltage: '480V', boltedFaultCurrentKA: 0.3 });
+      expect(codes(f)).toContain('fault_below_ieee1584_min');
+      const finding = f.find((x) => x.code === 'fault_below_ieee1584_min');
+      expect(finding.severity).toBe('error');
+      expect(finding.message).toContain('0.5 kA');
+      expect(finding.message).toContain('600 V');
+    });
+
+    test('LV (480V) bus above the LV ceiling of 106 kA is flagged', () => {
+      const f = checkBusContradictions({ busName: 'LV-1', nominalVoltage: '480V', boltedFaultCurrentKA: 110 });
+      expect(codes(f)).toContain('fault_exceeds_ieee1584_max');
+      const finding = f.find((x) => x.code === 'fault_exceeds_ieee1584_max');
+      expect(finding.message).toContain('106 kA');
+    });
+
+    test('LV (480V) bus within 0.5-106 kA is NOT flagged', () => {
+      const f = checkBusContradictions({ busName: 'LV-1', nominalVoltage: '480V', boltedFaultCurrentKA: 21.9 });
+      expect(codes(f)).not.toContain('fault_below_ieee1584_min');
+      expect(codes(f)).not.toContain('fault_exceeds_ieee1584_max');
+    });
+
+    test('MV (4160V) bus at 0.3 kA is valid (above the 0.2 kA MV floor) — the old flat 0.5 kA floor would have wrongly flagged this', () => {
+      const f = checkBusContradictions({ busName: 'MV-1', nominalVoltage: '4160V', boltedFaultCurrentKA: 0.3 });
+      expect(codes(f)).not.toContain('fault_below_ieee1584_min');
+    });
+
+    test('MV (4160V) bus below the MV floor of 0.2 kA is flagged', () => {
+      const f = checkBusContradictions({ busName: 'MV-1', nominalVoltage: '4160V', boltedFaultCurrentKA: 0.15 });
+      expect(codes(f)).toContain('fault_below_ieee1584_min');
+      const finding = f.find((x) => x.code === 'fault_below_ieee1584_min');
+      expect(finding.message).toContain('0.2 kA');
+      expect(finding.message).toContain('601 V');
+    });
+
+    test('MV (4160V) bus at 70 kA is flagged — the old flat 106 kA ceiling would have wrongly let this through', () => {
+      const f = checkBusContradictions({ busName: 'MV-1', nominalVoltage: '4160V', boltedFaultCurrentKA: 70 });
+      expect(codes(f)).toContain('fault_exceeds_ieee1584_max');
+      const finding = f.find((x) => x.code === 'fault_exceeds_ieee1584_max');
+      expect(finding.message).toContain('65 kA');
+    });
+
+    test('MV (13.8kV) bus within 0.2-65 kA is NOT flagged', () => {
+      const f = checkBusContradictions({ busName: 'MV-2', nominalVoltage: '13.8kV', boltedFaultCurrentKA: 25 });
+      expect(codes(f)).not.toContain('fault_below_ieee1584_min');
+      expect(codes(f)).not.toContain('fault_exceeds_ieee1584_max');
+    });
+
+    test('unknown voltage defaults to the wider MV envelope, same convention as the gap check', () => {
+      // No nominalVoltage supplied: 0.3 kA would fail the LV floor (0.5) but
+      // passes the MV floor (0.2) — the code must default to MV like the
+      // adjacent gap check does when voltage class can't be determined.
+      const f = checkBusContradictions({ busName: 'UNKNOWN-V', boltedFaultCurrentKA: 0.3 });
+      expect(codes(f)).not.toContain('fault_below_ieee1584_min');
+    });
+
+    test('electrode-gap check is unaffected by the fault-current change (regression)', () => {
+      const fLv = checkBusContradictions({ busName: 'LV-1', nominalVoltage: '480V', conductorGapMm: 100 });
+      expect(codes(fLv)).toContain('gap_outside_ieee1584_range');
+      const fMv = checkBusContradictions({ busName: 'MV-1', nominalVoltage: '4160V', conductorGapMm: 100 });
+      expect(codes(fMv)).not.toContain('gap_outside_ieee1584_range');
+    });
+  });
+
+  describe('working distance below IEEE 1584-2018 floor — reworded message, same 12in/304.8mm value', () => {
+    test('flags working distance below 12 in regardless of voltage class', () => {
+      const f = checkBusContradictions({ busName: 'B', nominalVoltage: '4160V', workingDistanceIn: 10 });
+      expect(codes(f)).toContain('working_distance_below_ieee1584_min');
+      const finding = f.find((x) => x.code === 'working_distance_below_ieee1584_min');
+      expect(finding.message).toContain('12 in');
+      expect(finding.message).not.toMatch(/≤600 V|601 V–15 kV/); // NOT voltage-branched, unlike fault current/gap
+    });
+
+    test('does NOT flag working distance of exactly 12 in (inclusive floor)', () => {
+      const f = checkBusContradictions({ busName: 'B', workingDistanceIn: 12 });
+      expect(codes(f)).not.toContain('working_distance_below_ieee1584_min');
+    });
+  });
+
+  describe('"Category 0" legacy-terminology wording fix (audit 2026-07-08) — values unchanged', () => {
+    test('cat0_boundary_present fires for IE<1.2 cal/cm^2 equipment with a boundary recorded, and its message does not say "Category 0"', () => {
+      const f = checkBusContradictions({ busName: 'PNL-Y', ppeCategory: 0, arcFlashBoundaryIn: 12 });
+      expect(codes(f)).toContain('cat0_boundary_present');
+      const finding = f.find((x) => x.code === 'cat0_boundary_present');
+      expect(finding.severity).toBe('warning');
+      expect(finding.message).not.toContain('Category 0');
+      expect(finding.message).toContain('1.2 cal/cm²');
+    });
+
+    test('the 1.2 cal/cm^2 threshold itself is unchanged: PPE "Cat 0" is still under-protective at exactly 1.2', () => {
+      const f = checkBusContradictions({ busName: 'PNL-Z', incidentEnergyCalCm2: 1.2, ppeCategory: 0 });
+      expect(codes(f)).toContain('ppe_under_ie');
+    });
+  });
+
 // ── checkSystemContradictions ─────────────────────────────────────────────────
 
 describe('checkSystemContradictions', () => {

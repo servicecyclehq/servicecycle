@@ -23,15 +23,20 @@ export type Gases = Partial<Record<GasKey, number>>;
 
 // Upper bound (inclusive) of each Condition band, in ppm. Condition 4 = above C3.
 // Source: IEEE C57.104-2008 Table 1 individual-gas / TDCG four-condition table.
-// Cross-check: the Condition-1 individual limits sum to the Condition-1 TDCG of 720
-// (100 + 120 + 35 + 50 + 65 + 350 = 720), which fixes acetylene at 35/50/80 — NOT
-// the 1/9/35 a prior revision carried (that set is internally inconsistent with the
-// TDCG row and was the 2026-06-28 domain-audit P0-1 correction).
+// Acetylene (C2H2) is 1/9/35 ppm per Table 1 — REVERTED 2026-07-08 (acquisition-
+// audit finding, dgaEvaluate.ts:34) from an incorrect 35/50/80 that a 2026-06-28
+// revision introduced on a false premise: that each gas's Condition-1 limit must
+// sum to the Condition-1 TDCG of 720 (100+120+35+50+65+350=720). IEEE C57.104
+// Table 1 does not define individual-gas limits that way — the TDCG row is an
+// independently-screened value, not a sum of the per-gas C1 limits, and the
+// standard's own published acetylene limits are 1/9/35. Acetylene is the key gas
+// for arcing faults (see keyGasFault below), so the inflated 35/50/80 set silently
+// under-called a genuine high-energy arcing signature by ~2 condition levels.
 const LIMITS: Record<string, [number, number, number]> = {
   // gas: [C1 max, C2 max, C3 max]
   h2:   [100, 700, 1800],
   ch4:  [120, 400, 1000],
-  c2h2: [35, 50, 80],
+  c2h2: [1, 9, 35],
   c2h4: [50, 100, 200],
   c2h6: [65, 100, 150],
   co:   [350, 570, 1400],

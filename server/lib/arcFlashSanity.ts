@@ -33,7 +33,11 @@ export interface Finding { busName: string; code: string; severity: Severity; me
 
 // NFPA 70E PPE-category arc ratings (cal/cm^2). The assigned category must have an
 // arc rating >= the incident energy at the working distance.
-// Cat 0: IE < 1.2 cal/cm² — no arc flash boundary; Cat 0 PPE applies.
+// IE < 1.2 cal/cm² (no arc-flash PPE required). "Category 0" was legacy NFPA 70E
+// terminology removed in the 2015 edition; the 1.2 cal/cm² threshold itself is
+// still correct — only the label was wrong. The record key `0` below is kept
+// purely as an internal index (mirrors the ppeCategory field's own 0..4 values
+// from the sealed study) and is never surfaced as "Category 0" in messages.
 const PPE_CATEGORY_CAL: Record<number, number> = { 0: 1.2, 1: 4, 2: 8, 3: 25, 4: 40 };
 
 function num(v: any): number | null {
@@ -124,20 +128,31 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
   }
 
   // [AFX-9] IEEE 1584-2018 input range validation. The model's bolted (available)
-  // fault-current validity envelope is 0.5–106 kA; the electrode-gap range is
-  // voltage-class dependent (audit 2026-06-28 P1-10 / P2-3 corrections).
+  // fault-current validity envelope is voltage-class dependent, same as the
+  // electrode-gap range right below: 500 A–106 kA (0.5–106 kA) for ≤600 V, but
+  // only 200 A–65 kA (0.2–65 kA) for 601 V–15 kV (audit 2026-07-08 correction —
+  // a prior flat 0.5–106 kA window regardless of voltage class both missed MV
+  // buses outside 65–106 kA and false-flagged valid MV buses at 200–500 A).
   const boltedKA = num(bus.boltedFaultCurrentKA);
   const gapMm    = num(bus.conductorGapMm);
   const wdIn     = num(bus.workingDistanceIn);
-  if (boltedKA != null && boltedKA < 0.5) {
-    add('fault_below_ieee1584_min', 'error',
-      'Available (bolted) fault current is below the IEEE 1584-2018 minimum of 0.5 kA — results are outside model validity.',
-      `boltedFaultCurrentKA=${boltedKA}`);
-  }
-  if (boltedKA != null && boltedKA > 106) {
-    add('fault_exceeds_ieee1584_max', 'error',
-      'Bolted fault current exceeds IEEE 1584-2018 maximum of 106 kA — results are outside model validity.',
-      `boltedFaultCurrentKA=${boltedKA}`);
+  if (boltedKA != null) {
+    // Default to the wider MV envelope when voltage is unknown, same convention
+    // as the gap check below, so we don't false-flag a valid MV study.
+    const lvClassFault = nomVKv != null && nomVKv <= 600;
+    const faultMinKA = lvClassFault ? 0.5 : 0.2;
+    const faultMaxKA = lvClassFault ? 106 : 65;
+    const voltageLabel = lvClassFault ? '≤600 V' : '601 V–15 kV';
+    if (boltedKA < faultMinKA) {
+      add('fault_below_ieee1584_min', 'error',
+        `Available (bolted) fault current is below the IEEE 1584-2018 minimum of ${faultMinKA} kA for ${voltageLabel} — results are outside model validity.`,
+        `boltedFaultCurrentKA=${boltedKA}, nominalVoltage=${bus.nominalVoltage ?? 'n/a'}`);
+    }
+    if (boltedKA > faultMaxKA) {
+      add('fault_exceeds_ieee1584_max', 'error',
+        `Bolted fault current exceeds IEEE 1584-2018 maximum of ${faultMaxKA} kA for ${voltageLabel} — results are outside model validity.`,
+        `boltedFaultCurrentKA=${boltedKA}, nominalVoltage=${bus.nominalVoltage ?? 'n/a'}`);
+    }
   }
   // Electrode-gap validity is voltage-class dependent: 6.35–76.2 mm for ≤600 V,
   // 19.05–254 mm for 601 V–15 kV. Default to the wider MV envelope when voltage is
@@ -152,9 +167,17 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
         `conductorGapMm=${gapMm}, nominalVoltage=${bus.nominalVoltage ?? 'n/a'}`);
     }
   }
+  // Unlike fault current and gap above, IEEE 1584-2018's working-distance floor
+  // is NOT voltage-class branched — it is a single "greater than or equal to
+  // 12 in (304.8 mm)" bound that applies across the model's full 208 V–15 kV
+  // range. Below 12 in the worker is effectively within the arc plasma cloud
+  // itself, so the model's empirical fit (built from tests no closer than 12 in)
+  // isn't just "unvalidated" data-entry-wise — the physical premise of a
+  // measured working distance breaks down. Reworded 2026-07-08 (audit) for
+  // precision; the 12 in / 304.8 mm value itself was already correct.
   if (wdIn != null && wdIn < 12) {
     add('working_distance_below_ieee1584_min', 'error',
-      'Working distance below IEEE 1584-2018 minimum of 12 in (305 mm) — results are outside model validity.',
+      'Working distance is below the IEEE 1584-2018 validity floor of 12 in (304.8 mm), applicable at all voltage classes — the arc-flash model is not empirically validated this close to the arc (the worker would be within the plasma cloud). Confirm the recorded working distance before relying on this result.',
       `workingDistanceIn=${wdIn}`);
   }
 
@@ -163,7 +186,7 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
   const afbIn = num(bus.arcFlashBoundaryIn);
   if (ppeCategory === 0 && afbIn != null) {
     out.push({ busName: name, code: 'cat0_boundary_present', severity: 'warning',
-      message: 'Category 0 equipment (IE < 1.2 cal/cm²) does not require an Arc Flash Protection Boundary per NFPA 70E 2024 Table 130.7(C)(15)(a) Note 3. Verify this value.' });
+      message: 'Equipment with IE < 1.2 cal/cm² (no arc-flash PPE required) does not require an Arc Flash Protection Boundary per NFPA 70E 2024 Table 130.7(C)(15)(a) Note 3. Verify this value.' });
   }
 
   return out;
