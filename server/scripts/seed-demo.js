@@ -2709,7 +2709,7 @@ async function resetAndSeedDemo(opts = {}) {
 // -- CLI entry ----------------------------------------------------------------
 if (require.main === module) {
   resetAndSeedDemo({ trigger: 'cli' })
-    .then((s) => {
+    .then(async (s) => {
       console.log('Demo seed complete:');
       console.log(JSON.stringify(s, null, 2));
       console.log('\nLogin credentials:');
@@ -2718,7 +2718,24 @@ if (require.main === module) {
       console.log('  viewer@demo.local     / Viewer1234!');
       console.log('  consultant@demo.local / Consultant1234!');
       console.log('  tech@demo.local       / Tech1234!');
-      return prisma.$disconnect();
+      await prisma.$disconnect();
+      // 2026-07-08: root cause of a recurring CI hang (job "tsc + jest +
+      // smoke" going silent for up to the full 15min job timeout, always
+      // right after this script's own "Demo seed complete" log line).
+      // Confirmed via gh run log inspection with per-step timeouts added as
+      // a diagnostic: this script does ALL its work, prints the summary +
+      // credentials, disconnects Prisma -- and then the Node process itself
+      // never exits. prisma.$disconnect() only closes the DB connection; it
+      // does nothing about the open HTTP keep-alive socket(s) the live
+      // newsScanner RSS fetch (rss-parser, a few lines above via
+      // seedContractorBook -> ... -> runNewsScanner) can leave behind,
+      // which keep the event loop alive until something external kills the
+      // process. Locally these evidently close fast enough to never matter;
+      // in CI's network they apparently don't. The CLI's own failure branch
+      // right below already force-exits after disconnecting -- this brings
+      // the success branch in line with that existing pattern instead of
+      // relying on a natural (and apparently unreliable) event-loop drain.
+      process.exit(0);
     })
     .catch(async (err) => {
       console.error('Seed failed:', err);
