@@ -106,8 +106,24 @@ jobs:
         run: npx prisma migrate deploy
 
       - name: Seed database
-        # Creates the demo tenant + admin@acme.com used by auth.test.js.
+        # prisma/seed.js is a deliberate no-op (demo seeding moved to
+        # scripts/seed-demo.js -- see that file's own header). Kept only so
+        # `prisma db seed` / `npm run seed` stay wired up.
         run: node prisma/seed.js
+
+      - name: Seed demo data
+        # Creates admin@demo.local (+ manager/viewer/consultant/tech) used by
+        # every live-server smoke suite's login() helper, AND is what makes
+        # the S8 first-run setup gate (index.ts ~line 1084, checks
+        # InstanceConfig.setupCompletedAt) open up: lib/instanceConfig.ts
+        # auto-marks the instance configured once an admin user predates the
+        # InstanceConfig row, which is true here since this step runs before
+        # the server ever boots. Found 2026-07-08 immediately after fixing
+        # the "Start API server never listens" bug (see index.ts FORCE_LISTEN
+        # comment) -- with no admin seeded, every smoke-suite login got 503
+        # "Instance not yet configured", the very next failure point CI had
+        # never been able to reach before today.
+        run: node scripts/seed-demo.js
 
       - name: Unit tests (mocked Prisma — no server needed)
         # The unit jest project stubs out Prisma via moduleNameMapper.
