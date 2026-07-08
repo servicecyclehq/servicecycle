@@ -31,7 +31,12 @@ jest.mock('@anthropic-ai/sdk', () => {
     messages: {
       create: async (args) => {
         lastCreateArgs = args;
-        return { content: [{ text: '{}' }] };
+        // lib/ai.ts's _anthropicText() requires block.type === 'text' (matches
+        // the real Anthropic SDK's response shape) -- this mock was missing
+        // `type`, so every call fell through to the "returned no text
+        // content" throw regardless of model resolution, which is what this
+        // suite actually tests. Not a real AI-credential gap.
+        return { content: [{ type: 'text', text: '{}' }] };
       },
     },
   }));
