@@ -21,7 +21,15 @@
 
 async function main() {
   const sharp = require('sharp');
-  const tsxCliPath = require.resolve('tsx/dist/cli.mjs');
+  // tsx's package.json "exports" map only exposes the "./cli" subpath
+  // specifier (require.resolve('tsx/cli')) for package-name resolution --
+  // the Dockerfile's actual CMD deliberately bypasses that and requires the
+  // raw file path (node_modules/tsx/dist/cli.mjs) directly, which sidesteps
+  // "exports" restrictions entirely. Check existence the same way the real
+  // boot path does, via fs, rather than require.resolve.
+  const fs = require('fs');
+  const tsxCliPath = require.resolve('tsx/package.json').replace('package.json', 'dist/cli.mjs');
+  if (!fs.existsSync(tsxCliPath)) throw new Error('tsx cli.mjs missing at ' + tsxCliPath);
   console.log('TSX_RESOLVE_OK', tsxCliPath);
 
   const png = await sharp({
