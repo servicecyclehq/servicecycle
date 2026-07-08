@@ -40,8 +40,9 @@ function anon() {
 }
 
 const A_USERS = {
-  admin:  { email: 'admin@demo.local',  password: 'Admin1234!' },
-  viewer: { email: 'viewer@demo.local', password: 'Viewer1234!' },
+  admin:   { email: 'admin@demo.local',   password: 'Admin1234!' },
+  viewer:  { email: 'viewer@demo.local',  password: 'Viewer1234!' },
+  manager: { email: 'manager@demo.local', password: 'Manager1234!' },
 };
 
 async function login(email, password) {

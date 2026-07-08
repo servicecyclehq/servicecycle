@@ -28,11 +28,16 @@ beforeAll(async () => {
     .set(bearer(t.tokenAdminA))
     .send({ name: 'v1-test-key', scopes: ['read'] });
   expect(res.status).toBe(201);
-  expect(res.body.data.plaintext).toMatch(/^sc_/);
+  // POST /api/settings/api-keys (routes/apiKeys.ts) returns the one-time
+  // plaintext key under `key`, not `plaintext` -- confirmed against the
+  // route handler and the client (ApiKeysSection.jsx reads `j.data.key`).
+  // This suite's own local var is still called `plaintext` below; only the
+  // response-field name was wrong.
+  expect(res.body.data.key).toMatch(/^sc_/);
   keyA = {
     id:        res.body.data.id,
     name:      res.body.data.name,
-    plaintext: res.body.data.plaintext,
+    plaintext: res.body.data.key,
     scopes:    res.body.data.scopes,
   };
 }, 60_000);
@@ -189,7 +194,10 @@ describe('audit log: api_v1_call written on authenticated request', () => {
       .set(bearer(t.tokenAdminA));
     expect(logRes.status).toBe(200);
 
-    const logs = logRes.body?.data ?? logRes.body?.logs ?? [];
+    // GET /api/activity (routes/activity.ts) nests the array at data.logs,
+    // not data itself -- the old `?? logRes.body?.logs` fallback never
+    // matched (data is always a truthy object), so `.find` below threw.
+    const logs = logRes.body?.data?.logs ?? [];
     const apiRow = logs.find(
       (r) => r.action === 'api_v1_call' && r.details?.keyId === keyA.id
     );

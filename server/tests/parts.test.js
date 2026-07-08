@@ -158,12 +158,17 @@ describe('parts CRUD', () => {
     expect(res.status).toBe(400);
   });
 
-  test('invalid category is rejected with 400', async () => {
+  test('invalid category is silently dropped, not rejected', async () => {
+    // routes/parts.ts POST / (and PATCH /:id, and the CSV-import row parser)
+    // all normalize an unrecognized category to unset rather than 400ing --
+    // a deliberate, consistent lenient-input choice, not a validation gap.
+    // This test previously asserted a 400 that the route never implemented.
     const res = await api()
       .post('/api/parts')
       .set(bearer(t.tokenAdminA))
       .send({ partNumber: 'CAT-BAD', description: 'Bad category', category: 'WIDGET' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
+    expect(res.body.data.category).toBeFalsy();
   });
 });
 

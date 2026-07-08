@@ -46,6 +46,24 @@ jobs:
       # auth.test.js gracefully skips when this doesn't match the seeded password.
       # Set it explicitly so auth tests run (not just skip) in CI.
       SEED_ADMIN_PASSWORD: "Admin1234!"
+      # registerB() in tests/_routeHelpers.js self-registers a hostile "B"
+      # tenant for every setupTenants()-based suite (see note above). POST
+      # /api/auth/register is closed by default (routes/auth.ts H3) and 403s
+      # without this — found 2026-07-08 while fixing the live-server suite
+      # ordering bug above; without it those 11 suites would still all fail
+      # even after being moved to the post-server-start step.
+      REGISTRATION_OPEN: "true"
+      # tests/_routeHelpers.js gives every suite its own client-IP band (via
+      # X-Forwarded-For / CF-Connecting-IP) specifically so 11 suites sharing
+      # one server + one jest process (maxWorkers:1) don't trip each other's
+      # login/registration rate limits. That isolation only works if the
+      # server actually trusts those spoofed-IP headers — found 2026-07-08
+      # that without these two, auth.ts keys rate limits on the CI runner's
+      # single real req.ip instead, and most of the 11 suites fail with 429s
+      # once a couple of suites ahead of them in the run have logged in a
+      # few times.
+      TRUST_PROXY: "true"
+      TRUST_PROXY_SOURCE: "cloudflare"
 
     defaults:
       run:
@@ -84,13 +102,20 @@ jobs:
 
       - name: Unit tests (mocked Prisma — no server needed)
         # The unit jest project stubs out Prisma via moduleNameMapper.
-        # Excludes the three tests that require a live HTTP server — those
-        # run below after the server starts.
+        # Excludes every test that drives the app over real HTTP (supertest
+        # against TEST_BASE_URL/localhost:PORT via tests/helpers.js or
+        # tests/_routeHelpers.js) — those need a running server and run below
+        # after it starts. 2026-07-08: this list previously only had
+        # health/auth/aiQuota; 11 newer live-server suites (documentAnnotations,
+        # workOrderComments, workOrderTransitions, v1PublicApi, idor, parts,
+        # accountExport, loto, quoteRequests, outagePlan, field — added
+        # 2026-06-24..07-05) were silently running here with no server up,
+        # failing every single push since. CI has been red on every push to
+        # main for at least the last 8 commits without anyone noticing —
+        # `git log`/PR checks weren't being watched closely enough to catch it.
         run: |
           npx jest --selectProjects unit --ci --forceExit \
-            --testPathIgnorePatterns="tests/health\\.test\\.js" \
-            --testPathIgnorePatterns="tests/auth\\.test\\.js" \
-            --testPathIgnorePatterns="tests/aiQuota\\.test\\.js"
+            --testPathIgnorePatterns="tests/(health|auth|aiQuota|documentAnnotations|workOrderComments|workOrderTransitions|v1PublicApi|idor|parts|accountExport|loto|quoteRequests|outagePlan|field)\\.test\\.js"
 
       - name: Start API server (background — needed for smoke tests)
         # health.test.js and auth.test.js call http://localhost:3001 via
@@ -115,10 +140,14 @@ jobs:
       - name: Smoke tests (live server + real DB)
         # health, auth, and aiQuota hit the running server / real Postgres.
         # aiQuota self-skips if the DB schema doesn't have the expected tables,
-        # but with migrations run above it should pass fully.
+        # but with migrations run above it should pass fully. The 11
+        # setupTenants()-based live-server suites (see note in the "Unit
+        # tests" step above) belong here too -- they were never reachable by
+        # CI before 2026-07-08 because the step above ran before the server
+        # existed.
         run: |
           npx jest --selectProjects unit --ci --forceExit \
-            --testPathPatterns="tests/(health|auth|aiQuota)\.test\.js"
+            --testPathPatterns="tests/(health|auth|aiQuota|documentAnnotations|workOrderComments|workOrderTransitions|v1PublicApi|idor|parts|accountExport|loto|quoteRequests|outagePlan|field)\.test\.js"
 
       - name: Stop background server
         if: always()

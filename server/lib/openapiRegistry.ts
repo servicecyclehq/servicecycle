@@ -50,7 +50,15 @@ function getSpec() {
   }
   let parsed;
   try {
-    parsed = yaml.safeLoad ? yaml.safeLoad(file.body) : yaml.load(file.body);
+    // js-yaml v4 kept `safeLoad` as an exported function but made it THROW
+    // ("Function yaml.safeLoad is removed...") instead of removing the
+    // export outright, so the old `yaml.safeLoad ? ... : yaml.load(...)`
+    // feature-detect always picked the throwing branch (the function
+    // reference is truthy even though calling it fails). `load()` has been
+    // safe-by-default since v4 -- just call it directly. Found 2026-07-08:
+    // this made /docs/api 503 (getSpec() returning null) in every
+    // environment since whenever js-yaml was bumped to v4.
+    parsed = yaml.load(file.body);
   } catch (err) {
     console.error(`[openapiRegistry] YAML parse error from ${file.source}: ${err && err.message}`);
     return null;

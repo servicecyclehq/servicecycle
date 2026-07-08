@@ -111,10 +111,19 @@ async function buildAccountExport(prisma: any, accountId: string) {
     }),
     prisma.systemStudyAsset.findMany({
       where: { accountId },
-      select: { id: true, studyId: true, assetId: true, busName: true, nominalVoltageV: true,
-        hazardLevel: true, incidentEnergyCalCm2: true, arcFlashBoundaryIn: true, limitedApproachIn: true,
-        restrictedApproachIn: true, ppeCategory: true, ppeMethod: true, workingDistanceIn: true,
-        expiresAt: true, createdAt: true },
+      // 2026-07-08: this select clause referenced 4 fields that don't exist
+      // on SystemStudyAsset (nominalVoltageV, hazardLevel, limitedApproachIn,
+      // restrictedApproachIn -- the real names are nominalVoltage,
+      // labelSeverity, shockLimitedApproachIn, shockRestrictedApproachIn;
+      // expiresAt isn't a field on this model at all) -- made GET
+      // /api/export/account 500 unconditionally for every account, always.
+      // Found while fixing the CI live-server-suite ordering bug, which is
+      // what finally let accountExport.test.js actually run against a real
+      // server and surface this.
+      select: { id: true, studyId: true, assetId: true, busName: true, nominalVoltage: true,
+        labelSeverity: true, incidentEnergyCalCm2: true, arcFlashBoundaryIn: true, shockLimitedApproachIn: true,
+        shockRestrictedApproachIn: true, ppeCategory: true, ppeMethod: true, workingDistanceIn: true,
+        createdAt: true },
       orderBy: { createdAt: 'asc' },
     }),
     prisma.lotoProc.findMany({
@@ -319,12 +328,12 @@ const EXPORT_SHEETS = [
   ] },
   { key: 'arcFlashLabels', sheet: 'Arc Flash Labels', columns: [
     { id: 'id', header: 'ID' }, { id: 'studyId', header: 'Study ID' }, { id: 'assetId', header: 'Asset ID' },
-    { id: 'busName', header: 'Bus Name' }, { id: 'nominalVoltageV', header: 'Voltage (V)', type: 'number' },
-    { id: 'hazardLevel', header: 'Hazard Level' },
+    { id: 'busName', header: 'Bus Name' }, { id: 'nominalVoltage', header: 'Voltage' },
+    { id: 'labelSeverity', header: 'Hazard Level' },
     { id: 'incidentEnergyCalCm2', header: 'IE (cal/cm2)', type: 'number' },
     { id: 'arcFlashBoundaryIn', header: 'AFB (in)', type: 'number' },
     { id: 'ppeCategory', header: 'PPE Cat' }, { id: 'ppeMethod', header: 'PPE Method' },
-    { id: 'expiresAt', header: 'Expires', type: 'date' }, { id: 'createdAt', header: 'Created', type: 'date' },
+    { id: 'createdAt', header: 'Created', type: 'date' },
   ] },
   { key: 'lotoProcs', sheet: 'LOTO Procedures', columns: [
     { id: 'id', header: 'ID' }, { id: 'assetId', header: 'Asset ID' }, { id: 'title', header: 'Title' },

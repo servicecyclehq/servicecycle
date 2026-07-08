@@ -124,6 +124,17 @@ async function pruneAccount(accountId) {
   await prisma.customFieldDefinition.deleteMany({ where: filter }).catch(() => {});
   await prisma.notificationLog.deleteMany({ where: filter }).catch(() => {});
   await prisma.outboundWebhookDLQ.deleteMany({ where: filter }).catch(() => {});
+  // PartnerEventLog.accountId is a required, no-action FK (never hard-deleted
+  // by the customer-facing archival cron -- see prisma/schema.prisma). Missing
+  // this step made pruneAccount() throw P2003 (RESTRICT violation) for any
+  // demo account that ever fired a partner event, silently aborting the
+  // account delete (caught by the caller's try/catch and logged, but the
+  // account -- and its slot against DEMO_MAX_ACCOUNTS -- was never freed).
+  // Found 2026-07-08: local dev DB had grown to 4332 accounts (cap 1000)
+  // because of this, breaking every live-server test suite that registers a
+  // new account (setupTenants -> registerB). Same bug is live on the nightly
+  // prune cron in production -- unpruneable accounts accumulate forever.
+  await prisma.partnerEventLog.deleteMany({ where: filter }).catch(() => {});
   await prisma.webhookEndpoint.deleteMany({ where: filter }).catch(() => {});
   await prisma.apiKey.deleteMany({ where: filter }).catch(() => {});
   await prisma.consultantAccess.deleteMany({ where: filter }).catch(() => {});

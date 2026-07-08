@@ -9,7 +9,7 @@
  * rejection. Asserts the Area 2 RBAC fix (POST/PUT now requireManager).
  */
 
-const { api, bearer, anon, setupTenants, ALIEN_UUID } = require('./_routeHelpers');
+const { api, bearer, anon, setupTenants, login, A_USERS, ALIEN_UUID } = require('./_routeHelpers');
 
 let t;            // shared tenant context
 let assetId;      // an asset in account A
@@ -104,9 +104,15 @@ describe('happy-path CRUD', () => {
     const id = create.body.data.id;
     createdDraftIds.push(id);
 
+    // ESO-6 (routes/loto.ts): the procedure author cannot approve their own
+    // LOTO procedure (self-approval guard, added after this test was first
+    // written). Approve as the seeded manager@demo.local instead -- a
+    // different qualified user, same account A -- to exercise the real
+    // approval workflow rather than tripping the guard.
+    const tokenManagerA = await login(A_USERS.manager.email, A_USERS.manager.password);
     const patch = await api()
       .patch(`/api/assets/${assetId}/loto/${id}/status`)
-      .set(bearer(t.tokenAdminA))
+      .set(bearer(tokenManagerA))
       .send({ status: 'active' });
     expect(patch.status).toBe(200);
     expect(patch.body.data.status).toBe('active');

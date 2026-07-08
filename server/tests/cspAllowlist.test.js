@@ -24,7 +24,11 @@ describe('L6: CSP allowlist *.servicecycle.app on connect-src / img-src / font-s
 
   // Find the cspDirectives = { ... } block so we don't false-positive on a
   // stray comment or unrelated reference further down the file.
-  const blockMatch = src.match(/const\s+cspDirectives\s*=\s*\{([\s\S]*?)\};/);
+  // Tolerates an optional TS type annotation (`const cspDirectives: any = {`)
+  // -- added at some point after this test was written and broke the match
+  // (blockMatch fell through to null, `block` to '', every assertion below
+  // failed even though the actual allowlist in index.ts never changed).
+  const blockMatch = src.match(/const\s+cspDirectives(?:\s*:\s*\w+)?\s*=\s*\{([\s\S]*?)\};/);
   const block = blockMatch ? blockMatch[1] : '';
 
   test('cspDirectives block present in server/index.ts', () => {
