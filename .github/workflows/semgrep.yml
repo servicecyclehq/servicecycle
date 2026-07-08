@@ -1,0 +1,54 @@
+name: Semgrep (SAST)
+
+# SOC 2 CC7.1 — a second, differently-sourced SAST scanner alongside CodeQL
+# (docs/security/AI_CODE_SECURITY_RESEARCH_2026-07-07.md action item).
+# Free (Semgrep Community rulesets, no account/API key needed for the OSS
+# `semgrep/semgrep` Docker image run via `semgrep ci`/`semgrep scan`).
+#
+# 2026-07-08: added as REPORT-ONLY on first run (`continue-on-error: true`).
+# Not added to branch protection's required checks -- do not mark it
+# required until a human has reviewed at least one real run's findings and
+# confirmed the ruleset isn't too noisy for this codebase. See the overnight
+# session recap memory for why.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly deep scan on Monday 07:30 UTC (offset from CodeQL's 07:00 slot).
+    - cron: '30 7 * * 1'
+
+concurrency:
+  group: semgrep-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep
+
+    # Report-only for now -- see header comment. Flip to `continue-on-error:
+    # false` (or remove the line) once a human has reviewed real findings.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep scan --config p/owasp-top-ten --config p/nodejs --config p/python --error --output semgrep-results.txt --text || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep-results.txt
+          retention-days: 30
