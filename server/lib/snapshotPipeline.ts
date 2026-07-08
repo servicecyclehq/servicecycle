@@ -123,7 +123,7 @@ async function persistSnapshot(prisma, {
       },
     });
   } catch (rowErr) {
-    try { await deleteFile(storageKey); } catch (_) { /* best-effort */ }
+    try { await deleteFile(storageKey, accountId); } catch (_) { /* best-effort */ }
     throw rowErr;
   }
 
@@ -152,7 +152,7 @@ async function persistSnapshot(prisma, {
     console.error('[snapshotPipeline] audit anchor failed — rolling back snapshot:',
       anchorErr.message);
     try { await prisma.complianceSnapshot.delete({ where: { id: snapshotId } }); } catch (_) { /* best-effort */ }
-    try { await deleteFile(storageKey); } catch (_) { /* best-effort */ }
+    try { await deleteFile(storageKey, accountId); } catch (_) { /* best-effort */ }
     const err: any = new Error(
       'Snapshot could not be anchored in the audit log and was discarded. Please retry.'
     );

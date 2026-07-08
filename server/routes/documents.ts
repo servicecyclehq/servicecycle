@@ -234,7 +234,7 @@ router.get('/file', async (req, res) => {
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found.' });
 
-    let buf = await downloadFile(key);
+    let buf = await downloadFile(key, req.user.accountId);
 
     // Decrypt if the document was stored encrypted
     if (doc.encrypted) {
@@ -306,7 +306,7 @@ router.get('/:documentId/url', async (req, res) => {
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found.' });
 
-    const result = await getFileUrl(doc.filePath, doc.filename);
+    const result = await getFileUrl(doc.filePath, doc.filename, null, req.user.accountId);
 
     // C1: audit document URL fetch (S3 pre-signed URL or local API path).
     // For S3 deployments this is the actionable signal — the bytes flow direct

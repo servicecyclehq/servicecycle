@@ -568,7 +568,7 @@ router.get('/snapshots/:id/download', async (req, res) => {
 
     let buf;
     try {
-      buf = await downloadFile(snap.filePath);
+      buf = await downloadFile(snap.filePath, req.user.accountId);
     } catch (readErr) {
       // Evidence file gone from storage — same class of failure as a hash
       // mismatch from the auditor's point of view.

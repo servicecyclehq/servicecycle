@@ -84,7 +84,7 @@ async function runIngestJob(job: any, builder?: any): Promise<'done' | 'failed'>
   const buildPreview = builder || require('./testReportPreview').buildTestReportPreview;
   try {
     await prisma.ingestJob.update({ where: { id: job.id }, data: { progress: 10, phase: 'reading file' } });
-    const buffer = await downloadFile(job.fileKey);
+    const buffer = await downloadFile(job.fileKey, job.targetAccountId || job.accountId);
 
     await prisma.ingestJob.update({ where: { id: job.id }, data: { progress: 40, phase: 'parsing' } });
     // 2026-07-05 (§11 A2 Half 1 + Half 2, Option A per Dustin): pass the last

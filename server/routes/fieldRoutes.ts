@@ -339,7 +339,7 @@ router.get('/asset/:assetId/document/:documentId', async (req, res) => {
       return res.json({ success: true, data: { external: true, externalUrl: doc.externalUrl } });
     }
 
-    let buf = await downloadFile(doc.filePath);
+    let buf = await downloadFile(doc.filePath, req.user.accountId);
     if (doc.encrypted) buf = decrypt(buf, doc.id);
 
     const safeAscii = (doc.filename || 'document').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');

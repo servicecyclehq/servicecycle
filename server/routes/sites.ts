@@ -700,7 +700,7 @@ router.get('/:siteId/studies', async (req, res) => {
       st.sourceDocumentUrl = st.reportPdfUrl
         ? st.reportPdfUrl
         : st.reportFileKey
-          ? await getFileUrl(st.reportFileKey).then((r: any) => r.url).catch(() => null)
+          ? await getFileUrl(st.reportFileKey, null, null, req.user.accountId).then((r: any) => r.url).catch(() => null)
           : null;
     }
 

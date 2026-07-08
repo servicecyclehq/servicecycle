@@ -1160,6 +1160,152 @@ router.put('/service-rep', requireAdmin, async (req, res) => {
 });
 
 
+// ── GET /api/settings/storage — per-tenant "bring your own storage" (2026-07-08) ──
+// Admin only. Never returns the decrypted access key / secret — only
+// whether a custom config is set and its non-sensitive fields (provider,
+// bucket, region, endpoint). See lib/storage.ts for the resolution logic.
+router.get('/storage', requireAdmin, async (req, res) => {
+  try {
+    const account = await prisma.account.findUnique({
+      where:  { id: req.user.accountId },
+      select: {
+        storageProvider:   true,
+        storageS3Bucket:   true,
+        storageS3Region:   true,
+        storageS3Endpoint: true,
+        storageS3KeyId:    true,
+      },
+    });
+    const configured = !!(account && account.storageProvider === 's3');
+    return res.json({
+      success: true,
+      data: {
+        configured,
+        provider: account?.storageProvider ?? null,
+        bucket:   account?.storageS3Bucket ?? null,
+        region:   account?.storageS3Region ?? null,
+        endpoint: account?.storageS3Endpoint ?? null,
+        // Masked hint only (never the real key) -- same pattern as
+        // encryption/status's masterKeyHint below.
+        keyIdHint: account?.storageS3KeyId
+          ? '...' + decryptIfEncrypted(account.storageS3KeyId).slice(-4)
+          : null,
+      },
+    });
+  } catch (err) {
+    console.error('[settings/storage GET]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load storage settings' });
+  }
+});
+
+// ── PUT /api/settings/storage — set or clear per-tenant storage config ──────
+// Admin only. Pass provider: null to revert to the global default (clears
+// all fields). Pass provider: 's3' with bucket + accessKeyId + secretAccessKey
+// (region/endpoint optional) to opt this account into its own bucket --
+// cloud (AWS/Wasabi/DO Spaces/etc.) or on-prem (MinIO/Ceph). Does NOT
+// validate the credentials actually work -- use POST /storage/test for that
+// before relying on this in production.
+router.put('/storage', requireAdmin, async (req, res) => {
+  try {
+    const { provider, bucket, region, endpoint, accessKeyId, secretAccessKey } = req.body;
+
+    if (provider == null) {
+      // Clear -- revert this account to the global default.
+      const updated = await prisma.account.update({
+        where: { id: req.user.accountId },
+        data: {
+          storageProvider:   null,
+          storageS3Bucket:   null,
+          storageS3Region:   null,
+          storageS3Endpoint: null,
+          storageS3KeyId:    null,
+          storageS3Secret:   null,
+        },
+        select: { storageProvider: true },
+      });
+      return res.json({ success: true, data: updated });
+    }
+
+    if (provider !== 's3') {
+      return res.status(400).json({ success: false, error: 'provider must be null or "s3"' });
+    }
+    if (!bucket || typeof bucket !== 'string') {
+      return res.status(400).json({ success: false, error: 'bucket is required when provider is "s3"' });
+    }
+    // accessKeyId/secretAccessKey are only required on first setup -- if the
+    // admin is just changing the bucket/region/endpoint, omitting them keeps
+    // the existing encrypted credentials (never re-prompt for a secret that's
+    // already stored, same UX precedent as the AI_API_KEY masked-field flow
+    // earlier in this file).
+    const existing = await prisma.account.findUnique({
+      where:  { id: req.user.accountId },
+      select: { storageS3KeyId: true, storageS3Secret: true },
+    });
+    const keyIdToStore = accessKeyId
+      ? encryptIfNeeded(String(accessKeyId))
+      : existing?.storageS3KeyId ?? null;
+    const secretToStore = secretAccessKey
+      ? encryptIfNeeded(String(secretAccessKey))
+      : existing?.storageS3Secret ?? null;
+
+    if (!keyIdToStore || !secretToStore) {
+      return res.status(400).json({ success: false, error: 'accessKeyId and secretAccessKey are required for first-time setup' });
+    }
+
+    const updated = await prisma.account.update({
+      where: { id: req.user.accountId },
+      data: {
+        storageProvider:   's3',
+        storageS3Bucket:   bucket,
+        storageS3Region:   region || null,
+        storageS3Endpoint: endpoint || null,
+        storageS3KeyId:    keyIdToStore,
+        storageS3Secret:   secretToStore,
+      },
+      select: { storageProvider: true, storageS3Bucket: true, storageS3Region: true, storageS3Endpoint: true },
+    });
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('[settings/storage PUT]', err);
+    return res.status(500).json({ success: false, error: 'Failed to update storage settings' });
+  }
+});
+
+// ── POST /api/settings/storage/test — verify the account's own bucket works ──
+// Admin only. Writes and immediately deletes a tiny marker object to prove
+// the stored credentials can actually reach the bucket, rather than trusting
+// unvalidated input. Does not touch any real document.
+router.post('/storage/test', requireAdmin, async (req, res) => {
+  try {
+    const { resolveAccountStorageConfig } = require('../lib/storage');
+    const cfg = await resolveAccountStorageConfig(req.user.accountId);
+    if (!cfg) {
+      return res.status(400).json({ success: false, error: 'No custom storage is configured for this account -- nothing to test.' });
+    }
+
+    const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    const s3cfg: any = {
+      region:      cfg.region || 'us-east-1',
+      credentials: { accessKeyId: cfg.keyId, secretAccessKey: cfg.secret },
+    };
+    if (cfg.endpoint) { s3cfg.endpoint = cfg.endpoint; s3cfg.forcePathStyle = true; }
+    const client = new S3Client(s3cfg);
+    const testKey = `${req.user.accountId}/.storage-test/${Date.now()}.txt`;
+
+    await client.send(new PutObjectCommand({
+      Bucket: cfg.bucket, Key: testKey, Body: Buffer.from('ServiceCycle storage connectivity test'),
+      ContentType: 'text/plain',
+    }));
+    await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: testKey }));
+
+    return res.json({ success: true, data: { message: 'Successfully wrote and deleted a test object in your bucket.' } });
+  } catch (err: any) {
+    console.error('[settings/storage/test POST]', err);
+    return res.status(400).json({ success: false, error: `Storage test failed: ${err?.message || 'unknown error'}` });
+  }
+});
+
+
 // ── GET /api/settings/branding — no auth level gate; any user can load brand ──
 // Returns BRAND_LOGO_URL, BRAND_PRIMARY_COLOR, BRAND_DISPLAY_NAME for CSS
 // injection on load.  Safe to expose — cosmetic only.

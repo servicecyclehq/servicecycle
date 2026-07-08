@@ -23,7 +23,7 @@
  * encrypted with AES-256-GCM before being written. The storage layer is
  * encryption-agnostic — it stores whatever bytes it is given.
  *
- * Env vars:
+ * Env vars (GLOBAL DEFAULT — used when an account has no per-tenant config):
  *   STORAGE_DEST            'local' (default) | 's3'
  *   STORAGE_LOCAL_PATH      path on host (default: ./uploads)
  *   STORAGE_S3_BUCKET       bucket name (S3 only)
@@ -31,6 +31,18 @@
  *   STORAGE_S3_KEY_ID       access key ID (S3 only)
  *   STORAGE_S3_SECRET       secret access key (S3 only)
  *   STORAGE_S3_ENDPOINT     optional; set for non-AWS providers
+ *
+ * Per-tenant "bring your own storage" (2026-07-08):
+ *   Pass an `accountId` to uploadFile/putAtKey/downloadFile/deleteFile/
+ *   getFileUrl and, if that account has `storageProvider = 's3'` set on its
+ *   Account row (server/prisma/schema.prisma), the call is routed to that
+ *   account's own S3-compatible bucket instead of the global default —
+ *   cloud (AWS/Wasabi/DO Spaces/etc.) or on-prem (MinIO/Ceph). Credentials
+ *   are decrypted from the Account row via lib/crypto.ts on each call (no
+ *   caching — correctness over a saved DB round-trip; document I/O is not a
+ *   hot enough path to need it). accountId is OPTIONAL and backward
+ *   compatible: omit it (as every pre-2026-07-08 call site does) and
+ *   behaviour is byte-for-byte identical to before — global env config only.
  */
 
 const path = require('path');
@@ -102,6 +114,60 @@ function getConfig() {
   };
 }
 
+// ── Per-tenant storage config resolution ────────────────────────────────────
+// 2026-07-08: "bring your own storage". Looks up the account's own S3 config
+// (if any); returns null when the account has no override, meaning "use the
+// global env-var config above, unchanged". Not cached — see file header.
+
+async function resolveAccountStorageConfig(accountId) {
+  if (!accountId) return null;
+  let account;
+  try {
+    // Lazy require to avoid a hard dependency for callers that never pass an
+    // accountId (e.g. some scripts/tests construct storage.ts in isolation).
+    const prisma = require('./prisma').default || require('./prisma');
+    account = await prisma.account.findUnique({
+      where:  { id: accountId },
+      select: {
+        storageProvider:   true,
+        storageS3Bucket:   true,
+        storageS3Region:   true,
+        storageS3Endpoint: true,
+        storageS3KeyId:    true,
+        storageS3Secret:   true,
+      },
+    });
+  } catch (err) {
+    // Never let a storage-config lookup failure break a file operation —
+    // fall back to the global default, same as "no override configured".
+    console.warn('[storage] resolveAccountStorageConfig lookup failed, falling back to global config:', err && err.message);
+    return null;
+  }
+
+  if (!account || account.storageProvider !== 's3') return null;
+
+  const { decryptIfEncrypted } = require('./crypto');
+  const bucket = account.storageS3Bucket;
+  const keyId  = decryptIfEncrypted(account.storageS3KeyId);
+  const secret = decryptIfEncrypted(account.storageS3Secret);
+
+  if (!bucket || !keyId || !secret) {
+    // Misconfigured (provider set but a required field missing) — fail safe
+    // to the global default rather than throwing mid-upload/-download.
+    console.warn(`[storage] account ${accountId} has storageProvider='s3' but is missing bucket/keyId/secret — falling back to global config`);
+    return null;
+  }
+
+  return {
+    dest:     's3',
+    bucket,
+    region:   account.storageS3Region || 'us-east-1',
+    endpoint: account.storageS3Endpoint || null,
+    keyId,
+    secret,
+  };
+}
+
 // ── Storage key ───────────────────────────────────────────────────────────────
 // Format: '{accountId}/{assetId|misc}/{timestamp}_{sanitizedFilename}'
 // This is the canonical identifier stored in Document.filePath.
@@ -113,10 +179,31 @@ function buildStorageKey(accountId, filename, assetId = null) {
   return `${folder}/${ts}_${safe}`;
 }
 
-// ── S3 client (lazy singleton) ────────────────────────────────────────────────
+// ── S3 client ─────────────────────────────────────────────────────────────────
+// Global-config client is a lazy singleton (unchanged behaviour). A per-tenant
+// client is constructed fresh per call when a resolved account config is
+// passed in — S3Client construction is local/cheap (no network round-trip),
+// and a tiny per-call allocation is a fine trade for not caching credentials
+// across accounts in memory.
 
 let _s3 = null;
-function getS3Client() {
+function getS3Client(tenantConfig = null) {
+  if (tenantConfig) {
+    const { S3Client } = require('@aws-sdk/client-s3');
+    const cfg: any = {
+      region:      tenantConfig.region || 'us-east-1',
+      credentials: {
+        accessKeyId:     tenantConfig.keyId,
+        secretAccessKey: tenantConfig.secret,
+      },
+    };
+    if (tenantConfig.endpoint) {
+      cfg.endpoint       = tenantConfig.endpoint;
+      cfg.forcePathStyle = true;
+    }
+    return new S3Client(cfg);
+  }
+
   if (_s3) return _s3;
   const { S3Client } = require('@aws-sdk/client-s3');
   const cfg: any = {
@@ -134,12 +221,30 @@ function getS3Client() {
   return _s3;
 }
 
+// Resolve which "effective" storage backend to use for this call: the
+// account's own config if it has one configured, else the global default.
+// Returns { dest, bucket, s3Client } where s3Client is null for dest='local'.
+async function resolveEffective(accountId) {
+  const tenantConfig = await resolveAccountStorageConfig(accountId);
+  if (tenantConfig) {
+    return { dest: 's3', bucket: tenantConfig.bucket, s3Client: getS3Client(tenantConfig) };
+  }
+  const dest = getDest();
+  if (dest === 's3') {
+    return { dest: 's3', bucket: process.env.STORAGE_S3_BUCKET, s3Client: getS3Client() };
+  }
+  return { dest: 'local', bucket: null, s3Client: null };
+}
+
 // ── Upload ────────────────────────────────────────────────────────────────────
 
 /**
- * Upload a file buffer to the configured storage destination.
+ * Upload a file buffer to the configured storage destination. Routes to the
+ * account's own bucket if it has "bring your own storage" configured,
+ * otherwise the global default (unchanged pre-2026-07-08 behaviour).
  *
- * @param {string}  accountId   — account that owns the file
+ * @param {string}  accountId   — account that owns the file; also used to
+ *                                resolve per-tenant storage config
  * @param {string|null} assetId — optional; used to scope storage path
  * @param {string}  filename    — original filename (used in storage key)
  * @param {Buffer}  buffer      — file bytes (already encrypted if opt-in enabled)
@@ -147,14 +252,14 @@ function getS3Client() {
  * @returns {{ storageKey: string, sizeBytes: number }}
  */
 async function uploadFile(accountId, assetId, filename, buffer, mimeType) {
-  const key  = buildStorageKey(accountId, filename, assetId);
-  const dest = getDest();
+  const key = buildStorageKey(accountId, filename, assetId);
+  const { dest, bucket, s3Client } = await resolveEffective(accountId);
 
   if (dest === 's3') {
-    if (!s3Configured()) throw new Error('STORAGE_DEST is set to "s3" but S3 credentials are not configured.');
+    if (!bucket) throw new Error('STORAGE_DEST is set to "s3" but S3 credentials are not configured.');
     const { PutObjectCommand } = require('@aws-sdk/client-s3');
-    await getS3Client().send(new PutObjectCommand({
-      Bucket:      process.env.STORAGE_S3_BUCKET,
+    await s3Client.send(new PutObjectCommand({
+      Bucket:      bucket,
       Key:         key,
       Body:        buffer,
       ContentType: mimeType === 'text/plain' ? 'application/octet-stream' : (mimeType || 'application/octet-stream'),
@@ -182,17 +287,20 @@ async function uploadFile(accountId, assetId, filename, buffer, mimeType) {
  * @param {string} key      — full storage key, e.g. "acct1/drawings/doc1/rev-1.pdf"
  * @param {Buffer} buffer   — file bytes
  * @param {string} mimeType — MIME type
+ * @param {string|null} [accountId] — 2026-07-08: optional, resolves per-tenant
+ *   storage config if the account has "bring your own storage" configured.
+ *   Omit for unchanged pre-2026-07-08 behaviour (global default only).
  * @returns {{ storageKey: string, sizeBytes: number }}
  */
-async function putAtKey(key, buffer, mimeType) {
+async function putAtKey(key, buffer, mimeType, accountId = null) {
   if (!key || typeof key !== 'string') throw new Error('putAtKey: key is required');
-  const dest = getDest();
+  const { dest, bucket, s3Client } = await resolveEffective(accountId);
 
   if (dest === 's3') {
-    if (!s3Configured()) throw new Error('STORAGE_DEST is set to "s3" but S3 credentials are not configured.');
+    if (!bucket) throw new Error('STORAGE_DEST is set to "s3" but S3 credentials are not configured.');
     const { PutObjectCommand } = require('@aws-sdk/client-s3');
-    await getS3Client().send(new PutObjectCommand({
-      Bucket:      process.env.STORAGE_S3_BUCKET,
+    await s3Client.send(new PutObjectCommand({
+      Bucket:      bucket,
       Key:         key,
       Body:        buffer,
       ContentType: mimeType === 'text/plain' ? 'application/octet-stream' : (mimeType || 'application/octet-stream'),
@@ -214,15 +322,17 @@ async function putAtKey(key, buffer, mimeType) {
  * The caller is responsible for decrypting if the document is encrypted.
  *
  * @param {string} storageKey
+ * @param {string|null} [accountId] — 2026-07-08: optional, resolves the
+ *   account's own bucket if configured. Omit for unchanged behaviour.
  * @returns {Buffer}
  */
-async function downloadFile(storageKey) {
-  const dest = getDest();
+async function downloadFile(storageKey, accountId = null) {
+  const { dest, bucket, s3Client } = await resolveEffective(accountId);
 
   if (dest === 's3') {
     const { GetObjectCommand } = require('@aws-sdk/client-s3');
-    const res = await getS3Client().send(new GetObjectCommand({
-      Bucket: process.env.STORAGE_S3_BUCKET,
+    const res = await s3Client.send(new GetObjectCommand({
+      Bucket: bucket,
       Key:    storageKey,
     }));
     const chunks = [];
@@ -239,15 +349,17 @@ async function downloadFile(storageKey) {
  * Delete a stored file. Fails silently if the file no longer exists.
  *
  * @param {string} storageKey
+ * @param {string|null} [accountId] — 2026-07-08: optional, resolves the
+ *   account's own bucket if configured. Omit for unchanged behaviour.
  */
-async function deleteFile(storageKey) {
-  const dest = getDest();
+async function deleteFile(storageKey, accountId = null) {
+  const { dest, bucket, s3Client } = await resolveEffective(accountId);
 
   if (dest === 's3') {
     const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
     try {
-      await getS3Client().send(new DeleteObjectCommand({
-        Bucket: process.env.STORAGE_S3_BUCKET,
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: bucket,
         Key:    storageKey,
       }));
     } catch { /* ignore */ }
@@ -273,10 +385,12 @@ async function deleteFile(storageKey) {
  * @param {string} storageKey
  * @param {string|null} filename
  * @param {number|null} [ttlSeconds]  optional per-call expiry override (seconds)
+ * @param {string|null} [accountId]   2026-07-08: optional, resolves the
+ *   account's own bucket if configured. Omit for unchanged behaviour.
  * @returns {{ url: string, type: 'local'|'presigned', expiresIn?: number }}
  */
-async function getFileUrl(storageKey, filename = null, ttlSeconds = null) {
-  const dest = getDest();
+async function getFileUrl(storageKey, filename = null, ttlSeconds = null, accountId = null) {
+  const { dest, bucket, s3Client } = await resolveEffective(accountId);
 
   if (dest === 's3') {
     const { GetObjectCommand }  = require('@aws-sdk/client-s3');
@@ -287,9 +401,9 @@ async function getFileUrl(storageKey, filename = null, ttlSeconds = null) {
     const safeName = (filename || 'download').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
     const expiresIn = getPresignTtl(ttlSeconds);
     const url = await getSignedUrl(
-      getS3Client(),
+      s3Client,
       new GetObjectCommand({
-        Bucket: process.env.STORAGE_S3_BUCKET,
+        Bucket: bucket,
         Key: storageKey,
         ResponseContentDisposition: `attachment; filename="${safeName}"`,
         ResponseContentType: 'application/octet-stream',
@@ -314,6 +428,9 @@ module.exports = {
   isConfigured,
   getConfig,
   buildStorageKey,
+  // 2026-07-08 BYO storage — exported for the account settings route (to
+  // validate a tenant's config, e.g. a "test connection" button) and tests.
+  resolveAccountStorageConfig,
 };
 
 export {};

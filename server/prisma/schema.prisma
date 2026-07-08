@@ -315,6 +315,21 @@ model Account {
   // PE-seal display prefs. Not read by any code yet -- see
   // EDMS_MODULE_SCOPE_2026-07-04.md §5/§15.
   edmsSettings             Json?
+  // Per-tenant "bring your own storage" (2026-07-08, Dustin: "that's a
+  // requirement not a nice to have"). When storageProvider is null, storage
+  // falls back to the global STORAGE_* env vars (today's only-mode behaviour
+  // -- every existing account keeps working unchanged). When set, documents
+  // for this account are written to the account's own S3-compatible bucket
+  // (AWS S3, on-prem MinIO/Ceph, Wasabi, DO Spaces, etc.) instead of the
+  // shared default. Credentials stored encrypted -- same AES-256-GCM path as
+  // importWebhookSecret (lib/crypto.ts). Field names mirror the STORAGE_S3_*
+  // env vars 1:1 so the fallback logic in lib/storage.ts is symmetric.
+  storageProvider          String? // null (use global default) | "s3"
+  storageS3Bucket          String?
+  storageS3Region          String?
+  storageS3Endpoint        String? // non-AWS S3-compatible providers / on-prem
+  storageS3KeyId           String? // stored encrypted
+  storageS3Secret          String? // stored encrypted
   createdAt                DateTime      @default(now())
   updatedAt                DateTime      @updatedAt
 

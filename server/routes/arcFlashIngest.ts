@@ -1360,12 +1360,12 @@ function studyAssetOut(s: any) {
 // an ingest-confirm linked a reportFileKey, resolve it through storage at
 // READ time (never cached/baked in — see the schema comment on why). Pure
 // passthrough (null) when neither is present.
-async function resolveSourceDocUrl(study: any): Promise<string | null> {
+async function resolveSourceDocUrl(study: any, accountId?: string): Promise<string | null> {
   if (!study) return null;
   if (study.reportPdfUrl) return study.reportPdfUrl;
   if (study.reportFileKey) {
     try {
-      const { url } = await getFileUrl(study.reportFileKey);
+      const { url } = await getFileUrl(study.reportFileKey, null, null, accountId);
       return url;
     } catch (e) {
       console.error('resolveSourceDocUrl error:', e);
@@ -1431,7 +1431,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
     // [W3] Only resolve the source-document URL for the winning row — this is
     // the one thing the Arc Flash tab actually displays; no point resolving
     // (and for S3, presigning) every superseded row on every page load.
-    if (current) (current as any).study.sourceDocumentUrl = await resolveSourceDocUrl(current.study);
+    if (current) (current as any).study.sourceDocumentUrl = await resolveSourceDocUrl(current.study, accountId);
     // [2026-07-05 review fix] `reportFileKey` is an internal storage key
     // (embeds the account + key scheme) that studyAssetOut() passes through
     // on every row so resolveSourceDocUrl() above can read it -- it was then

@@ -135,17 +135,17 @@ async function backfillOneDocument(documentId: string, opts: any, tx: any = pris
     return { documentId, status: 'blocked', reason: 'EDMS_BACKFILL_ENABLE!=true -- refusing to write' };
   }
 
-  const buffer = await downloadFile(doc.filePath);
+  const buffer = await downloadFile(doc.filePath, doc.accountId);
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
 
   const storageKey = `${doc.accountId}/drawings/${doc.id}/rev-1.pdf`;
-  await putAtKey(storageKey, buffer, doc.fileType);
+  await putAtKey(storageKey, buffer, doc.fileType, doc.accountId);
 
   // VERIFY step (per header §14 step 4): re-download what we just wrote and
   // confirm the SHA-256 matches before we ever point currentRevisionId at it.
   // putAtKey() has no built-in verification, so this script does it explicitly
   // rather than trusting a bare write.
-  const verifyBuffer = await downloadFile(storageKey);
+  const verifyBuffer = await downloadFile(storageKey, doc.accountId);
   const verifySha256 = crypto.createHash('sha256').update(verifyBuffer).digest('hex');
   if (verifySha256 !== sha256) {
     throw new Error(

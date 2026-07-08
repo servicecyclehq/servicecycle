@@ -224,7 +224,7 @@ async function _resetDemoAccount() {
       where: filter, select: { filePath: true },
     });
     for (const s of snaps) {
-      try { await deleteFile(s.filePath); } catch (_) { /* best-effort */ }
+      try { await deleteFile(s.filePath, filter.accountId); } catch (_) { /* best-effort */ }
     }
   } catch (_) { /* storage module unavailable — rows still wiped below */ }
   await prisma.complianceSnapshot.deleteMany({ where: filter }).catch(() => {});
