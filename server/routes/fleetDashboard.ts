@@ -725,14 +725,23 @@ router.post('/invites', async (req: any, res: any) => {
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const acceptUrl = `${clientUrl}/invite/accept?token=${rawToken}`;
     const orgName = invite.partnerOrg.name;
+    // Semgrep raw-html-format (2026-07-08): partnerOrg.name is user-editable
+    // (any user who can create/edit a partner org profile controls it) and
+    // was being interpolated straight into HTML sent to the INVITEE's inbox
+    // -- unlike the sibling esc() pattern already used in disasterEvents.ts
+    // and proposals.ts, this handler had no escaping at all. HTML-inject a
+    // fake button/link here and you have a phishing vector wearing a
+    // legitimate ServiceCycle "from" address.
+    const esc = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeOrgName = esc(orgName);
 
     await sendEmail({
       to: email,
       subject: `${orgName} has invited you to connect on ServiceCycle`,
       html: `
         <h2>You've been invited to connect</h2>
-        <p><strong>${orgName}</strong> manages your electrical compliance program and has invited you to link your facility account.</p>
-        <p>Accepting gives <strong>${orgName}</strong> visibility into your maintenance activity so they can support you proactively.</p>
+        <p><strong>${safeOrgName}</strong> manages your electrical compliance program and has invited you to link your facility account.</p>
+        <p>Accepting gives <strong>${safeOrgName}</strong> visibility into your maintenance activity so they can support you proactively.</p>
         <p>This invitation expires in 7 days.</p>
         <p><a href="${acceptUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:bold;">Accept Invitation</a></p>
         <p style="color:#888;font-size:12px;">Or copy this link: ${acceptUrl}</p>
@@ -831,13 +840,16 @@ router.post('/invites/:id/resend', async (req: any, res: any) => {
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const acceptUrl = `${clientUrl}/invite/accept?token=${rawToken}`;
     const orgName = invite.partnerOrg.name;
+    // Same fix as the POST /invites handler above -- see that comment.
+    const esc = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeOrgName = esc(orgName);
 
     await sendEmail({
       to: invite.inviteeEmail,
       subject: `${orgName} has invited you to connect on ServiceCycle`,
       html: `
         <h2>You've been invited to connect (resent)</h2>
-        <p><strong>${orgName}</strong> has re-sent your invitation to link your facility account on ServiceCycle.</p>
+        <p><strong>${safeOrgName}</strong> has re-sent your invitation to link your facility account on ServiceCycle.</p>
         <p>This invitation expires in 7 days.</p>
         <p><a href="${acceptUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:bold;">Accept Invitation</a></p>
         <p style="color:#888;font-size:12px;">Or copy this link: ${acceptUrl}</p>

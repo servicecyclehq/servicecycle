@@ -21,6 +21,14 @@ updates:
         update-types:
           - minor
           - patch
+    # Semgrep finding 2026-07-08 (dependabot-missing-cooldown): wait 7 days
+    # after a version is published before Dependabot proposes bumping to it
+    # -- a newly-published version could be a compromised/malicious release
+    # (npm/PyPI account takeover publishing a malicious patch bump is a real,
+    # recurring supply-chain pattern) or simply unstable; a short quarantine
+    # lets the ecosystem catch and yank those before we'd ever pull them in.
+    cooldown:
+      default-days: 7
 
   # Client npm dependencies
   - package-ecosystem: npm
@@ -40,6 +48,8 @@ updates:
         update-types:
           - minor
           - patch
+    cooldown:
+      default-days: 7
 
   # GitHub Actions
   - package-ecosystem: github-actions
@@ -49,3 +59,5 @@ updates:
       day: monday
     commit-message:
       prefix: "chore(ci)"
+    cooldown:
+      default-days: 7

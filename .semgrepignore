@@ -1,0 +1,11 @@
+# Standalone reference/report HTML files at the repo root -- generated
+# research artifacts and competitive/vendor documentation, not served by
+# the running app (nginx only serves client/dist; Express serves no static
+# HTML from the repo root). Flagged 2026-07-08 when Semgrep's first real CI
+# run found ArcFlash_Format_Sources.html's plaintext-HTTP links to 3rd-party
+# vendor download sites (download.easypower.com etc.) -- a false positive
+# for ServiceCycle's own security posture, since we don't control those
+# vendors' HTTPS support and this is documentation, not runtime content.
+arc-flash-sample-pdfs.html
+ArcFlash_Format_Sources.html
+nameplate_vision_report.html

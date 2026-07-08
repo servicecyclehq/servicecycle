@@ -135,6 +135,11 @@ router.post('/request-contact', requireManagerOrOem, async (req: any, res: any) 
       const safeName = esc(req.user.name || 'A user');
       const safeCompany = esc(account?.companyName || 'a customer account');
       const subject = `[${account?.companyName || 'Customer'}] Requested ${label} about their maintenance program`;
+      // nosemgrep: javascript.express.security.injection.raw-html-format.raw-html-format
+      // Reviewed 2026-07-08: safeName/safeCompany are already esc()'d above
+      // (lines 135-136) and note is esc()'d inline here -- Semgrep's
+      // dataflow doesn't see through the local esc() helper or the
+      // safe-prefixed variable names, but the HTML-escaping is real.
       const html = `<p><strong>${safeName}</strong> at <strong>${safeCompany}</strong> requested ${label} to discuss their multi-year maintenance proposal.</p>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ''}<p>Open ServiceCycle to review their program and follow up.</p>`;
       for (const to of emails) {
         try { await sendEmail({ to, subject, html }); notified++; } catch (e: any) { console.error('[proposals request-contact email]', e.message); }

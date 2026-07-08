@@ -78,7 +78,14 @@ function decryptWith(b64Encoded, keyBytes) {
   const iv  = buf.subarray(0, IV_LEN);
   const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN);
   const ct  = buf.subarray(IV_LEN + TAG_LEN);
-  const dec = crypto.createDecipheriv(ALGO, keyBytes, iv);
+  // Semgrep gcm-no-tag-length (2026-07-08): pass authTagLength explicitly so
+  // Node enforces exactly TAG_LEN (16) bytes at cipher-creation time, not
+  // just whatever setAuthTag() happens to receive -- without this, a
+  // shorter-than-expected tag could be silently accepted, weakening GCM's
+  // forgery resistance. buf always slices exactly TAG_LEN bytes for `tag`
+  // (see the subarray call above), so this is a pure hardening no-op for
+  // every value this function has ever actually decrypted.
+  const dec = crypto.createDecipheriv(ALGO, keyBytes, iv, { authTagLength: TAG_LEN });
   dec.setAuthTag(tag);
   return Buffer.concat([dec.update(ct), dec.final()]).toString('utf8');
 }

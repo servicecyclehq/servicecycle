@@ -314,6 +314,10 @@ router.post('/declare', requireManager, async (req: any, res) => {
     if (account?.serviceRepEmail) {
       const { sendEmail } = require('../lib/email');
       const esc = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // nosemgrep: javascript.express.security.injection.raw-html-format.raw-html-format
+      // Reviewed 2026-07-08: every interpolated value below is wrapped in
+      // esc() (defined directly above) -- Semgrep's dataflow doesn't see
+      // through the local helper call, but the HTML-escaping is real.
       sendEmail({
         to:      account.serviceRepEmail,
         subject: `[EMERGENCY] ${account.companyName} has declared an emergency — priority service needed`,
