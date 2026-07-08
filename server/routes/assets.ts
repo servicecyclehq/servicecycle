@@ -29,6 +29,7 @@ const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 // same rules as the Settings → Custom Fields CRUD so the two can't drift.
 const { validateValueForDefinition } = require('./customFields');
 const { resolveAsset } = require('../lib/assetIdentity'); // #3 fuzzy asset identity resolution
+const { assetLabel } = require('../lib/assetLabel');
 import prisma from '../lib/prisma';
 import { notifyConditionDegradation, notifyAssetDecommissioned } from '../lib/assetAlertNotifier';
 
@@ -826,6 +827,20 @@ router.post('/', requireManager, async (req, res) => {
     const criticality = conditionCriticality || 'C2';
     const environment = conditionEnvironment || 'C2';
 
+    // [2026-07-08 audit item 9] A malformed date string (e.g. "not-a-date")
+    // previously sailed through `new Date(x)` as an Invalid Date, which
+    // Prisma then threw on at write time — a 500 that also pollutes the
+    // server-error alerting pipeline with a false row for what is really a
+    // caller input mistake. Reject it here with a clean 400 instead.
+    const installDateParsed = installDate ? new Date(installDate) : null;
+    if (installDateParsed && Number.isNaN(installDateParsed.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid installDate' });
+    }
+    const lastCommissionedDateParsed = lastCommissionedDate ? new Date(lastCommissionedDate) : null;
+    if (lastCommissionedDateParsed && Number.isNaN(lastCommissionedDateParsed.getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid lastCommissionedDate' });
+    }
+
     const asset = await prisma.$transaction(async (tx) => {
       const created = await tx.asset.create({
         data: {
@@ -840,8 +855,8 @@ router.post('/', requireManager, async (req, res) => {
           model:         model || null,
           serialNumber:  serialNumber || null,
           nameplateData: nameplateData ?? undefined,
-          installDate:          installDate ? new Date(installDate) : null,
-          lastCommissionedDate: lastCommissionedDate ? new Date(lastCommissionedDate) : null,
+          installDate:          installDateParsed,
+          lastCommissionedDate: lastCommissionedDateParsed,
           conditionPhysical:    physical,
           conditionCriticality: criticality,
           conditionEnvironment: environment,
@@ -977,9 +992,22 @@ router.put('/:id', requireManager, async (req, res) => {
     if (model !== undefined)         updateData.model = model || null;
     if (serialNumber !== undefined)  updateData.serialNumber = serialNumber || null;
     if (nameplateData !== undefined) updateData.nameplateData = nameplateData ?? undefined;
-    if (installDate !== undefined)   updateData.installDate = installDate ? new Date(installDate) : null;
+    // [2026-07-08 audit item 9] Same NaN-check as POST /api/assets — a
+    // malformed date string must 400, not fall through to a Prisma write
+    // error (500) that pollutes the error-alerting pipeline.
+    if (installDate !== undefined) {
+      const parsed = installDate ? new Date(installDate) : null;
+      if (parsed && Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid installDate' });
+      }
+      updateData.installDate = parsed;
+    }
     if (lastCommissionedDate !== undefined) {
-      updateData.lastCommissionedDate = lastCommissionedDate ? new Date(lastCommissionedDate) : null;
+      const parsed = lastCommissionedDate ? new Date(lastCommissionedDate) : null;
+      if (parsed && Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid lastCommissionedDate' });
+      }
+      updateData.lastCommissionedDate = parsed;
     }
     if (inService !== undefined)   updateData.inService = inService === true || inService === 'true';
     if (isEnergized !== undefined) updateData.isEnergized = isEnergized === true || isEnergized === 'true';
@@ -1109,7 +1137,7 @@ router.put('/:id', requireManager, async (req, res) => {
       notifyConditionDegradation({
         accountId: req.user.accountId,
         assetId: req.params.id,
-        assetName: asset.name ?? req.params.id,
+        assetName: assetLabel(asset, req.params.id),
         oldCondition: governingFrom,
         newCondition: governingTo,
         triggeredBy: req.user.name || req.user.email || 'manual',
@@ -1121,7 +1149,7 @@ router.put('/:id', requireManager, async (req, res) => {
       notifyAssetDecommissioned({
         accountId: req.user.accountId,
         assetId: req.params.id,
-        assetName: asset.name ?? req.params.id,
+        assetName: assetLabel(asset, req.params.id),
         decommissionedBy: req.user.name || req.user.email,
       }).catch(() => {});
     }

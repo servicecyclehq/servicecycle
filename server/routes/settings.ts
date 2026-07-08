@@ -997,130 +997,28 @@ router.get('/export', requireAdmin, async (req, res) => {
   }
 });
 
-// ── GET /api/settings/encryption/status ──────────────────────────────────────
-// Returns current encryption state for this account.
-router.get('/encryption/status', requireAdmin, async (req, res) => {
-  try {
-    const { masterKeyHint } = require('../lib/docCrypto');
-    const rows = await prisma.accountSetting.findMany({
-      where: {
-        accountId: req.user.accountId,
-        key: { in: ['ENCRYPTION_ENABLED', 'ENCRYPTION_ACKNOWLEDGED_AT', 'ENCRYPTION_ACKNOWLEDGED_BY'] },
-      },
-    });
-    const map = Object.fromEntries(rows.map(r => [r.key, r.value]));
-
-    return res.json({
-      success: true,
-      data: {
-        enabled:          map['ENCRYPTION_ENABLED'] === 'true',
-        acknowledgedAt:   map['ENCRYPTION_ACKNOWLEDGED_AT'] || null,
-        acknowledgedBy:   map['ENCRYPTION_ACKNOWLEDGED_BY'] || null,
-        masterKeyHint:    masterKeyHint(),
-        masterKeyPresent: !!process.env.MASTER_KEY,
-      },
-    });
-  } catch (err) {
-    console.error('[settings/encryption/status]', err);
-    return res.status(500).json({ success: false, error: 'Failed to fetch encryption status.' });
-  }
-});
-
-// ── POST /api/settings/encryption/verify-key ─────────────────────────────────
-// Verifies the last 8 characters of MASTER_KEY. Used during the opt-in flow
-// to prove the admin has the key accessible before enabling encryption.
-router.post('/encryption/verify-key', requireAdmin, async (req, res) => {
-  try {
-    const { verifyMasterKeyTail } = require('../lib/docCrypto');
-    const { tail } = req.body;
-    if (!tail || typeof tail !== 'string' || tail.length !== 8) {
-      return res.status(400).json({ success: false, error: 'Provide exactly 8 characters.' });
-    }
-    const match = verifyMasterKeyTail(tail);
-    return res.json({ success: true, data: { match } });
-  } catch (err) {
-    console.error('[settings/encryption/verify-key]', err);
-    return res.status(500).json({ success: false, error: 'Verification failed.' });
-  }
-});
-
-// ── POST /api/settings/encryption/enable ─────────────────────────────────────
-// Enables document encryption for this account. Requires prior acknowledgment
-// from the UI (the key verification + checkbox flow). Records who enabled it
-// and when for audit purposes.
-router.post('/encryption/enable', requireAdmin, async (req, res) => {
-  try {
-    const { verifyMasterKeyTail } = require('../lib/docCrypto');
-    const { tail, acknowledged } = req.body;
-
-    // Re-verify the key tail server-side — never trust the client-side check alone
-    if (!tail || !verifyMasterKeyTail(tail)) {
-      return res.status(400).json({
-        success: false,
-        error: 'MASTER_KEY verification failed. Provide the last 8 characters of your MASTER_KEY.',
-      });
-    }
-
-    if (!acknowledged) {
-      return res.status(400).json({
-        success: false,
-        error: 'Acknowledgment is required before encryption can be enabled.',
-      });
-    }
-
-    const now = new Date().toISOString();
-    const upsert = (key, value) => prisma.accountSetting.upsert({
-      where:  { accountId_key: { accountId: req.user.accountId, key } },
-      update: { value },
-      create: { accountId: req.user.accountId, key, value },
-    });
-
-    await Promise.all([
-      upsert('ENCRYPTION_ENABLED',          'true'),
-      upsert('ENCRYPTION_ACKNOWLEDGED_AT',   now),
-      upsert('ENCRYPTION_ACKNOWLEDGED_BY',   req.user.id),
-    ]);
-
-    console.log(`[encryption] Enabled for account ${req.user.accountId} by user ${req.user.id} at ${now}`);
-    try {
-      const { writeLog: writeActivityLog } = require('../lib/activityLog');
-      writeActivityLog({ userId: req.user.id, accountId: req.user.accountId, action: 'encryption_enabled', details: { acknowledgedAt: now } });
-    } catch (_e) { /* non-fatal */ }
-
-    return res.json({
-      success: true,
-      data: { enabled: true, acknowledgedAt: now, acknowledgedBy: req.user.id },
-    });
-  } catch (err) {
-    console.error('[settings/encryption/enable]', err);
-    return res.status(500).json({ success: false, error: 'Failed to enable encryption.' });
-  }
-});
-
-// ── POST /api/settings/encryption/disable ────────────────────────────────────
-// Disables encryption for new uploads. Already-encrypted documents remain
-// encrypted and will continue to decrypt correctly as long as MASTER_KEY
-// is unchanged. Does not re-encrypt or modify any stored files.
-router.post('/encryption/disable', requireAdmin, async (req, res) => {
-  try {
-    await prisma.accountSetting.upsert({
-      where:  { accountId_key: { accountId: req.user.accountId, key: 'ENCRYPTION_ENABLED' } },
-      update: { value: 'false' },
-      create: { accountId: req.user.accountId, key: 'ENCRYPTION_ENABLED', value: 'false' },
-    });
-
-    console.log(`[encryption] Disabled for account ${req.user.accountId} by user ${req.user.id}`);
-    try {
-      const { writeLog: writeActivityLog } = require('../lib/activityLog');
-      writeActivityLog({ userId: req.user.id, accountId: req.user.accountId, action: 'encryption_disabled', details: {} });
-    } catch (_e) { /* non-fatal */ }
-
-    return res.json({ success: true, data: { enabled: false } });
-  } catch (err) {
-    console.error('[settings/encryption/disable]', err);
-    return res.status(500).json({ success: false, error: 'Failed to disable encryption.' });
-  }
-});
+// [2026-07-08 acquisition audit item 2 — REMOVED, deliberate choice (b)]
+// This block used to expose GET /encryption/status, POST /encryption/verify-key,
+// POST /encryption/enable, and POST /encryption/disable: an account-level
+// ENCRYPTION_ENABLED toggle that wrote a hash-chained, tamper-evident audit
+// log event ("encryption_enabled") — but NOTHING in the codebase ever read
+// that flag. Document encryption is gated purely by the env var ENCRYPT_DOCS
+// (routes/documents.ts, routes/fieldRoutes.ts), and photo uploads bypass
+// encryption entirely regardless of either flag. So this toggle was a pure
+// no-op that (a) told an admin "encryption is ON" when it controlled nothing,
+// and (b) wrote a permanent audit-log entry asserting a security control had
+// been enabled when it had not — the worst artifact a security reviewer can
+// find. Wiring the flag to actually gate encryption (option a) would mean
+// editing routes/documents.ts AND adding encryption to routes/fieldRoutes.ts
+// (which has none today, not even env-gated) to bring photos to parity —
+// real engineering work outside routes/settings.ts, not a contained change,
+// so option (b) — delete the dead control and its audit-event emission — is
+// the safe fix for this pass. client/src/components/settings/EncryptionSection.jsx
+// still calls these four endpoints and will need a matching removal/rework;
+// that's a client-side follow-up (out of scope here — server routes only).
+// lib/docCrypto.ts's verifyMasterKeyTail/masterKeyHint exports are now
+// unused by this file but left in place (may still serve the master-key
+// rotation tooling; not touched).
 
 // ── GET /api/settings/service-rep ─────────────────────────────────────────
 // Returns the per-account service representative contact info.
@@ -1185,8 +1083,8 @@ router.get('/storage', requireAdmin, async (req, res) => {
         bucket:   account?.storageS3Bucket ?? null,
         region:   account?.storageS3Region ?? null,
         endpoint: account?.storageS3Endpoint ?? null,
-        // Masked hint only (never the real key) -- same pattern as
-        // encryption/status's masterKeyHint below.
+        // Masked hint only (never the real key) -- same masked-tail pattern
+        // used for AI_API_KEY elsewhere in this file.
         keyIdHint: account?.storageS3KeyId
           ? '...' + decryptIfEncrypted(account.storageS3KeyId).slice(-4)
           : null,
@@ -1231,6 +1129,25 @@ router.put('/storage', requireAdmin, async (req, res) => {
     }
     if (!bucket || typeof bucket !== 'string') {
       return res.status(400).json({ success: false, error: 'bucket is required when provider is "s3"' });
+    }
+    // [2026-07-08 audit W1-M6 / item 2] SSRF guard — same validateWebhookUrl()
+    // gate the AI-endpoint (PUT / and POST /test, ~line 340/654) and Slack/
+    // Teams webhook paths already use. `endpoint` becomes a server-side S3
+    // client target (storage/test below, and every document read/write once
+    // saved) — without this an admin (or a compromised admin session) could
+    // point it at an internal / cloud-metadata host and use the /test
+    // endpoint's response as a probe. `endpoint` is optional (omitted =
+    // real AWS S3, a hardcoded-safe default), so only validate when present.
+    // ALLOW_INTERNAL_STORAGE_ENDPOINT=true opts out for a genuine on-prem
+    // MinIO/Ceph deployment reachable only on the operator's own network
+    // (mirrors ALLOW_INTERNAL_AI_ENDPOINT's escape hatch).
+    if (endpoint && typeof endpoint === 'string' && endpoint.trim() && process.env.ALLOW_INTERNAL_STORAGE_ENDPOINT !== 'true') {
+      const { validateWebhookUrl } = require('../lib/webhook');
+      const { valid, reason } = await validateWebhookUrl(endpoint.trim())
+        .catch(() => ({ valid: false, reason: 'validation-error' }));
+      if (!valid) {
+        return res.status(400).json({ success: false, error: `Storage endpoint blocked: ${reason}` });
+      }
     }
     // accessKeyId/secretAccessKey are only required on first setup -- if the
     // admin is just changing the bucket/region/endpoint, omitting them keeps
@@ -1283,6 +1200,18 @@ router.post('/storage/test', requireAdmin, async (req, res) => {
       return res.status(400).json({ success: false, error: 'No custom storage is configured for this account -- nothing to test.' });
     }
 
+    // [2026-07-08 audit W1-M6 / item 2] Defense-in-depth re-validation: cfg.endpoint
+    // is whatever was last saved via PUT /storage (now SSRF-guarded above), but
+    // re-check here too — belt-and-suspenders against a row written before this
+    // fix shipped, or a future write path that bypasses the PUT guard.
+    if (cfg.endpoint && process.env.ALLOW_INTERNAL_STORAGE_ENDPOINT !== 'true') {
+      const { validateWebhookUrl } = require('../lib/webhook');
+      const { valid } = await validateWebhookUrl(cfg.endpoint).catch(() => ({ valid: false }));
+      if (!valid) {
+        return res.status(400).json({ success: false, error: 'Configured storage endpoint is not allowed. Update it in Settings before testing.' });
+      }
+    }
+
     const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
     const s3cfg: any = {
       region:      cfg.region || 'us-east-1',
@@ -1300,8 +1229,11 @@ router.post('/storage/test', requireAdmin, async (req, res) => {
 
     return res.json({ success: true, data: { message: 'Successfully wrote and deleted a test object in your bucket.' } });
   } catch (err: any) {
+    // [2026-07-08 audit item 2] err.message previously went straight to the
+    // caller (an SDK/network error can echo back internal hostnames/paths).
+    // Full detail stays server-side in the log.
     console.error('[settings/storage/test POST]', err);
-    return res.status(400).json({ success: false, error: `Storage test failed: ${err?.message || 'unknown error'}` });
+    return res.status(400).json({ success: false, error: 'Storage test failed. Check your bucket, region, and endpoint configuration.' });
   }
 });
 

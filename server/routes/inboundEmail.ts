@@ -3,14 +3,30 @@
  *
  * A forwarded test report lands here (Resend "email.received" webhook), is routed
  * to the right account by the to-address, and each PDF/photo attachment is stored
- * and enqueued as an AUTO-COMMIT IngestJob -> the worker parses every line and
- * creates the asset card(s). Zero new behaviour downstream: same parser + commit
- * path as a manual upload, just no human in the loop.
+ * and enqueued as an AUTO-COMMIT IngestJob -> the worker parses every line and,
+ * subject to the confidence gate (lib/ingestConfidenceGate.ts -- a low-confidence
+ * parse is parked as needs_review, never silently committed), creates the asset
+ * card(s). Same parser + commit path as a manual upload, just no human in the
+ * loop for a high-confidence parse.
  *
- * Auth (either is sufficient):
+ * Auth (either transport check is sufficient, PLUS the sender allowlist below):
  *   - Resend/Svix signature  (RESEND_WEBHOOK_SECRET = whsec_...)  -- the live path
  *   - shared-secret header    (INBOUND_WEBHOOK_SECRET via x-inbound-secret / Bearer)
  *     -- for simulation, the CLI, or a non-Svix provider.
+ *
+ * [2026-07-08 acquisition audit W1-H1] The Resend/Svix signature (or shared
+ * secret) only proves the request really came THROUGH Resend/the configured
+ * transport -- it says nothing about who the email's FROM address is. Routing
+ * on the `to:` slug alone meant anyone who could reach (or enumerate) a real
+ * account's slug could inject arbitrary attachments that auto-commit straight
+ * into that account's compliance data. Every inbound message's sender is now
+ * checked against a per-account allowlist (AccountSetting
+ * inbound_allowed_senders, a JSON array of exact addresses and/or
+ * "@domain.com" / "domain.com" entries) and FAILS CLOSED when no allowlist is
+ * configured -- see isAllowedSender() below. The 202 accept-and-drop response
+ * is also now IDENTICAL for every "nothing enqueued" outcome (unmatched slug,
+ * matched slug + disallowed sender, no usable attachments) so a caller can
+ * never use the response to enumerate valid slugs.
  *
  * Routing: reports-<slug>@<domain> -> AccountSetting inbound_slug=<slug>.
  * Attachments: inline base64 if the payload carries it, else fetched from Resend's
@@ -100,6 +116,38 @@ async function resolveAccountByTo(toList: any): Promise<{ accountId: string; slu
   return null;
 }
 
+// [2026-07-08 audit W1-H1] Per-account inbound sender allowlist. Fails CLOSED:
+// an account with no `inbound_allowed_senders` AccountSetting configured yet
+// accepts mail from NOBODY -- an admin must opt in an explicit sender/domain
+// before email-in will process anything for that account. Entries: an exact
+// address ("jane@acme.com"), a bare domain ("acme.com"), or an "@domain"
+// form -- any of the three allow every sender at that domain except the exact
+// form, which is an exact-address match.
+async function isAllowedSender(accountId: string, senderAddr: string | null): Promise<boolean> {
+  if (!senderAddr) return false;
+  try {
+    const setting = await prisma.accountSetting.findFirst({
+      where: { accountId, key: 'inbound_allowed_senders' },
+      select: { value: true },
+    });
+    if (!setting?.value) return false;
+    let list: any;
+    try { list = JSON.parse(setting.value); } catch { return false; }
+    if (!Array.isArray(list) || list.length === 0) return false;
+    const domain = senderAddr.split('@')[1] || '';
+    return list.some((raw: any) => {
+      const entry = String(raw || '').trim().toLowerCase();
+      if (!entry) return false;
+      if (entry.startsWith('@')) return domain === entry.slice(1);
+      if (entry.includes('@')) return senderAddr === entry;
+      return domain === entry;
+    });
+  } catch (e: any) {
+    console.error('[inbound/email] allowlist lookup failed — failing closed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 type Att = { filename: string; contentType: string; buffer: Buffer };
 
 async function fetchResendAttachments(emailId: string): Promise<Att[]> {
@@ -144,9 +192,23 @@ router.post('/email', async (req: any, res: any) => {
     if (event.type && event.type !== 'email.received') return res.status(200).json({ ok: true, ignored: event.type });
     const data = event.data || event;
 
+    // [2026-07-08 audit W1-H1] One identical response body for every
+    // "nothing was enqueued" outcome — see the file-header note. Resend only
+    // cares about the 2xx status (so it doesn't retry/bounce); nothing reads
+    // this body.
+    const ACCEPT_AND_DROP = { ok: true };
+
     const account = await resolveAccountByTo(data.to);
-    // Accept-and-drop (202) for un-routable mail so the provider does not retry/bounce.
-    if (!account) return res.status(202).json({ ok: true, note: 'no matching inbound account' });
+    if (!account) return res.status(202).json(ACCEPT_AND_DROP);
+
+    // Sender authorization — see isAllowedSender() + file header. This is the
+    // actual injection fix: the transport signature checked above proves the
+    // request came through Resend, not who wrote the email.
+    const senderAddr = senderEmail(data.from);
+    if (!(await isAllowedSender(account.accountId, senderAddr))) {
+      console.warn(`[inbound/email] rejected: sender ${senderAddr || '(unparseable)'} is not on the inbound allowlist for account ${account.accountId.slice(0, 8)}`);
+      return res.status(202).json(ACCEPT_AND_DROP);
+    }
 
     let attachments: Att[] = [];
     if (Array.isArray(data.attachments) && data.attachments.some((a: any) => a.content)) {
@@ -160,7 +222,7 @@ router.post('/email', async (req: any, res: any) => {
     attachments = attachments
       .filter((a) => a.buffer && a.buffer.length > 0 && a.buffer.length <= MAX_INBOUND_ATT_BYTES)
       .slice(0, MAX_INBOUND_ATTACHMENTS);
-    if (!attachments.length) return res.status(202).json({ ok: true, note: 'no usable attachments' });
+    if (!attachments.length) return res.status(202).json(ACCEPT_AND_DROP);
 
     const siteSetting = await prisma.accountSetting.findFirst({ where: { accountId: account.accountId, key: 'inbound_site_id' }, select: { value: true } });
     const siteId = siteSetting?.value || null;
@@ -168,7 +230,6 @@ router.post('/email', async (req: any, res: any) => {
     // The sender to acknowledge once the whole message is gated (null for
     // no-reply / loop-prone senders), and a batch id correlating these jobs so
     // the post-parse ack aggregates into one outcome email.
-    const senderAddr = senderEmail(data.from);
     const notifyEmail = (senderAddr && !NO_REPLY_RE.test(senderAddr)) ? senderAddr : null;
     const batchId = crypto.randomUUID();
 
@@ -182,10 +243,10 @@ router.post('/email', async (req: any, res: any) => {
       } });
       jobs.push(job.id);
     }
-    console.log(`[inbound/email] queued ${jobs.length} auto-commit job(s) for ${account.slug} (batch ${batchId})`);
+    console.log(`[inbound/email] queued ${jobs.length} auto-commit job(s) for ${account.slug} (batch ${batchId}) from allowed sender ${senderAddr}`);
 
     // No ack here — lib/ingestAck sends the outcome email after parsing+gating.
-    return res.status(202).json({ ok: true, account: account.slug, jobs, batchId, willAck: !!notifyEmail });
+    return res.status(202).json(ACCEPT_AND_DROP);
   } catch (err: any) {
     console.error('[inbound/email]', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, error: 'inbound processing failed' });

@@ -16,8 +16,16 @@ export {};
 const express   = require('express');
 const bcrypt    = require('bcryptjs');
 const prisma    = require('../lib/prisma').default;
+const { requireSuperAdmin } = require('../middleware/roles');
 
 const router = express.Router();
+
+// [2026-07-08 audit W1-L1 / item 6] Defense-in-depth: this router was only
+// requireSuperAdmin-gated at the mount point (index.ts). Every sibling
+// super_admin-only router (e.g. routes/adminOpportunities.ts) also gates
+// itself in-file so a future mount change or a new router added elsewhere
+// can never accidentally expose these routes without the guard.
+router.use(requireSuperAdmin);
 
 // ── GET /api/admin/partner-orgs ──────────────────────────────────────────────
 // List all PartnerOrganizations with account count and oem_admin user count.
@@ -74,7 +82,7 @@ router.get('/', async (req: any, res: any) => {
     res.json({ orgs: result });
   } catch (err) {
     console.error('[adminPartnerOrgs GET /]', err);
-    res.status(500).json({ error: 'Failed to list partner orgs' });
+    res.status(500).json({ success: false, error: 'Failed to list partner orgs' });
   }
 });
 
@@ -84,7 +92,7 @@ router.post('/', async (req: any, res: any) => {
   try {
     const { name, logoUrl, primaryColor, website } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'name is required' });
+      return res.status(400).json({ success: false, error: 'name is required' });
     }
 
     const org = await prisma.partnerOrganization.create({
@@ -103,10 +111,10 @@ router.post('/', async (req: any, res: any) => {
     res.status(201).json({ org });
   } catch (err: any) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ error: 'A partner org with that name already exists' });
+      return res.status(409).json({ success: false, error: 'A partner org with that name already exists' });
     }
     console.error('[adminPartnerOrgs POST /]', err);
-    res.status(500).json({ error: 'Failed to create partner org' });
+    res.status(500).json({ success: false, error: 'Failed to create partner org' });
   }
 });
 
@@ -118,14 +126,14 @@ router.patch('/:id', async (req: any, res: any) => {
     const { name, logoUrl, primaryColor, website } = req.body;
 
     const existing = await prisma.partnerOrganization.findUnique({ where: { id } });
-    if (!existing) return res.status(404).json({ error: 'Partner org not found' });
+    if (!existing) return res.status(404).json({ success: false, error: 'Partner org not found' });
 
     const data: Record<string, any> = {};
     if (name !== undefined) {
       // Guard the .trim() below: a non-string name (number/object/array) would
       // throw and surface as a 500 instead of a clean 400.
       if (typeof name !== 'string' || !name.trim()) {
-        return res.status(400).json({ error: 'name must be a non-empty string' });
+        return res.status(400).json({ success: false, error: 'name must be a non-empty string' });
       }
       data.name = name.trim();
     }
@@ -143,7 +151,7 @@ router.patch('/:id', async (req: any, res: any) => {
     res.json({ org });
   } catch (err) {
     console.error('[adminPartnerOrgs PATCH /:id]', err);
-    res.status(500).json({ error: 'Failed to update partner org' });
+    res.status(500).json({ success: false, error: 'Failed to update partner org' });
   }
 });
 
@@ -157,7 +165,7 @@ router.delete('/:id', async (req: any, res: any) => {
       where: { id },
       include: { _count: { select: { accounts: true } } },
     });
-    if (!existing) return res.status(404).json({ error: 'Partner org not found' });
+    if (!existing) return res.status(404).json({ success: false, error: 'Partner org not found' });
 
     if (existing._count.accounts === 0) {
       // Safe to hard-delete
@@ -183,7 +191,7 @@ router.delete('/:id', async (req: any, res: any) => {
     res.json({ deleted: true, hard: false, accountCount: existing._count.accounts });
   } catch (err) {
     console.error('[adminPartnerOrgs DELETE /:id]', err);
-    res.status(500).json({ error: 'Failed to delete partner org' });
+    res.status(500).json({ success: false, error: 'Failed to delete partner org' });
   }
 });
 
@@ -193,14 +201,14 @@ router.post('/:id/link-account', async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { accountId } = req.body;
-    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+    if (!accountId) return res.status(400).json({ success: false, error: 'accountId is required' });
 
     const org = await prisma.partnerOrganization.findUnique({ where: { id } });
-    if (!org) return res.status(404).json({ error: 'Partner org not found' });
-    if (org.name?.startsWith('[DELETED]')) return res.status(409).json({ error: 'This partner org has been deleted.' });
+    if (!org) return res.status(404).json({ success: false, error: 'Partner org not found' });
+    if (org.name?.startsWith('[DELETED]')) return res.status(409).json({ success: false, error: 'This partner org has been deleted.' });
 
     const account = await prisma.account.findUnique({ where: { id: accountId } });
-    if (!account) return res.status(404).json({ error: 'Account not found' });
+    if (!account) return res.status(404).json({ success: false, error: 'Account not found' });
 
     const updated = await prisma.account.update({
       where: { id: accountId },
@@ -211,7 +219,7 @@ router.post('/:id/link-account', async (req: any, res: any) => {
     res.json({ account: updated });
   } catch (err) {
     console.error('[adminPartnerOrgs POST /:id/link-account]', err);
-    res.status(500).json({ error: 'Failed to link account' });
+    res.status(500).json({ success: false, error: 'Failed to link account' });
   }
 });
 
@@ -224,16 +232,16 @@ router.post('/:id/create-oem-user', async (req: any, res: any) => {
     const { email, name, password } = req.body;
 
     if (!email || !name || !password) {
-      return res.status(400).json({ error: 'email, name, and password are required' });
+      return res.status(400).json({ success: false, error: 'email, name, and password are required' });
     }
 
     const org = await prisma.partnerOrganization.findUnique({ where: { id } });
-    if (!org) return res.status(404).json({ error: 'Partner org not found' });
-    if (org.name?.startsWith('[DELETED]')) return res.status(409).json({ error: 'This partner org has been deleted.' });
+    if (!org) return res.status(404).json({ success: false, error: 'Partner org not found' });
+    if (org.name?.startsWith('[DELETED]')) return res.status(409).json({ success: false, error: 'This partner org has been deleted.' });
 
     // Check for duplicate email
     const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-    if (existing) return res.status(409).json({ error: 'A user with that email already exists' });
+    if (existing) return res.status(409).json({ success: false, error: 'A user with that email already exists' });
 
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -270,10 +278,10 @@ router.post('/:id/create-oem-user', async (req: any, res: any) => {
     });
   } catch (err: any) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ error: 'A user with that email already exists' });
+      return res.status(409).json({ success: false, error: 'A user with that email already exists' });
     }
     console.error('[adminPartnerOrgs POST /:id/create-oem-user]', err);
-    res.status(500).json({ error: 'Failed to create OEM user' });
+    res.status(500).json({ success: false, error: 'Failed to create OEM user' });
   }
 });
 

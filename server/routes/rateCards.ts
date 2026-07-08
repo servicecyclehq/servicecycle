@@ -70,18 +70,38 @@ router.put('/:serviceType', requireManager, async (req: any, res: any) => {
     const minCents = Math.round(minDollars * 100);
     const maxCents = Math.round(maxDollars * 100);
 
-    // ServiceRateCard has no unique key on (accountId, serviceType), so this is
-    // a manual upsert scoped to this account's overrides (partnerOrgId null).
-    const existing = await prisma.serviceRateCard.findFirst({
-      where: { accountId: req.user.accountId, partnerOrgId: null, serviceType },
-      select: { id: true },
-    });
-    if (existing) {
-      await prisma.serviceRateCard.update({ where: { id: existing.id }, data: { minCents, maxCents } });
-    } else {
-      await prisma.serviceRateCard.create({
-        data: { accountId: req.user.accountId, partnerOrgId: null, serviceType, minCents, maxCents },
-      });
+    // [2026-07-08 audit item 10] ServiceRateCard has NO unique constraint on
+    // (accountId, partnerOrgId, serviceType) anywhere in schema.prisma or any
+    // migration (verified against live code — the audit assumed one existed
+    // and asked for a real Prisma .upsert() on it; it doesn't exist, so that
+    // isn't directly possible without a schema migration, which is out of
+    // scope for this pass). The prior manual findFirst-then-create/update
+    // raced on money-adjacent config: two concurrent saves for the same
+    // service type could both read "no existing row" and both insert,
+    // leaving a duplicate override with an unpredictable winner downstream.
+    // SERIALIZABLE isolation closes that window without a schema change:
+    // Postgres aborts one of two overlapping read-then-write transactions on
+    // the same row(s) with a serialization failure (Prisma P2034) instead of
+    // silently letting both "succeed".
+    try {
+      await prisma.$transaction(async (tx: any) => {
+        const existing = await tx.serviceRateCard.findFirst({
+          where: { accountId: req.user.accountId, partnerOrgId: null, serviceType },
+          select: { id: true },
+        });
+        if (existing) {
+          await tx.serviceRateCard.update({ where: { id: existing.id }, data: { minCents, maxCents } });
+        } else {
+          await tx.serviceRateCard.create({
+            data: { accountId: req.user.accountId, partnerOrgId: null, serviceType, minCents, maxCents },
+          });
+        }
+      }, { isolationLevel: 'Serializable' });
+    } catch (txErr: any) {
+      if (txErr?.code === 'P2034') {
+        return res.status(409).json({ success: false, error: 'This rate card was just updated by another request — please retry.' });
+      }
+      throw txErr;
     }
 
     try {

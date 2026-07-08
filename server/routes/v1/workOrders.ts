@@ -100,8 +100,10 @@ router.post('/', requireScope('write'), async (req, res) => {
   const idemKey = normalizeKey(req);
 
   // Idempotent replay: a retried request returns the original response verbatim.
+  // [2026-07-08 audit item 7] method+path now passed so a key reused against a
+  // different endpoint gets a 409, not this endpoint's stored response.
   if (idemKey) {
-    const prior = await findStored(prisma, accountId, idemKey);
+    const prior = await findStored(prisma, accountId, idemKey, 'POST', '/api/v1/work-orders');
     if (prior) {
       res.set('Idempotent-Replay', 'true');
       return res.status(prior.statusCode).json(prior.responseBody);

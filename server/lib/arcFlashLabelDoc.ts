@@ -13,6 +13,7 @@
  */
 
 const { shockApproachBoundaries } = require('./arcFlashLabel');
+const { assetLabel } = require('./assetLabel');
 
 // ANSI Z535.4 signal-word colors.
 const SAFETY_RED = '#C8102E';     // DANGER
@@ -95,7 +96,12 @@ function buildLabelModel(row: any, opts: any = {}): any {
     shockRestrictedApproachIn,
     shockLimitedApproachSource: shockLimitedApproachIn == null ? null : (limitedStored != null ? 'study' : 'table130_4'),
     shockRestrictedApproachSource: shockRestrictedApproachIn == null ? null : (restrictedStored != null ? 'study' : 'table130_4'),
-    busName: row.busName || row.asset?.name || 'Equipment',
+    // [2026-07-08 audit item 9] row.asset?.name doesn't exist on Asset -- was
+    // always undefined, silently skipping straight to the generic 'Equipment'
+    // fallback. assetLabel() derives a real manufacturer/model/serial (or
+    // equipmentType) label when busName itself is blank. PPE category/method
+    // logic above is untouched.
+    busName: row.busName || assetLabel(row.asset, 'Equipment'),
     equipmentType: row.asset?.equipmentType || null,
     studyDate: fmtDate(row.study?.performedDate),
     studyExpiresAt: row.study?.expiresAt || row.study?.expiryDate || null,

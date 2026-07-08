@@ -136,14 +136,19 @@ router.post('/connections', async (req: any, res: any) => {
 
 // ─── DELETE /api/sso/admin/connections/:id ───────────────────────────────────
 router.delete('/connections/:id', async (req: any, res: any) => {
-  const accountId = req.user.accountId;
-  const conn = await prisma.ssoConnection.findUnique({ where: { id: req.params.id } });
-  if (!conn || conn.accountId !== accountId) return res.status(404).json({ success: false, error: 'Connection not found' });
-  // Removing the mapping disables our use of it; the Polis-side delete is
-  // best-effort (admin can also remove it in the Polis portal).
-  await prisma.ssoConnection.delete({ where: { id: conn.id } }); // cascades domains + login states
-  writeActivityLog({ userId: req.user.id, accountId, action: 'sso_connection_deleted', details: { connectionId: conn.id } });
-  return res.json({ success: true });
+  try {
+    const accountId = req.user.accountId;
+    const conn = await prisma.ssoConnection.findUnique({ where: { id: req.params.id } });
+    if (!conn || conn.accountId !== accountId) return res.status(404).json({ success: false, error: 'Connection not found' });
+    // Removing the mapping disables our use of it; the Polis-side delete is
+    // best-effort (admin can also remove it in the Polis portal).
+    await prisma.ssoConnection.delete({ where: { id: conn.id } }); // cascades domains + login states
+    writeActivityLog({ userId: req.user.id, accountId, action: 'sso_connection_deleted', details: { connectionId: conn.id } });
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('[ssoAdmin] connection delete failed:', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to delete connection' });
+  }
 });
 
 // ─── POST /api/sso/admin/domains ──────────────────────────────────────────────
@@ -152,44 +157,54 @@ const DomainSchema = z.object({
   connectionId: z.string().uuid(),
 });
 router.post('/domains', async (req: any, res: any) => {
-  const accountId = req.user.accountId;
-  const parsed = DomainSchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ success: false, error: parsed.error.issues?.[0]?.message || 'Invalid domain payload' });
-  const { domain, connectionId } = parsed.data;
-
-  const conn = await prisma.ssoConnection.findUnique({ where: { id: connectionId } });
-  if (!conn || conn.accountId !== accountId) return res.status(404).json({ success: false, error: 'Connection not found' });
-
-  // Domain is GLOBALLY unique (isolation anchor). If already claimed by another
-  // account, refuse — never let one tenant hijack another's domain.
-  const existing = await prisma.ssoDomain.findUnique({ where: { domain } });
-  if (existing && existing.accountId !== accountId) {
-    return res.status(409).json({ success: false, error: 'This domain is already claimed by another organization. Contact support to verify ownership.' });
-  }
-  if (existing) {
-    const updated = await prisma.ssoDomain.update({ where: { domain }, data: { connectionId, isActive: true } });
-    return res.json({ success: true, data: { domain: updated } });
-  }
-  let dom;
   try {
-    dom = await prisma.ssoDomain.create({ data: { domain, accountId, connectionId } });
-  } catch (err: any) {
-    if (err?.code === 'P2002') {
-      return res.status(409).json({ error: 'This domain is already claimed by another account' });
+    const accountId = req.user.accountId;
+    const parsed = DomainSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ success: false, error: parsed.error.issues?.[0]?.message || 'Invalid domain payload' });
+    const { domain, connectionId } = parsed.data;
+
+    const conn = await prisma.ssoConnection.findUnique({ where: { id: connectionId } });
+    if (!conn || conn.accountId !== accountId) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+    // Domain is GLOBALLY unique (isolation anchor). If already claimed by another
+    // account, refuse — never let one tenant hijack another's domain.
+    const existing = await prisma.ssoDomain.findUnique({ where: { domain } });
+    if (existing && existing.accountId !== accountId) {
+      return res.status(409).json({ success: false, error: 'This domain is already claimed by another organization. Contact support to verify ownership.' });
     }
-    throw err;
+    if (existing) {
+      const updated = await prisma.ssoDomain.update({ where: { domain }, data: { connectionId, isActive: true } });
+      return res.json({ success: true, data: { domain: updated } });
+    }
+    let dom;
+    try {
+      dom = await prisma.ssoDomain.create({ data: { domain, accountId, connectionId } });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        return res.status(409).json({ success: false, error: 'This domain is already claimed by another account' });
+      }
+      throw err;
+    }
+    writeActivityLog({ userId: req.user.id, accountId, action: 'sso_domain_added', details: { domain } });
+    return res.status(201).json({ success: true, data: { domain: dom } });
+  } catch (e: any) {
+    console.error('[ssoAdmin] domain add failed:', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to add domain' });
   }
-  writeActivityLog({ userId: req.user.id, accountId, action: 'sso_domain_added', details: { domain } });
-  return res.status(201).json({ success: true, data: { domain: dom } });
 });
 
 router.delete('/domains/:id', async (req: any, res: any) => {
-  const accountId = req.user.accountId;
-  const dom = await prisma.ssoDomain.findUnique({ where: { id: req.params.id } });
-  if (!dom || dom.accountId !== accountId) return res.status(404).json({ success: false, error: 'Domain not found' });
-  await prisma.ssoDomain.delete({ where: { id: dom.id } });
-  writeActivityLog({ userId: req.user.id, accountId, action: 'sso_domain_removed', details: { domain: dom.domain } });
-  return res.json({ success: true });
+  try {
+    const accountId = req.user.accountId;
+    const dom = await prisma.ssoDomain.findUnique({ where: { id: req.params.id } });
+    if (!dom || dom.accountId !== accountId) return res.status(404).json({ success: false, error: 'Domain not found' });
+    await prisma.ssoDomain.delete({ where: { id: dom.id } });
+    writeActivityLog({ userId: req.user.id, accountId, action: 'sso_domain_removed', details: { domain: dom.domain } });
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('[ssoAdmin] domain delete failed:', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to delete domain' });
+  }
 });
 
 // ─── POST /api/sso/admin/directories (SCIM) ──────────────────────────────────
@@ -233,12 +248,17 @@ router.post('/directories', async (req: any, res: any) => {
 });
 
 router.delete('/directories/:id', async (req: any, res: any) => {
-  const accountId = req.user.accountId;
-  const dir = await prisma.scimDirectory.findUnique({ where: { id: req.params.id } });
-  if (!dir || dir.accountId !== accountId) return res.status(404).json({ success: false, error: 'Directory not found' });
-  await prisma.scimDirectory.delete({ where: { id: dir.id } });
-  writeActivityLog({ userId: req.user.id, accountId, action: 'scim_directory_deleted', details: { directoryId: dir.id } });
-  return res.json({ success: true });
+  try {
+    const accountId = req.user.accountId;
+    const dir = await prisma.scimDirectory.findUnique({ where: { id: req.params.id } });
+    if (!dir || dir.accountId !== accountId) return res.status(404).json({ success: false, error: 'Directory not found' });
+    await prisma.scimDirectory.delete({ where: { id: dir.id } });
+    writeActivityLog({ userId: req.user.id, accountId, action: 'scim_directory_deleted', details: { directoryId: dir.id } });
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('[ssoAdmin] directory delete failed:', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to delete directory' });
+  }
 });
 
 // ─── Role mappings ────────────────────────────────────────────────────────────
@@ -247,28 +267,38 @@ const RoleMapSchema = z.object({
   role: z.string(),
 });
 router.post('/role-mappings', async (req: any, res: any) => {
-  const accountId = req.user.accountId;
-  const parsed = RoleMapSchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ success: false, error: 'Invalid role-mapping payload' });
-  const role = sanitizeRole(parsed.data.role);
-  if (!role) {
-    return res.status(400).json({ success: false, error: 'Role must be one of viewer, consultant, manager. admin/oem_admin/super_admin cannot be granted via SSO.' });
+  try {
+    const accountId = req.user.accountId;
+    const parsed = RoleMapSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ success: false, error: 'Invalid role-mapping payload' });
+    const role = sanitizeRole(parsed.data.role);
+    if (!role) {
+      return res.status(400).json({ success: false, error: 'Role must be one of viewer, consultant, manager. admin/oem_admin/super_admin cannot be granted via SSO.' });
+    }
+    const mapping = await prisma.ssoRoleMapping.upsert({
+      where: { accountId_idpGroup: { accountId, idpGroup: parsed.data.idpGroup } },
+      create: { accountId, idpGroup: parsed.data.idpGroup, role },
+      update: { role },
+    });
+    writeActivityLog({ userId: req.user.id, accountId, action: 'sso_role_mapping_set', details: { idpGroup: parsed.data.idpGroup, role } });
+    return res.json({ success: true, data: { mapping } });
+  } catch (e: any) {
+    console.error('[ssoAdmin] role-mapping set failed:', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to save role mapping' });
   }
-  const mapping = await prisma.ssoRoleMapping.upsert({
-    where: { accountId_idpGroup: { accountId, idpGroup: parsed.data.idpGroup } },
-    create: { accountId, idpGroup: parsed.data.idpGroup, role },
-    update: { role },
-  });
-  writeActivityLog({ userId: req.user.id, accountId, action: 'sso_role_mapping_set', details: { idpGroup: parsed.data.idpGroup, role } });
-  return res.json({ success: true, data: { mapping } });
 });
 
 router.delete('/role-mappings/:id', async (req: any, res: any) => {
-  const accountId = req.user.accountId;
-  const m = await prisma.ssoRoleMapping.findUnique({ where: { id: req.params.id } });
-  if (!m || m.accountId !== accountId) return res.status(404).json({ success: false, error: 'Mapping not found' });
-  await prisma.ssoRoleMapping.delete({ where: { id: m.id } });
-  return res.json({ success: true });
+  try {
+    const accountId = req.user.accountId;
+    const m = await prisma.ssoRoleMapping.findUnique({ where: { id: req.params.id } });
+    if (!m || m.accountId !== accountId) return res.status(404).json({ success: false, error: 'Mapping not found' });
+    await prisma.ssoRoleMapping.delete({ where: { id: m.id } });
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('[ssoAdmin] role-mapping delete failed:', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to delete role mapping' });
+  }
 });
 
 // ─── PUT /api/sso/admin/policy ────────────────────────────────────────────────
@@ -278,43 +308,48 @@ const PolicySchema = z.object({
   defaultRole: z.string().optional(),
 });
 router.put('/policy', async (req: any, res: any) => {
-  const accountId = req.user.accountId;
-  const parsed = PolicySchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ success: false, error: 'Invalid policy payload' });
+  try {
+    const accountId = req.user.accountId;
+    const parsed = PolicySchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ success: false, error: 'Invalid policy payload' });
 
-  if (parsed.data.ssoRequired === true) {
-    // BREAK-GLASS GUARD: there must remain at least one password-capable
-    // (non-ssoManaged) active admin who can sign in if the IdP breaks.
-    const breakGlassAdmins = await prisma.user.count({
-      where: { accountId, role: 'admin', isActive: true, ssoManaged: false },
-    });
-    if (breakGlassAdmins < 1) {
-      return res.status(409).json({
-        success: false,
-        error: 'Cannot require SSO: at least one local (non-SSO) admin must remain for break-glass access. Create or convert a local admin first.',
-        code: 'NO_BREAK_GLASS_ADMIN',
+    if (parsed.data.ssoRequired === true) {
+      // BREAK-GLASS GUARD: there must remain at least one password-capable
+      // (non-ssoManaged) active admin who can sign in if the IdP breaks.
+      const breakGlassAdmins = await prisma.user.count({
+        where: { accountId, role: 'admin', isActive: true, ssoManaged: false },
+      });
+      if (breakGlassAdmins < 1) {
+        return res.status(409).json({
+          success: false,
+          error: 'Cannot require SSO: at least one local (non-SSO) admin must remain for break-glass access. Create or convert a local admin first.',
+          code: 'NO_BREAK_GLASS_ADMIN',
+        });
+      }
+    }
+
+    if (parsed.data.ssoRequired !== undefined) {
+      await prisma.accountSetting.upsert({
+        where: { accountId_key: { accountId, key: 'sso.required' } },
+        create: { accountId, key: 'sso.required', value: parsed.data.ssoRequired ? 'true' : 'false' },
+        update: { value: parsed.data.ssoRequired ? 'true' : 'false' },
+      });
+      writeActivityLog({ userId: req.user.id, accountId, action: 'sso_required_changed', details: { ssoRequired: parsed.data.ssoRequired } });
+    }
+    if (parsed.data.defaultRole !== undefined) {
+      const def = sanitizeRole(parsed.data.defaultRole);
+      if (!def) return res.status(400).json({ success: false, error: 'Default role must be viewer, consultant, or manager' });
+      await prisma.accountSetting.upsert({
+        where: { accountId_key: { accountId, key: 'sso.rolemap.default' } },
+        create: { accountId, key: 'sso.rolemap.default', value: def },
+        update: { value: def },
       });
     }
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('[ssoAdmin] policy update failed:', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to update SSO policy' });
   }
-
-  if (parsed.data.ssoRequired !== undefined) {
-    await prisma.accountSetting.upsert({
-      where: { accountId_key: { accountId, key: 'sso.required' } },
-      create: { accountId, key: 'sso.required', value: parsed.data.ssoRequired ? 'true' : 'false' },
-      update: { value: parsed.data.ssoRequired ? 'true' : 'false' },
-    });
-    writeActivityLog({ userId: req.user.id, accountId, action: 'sso_required_changed', details: { ssoRequired: parsed.data.ssoRequired } });
-  }
-  if (parsed.data.defaultRole !== undefined) {
-    const def = sanitizeRole(parsed.data.defaultRole);
-    if (!def) return res.status(400).json({ success: false, error: 'Default role must be viewer, consultant, or manager' });
-    await prisma.accountSetting.upsert({
-      where: { accountId_key: { accountId, key: 'sso.rolemap.default' } },
-      create: { accountId, key: 'sso.rolemap.default', value: def },
-      update: { value: def },
-    });
-  }
-  return res.json({ success: true });
 });
 
 module.exports = router;

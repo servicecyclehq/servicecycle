@@ -18,7 +18,16 @@
  * operator's other customers once customers have their own logins). admin /
  * manager are allowed ONLY in DEMO_MODE so the sandbox (just us, no real
  * customers) is testable. The account scope is enforced separately in the route
- * by mirroring the fleet partnerOrg guard (fail-closed). A broad "grant any
+ * by mirroring the fleet partnerOrg guard (fail-closed) for oem_admin/
+ * super_admin/demo callers. [2026-07-08 audit W1-M1 / item 3] group_admin is
+ * an EnterpriseGroup (HoldCo-over-OpCos) role, not a partner-org role -- an
+ * account can carry BOTH a partnerOrgId and an enterpriseGroupId, so a
+ * group_admin used to fall into the same partnerOrgId-scoped branch as
+ * oem_admin and could read/reassign reps across every account sharing that
+ * partnerOrgId, not just their own enterprise group. routes/sales.ts's
+ * resolveScope() now gives group_admin its own enterpriseGroupId-scoped
+ * branch, mirroring routes/group.ts's resolveGroupScope() (the pattern
+ * every OTHER group_admin-gated surface already uses). A broad "grant any
  * viewer" capability is intentionally deferred - cross-account grants are
  * security-sensitive and shouldn't be a casual flag.
  */

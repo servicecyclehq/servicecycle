@@ -3,6 +3,43 @@ const prisma = require('./lib/prisma').default;
 const { settleAllPending, verifyAllChains } = require('./lib/activityLogChain'); // Pass-6 W4 MT-127
 const { verifyToken } = require('./lib/jwtSecrets');
 
+// ── Process-level error handlers (2026-07-08 acquisition audit item 5) ──────
+// Express 4 does NOT forward a rejected promise thrown inside an async route
+// handler to the error-handling middleware -- an un-awaited/uncaught
+// rejection just becomes a bare Node "unhandledRejection" event, and Node 20
+// terminates the process by default when nothing is listening for it. This
+// file has several genuinely fire-and-forget async calls (webhook retries,
+// digest sends, notify* helpers) by design, so a single transient failure in
+// one of them (a DB blip, a flaky outbound call) must not be able to kill the
+// whole server. Log loudly for visibility -- Better Stack when configured,
+// console always -- but do NOT exit; whatever request/job triggered this one
+// rejection has already failed on its own terms and the process itself is
+// still in a known-good state.
+process.on('unhandledRejection', (reason: any) => {
+  const message = reason && reason.message ? String(reason.message) : String(reason);
+  const stack = reason && reason.stack ? String(reason.stack).slice(0, 2000) : undefined;
+  console.error('[process] UNHANDLED REJECTION —', message, stack ? `\n${stack}` : '');
+  try {
+    require('./lib/betterStack').logEvent('error', { kind: 'unhandledRejection', message: message.slice(0, 500), stack });
+  } catch (_) { /* noop */ }
+});
+
+// uncaughtException means a synchronous throw escaped every try/catch on the
+// call stack -- Node's own guarantee here is much weaker than for a rejected
+// promise (the process may already be in an inconsistent state: a lock held,
+// an in-flight write half-done). The documented-safe move is log-then-exit
+// and let the process manager (PM2 / `docker compose` restart policy)
+// restart clean, rather than keep serving requests from an unknown state.
+process.on('uncaughtException', (err: any) => {
+  const message = err && err.message ? String(err.message) : String(err);
+  const stack = err && err.stack ? String(err.stack).slice(0, 2000) : undefined;
+  console.error('[process] UNCAUGHT EXCEPTION — exiting —', message, stack ? `\n${stack}` : '');
+  try {
+    require('./lib/betterStack').logEvent('error', { kind: 'uncaughtException', message: message.slice(0, 500), stack });
+  } catch (_) { /* noop */ }
+  process.exit(1);
+});
+
 // ── Startup env validation ────────────────────────────────────────────────────
 // Refuse to boot if required env vars are missing. Logs all missing names at
 // once so the operator can fix them in a single restart cycle. (M3)
@@ -270,7 +307,7 @@ const { gpcMiddleware }     = require('./middleware/gpc'); // (Pass-6 W3 MT-027)
 const { countryGate }       = require('./middleware/countryGate'); // (Pass-6 W3 MT-026) US-only registration gate
 const { getInstanceConfig } = require('./lib/instanceConfig'); // (S8) setup gate
 const { runAlertEngine }    = require('./lib/alertEngine');
-const { runBackup }         = require('./lib/backup');
+const { runBackup, runUploadsSync } = require('./lib/backup');
 const { pruneActivityLog }  = require('./lib/activityLogPrune'); // (B2) retention
 const { pruneBackupLog }    = require('./lib/backupLogPrune');   // (B1 5/02) retention
 const { pruneWebhookDlq }   = require('./lib/dlqPrune');         // v0.37.1 W5 MT-132
@@ -1051,7 +1088,24 @@ app.use('/api/help', helpRoutes);
 // captures are rejected at the gateway with a useful error code rather than
 // landing in the queue. Self-host installs see countryGate as a no-op by
 // default (mode resolves to 'off' when DEMO_MODE is unset).
-app.use('/api/early-access', countryGate, earlyAccessRoutes);
+//
+// [2026-07-08 audit W1-L3 / item 5] earlyAccessRoutes ALSO defines the
+// admin-only GET /list (already self-protected on-route with
+// authenticateToken+requireAdmin+denyOnDemo, AND separately mounted at
+// /api/admin/early-access behind the admin router's own auth — see
+// admin.ts:200 / index.ts's '/api/admin' mount). Mounting the WHOLE router
+// here on a public, unauthenticated path still meant /list was reachable
+// "one line from exposure": if its inline guard were ever dropped, this
+// public mount would immediately serve the full lead/prospect PII table with
+// zero auth. Gate at the mount itself instead of trusting the sub-route:
+// only the intended public POST / can ever reach the router from here —
+// everything else (GET /list included) 404s before the router sees it.
+app.use('/api/early-access', countryGate, (req, res, next) => {
+  if (req.method !== 'POST' || req.path !== '/') {
+    return res.status(404).json({ success: false, error: 'Route not found' });
+  }
+  next();
+}, earlyAccessRoutes);
 
 // ── First-run setup gate (S8) ────────────────────────────────────────────────
 // Until the wizard finishes (InstanceConfig.setupCompletedAt is set) every
@@ -1938,17 +1992,49 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
     // ── Nightly backup cron (runs at 2:00 AM server time) ───────────────────
     cron.schedule('0 2 * * *', () => runOnce('backup', async () => {
       console.log('[Cron] Running nightly database backup...');
-      // S5-FN-02 (v0.74.0): collect per-account results; throw if any failed so
-      // runOnce pings healthchecks.io 'fail'. Pre-fix, the catch() swallowed all
-      // errors and the cron pinged green even when backups failed.
+      // [2026-07-08 audit item 5] runBackup() runs `pg_dump` against the WHOLE
+      // shared Postgres database, unconditionally — ServiceCycle is one DB for
+      // every tenant, not DB-per-tenant, so the `accountId` it takes is only
+      // used for the BackupLog row + log-line prefix, never to scope the dump
+      // itself (see lib/backup.ts runPgDump()). The prior version of this cron
+      // called runBackup() once PER ACCOUNT, so a full-database pg_dump ran N
+      // times every night (N = account count) — needless disk churn/CPU and a
+      // faster local-retention burn (see the disk-usage note in ops memory).
+      // Dump exactly ONCE per night against the first account, then mirror the
+      // same BackupLog bookkeeping runBackup() would have written for every
+      // OTHER account — so each account's own Settings > Backup history still
+      // shows an accurate nightly entry pointing at that one shared dump —
+      // without re-running pg_dump for each of them.
       const accounts = await prisma.account.findMany({ select: { id: true } });
+      if (accounts.length === 0) return;
+
+      const [primaryAccount, ...restAccounts] = accounts;
+      const primary = await runBackup(primaryAccount.id, 'cron');
       const failures = [];
-      for (const account of accounts) {
-        const result = await runBackup(account.id, 'cron');
-        if (!result.success) {
-          failures.push({ accountId: account.id, error: result.error });
+      if (!primary.success) failures.push({ accountId: primaryAccount.id, error: primary.error });
+
+      if (restAccounts.length > 0) {
+        const status = primary.success ? 'success' : 'failure';
+        try {
+          await prisma.backupLog.createMany({
+            data: restAccounts.map((account) => ({
+              accountId:   account.id,
+              status,
+              filename:    primary.filename || null,
+              sizeBytes:   primary.sizeBytes ?? null,
+              storageKey:  primary.storageKey || primary.localPath || primary.filename || null,
+              error:       primary.success ? null : String(primary.error || '').slice(0, 2000),
+              triggeredBy: 'cron',
+            })),
+          });
+        } catch (logErr: any) {
+          console.error('[Cron] Backup: failed to mirror BackupLog rows for non-primary accounts:', logErr.message);
+        }
+        if (!primary.success) {
+          for (const account of restAccounts) failures.push({ accountId: account.id, error: primary.error });
         }
       }
+
       if (failures.length > 0) {
         throw new Error(
           `Backup failed for ${failures.length} of ${accounts.length} account(s): ` +
@@ -1956,7 +2042,31 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
         );
       }
     }), { timezone: 'UTC' });
-    console.log('[Cron] Backup scheduled — runs daily at 02:00');
+    console.log('[Cron] Backup scheduled — runs once nightly (single shared-DB dump) at 02:00');
+
+    // [2026-07-08 audit W1 DevOps-3] Off-host sync of ./uploads (documents/
+    // photos) — previously ONLY Postgres was backed up off-host; a droplet
+    // loss meant permanent document loss. Runs at 02:20, after the DB dump
+    // (02:00) has room to finish, same 20-minute-offset pattern as the other
+    // post-backup slots below. runUploadsSync() itself no-ops cleanly (skip,
+    // not failure) when BACKUP_S3_* isn't configured or STORAGE_DEST=s3
+    // (no local copy to sync in that case) — see lib/backup.ts.
+    cron.schedule('20 2 * * *', () => runOnce('uploadsSync', async () => {
+      console.log('[Cron] Running nightly uploads off-host sync...');
+      const result = await runUploadsSync('cron');
+      if (!result.success && !result.skipped) {
+        throw new Error(`Uploads sync failed: ${result.error}`);
+      }
+      if (result.skipped) {
+        console.log('[Cron] Uploads sync skipped:', result.error);
+      } else {
+        console.log(
+          `[Cron] Uploads sync complete: ${result.uploaded} uploaded, ` +
+          `${result.unchanged} unchanged, ${result.failed} failed (of ${result.total} total)`
+        );
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] Uploads off-host sync scheduled — runs daily at 02:20');
 
     // ── ActivityLog retention prune (B2) — runs at 03:00 AM server time ────
     // Deletes activity_logs rows older than ACTIVITY_LOG_RETENTION_DAYS

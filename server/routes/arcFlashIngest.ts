@@ -2343,7 +2343,10 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
 
       const ikey = idemNormalizeKey(req);
       if (ikey) {
-        const stored = await idemFindStored(prisma, accountId, ikey);
+        // [2026-07-08 audit item 7] method+path (matching what idemStore()
+        // records below) so a key reused against a different endpoint 409s
+        // instead of replaying this endpoint's cached response.
+        const stored = await idemFindStored(prisma, accountId, ikey, req.method, req.path);
         if (stored) return res.status(stored.statusCode).json(stored.responseBody);
       }
 

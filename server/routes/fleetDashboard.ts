@@ -1174,8 +1174,11 @@ router.post('/settings/webhook-test', async (req: any, res: any) => {
 
     res.json({ success: result.ok, statusCode: result.status, reason: result.ok ? undefined : result.reason });
   } catch (err: any) {
+    // [2026-07-08 audit item 11] err.message previously leaked internal detail
+    // (stack-adjacent text, sometimes hostnames/paths) straight to the caller.
+    // Full detail stays server-side in the log; the response is generic.
     console.error('[fleet/settings/webhook-test]', err);
-    res.status(500).json({ error: 'Webhook test failed', detail: err.message });
+    res.status(500).json({ success: false, error: 'Webhook test failed' });
   }
 });
 

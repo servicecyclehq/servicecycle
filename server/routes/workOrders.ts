@@ -37,6 +37,7 @@ const { requireManager, requireRole } = require('../middleware/roles');
 const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { recomputeScheduleDates, worstCondition } = require('../lib/maintenanceInterval');
+const { assetLabel } = require('../lib/assetLabel');
 const prisma = require('../lib/prisma').default;
 const { notifyConditionDegradation } = require('../lib/assetAlertNotifier');
 // Prisma.DbNull — clearing a nullable Json column (testEquipment) requires the
@@ -804,7 +805,7 @@ router.put('/:id', requireManager, async (req, res) => {
         notifyConditionDegradation({
           accountId: req.user.accountId,
           assetId: existing.assetId,
-          assetName: existing.asset?.name ?? existing.assetId,
+          assetName: assetLabel(existing.asset, existing.assetId),
           oldCondition: existing.asset.governingCondition,
           newCondition: newGoverning,
           triggeredBy: 'work_order_completion',
@@ -821,7 +822,7 @@ router.put('/:id', requireManager, async (req, res) => {
         const immediateCount = openDefs.filter((d: any) => d.severity === 'IMMEDIATE').length;
         emitPartnerEvent(req.user.accountId, 'INSPECTION_COMPLETED', {
           assetId:         existing.assetId,
-          assetName:       existing.asset?.name ?? 'Asset',
+          assetName:       assetLabel(existing.asset),
           deficiencyCount: openDefs.length,
           immediateCount,
         }).catch(console.error);
@@ -870,11 +871,33 @@ router.put('/:id', requireManager, async (req, res) => {
       }
     }
 
-    const workOrder = await prisma.workOrder.update({
-      where: { id: existing.id },
-      data: updateData,
-      include: listInclude,
-    });
+    // [2026-07-08 audit item 8] Race-safe status transition: the COMPLETE
+    // branch above already claims the row via a guarded updateMany (only
+    // succeeds if the row is still in the status we read) + 409 on conflict.
+    // Every OTHER transition used to blind-overwrite by id instead -- a
+    // concurrent request (e.g. one dispatcher cancelling while another starts
+    // the job) could silently clobber whatever the other request just wrote,
+    // including un-completing/un-cancelling a WO that moved on between our
+    // read (top of this handler) and this write. Apply the same pattern here
+    // whenever a status transition is in flight; plain field edits (no status
+    // change) keep the simple update-by-id path.
+    let workOrder: any;
+    if (transitioning) {
+      const claim = await prisma.workOrder.updateMany({
+        where: { id: existing.id, status: existing.status },
+        data: updateData,
+      });
+      if (claim.count === 0) {
+        return res.status(409).json({ success: false, error: 'This work order was already updated by another request. Reload and try again.' });
+      }
+      workOrder = await prisma.workOrder.findUnique({ where: { id: existing.id }, include: listInclude });
+    } else {
+      workOrder = await prisma.workOrder.update({
+        where: { id: existing.id },
+        data: updateData,
+        include: listInclude,
+      });
+    }
 
     if (transitioning && status === 'CANCELLED') {
       writeActivityLog({

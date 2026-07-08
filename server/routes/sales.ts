@@ -28,13 +28,38 @@ function scopeBlocked(req: any, partnerOrgId: string | null | undefined): boolea
   return !partnerOrgId && req.user.role !== 'super_admin' && !DEMO();
 }
 
-// Resolve the caller's account scope once (gate + fail-closed partnerOrg filter).
+// [2026-07-08 audit W1-M1 / item 3] Same fail-closed shape as scopeBlocked()
+// above, but for group_admin's OWN scope dimension (enterpriseGroupId, not
+// partnerOrgId) — mirrors routes/group.ts's groupFallbackBlocked().
+function groupScopeBlocked(req: any, enterpriseGroupId: string | null | undefined): boolean {
+  return !enterpriseGroupId && req.user.role !== 'super_admin' && !DEMO();
+}
+
+// Resolve the caller's account scope once (gate + fail-closed scope filter).
 // Returns { ok, status, error, accountWhere } so every sales endpoint shares one
 // security posture.
 async function resolveScope(req: any): Promise<any> {
   if (!canViewSales(req.user, { demoMode: DEMO() })) {
     return { ok: false, status: 403, error: 'Sales roll-up is available to operator staff only.' };
   }
+
+  // [2026-07-08 audit W1-M1 / item 3] group_admin is an EnterpriseGroup
+  // (HoldCo-over-OpCos) role — it must be scoped by enterpriseGroupId, NOT
+  // partnerOrgId. Before this fix, group_admin fell through to the
+  // partnerOrgId branch below like oem_admin, and since an Account can carry
+  // BOTH a partnerOrgId and an enterpriseGroupId, a group_admin whose account
+  // happened to have a non-null partnerOrgId could read/reassign reps across
+  // every account sharing that partnerOrgId — not just their own group.
+  if (req.user.role === 'group_admin') {
+    const caller = await prisma.account.findUnique({ where: { id: req.user.accountId }, select: { enterpriseGroupId: true } });
+    if (groupScopeBlocked(req, caller?.enterpriseGroupId)) {
+      return { ok: false, status: 403, error: 'No enterprise group is linked to your account.' };
+    }
+    const accountWhere: any = { status: 'active' };
+    if (caller?.enterpriseGroupId) accountWhere.enterpriseGroupId = caller.enterpriseGroupId;
+    return { ok: true, accountWhere };
+  }
+
   const caller = await prisma.account.findUnique({ where: { id: req.user.accountId }, select: { partnerOrgId: true } });
   if (scopeBlocked(req, caller?.partnerOrgId)) {
     return { ok: false, status: 403, error: 'No operator organization is linked to your account.' };

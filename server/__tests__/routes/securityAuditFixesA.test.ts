@@ -3,8 +3,10 @@
  * secret / rate-limit fixes).
  *
  * Covers:
- *  - earlyAccess GET /list is admin-gated even on the PUBLIC mount (was an
- *    unauthenticated lead-PII dump)
+ *  - earlyAccess GET /list is unreachable on the PUBLIC mount, period (2026-07-08
+ *    acquisition audit W1-L3 hardening superseded the original 2026-06-20 fix —
+ *    see the describe block below for details) — the admin-mounted path still
+ *    works normally.
  *  - proposals POST /request-contact blocks read-only roles (consultant/viewer)
  *  - disasterEvents POST /:id/resolve requires manager+
  *  - adminPartnerOrgs GET / + PATCH never serialize webhookSecret
@@ -57,17 +59,45 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-describe('earlyAccess GET /list — admin-gated on the public mount (was unauth PII dump)', () => {
-  test('no token → 401', async () => {
+// [2026-07-08 acquisition audit W1-L3] The 2026-06-20 fix (asserted below,
+// originally) made GET /list on the PUBLIC mount admin-gated ON THE ROUTE —
+// safe, but still "one line from exposure": if that inline
+// authenticateToken/requireAdmin/denyOnDemo guard were ever dropped, the
+// public mount would immediately re-expose the lead/prospect PII table. The
+// audit's fix goes one step further and gates AT THE MOUNT (index.ts) so
+// /list is structurally unreachable from the public path regardless of the
+// route's own guard — every method/path except POST / 404s before the
+// earlyAccess router is ever invoked. The ADMIN-mounted path
+// (/api/admin/early-access/list, admin.ts + index.ts's '/api/admin' mount)
+// is untouched and still enforces auth normally.
+describe('earlyAccess GET /list — public mount hardened to a structural 404 (2026-07-08)', () => {
+  test('public mount: 404 regardless of auth (no token)', async () => {
     const res = await request(app).get('/api/early-access/list');
+    expect(res.status).toBe(404);
+  });
+  test('public mount: 404 regardless of auth (viewer token)', async () => {
+    const res = await request(app).get('/api/early-access/list').set('Authorization', `Bearer ${viewer.token}`);
+    expect(res.status).toBe(404);
+  });
+  test('public mount: 404 even with a valid admin token', async () => {
+    const res = await request(app).get('/api/early-access/list').set('Authorization', `Bearer ${admin.token}`);
+    expect(res.status).toBe(404);
+  });
+  test('public mount: legitimate POST / lead capture still works', async () => {
+    const res = await request(app).post('/api/early-access').send({ name: 'Regression Test', email: `regress-${Date.now()}@example.com` });
+    expect(res.status).toBe(201);
+  });
+
+  test('admin mount: no token → 401', async () => {
+    const res = await request(app).get('/api/admin/early-access/list');
     expect(res.status).toBe(401);
   });
-  test('viewer token → 403', async () => {
-    const res = await request(app).get('/api/early-access/list').set('Authorization', `Bearer ${viewer.token}`);
+  test('admin mount: viewer token → 403', async () => {
+    const res = await request(app).get('/api/admin/early-access/list').set('Authorization', `Bearer ${viewer.token}`);
     expect(res.status).toBe(403);
   });
-  test('admin token → 200', async () => {
-    const res = await request(app).get('/api/early-access/list').set('Authorization', `Bearer ${admin.token}`);
+  test('admin mount: admin token → 200', async () => {
+    const res = await request(app).get('/api/admin/early-access/list').set('Authorization', `Bearer ${admin.token}`);
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
   });

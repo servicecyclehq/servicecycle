@@ -117,7 +117,9 @@ router.post('/readings', requireScope('write'), async (req: any, res: any) => {
   const accountId = req.apiKeyAccountId;
   const idemKey = normalizeKey(req);
   if (idemKey) {
-    const prior = await findStored(prisma, accountId, idemKey);
+    // [2026-07-08 audit item 7] method+path now passed so a key reused
+    // against a different endpoint gets a 409, not this one's cached reply.
+    const prior = await findStored(prisma, accountId, idemKey, 'POST', '/api/v1/telemetry/readings');
     if (prior) { res.set('Idempotent-Replay', 'true'); return res.status(prior.statusCode).json(prior.responseBody); }
   }
 
