@@ -1,6 +1,6 @@
 # deploy/ — live web-tier configuration (host-level, outside docker-compose)
 
-**Status (re-confirmed 2026-07-09, still scaffold only): the actual live
+**Status (re-confirmed 2026-07-08, still scaffold only): the actual live
 config has not been pulled in yet.** This directory exists so the droplet's
 host-level nginx + TLS configuration has a place to live once it's captured;
 it is not currently version-controlled anywhere. `docker-compose.yml` only
@@ -17,7 +17,7 @@ directory-allowlist message). `nginx` and `certbot` also aren't on the
 `run_approved_command` binary allowlist at all. None of this is bypassable
 from an agent session — it needs a human with real SSH access.
 
-**2026-07-09: re-tested from scratch** (not just trusted from the paragraph
+**2026-07-08: re-tested from scratch** (not just trusted from the paragraph
 above) — same conclusion, exact boundary now on record:
 - `read_file_section("/etc/nginx/nginx.conf", ...)` → `Path not permitted...
   Reads are restricted to: /root/ServiceCycle, /root/.pm2/logs`.

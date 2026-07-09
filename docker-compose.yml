@@ -163,7 +163,7 @@ services:
       NODE_ENV:     ${NODE_ENV:-production}
 
   # Bind-mount ownership fix (init container).
-  # 2026-07-09: ./uploads and ./backups are host bind mounts. On any target
+  # 2026-07-08: ./uploads and ./backups are host bind mounts. On any target
   # where these directories don't already exist, Docker auto-creates the
   # bind-mount source as root:root 0755 (the daemon's own identity) before
   # the `server` container -- which runs as the unprivileged `node` user,
@@ -173,7 +173,7 @@ services:
   # falls back to /tmp (tmpfs, wiped on every container restart/redeploy),
   # so the nightly backup cron kept writing BackupLog.status='success' while
   # the actual gzip landed somewhere that evaporates on the next deploy --
-  # a silent, false-green failure, not a loud one. Root-caused 2026-07-09
+  # a silent, false-green failure, not a loud one. Root-caused 2026-07-08
   # while acting on the Batch 8 backup-permission finding from the
   # 2026-07-08 remediation pass. (./uploads on THIS droplet happened to be
   # manually chmod 777'd at some point in its history, so it never hit the
