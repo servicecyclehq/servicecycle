@@ -1,7 +1,7 @@
-'use strict';
-
 /**
- * L1: AI daily-cap unit tests.
+ * __tests__/lib/aiQuota.test.ts
+ * --------------------------------
+ * L1: AI daily-cap regression suite.
  *
  * Hits the live dev Postgres (same shape as customFields.test.js etc.) so we
  * exercise the real ON CONFLICT upsert path — mocking that out would defeat
@@ -10,20 +10,42 @@
  * Cleans up after itself by deleting the test users it creates. Skips
  * gracefully if the DB isn't reachable (e.g. CI without a Postgres) so this
  * file doesn't red-flag pure offline lints.
+ *
+ * 2026-07-08: moved here from tests/aiQuota.test.js (plain-JS "unit"
+ * project), fixing a pre-existing bug in the same move. The old file's own
+ * setup did `const prisma = require('../lib/prisma');` — a two-segment
+ * specifier that DOES match the unit project's moduleNameMapper regex
+ * (`^(\.{1,2}/.*)/prisma$`), so this test's own Prisma client was already
+ * silently the no-op stub from tests/__mocks__/prisma.js, even though
+ * lib/aiQuota.ts's OWN internal `./prisma` import escaped the mapper and
+ * always hit the real DB. In beforeAll, `prisma.account.upsert(...)`
+ * resolved to the stub's `null` instead of throwing, so `acc.id` threw
+ * `Cannot read properties of null`, which the surrounding try/catch caught
+ * and mapped to `dbReachable = false` — misreporting "DB not reachable" in
+ * the console.warn below even when the real DB was fine, and silently
+ * no-op'ing (via the `if (!dbReachable) return;` guards) every DB-touching
+ * test in the second describe block below without failing anything. Fixed
+ * by switching to the shared Prisma singleton via its actual real-DB path,
+ * `require('../../lib/prisma').default` (this project has no
+ * moduleNameMapper at all — a real Prisma client is the intentional
+ * default), matching the convention already used by sibling
+ * aiQuotaRefund.test.ts and webhookDlqPersist.test.ts in this directory.
+ * The old file's manual `dotenv.config()` call is also dropped: this
+ * project's setupFiles (__tests__/helpers/setup-env.ts) already loads .env
+ * and sets DATABASE_URL/JWT_SECRET/MASTER_KEY/DEMO_MODE before any module
+ * loads.
  */
+import '../helpers/setup';
 
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-
-const prisma = require('../lib/prisma');
-const aiQuota = require('../lib/aiQuota');
+const prisma = require('../../lib/prisma').default;
+const aiQuota = require('../../lib/aiQuota');
 
 const TEST_ACCOUNT_NAME = '__aiQuota_test_account__';
 const TEST_USER_PREFIX  = '__aiQuota_test_user__';
 
 let dbReachable = true;
-let testAccountId;
-let userIds = [];
+let testAccountId: string;
+let userIds: string[] = [];
 
 beforeAll(async () => {
   try {
@@ -39,7 +61,7 @@ beforeAll(async () => {
       },
     });
     testAccountId = acc.id;
-  } catch (e) {
+  } catch (e: any) {
     dbReachable = false;
     console.warn('[aiQuota.test] DB not reachable — skipping. Reason:', e.message);
   }
@@ -53,14 +75,14 @@ afterAll(async () => {
       await prisma.user.deleteMany({    where: { id:     { in: userIds } } });
     }
     await prisma.account.deleteMany({ where: { id: testAccountId } });
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[aiQuota.test] cleanup failed:', e.message);
   } finally {
     await prisma.$disconnect();
   }
 });
 
-async function makeUser(suffix) {
+async function makeUser(suffix: number | string) {
   const id = `00000000-0000-0000-0000-aiq${String(suffix).padStart(9, '0')}`;
   const u = await prisma.user.create({
     data: {
@@ -213,3 +235,5 @@ describe('aiQuota.checkAndIncrement (live DB)', () => {
     expect(row).toBeNull();
   });
 });
+
+export {};

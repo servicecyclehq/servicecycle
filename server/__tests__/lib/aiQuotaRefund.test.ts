@@ -1,8 +1,6 @@
-'use strict';
-
 /**
- * tests/aiQuotaRefund.test.js
- * ----------------------------
+ * __tests__/lib/aiQuotaRefund.test.ts
+ * -------------------------------------
  * v0.37.4 regression suite for lib/aiQuota.refundIncrement (the v0.37.3
  * MT-102 refund-on-failure helper). Locks in:
  *   - refund decrements the day's count by 1
@@ -10,27 +8,32 @@
  *   - refund on UNLIMITED quota is a no-op (no DB write)
  *   - refund swallows DB errors (never throws)
  *
- * Hits the live dev Postgres same way aiQuota.test.js does — the
- * GREATEST clause lives in SQL and there's nothing to test if we mock
- * the prisma layer out. Skips gracefully on unreachable DB.
+ * Hits the live dev Postgres the same way aiQuota.test.ts (sibling in this
+ * directory) does — the GREATEST clause lives in SQL and there's nothing to
+ * test if we mock the prisma layer out. Skips gracefully on unreachable DB.
+ *
+ * 2026-07-08: moved here from tests/aiQuotaRefund.test.js (plain-JS "unit"
+ * project). lib/aiQuota.ts imports prisma via the bare `./prisma` form,
+ * which escapes the unit project's moduleNameMapper (only two-segment
+ * `../lib/prisma`-shaped specifiers get redirected to the stub in
+ * tests/__mocks__/prisma.js) and always talks to the real DB — so this
+ * suite needs a real DB round-trip too, which is exactly what the
+ * "integration" project (no moduleNameMapper at all — a real Prisma client
+ * is the intentional default here) is for. The old file's manual
+ * `dotenv.config()` call is dropped: this project's setupFiles
+ * (__tests__/helpers/setup-env.ts) already loads .env and sets
+ * DATABASE_URL/JWT_SECRET/MASTER_KEY/DEMO_MODE before any module loads.
  */
+import '../helpers/setup';
 
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-
-// NOTE: do NOT require('../lib/prisma') here — jest.config.js maps that
-// specifier to the no-op stub in tests/__mocks__/prisma.js. This suite needs
-// a real client (lib/aiQuota's own `./prisma` import escapes the mapper and
-// talks to the real DB, so the test must see the same rows).
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const aiQuota = require('../lib/aiQuota');
+const prisma = require('../../lib/prisma').default;
+const aiQuota = require('../../lib/aiQuota');
 
 const TEST_ACCOUNT_ID  = '00000000-0000-0000-0000-aiqrefund0001';
 const TEST_ACCOUNT_NAME = '__aiQuotaRefund_test_account__';
 
 let dbReachable = true;
-let userIds = [];
+let userIds: string[] = [];
 
 beforeAll(async () => {
   try {
@@ -39,7 +42,7 @@ beforeAll(async () => {
       update: {},
       create: { id: TEST_ACCOUNT_ID, companyName: TEST_ACCOUNT_NAME, planType: 'licensed' },
     });
-  } catch (e) {
+  } catch (e: any) {
     dbReachable = false;
     console.warn('[aiQuotaRefund.test] DB not reachable — skipping. Reason:', e.message);
   }
@@ -58,7 +61,7 @@ afterAll(async () => {
   }
 });
 
-async function mkUser(slug) {
+async function mkUser(slug: string) {
   const u = await prisma.user.create({
     data: {
       name:         `aiQuotaRefund ${slug}`,
@@ -72,7 +75,7 @@ async function mkUser(slug) {
   return u.id;
 }
 
-const maybeDescribe = (dbReachable === false) ? describe.skip : describe;
+const maybeDescribe = !dbReachable ? describe.skip : describe;
 
 maybeDescribe('aiQuota.refundIncrement', () => {
   test('decrements the day count by 1 after a checkAndIncrement', async () => {
@@ -138,3 +141,5 @@ maybeDescribe('aiQuota.refundIncrement', () => {
     await expect(aiQuota.refundIncrement(undefined, undefined)).resolves.toBeUndefined();
   });
 });
+
+export {};

@@ -1,28 +1,35 @@
-﻿'use strict';
-
 /**
- * tests/webhookDlq.test.js
- * -------------------------
- * v0.37.4 regression suite for lib/webhookDlq + lib/dlqPrune (the v0.37.1
- * MT-132 outbound-webhook DLQ helpers). Locks in:
+ * __tests__/lib/webhookDlqPersist.test.ts
+ * -----------------------------------------
+ * v0.37.4 regression suite for lib/webhookDlq's exported persist/prune/mask
+ * helpers (the v0.37.1 MT-132 outbound-webhook DLQ helpers). Locks in:
  *   - persistFailedDelivery writes a row, never throws
  *   - URL masking strips path + query so a stored row can't leak secrets
  *   - pruneOlderThan deletes rows older than the cutoff and leaves newer rows
  *
+ * (Not to be confused with webhookDlqAlarmPruneCrashPath.test.ts, which
+ * exercises the webhookDlqAlarm/webhookDlqPrune CRON BODIES in index.ts —
+ * this file tests lib/webhookDlq.ts's exported functions directly.)
+ *
+ * 2026-07-08: moved here from tests/webhookDlq.test.js (plain-JS "unit"
+ * project). lib/webhookDlq.ts imports prisma via the bare `./prisma` form,
+ * which escapes the unit project's moduleNameMapper (only two-segment
+ * `../lib/prisma`-shaped specifiers get redirected to the stub in
+ * tests/__mocks__/prisma.js) and always talks to the real DB — so this
+ * suite needs a real DB round-trip too, which is exactly what the
+ * "integration" project (no moduleNameMapper at all — a real Prisma client
+ * is the intentional default here) is for. The old file's manual
+ * `dotenv.config()` call is dropped: this project's setupFiles
+ * (__tests__/helpers/setup-env.ts) already loads .env and sets
+ * DATABASE_URL/JWT_SECRET/MASTER_KEY/DEMO_MODE before any module loads.
+ *
  * Hits the live dev Postgres (the OutboundWebhookDLQ migration must be
  * applied). Skips gracefully if the table is missing or the DB is offline.
  */
+import '../helpers/setup';
 
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-
-// NOTE: do NOT require('../lib/prisma') here — jest.config.js maps that
-// specifier to the no-op stub in tests/__mocks__/prisma.js. This suite needs
-// a real client (lib/webhookDlq's own `./prisma` import escapes the mapper
-// and talks to the real DB, so the test must see the same rows).
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const { persistFailedDelivery, pruneOlderThan, maskUrl } = require('../lib/webhookDlq');
+const prisma = require('../../lib/prisma').default;
+const { persistFailedDelivery, pruneOlderThan, maskUrl } = require('../../lib/webhookDlq');
 
 const TEST_ACCOUNT_ID = '00000000-0000-0000-0000-dlqtest000001';
 
@@ -36,17 +43,17 @@ beforeAll(async () => {
       update: {},
       create: { id: TEST_ACCOUNT_ID, companyName: '__dlq_test_account__', planType: 'licensed' },
     });
-  } catch (e) {
+  } catch (e: any) {
     dbReachable = false;
-    console.warn('[webhookDlq.test] DB not reachable — skipping. Reason:', e.message);
+    console.warn('[webhookDlqPersist.test] DB not reachable — skipping. Reason:', e.message);
     return;
   }
   // Probe the table — older deploys may not have run the migration yet.
   try {
     await prisma.outboundWebhookDLQ.findFirst({ where: { accountId: TEST_ACCOUNT_ID } });
-  } catch (e) {
+  } catch (e: any) {
     tableExists = false;
-    console.warn('[webhookDlq.test] outbound_webhook_dlq table not present — skipping. Reason:', e.message);
+    console.warn('[webhookDlqPersist.test] outbound_webhook_dlq table not present — skipping. Reason:', e.message);
   }
 });
 
@@ -181,3 +188,5 @@ maybeDescribe('webhookDlq.pruneOlderThan', () => {
     expect(goneNow).toBeNull();
   });
 });
+
+export {};
