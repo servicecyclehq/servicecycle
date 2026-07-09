@@ -1,8 +1,8 @@
 # ServiceCycle — 2026-07-08 Acquisition Audit Remediation — Run 2
 
 **Source docs:** `docs/REMEDIATION_SUMMARY_2026-07-08.md` (Run 1) / `docs/AUDIT_PUNCHLIST_2026-07-08.md` (running list)
-**Remediation session:** 2026-07-08, single Cowork session, 6 code/infra commits on `main` + this doc.
-**HEAD before this pass:** `a683d8e` · **HEAD after:** see `git log main` (this doc's own commit is the last one)
+**Remediation session:** 2026-07-08, single Cowork session, 7 code/infra commits on `main` + 1 lockfile hotfix (`bbb8a32`, found during deploy) + 2 docs commits (initial writeup + this deploy-record fill-in).
+**HEAD before this pass:** `a683d8e` · **HEAD after (deployed to prod):** `bbb8a32`
 
 ---
 
@@ -229,9 +229,47 @@ Re-ran the close-out checklist from Run 1's punchlist against current live state
 
 ## 4. Deploy record
 
-_(filled in after this doc's own commit — see the final message in this
-session for the actual sequence: push → `git_pull` on droplet → rebuild →
-`deploy_client` → health check.)_
+**Commits deployed:** 8 commits, `a683d8e` (Run 1 HEAD) → `bbb8a32` (Run 2
+HEAD, includes the lockfile hotfix below), pushed to `main` and pulled on the
+droplet. Full sequence, all via the vps-control MCP — no manual droplet
+commands handed to Dustin:
+
+1. `git_pull` — droplet synced to `bbb8a32`.
+2. **`server-migrate` build** (`job-1783557695552-3f0c761c`) — **first
+   attempt failed**, `npm ci` exit code 1. Root cause: two same-session
+   `package.json` edits (the `js-yaml` override in this pass, the
+   `@smithy/node-http-handler` dependency from the storage.ts subagent) were
+   never followed by a `package-lock.json` regen, and `npm ci` fails hard on
+   any drift. Fixed locally (`npm install --package-lock-only`), diff
+   confirmed narrowly scoped, verified via a full local `npm ci`, committed
+   as `bbb8a32`, pushed, re-pulled. **Second attempt succeeded** (397s).
+   `migrate_status` immediately after: *"Database schema is up to date!"* —
+   confirms both new migrations (`20260708130000_run2_loto_version_history`,
+   `20260708140000_run2_drop_dead_ingestion_session`) applied cleanly with no
+   errors.
+3. **`server` image rebuild** (`job-1783558338152-25ff1b1c`) — succeeded
+   (174s). Container recreated; Docker health check reported `healthy` 17s
+   after restart. `docker compose logs server --tail 40` afterward is clean
+   (routine weatherScanner/EMAIL-MOCK cron output only, no errors).
+4. **`deploy_client`** (`deploy-1783558541641-14bf7e9b`) — succeeded (78s).
+   Published `client:/app/dist/.` → `/var/www/servicecycle/html`.
+5. **`reseed_demo`** (`deploy-1783558628069-05e273b7`) — succeeded (28s),
+   ended with `Demo seed complete` and no `ingestionSession` or arc-flash
+   prune errors — this is the live confirmation that the W1-M5 `demoPrune`/
+   `seed-demo.js` fixes (dead-model removal + the 7-model arc-flash prune
+   parity fix) actually work end-to-end against a real database, not just in
+   review.
+6. **Final health check:** all 3 containers running (`db` healthy 12 days
+   uptime unaffected, `server` healthy, `client` running); `GET
+   /api/ready` → `200`; no crash-loop, no error-level log lines.
+
+**Known verification gap:** `migrate_status` timed out (180s) on two later
+polls taken purely as extra reassurance after the reseed — this matches an
+existing transient-timeout pattern on this tool, not a real problem. The
+schema state was already confirmed clean immediately after the migration
+ran (step 2 above), and nothing between that point and the timeout touched
+the schema, so this is not treated as an open question — just disclosed for
+completeness.
 
 ---
 
