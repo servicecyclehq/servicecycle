@@ -1,0 +1,59 @@
+name: Knip (dead code — report only)
+
+# Reports unused files / exports / dependencies and undeclared ("unlisted")
+# dependencies across the server/client/sdk packages. Config: knip.json (root).
+#
+# REPORT-ONLY / NON-BLOCKING: the knip step is continue-on-error, so findings
+# never fail CI. The report is written to the job summary and uploaded as an
+# artifact. Deletion decisions are made by a human, not this job.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  knip:
+    name: Dead-code / unused-deps report
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install analyzed workspace deps (server, client, sdk)
+        # knip needs each package's node_modules to resolve imports.
+        run: |
+          npm ci --prefix server
+          npm ci --prefix client
+          npm ci --prefix sdk
+
+      - name: Run knip (non-blocking report)
+        continue-on-error: true
+        run: npx --yes knip@5 | tee knip-report.txt
+
+      - name: Publish report to job summary
+        if: always()
+        run: |
+          {
+            echo '### Knip report (report-only — does not fail CI)';
+            echo '```';
+            cat knip-report.txt || echo '(no report produced)';
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload knip report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: knip-report-${{ github.sha }}
+          path: knip-report.txt
+          retention-days: 30

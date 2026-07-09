@@ -1,0 +1,53 @@
+name: Renovate (self-hosted)
+
+# Self-hosted Renovate via the official GitHub Action — the deliberate
+# replacement for Dependabot-off. Runs on a weekly schedule (and on demand);
+# config lives in renovate.json (dependency dashboard on, grouped PRs,
+# automerge OFF). The Mend-hosted app is intentionally NOT used (it would need
+# third-party repo access); self-hosting keeps everything in this repo/runner.
+#
+# Requires a repo/org secret RENOVATE_TOKEN — a PAT (classic: repo + workflow
+# scopes, or a fine-grained token with contents+PR write) for the account
+# Renovate should open PRs as. Until that secret exists the workflow no-ops
+# safely (the action fails fast on a missing token; it opens nothing).
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC. renovate.json further restricts PR activity to
+    # the "before 6am on monday" America/Chicago window.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Renovate log level'
+        required: false
+        default: 'info'
+        type: choice
+        options: ['debug', 'info', 'warn']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    name: Run Renovate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.1.18
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          # Process this repo only; its root renovate.json is auto-read as the
+          # repository config (do NOT pass it as the global configurationFile).
+          RENOVATE_AUTODISCOVER: 'false'
+          RENOVATE_REPOSITORIES: ${{ github.repository }}

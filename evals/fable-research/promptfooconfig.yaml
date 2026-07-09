@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Proof-of-pattern: ONE fable-research-style benchmark question ported into a
+# promptfoo eval, formalizing the hand-rolled with-vs-without harness used when
+# fable-research was benchmarked (Sonnet + skill 35/36 assertion passes vs bare
+# 30/36; the skill eliminated unforced citation errors + unlabeled-confidence
+# claims). See FABLE_SKILLS_ROADMAP.md and .claude/skills/fable-research/SKILL.md.
+#
+# Tooling note: promptfoo is MIT-licensed and was ACQUIRED BY OPENAI (Mar 2026);
+# it remains open source per its own README. Local-first, no telemetry required.
+#
+# NOTE ON PROVENANCE: the original 6 benchmark questions were run ad-hoc during
+# the benchmarking session and are not committed to the repo. This is a faithful
+# REPRESENTATIVE question that exercises the same doctrine the benchmark scored
+# (SKILL.md §3 verify-like-adversary, §4 anti-hallucination, §6 labeled
+# confidence) — not a verbatim copy. Add the other questions as `tests` entries.
+#
+# RUN:  cd evals/fable-research && ANTHROPIC_API_KEY=... npx promptfoo@0.121 eval
+# The llm-rubric grader also calls the provider, so a key is required to run
+# (not to `validate`). Model id below is a valid historical Sonnet; bump it to a
+# current one — .claude/skills/claude-api/shared/models.md is the source of truth.
+
+description: "fable-research doctrine eval (proof-of-pattern, 1 question)"
+
+prompts:
+  - "{{question}}"
+
+providers:
+  - id: anthropic:messages:claude-3-7-sonnet-20250219
+    config:
+      max_tokens: 1024
+      temperature: 0
+
+# The system prompt a real run would prepend with the fable-research standard.
+# Left minimal here; the eval measures whether the OUTPUT obeys the doctrine.
+defaultTest:
+  options:
+    provider: anthropic:messages:claude-3-7-sonnet-20250219
+
+tests:
+  - description: "Time-sensitive version lookup — must cite a source and label recency"
+    vars:
+      question: >-
+        What is the current latest Long-Term Support (LTS) major version of
+        Node.js? Answer with the version number, cite where you got it, and make
+        your confidence and the as-of date explicit.
+    assert:
+      # §4: a load-bearing claim carries a real source (URL present).
+      - type: regex
+        value: "https?://"
+      # §3/§6: recency / confidence is labeled, not laundered into fluent prose.
+      - type: icontains-any
+        value:
+          - "as of"
+          - "as-of"
+          - "check date"
+          - "verified"
+          - "single-source"
+          - "confirmed"
+          - "confidence"
+      # The qualitative doctrine check — the heart of what the benchmark scored.
+      - type: llm-rubric
+        value: >-
+          Grade the response against the Fable Research standard. PASS only if it:
+          (1) gives a specific Node.js LTS major version as the answer;
+          (2) attributes the claim to a named/linked source rather than stating it
+          bare from memory; (3) makes recency explicit — an as-of date or an
+          explicit note that the version should be re-checked because it changes
+          over time; (4) labels confidence (e.g. verified / single-source /
+          needs-recheck) instead of asserting false certainty; and (5) does NOT
+          fabricate a citation or invent precision. FAIL if it states the version
+          with no source, or presents a possibly-stale fact as settled truth.

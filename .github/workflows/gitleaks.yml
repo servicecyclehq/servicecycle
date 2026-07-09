@@ -1,16 +1,23 @@
 name: Gitleaks (secret scan)
 
 # SOC 2 CC6.8 / CC7.1 — detect secrets committed to source.
-# Runs on every push and PR. Fails the build if a secret is detected.
-# The workflow uses the official Gitleaks Action, which is free for public
-# and private repos.
+# Runs on every push and PR, plus a weekly full-history sweep.
+#
+# Uses the MIT-licensed gitleaks CLI in a plain `run:` step rather than the
+# `gitleaks/gitleaks-action@v2` wrapper. That wrapper was relicensed (free for
+# personal accounts or a single org repo, paid GITLEAKS_LICENSE beyond that);
+# the underlying CLI is MIT, so this removes the licensing question entirely.
+#
+# Pre-existing history findings are baselined in `.gitleaksignore` at repo root
+# so the gate protects against NEW secrets without going red on known history.
 
 on:
   push:
     branches: ['**']
   pull_request:
-  # Weekly full-history scan catches secrets that slipped in before
-  # gitleaks was wired up. Runs Sunday 06:00 UTC.
+  # Weekly full-history scan, Sunday 06:00 UTC. (Every run here is already a
+  # full-history `gitleaks git` scan, so this cron is a scheduled belt-and-braces
+  # sweep that also picks up newly-disclosed detector rules.)
   schedule:
     - cron: '0 6 * * 0'
 
@@ -20,8 +27,11 @@ concurrency:
 
 permissions:
   contents: read
-  security-events: write   # for SARIF upload
-  pull-requests: write     # for PR comments on findings
+  security-events: write   # for SARIF upload to the Security tab
+
+env:
+  # Pin the CLI version for reproducible scans. Bump deliberately.
+  GITLEAKS_VERSION: 8.30.1
 
 jobs:
   gitleaks:
@@ -32,18 +42,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so weekly scans can walk back.
+          # Full history so the scan walks every commit, not just the push range.
           fetch-depth: 0
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          # No GITLEAKS_LICENSE required for public/personal use.
-          # If we adopt Gitleaks Pro later, add GITLEAKS_LICENSE as a repo secret.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install gitleaks CLI (MIT)
+        run: |
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f gitleaks gitleaks.tar.gz
+          gitleaks version
+
+      - name: Run gitleaks (full history)
+        run: |
+          gitleaks git . \
+            --config .gitleaks.toml \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --redact \
+            --exit-code 1
+        # Pre-existing findings are baselined in .gitleaksignore; a NEW secret
+        # makes this step exit non-zero and fails the job.
+
+      - name: Upload SARIF to GitHub Security tab
+        # Runs even on failure so findings surface in the Security tab.
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          # Fails the job on any leak detection.
-          # Config file is optional; omitting uses the default ruleset.
-          # Add `.gitleaks.toml` at repo root if we need to allowlist known-false-positive patterns
-          # (e.g., example env vars in `.env.example`).
-          config-path: .gitleaks.toml
+          sarif_file: gitleaks.sarif
+          category: gitleaks

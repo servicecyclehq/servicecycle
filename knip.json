@@ -1,0 +1,46 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "server": {
+      "entry": [
+        "index.ts",
+        "scripts/**/*.{ts,js,mjs,cjs}",
+        "prisma/seed.{ts,js}",
+        "tests/**/*.{ts,js}",
+        "__tests__/**/*.{ts,js}"
+      ],
+      "project": ["**/*.{ts,js}"],
+      "ignore": [
+        "pyextract/**",
+        "backups/**",
+        "uploads/**",
+        "data/**",
+        "sbom/**",
+        "dist/**",
+        ".evalwork/**",
+        ".evalenv/**"
+      ]
+    },
+    "client": {
+      "entry": [
+        "index.html",
+        "vite.config.js",
+        "src/main.{jsx,tsx,js,ts}",
+        "scripts/**/*.{js,mjs,cjs}"
+      ],
+      "project": ["src/**/*.{js,jsx,ts,tsx}"],
+      "ignore": ["dist/**", "dist-verify/**", "public/**"]
+    },
+    "sdk": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["dist/**", "python/**"]
+    }
+  },
+  "ignore": ["**/vite.config.js.timestamp-*.mjs"],
+  "ignoreBinaries": ["docker", "prisma", "tsx", "vite"],
+  "ignoreDependencies": ["dependency-cruiser"],
+  "eslint": false,
+  "stylelint": false,
+  "playwright": false
+}

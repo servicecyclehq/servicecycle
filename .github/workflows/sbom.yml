@@ -55,3 +55,34 @@ jobs:
           name: sbom-${{ matrix.target }}-${{ github.sha }}
           path: ${{ matrix.target }}/cyclonedx.json
           retention-days: 90
+
+  # ─────────────────────────────────────────────────────────────────────
+  # SPDX SBOM (Trivy) — CycloneDX above is the security-tooling norm; SPDX
+  # is what M&A / legal due-diligence reads for license provenance. Trivy
+  # walks the lockfiles (no node_modules needed) and emits SPDX-JSON.
+  # ─────────────────────────────────────────────────────────────────────
+  spdx:
+    name: Generate SPDX SBOM (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SPDX-JSON SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: spdx-json
+          output: sbom.spdx.json
+          # node_modules excluded — dependency graph comes from lockfiles,
+          # not installed trees. Mirrors trivy.yml fs-scan skip-dirs.
+          skip-dirs: 'node_modules,client/node_modules,server/node_modules,sdk/node_modules,client/dist,server/dist'
+
+      - name: Upload SPDX SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-spdx-${{ github.sha }}
+          path: sbom.spdx.json
+          retention-days: 90

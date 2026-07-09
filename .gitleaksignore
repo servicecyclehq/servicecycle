@@ -1,0 +1,40 @@
+# .gitleaksignore — baseline of pre-existing gitleaks findings.
+#
+# Purpose: when gitleaks was first wired up (gitleaks-action@v2), the push-event
+# scan only walked the *new* commit range, so full git history was never gated.
+# Moving to the MIT gitleaks CLI with a full-history `gitleaks git` scan
+# (.github/workflows/gitleaks.yml) surfaces 10 pre-existing history findings.
+# Baselining them here lets the gate protect against NEW secrets going forward
+# without going permanently red on known history. Format: commit:path:rule:line.
+#
+# All 10 are `generic-api-key` (a high-noise entropy heuristic). 9 are confirmed
+# false positives (test fixtures, doc examples, data-column-mapping strings).
+# 1 (DEMO_LANDMINES) needs a real decision from Dustin — see the flagged block.
+#
+# Reviewed 2026-07-08. Re-verify a fingerprint before trusting it: history can
+# be rewritten and these are commit-pinned.
+
+# ── Data-column mapping definitions matched by the entropy heuristic (FP) ──
+9e05812b31d29a6e986b69b17f299ce1aeea182c:server/lib/arcFlashAfxMultiTable.ts:generic-api-key:31
+aceec73a5a36291a7ccde719904d767bf09678d1:server/lib/arcFlashAfx.ts:generic-api-key:67
+
+# ── Test fixtures / mock tokens in test files (FP) ──
+f0368fbb79844e586ac1472234b222048ca4476f:server/tests/passwordPolicyHibp.test.js:generic-api-key:34
+f28e1f00c6765406fde6791bcd0ffe4177cf25df:server/__tests__/routes/securityAuditFixesB.test.ts:generic-api-key:137
+31914ad26a6c9a6e1c1c435d3d1664ea57796d62:server/tests/registerTermsGate.test.js:generic-api-key:101
+31914ad26a6c9a6e1c1c435d3d1664ea57796d62:server/tests/audit-2026-05-03.test.js:generic-api-key:211
+33a812d4a05e2943469833eed20249777b1399c4:server/tests/registerTermsGate.test.js:generic-api-key:75
+33a812d4a05e2943469833eed20249777b1399c4:server/tests/audit-2026-05-03.test.js:generic-api-key:211
+
+# ── Example/placeholder key string in NETA research doc (FP) ──
+f5be38a2b273e0189e2e1cd61972596356f02834:docs/research/2026-06-12-neta-field-library.md:generic-api-key:660
+
+# ── Partial key prefixes in DEMO_LANDMINES_v8.md — REDACTED in current tree ──
+# The current file was redacted (gsk_<REDACTED> / AQ.<REDACTED>) so the working
+# tree is clean. But the secret still lives in HISTORICAL commit f0368fbb7, and
+# a full-history `gitleaks git` scan sees every commit — so this fingerprint
+# stays baselined. Fully purging it would require a history rewrite (BFG/
+# filter-repo — destructive, rewrites the pushed branch + everyone's clones);
+# not worth it for a truncated prefix. The real remediation is the doc's own
+# finding: rotate the GROQ + GEMINI keys, which makes the historical prefix dead.
+f0368fbb79844e586ac1472234b222048ca4476f:docs/DEMO_LANDMINES_v8.md:generic-api-key:159
