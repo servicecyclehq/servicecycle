@@ -75,11 +75,35 @@ RUN npm prune --omit=dev
 FROM node:20-slim AS runtime
 
 # Runtime-only system deps:
-#   openssl            â€” Prisma probes for libssl at boot
-#   postgresql-client  â€” pg_dump used by lib/backup.js (cron 02:00)
-#   wget               â€” HEALTHCHECK
+#   openssl              -- Prisma probes for libssl at boot
+#   postgresql-client-16 -- pg_dump used by lib/backup.js (cron 02:00). Version-
+#                           pinned to match db's postgres:16-alpine (see
+#                           docker-compose.yml): pg_dump refuses to dump a
+#                           server with a NEWER major version than itself, and
+#                           Debian bookworm's own default repo only ships the
+#                           PG15 client, so the old unversioned
+#                           `postgresql-client` package silently resolved to
+#                           an incompatible pg_dump (found 2026-07-08 -- every
+#                           nightly backup was failing with "aborting because
+#                           of server version mismatch", separate from and
+#                           unmasked by the fix-perms bug fixed earlier the
+#                           same day). Sourced from the official PGDG apt repo
+#                           per postgresql.org/download/linux/debian.
+#                           NOTE: if db's image ever moves to postgres:17+,
+#                           this pin must move with it or backups break again.
+#   wget                  -- HEALTHCHECK
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      openssl postgresql-client wget \
+      curl ca-certificates \
+ && install -d /usr/share/postgresql-common/pgdg \
+ && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && . /etc/os-release \
+ && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+      "$VERSION_CODENAME" "$(dpkg --print-architecture)" \
+      > /etc/apt/sources.list.d/pgdg.sources \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      openssl postgresql-client-16 wget \
       python3 python3-pip tesseract-ocr \
  && rm -rf /var/lib/apt/lists/*
 
