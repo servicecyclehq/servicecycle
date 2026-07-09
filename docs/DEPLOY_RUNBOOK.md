@@ -262,7 +262,54 @@ Then open the domain in a browser and log in as `admin@demo.local / Admin1234!`.
 
 ---
 
-## 10. Troubleshooting
+## 10. Rolling back a bad deploy
+
+CI-driven deploys (`.github/workflows/deploy.yml`) tag every server image that
+passes its post-deploy health check as `servicecycle-server:sha-<git-sha>` and
+keep the last ~5 such tags (older ones are pruned automatically, same as the
+pre-deploy DB dumps and client html backups below). `.github/workflows/rollback.yml`
+uses those tags to roll the server back **without rebuilding** — it just
+retags an already-on-disk image back onto the name `docker compose up -d`
+uses and restarts the one container, so it's fast (no `npm ci`/build/rsync)
+and doesn't depend on the old source tree still being checked out anywhere.
+
+**To trigger it:** GitHub → Actions tab → "Rollback ServiceCycle droplet" →
+Run workflow. Inputs:
+
+| Input | Required | What it does |
+|---|---|---|
+| `server_sha` | Yes | Full git commit SHA to roll the server back to. Must still be tagged on the droplet — the workflow's first step ("Show available rollback targets") lists what's actually present before you commit to anything. Or pass the literal value `previous` as a shortcut for "the 2nd-newest tagged image" (see the workflow's "Resolve target SHA" step comment for the exact, deliberately-simple definition — it is not a full deploy-history log). |
+| `client_backup_dir` | No | Exact `html-backup-ci-<timestamp>` directory name under `/root` on the droplet to restore the client SPA from. Leave blank to roll back the server only. |
+
+**Known limitations (read before using):**
+
+- **No DB/migration rollback.** Prisma migrations here are forward-only (see
+  §9 above and the "Updating" note). If the deploy you're undoing shipped a
+  migration, rolling back the server code can leave *older* code running
+  against a *newer* schema. Check `server/prisma/migrations` for anything
+  added since the target SHA before rolling back across a migration boundary
+  — if there's a schema change in between, restoring the matching
+  `predeploy-ci-*.sql.gz` dump (see §9's pre-update note) is a manual step
+  this workflow does not automate.
+- **No automatic SHA ↔ client-backup correlation.** The timestamped html
+  backups carry no metadata linking them to a git SHA — they're just
+  "whatever was live right before that deploy overwrote it." If you need the
+  client rolled back too, you have to pick the right `html-backup-ci-*`
+  directory yourself (the workflow's first step lists what's on the droplet;
+  or SSH in and run `ls -dt /root/html-backup-ci-*`). Getting it wrong isn't
+  catastrophic — the restore step takes its own pre-rollback safety snapshot
+  first — but it is manual.
+- **Nothing to roll back to if the image was never tagged or already aged
+  out.** Deploys from before this mechanism shipped, or a deploy whose own
+  health check failed (it's deliberately never tagged — see the tagging
+  step's comment in `deploy.yml`), or anything older than the last ~5
+  successful deploys, has no image on the droplet to retag. In that case the
+  only path back is a fresh forward deploy of the older commit (re-run
+  `deploy.yml` against it, which rebuilds from source).
+
+---
+
+## 11. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
@@ -274,7 +321,7 @@ Then open the domain in a browser and log in as `admin@demo.local / Admin1234!`.
 
 ---
 
-## 11. Production hardening checklist (best-practice gap-check)
+## 12. Production hardening checklist (best-practice gap-check)
 
 Mapped against standard go-live best practices for a Dockerized app on a fresh VM (DigitalOcean/Docker/OWASP/PostgreSQL/Caddy guidance). Split into what the app/stack already handles vs. what you must do on the box.
 

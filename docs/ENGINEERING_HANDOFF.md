@@ -130,4 +130,4 @@ The demo punch list is at `docs/DEMO_FIXES.md`. As of the last session, all item
 
 The engineering function has been a single founding engineer to date — a bus-factor-of-one that an acquirer should close early by designating a primary maintainer plus a backup operator and moving all infrastructure credentials into a shared secret manager (see the operator-continuity note in `docs/INCIDENT_RESPONSE.md`). Post-acquisition, the intent is a clean handoff — the docs, tests, and runbooks are the knowledge transfer. If you need context on a specific design decision, the session notes in `docs/sessions/` record the reasoning behind major features as they were built.
 
-For security incidents: `docs/INCIDENT_RESPONSE.md`. For key rotation: `docs/KEY_ROTATION.md`. For rollback after a bad deploy: `docs/DEPLOY_RUNBOOK.md` §Rollback.
+For security incidents: `docs/INCIDENT_RESPONSE.md`. For key rotation: `docs/KEY_ROTATION.md`. For rollback after a bad deploy: `docs/DEPLOY_RUNBOOK.md` §10 "Rolling back a bad deploy" (`.github/workflows/rollback.yml`, `workflow_dispatch`-triggered from the Actions tab).

@@ -1,0 +1,270 @@
+name: Rollback ServiceCycle droplet
+
+# Manual-only escape hatch for a bad deploy.yml run. Companion to
+# .github/workflows/deploy.yml -- read that file first, this one assumes the
+# same droplet layout, the same `Configure SSH` step, and the same
+# /root/ServiceCycle base docker-compose.yml (no `image:` key on the server
+# service -- Compose auto-names the built image, resolved here the same way
+# deploy.yml resolves it: `docker compose config --images server`, never
+# hardcoded).
+#
+# What this rolls back and how:
+#   SERVER  - deploy.yml's "Tag server image with commit SHA" step tags every
+#             successfully-health-checked build as `servicecycle-server:sha-<sha>`
+#             and prunes anything past the 5 most recent. Rolling back means
+#             retagging an old sha-* image back onto the floating default tag
+#             `docker compose up -d` uses, then force-recreating the server
+#             container from it -- WITHOUT rebuilding, which is the entire
+#             point of a rollback (fast, and doesn't depend on the old source
+#             tree still being checked out anywhere).
+#   CLIENT  - deploy.yml's "Deploy client" step snapshots the live html dir to
+#             /root/html-backup-ci-<timestamp> before every overwrite, and
+#             prunes to the 5 most recent. Client rollback is OPTIONAL and
+#             requires the operator to name the exact backup directory (see
+#             the "Known limitation" note below) -- leave the input blank to
+#             roll back the server only.
+#
+# What this does NOT do (read before using):
+#   - Does NOT touch the database or undo migrations. Prisma migrations are
+#     forward-only in this repo (see docs/DEPLOY_RUNBOOK.md); if the deploy
+#     you're rolling back away from ran a migration, rolling back the server
+#     code can leave OLDER code running against a NEWER schema. Check
+#     `server/prisma/migrations` for anything added since the target SHA
+#     before rolling back across a migration boundary -- if in doubt, restore
+#     the matching predeploy-ci-*.sql.gz dump too (manual, not automated
+#     here).
+#   - Does NOT correlate a server SHA to a specific client html backup
+#     automatically -- see the "Known limitation" note below.
+#   - Does NOT rebuild anything -- if the SHA you want was never tagged (a
+#     deploy that predates this mechanism, or one that's aged out of the
+#     5-image retention window, or one whose own health check failed so it
+#     never got tagged at all), there is nothing to roll back to here; you'd
+#     need a fresh forward deploy of that commit instead (re-run deploy.yml
+#     against it).
+#
+# Known limitation (client backup correlation):
+#   The html-backup-ci-<timestamp> directories deploy.yml creates carry no
+#   metadata linking them to a git SHA -- they're just "whatever was live
+#   right before this deploy overwrote it," named by wall-clock time. Building
+#   a real SHA<->backup index (e.g. a manifest file written alongside each
+#   backup) is reasonable future work but more infrastructure than this pass
+#   warrants. For now: if you need the client rolled back too, SSH in (or read
+#   this run's "Show available rollback targets" step output) and pick the
+#   `html-backup-ci-*` directory whose timestamp lines up with the deploy you
+#   want to undo, then pass its exact name as `client_backup_dir`. Getting
+#   this wrong just restores the wrong-but-still-valid snapshot -- the step
+#   takes its own pre-rollback safety backup first, so it's not one-way.
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_sha:
+        description: >-
+          Full git commit SHA to roll the server back to. Must match an image
+          still tagged servicecycle-server:sha-<sha> on the droplet (deploy.yml
+          keeps only the last ~5 -- see this run's "Show available rollback
+          targets" step for what's actually present). Or pass the literal
+          value "previous" as a convenience alias -- see the "Resolve target
+          SHA" step for exactly what that means before relying on it.
+        required: true
+        type: string
+      client_backup_dir:
+        description: >-
+          OPTIONAL. Exact directory name under /root on the droplet to
+          restore the client SPA from, e.g. html-backup-ci-20260708-143022.
+          Leave blank to roll back the server only and leave the client html
+          untouched. No automatic SHA<->backup correlation exists (see the
+          header comment above) -- check this run's "Show available rollback
+          targets" step, or SSH in and run `ls -dt /root/html-backup-ci-*`.
+        required: false
+        type: string
+
+# Reuse deploy.yml's concurrency group so a rollback and a regular deploy can
+# never race each other against the same droplet/container -- one always
+# queues behind the other instead of both touching `docker compose` at once.
+concurrency:
+  group: sc-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Same SOC 2 CC8.1 environment gate as deploy.yml -- a rollback is at
+    # least as consequential as a forward deploy (it's usually run under
+    # time pressure right after something broke), so it gets the same
+    # protection-rule hook once the `production` environment exists in
+    # Settings -> Environments. No-op until that environment is created,
+    # same caveat as deploy.yml.
+    environment: production
+    steps:
+      # Copied verbatim from deploy.yml's "Configure SSH" step -- same
+      # secrets, same host-key + config setup. Keep the two in sync if this
+      # ever changes.
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SC_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "${{ secrets.SC_SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config <<EOF
+          Host sc
+            HostName ${{ secrets.SC_SSH_HOST }}
+            User ${{ secrets.SC_SSH_USER }}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+          EOF
+
+      - name: Show available rollback targets (informational)
+        # Always runs first, before anything mutates -- gives the operator
+        # (and the run's log, for an audit trail) a concrete list to check
+        # the server_sha / client_backup_dir inputs against, in case either
+        # was mistyped or has since aged out of the 5-item retention window.
+        run: |
+          set -euo pipefail
+          echo "== SHA-tagged server images on droplet (newest first) =="
+          ssh sc "docker images --format '{{.CreatedAt}}|{{.Tag}}' servicecycle-server | grep '|sha-' | sort -r" || echo "(none found)"
+          echo ""
+          echo "== html-backup-ci-* directories on droplet (newest first) =="
+          ssh sc "ls -dt /root/html-backup-ci-* 2>/dev/null" || echo "(none found)"
+
+      - name: Resolve target SHA
+        id: resolve
+        # Accepts either a full SHA (strips an accidental leading "sha-" if
+        # the operator pasted a tag straight out of `docker images`) or the
+        # literal "previous". "previous" means "the 2nd-newest sha-* tag on
+        # the droplet right now" -- NOT "whatever ran immediately before this
+        # specific rollback" and NOT backed by any real deploy-history log.
+        # If you already rolled back once and roll back again with
+        # "previous" before a new deploy happens in between, you'll get the
+        # same target again, not a 3rd option. That's a deliberate
+        # simplification: it covers the common "the last deploy broke
+        # something, undo it" case without building out real deploy-history
+        # tracking, which is more than this pass warrants. Use an explicit
+        # SHA (see the "Show available rollback targets" step above) for
+        # anything less than the single most common case.
+        env:
+          # Route the raw operator-typed input through an env var instead of
+          # interpolating `${{ inputs.server_sha }}` directly into this
+          # script's body. workflow_dispatch inputs are free text substituted
+          # textually before bash ever parses the script -- embedding one
+          # inline is the classic GitHub Actions script-injection pattern
+          # (e.g. an input containing `$(...)` or embedded quotes would
+          # execute on the runner). The regex validation below is the other
+          # half of closing that off, applied to whatever this resolves to
+          # (typed directly or derived from "previous") before it becomes a
+          # step output that later steps interpolate into ssh/docker commands.
+          INPUT_SERVER_SHA: ${{ inputs.server_sha }}
+        run: |
+          set -euo pipefail
+          INPUT_SHA="${INPUT_SERVER_SHA#sha-}"
+          if [ "$INPUT_SHA" = "previous" ]; then
+            LINES=$(ssh sc "docker images --format '{{.CreatedAt}}|{{.Tag}}' servicecycle-server | grep '|sha-' | sort -r")
+            TARGET=$(printf '%s\n' "$LINES" | sed -n '2p' | cut -d'|' -f2 | sed 's/^sha-//')
+            if [ -z "$TARGET" ]; then
+              echo '::error::Could not resolve "previous" -- fewer than 2 SHA-tagged server images exist on the droplet right now. Pass an explicit server_sha instead (see the "Show available rollback targets" step above for what is available).'
+              exit 1
+            fi
+            echo "Resolved \"previous\" -> $TARGET"
+          else
+            TARGET="$INPUT_SHA"
+          fi
+          # A git SHA is always lowercase hex, 7-40 chars. Reject anything
+          # else here -- both to turn a typo into a clear error instead of a
+          # confusing "image not found" two steps later, and to guarantee
+          # every later step that interpolates this output directly into a
+          # shell command is only ever handling a known-safe charset.
+          if ! printf '%s' "$TARGET" | grep -qE '^[0-9a-f]{7,40}$'; then
+            echo "::error::server_sha resolved to \"$TARGET\", which is not a plausible git SHA (expected lowercase hex, 7-40 chars). Refusing to continue."
+            exit 1
+          fi
+          echo "Target SHA: $TARGET"
+          echo "target_sha=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Verify target server image exists
+        run: |
+          set -euo pipefail
+          ssh sc "docker image inspect servicecycle-server:sha-${{ steps.resolve.outputs.target_sha }}" >/dev/null || {
+            echo "::error::servicecycle-server:sha-${{ steps.resolve.outputs.target_sha }} not found on the droplet. It may have aged out of the 5-image retention window, or predates this rollback mechanism, or its deploy never passed its own health check (so it was never tagged). See the \"Show available rollback targets\" step above for what actually exists."
+            exit 1
+          }
+
+      - name: Retag + restart server (no rebuild)
+        # The whole point of a rollback vs. a redeploy: no `rsync`, no
+        # `--build`, just point the existing default image tag at an image
+        # that's already sitting on disk and restart the one container.
+        # `docker compose config --images server` resolves that default tag
+        # the exact same way deploy.yml's tagging step does -- see that
+        # step's comment for why this asks Compose instead of hardcoding a
+        # naming convention.
+        # `--force-recreate --no-deps`: --no-deps is deliberate -- server
+        # depends_on server-migrate (service_completed_successfully) and db
+        # in docker-compose.yml, and a rollback must NOT re-run migrations
+        # or touch the db container. --force-recreate is needed because,
+        # from Compose's point of view, the *name* of the image hasn't
+        # changed (only which image ID that name now points at), so a plain
+        # `up -d` might decide nothing changed and skip recreating the
+        # container entirely.
+        run: |
+          set -euo pipefail
+          ssh sc "cd /root/ServiceCycle && DEFAULT_TAG=\$(docker compose config --images server) && docker tag servicecycle-server:sha-${{ steps.resolve.outputs.target_sha }} \$DEFAULT_TAG && echo Retagged \$DEFAULT_TAG to servicecycle-server:sha-${{ steps.resolve.outputs.target_sha }} && docker compose up -d --force-recreate --no-deps server"
+
+      - name: Health check
+        # Same /api/ready pattern (and the same real host port -- 3002, per
+        # the droplet's .env -- see deploy.yml's Health check step for the
+        # full explanation) as the main deploy pipeline, so a rollback that
+        # doesn't actually come up healthy fails loudly here instead of
+        # silently leaving the droplet worse off.
+        run: |
+          set -euo pipefail
+          sleep 15
+          code=$(ssh sc "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3002/api/ready")
+          echo "api/ready -> HTTP $code"
+          test "$code" = "200" || { echo "Health check failed after rollback"; exit 1; }
+          ssh sc "docker ps --filter name=servicecycle-server --format '{{.Names}} {{.Status}}'"
+
+      - name: Restore client html backup
+        if: ${{ inputs.client_backup_dir != '' }}
+        env:
+          # Same script-injection rationale as the "Resolve target SHA" step
+          # -- route the raw free-text input through an env var and validate
+          # its charset before it ever reaches an ssh/rsync command line,
+          # rather than interpolating `${{ inputs.client_backup_dir }}`
+          # directly into this script.
+          INPUT_CLIENT_BACKUP_DIR: ${{ inputs.client_backup_dir }}
+        run: |
+          set -euo pipefail
+          BACKUP="$INPUT_CLIENT_BACKUP_DIR"
+          # Real backup dirs are always html-backup-ci-<timestamp>. Restrict
+          # to a safe, predictable charset (no slashes, quotes, `$`, etc.)
+          # before this touches any remote command -- turns a typo'd/pasted
+          # value into a clear error instead of a confusing remote failure
+          # (or worse).
+          if ! printf '%s' "$BACKUP" | grep -qE '^[A-Za-z0-9._-]+$'; then
+            echo "::error::client_backup_dir \"$BACKUP\" contains characters outside [A-Za-z0-9._-] -- refusing to use it. Expected something like html-backup-ci-20260708-143022 (see the \"Show available rollback targets\" step above)."
+            exit 1
+          fi
+          ssh sc "test -d /root/$BACKUP" || {
+            echo "::error::/root/$BACKUP not found on the droplet. See the \"Show available rollback targets\" step above, or SSH in and run: ls -dt /root/html-backup-ci-*"
+            exit 1
+          }
+          # Safety net for the rollback ITSELF: snapshot whatever is live
+          # right now before overwriting it, same practice as every regular
+          # deploy in deploy.yml's "Deploy client" step. If $BACKUP turns out
+          # to be the wrong one, this is the way back.
+          ssh sc "cp -a /var/www/servicecycle/html /root/html-backup-ci-pre-rollback-$(date +%Y%m%d-%H%M%S)"
+          ssh sc "rsync -a --delete /root/$BACKUP/ /var/www/servicecycle/html/"
+          echo "Restored client html from /root/$BACKUP"
+
+      - name: Rollback summary
+        if: always()
+        env:
+          INPUT_CLIENT_BACKUP_DIR: ${{ inputs.client_backup_dir }}
+        run: |
+          echo "Target server SHA : ${{ steps.resolve.outputs.target_sha }}"
+          echo "Client backup dir  : ${INPUT_CLIENT_BACKUP_DIR:-(none -- server only)}"

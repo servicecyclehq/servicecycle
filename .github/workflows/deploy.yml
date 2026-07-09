@@ -53,6 +53,16 @@ jobs:
     # this change can't flip on its own. Referencing it here means the gate
     # activates automatically the moment someone with access creates it.
     environment: production
+    # Single source of truth for "the commit actually being deployed" --
+    # reused by the image-tagging step below (rollback.yml retags/restarts
+    # from this exact SHA) and echoed into step logs for auditability.
+    # workflow_run carries no head_commit for a manual (workflow_dispatch)
+    # run, so this falls back to github.sha (the SHA of the ref that was
+    # selected when the run was dispatched) -- deliberately NOT the same
+    # fallback the checkout step below uses (github.ref, a branch name, not
+    # a SHA -- fine for checkout, useless as an image tag).
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       # TODO: pin to SHA digest for supply chain security
       - uses: actions/checkout@v4
@@ -138,6 +148,34 @@ jobs:
           test "$code" = "200" || { echo "Health check failed"; exit 1; }
           ssh sc "docker ps --filter name=servicecycle-server --format '{{.Names}} {{.Status}}'"
 
+      - name: Tag server image with commit SHA (rollback candidate)
+        # Only runs if the Health check step above passed (no `if:` means
+        # "default to on success"), by design: a build that failed its own
+        # post-deploy health check should never be marked as something
+        # rollback.yml can roll INTO later. Prior successful deploys' sha-*
+        # tags are untouched by this run's `docker compose up -d --build`
+        # (rebuilding only moves the floating default-name tag; it doesn't
+        # delete or overwrite other tags pointing at the old image layers),
+        # so even a failed deploy here leaves the last known-good SHA tag
+        # intact and rollback-able.
+        #
+        # `docker compose config --images server` resolves the exact image
+        # name Compose just built `server` under -- this base
+        # docker-compose.yml has no `image:` key on the server service, so
+        # Compose auto-derives one from the project dir name
+        # (/root/ServiceCycle -> project "servicecycle" -> image
+        # "servicecycle-server" under Compose v2's current default naming).
+        # Asking Compose directly instead of hardcoding that convention here
+        # means this keeps working even if the project directory name or
+        # Compose version ever changes -- see the rollback.yml header for
+        # the "don't guess the tag" reasoning in full.
+        #
+        # `docker tag` just adds a second name to the same image ID/layers
+        # (no data duplication), so this costs ~0 extra disk per deploy.
+        run: |
+          set -euo pipefail
+          ssh sc "cd /root/ServiceCycle && IMAGE=\$(docker compose config --images server) && docker tag \$IMAGE servicecycle-server:sha-$DEPLOY_SHA && echo Tagged \$IMAGE as servicecycle-server:sha-$DEPLOY_SHA"
+
       - name: Prune old pre-deploy dump artifacts
         # 2026-07-08 audit (DevOps Low — "unencrypted pg_dump artifacts
         # accumulating in /root"): the "Pre-deploy DB backup" step above has
@@ -155,3 +193,57 @@ jobs:
         run: |
           set -euo pipefail
           ssh sc "cd /root && ls -t predeploy-ci-*.sql.gz 2>/dev/null | tail -n +6 | xargs -r rm -f --" || echo "WARN: prune step failed (non-fatal, will retry next deploy)"
+
+      - name: Prune old server image tags
+        # Unbounded-growth guard for the sha-* tags the "Tag server image"
+        # step above adds on every successful deploy -- same disk-growth
+        # pattern the predeploy-ci-*.sql.gz prune step above already exists
+        # to guard against (2026-07-08 audit flagged /root at 77% disk used
+        # partly from exactly this kind of unpruned per-deploy artifact),
+        # applied here to image tags instead of dump files. Keeps the 5 most
+        # recent by image CREATION TIME (docker images --format
+        # '{{.CreatedAt}}|{{.Tag}}', sorted on the whole line so CreatedAt --
+        # the leftmost field -- drives the order) and removes the rest. A
+        # plain alphabetical sort of the SHA strings themselves would be
+        # meaningless (git SHAs aren't chronological), hence sorting on
+        # CreatedAt explicitly rather than mirroring the dump-artifact
+        # step's simpler `ls -t` (which works there because *filenames*
+        # embed a real timestamp; image tags here don't).
+        #
+        # Deliberately narrow, per the 2 vCPU / ~2 GB droplet's tight disk
+        # budget and the acquisition-audit's "unbounded artifact growth"
+        # finding: only ever touches tags matching `servicecycle-server:sha-*`
+        # via an explicit grep filter -- never a blanket `docker image prune`
+        # / `docker system prune` (which would also sweep build cache/layers
+        # this step has no business touching), and never the floating
+        # default tag (which always points at whatever build is currently
+        # live, and is managed by `docker compose up -d --build`, not this
+        # step). `if: always()` so a failed deploy this run still gets its
+        # disk cleaned up, same rationale as the dump-artifact prune step.
+        if: always()
+        run: |
+          set -euo pipefail
+          ssh sc "docker images --format '{{.CreatedAt}}|{{.Tag}}' servicecycle-server | grep '|sha-' | sort -r | tail -n +6 | cut -d'|' -f2 | xargs -r -I{} docker rmi servicecycle-server:{}" || echo "WARN: image prune step failed (non-fatal, will retry next deploy)"
+
+      - name: Prune old client html backups
+        # Same unbounded-growth pattern as the two prune steps above,
+        # applied to the timestamped `cp -a` snapshots the "Deploy client"
+        # step takes before every overwrite -- these have accumulated in
+        # /root, uncapped, since the backup line was first added, same as
+        # the predeploy-ci-*.sql.gz files were before the step above. Keeps
+        # the 5 most recent by mtime (`ls -dt`, matching the sql.gz step's
+        # own approach -- `-d` so directory entries are listed themselves,
+        # not their contents) and removes the rest with `rm -rf` (these are
+        # directories, not files, so plain `rm -f` wouldn't remove them).
+        #
+        # These backups are a rollback SAFETY NET, not the only copy of
+        # anything -- the live html tree is reproducible by re-running the
+        # client build against the matching git SHA -- so pruning to a short
+        # rolling window is the same acceptable trade-off already made for
+        # the DB dumps and image tags above. rollback.yml's client-restore
+        # step depends on a recent backup still being present, which is
+        # exactly why this keeps 5 rather than 1.
+        if: always()
+        run: |
+          set -euo pipefail
+          ssh sc "cd /root && ls -dt html-backup-ci-* 2>/dev/null | tail -n +6 | xargs -r rm -rf --" || echo "WARN: prune step failed (non-fatal, will retry next deploy)"

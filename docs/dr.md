@@ -17,7 +17,7 @@ one DigitalOcean droplet is the entire production footprint.
 |---|---|---|---|
 | PostgreSQL (all application data) | **Yes** | Nightly `pg_dump --format=custom` (`server/lib/backup.ts`, `runBackup()`), gzip-equivalent internal compression, AES-256-GCM encrypted by default | `./backups` bind mount, optionally also S3-compatible bucket |
 | `./uploads` (customer PDFs, photos, nameplate scans, drawings) | **Partial — code exists, not yet scheduled** | `runUploadsSync()` in `server/lib/backup.ts` (added 2026-07-08), delta-syncs the local uploads directory to the same S3 bucket used for DB backups under a distinct `uploads-sync/` prefix | S3 bucket only (no local "backup copy" — the live `./uploads` bind mount IS the primary copy) |
-| Droplet-level (OS, Docker state, `.env`) | **Manual only** | DigitalOcean droplet snapshots — an operator action, not automated by this repo (`DEPLOY_RUNBOOK.md` §11 "You should set up soon after go-live") | DigitalOcean |
+| Droplet-level (OS, Docker state, `.env`) | **Manual only** | DigitalOcean droplet snapshots — an operator action, not automated by this repo (`DEPLOY_RUNBOOK.md` §12 "You should set up soon after go-live") | DigitalOcean |
 | `MASTER_KEY` (encrypts backups, TOTP secrets, some stored credentials) | **Manual, off-box, by design** | Operator responsibility at provisioning time (`DEPLOY_RUNBOOK.md` §3/§4) — losing it makes encrypted data permanently unrecoverable, so it deliberately isn't stored anywhere this repo automates | Wherever the operator puts it (password manager, etc.) |
 
 ### Honesty check on the uploads-sync gap
@@ -60,9 +60,9 @@ attached.
 ## 3. Restore procedure
 
 **Don't duplicate the step-by-step here — the canonical, maintained version lives in
-`docs/DEPLOY_RUNBOOK.md`** (§5 "Deploy", §6 "Seed demo data", §9 "Operational notes", §11 "Production
-hardening checklist"). This section is the DR-specific index into that runbook plus the pieces that
-aren't there yet.
+`docs/DEPLOY_RUNBOOK.md`** (§5 "Deploy", §6 "Seed demo data", §9 "Operational notes", §10 "Rolling back
+a bad deploy", §12 "Production hardening checklist"). This section is the DR-specific index into that
+runbook plus the pieces that aren't there yet.
 
 ### 3.1 Automated integrity checks (already running, not a manual restore)
 
