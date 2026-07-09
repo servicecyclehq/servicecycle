@@ -125,3 +125,48 @@ Every High-severity item shipped. See `docs/REMEDIATION_SUMMARY_2026-07-08.md` f
 - If `e2e-scheduled.yml` should go green, add demo basic-auth credentials as GitHub repo secrets.
 
 **Deployed:** pushed to `origin/main` at `191b08b`, pulled + rebuilt on the droplet (migration applied, `server-migrate`+`server` rebuilt, `client` rebuilt+published), post-deploy `get_app_status`: db healthy, server healthy, client running. Independent fresh-eyes security review verdict: **GO** (2 non-blocking follow-ups noted above).
+
+---
+
+## Remediation pass Run 2 close-out (2026-07-08, same day)
+
+Full writeup: `docs/REMEDIATION_SUMMARY_2026-07-08_RUN2.md`. `HEAD` before →
+`a683d8e`; 6 code/infra commits, SHAs below. Every item re-verified against
+live code first (not trusted from Run 1's docs) — several turned out to be
+partially wrong (W1-M8's "5 breaking tests" was actually 7; the 5 named
+W1-M10 "priority" files all had real coverage already; `FailedLoginAttempt`
+was bundled with `IngestionSession` under W1-L7 but isn't actually dead).
+
+| Item | Status | SHA |
+|---|---|---|
+| **W1-M2** rotate-master-key.js | ✅ Shipped — full rewrite, nonexistent-model call removed, idempotent | `bbfdbcb` |
+| **W1-M4** LOTO version history | ✅ Shipped — append-only via version+isCurrent, new history endpoint | `739cc87` |
+| **W1-M5** demoPrune blockers | ✅ Shipped — PartnerInvite + IncidentLog + 7 arc-flash tables | `739cc87` |
+| **W1-M8** jest ./prisma gap | ✅ Shipped (investigated + relocated, not a regex change) — regex confirmed still correct, 3 real-DB tests moved to integration project | `2724b27` |
+| **W1-M10** untested routes | ✅ Partial — corrected count (23, not 19), 1 new safety-critical suite + 4 targeted additions; 17 files still genuinely untested, not all attempted | `8addd49` |
+| **W1-L7** dead schema | ✅ Partial — `IngestionSession` dropped; `FailedLoginAttempt` investigated and kept (not dead, see Run 2 doc §1 Batch 1) | `739cc87` |
+| **W1-L10** js-yaml | ✅ Shipped — override added | `09a7f1d` |
+| **W1-L11** vite/esbuild | ✅ Documented — already-correct deferral, stale comment fixed, no code bump (by design) | `09a7f1d` |
+| **W1-L12** gitleaks regex | ✅ Shipped — anchored/bounded | `09a7f1d` |
+| Non-blocking: storage.ts DNS-rebind | ✅ Shipped | `09a7f1d` |
+| Non-blocking: inboundEmail timing | ✅ Shipped | `09a7f1d` |
+| Live web tier versioning | ⚠️ Scaffold only — `deploy/README.md` + exact SSH pull commands; MCP hard-restricted from reading `/etc/nginx` | `634ebf8` |
+| Deploy rollback story | ✅ Shipped — SHA-tagged images + `rollback.yml` | `634ebf8` |
+
+**Batch 8 live-check, re-run:** Part/SpareInventory NOTICE still unverifiable
+(direct-DB MCP block, unchanged from Run 1). Uploads-sync confirmed a clean
+intentional no-op (off-host storage never activated on this droplet, known
+SOC2-backlog item, not a bug). **New finding, not in Run 1's scope**: nightly
+local backups have almost certainly been failing due to a host-side
+directory-permission mismatch (`/root/ServiceCycle/backups` root:root 755,
+server runs as uid 1000) — `chown` is hard-blocked at the MCP's security
+layer, needs Dustin over SSH, one command, see Run 2 doc §5.
+
+**Known verification gap, disclosed not hidden:** the live-server-dependent
+route tests (`server/tests/*.test.js`, including `loto.test.js`) need a
+running `npm run dev` on `:3001`, a pre-existing environment limitation this
+session couldn't route around — see Run 2 doc §3 for what covered the LOTO
+changes instead (tsc against regenerated Prisma types, migrate deploy,
+direct review).
+
+**Deployed:** see Run 2 doc §4 for the actual sequence and outcome.
