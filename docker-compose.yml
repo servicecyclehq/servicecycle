@@ -162,6 +162,43 @@ services:
       MASTER_KEY:   ${MASTER_KEY:?MASTER_KEY must be set in .env (44-char base64 of 32 random bytes)}
       NODE_ENV:     ${NODE_ENV:-production}
 
+  # Bind-mount ownership fix (init container).
+  # 2026-07-09: ./uploads and ./backups are host bind mounts. On any target
+  # where these directories don't already exist, Docker auto-creates the
+  # bind-mount source as root:root 0755 (the daemon's own identity) before
+  # the `server` container -- which runs as the unprivileged `node` user,
+  # uid 1000, per server/Dockerfile's USER node -- ever starts. root:root
+  # 0755 means uid 1000 gets EACCES on every write into ./backups.
+  # lib/backup.ts's saveToLocal() catches that specific error and silently
+  # falls back to /tmp (tmpfs, wiped on every container restart/redeploy),
+  # so the nightly backup cron kept writing BackupLog.status='success' while
+  # the actual gzip landed somewhere that evaporates on the next deploy --
+  # a silent, false-green failure, not a loud one. Root-caused 2026-07-09
+  # while acting on the Batch 8 backup-permission finding from the
+  # 2026-07-08 remediation pass. (./uploads on THIS droplet happened to be
+  # manually chmod 777'd at some point in its history, so it never hit the
+  # same symptom -- that's an accident of this one droplet's history, not a
+  # property of this compose file. A fresh self-host clone would hit both.)
+  #
+  # The only service in this file that runs as root, for exactly one
+  # narrowly-scoped, idempotent operation: chown the two bind-mount targets
+  # to the `node` user/group baked into the node:20-alpine image (already
+  # pulled locally -- shares a layer cache with server-migrate's deps stage)
+  # before `server` starts. Safe to run on every `docker compose up`: chown
+  # on already-correct ownership is a fast no-op, so this self-heals if
+  # ownership ever regresses again (fresh droplet, `docker compose down -v`
+  # + volume recreate, an operator's own chown typo) without needing another
+  # one-off manual SSH fix.
+  fix-perms:
+    image: node:20-alpine
+    container_name: servicecycle-fix-perms
+    user: "0:0"
+    restart: "no"
+    command: ["sh", "-c", "chown -R node:node /mnt/uploads /mnt/backups"]
+    volumes:
+      - ./uploads:/mnt/uploads
+      - ./backups:/mnt/backups
+
   # â”€â”€ API Server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   server:
     build:
@@ -208,6 +245,8 @@ services:
       db:
         condition: service_healthy
       server-migrate:
+        condition: service_completed_successfully
+      fix-perms:
         condition: service_completed_successfully
     # Host-port binding defaults to 127.0.0.1 (defense-in-depth, 2026-05-12):
     # for local dev that's fine (host:3001 still works from the same machine).

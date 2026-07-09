@@ -30,6 +30,26 @@ services:
       MASTER_KEY:   ${MASTER_KEY:?MASTER_KEY must be set in .env (44-char base64 of 32 random bytes)}
       NODE_ENV:     ${NODE_ENV:-production}
 
+  # Bind-mount ownership fix (init container). See the root docker-compose.yml
+  # for the full rationale — same bug, same fix, kept in parity: on a target
+  # where ./uploads / ./backups don't already exist, Docker auto-creates the
+  # bind-mount source as root:root 0755, and the server image's unprivileged
+  # `node` user (uid 1000) gets EACCES writing into ./backups. lib/backup.ts
+  # silently falls back to /tmp (wiped every restart) rather than crashing,
+  # so this is a self-hosted customer's most likely path to a backup cron
+  # that keeps reporting success while nightly dumps quietly evaporate.
+  # Runs once, as root, before `server` starts; idempotent (safe every
+  # `docker compose up`) and self-healing if ownership ever regresses again.
+  fix-perms:
+    image: node:20-alpine
+    container_name: servicecycle-fix-perms
+    user: "0:0"
+    restart: "no"
+    command: ["sh", "-c", "chown -R node:node /mnt/uploads /mnt/backups"]
+    volumes:
+      - ./uploads:/mnt/uploads
+      - ./backups:/mnt/backups
+
   db:
     image: postgres:16-alpine
     container_name: servicecycle-db
@@ -120,6 +140,8 @@ services:
         condition: service_completed_successfully
       db:
         condition: service_healthy
+      fix-perms:
+        condition: service_completed_successfully
     # Host-port binding defaults to 127.0.0.1 (defense-in-depth, 2026-05-12):
     # operators running this compose file behind their own reverse proxy
     # (Caddy, nginx, Traefik, etc.) almost always want loopback-only on the
