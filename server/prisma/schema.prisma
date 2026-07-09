@@ -187,14 +187,6 @@ enum TelemetryStatus {
   CRIT
 }
 
-enum IngestionStatus {
-  processing
-  review_pending
-  approved
-  imported
-  failed
-}
-
 enum PartnerEventType {
   IMMEDIATE_DEFICIENCY
   INSPECTION_COMPLETED
@@ -351,7 +343,6 @@ model Account {
   documents              Document[]
   communications         Communication[]
   alerts                 Alert[]
-  ingestionSessions      IngestionSession[]
   invites                UserInvite[]
   settings               AccountSetting[]
   consultantAccesses     ConsultantAccess[]
@@ -576,7 +567,6 @@ model User {
   account                 Account                 @relation(fields: [accountId], references: [id])
   uploadedDocuments       Document[]              @relation("Uploader")
   communications          Communication[]         @relation("CommunicationCreator")
-  reviewedIngestions      IngestionSession[]      @relation("IngestionReviewer")
   alertPreferences        AlertPreference[]
   activityLogs            ActivityLog[]
   sentInvites             UserInvite[]            @relation("InviteCreator")
@@ -1885,7 +1875,6 @@ model Document {
   workOrder  WorkOrder?         @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   account     Account              @relation(fields: [accountId], references: [id])
   uploader    User                 @relation("Uploader", fields: [uploadedBy], references: [id])
-  ingestions  IngestionSession[]
   annotations DocumentAnnotation[]
 
   @@index([accountId])
@@ -2155,33 +2144,6 @@ model AlertPreference {
   @@unique([userId, alertType])
   @@index([userId])
   @@map("alert_preferences")
-}
-
-// ─── Ingestion Sessions ──────────────────────────────────────────────────────
-// AI-assisted extraction from uploaded PDFs (contractor test reports,
-// nameplate photos, legacy maintenance logs) into structured fields.
-
-model IngestionSession {
-  id                String          @id @default(uuid())
-  accountId         String
-  documentId        String?
-  originalFilename  String
-  rawText           String?
-  extractedFields   Json?
-  confidenceScores  Json?
-  aiNotes           Json?
-  status            IngestionStatus @default(processing)
-  reviewedBy        String?
-  reviewCompletedAt DateTime?
-  importedAt        DateTime?
-  createdAt         DateTime        @default(now())
-
-  account  Account   @relation(fields: [accountId], references: [id])
-  document Document? @relation(fields: [documentId], references: [id])
-  reviewer User?     @relation("IngestionReviewer", fields: [reviewedBy], references: [id])
-
-  @@index([accountId])
-  @@map("ingestion_sessions")
 }
 
 // ─── Activity Log ─────────────────────────────────────────────────────────────
@@ -2780,12 +2742,21 @@ model LotoEnergySource {
   // How to verify zero-energy state: e.g. "Test load terminals with fluke T6 — confirm 0V"
   verificationMethod String
   sortOrder          Int        @default(0)
+  // 2026-07-08 Run 2 (W1-M4): append-only version history. A PUT no longer
+  // deletes+recreates these rows -- it flips isCurrent:false on the old set
+  // and creates a new set stamped with the parent LotoProc's new version
+  // number, so a prior OSHA 1910.147 procedure revision's exact isolation
+  // steps stay in the DB (auditable) instead of being destroyed. Reads
+  // filter on isCurrent:true; GET /:id/history reads across all versions.
+  version            Int        @default(1)
+  isCurrent          Boolean    @default(true)
 
   loto    LotoProc @relation(fields: [lotoId], references: [id], onDelete: Cascade)
   account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([lotoId])
   @@index([accountId])
+  @@index([lotoId, isCurrent])
   @@map("loto_energy_sources")
 }
 
@@ -2804,12 +2775,17 @@ model LotoStep {
   // When true, the field worker must record a physical reading or tick a box
   // before proceeding. UI renders a checkbox-style row for these steps.
   requiresVerification Boolean @default(false)
+  // 2026-07-08 Run 2 (W1-M4): append-only version history -- see the matching
+  // comment on LotoEnergySource.version/isCurrent above; same mechanism.
+  version              Int     @default(1)
+  isCurrent            Boolean @default(true)
 
   loto    LotoProc @relation(fields: [lotoId], references: [id], onDelete: Cascade)
   account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([lotoId])
   @@index([accountId])
+  @@index([lotoId, isCurrent])
   @@map("loto_steps")
 }
 

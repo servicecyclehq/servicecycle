@@ -102,8 +102,23 @@ async function pruneAccount(accountId) {
   // ── Asset-scoped leaves
   await prisma.customFieldValue.deleteMany({ where: { asset: { accountId } } }).catch(() => {});
   await prisma.communication.deleteMany({ where: filter }).catch(() => {});
-  await prisma.ingestionSession.deleteMany({ where: filter }).catch(() => {});
   await prisma.document.deleteMany({ where: filter }).catch(() => {});
+
+  // ── W1-M5 (2026-07-08 Run 2): arc-flash field-collection + ingest records.
+  // These are scalar-FK-only (no real Prisma @relation to Account -- see
+  // schema.prisma comments on ArcFlashIngest/ProtectiveDevice/etc.), so they
+  // never blocked account.delete() with a P2003 like PartnerEventLog below
+  // did -- but with no relation there's also no cascade, so they silently
+  // survived every prune forever, orphaned against a deleted accountId.
+  // Mirrors (and extends to full parity with) the partial fix already in
+  // scripts/seed-demo.js's _resetDemoAccount, which only covers 3 of these 7.
+  await prisma.arcFlashIngestBus.deleteMany({ where: filter }).catch(() => {});
+  await prisma.arcFlashIngest.deleteMany({ where: filter }).catch(() => {});
+  await prisma.deviceTestRecord.deleteMany({ where: filter }).catch(() => {});
+  await prisma.arcFlashCollectionTask.deleteMany({ where: filter }).catch(() => {});
+  await prisma.protectionCurve.deleteMany({ where: filter }).catch(() => {});
+  await prisma.protectiveDevice.deleteMany({ where: filter }).catch(() => {});
+  await prisma.arcFlashIncident.deleteMany({ where: filter }).catch(() => {});
 
   // ── Assets, then the site hierarchy bottom-up (all required site FKs are
   // no-action, so children must go before sites)
@@ -135,6 +150,18 @@ async function pruneAccount(accountId) {
   // new account (setupTenants -> registerB). Same bug is live on the nightly
   // prune cron in production -- unpruneable accounts accumulate forever.
   await prisma.partnerEventLog.deleteMany({ where: filter }).catch(() => {});
+  // W1-M5 (2026-07-08 Run 2): PartnerInvite.accountId is a required,
+  // unindexed-until-Batch-1, RESTRICT (no-action) FK -- missing this step is
+  // the exact same P2003-on-account.delete() class of bug the PartnerEventLog
+  // fix above already documents, just for a different table. Any demo account
+  // that was ever the SUBJECT of a partner invite (not just one that sent
+  // one) would permanently fail to prune, exactly like the PartnerEventLog
+  // case did before it was found.
+  await prisma.partnerInvite.deleteMany({ where: filter }).catch(() => {});
+  // IncidentLog.accountId is also a required, no-action FK (schema.prisma) and
+  // was missing here despite scripts/seed-demo.js already deleting it --
+  // same bug class, found alongside the arc-flash orphan audit above.
+  await prisma.incidentLog.deleteMany({ where: filter }).catch(() => {});
   await prisma.webhookEndpoint.deleteMany({ where: filter }).catch(() => {});
   await prisma.apiKey.deleteMany({ where: filter }).catch(() => {});
   await prisma.consultantAccess.deleteMany({ where: filter }).catch(() => {});

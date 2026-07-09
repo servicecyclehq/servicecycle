@@ -186,13 +186,22 @@ async function _resetDemoAccount() {
   // ── Asset-attached leaves ─────────────────────────────────────────────────
   await prisma.customFieldValue.deleteMany({ where: { asset: { accountId: DEMO_ACCOUNT_ID } } }).catch(() => {});
   await prisma.communication.deleteMany({ where: filter }).catch(() => {});
-  await prisma.ingestionSession.deleteMany({ where: filter }).catch(() => {});
   await prisma.document.deleteMany({ where: filter }).catch(() => {});
   // Arc-flash field records are scalar-FK (no cascade) — clear them explicitly so
   // they don't accumulate across reseeds.
+  // 2026-07-08 Run 2 (W1-M5/L7): extended to full parity with lib/demoPrune.ts
+  // — this block previously covered only 3 of these 7 tables, so
+  // arcFlashIngest/arcFlashIngestBus/protectionCurve/arcFlashIncident rows
+  // accumulated across every reseed instead of resetting; arcFlashIncident in
+  // particular was being createMany'd again further down this same file
+  // without ever being cleared first, duplicating rows on every reseed.
+  await prisma.arcFlashIngestBus.deleteMany({ where: filter }).catch(() => {});
+  await prisma.arcFlashIngest.deleteMany({ where: filter }).catch(() => {});
   await prisma.deviceTestRecord.deleteMany({ where: filter }).catch(() => {});
   await prisma.arcFlashCollectionTask.deleteMany({ where: filter }).catch(() => {});
+  await prisma.protectionCurve.deleteMany({ where: filter }).catch(() => {});
   await prisma.protectiveDevice.deleteMany({ where: filter }).catch(() => {});
+  await prisma.arcFlashIncident.deleteMany({ where: filter }).catch(() => {});
   await prisma.asset.deleteMany({ where: filter });
 
   // ── Hierarchy + site-scoped rows ──────────────────────────────────────────

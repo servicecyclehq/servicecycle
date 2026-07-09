@@ -55,6 +55,26 @@ test('pruneAccount(): real dependency-ordered delete chain removes a full fixtur
     },
   });
 
+  // W1-M5 (2026-07-08 Run 2) regression fixtures — these three previously
+  // either blocked account.delete() with a P2003 (PartnerInvite) or survived
+  // it silently orphaned (the 7 arc-flash scalar-FK tables, represented here
+  // by ArcFlashIncident; IncidentLog was already covered by seed-demo.js but
+  // missing from this chain).
+  const incident = await prisma.incidentLog.create({
+    data: { accountId: admin.accountId, assetId: asset.id, occurredAt: new Date(), type: 'OTHER' },
+  });
+  const arcFlashIncident = await prisma.arcFlashIncident.create({
+    data: { accountId: admin.accountId, assetId: asset.id, description: 'DP test arc-flash incident' },
+  });
+  const partnerOrg = await prisma.partnerOrganization.create({ data: { name: `DP Partner Org ${Date.now()}` } });
+  const partnerInvite = await prisma.partnerInvite.create({
+    data: {
+      partnerOrgId: partnerOrg.id, inviteeEmail: `dp-invite-${Date.now()}@example.com`, invitedById: admin.id,
+      tokenHash: `dp-token-hash-${Date.now()}`, expiresAt: new Date(Date.now() + 86400000),
+      accountId: admin.accountId, // set as if already accepted onto this account
+    },
+  });
+
   const { pruneAccount } = require('../../lib/demoPrune');
   const result = await pruneAccount(admin.accountId);
 
@@ -66,6 +86,11 @@ test('pruneAccount(): real dependency-ordered delete chain removes a full fixtur
   expect(await prisma.asset.findUnique({ where: { id: asset.id } })).toBeNull();
   expect(await prisma.workOrder.findUnique({ where: { id: wo.id } })).toBeNull();
   expect(await prisma.maintenanceTaskDefinition.findUnique({ where: { id: taskDef.id } })).toBeNull();
+  expect(await prisma.incidentLog.findUnique({ where: { id: incident.id } })).toBeNull();
+  expect(await prisma.arcFlashIncident.findUnique({ where: { id: arcFlashIncident.id } })).toBeNull();
+  expect(await prisma.partnerInvite.findUnique({ where: { id: partnerInvite.id } })).toBeNull();
+
+  await prisma.partnerOrganization.delete({ where: { id: partnerOrg.id } }).catch(() => {});
 
   // Calling it again on an already-gone account must be idempotent, not throw.
   const second = await pruneAccount(admin.accountId);

@@ -77,7 +77,10 @@ router.get('/', async (req, res) => {
       include: {
         createdBy:    { select: { id: true, name: true } },
         approvedBy:   { select: { id: true, name: true } },
-        _count:       { select: { energySources: true, steps: true } },
+        // W1-M4: children are append-only now (old revisions kept with
+        // isCurrent:false) -- scope the count to the live revision only,
+        // otherwise this would grow with every PUT regardless of size.
+        _count:       { select: { energySources: { where: { isCurrent: true } }, steps: { where: { isCurrent: true } } } },
       },
       orderBy: [{ status: 'asc' }, { version: 'desc' }],
     });
@@ -101,8 +104,10 @@ router.get('/:id', async (req, res) => {
         asset:         { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true, site: { select: { name: true } } } },
         createdBy:     { select: { id: true, name: true } },
         approvedBy:    { select: { id: true, name: true } },
-        energySources: { orderBy: { sortOrder: 'asc' } },
-        steps:         { orderBy: { sortOrder: 'asc' } },
+        // W1-M4: only the live revision's children — see GET /:id/history for
+        // prior revisions.
+        energySources: { where: { isCurrent: true }, orderBy: { sortOrder: 'asc' } },
+        steps:         { where: { isCurrent: true }, orderBy: { sortOrder: 'asc' } },
       },
     });
 
@@ -117,6 +122,47 @@ router.get('/:id', async (req, res) => {
     });
   } catch (err) {
     console.error('[loto GET /:id]', err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// ── GET /api/assets/:assetId/loto/:id/history ────────────────────────────────
+// W1-M4: full auditable revision history — every energySource/step row ever
+// saved for this procedure, including superseded (isCurrent:false) ones,
+// grouped by the version they belonged to. Read-only, same access as GET /:id
+// (no requireManager — viewers/consultants can audit history too).
+router.get('/:id/history', async (req, res) => {
+  try {
+    const { assetId } = req.params;
+    const accountId   = req.user.accountId;
+
+    const proc = await prisma.lotoProc.findFirst({
+      where:  { id: req.params.id, assetId, accountId },
+      select: {
+        id: true, title: true, version: true, status: true,
+        energySources: { orderBy: [{ version: 'asc' }, { sortOrder: 'asc' }] },
+        steps:         { orderBy: [{ version: 'asc' }, { sortOrder: 'asc' }] },
+      },
+    });
+    if (!proc) return res.status(404).json({ success: false, error: 'Procedure not found' });
+
+    const versions = new Map<number, { version: number, isCurrent: boolean, energySources: any[], steps: any[] }>();
+    const bucket = (v: number, isCurrent: boolean) => {
+      if (!versions.has(v)) versions.set(v, { version: v, isCurrent, energySources: [], steps: [] });
+      return versions.get(v)!;
+    };
+    for (const s of proc.energySources) bucket(s.version, s.isCurrent).energySources.push(s);
+    for (const s of proc.steps)         bucket(s.version, s.isCurrent).steps.push(s);
+
+    return res.json({
+      success: true,
+      data: {
+        id: proc.id, title: proc.title, currentVersion: proc.version, status: proc.status,
+        versions: Array.from(versions.values()).sort((a, b) => b.version - a.version),
+      },
+    });
+  } catch (err) {
+    console.error('[loto GET /:id/history]', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
@@ -206,10 +252,16 @@ router.put('/:id', requireManager, async (req, res) => {
     const { sources, steps: parsedSteps, error } = parseSourcesAndSteps(req.body);
     if (error) return res.status(400).json({ success: false, error });
 
-    // Replace children in a transaction
+    // W1-M4: append-only version history. The previous implementation
+    // deleteMany'd the old energySources/steps here, permanently destroying
+    // the prior OSHA 1910.147 procedure text on every revision. Now: flip the
+    // old (isCurrent:true) rows to isCurrent:false — they stay in the table,
+    // readable via GET /:id/history — and create a fresh set stamped with the
+    // new version number as the new isCurrent:true rows.
+    const newVersion = existing.version + 1;
     const proc = await prisma.$transaction(async (tx: any) => {
-      await tx.lotoEnergySource.deleteMany({ where: { lotoId: req.params.id } });
-      await tx.lotoStep.deleteMany({ where: { lotoId: req.params.id } });
+      await tx.lotoEnergySource.updateMany({ where: { lotoId: req.params.id, isCurrent: true }, data: { isCurrent: false } });
+      await tx.lotoStep.updateMany({ where: { lotoId: req.params.id, isCurrent: true }, data: { isCurrent: false } });
 
       return tx.lotoProc.update({
         where: { id: req.params.id },
@@ -217,7 +269,7 @@ router.put('/:id', requireManager, async (req, res) => {
           title:        title.trim(),
           notes:        notes || null,
           status:       'draft',                      // re-approval required
-          version:      existing.version + 1,
+          version:      newVersion,
           approvedById: null,
           approvedAt:   null,
           energySources: {
@@ -229,6 +281,8 @@ router.put('/:id', requireManager, async (req, res) => {
               isolationMethod:    s.isolationMethod,
               verificationMethod: s.verificationMethod,
               sortOrder:          s.sortOrder ?? i,
+              version:            newVersion,
+              isCurrent:          true,
             })),
           },
           steps: {
@@ -238,12 +292,14 @@ router.put('/:id', requireManager, async (req, res) => {
               instruction:          s.instruction,
               category:             s.category || 'lockout',
               requiresVerification: Boolean(s.requiresVerification),
+              version:              newVersion,
+              isCurrent:            true,
             })),
           },
         },
         include: {
-          energySources: { orderBy: { sortOrder: 'asc' } },
-          steps:         { orderBy: { sortOrder: 'asc' } },
+          energySources: { where: { isCurrent: true }, orderBy: { sortOrder: 'asc' } },
+          steps:         { where: { isCurrent: true }, orderBy: { sortOrder: 'asc' } },
           createdBy:     { select: { id: true, name: true } },
         },
       });

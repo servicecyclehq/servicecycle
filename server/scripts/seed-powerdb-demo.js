@@ -377,7 +377,6 @@ async function _resetPowerdbAccount() {
 
   await prisma.customFieldValue.deleteMany({ where: { asset: { accountId: POWERDB_ACCOUNT_ID } } }).catch(() => {});
   await prisma.communication.deleteMany({ where: filter }).catch(() => {});
-  await prisma.ingestionSession.deleteMany({ where: filter }).catch(() => {});
   await prisma.document.deleteMany({ where: filter }).catch(() => {});
   await prisma.asset.deleteMany({ where: filter });
 
