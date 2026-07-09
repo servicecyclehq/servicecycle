@@ -151,7 +151,7 @@ was bundled with `IngestionSession` under W1-L7 but isn't actually dead).
 | **W1-L12** gitleaks regex | ✅ Shipped — anchored/bounded | `09a7f1d` |
 | Non-blocking: storage.ts DNS-rebind | ✅ Shipped | `09a7f1d` |
 | Non-blocking: inboundEmail timing | ✅ Shipped | `09a7f1d` |
-| Live web tier versioning | ⚠️ Scaffold only — `deploy/README.md` + exact SSH pull commands; MCP hard-restricted from reading `/etc/nginx` | `634ebf8` |
+| Live web tier versioning | ✅ Shipped — `deploy/nginx.conf.snapshot` + `deploy/certbot.md` captured 2026-07-08 (Dustin ran `nginx -T` directly, MCP still can't read `/etc/nginx`) | `634ebf8`, follow-up TBD |
 | Deploy rollback story | ✅ Shipped — SHA-tagged images + `rollback.yml` | `634ebf8` |
 
 **Batch 8 live-check, re-run:** Part/SpareInventory NOTICE still unverifiable
