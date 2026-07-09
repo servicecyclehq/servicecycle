@@ -49,7 +49,15 @@ paths = [
 regexes = [
   '''test-secret-minimum-32-chars-long-for-ci-!!''',
   '''AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=''',
-  '''your-.*-here''',
+  # 2026-07-08 Run 2 (W1-L12): was '''your-.*-here''' -- unanchored + greedy
+  # `.*` meant this could match clear across a line (through whitespace,
+  # punctuation, anything) as long as SOME "your-" appeared before and
+  # SOME "-here" appeared after, anywhere later in the same line -- e.g. a
+  # line pairing an unrelated "your-" idiom with a real secret that happens
+  # to be followed by "-here" elsewhere would be silently allowlisted.
+  # Anchored to a single placeholder-shaped token: "your-" + 1-40 word/hyphen
+  # characters + "-here", nothing else in between.
+  '''your-[\w-]{1,40}-here''',
   '''change-me-in-prod''',
   '''example[_-]?(key|secret|token)''',
   # Compliance/runbook doc idioms (docs/security/*.md, docs/compliance/*.md,

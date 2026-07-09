@@ -56,6 +56,51 @@ const MAX_INBOUND_ATT_BYTES   = 15 * 1024 * 1024;
 // bounce against an unattended mailbox.
 const NO_REPLY_RE = /(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounce|notifications?@|^reports-)/i;
 
+// [2026-07-08 audit follow-up, item 2] One identical response body for every
+// "nothing was enqueued" outcome, AND the real success path — see the
+// isAllowedSender() comment above for the byte-identity fix. Hoisted to
+// module scope so the padding helper below can send it from one place.
+const ACCEPT_AND_DROP = { ok: true };
+
+// ── Response-timing side-channel guard ───────────────────────────────────────
+// The 202 body is byte-identical on every path, but the WORK done before it is
+// sent is not: the reject paths (unmatched slug, disallowed sender, no usable
+// attachments) return almost immediately, while the real ingest path does a
+// storage upload + a DB insert per attachment. An attacker probing `to:`
+// addresses (or sender allowlists) could still time the response and infer
+// validity from latency alone, even with an identical body.
+//
+// Fix: every 202 exit point (reject AND success) is routed through
+// respondAcceptAndDrop(), which pads the response so it never returns before
+// MIN_RESPONSE_MS + jitter has elapsed since the request started. This is a
+// floor, not a fixed sleep: a success path that's already slower than the
+// floor (typical for S3-backed BYO storage, or multi-attachment messages) is
+// effectively untouched, while fast paths (rejects, and fast local-disk
+// single-attachment successes) get padded up to the same floor. We chose
+// "pad to floor" over "do the DB writes fire-and-forget after responding"
+// because the latter would (a) race the existing tests, which assert the
+// created IngestJob synchronously right after the HTTP response resolves, and
+// (b) drop the current behavior where a thrown error during upload/enqueue
+// still surfaces as a 500 — which is what makes Resend's own webhook retry
+// kick in. Padding preserves both of those synchronous guarantees.
+const MIN_RESPONSE_MS    = 250;
+const RESPONSE_JITTER_MS = 150;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function padToFloor(startedAt: number): Promise<void> {
+  const floor = MIN_RESPONSE_MS + Math.floor(Math.random() * RESPONSE_JITTER_MS);
+  const remaining = floor - (Date.now() - startedAt);
+  if (remaining > 0) await sleep(remaining);
+}
+
+async function respondAcceptAndDrop(res: any, startedAt: number) {
+  await padToFloor(startedAt);
+  return res.status(202).json(ACCEPT_AND_DROP);
+}
+
 function isReportAttachment(filename: string, contentType: string): boolean {
   return PDFISH_RE.test(filename || '') || PDF_TYPES.test(contentType || '');
 }
@@ -175,6 +220,7 @@ async function fetchResendAttachments(emailId: string): Promise<Att[]> {
 
 // POST /api/inbound/email
 router.post('/email', async (req: any, res: any) => {
+  const t0 = Date.now(); // response-timing side-channel guard, see respondAcceptAndDrop() above
   try {
     const rawBody = req.rawBody != null ? req.rawBody : JSON.stringify(req.body || {});
     const svixSecret = process.env.RESEND_WEBHOOK_SECRET;
@@ -195,11 +241,12 @@ router.post('/email', async (req: any, res: any) => {
     // [2026-07-08 audit W1-H1] One identical response body for every
     // "nothing was enqueued" outcome — see the file-header note. Resend only
     // cares about the 2xx status (so it doesn't retry/bounce); nothing reads
-    // this body.
-    const ACCEPT_AND_DROP = { ok: true };
+    // this body. (ACCEPT_AND_DROP itself now lives at module scope — see
+    // respondAcceptAndDrop() above, which also closes the response-timing
+    // side-channel across all of these exit points.)
 
     const account = await resolveAccountByTo(data.to);
-    if (!account) return res.status(202).json(ACCEPT_AND_DROP);
+    if (!account) return respondAcceptAndDrop(res, t0);
 
     // Sender authorization — see isAllowedSender() + file header. This is the
     // actual injection fix: the transport signature checked above proves the
@@ -207,7 +254,7 @@ router.post('/email', async (req: any, res: any) => {
     const senderAddr = senderEmail(data.from);
     if (!(await isAllowedSender(account.accountId, senderAddr))) {
       console.warn(`[inbound/email] rejected: sender ${senderAddr || '(unparseable)'} is not on the inbound allowlist for account ${account.accountId.slice(0, 8)}`);
-      return res.status(202).json(ACCEPT_AND_DROP);
+      return respondAcceptAndDrop(res, t0);
     }
 
     let attachments: Att[] = [];
@@ -222,7 +269,7 @@ router.post('/email', async (req: any, res: any) => {
     attachments = attachments
       .filter((a) => a.buffer && a.buffer.length > 0 && a.buffer.length <= MAX_INBOUND_ATT_BYTES)
       .slice(0, MAX_INBOUND_ATTACHMENTS);
-    if (!attachments.length) return res.status(202).json(ACCEPT_AND_DROP);
+    if (!attachments.length) return respondAcceptAndDrop(res, t0);
 
     const siteSetting = await prisma.accountSetting.findFirst({ where: { accountId: account.accountId, key: 'inbound_site_id' }, select: { value: true } });
     const siteId = siteSetting?.value || null;
@@ -246,7 +293,7 @@ router.post('/email', async (req: any, res: any) => {
     console.log(`[inbound/email] queued ${jobs.length} auto-commit job(s) for ${account.slug} (batch ${batchId}) from allowed sender ${senderAddr}`);
 
     // No ack here — lib/ingestAck sends the outcome email after parsing+gating.
-    return res.status(202).json(ACCEPT_AND_DROP);
+    return respondAcceptAndDrop(res, t0);
   } catch (err: any) {
     console.error('[inbound/email]', err && err.message ? err.message : err);
     return res.status(500).json({ success: false, error: 'inbound processing failed' });

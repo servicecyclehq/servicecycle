@@ -49,7 +49,13 @@ test('a fully configured account resolves its own bucket with decrypted credenti
       storageProvider:   's3',
       storageS3Bucket:   'account-a-own-bucket',
       storageS3Region:   'us-west-2',
-      storageS3Endpoint: 'https://s3.us-west-2.example.com',
+      // 2026-07-08 audit follow-up: resolveAccountStorageConfig() now
+      // SSRF-re-validates (and DNS-resolves, for IP pinning) the endpoint on
+      // every call -- see lib/storage.ts F-SSRF-REBIND. A non-resolving
+      // *.example.com placeholder would now fail closed (dns-failed), so this
+      // uses a real, public, always-resolvable AWS regional endpoint instead.
+      // Nothing is actually connected to; only DNS resolution happens here.
+      storageS3Endpoint: 'https://s3.us-west-2.amazonaws.com',
       storageS3KeyId:    require('../../lib/crypto').encrypt('AKIA_TEST_KEY_A'),
       storageS3Secret:   require('../../lib/crypto').encrypt('test-secret-value-a'),
     },
@@ -60,7 +66,7 @@ test('a fully configured account resolves its own bucket with decrypted credenti
   expect(cfg.dest).toBe('s3');
   expect(cfg.bucket).toBe('account-a-own-bucket');
   expect(cfg.region).toBe('us-west-2');
-  expect(cfg.endpoint).toBe('https://s3.us-west-2.example.com');
+  expect(cfg.endpoint).toBe('https://s3.us-west-2.amazonaws.com');
   // Decrypted, not the raw enc.v1: sentinel value.
   expect(cfg.keyId).toBe('AKIA_TEST_KEY_A');
   expect(cfg.secret).toBe('test-secret-value-a');

@@ -158,11 +158,54 @@ async function resolveAccountStorageConfig(accountId) {
     return null;
   }
 
+  const endpoint = account.storageS3Endpoint || null;
+
+  // F-SSRF-REBIND (2026-07-08 audit follow-up, item 1): routes/settings.ts
+  // SSRF-validates `endpoint` with lib/webhook.ts's validateWebhookUrl() at
+  // config-SAVE time (PUT /storage), but that only proves the hostname was
+  // safe *then*. Every actual S3 request made through this account's client
+  // re-resolves DNS fresh, so a low-TTL attacker-controlled endpoint domain
+  // could pass the save-time check with a public IP, then be repointed at an
+  // internal/metadata IP by the time real traffic flows — classic DNS
+  // rebinding, same class of bug validateWebhookUrl()'s own header comment
+  // documents for the webhook path. Re-validate here, at request time, and
+  // carry the vetted addresses through to getS3Client() so the actual TCP
+  // connection can be pinned to them (same postOnce() mechanism webhook.ts
+  // uses for outbound webhook delivery) instead of re-resolving DNS.
+  //
+  // Only the per-tenant BYO endpoint goes through this — it is admin-supplied
+  // input from potentially many different (mutually untrusted) tenants, which
+  // is exactly the SSRF threat model. The global STORAGE_S3_ENDPOINT env var
+  // (getS3Client() with no tenantConfig) is operator-set deploy-time config,
+  // not per-request untrusted input, and legitimately may point at an
+  // internal MinIO/Ceph instance — so it is intentionally left unvalidated,
+  // matching the "don't break the global S3 config path" guidance this fix
+  // was scoped to.
+  //
+  // ALLOW_INTERNAL_STORAGE_ENDPOINT mirrors the same escape hatch
+  // routes/settings.ts already offers for a genuine on-prem deployment; when
+  // set, we skip validation+pinning entirely (same as the save-time guard).
+  let endpointAddresses: string[] | null = null;
+  if (endpoint && process.env.ALLOW_INTERNAL_STORAGE_ENDPOINT !== 'true') {
+    const { validateWebhookUrl } = require('./webhook');
+    const { valid, reason, addresses } = await validateWebhookUrl(endpoint)
+      .catch(() => ({ valid: false, reason: 'validation-error', addresses: null }));
+    if (!valid) {
+      // Fail CLOSED — do not silently fall back to the global bucket. That
+      // would route this tenant's documents to the wrong (shared) storage
+      // backend, masking the security block as a functional one.
+      console.warn(`[storage] account ${accountId} storage endpoint blocked at request time (DNS-rebind guard): ${reason}`);
+      throw new Error(`Storage endpoint blocked: ${reason}`);
+    }
+    endpointAddresses = addresses;
+  }
+
   return {
     dest:     's3',
     bucket,
     region:   account.storageS3Region || 'us-east-1',
-    endpoint: account.storageS3Endpoint || null,
+    endpoint,
+    endpointAddresses,
     keyId,
     secret,
   };
@@ -200,6 +243,32 @@ function getS3Client(tenantConfig = null) {
     if (tenantConfig.endpoint) {
       cfg.endpoint       = tenantConfig.endpoint;
       cfg.forcePathStyle = true;
+      // F-SSRF-REBIND (2026-07-08 audit follow-up, item 1): pin the SDK's
+      // actual TCP connection to the address(es) resolveAccountStorageConfig()
+      // already validated, instead of letting the request handler re-resolve
+      // DNS fresh on every S3 call (the TOCTOU gap a DNS-rebind attack needs).
+      // Same mechanism lib/webhook.ts uses for outbound webhook delivery
+      // (postOnce()'s `lookup: pinnedLookup(addresses)`), just wired through
+      // @aws-sdk/client-s3's `requestHandler` instead of a raw https.request
+      // options object — NodeHttpHandler (from @smithy/node-http-handler,
+      // already a transitive dep of @aws-sdk/client-s3 and now declared
+      // directly) accepts a pre-built https.Agent via `httpsAgent`, and
+      // https.Agent itself accepts a custom `lookup` function. TLS
+      // servername/cert validation still uses the real hostname — only the
+      // IP the socket connects to is pinned.
+      //
+      // endpointAddresses is null when ALLOW_INTERNAL_STORAGE_ENDPOINT opted
+      // this account out of validation (genuine on-prem MinIO/Ceph); in that
+      // case we intentionally fall through with no custom requestHandler, same
+      // as pre-fix behaviour.
+      if (tenantConfig.endpointAddresses && tenantConfig.endpointAddresses.length) {
+        const https = require('https');
+        const { NodeHttpHandler } = require('@smithy/node-http-handler');
+        const { pinnedLookup } = require('./webhook');
+        cfg.requestHandler = new NodeHttpHandler({
+          httpsAgent: new https.Agent({ lookup: pinnedLookup(tenantConfig.endpointAddresses) }),
+        });
+      }
     }
     return new S3Client(cfg);
   }

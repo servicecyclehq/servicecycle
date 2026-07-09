@@ -2,16 +2,27 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// SECURITY NOTE — see docs/security/findings.csv (F002 / F003)
-//   Vite 5.x dev-server has CVE-2026-39365 (.map path traversal) and the
-//   esbuild dev-server has GHSA-67mh-4wv8-2f99 (CORS wildcard). BOTH are
-//   dev-server-only — `vite preview` (used by docker-compose.yml in prod)
-//   is unaffected because it skips the transform middleware. We accept
-//   the dev-only risk because:
-//     - production deployments use `vite build && vite preview` or the
-//       nginx-served `client/Dockerfile.prod` static stage,
-//     - the major-version bump to vite 7 is a separate piece of work
-//       gated on the React 18 -> 19 / dependency refresh pass.
+// SECURITY NOTE — updated 2026-07-08 Run 2 (W1-L11); see
+// docs/security/DEPENDENCY_DECISIONS.md (the docs/security/findings.csv
+// this comment used to cite doesn't exist in this repo -- stale reference,
+// removed).
+//   Locked vite@5.4.21 / esbuild@0.21.5 (client/package-lock.json) are
+//   affected by three advisories: vite GHSA-fx2h-pf6j-xcff / CVE-2026-53571
+//   (High, CVSS 8.2 -- server.fs.deny bypass via Windows NTFS
+//   alternate-data-stream / 8.3-short-name paths; this is the actual
+//   "1 High" driver today, published after this comment was first written --
+//   the older CVE-2026-39365 .map path-traversal (Moderate) is still open
+//   too but is no longer the primary one), and esbuild GHSA-67mh-4wv8-2f99
+//   (CORS wildcard on the dev server). ALL THREE are dev-server-only —
+//   `vite preview` / the nginx-served `client/Dockerfile.prod` static stage
+//   (what prod actually runs) never executes vite's dev transform
+//   middleware. We accept the dev-only risk because:
+//     - production deployments use `vite build` + nginx (Dockerfile.prod),
+//       never `vite dev`,
+//     - fixing all three requires vite >=7.3.5 (no 5.x backport exists —
+//       5.4.21 is the last release ever published on the 5.x line), a
+//       two-major-version jump gated on the React 18 -> 19 / dependency
+//       refresh pass, not a patch bump.
 //   IF you run `vite dev` (i.e. `npm run dev`) on an untrusted network,
 //   set `host: '127.0.0.1'` here or pass `--host=127.0.0.1` on the CLI
 //   to take the dev server off the LAN.
