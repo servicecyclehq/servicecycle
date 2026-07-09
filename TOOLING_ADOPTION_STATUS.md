@@ -22,9 +22,12 @@ Branch **squash-merged to `main` @ `7172beb`** (linear history) after getting al
 - **`servicecyclehq` = personal User account** (not an org) — resolves the gitleaks-license question (moot anyway post-CLI-swap).
 - **All 6 CI jobs green** on the merged content (Gitleaks, CI, License, Knip, dependency-cruiser, Trivy).
 
+### Dependency bot decision — RESOLVED: kept Dependabot, removed Renovate (`da5f864`)
+
+Discovered post-merge that `.github/dependabot.yml` is active and mature (grouped, weekly, Semgrep cooldown) — the Renovate recommendation's "Dependabot-off" premise was wrong. Per Dustin ("use the industry standard"): kept **GitHub-native Dependabot**, removed `renovate.json` + the Renovate workflow. No `RENOVATE_TOKEN` needed anymore.
+
 ### Still needs Dustin (his actions — I can't do these)
 
-- **Add `RENOVATE_TOKEN` secret** — Renovate opens no PRs until it exists.
 - **Rotate the GROQ + GEMINI keys** — the DEMO_LANDMINES finding's real remediation (redaction only cleaned the doc, not the live keys).
 - **CCA-F Partner Academy course completion** — check status under the softwareone.com email (Sept 24 first-15 bonus race).
 
@@ -50,7 +53,7 @@ Branch **squash-merged to `main` @ `7172beb`** (linear history) after getting al
 | 3 | license-checker-rseidelsohn gate | ✅ DONE `14e929c` |
 | 4 | knip (report-only) | ✅ DONE `b3b963f` (triage below; 5 real undeclared deps flagged) |
 | 5 | dependency-cruiser (non-blocking) | ✅ DONE `de80616` (0 errors — clean boundaries) |
-| 6 | Renovate self-hosted Action | ✅ DONE `a010c4f` (needs RENOVATE_TOKEN secret to activate) |
+| 6 | ~~Renovate~~ → kept Dependabot | ⛔ REMOVED `da5f864` (Dependabot already active; Renovate redundant) |
 | 7 | anthropics/skills cherry-pick | ✅ DONE `aede160` |
 | 8 | pino hardening (if time) | ✅ ALREADY IMPLEMENTED — no change needed (gap flagged) |
 | 9 | promptfoo eval (if time) | ✅ DONE `6b01cd7` |
