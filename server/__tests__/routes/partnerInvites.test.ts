@@ -115,11 +115,17 @@ describe('GET /api/invite/accept', () => {
     toDelete.push({ model: 'partnerInvite', id: validInvite.id });
   });
 
-  test('valid token → returns partnerOrgName and inviteeEmail', async () => {
+  test('valid token → returns partnerOrgName but never inviteeEmail (SEC3 anti-harvesting)', async () => {
     const res = await request(app).get(`/api/invite/accept?token=${validToken}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('partnerOrgName');
-    expect(res.body).toHaveProperty('inviteeEmail', 'valid-invitee@test.invalid');
+    // SEC3 (routes/partnerInvitePublic.ts): inviteeEmail is deliberately omitted
+    // from this unauthenticated GET response — returning it would let anyone
+    // holding a forwarded/leaked invite token harvest the invitee's email
+    // address without ever logging in. The email is only revealed to the
+    // caller after POST /accept succeeds (with the invited identity already
+    // authenticated).
+    expect(res.body.inviteeEmail).toBeUndefined();
   });
 
   test('expired token → { expired: true }', async () => {

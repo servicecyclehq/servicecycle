@@ -31,6 +31,17 @@ afterAll(async () => {
 
 const auth = (u: TestUser) => `Bearer ${u.token}`;
 
+// The route's activityLog.create() is fire-and-forget (not awaited before the
+// response is sent) — poll briefly instead of racing it.
+async function waitForLog(accountId: string, action: string): Promise<any> {
+  for (let i = 0; i < 30; i++) {
+    const row = await prisma.activityLog.findFirst({ where: { accountId, action }, orderBy: { createdAt: 'desc' } });
+    if (row) return row;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
+}
+
 describe('#21 auditor/insurer share links', () => {
   let token: string;
   let linkId: string;
@@ -55,6 +66,13 @@ describe('#21 auditor/insurer share links', () => {
     expect(res.body.data.sharedWith).toBe('Acme Insurance');
     expect(typeof res.body.data.overallRate === 'number' || res.body.data.overallRate === null).toBe(true);
     expect(res.body.data.watermark).toContain('ServiceCycle');
+  });
+
+  test('public view records a tamper-evident activityLog entry for the owner', async () => {
+    const log = await waitForLog(manager.accountId, 'share_link_viewed');
+    expect(log).toBeTruthy();
+    expect(log.accountId).toBe(manager.accountId);
+    expect((log.details as any).shareLinkId).toBe(linkId);
   });
 
   test('viewing increments the owner view counter', async () => {

@@ -153,4 +153,41 @@ describe('#28 ingest endpoints', () => {
   });
 });
 
+// INS-7-14 dedup guard: a resubmitted Condition-3/4 sample for the same asset
+// must not pile up duplicate open IMMEDIATE deficiencies — dgaIngest.ts skips
+// creating a new one when an open ('resolvedAt: null') IMMEDIATE deficiency
+// whose description contains 'DGA Condition' already exists for the asset.
+describe('#28 INS-7-14 dedup guard on repeated Condition-4 submissions', () => {
+  test('committing the same Condition-4 sample twice leaves exactly one open IMMEDIATE deficiency', async () => {
+    const site2 = await prisma.site.create({ data: { accountId: manager.accountId, name: `DGA-dup ${Date.now()}` } });
+    const asset2 = await prisma.asset.create({ data: { accountId: manager.accountId, siteId: site2.id, equipmentType: 'TRANSFORMER_LIQUID', serialNumber: `TX-DUP-${Date.now()}` } });
+
+    const gases = { h2: 200, ch4: 150, c2h2: 40, c2h4: 250, c2h6: 20, co: 100 }; // Condition 4 (c2h2 40 > 35)
+
+    const first = await request(app).post(`/api/assets/${asset2.id}/dga/commit`).set('Authorization', auth(manager))
+      .send({ sampleDate: '2026-03-01', gases });
+    expect(first.status).toBe(201);
+    expect(first.body.data.evaluation.overallCondition).toBe(4);
+    expect(first.body.data.deficiencyCreated).toBe(true);
+
+    const second = await request(app).post(`/api/assets/${asset2.id}/dga/commit`).set('Authorization', auth(manager))
+      .send({ sampleDate: '2026-03-02', gases });
+    expect(second.status).toBe(201);
+    expect(second.body.data.deficiencyCreated).toBe(false); // dedup guard: an open IMMEDIATE already covers it
+
+    const openImmediate = await prisma.deficiency.findMany({
+      where: {
+        accountId: manager.accountId, assetId: asset2.id, severity: 'IMMEDIATE',
+        description: { contains: 'DGA Condition' }, resolvedAt: null,
+      },
+    });
+    expect(openImmediate.length).toBe(1);
+
+    // Both samples are still recorded — the guard only suppresses the
+    // duplicate deficiency, not the lab data itself.
+    const sampleCount = await prisma.labSample.count({ where: { accountId: manager.accountId, assetId: asset2.id, sampleType: 'dga' } });
+    expect(sampleCount).toBe(2);
+  });
+});
+
 export {};

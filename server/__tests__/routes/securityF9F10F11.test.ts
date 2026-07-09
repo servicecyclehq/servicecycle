@@ -28,6 +28,9 @@ afterAll(async () => {
   try { await prisma.maintenanceSchedule.deleteMany({ where: { accountId: acc } }); } catch {}
   try { await prisma.maintenanceTaskDefinition.deleteMany({ where: { accountId: acc } }); } catch {}
   try { await prisma.asset.deleteMany({ where: { accountId: acc } }); } catch {}
+  // createMissingSites tests create Building/Area rows — must go before Site.
+  try { await prisma.area.deleteMany({ where: { accountId: acc } }); } catch {}
+  try { await prisma.building.deleteMany({ where: { accountId: acc } }); } catch {}
   try { await prisma.site.deleteMany({ where: { accountId: acc } }); } catch {}
   try { await prisma.partnerOrganization.deleteMany({ where: { name: { startsWith: '[DELETED] ZZTest' } } }); } catch {}
   for (const u of [manager, superAdmin]) {
@@ -111,6 +114,88 @@ describe('F11 import computes DPS', () => {
     expect(asset.conditionScore).toBe(4);
     expect(asset.criticalityScore).toBe(5);
     expect(asset.priorityScore).toBe(20);
+  });
+});
+
+// createMissingSites (default OFF, opt-in per commit) auto-creates the
+// site/building/area/position hierarchy for names in the file that don't
+// already exist in the account, and links the imported asset to them.
+describe('assetsImport createMissingSites auto-creates the site/building/area hierarchy', () => {
+  test('unknown site/building/area names are created and the asset is linked to them', async () => {
+    const siteName = `HierSite ${Date.now()}`;
+    const buildingName = `HierBldg ${Date.now()}`;
+    const areaName = `HierArea ${Date.now()}`;
+    const serial = `HIER-${Date.now()}`;
+    const csv = `Site,Building,Area,Equipment Type,Serial Number\n${siteName},${buildingName},${areaName},MOTOR,${serial}\n`;
+    const columnMap = JSON.stringify({
+      'Site': 'siteName',
+      'Building': 'buildingName',
+      'Area': 'areaName',
+      'Equipment Type': 'equipmentType',
+      'Serial Number': 'serialNumber',
+    });
+    const res = await request(app).post('/api/assets/import/commit')
+      .set('Authorization', auth(manager))
+      .field('columnMap', columnMap)
+      .field('createMissingSites', 'true')
+      .attach('file', Buffer.from(csv), 'assets.csv');
+    expect(res.status).toBeLessThan(300);
+    expect(res.body.data.created).toBe(1);
+    expect(res.body.data.sitesCreated).toBe(1);
+
+    const site = await prisma.site.findFirst({ where: { accountId: manager.accountId, name: siteName } });
+    expect(site).toBeTruthy();
+    const building = await prisma.building.findFirst({ where: { accountId: manager.accountId, siteId: site.id, name: buildingName } });
+    expect(building).toBeTruthy();
+    const area = await prisma.area.findFirst({ where: { accountId: manager.accountId, siteId: site.id, name: areaName } });
+    expect(area).toBeTruthy();
+    expect(area.buildingId).toBe(building.id); // area inherits the building it was created under
+
+    const asset = await prisma.asset.findFirst({ where: { accountId: manager.accountId, serialNumber: serial } });
+    expect(asset).toBeTruthy();
+    expect(asset.siteId).toBe(site.id);
+    expect(asset.buildingId).toBe(building.id);
+    expect(asset.areaId).toBe(area.id);
+  });
+});
+
+// autoApplySchedules defaults to true (opt OUT explicitly) — a freshly
+// imported asset silently gets MaintenanceSchedule rows from the GLOBAL
+// task-definition matrix for its equipment type. They must land UNBASELINED
+// (nextDueDate/lastCompletedDate null) — no proof any maintenance was
+// actually done, so they must not read as compliant.
+describe('assetsImport autoApplySchedules defaults on and lands schedules unbaselined', () => {
+  test('default (field omitted) creates unbaselined MaintenanceSchedule rows for the equipment type', async () => {
+    const siteName = `SchedSite ${Date.now()}`;
+    await prisma.site.create({ data: { accountId: manager.accountId, name: siteName } });
+    const serial = `SCHED-${Date.now()}`;
+    // SWITCHGEAR carries a non-empty global task matrix (confirmed by the
+    // lean-program tests — SWGR_INSULATION_RES / SWGR_IR_THERMO always apply).
+    const csv = `Site,Equipment Type,Serial Number\n${siteName},SWITCHGEAR,${serial}\n`;
+    const columnMap = JSON.stringify({
+      'Site': 'siteName',
+      'Equipment Type': 'equipmentType',
+      'Serial Number': 'serialNumber',
+    });
+    const res = await request(app).post('/api/assets/import/commit')
+      .set('Authorization', auth(manager))
+      .field('columnMap', columnMap)
+      // autoApplySchedules deliberately omitted — exercising the on-by-default branch.
+      .attach('file', Buffer.from(csv), 'assets.csv');
+    expect(res.status).toBeLessThan(300);
+    expect(res.body.data.autoApplySchedules).toBe(true);
+    expect(res.body.data.schedulesCreated).toBeGreaterThan(0);
+    expect(res.body.data.assetsWithProgram).toBe(1);
+    expect(res.body.data.assetsWithoutProgram).toBe(0);
+
+    const asset = await prisma.asset.findFirst({ where: { accountId: manager.accountId, serialNumber: serial } });
+    expect(asset).toBeTruthy();
+    const schedules = await prisma.maintenanceSchedule.findMany({ where: { accountId: manager.accountId, assetId: asset.id } });
+    expect(schedules.length).toBeGreaterThan(0);
+    for (const s of schedules) {
+      expect(s.nextDueDate).toBeNull();
+      expect(s.lastCompletedDate).toBeNull();
+    }
   });
 });
 
