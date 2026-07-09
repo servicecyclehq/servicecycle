@@ -131,7 +131,8 @@ Every High-severity item shipped. See `docs/REMEDIATION_SUMMARY_2026-07-08.md` f
 ## Remediation pass Run 2 close-out (2026-07-08, same day)
 
 Full writeup: `docs/REMEDIATION_SUMMARY_2026-07-08_RUN2.md`. `HEAD` before →
-`a683d8e`; 6 code/infra commits, SHAs below. Every item re-verified against
+`a683d8e`, deployed HEAD → `bbb8a32` (includes a lockfile hotfix found
+mid-deploy, see below); 7 code/infra commits, SHAs below. Every item re-verified against
 live code first (not trusted from Run 1's docs) — several turned out to be
 partially wrong (W1-M8's "5 breaking tests" was actually 7; the 5 named
 W1-M10 "priority" files all had real coverage already; `FailedLoginAttempt`
@@ -169,4 +170,9 @@ session couldn't route around — see Run 2 doc §3 for what covered the LOTO
 changes instead (tsc against regenerated Prisma types, migrate deploy,
 direct review).
 
-**Deployed:** see Run 2 doc §4 for the actual sequence and outcome.
+**Deployed:** ✅ live — `server-migrate` (2 new migrations applied clean),
+`server`, `deploy_client`, and `reseed_demo` all succeeded; `GET /api/ready`
+→ `200`; clean logs. First `server-migrate` attempt hit a `package.json`/
+`package-lock.json` drift (`npm ci` exit 1) from two same-session dependency
+edits never followed by a lockfile regen — fixed and shipped as `bbb8a32`.
+See Run 2 doc §4 for the full sequence and outcome.
