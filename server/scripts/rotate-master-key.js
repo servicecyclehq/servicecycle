@@ -4,14 +4,43 @@
  *
  * MASTER_KEY rotation for ServiceCycle envelope-encrypted DB columns.
  *
- * v0.73.5 (CloudConnector credentials added; originally v0.67.11, audit High H26).
+ * v0.74.0 (2026-07-08 Run 2, W1-M2 — see below; originally v0.73.5, audit High H26).
+ *
+ * 2026-07-08 Run 2 fix notes (W1-M2, re-verified against live schema before
+ * writing this):
+ *   - The previous `rotateCloudConnectors()` called `prisma.cloudConnector.*`
+ *     -- there is no `CloudConnector` model anywhere in schema.prisma (grep
+ *     confirmed zero matches) and never has been in this repo's migration
+ *     history. That call would throw `TypeError: Cannot read properties of
+ *     undefined (reading 'findMany')` the instant this script ran, before
+ *     touching anything else. Removed.
+ *   - Replaced with `rotateAccountSecrets()`, covering the two fields the
+ *     prior audit correctly identified as genuinely missing:
+ *     `Account.importWebhookSecret` and `Account.storageS3KeyId` /
+ *     `Account.storageS3Secret` (schema.prisma, on the Account model) --
+ *     all three use the same `lib/crypto.ts` "enc.v1:" sentinel scheme as
+ *     everything else here, confirmed via `lib/webhookImport.ts` and
+ *     `lib/storage.ts`'s own `decryptIfEncrypted()` calls on these exact
+ *     fields.
+ *   - Idempotency: every rotate* function now tries the NEW key first via
+ *     `decryptWithEither()` before falling back to the OLD key. A row that
+ *     decrypts cleanly with the new key is already-rotated and is skipped
+ *     (not re-encrypted, not double-wrapped) -- so `--apply` is now safe to
+ *     re-run after a partial failure. Previously, a crash partway through
+ *     (e.g. after AccountSettings succeeded but before WebhookEndpoints ran)
+ *     left the DB in a mixed state that a straight re-run could not recover
+ *     from, because the already-rotated rows could no longer be decrypted
+ *     with OLD_MASTER_KEY and the script would abort immediately on them.
+ *   - The completion sentinel is now informational only (prints a note if a
+ *     prior run completed) rather than being the correctness mechanism --
+ *     per-row decrypt-with-either is what makes re-runs safe now.
  *
  * What it rotates:
  *   - AccountSetting.value (when prefixed `enc.v1:`)
  *   - WebhookEndpoint.url + .hmacSecret (always encrypted)
  *   - User.twoFactorSecret (when prefixed `enc.v1:`)
- *   - CloudConnector.credentials (JSON object -- each field value
- *     starting with `enc.v1:` is decrypted+re-encrypted in-place)
+ *   - Account.importWebhookSecret (when prefixed `enc.v1:`)
+ *   - Account.storageS3KeyId + Account.storageS3Secret (when prefixed `enc.v1:`)
  *
  * What it does NOT rotate:
  *   - Document file content on disk / S3 (uses lib/docCrypto.js with
@@ -28,20 +57,23 @@
  *   OLD_MASTER_KEY .......  the OLD key (for decrypt-with-old)
  *
  * Modes:
- *   --dry-run   ..  count rows + decrypt every encrypted value with the
- *                   OLD key to verify it's recoverable. Does NOT write.
- *                   This is the SAFE first step.
- *   --apply     ..  decrypt-with-old + encrypt-with-new + UPDATE. Writes a
- *                   sentinel file `.master-key-rotation-completed-at`
- *                   when finished so re-runs of the same rotation skip.
+ *   --dry-run   ..  count rows + decrypt every encrypted value (new key
+ *                   first, then old) to verify it's recoverable. Does NOT
+ *                   write. This is the SAFE first step.
+ *   --apply     ..  decrypt-with-new-or-old + encrypt-with-new (skipping
+ *                   already-rotated values) + UPDATE. Writes a sentinel
+ *                   file `.master-key-rotation-completed-at` when finished.
+ *                   Safe to re-run -- see idempotency note above.
  *   (no flag)   ..  prints usage + exits 1.
  *
  * Atomicity:
  *   Each table is rotated inside its own prisma transaction. If a row
- *   fails decrypt, the transaction rolls back. The "first failure
- *   abort + don't touch downstream tables" model is intentional --
- *   you want to know IMMEDIATELY if a value isn't recoverable with the
- *   old key before you commit any rewrites.
+ *   fails decrypt with EITHER key, the transaction rolls back. The "first
+ *   failure abort + don't touch downstream tables" model is intentional --
+ *   you want to know IMMEDIATELY if a value isn't recoverable with either
+ *   key before you commit any rewrites. Because already-rotated rows are
+ *   now detected and skipped, re-running after fixing the underlying issue
+ *   (e.g. a wrong OLD_MASTER_KEY) will simply pick up where it left off.
  *
  * Usage:
  *   # Set NEW MASTER_KEY in .env first; keep OLD_MASTER_KEY alongside:
@@ -49,7 +81,7 @@
  *   #   OLD_MASTER_KEY=<old-44-char-base64>
  *   docker compose -f docker-compose.ghcr.yml exec server \
  *     node scripts/rotate-master-key.js --dry-run
- *   # If clean, run apply:
+ *   # If clean, run apply (safe to re-run if it fails partway):
  *   docker compose -f docker-compose.ghcr.yml exec server \
  *     node scripts/rotate-master-key.js --apply
  *   # After success, remove OLD_MASTER_KEY from .env. Old backups in
@@ -98,6 +130,20 @@ function encryptWith(plaintext, keyBytes) {
   return SENTINEL + Buffer.concat([iv, tag, ct]).toString('base64');
 }
 
+/**
+ * 2026-07-08 Run 2 (W1-M2): try the NEW key first (already-rotated case),
+ * fall back to the OLD key (not-yet-rotated case). Throws only if NEITHER
+ * key can decrypt -- a genuine corruption/wrong-key situation the operator
+ * needs to know about immediately, same as before.
+ */
+function decryptWithEither(b64Encoded, newKey, oldKey) {
+  try {
+    return { plaintext: decryptWith(b64Encoded, newKey), alreadyNew: true };
+  } catch (_e) {
+    return { plaintext: decryptWith(b64Encoded, oldKey), alreadyNew: false };
+  }
+}
+
 function parseKey(b64, label) {
   if (!b64) {
     console.error(`[rotate] ERROR: ${label} env var is not set`);
@@ -117,21 +163,21 @@ async function rotateAccountSettings(prisma, oldKey, newKey, dryRun) {
     select: { id: true, accountId: true, key: true, value: true },
   });
   console.log(`[rotate] AccountSetting: ${rows.length} encrypted rows`);
-  let updated = 0;
+  let updated = 0, skippedAlreadyNew = 0;
   for (const r of rows) {
     try {
-      const plain = decryptWith(r.value, oldKey);
+      const { plaintext, alreadyNew } = decryptWithEither(r.value, newKey, oldKey);
+      if (alreadyNew) { skippedAlreadyNew++; continue; }
       if (!dryRun) {
-        const re = encryptWith(plain, newKey);
-        await prisma.accountSetting.update({ where: { id: r.id }, data: { value: re } });
+        await prisma.accountSetting.update({ where: { id: r.id }, data: { value: encryptWith(plaintext, newKey) } });
         updated++;
       }
     } catch (e) {
-      console.error(`[rotate] AccountSetting ${r.id} (${r.key}) FAILED decrypt with OLD_MASTER_KEY: ${e.message}`);
+      console.error(`[rotate] AccountSetting ${r.id} (${r.key}) FAILED decrypt with either key: ${e.message}`);
       throw e;
     }
   }
-  console.log(`[rotate] AccountSetting: ${dryRun ? 'verified' : 'rewrote'} ${dryRun ? rows.length : updated}`);
+  console.log(`[rotate] AccountSetting: ${dryRun ? 'verified' : 'rewrote'} ${dryRun ? rows.length - skippedAlreadyNew : updated} (${skippedAlreadyNew} already on new key)`);
   return rows.length;
 }
 
@@ -140,27 +186,29 @@ async function rotateWebhookEndpoints(prisma, oldKey, newKey, dryRun) {
     select: { id: true, url: true, hmacSecret: true },
   });
   console.log(`[rotate] WebhookEndpoint: ${rows.length} rows (always-encrypted url + hmacSecret)`);
-  let updated = 0;
+  let updated = 0, skippedAlreadyNew = 0;
   for (const r of rows) {
     try {
-      const urlPlain    = decryptWith(r.url,        oldKey);
-      const secretPlain = decryptWith(r.hmacSecret, oldKey);
+      const urlRes    = decryptWithEither(r.url,        newKey, oldKey);
+      const secretRes = decryptWithEither(r.hmacSecret, newKey, oldKey);
+      const bothAlreadyNew = urlRes.alreadyNew && secretRes.alreadyNew;
+      if (bothAlreadyNew) { skippedAlreadyNew++; continue; }
       if (!dryRun) {
         await prisma.webhookEndpoint.update({
           where: { id: r.id },
           data: {
-            url:        encryptWith(urlPlain,    newKey),
-            hmacSecret: encryptWith(secretPlain, newKey),
+            url:        urlRes.alreadyNew    ? r.url        : encryptWith(urlRes.plaintext,    newKey),
+            hmacSecret: secretRes.alreadyNew ? r.hmacSecret : encryptWith(secretRes.plaintext, newKey),
           },
         });
         updated++;
       }
     } catch (e) {
-      console.error(`[rotate] WebhookEndpoint ${r.id} FAILED decrypt with OLD_MASTER_KEY: ${e.message}`);
+      console.error(`[rotate] WebhookEndpoint ${r.id} FAILED decrypt with either key: ${e.message}`);
       throw e;
     }
   }
-  console.log(`[rotate] WebhookEndpoint: ${dryRun ? 'verified' : 'rewrote'} ${dryRun ? rows.length : updated}`);
+  console.log(`[rotate] WebhookEndpoint: ${dryRun ? 'verified' : 'rewrote'} ${dryRun ? rows.length - skippedAlreadyNew : updated} (${skippedAlreadyNew} already on new key)`);
   return rows.length;
 }
 
@@ -170,57 +218,70 @@ async function rotateUserTotpSecrets(prisma, oldKey, newKey, dryRun) {
     select: { id: true, twoFactorSecret: true },
   });
   console.log(`[rotate] User.twoFactorSecret: ${rows.length} encrypted rows`);
-  let updated = 0;
+  let updated = 0, skippedAlreadyNew = 0;
   for (const r of rows) {
     try {
-      const plain = decryptWith(r.twoFactorSecret, oldKey);
+      const { plaintext, alreadyNew } = decryptWithEither(r.twoFactorSecret, newKey, oldKey);
+      if (alreadyNew) { skippedAlreadyNew++; continue; }
       if (!dryRun) {
-        await prisma.user.update({ where: { id: r.id }, data: { twoFactorSecret: encryptWith(plain, newKey) } });
+        await prisma.user.update({ where: { id: r.id }, data: { twoFactorSecret: encryptWith(plaintext, newKey) } });
         updated++;
       }
     } catch (e) {
-      console.error(`[rotate] User ${r.id} 2FA FAILED decrypt with OLD_MASTER_KEY: ${e.message}`);
+      console.error(`[rotate] User ${r.id} 2FA FAILED decrypt with either key: ${e.message}`);
       throw e;
     }
   }
-  console.log(`[rotate] User.twoFactorSecret: ${dryRun ? 'verified' : 'rewrote'} ${dryRun ? rows.length : updated}`);
+  console.log(`[rotate] User.twoFactorSecret: ${dryRun ? 'verified' : 'rewrote'} ${dryRun ? rows.length - skippedAlreadyNew : updated} (${skippedAlreadyNew} already on new key)`);
   return rows.length;
 }
 
-async function rotateCloudConnectors(prisma, oldKey, newKey, dryRun) {
-  const rows = await prisma.cloudConnector.findMany({
-    select: { id: true, provider: true, credentials: true },
+/**
+ * 2026-07-08 Run 2 (W1-M2): replaces the old rotateCloudConnectors() (which
+ * called a model that doesn't exist -- see file header). Covers the two
+ * Account-level encrypted fields the original audit found genuinely missing:
+ * importWebhookSecret (lib/webhookImport.ts) and storageS3KeyId/storageS3Secret
+ * (lib/storage.ts, routes/settings.ts) -- all three optionally "enc.v1:"
+ * prefixed, same scheme as AccountSetting.value above.
+ */
+async function rotateAccountSecrets(prisma, oldKey, newKey, dryRun) {
+  const FIELDS = ['importWebhookSecret', 'storageS3KeyId', 'storageS3Secret'];
+  const rows = await prisma.account.findMany({
+    where: {
+      OR: FIELDS.map((f) => ({ [f]: { startsWith: SENTINEL } })),
+    },
+    select: { id: true, importWebhookSecret: true, storageS3KeyId: true, storageS3Secret: true },
   });
-  console.log(`[rotate] CloudConnector: ${rows.length} rows`);
-  let encCount = 0;
-  let updated  = 0;
+  console.log(`[rotate] Account secrets (importWebhookSecret/storageS3KeyId/storageS3Secret): ${rows.length} accounts with at least one encrypted field`);
+
+  let fieldCount = 0, fieldsRewritten = 0, fieldsSkippedAlreadyNew = 0, accountsUpdated = 0;
   for (const r of rows) {
-    const creds = r.credentials;
-    if (!creds || typeof creds !== 'object') continue;
-    const newCreds = {};
+    const data = {};
     let changed = false;
-    for (const [k, v] of Object.entries(creds)) {
-      if (typeof v === 'string' && v.startsWith(SENTINEL)) {
-        encCount++;
-        try {
-          const plain = decryptWith(v, oldKey);
-          newCreds[k] = dryRun ? v : encryptWith(plain, newKey);
+    for (const field of FIELDS) {
+      const val = r[field];
+      if (typeof val !== 'string' || !val.startsWith(SENTINEL)) continue;
+      fieldCount++;
+      try {
+        const { plaintext, alreadyNew } = decryptWithEither(val, newKey, oldKey);
+        if (alreadyNew) { fieldsSkippedAlreadyNew++; continue; }
+        if (!dryRun) {
+          data[field] = encryptWith(plaintext, newKey);
           changed = true;
-        } catch (e) {
-          console.error(`[rotate] CloudConnector ${r.id} (${r.provider}) field "${k}" FAILED decrypt with OLD_MASTER_KEY: ${e.message}`);
-          throw e;
         }
-      } else {
-        newCreds[k] = v;
+        fieldsRewritten++;
+      } catch (e) {
+        console.error(`[rotate] Account ${r.id} field "${field}" FAILED decrypt with either key: ${e.message}`);
+        throw e;
       }
     }
     if (!dryRun && changed) {
-      await prisma.cloudConnector.update({ where: { id: r.id }, data: { credentials: newCreds } });
-      updated++;
+      await prisma.account.update({ where: { id: r.id }, data });
+      accountsUpdated++;
     }
   }
-  console.log(`[rotate] CloudConnector: ${dryRun ? 'verified' : 'rewrote'} ${encCount} encrypted fields across ${dryRun ? rows.length : updated} connectors`);
-  return encCount;
+  console.log(`[rotate] Account secrets: ${dryRun ? 'verified' : 'rewrote'} ${fieldsRewritten}/${fieldCount} fields (${fieldsSkippedAlreadyNew} already on new key) across ${dryRun ? rows.length : accountsUpdated} accounts`);
+  return fieldCount;
 }
 
 async function main() {
@@ -244,6 +305,14 @@ async function main() {
     process.exit(1);
   }
 
+  const sentinelPath = path.join(__dirname, '..', '.master-key-rotation-completed-at');
+  if (apply && fs.existsSync(sentinelPath)) {
+    // Informational only (see file header) -- per-row decrypt-with-either
+    // makes this run safe regardless; a prior completion just means most/all
+    // rows should already be on the new key and will be skipped quickly.
+    console.log(`[rotate] NOTE: a previous rotation completed at ${fs.readFileSync(sentinelPath, 'utf8').trim()}. Re-running is safe -- already-rotated rows are detected and skipped.`);
+  }
+
   // Avoid pulling in the server's bootstrapping chain (auth middleware,
   // express, etc.); only need PrismaClient.
   const { PrismaClient } = require('@prisma/client');
@@ -254,13 +323,12 @@ async function main() {
     total += await rotateAccountSettings(prisma, oldKey, newKey, dryRun);
     total += await rotateWebhookEndpoints(prisma, oldKey, newKey, dryRun);
     total += await rotateUserTotpSecrets(prisma, oldKey, newKey, dryRun);
-    total += await rotateCloudConnectors(prisma, oldKey, newKey, dryRun);
+    total += await rotateAccountSecrets(prisma, oldKey, newKey, dryRun);
     if (apply) {
-      const sentinelPath = path.join(__dirname, '..', '.master-key-rotation-completed-at');
       fs.writeFileSync(sentinelPath, new Date().toISOString() + '\n');
-      console.log(`[rotate] APPLIED. ${total} encrypted values rewritten. Sentinel: ${sentinelPath}`);
+      console.log(`[rotate] APPLIED. ${total} encrypted values checked (already-on-new-key rows skipped, see per-table logs above). Sentinel: ${sentinelPath}`);
     } else {
-      console.log(`[rotate] DRY-RUN COMPLETE. ${total} encrypted values verified-decryptable with OLD_MASTER_KEY.`);
+      console.log(`[rotate] DRY-RUN COMPLETE. ${total} encrypted values checked, all recoverable with the new or old key.`);
     }
   } finally {
     await prisma.$disconnect();
