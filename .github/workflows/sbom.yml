@@ -50,7 +50,7 @@ jobs:
         working-directory: ${{ matrix.target }}
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ matrix.target }}-${{ github.sha }}
           path: ${{ matrix.target }}/cyclonedx.json
@@ -81,7 +81,7 @@ jobs:
           skip-dirs: 'node_modules,client/node_modules,server/node_modules,sdk/node_modules,client/dist,server/dist'
 
       - name: Upload SPDX SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-spdx-${{ github.sha }}
           path: sbom.spdx.json
