@@ -11,6 +11,25 @@ All 7 required items + both "if time" items are complete on branch `tooling-adop
 
 ---
 
+## ✅ Morning 2026-07-09 — close-out (MERGED)
+
+Branch **squash-merged to `main` @ `7172beb`** (linear history) after getting all CI green. Work done this morning:
+
+- **sdk CI failures root-caused + fixed** — `sdk/package-lock.json` was accidentally untracked (client/server were committed); it broke the sdk legs of License / knip / dependency-cruiser. Committed it (valid, not gitignored). All three now pass.
+- **DEMO_LANDMINES key prefixes REDACTED** (`gsk_<REDACTED>`/`AQ.<REDACTED>`). Current tree clean; historical commit `f0368fbb7` still holds them so the `.gitleaksignore` entry stays (full purge = history rewrite; real fix = rotate the keys, still a to-do).
+- **6 undeclared deps DECLARED** — `jszip`/`archiver`/`ms` → server deps; `openai`/`swagger-ui-dist` → server **optionalDependencies** (both have graceful require-guarded fallbacks); `png-to-ico` → client devDep. knip unlisted 7→0; server `tsc` + `npm ci` clean. ⚠️ `openai` pinned to latest 6.x — validate against `server/lib/ai.ts` when the BYO-OpenAI path is next used.
+- **Pre-existing main CI failure fixed** — the `CI` "OpenAPI drift check" was red on main (independent of tooling): committed `docs/openapi.json` listed 4 removed `/api/settings/encryption/*` paths. Regenerated the spec (`npm run openapi:build`); drift check green.
+- **`servicecyclehq` = personal User account** (not an org) — resolves the gitleaks-license question (moot anyway post-CLI-swap).
+- **All 6 CI jobs green** on the merged content (Gitleaks, CI, License, Knip, dependency-cruiser, Trivy).
+
+### Still needs Dustin (his actions — I can't do these)
+
+- **Add `RENOVATE_TOKEN` secret** — Renovate opens no PRs until it exists.
+- **Rotate the GROQ + GEMINI keys** — the DEMO_LANDMINES finding's real remediation (redaction only cleaned the doc, not the live keys).
+- **CCA-F Partner Academy course completion** — check status under the softwareone.com email (Sept 24 first-15 bonus race).
+
+---
+
 ## Repo facts verified this session (ground truth)
 
 - Branch `tooling-adoptions` created off `main` @ `ac45204` (verified `git branch --show-current`).
