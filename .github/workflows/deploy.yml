@@ -65,7 +65,7 @@ jobs:
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       # TODO: pin to SHA digest for supply chain security
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # workflow_run checkouts default to the workflow FILE's ref (the
           # branch that's currently on main HEAD), not necessarily the exact
