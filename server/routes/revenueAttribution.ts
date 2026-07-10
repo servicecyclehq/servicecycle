@@ -26,7 +26,17 @@ router.get('/attribution', requireManager, async (req: any, res: any) => {
     const data = await buildRevenueAttribution(prisma, req.user.accountId, { windowDays });
     return res.json({ success: true, data });
   } catch (err: any) {
-    console.error('[revenue/attribution]', err?.message || err);
+    // 2026-07-09: proof-of-pattern for the console.* -> req.log migration
+    // (pino-http, req-id-bound, redaction already configured in index.ts;
+    // this was the first route to actually adopt req.log). Falls back to
+    // console.error if req.log is somehow unavailable (pino-http failed to
+    // load — see the try/catch around its app.use() in index.ts) so an
+    // error is never silently swallowed either way.
+    if (req.log) {
+      req.log.error({ err }, '[revenue/attribution] failed to build revenue attribution');
+    } else {
+      console.error('[revenue/attribution]', err?.message || err);
+    }
     return res.status(500).json({ success: false, error: 'Failed to build revenue attribution.' });
   }
 });
