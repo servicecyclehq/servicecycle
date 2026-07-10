@@ -1,7 +1,7 @@
 # ServiceCycle — Data Room Index
 
 **Classification:** Confidential / Diligence
-**Updated:** 2026-07-04 (SOC 2 readiness sweep)
+**Updated:** 2026-07-10 (added verified diligence summary; re-verification pass)
 **Contact:** servicecycle.app (demo access on request)
 
 This index maps the standard PE/M&A due diligence workstream categories to the
@@ -15,6 +15,7 @@ unless noted.
 | Request | Document |
 |---|---|
 | "Send me the acquisition overview" | `docs/ACQUISITION_BRIEF.md` |
+| "Give me the verified technical diligence summary (evidence-cited, includes known gaps)" | `docs/DILIGENCE_SUMMARY.md` |
 | "Can we do a demo?" | `docs/DEMO_SCRIPT.md` (guide) + servicecycle.app (live) |
 | "What's the tech stack?" | `docs/ARCHITECTURE.md` |
 | "What are the security controls?" | `docs/SOC2_CONTROLS.md` + `docs/SECURITY_TRUST_PACK.md` |

@@ -1,7 +1,7 @@
 # SOC 2 Readiness Checklist — ServiceCycle
 
 **Compiled:** 2026-07-04
-**Last updated:** 2026-07-04 (three autonomous sessions — 36 items closed to green, 9 moved red→yellow)
+**Last updated:** 2026-07-10 (independent re-verification of all 15 yellows against live repo/CI/GitHub/prod — tally unchanged at 80/15/0; see session log)
 **Stack constraint:** GitHub + Cowork only, $0 spend, solo dev
 **Anchor doc:** `docs/SOC2_CONTROLS.md` (Trust Services Criteria mapping)
 **Purpose:** Synthesized checklist of every meaningful SOC 2 control across five AI proposals (Copilot base + ChatGPT, DeepSeek, Perplexity, Gemini), deduplicated and scored against SC's current state.
@@ -11,6 +11,26 @@ Legend: 🟢 Done · 🟡 Partial / documented but no operating evidence · 🔴
 ---
 
 ## Session log
+
+### 2026-07-10 — Independent re-verification of all 15 yellows (read-only; no status changes)
+
+Re-checked every open item against live sources rather than prior session notes — GitHub API (authenticated as `servicecyclehq`), Actions run history, git signature status, evidence-file fill state, and the production droplet. **Tally unchanged: 🟢 80 / 🟡 15 / 🔴 0.** None of the 15 could be closed autonomously; each genuinely needs the founder, an attorney, or a calendar/cron boundary. Per-item evidence:
+
+- **A8/L6** — `2026-Q3/access-review-2026-07-04.md` still has 8/8 checkboxes unchecked. Needs Dustin's screenshot + checkbox pass.
+- **A10** — no MFA screenshots exist anywhere under `docs/compliance/evidence/`. Needs Dustin (5–10 min per vendor console).
+- **B7** — `git log --format=%G?` shows every recent `main` commit unsigned; GitHub `required_signatures` = false (API-checked). Needs Dustin: local SSH signing per `SIGNED_COMMITS.md`, then flip enforcement.
+- **B11** — `production` environment exists with **0 protection rules**, `can_admins_bypass: true` (API-checked). Needs Dustin: required-reviewer or wait-timer rule in Settings → Environments. Note: the repo has **zero Actions secrets** (also API-checked), so `deploy.yml` fails on every push and this gate is currently moot — decide it together with the deploy-secrets question in `GITHUB_ADMIN_SETUP.md`.
+- **C9/L10** — `2026-Q3/quarterly-security-review-2026-07-04.md` still has 14/14 checkboxes unchecked. Needs Dustin's walkthrough + sign-off.
+- **D5** — `betterStack.ts` still gated on unset `BETTERSTACK_*` env; no activation evidence anywhere; no external uptime alerting exists today. Needs Dustin: run `BETTER_STACK_ACTIVATION.md` against the dashboard + set env on the droplet.
+- **D9** — baseline populated; month-end close 2026-08-01 via the scheduled task. No action before then.
+- **F3/L7** — material progress since last update: the restore-test crons had **never completed a real run** until `c39b5d4` (2026-07-06) fixed them (+ 4 real-DB regression tests). Schedule, corrected: weekly TOC check Sundays 04:00 UTC (`runRestoreTest`), monthly deep restore 1st 05:00 UTC (`runDeepRestoreTest`). First live post-fix weekly run expected **2026-07-12**; paste its output into the scaffolded evidence file to close.
+- **F5** — verified live on the droplet: exactly one nightly encrypted backup exists (`servicecycle-backup-2026-07-10T02-00-00-114Z.sql.gz.enc`, written 02:00 UTC today — the first to persist after the `3da89a2` bind-mount ownership fix). Destination is **local droplet disk**; no `BACKUP_S3_*` credentials in prod. Needs Dustin: offsite S3-compatible credentials into the droplet `.env` (the vendor account already exists per `SECRETS_INVENTORY.md`). Until then backups share the droplet's failure domain — the highest-value yellow on this list.
+- **F6** — first-month template ready; closes at month-end 2026-08-01 (its S3-lifecycle row depends on F5).
+- **H7** — draft privacy policy live at `/privacy` + `/legal/privacy` (`client/src/App.jsx`). Needs an attorney; nothing founder-mechanical closes this.
+- **K1** — `ENDPOINT_SECURITY.md` exists; still zero dated BitLocker/screen-lock screenshots in evidence. Needs Dustin (~5 min).
+
+Also corrected this session (docs-only): `SOC2_ONE_PAGER.md` carried two claims that did not survive verification — it said backups go to an "off-host S3-compatible target" (they are local-only until F5 closes) and still listed branch protection + DAST target among open GitHub admin items (both closed in Session 8; re-confirmed live today). Both fixed. For the record: all 10 CI security/quality gates were green on `main` HEAD `1d99c9b` (Actions API, 2026-07-09 runs), the first scheduled DAST run succeeded 2026-07-08, and the `overnight-hardening` branch (6 commits incl. the `2917a3b` cross-tenant disaster-events fix) is not yet merged or deployed — tracked outside this checklist.
+
 
 ### 2026-07-04 — First autonomous SOC 2 sweep
 
@@ -244,11 +264,11 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 | B4 | Dependabot on server, client, Actions | 🟢 | `.github/dependabot.yml` |
 | B5 | **Branch protection** (required PR, required status checks) | 🟢 | **LIVE on main (Session 8)** — required checks: `Scan for secrets`, `Analyze (javascript-typescript)`, `Filesystem scan (package manifests)`. Linear history, no force push, no deletions, required conversation resolution. `enforce_admins: false` per RAR-006 solo-dev emergency-fix path |
 | B6 | **CODEOWNERS** file | 🟢 | `.github/CODEOWNERS` (Session 2) |
-| B7 | **Signed commits** (GPG or Sigstore) | 🟡 | `verify-signed-commits.yml` + `docs/security/SIGNED_COMMITS.md` (Session 2); needs local GPG/SSH setup + branch protection enable |
+| B7 | **Signed commits** (GPG or Sigstore) | 🟡 | `verify-signed-commits.yml` + `docs/security/SIGNED_COMMITS.md` (Session 2); needs local GPG/SSH setup, then flip `required_signatures`. Re-verified 2026-07-10: all recent `main` commits unsigned, `required_signatures` off |
 | B8 | **Release tagging automation + CHANGELOG** | 🟢 | `release-tag.yml` (Session 2) + `CHANGELOG.md` (Session 1) |
 | B9 | **Release verification checklist** (tests pass, scans pass, migration reviewed, rollback documented) | 🟢 | `docs/security/RELEASE_VERIFICATION.md` (Session 3) consolidated checklist + PR-body sign-off stub |
 | B10 | **Dependency approval process** (purpose, maintainer, last update, CVEs, approver) | 🟢 | `docs/security/DEPENDENCY_DECISIONS.md` (Session 2) |
-| B11 | **Environment approvals for deploys** | 🟡 | `deploy.yml` references `environment: production` (Session 7); `production` env CREATED via API (Session 8) with `can_admins_bypass:true` and no protection rules. Dustin adds required-reviewer / wait-timer rules in Settings → Environments → production to activate the gate |
+| B11 | **Environment approvals for deploys** | 🟡 | `deploy.yml` references `environment: production` (Session 7); `production` env CREATED via API (Session 8) with `can_admins_bypass:true` and no protection rules. Dustin adds required-reviewer / wait-timer rules in Settings → Environments → production to activate the gate. Re-verified 2026-07-10 via API: still 0 protection rules; note repo has zero Actions secrets so `deploy.yml` is inert regardless |
 | B12 | **Solo-dev separation-of-duties exception** documented | 🟢 | `CHANGE_REVIEW_CHECKLIST.md` v1.1 §Solo-founder + `RAR-006` (Session 2) |
 
 ---
@@ -277,7 +297,7 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 | D2 | Auth, admin, user, error, LLM, deploy events logged | 🟢 | `server/lib/activityLog.ts`; api_v1_call events |
 | D3 | SIEM export (ndjson + CEF) | 🟢 | `GET /api/activity/export` |
 | D4 | Redaction middleware for PII in logs | 🟢 | `server/lib/redact.ts` `redactEmail()` |
-| D5 | Better Stack / uptime monitoring wired | 🟡 | `server/lib/betterStack.ts` present; activation runbook now at `docs/security/BETTER_STACK_ACTIVATION.md`; still needs execution against the Better Stack dashboard |
+| D5 | Better Stack / uptime monitoring wired | 🟡 | `server/lib/betterStack.ts` present; activation runbook at `docs/security/BETTER_STACK_ACTIVATION.md`; still needs execution against the Better Stack dashboard + `BETTERSTACK_*` env on the droplet. Re-verified 2026-07-10: not activated; no external uptime alerting exists |
 | D6 | Health check endpoint | 🟢 | `GET /api/health` |
 | D7 | **Log review procedure + dated evidence** (weekly glance, jotted) | 🟢 | Procedure at `docs/security/LOG_REVIEW.md` (Session 3) + first dated bullet at `docs/compliance/evidence/2026-07/log-review-weekly.md` for 2026-06-27→2026-07-04 window (Session 4) |
 | D8 | **Monitoring matrix** — "what would alert me if X" | 🟢 | `docs/security/MONITORING_MATRIX.md` (this session) |
@@ -305,9 +325,9 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 |---|---|---|---|
 | F1 | Nightly encrypted pg_dump to S3, 30-day retention | 🟢 | `server/lib/backup.ts`, `server/lib/backupCrypto.ts` |
 | F2 | Automated monthly restore test | 🟢 | `server/lib/restoreTest.ts` |
-| F3 | **Dated restore-test evidence log** | 🟡 | July template scaffolded at `docs/compliance/evidence/2026-07/restore-test-2026-07.md` (Session 7); closes when Dustin pastes cron output after 2026-07-05 automated run |
+| F3 | **Dated restore-test evidence log** | 🟡 | July template scaffolded at `docs/compliance/evidence/2026-07/restore-test-2026-07.md` (Session 7). The cron itself was broken until `c39b5d4` (2026-07-06); first live post-fix weekly run expected 2026-07-12 — paste that output to close |
 | F4 | RTO ~2h / RPO ~24h documented | 🟢 | `SOC2_CONTROLS.md` CC9.1 |
-| F5 | **Backup destination credentials configured** | 🟡 | Needs prod env update |
+| F5 | **Backup destination credentials configured** | 🟡 | Verified 2026-07-10: nightly encrypted backup runs but lands on **local droplet disk** (`BACKUP_DEST` default); no `BACKUP_S3_*` in prod. Needs Dustin: offsite S3-compatible credentials into droplet `.env`. Highest-value yellow — backups currently share the droplet's failure domain |
 | F6 | **Secure disposal log** for old backups + old logs | 🟡 | Cadence doc + first-month template at `docs/compliance/evidence/2026-07/secure-disposal-2026-07.md` (Session 6); closes at month-end 2026-08-01 |
 
 ---
@@ -420,27 +440,28 @@ Score: **🟢 78 / 🟡 17 / 🔴 0** (82% / 18% / 0%). Autonomous doc + evidenc
 
 **Interpretation:** the SC repo is now at **84% green, 16% yellow, 0% red.** Every SOC 2 control across A–L is done or has a documented execution path. The remaining 15 yellows need one of: screenshot/checkbox pass by the founder (7 items), a production env change (3 items — Better Stack, backup dest, deploy SSH key setup), local GPG config (1 item — B7), env-rules configuration in GH UI (1 item — B11), attorney review (1 item — H7), or automated month-end close-out (2 items — D9, F6).
 
-**The 15 yellows** are all execution-step-away items:
-- [2026-07-05 review fix] B5 branch protection and C7 DAST target var were
-  closed to 🟢 in Session 8 (see the callouts above and the Summary
-  scoreboard, which already reflects 80🟢/15🟡) — removed from this
-  breakdown, which had gone stale and still listed them as open.
-- 2 need Dustin admin action on GitHub (B7 signed commits — local GPG/SSH
-  setup, B11 environment gate — reviewer/wait-timer rules in Settings →
-  Environments) — runbook at `docs/security/GITHUB_ADMIN_SETUP.md`.
-- 6 need dated evidence execution — a screenshot/checkbox pass by the founder
-  (A8 access review, A10 MFA screenshots, C9 quarterly review, K1 endpoint
-  screenshots, L6 access review evidence, L10 quarterly review evidence — L6/
-  A8 and L10/C9 are the same underlying evidence file referenced from two
-  checklist sections).
-- 2 auto-close once Dustin pastes the already-scheduled cron output (F3
-  restore-test archive, L7 restore-test evidence — same evidence file, two
-  sections).
-- 2 need a production env or credential step (D5 Better Stack activation, F5
-  backup destination credentials).
+**The 15 yellows** (re-verified one-by-one 2026-07-10 — see that session-log
+entry for the live evidence behind each line). Three are duplicate ledger rows
+of the same artifact (L6=A8, L7=F3, L10=C9), so there are **12 distinct
+actions**:
+- 8 need Dustin's hands — A8/L6 first quarterly access review (fill the
+  scaffolded evidence file), A10 MFA screenshots per vendor console, B7 local
+  commit-signing setup then flip `required_signatures`, B11 reviewer/wait-timer
+  rules on the GitHub `production` environment (currently 0 rules; moot while
+  the repo has zero Actions secrets — decide with the deploy-secrets question
+  in `docs/security/GITHUB_ADMIN_SETUP.md`), C9/L10 first quarterly security
+  review walkthrough, D5 Better Stack activation + droplet env, F5 offsite
+  backup credentials into droplet `.env` (highest-value item — backups are
+  local-only today), K1 BitLocker/screen-lock screenshots.
+- 1 needs an attorney (H7 privacy-policy review; draft already live at
+  `/privacy` + `/legal/privacy`).
+- 2 close after the next scheduled cron run (F3/L7 restore-test evidence —
+  cron fixed `c39b5d4` 2026-07-06; first live weekly run expected 2026-07-12).
 - 2 auto-close at month-end 2026-08-01 with no action needed before then (D9
   security metrics full-month close, F6 secure disposal log first entry).
-- 1 needs attorney review (H7 privacy policy).
+- [2026-07-05 review fix, retained for history] B5 branch protection and C7
+  DAST target var were closed to 🟢 in Session 8; both re-confirmed live via
+  the GitHub API on 2026-07-10.
 
 There is no doc gap remaining. The remaining path to 100% is execution.
 

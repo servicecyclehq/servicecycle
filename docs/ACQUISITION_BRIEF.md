@@ -1,7 +1,7 @@
 # ServiceCycle — Acquisition Brief
 
 **Classification:** Confidential / Diligence  
-**Prepared:** 2026-06-25  
+**Prepared:** 2026-06-25 · **Updated:** 2026-07-10 (claims re-verified against live repo/CI/prod; the checkable technical companion is `docs/DILIGENCE_SUMMARY.md`)  
 **Contact:** servicecycle.app (demo access available on request)
 
 ---
@@ -117,7 +117,7 @@ The platform is production-deployed with a live demo at servicecycle.app:
 - **Revenue Intelligence** — super_admin-only, cross-tenant field-intelligence feed: arc-flash study pipeline with a 0–100 composite score, system-change alerts, plus dormant / greenfield / no-study leads; a platform rate sheet (researched US-average rates) drives dollar estimates; CSV export to the acquirer's CRM. SC detects; the CRM manages.
 - **Document layer** — customer-uploaded documents (one-lines, manuals, test reports, LOTO) surfaced on the asset, in field mode / via QR scan, on the site, and in an account-wide searchable library; accuracy acknowledgment at upload and download (storage-platform posture — SC stores and extracts, it does not author, verify, or generate documents)
 
-Security posture: SOC 2 Type I controls mapped and documented; 13 of the actionable TSC gaps closed; hash-chain audit log; AES-256-GCM encryption at rest; multi-layer rate limiting; tenant isolation tested.
+Security posture (re-verified 2026-07-10): 95-control SOC 2-style scorecard at 80 green / 15 yellow / 0 red (`docs/SOC2_READINESS_CHECKLIST.md`); CI plus 9 security/quality gates all green on `main` @ `1d99c9b` — CodeQL, Semgrep, Gitleaks, Trivy, CycloneDX SBOM, license-compliance gate, Knip, dependency-cruiser, signed-commit verifier — with a weekly OWASP ZAP baseline DAST against the live demo (first scheduled run green 2026-07-08); GitHub branch protection live with 3 required security checks; hash-chained tamper-evident audit log; AES-256-GCM master-key encryption for secret-bearing columns plus opt-in document encryption; multi-layer rate limiting; tenant isolation tested and documented (`docs/security/DATABASE_ISOLATION_PROOF.md`); DigitalOcean CSPM weekly scan (first scan clean). Hardening shipped since this brief was first prepared includes: SSO tenant check made fail-closed (`723fe84`), partner-webhook signing unified onto a replay-protected scheme (`621798e`), per-tenant BYO storage with DNS-rebind pinning (`10cf249`, `09a7f1d`), npm `ignore-scripts` supply-chain hardening (`1ec4ac1`), a Semgrep triage that fixed two real bugs including an XSS gap (`7869fb3`), and a two-run acquisition-audit remediation sweep (2026-07-08). Honest caveats — no third-party pentest, no formal SOC 2 engagement, single-VPS deployment with backups not yet offsite, and every open item — are stated plainly in `docs/DILIGENCE_SUMMARY.md` §5–6.
 
 ---
 
@@ -171,7 +171,7 @@ The product is self-contained and documented to operate without the founding eng
 - `docs/ENGINEERING_HANDOFF.md` — day-1 guide for a new engineering lead
 - `docs/KEY_ROTATION.md` — secret rotation procedures
 - `docs/INCIDENT_RESPONSE.md` — incident playbooks
-- Test suite: ~500 integration tests; CI via GitHub Actions
+- Test suite: 236 server-side Jest test files, ~2,000 declared cases across the unit (stubbed-Prisma) and real-Postgres integration projects, plus 6 Playwright e2e specs; 16 GitHub Actions workflows — CI and all security/quality gates green on `main` @ `1d99c9b` (2026-07-09)
 
 A new engineering team can deploy, maintain, and extend the platform without the original author. That is intentional — it is the prerequisite for the clean break.
 

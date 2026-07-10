@@ -10,7 +10,7 @@ artifacts:
 
 # Restore Test — 2026-07
 
-The monthly restore test runs automatically via the `restoreTest` cron in `server/index.ts` at 04:00 UTC on the first Sunday of the month (2026-07-05).
+The restore test runs automatically via the `restoreTest` cron in `server/index.ts` **weekly, Sundays 04:00 UTC** (`cron.schedule('0 4 * * 0', ...)`). Note (2026-07-10): the restore-test crons had never completed a real run until fixed in `c39b5d4` on 2026-07-06, so the 2026-07-05 scheduled run predates the fix — the first live artifact for this file comes from the **2026-07-12** run (or a manual trigger).
 
 For deep restore against a sidecar Postgres, the `deepRestoreTest` cron runs at 05:00 UTC on the 1st of the month (2026-07-01), gated on `PG_TEST_DB_URL` being set.
 
