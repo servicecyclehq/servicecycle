@@ -263,6 +263,23 @@ services:
       JWT_SECRET:   ${JWT_SECRET:?JWT_SECRET must be set in .env (>=32 chars, see server/.env.example)}
       MASTER_KEY:   ${MASTER_KEY:?MASTER_KEY must be set in .env (44-char base64 of 32 random bytes)}
 
+      # Key-rotation grace period. verifyToken() in lib/jwtSecrets.ts falls
+      # back to OLD_JWT_SECRET during a rotation window so existing sessions
+      # signed with the previous secret keep validating. 2026-07-09 audit:
+      # this whitelist never forwarded it, so a mid-rotation .env value would
+      # be silently ignored and rotation would look like a mass logout.
+      # Empty default = no rotation in progress (current behavior, unchanged).
+      OLD_JWT_SECRET: ${OLD_JWT_SECRET:-}
+
+      # Per-account feature flags also settable globally as a self-host
+      # operator override (DB-backed Account.feature.* takes precedence when
+      # set; these are the deployment-wide fallback). 2026-07-09 audit: read
+      # by lib/accountFeatures.ts since added but never whitelisted here --
+      # the env-level lever was silently inert (per-account DB overrides
+      # still worked). Both default OFF, matching current behavior.
+      ACCOUNT_FEATURE_SSO:          ${ACCOUNT_FEATURE_SSO:-}
+      ACCOUNT_FEATURE_QEMW_WALLET:  ${ACCOUNT_FEATURE_QEMW_WALLET:-}
+
       # Required when NODE_ENV=production so CORS locks to a specific origin.
       # Leave the default for local development; override on a real deploy.
       CLIENT_URL:   ${CLIENT_URL:-http://localhost:5173}
@@ -380,6 +397,13 @@ services:
       GROQ_VISION_MODEL:   ${GROQ_VISION_MODEL:-}
       GROQ_MODEL:          ${GROQ_MODEL:-}
       AI_VISION_FALLBACK:  ${AI_VISION_FALLBACK:-groq}
+      # 2026-07-09 env-whitelist audit: self-host escape hatch to avoid
+      # any Anthropic dependency for vision calls (nameplate OCR / photo
+      # inspect). Code has read this since it was added but this whitelist
+      # never forwarded it -- same silent-no-op bug class as the
+      # STORAGE_S3_*/BACKUP_S3_* fix above. Empty default preserves current
+      # behavior (falls through to AI_PROVIDER's own vision path).
+      AI_VISION_PROVIDER: ${AI_VISION_PROVIDER:-}
       AZURE_OPENAI_API_KEY:    ${AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_ENDPOINT:   ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
