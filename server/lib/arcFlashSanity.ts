@@ -28,6 +28,15 @@
 
 'use strict';
 
+// Shared per-component voltage parser -- the W8 (2026-07-05) post-mortem fix
+// for the whole-string-kV 1000x inflation bug: each numeric component scales
+// by ITS OWN immediately-following unit tail, never by a flag inferred from
+// elsewhere in the string. CJS require matches the repo's interop pattern
+// (see measurementSanity.ts / routes/assetPhotoInspect.ts).
+const { parseVoltageComponents } = require('./nameplateValidators') as {
+  parseVoltageComponents: (s: any) => number[];
+};
+
 export type Severity = 'error' | 'warning';
 export interface Finding { busName: string; code: string; severity: Severity; message: string; detail?: string; }
 
@@ -119,8 +128,17 @@ export function checkBusContradictions(bus: any, ctx: { utilityMaxFaultKA?: numb
   // [AFX-5] The AC PPE-Category (table) Method is not applicable above 15 kV — the
   // selection table NFPA 70E 2024 Table 130.7(C)(15)(a) tops out at 15 kV. Above that the
   // Incident Energy Analysis Method is required. (130.7(C)(15)(b) is the DC table.)
-  const nomV = num(bus.nominalVoltage != null ? String(bus.nominalVoltage).replace(/[^0-9.]/g, '') : null);
-  const nomVKv = bus.nominalVoltage != null && /kv/i.test(String(bus.nominalVoltage)) ? (nomV != null ? nomV * 1000 : null) : nomV;
+  // [demo-readiness 2026-07-10] Parse per-component with each component's OWN
+  // immediate unit tail (shared W8 parser above), then take the highest
+  // component as the bus nominal in volts. The two lines this replaces were
+  // the last surviving copy of the pre-W8 shape -- strip all non-digits plus
+  // ONE whole-string /kv/i flag -- which inflated multi-component strings
+  // ("480/277V" -> 480277 V; "480V/13.8kV" -> 48,013,800 V), firing spurious
+  // >15 kV method flags on common LV gear and flipping the IEEE-1584
+  // voltage-class envelopes below. Validation-only: the stored/displayed
+  // nominalVoltage string is never rewritten (sealed-study passthrough).
+  const nomComponents: number[] = bus.nominalVoltage != null ? parseVoltageComponents(bus.nominalVoltage) : [];
+  const nomVKv = nomComponents.length > 0 ? Math.max(...nomComponents) : null;
   if (bus.ppeMethod === 'ppe_category' && nomVKv != null && nomVKv > 15000) {
     add('ppe_category_exceeds_voltage_limit', 'error',
       'PPE Category (table) Method (Table 130.7(C)(15)(a)) is not applicable above 15 kV per NFPA 70E 2024. Use the Incident Energy Analysis Method at this voltage.',

@@ -590,3 +590,60 @@ describe('checkSystemContradictions', () => {
     });
   });
 });
+
+
+// -- nominalVoltage parsing regression (demo-readiness 2026-07-10) ------------
+// lib/arcFlashSanity carried the LAST surviving copy of the pre-W8 voltage
+// parse shape: strip every non-digit char, then apply ONE whole-string /kv/i
+// flag. Multi-component strings inflated ("480/277V" -> 480277 V;
+// "480V/13.8kV" -> 48,013,800 V), firing a spurious >15 kV PPE-method flag on
+// common LV gear and flipping the IEEE-1584 voltage-class envelopes. The fix
+// reuses lib/nameplateValidators.parseVoltageComponents (the W8 post-mortem
+// parser: each component scales by ITS OWN immediate unit tail) and takes the
+// highest component as the bus nominal. Validation-only path -- the stored /
+// displayed nominalVoltage string is untouched by design (PPE/ratings come
+// from the sealed study; ServiceCycle never rewrites them).
+describe('nominalVoltage parsing -- multi-component strings (regression)', () => {
+  test('common LV wye string "480/277V" does NOT fire the >15kV PPE-method flag', () => {
+    const f = checkBusContradictions({ busName: 'LV-WYE', nominalVoltage: '480/277V', ppeMethod: 'ppe_category' });
+    expect(codes(f)).not.toContain('ppe_category_exceeds_voltage_limit');
+  });
+
+  test('"480/277V" keeps the LV IEEE-1584 fault envelope (0.3 kA is below the 0.5 kA LV floor)', () => {
+    // Pre-fix: 480277 "V" classed the bus MV (floor 0.2 kA) and the underrange went unflagged.
+    const f = checkBusContradictions({ busName: 'LV-WYE', nominalVoltage: '480/277V', boltedFaultCurrentKA: 0.3 });
+    expect(codes(f)).toContain('fault_below_ieee1584_min');
+  });
+
+  test('"480/277V" keeps the LV electrode-gap envelope (100 mm exceeds the 76.2 mm LV max)', () => {
+    const f = checkBusContradictions({ busName: 'LV-WYE', nominalVoltage: '480/277V', conductorGapMm: 100 });
+    expect(codes(f)).toContain('gap_outside_ieee1584_range');
+  });
+
+  test('mixed-unit label "480V/13.8kV" resolves to 13.8 kV (highest component), not 48,013,800 V', () => {
+    const f = checkBusContradictions({ busName: 'XFMR-BUS', nominalVoltage: '480V/13.8kV', ppeMethod: 'ppe_category' });
+    expect(codes(f)).not.toContain('ppe_category_exceeds_voltage_limit'); // 13.8 kV <= 15 kV table limit
+  });
+
+  test('genuinely >15 kV bus still fires the PPE-method flag', () => {
+    const f = checkBusContradictions({ busName: 'HV', nominalVoltage: '34.5kV', ppeMethod: 'ppe_category' });
+    expect(codes(f)).toContain('ppe_category_exceeds_voltage_limit');
+  });
+
+  test('single-component forms are unchanged: "13.8kV", bare "13800", "480V"', () => {
+    expect(codes(checkBusContradictions({ busName: 'A', nominalVoltage: '13.8kV', ppeMethod: 'ppe_category' })))
+      .not.toContain('ppe_category_exceeds_voltage_limit');
+    expect(codes(checkBusContradictions({ busName: 'B', nominalVoltage: '13800', ppeMethod: 'ppe_category' })))
+      .not.toContain('ppe_category_exceeds_voltage_limit');
+    expect(codes(checkBusContradictions({ busName: 'C', nominalVoltage: '480V', boltedFaultCurrentKA: 0.3 })))
+      .toContain('fault_below_ieee1584_min');
+  });
+
+  test('same-side tap label "13.8/12.47kV" resolves MV (12.47 kV component), no NaN silent skip', () => {
+    // Pre-fix the digit-strip produced "13.812.47" -> NaN -> null (checks fell
+    // back to the MV default by accident). Now the kV-suffixed component wins.
+    const f = checkBusContradictions({ busName: 'TAP', nominalVoltage: '13.8/12.47kV', ppeMethod: 'ppe_category', conductorGapMm: 100 });
+    expect(codes(f)).not.toContain('ppe_category_exceeds_voltage_limit');
+    expect(codes(f)).not.toContain('gap_outside_ieee1584_range'); // MV gap envelope 19.05-254 mm
+  });
+});
