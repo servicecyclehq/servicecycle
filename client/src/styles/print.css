@@ -1,0 +1,271 @@
+/* ===========================================================================
+   print.css -- C1(a): the shared ServiceCycle print standard ("Field Report")
+   ===========================================================================
+   Spec: docs/design/direction-board-2026-07-12.html #dir-c (.m3 CSS block) +
+   docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md section A.
+   Server-side twin: server/lib/pdfStyle.ts (same masthead / numbered-section /
+   hairline-table / footer patterns for the pdfkit documents).
+
+   STATUS (C1): built, deliberately NOT imported anywhere yet. Vite only
+   bundles CSS that is imported from the module graph -- tokens.css sits
+   unimported in this same folder as proof (see index.css "UX-8-5 reconcile"
+   note). C2 wires this file up by adding, at the very top of
+   client/src/index.css (before any style rule):
+
+       @import './styles/print.css';
+
+   Do NOT import it from main.jsx: CSS imports in main.jsx once broke the
+   production build (v0.5.4 Rollup tree-shaking incident, see main.jsx).
+
+   RULES
+   - Tokens only. Every color/font references an index.css custom property
+     (canonical :root names --color-text / --color-primary / --color-border /
+     --font-mono etc., brand aliases --color-ink etc. where they read
+     better). No raw hex anywhere in this file.
+   - Inert by default. Everything except the .no-print / .print-only
+     conventions and link neutralization is keyed to a .print-doc container,
+     so importing this file changes nothing on screen and nothing at print
+     time for pages that have not opted in.
+   - Safety-format exemptions: ANSI Z535.4 label colors, the NFPA 70E
+     energized-work permit format, and the StudyAssetBinding popup label
+     sheet are normative regulatory formats -- they must NOT adopt these
+     classes beyond, at most, footer micro-typography.
+   - Dark-mode caveat (open for C2): tokens theme-switch under
+     [data-theme="dark"], so printing while dark mode is active inherits
+     dark values (near-white text on paper). C2 should force
+     data-theme="light" around window.print() (hex-free, recommended) or
+     re-pin print tokens in index.css where the light literals already
+     live. Deliberately not solved here to keep this file token-pure.
+
+   Page opt-in pattern (C2):
+     <div className="print-doc">
+       <header className="print-masthead print-only">
+         <h1 className="print-masthead-title">Overdue Maintenance Report</h1>
+         <div className="print-masthead-meta">ACME CORP<br/>SUN 13 JUL 2026, 04:12 UTC</div>
+       </header>
+       <div className="print-rule print-only"></div>
+       <section className="print-sec">
+         <div className="print-sec-head">
+           <span className="print-sec-no"></span>  <!-- auto-numbers 01, 02, ... -->
+           <h2 className="print-sec-title">Status</h2>
+           <span className="print-sec-aux">vs NFPA 70B (2023)</span>
+         </div>
+         <table className="print-table">...</table>
+       </section>
+       <footer className="print-footer print-only">
+         <span>SERVICECYCLE</span>
+         <span className="print-footer-pages">GENERATED 2026-07-13</span>
+       </footer>
+       <div className="print-footer-hash print-only">SHA-256 ...</div>  <!-- optional -->
+     </div>
+   =========================================================================== */
+
+/* Screen side -- the one rule outside @media print. Elements that exist only
+   for the printed artifact (masthead, rules, footer, hash line) carry
+   .print-only and stay out of the on-screen layout entirely. Inside
+   @media print, later rules re-display them (order-based override). */
+.print-only { display: none; }
+
+@media print {
+  /* Letter, 0.75in margins -- matches the pdfkit house geometry (54pt). */
+  @page {
+    size: letter;
+    margin: 0.75in;
+  }
+
+  /* App-wide print conventions (safe app-wide; .no-print is the established
+     hide-at-print class -- see ArcFlashReport.jsx inline PRINT_CSS). */
+  .no-print { display: none !important; }
+  a { color: inherit !important; text-decoration: none !important; }
+
+  /* Re-display print-only elements; component rules below refine display. */
+  .print-only { display: block; }
+
+  /* Chrome suppression -- only when the page has opted into the standard. */
+  body:has(.print-doc) .sidebar,
+  body:has(.print-doc) .page-header { display: none !important; }
+  body:has(.print-doc) .main-content { margin-left: 0 !important; }
+  body:has(.print-doc) .page-body { padding: 0 !important; }
+
+  /* ---- Document container ---------------------------------------------- */
+  .print-doc {
+    counter-reset: print-sec;
+    color: var(--color-ink, var(--color-text));
+    background: var(--color-card, var(--color-surface));
+    font-size: 10.5pt;
+    line-height: 1.45;
+  }
+
+  /* ---- Masthead: title + org/meta + double hairline rule ----------------- */
+  .print-masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16pt;
+  }
+  .print-masthead-title {
+    font-size: 21pt;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 0;
+    color: var(--color-ink, var(--color-text));
+  }
+  .print-masthead-meta {
+    font-family: var(--font-mono);
+    font-size: 8pt;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    text-align: right;
+    line-height: 1.6;
+  }
+  /* Double rule: heavy line + hairline echo -- the field-report signature. */
+  .print-rule {
+    border-top: 2.5px solid var(--color-ink, var(--color-text));
+    margin-top: 9pt;
+  }
+  .print-rule::after {
+    content: "";
+    display: block;
+    border-top: 1px solid var(--color-ink, var(--color-text));
+    margin-top: 2.5px;
+  }
+  /* One-line document brief under the rule (SITES / ASSETS / OPEN WORK...). */
+  .print-briefline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8pt 20pt;
+    padding-top: 8pt;
+    font-family: var(--font-mono);
+    font-size: 8pt;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .print-briefline b,
+  .print-briefline strong { color: var(--color-ink, var(--color-text)); font-weight: 700; }
+
+  /* ---- Numbered sections (01, 02, ... via CSS counter) ------------------- */
+  .print-sec { counter-increment: print-sec; }
+  .print-sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10pt;
+    border-top: 1px solid var(--color-border-strong);
+    margin-top: 22pt;
+    padding-top: 10pt;
+    break-after: avoid;
+    break-inside: avoid;
+  }
+  .print-sec-no {
+    font-family: var(--font-mono);
+    font-size: 9.5pt;
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+  /* Leave the element empty to auto-number; put text in it to override. */
+  .print-sec-no:empty::before { content: counter(print-sec, decimal-leading-zero); }
+  .print-sec-title {
+    font-size: 12.5pt;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--color-ink, var(--color-text));
+  }
+  .print-sec-aux { margin-left: auto; font-size: 8.5pt; color: var(--color-text-muted); }
+
+  /* ---- Figures / IDs / dates: mono technical typography ------------------ */
+  .print-mono { font-family: var(--font-mono); }
+  .print-id {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.92em;
+    color: var(--color-text-muted);
+  }
+  .print-date,
+  .print-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .print-fig-v {
+    font-family: var(--font-mono);
+    font-weight: 300;
+    font-size: 32pt;
+    line-height: 1;
+    letter-spacing: -0.045em;
+  }
+  .print-fig-v b { font-weight: 600; }
+  .print-fig-v small { font-size: 13pt; font-weight: 400; color: var(--color-text-secondary); }
+  .print-fig-k {
+    font-family: var(--font-mono);
+    font-size: 7.5pt;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-top: 5pt;
+  }
+
+  /* ---- Hairline tables, right-aligned numeric columns -------------------- */
+  .print-table { width: 100%; border-collapse: collapse; }
+  .print-table thead { display: table-header-group; } /* repeat header each page */
+  .print-table tr { break-inside: avoid; }
+  .print-table th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 7.5pt;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    padding: 7pt 3pt;
+    border-bottom: 1.5px solid var(--color-ink, var(--color-text));
+  }
+  .print-table td {
+    padding: 7pt 3pt;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 9.5pt;
+    vertical-align: baseline;
+  }
+  .print-table th.num,
+  .print-table td.num { text-align: right; }
+  .print-table td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .print-table tbody tr:last-child td { border-bottom: 1px solid var(--color-border-strong); }
+
+  /* ---- Footer: timestamp + page slot + optional integrity hash ----------- */
+  .print-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12pt;
+    margin-top: 20pt;
+    padding-top: 7pt;
+    border-top: 1px solid var(--color-border-strong);
+    font-family: var(--font-mono);
+    font-size: 7.5pt;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  /* True per-sheet page numbers belong to the UA print header/footer (or
+     future @page margin boxes); this span carries "PAGE 1 / 1"-style text
+     when the document knows its own count. */
+  .print-footer-pages { white-space: nowrap; }
+  /* Optional integrity line -- render as a SIBLING below .print-footer, and
+     only when a hash exists. */
+  .print-footer-hash {
+    font-family: var(--font-mono);
+    font-size: 7pt;
+    letter-spacing: 0.02em;
+    color: var(--color-text-secondary);
+    word-break: break-all;
+    margin-top: 3pt;
+  }
+
+  /* Repeating variant: fixed elements repeat on every printed sheet in
+     Chromium/Firefox. Pair with .print-doc--running-footer so the last
+     lines of content never underlap the footer. */
+  .print-footer--running { position: fixed; bottom: 0; left: 0; right: 0; margin-top: 0; }
+  .print-doc--running-footer { padding-bottom: 34pt; }
+}
