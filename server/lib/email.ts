@@ -192,72 +192,84 @@ function welcomeHtml({ name, companyName, appUrl }) {
   const safeCompany = companyName || 'your team';
   const safeUrl = appUrl || 'https://servicecycle.app';
   return `
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Welcome to ServiceCycle, ${safeName}.</h2>
-  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Welcome to ServiceCycle, ${safeName}.</h2>
+  <p style="margin:0 0 16px;color:#1e293b;font-size:14px;line-height:1.6;">
     Your ${safeCompany} workspace is ready. Three things worth doing in your first 10 minutes:
   </p>
-  <ol style="margin:0 0 24px;padding-left:22px;color:#94a3b8;font-size:14px;line-height:1.7;">
+  <ol style="margin:0 0 24px;padding-left:22px;color:#1e293b;font-size:14px;line-height:1.7;">
     <li>Add your first site and equipment assets (or import a CSV).</li>
     <li>Set up maintenance alerts so we ping you before anything goes overdue.</li>
     <li>Invite a teammate so you're not the only person who knows when the next test is due.</li>
   </ol>
-  <a href="${safeUrl}/dashboard" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${safeUrl}/dashboard" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Open my dashboard
   </a>
-  <p style="margin:28px 0 0;font-size:12px;color:#475569;line-height:1.6;">
+  <p style="margin:28px 0 0;font-size:12px;color:#334155;line-height:1.6;">
     Questions or stuck on something? Reply to this email — it routes to a human.
   </p>
+  </div>
 </div>`;
 }
 
 function passwordResetHtml({ link }) {
   return `
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Reset your password</h2>
-  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Reset your password</h2>
+  <p style="margin:0 0 24px;color:#1e293b;font-size:14px;line-height:1.6;">
     We received a request to reset the password for your ServiceCycle account.
-    Click the button below to choose a new password. This link expires in <strong style="color:#e2e8f0;">1 hour</strong>.
+    Click the button below to choose a new password. This link expires in <strong style="color:#0a0d12;">1 hour</strong>.
   </p>
-  <a href="${link}" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${link}" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Reset Password
   </a>
-  <p style="margin:28px 0 0;font-size:12px;color:#475569;line-height:1.6;">
+  <p style="margin:28px 0 0;font-size:12px;color:#334155;line-height:1.6;">
     If you didn't request a password reset, you can safely ignore this email — your password won't change.<br>
     <span style="color:#334155;">Direct link: ${link}</span>
   </p>
+  </div>
 </div>`;
 }
 
 function inviteHtml({ inviterName, companyName, role, link }) {
   const roleLabel = { admin: 'Admin', manager: 'Manager', viewer: 'Viewer' }[role] || role;
   return `
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">You've been invited to join ServiceCycle</h2>
-  <p style="margin:0 0 8px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    <strong style="color:#e2e8f0;">${inviterName}</strong> has invited you to join
-    <strong style="color:#e2e8f0;">${companyName}</strong> on ServiceCycle as a
-    <strong style="color:#e2e8f0;">${roleLabel}</strong>.
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">You've been invited to join ServiceCycle</h2>
+  <p style="margin:0 0 8px;color:#1e293b;font-size:14px;line-height:1.6;">
+    <strong style="color:#0a0d12;">${inviterName}</strong> has invited you to join
+    <strong style="color:#0a0d12;">${companyName}</strong> on ServiceCycle as a
+    <strong style="color:#0a0d12;">${roleLabel}</strong>.
   </p>
-  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    Click the button below to set up your account. This invite expires in <strong style="color:#e2e8f0;">48 hours</strong>.
+  <p style="margin:0 0 24px;color:#1e293b;font-size:14px;line-height:1.6;">
+    Click the button below to set up your account. This invite expires in <strong style="color:#0a0d12;">48 hours</strong>.
   </p>
-  <a href="${link}" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${link}" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Accept Invitation
   </a>
-  <p style="margin:28px 0 0;font-size:12px;color:#475569;line-height:1.6;">
+  <p style="margin:28px 0 0;font-size:12px;color:#334155;line-height:1.6;">
     If you weren't expecting this invitation, you can safely ignore this email.<br>
     <span style="color:#334155;">Direct link: ${link}</span>
   </p>
+  </div>
 </div>`;
 }
 
@@ -269,66 +281,74 @@ function feedbackHtml({ userName, userEmail, userRole, companyName, category, me
   const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const safeMsg = esc(message).replace(/\n/g, '<br>');
   return `
-<div style="font-family:sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:20px;">
+<div style="font-family:sans-serif;max-width:580px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
-    <span style="margin-left:10px;font-size:12px;color:#475569;">User Feedback</span>
+    <span style="margin-left:10px;font-size:12px;color:#e6f0f5;">User Feedback</span>
+  </div>
+  </div>
+  <div style="padding:24px 24px 28px;">
+
+  <div style="background:#e6f0f5;border-radius:6px;padding:16px 20px;margin-bottom:20px;border-left:3px solid #073a52;">
+    <div style="font-size:13px;font-weight:700;color:#073a52;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Category</div>
+    <div style="font-size:16px;font-weight:600;color:#0a0d12;">${esc(category)}</div>
   </div>
 
-  <div style="background:#1e2330;border-radius:6px;padding:16px 20px;margin-bottom:20px;border-left:3px solid #6366f1;">
-    <div style="font-size:13px;font-weight:700;color:#a5b4fc;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Category</div>
-    <div style="font-size:16px;font-weight:600;color:#fff;">${esc(category)}</div>
+  <div style="background:#e6f0f5;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
+    <div style="font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Message</div>
+    <div style="font-size:14px;color:#0a0d12;line-height:1.7;">${safeMsg}</div>
   </div>
 
-  <div style="background:#1e2330;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
-    <div style="font-size:13px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Message</div>
-    <div style="font-size:14px;color:#e2e8f0;line-height:1.7;">${safeMsg}</div>
-  </div>
-
-  <div style="background:#1e2330;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
-    <div style="font-size:13px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">Submitted By</div>
+  <div style="background:#e6f0f5;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
+    <div style="font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">Submitted By</div>
     <table style="width:100%;border-collapse:collapse;">
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;width:110px;">Name</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(userName)}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Email</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(userEmail)}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Role</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;text-transform:capitalize;">${esc(userRole)}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Account</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(companyName)}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Page</td><td style="padding:3px 0;font-size:13px;color:#a5b4fc;">${esc(pageUrl)}</td></tr>
-      <tr><td style="padding:3px 0;font-size:12px;color:#64748b;">Time</td><td style="padding:3px 0;font-size:13px;color:#e2e8f0;">${esc(submittedAt)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#334155;width:110px;">Name</td><td style="padding:3px 0;font-size:13px;color:#0a0d12;">${esc(userName)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#334155;">Email</td><td style="padding:3px 0;font-size:13px;color:#0a0d12;">${esc(userEmail)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#334155;">Role</td><td style="padding:3px 0;font-size:13px;color:#0a0d12;text-transform:capitalize;">${esc(userRole)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#334155;">Account</td><td style="padding:3px 0;font-size:13px;color:#0a0d12;">${esc(companyName)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#334155;">Page</td><td style="padding:3px 0;font-size:13px;color:#073a52;">${esc(pageUrl)}</td></tr>
+      <tr><td style="padding:3px 0;font-size:12px;color:#334155;">Time</td><td style="padding:3px 0;font-size:13px;color:#0a0d12;">${esc(submittedAt)}</td></tr>
     </table>
   </div>
 
   <p style="margin:0;font-size:11px;color:#334155;">Sent from ServiceCycle in-app feedback — reply directly to respond to this user.</p>
+  </div>
 </div>`;
 }
 
 // Sent to all admins when a scoped viewer accepts their invite and activates.
 function newViewerActivationHtml({ viewerName, viewerEmail, assetCount, settingsUrl }) {
   return `
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">New viewer activated</h2>
-  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    <strong style="color:#e2e8f0;">${viewerName}</strong> (${viewerEmail}) just activated their ServiceCycle account.
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">New viewer activated</h2>
+  <p style="margin:0 0 16px;color:#1e293b;font-size:14px;line-height:1.6;">
+    <strong style="color:#0a0d12;">${viewerName}</strong> (${viewerEmail}) just activated their ServiceCycle account.
   </p>
-  <div style="background:#1e2330;border-radius:6px;padding:14px 18px;margin-bottom:20px;border-left:3px solid #f59e0b;">
-    <p style="margin:0;font-size:14px;color:#fcd34d;font-weight:600;">
+  <div style="background:#fef3c7;border-radius:6px;padding:14px 18px;margin-bottom:20px;border-left:3px solid #b45309;">
+    <p style="margin:0;font-size:14px;color:#b45309;font-weight:600;">
       They can currently see <strong>${assetCount}</strong> asset${assetCount !== 1 ? 's' : ''} assigned to them.
     </p>
-    <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">
+    <p style="margin:8px 0 0;font-size:13px;color:#1e293b;">
       Their access is restricted to assets at the sites they are assigned to.
     </p>
   </div>
-  <p style="margin:0 0 20px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  <p style="margin:0 0 20px;color:#1e293b;font-size:14px;line-height:1.6;">
     To expand their permissions or assign additional sites, visit the Users settings page.
   </p>
-  <a href="${settingsUrl}" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${settingsUrl}" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Go to Settings → Users
   </a>
-  <p style="margin:28px 0 0;font-size:12px;color:#475569;line-height:1.6;">
+  <p style="margin:28px 0 0;font-size:12px;color:#334155;line-height:1.6;">
     Direct link: ${settingsUrl}
   </p>
+  </div>
 </div>`;
 }
 
@@ -338,33 +358,36 @@ function newViewerActivationHtml({ viewerName, viewerEmail, assetCount, settings
 function earlyAccessReplyHtml({ name, installScriptUrl, demoUrl }) {
   const safeName = (name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') || 'there';
   return `
-<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+<div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Thanks for the interest, ${safeName}.</h2>
-  <p style="margin:0 0 18px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Thanks for the interest, ${safeName}.</h2>
+  <p style="margin:0 0 18px;color:#1e293b;font-size:14px;line-height:1.6;">
     ServiceCycle is self-hosted — every install runs on your own
     infrastructure and your equipment and maintenance records never leave
     your network. You can stand up an instance
     yourself with the one-line installer below; the demo at
-    <a href="${demoUrl}" style="color:#a5b4fc;">${demoUrl}</a> shows the same
+    <a href="${demoUrl}" style="color:#073a52;">${demoUrl}</a> shows the same
     UI populated with sample data if you'd rather try before installing.
   </p>
 
-  <div style="background:#1e2330;border-radius:6px;padding:16px 20px;margin:0 0 20px;border-left:3px solid #6366f1;">
-    <div style="font-size:12px;font-weight:700;color:#a5b4fc;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">One-line install</div>
-    <pre style="margin:0;font-family:Menlo,Consolas,monospace;font-size:13px;color:#e2e8f0;white-space:pre-wrap;line-height:1.5;">curl -fsSLO ${installScriptUrl}
+  <div style="background:#e6f0f5;border-radius:6px;padding:16px 20px;margin:0 0 20px;border-left:3px solid #073a52;">
+    <div style="font-size:12px;font-weight:700;color:#073a52;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">One-line install</div>
+    <pre style="margin:0;font-family:Menlo,Consolas,monospace;font-size:13px;color:#0a0d12;white-space:pre-wrap;line-height:1.5;">curl -fsSLO ${installScriptUrl}
 less install.sh
 bash install.sh</pre>
-    <div style="margin-top:10px;font-size:12px;color:#94a3b8;line-height:1.5;">
+    <div style="margin-top:10px;font-size:12px;color:#1e293b;line-height:1.5;">
       Runs on Ubuntu 22+ / Debian 12 / macOS with Docker Desktop. ~5 minutes
       from clean host to setup wizard. Reads the script before running it
       is the recommended step in the middle.
     </div>
   </div>
 
-  <p style="margin:0 0 8px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  <p style="margin:0 0 8px;color:#1e293b;font-size:14px;line-height:1.6;">
     Quickstart: the script prompts you for a domain, an admin email, and an
     optional Resend API key. It generates the database password, JWT secret,
     and document-encryption key for you, writes the .env, pulls the published
@@ -372,16 +395,17 @@ bash install.sh</pre>
     polls /api/health until it's green.
   </p>
 
-  <p style="margin:18px 0 0;color:#94a3b8;font-size:14px;line-height:1.6;">
+  <p style="margin:18px 0 0;color:#1e293b;font-size:14px;line-height:1.6;">
     Hit reply if you have any questions, want a walkthrough, or want to talk
     pilot scope — a real person reads every one of these.
   </p>
 
-  <p style="margin:28px 0 0;font-size:11px;color:#475569;line-height:1.6;">
+  <p style="margin:28px 0 0;font-size:11px;color:#334155;line-height:1.6;">
     You're receiving this because you submitted the early-access form at
     servicecycle.app. We don't add anyone to a marketing list — this is a
     one-shot transactional reply.
   </p>
+  </div>
 </div>`;
 }
 
@@ -389,20 +413,24 @@ bash install.sh</pre>
 function earlyAccessNotificationHtml({ name, email, company, timing, ipAddress, submittedAt }) {
   const esc = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `
-<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
+<div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
   <div style="margin-bottom:20px;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
-    <span style="margin-left:10px;font-size:12px;color:#475569;">New early-access request</span>
+    <span style="margin-left:10px;font-size:12px;color:#e6f0f5;">New early-access request</span>
   </div>
-  <table style="width:100%;border-collapse:collapse;background:#1e2330;border-radius:6px;padding:8px;">
-    <tr><td style="padding:8px 14px;font-size:12px;color:#64748b;width:120px;">Name</td><td style="padding:8px 14px;font-size:14px;color:#e2e8f0;">${esc(name)}</td></tr>
-    <tr><td style="padding:8px 14px;font-size:12px;color:#64748b;">Email</td><td style="padding:8px 14px;font-size:14px;color:#a5b4fc;"><a href="mailto:${esc(email)}" style="color:#a5b4fc;">${esc(email)}</a></td></tr>
-    <tr><td style="padding:8px 14px;font-size:12px;color:#64748b;">Company</td><td style="padding:8px 14px;font-size:14px;color:#e2e8f0;">${esc(company) || '—'}</td></tr>
-    <tr><td style="padding:8px 14px;font-size:12px;color:#64748b;">Timing</td><td style="padding:8px 14px;font-size:14px;color:#e2e8f0;">${esc(timing) || '—'}</td></tr>
-    <tr><td style="padding:8px 14px;font-size:12px;color:#64748b;">IP</td><td style="padding:8px 14px;font-size:13px;color:#64748b;">${esc(ipAddress) || '—'}</td></tr>
-    <tr><td style="padding:8px 14px;font-size:12px;color:#64748b;">Submitted</td><td style="padding:8px 14px;font-size:13px;color:#94a3b8;">${esc(submittedAt)}</td></tr>
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <table style="width:100%;border-collapse:collapse;background:#e6f0f5;border-radius:6px;padding:8px;">
+    <tr><td style="padding:8px 14px;font-size:12px;color:#334155;width:120px;">Name</td><td style="padding:8px 14px;font-size:14px;color:#0a0d12;">${esc(name)}</td></tr>
+    <tr><td style="padding:8px 14px;font-size:12px;color:#334155;">Email</td><td style="padding:8px 14px;font-size:14px;color:#073a52;"><a href="mailto:${esc(email)}" style="color:#073a52;">${esc(email)}</a></td></tr>
+    <tr><td style="padding:8px 14px;font-size:12px;color:#334155;">Company</td><td style="padding:8px 14px;font-size:14px;color:#0a0d12;">${esc(company) || '—'}</td></tr>
+    <tr><td style="padding:8px 14px;font-size:12px;color:#334155;">Timing</td><td style="padding:8px 14px;font-size:14px;color:#0a0d12;">${esc(timing) || '—'}</td></tr>
+    <tr><td style="padding:8px 14px;font-size:12px;color:#334155;">IP</td><td style="padding:8px 14px;font-size:13px;color:#334155;">${esc(ipAddress) || '—'}</td></tr>
+    <tr><td style="padding:8px 14px;font-size:12px;color:#334155;">Submitted</td><td style="padding:8px 14px;font-size:13px;color:#1e293b;">${esc(submittedAt)}</td></tr>
   </table>
   <p style="margin:24px 0 0;font-size:11px;color:#334155;">Auto-reply with install instructions has already been sent to the requester. Just hit reply to start a real conversation.</p>
+  </div>
 </div>`;
 }
 
@@ -418,29 +446,33 @@ function reportReceivedHtml({ companyName, siteName, reportCount, appUrl }) {
   const n = Number(reportCount) > 0 ? Number(reportCount) : 1;
   const fileWord = n === 1 ? 'report' : 'reports';
   const siteLine = safeSite
-    ? `for <strong style="color:#e2e8f0;">${safeSite}</strong> in the ${safeCompany} workspace`
+    ? `for <strong style="color:#0a0d12;">${safeSite}</strong> in the ${safeCompany} workspace`
     : `in the ${safeCompany} workspace`;
   return `
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Got it — thanks for sending that over.</h2>
-  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Got it — thanks for sending that over.</h2>
+  <p style="margin:0 0 16px;color:#1e293b;font-size:14px;line-height:1.6;">
     We received your ${n} ${fileWord} ${siteLine}. No action needed on your end — here's what happens next:
   </p>
-  <ol style="margin:0 0 24px;padding-left:22px;color:#94a3b8;font-size:14px;line-height:1.7;">
+  <ol style="margin:0 0 24px;padding-left:22px;color:#1e293b;font-size:14px;line-height:1.7;">
     <li>We're reading every line automatically and matching each device to an asset card.</li>
     <li>New equipment becomes a new card; readings update the existing ones.</li>
     <li>Anything out of spec is flagged as a deficiency so it doesn't get missed.</li>
   </ol>
-  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  <p style="margin:0 0 24px;color:#1e293b;font-size:14px;line-height:1.6;">
     Your cards are usually ready within a few minutes. You'll see them on the dashboard — no need to re-send.
   </p>
-  <a href="${safeUrl}/dashboard" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${safeUrl}/dashboard" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Open my dashboard
   </a>
   <p style="margin:24px 0 0;font-size:11px;color:#334155;">You received this because a test report was emailed in to ServiceCycle. If that wasn't you, you can ignore this message.</p>
+  </div>
 </div>`;
 }
 
@@ -453,19 +485,23 @@ function reportProcessedHtml({ companyName, appUrl, assetCount }) {
   const n = Number(assetCount) > 0 ? Number(assetCount) : null;
   const countLine = n ? `${n} asset card${n === 1 ? '' : 's'} ` : 'Your equipment ';
   return `
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;"><span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span></div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Got it - thanks for sending that over.</h2>
-  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;"><span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span></div>
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Got it - thanks for sending that over.</h2>
+  <p style="margin:0 0 16px;color:#1e293b;font-size:14px;line-height:1.6;">
     ${countLine}from your report ${n ? 'have' : 'has'} been read and uploaded to the ${safeCompany} workspace for your review on ServiceCycle.
   </p>
-  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  <p style="margin:0 0 24px;color:#1e293b;font-size:14px;line-height:1.6;">
     Have a look when you get a chance, and reach out to your account rep with any questions.
   </p>
-  <a href="${safeUrl}/assets" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${safeUrl}/assets" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Review my equipment
   </a>
   <p style="margin:24px 0 0;font-size:11px;color:#334155;">You received this because a test report was emailed in to ServiceCycle. If that wasn't you, you can ignore this message.</p>
+  </div>
 </div>`;
 }
 
@@ -478,22 +514,26 @@ function reportNeedsReviewHtml({ companyName, appUrl, committedCount, reviewCoun
   const committed = Number(committedCount) > 0 ? Number(committedCount) : 0;
   const review = Number(reviewCount) > 0 ? Number(reviewCount) : 1;
   const committedLine = committed > 0
-    ? `<strong style="color:#e2e8f0;">${committed}</strong> uploaded just fine, and `
+    ? `<strong style="color:#0a0d12;">${committed}</strong> uploaded just fine, and `
     : '';
   return `
-<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;"><span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span></div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Thanks - we've read your report.</h2>
-  <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6;">
-    ${committedLine}<strong style="color:#f87171;">${review} item${review === 1 ? '' : 's'} need${review === 1 ? 's' : ''} a quick review before ${review === 1 ? 'it is' : 'they are'} committed</strong> to the ${safeCompany} workspace - we want a person to confirm them rather than guess.
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;"><span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span></div>
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Thanks - we've read your report.</h2>
+  <p style="margin:0 0 16px;color:#1e293b;font-size:14px;line-height:1.6;">
+    ${committedLine}<strong style="color:#b91c1c;">${review} item${review === 1 ? '' : 's'} need${review === 1 ? 's' : ''} a quick review before ${review === 1 ? 'it is' : 'they are'} committed</strong> to the ${safeCompany} workspace - we want a person to confirm them rather than guess.
   </p>
-  <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.6;">
+  <p style="margin:0 0 24px;color:#1e293b;font-size:14px;line-height:1.6;">
     Please open the review queue, check the flagged ${review === 1 ? 'item' : 'items'}, and approve to add ${review === 1 ? 'it' : 'them'}. Reach out to your account rep with any questions.
   </p>
-  <a href="${safeUrl}/review" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${safeUrl}/review" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Review &amp; approve
   </a>
   <p style="margin:24px 0 0;font-size:11px;color:#334155;">You received this because a test report was emailed in to ServiceCycle. If that wasn't you, you can ignore this message.</p>
+  </div>
 </div>`;
 }
 
@@ -504,22 +544,26 @@ function reportNeedsReviewHtml({ companyName, appUrl, committedCount, reviewCoun
 // unknown-email brute-force attempts there is no account to notify.
 function loginLockoutAlertHtml({ targetEmail, ip, appUrl }) {
   const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  return `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+  return `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Login account locked out</h2>
-  <p style="margin:0 0 16px;font-size:14px;color:#94a3b8;">
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Login account locked out</h2>
+  <p style="margin:0 0 16px;font-size:14px;color:#1e293b;">
     5 failed login attempts in 15 minutes locked the following account. The lockout expires automatically in 15 minutes.
   </p>
-  <div style="background:#1e2330;border-radius:6px;padding:14px 18px;margin-bottom:20px;border-left:3px solid #f87171;">
-    <p style="margin:0;font-size:14px;color:#fca5a5;font-weight:600;">${esc(targetEmail)}</p>
-    <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">Source IP: <code style="color:#e2e8f0;">${esc(ip)}</code></p>
+  <div style="background:#fee2e2;border-radius:6px;padding:14px 18px;margin-bottom:20px;border-left:3px solid #b91c1c;">
+    <p style="margin:0;font-size:14px;color:#b91c1c;font-weight:600;">${esc(targetEmail)}</p>
+    <p style="margin:8px 0 0;font-size:13px;color:#1e293b;">Source IP: <code style="color:#0a0d12;">${esc(ip)}</code></p>
   </div>
-  <a href="${esc(appUrl)}/settings?tab=activity" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${esc(appUrl)}/settings?tab=activity" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     View activity log
   </a>
-  <p style="margin:28px 0 0;font-size:12px;color:#475569;">If this was a legitimate user who forgot their password, they can use the password-reset flow. If you don't recognize this activity, review the activity log for other suspicious events.</p>
+  <p style="margin:28px 0 0;font-size:12px;color:#334155;">If this was a legitimate user who forgot their password, they can use the password-reset flow. If you don't recognize this activity, review the activity log for other suspicious events.</p>
+  </div>
 </div>`;
 }
 
@@ -531,24 +575,28 @@ function loginLockoutAlertHtml({ targetEmail, ip, appUrl }) {
 // re-register after a lapsed account.
 function alreadyRegisteredHtml({ appUrl }: { appUrl: string }) {
   const safeUrl = appUrl || 'https://servicecycle.app';
-  return `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#e2e8f0;border-radius:8px;">
-  <div style="margin-bottom:24px;">
+  return `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+  <div style="background:#073a52;padding:20px 24px;">
+  <div style="margin-bottom:0;">
     <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.3px;">ServiceCycle</span>
   </div>
-  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#fff;">Someone tried to register with your email</h2>
-  <p style="margin:0 0 16px;font-size:14px;color:#94a3b8;line-height:1.6;">
+  </div>
+  <div style="padding:24px 24px 28px;">
+  <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">Someone tried to register with your email</h2>
+  <p style="margin:0 0 16px;font-size:14px;color:#1e293b;line-height:1.6;">
     Someone just tried to create a new ServiceCycle account using your email address.
     An account with this address already exists, so no new account was created.
   </p>
-  <p style="margin:0 0 24px;font-size:14px;color:#94a3b8;line-height:1.6;">
+  <p style="margin:0 0 24px;font-size:14px;color:#1e293b;line-height:1.6;">
     If that was you and you've forgotten your password, use the link below to reset it:
   </p>
-  <a href="${safeUrl}/forgot-password" style="display:inline-block;padding:11px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+  <a href="${safeUrl}/forgot-password" style="display:inline-block;padding:11px 22px;background:#073a52;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
     Reset my password
   </a>
-  <p style="margin:28px 0 0;font-size:12px;color:#475569;line-height:1.6;">
+  <p style="margin:28px 0 0;font-size:12px;color:#334155;line-height:1.6;">
     If you did not initiate this, you can safely ignore this email — your account and password were not changed.
   </p>
+  </div>
 </div>`;
 }
 

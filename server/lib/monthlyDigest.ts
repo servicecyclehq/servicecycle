@@ -89,10 +89,10 @@ function _money(n: number) {
   return fmtMoney(n);
 }
 function _rateColor(rate: number | null) {
-  if (rate == null) return '#94a3b8';
-  if (rate >= 90) return '#16a34a';
-  if (rate >= 70) return '#d97706';
-  return '#dc2626';
+  if (rate == null) return '#334155';
+  if (rate >= 90) return '#15803d';
+  if (rate >= 70) return '#b45309';
+  return '#b91c1c';
 }
 function _cadenceWord(c: string) {
   return c === 'weekly' ? 'weekly' : c === 'semimonthly' ? 'twice-monthly' : 'monthly';
@@ -229,15 +229,15 @@ async function gatherAccountDigest(account: any, now: Date) {
 // ── HTML building blocks ─────────────────────────────────────────────────────
 
 function _complianceBars(chartRows: Array<{ label: string; rate: number | null; overdue: number }>) {
-  if (!chartRows.length) return '<div style="color:#94a3b8;font-size:13px;padding:8px 0;">No rated schedules yet.</div>';
+  if (!chartRows.length) return '<div style="color:#334155;font-size:13px;padding:8px 0;">No rated schedules yet.</div>';
   return chartRows.map((r) => {
     const pct = r.rate == null ? 0 : Math.max(2, Math.min(100, r.rate));
     const color = _rateColor(r.rate);
     const rateLabel = r.rate == null ? 'n/a' : `${r.rate}%`;
-    const overdue = r.overdue > 0 ? ` <span style="color:#dc2626;">(${r.overdue} overdue)</span>` : '';
+    const overdue = r.overdue > 0 ? ` <span style="color:#b91c1c;">(${r.overdue} overdue)</span>` : '';
     return `<div style="margin:0 0 12px;">`
       + `<div style="font-size:13px;margin:0 0 5px;color:#1e293b;"><span style="font-weight:600;">${_esc(r.label)}:</span> <span style="color:${color};font-weight:700;">${rateLabel}</span>${overdue}</div>`
-      + `<div style="background:#f1f5f9;border-radius:4px;height:10px;overflow:hidden;">`
+      + `<div style="background:#e3e7ee;border-radius:4px;height:10px;overflow:hidden;">`
       + `<div style="width:${pct}%;height:10px;background:${color};border-radius:4px;"></div></div></div>`;
   }).join('');
 }
@@ -245,15 +245,15 @@ function _complianceBars(chartRows: Array<{ label: string; rate: number | null; 
 function _shell(headerKicker: string, headerTitle: string, headerSub: string, bodyHtml: string, cadence: string) {
   const cadenceWord = _cadenceWord(cadence);
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
-    + `<body style="margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f8fafc;">`
+    + `<body style="margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#fafbfd;">`
     + `<div style="max-width:680px;margin:24px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">`
-    + `<div style="background:#0f172a;padding:18px 24px;">`
-    + `<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);letter-spacing:.08em;text-transform:uppercase;">${_esc(headerKicker)}</div>`
+    + `<div style="background:#073a52;padding:18px 24px;">`
+    + `<div style="font-size:12px;font-weight:700;color:#e6f0f5;letter-spacing:.08em;text-transform:uppercase;">${_esc(headerKicker)}</div>`
     + `<div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">${_esc(headerTitle)}</div>`
-    + `<div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:4px;">${_esc(headerSub)}</div></div>`
+    + `<div style="font-size:12px;color:#e6f0f5;margin-top:4px;">${_esc(headerSub)}</div></div>`
     + `<div style="padding:18px 24px;">${bodyHtml}</div>`
-    + `<div style="padding:16px 24px;border-top:1px solid #e2e8f0;"><a href="${APP_URL()}/dashboard" style="background:#0f172a;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">Open ServiceCycle &rarr;</a></div>`
-    + `<div style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;">Digest cadence is ${cadenceWord}. Change it under Settings &rarr; Alerts. The attached spreadsheet has every line item.</div>`
+    + `<div style="padding:16px 24px;border-top:1px solid #e3e7ee;"><a href="${APP_URL()}/dashboard" style="background:#073a52;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">Open ServiceCycle &rarr;</a></div>`
+    + `<div style="padding:14px 24px;background:#fafbfd;border-top:1px solid #e3e7ee;font-size:12px;color:#334155;">Digest cadence is ${cadenceWord}. Change it under Settings &rarr; Alerts. The attached spreadsheet has every line item.</div>`
     + `</div></body></html>`;
 }
 
@@ -261,12 +261,12 @@ function _totalsStrip(overdueCount: number, pipelineMin: number, pipelineMax: nu
   const pipe = pipelineMin && pipelineMax && pipelineMin !== pipelineMax
     ? `${_money(pipelineMin)} &ndash; ${_money(pipelineMax)}` : _money(pipelineMax || pipelineMin);
   return `<div style="display:flex;gap:12px;margin:0 0 16px;">`
-    + `<div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px;">`
-    + `<div style="font-size:22px;font-weight:800;color:#dc2626;">${overdueCount}</div>`
-    + `<div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Overdue items</div></div>`
-    + `<div style="flex:1;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px;">`
-    + `<div style="font-size:22px;font-weight:800;color:#1d4ed8;">${pipe}</div>`
-    + `<div style="font-size:11px;color:#1e40af;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Service pipeline</div></div></div>`;
+    + `<div style="flex:1;background:#fee2e2;border:1px solid #b91c1c;border-radius:6px;padding:12px;">`
+    + `<div style="font-size:22px;font-weight:800;color:#b91c1c;">${overdueCount}</div>`
+    + `<div style="font-size:11px;color:#334155;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Overdue items</div></div>`
+    + `<div style="flex:1;background:#e6f0f5;border:1px solid #073a52;border-radius:6px;padding:12px;">`
+    + `<div style="font-size:22px;font-weight:800;color:#073a52;">${pipe}</div>`
+    + `<div style="font-size:11px;color:#334155;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Service pipeline</div></div></div>`;
 }
 
 // ── manager roll-up + rep templates ─────────────────────────────────────────
@@ -277,9 +277,9 @@ function managerRollupHtml(opts: any) {
   const body =
     `<div style="display:flex;align-items:center;gap:14px;margin:0 0 16px;">`
     + `<div style="font-size:40px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
-    + `<div style="font-size:13px;color:#475569;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${customerCount} customer${customerCount === 1 ? '' : 's'} &middot; ${repCount} rep${repCount === 1 ? '' : 's'} &middot; ${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}</span></div></div>`
+    + `<div style="font-size:13px;color:#334155;">Overall maintenance compliance<br><span style="color:#334155;font-size:12px;">${customerCount} customer${customerCount === 1 ? '' : 's'} &middot; ${repCount} rep${repCount === 1 ? '' : 's'} &middot; ${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}</span></div></div>`
     + _totalsStrip(totals.overdueCount, totals.pipelineMin, totals.pipelineMax)
-    + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
+    + `<div style="font-size:13px;font-weight:700;color:#0a0d12;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
     + _complianceBars(chartRows);
   return _shell('ServiceCycle — Manager Roll-up', `${scopeName}: monthly compliance`, 'Your whole book at a glance — full line-item detail in the attached spreadsheet.', body, cadence);
 }
@@ -291,24 +291,24 @@ function repEmailHtml(opts: any) {
   const rowsHtml = topItems.map((it: any) => {
     const est = it.estMin && it.estMax && it.estMin !== it.estMax
       ? `${_money(it.estMin)} &ndash; ${_money(it.estMax)}` : it.estMax ? _money(it.estMax) : '—';
-    const whenColor = it.daysUntil < 0 ? '#dc2626' : it.daysUntil <= 30 ? '#d97706' : '#475569';
-    const trend = it.trend ? ` <span style="color:#dc2626;font-size:11px;">&#9888; worsening</span>` : '';
-    return `<tr><td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;">`
+    const whenColor = it.daysUntil < 0 ? '#b91c1c' : it.daysUntil <= 30 ? '#b45309' : '#334155';
+    const trend = it.trend ? ` <span style="color:#b91c1c;font-size:11px;">&#9888; worsening</span>` : '';
+    return `<tr><td style="padding:9px 12px;border-bottom:1px solid #e3e7ee;">`
       + `<span style="font-weight:600;color:#1e293b;">${_esc(it.equipment)}</span> `
-      + `<span style="color:#94a3b8;font-size:12px;">&middot; ${_esc(it.companyName)} &middot; ${_esc(it.siteName)}</span><br>`
-      + `<span style="font-size:12px;color:#475569;">${_esc(it.task)} — <span style="color:${whenColor};font-weight:600;">${_esc(it.status)}</span> &middot; ${_esc(it.condition)}${trend}</span></td>`
-      + `<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap;font-weight:700;color:#1d4ed8;font-size:13px;">${est}</td></tr>`;
+      + `<span style="color:#334155;font-size:12px;">&middot; ${_esc(it.companyName)} &middot; ${_esc(it.siteName)}</span><br>`
+      + `<span style="font-size:12px;color:#334155;">${_esc(it.task)} — <span style="color:${whenColor};font-weight:600;">${_esc(it.status)}</span> &middot; ${_esc(it.condition)}${trend}</span></td>`
+      + `<td style="padding:9px 12px;border-bottom:1px solid #e3e7ee;text-align:right;white-space:nowrap;font-weight:700;color:#073a52;font-size:13px;">${est}</td></tr>`;
   }).join('');
 
   const body =
     `<div style="display:flex;align-items:center;gap:14px;margin:0 0 16px;">`
     + `<div style="font-size:40px;font-weight:800;color:${overallColor};line-height:1;">${overallRate == null ? 'n/a' : overallRate + '%'}</div>`
-    + `<div style="font-size:13px;color:#475569;">Compliance across your book<br><span style="color:#94a3b8;font-size:12px;">${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}</span></div></div>`
+    + `<div style="font-size:13px;color:#334155;">Compliance across your book<br><span style="color:#334155;font-size:12px;">${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}</span></div></div>`
     + _totalsStrip(totals.overdueCount, totals.pipelineMin, totals.pipelineMax)
-    + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
+    + `<div style="font-size:13px;font-weight:700;color:#0a0d12;margin:18px 0 10px;">${_esc(chartTitle)}</div>`
     + _complianceBars(chartRows)
-    + `<div style="font-size:13px;font-weight:700;color:#0f172a;margin:20px 0 8px;">Top items to act on this month</div>`
-    + `<table style="width:100%;border-collapse:collapse;">${rowsHtml || '<tr><td style="padding:10px;color:#94a3b8;font-size:13px;">Nothing outstanding — nice.</td></tr>'}</table>`;
+    + `<div style="font-size:13px;font-weight:700;color:#0a0d12;margin:20px 0 8px;">Top items to act on this month</div>`
+    + `<table style="width:100%;border-collapse:collapse;">${rowsHtml || '<tr><td style="padding:10px;color:#334155;font-size:13px;">Nothing outstanding — nice.</td></tr>'}</table>`;
   return _shell('ServiceCycle — Rep Digest', `${repName}: your month`, 'Your customers, ranked by what needs doing — full list attached.', body, cadence);
 }
 
@@ -418,10 +418,10 @@ function customerDigestHtml(opts: any) {
   const siteSections = thingsToDo.map((s: any) => {
     const rows = s.items.map((it: any) => {
       const when = it.daysUntil < 0 ? `${Math.abs(it.daysUntil)} days overdue` : `due in ${it.daysUntil} days`;
-      const whenColor = it.daysUntil < 0 ? '#dc2626' : '#d97706';
+      const whenColor = it.daysUntil < 0 ? '#b91c1c' : '#b45309';
       return `<li style="margin:0 0 6px;font-size:13px;color:#334155;line-height:1.5;"><strong>${_esc(it.task)}</strong> &mdash; <span style="color:${whenColor};font-weight:600;">${when}</span></li>`;
     }).join('');
-    return `<div style="margin:0 0 14px;"><div style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 6px;">${_esc(s.site)} &mdash; ${s.items.length} item${s.items.length === 1 ? '' : 's'} need${s.items.length === 1 ? 's' : ''} attention</div><ul style="margin:0;padding-left:18px;">${rows}</ul></div>`;
+    return `<div style="margin:0 0 14px;"><div style="font-size:13px;font-weight:700;color:#0a0d12;margin:0 0 6px;">${_esc(s.site)} &mdash; ${s.items.length} item${s.items.length === 1 ? '' : 's'} need${s.items.length === 1 ? 's' : ''} attention</div><ul style="margin:0;padding-left:18px;">${rows}</ul></div>`;
   }).join('');
 
   const contact = repName
@@ -430,29 +430,29 @@ function customerDigestHtml(opts: any) {
 
   const appUrl = APP_URL();
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
-    + `<body style="margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f8fafc;">`
+    + `<body style="margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#fafbfd;">`
     + `<div style="max-width:660px;margin:24px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">`
-    + `<div style="background:#0d4f6e;padding:18px 24px;">`
-    + `<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:.08em;text-transform:uppercase;">ServiceCycle &middot; Monthly Summary</div>`
+    + `<div style="background:#073a52;padding:18px 24px;">`
+    + `<div style="font-size:12px;font-weight:700;color:#e6f0f5;letter-spacing:.08em;text-transform:uppercase;">ServiceCycle &middot; Monthly Summary</div>`
     + `<div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">${_esc(companyName)}</div>`
-    + `<div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;">Your maintenance compliance for ${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}.</div></div>`
+    + `<div style="font-size:12px;color:#e6f0f5;margin-top:4px;">Your maintenance compliance for ${fmtDate(generatedAt, { month: 'long', year: 'numeric' })}.</div></div>`
     + `<div style="padding:20px 26px;">`
     + `<div style="font-size:14px;color:#334155;line-height:1.55;margin:2px 0 6px;">${intro.g}</div>`
-    + `<div style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 22px;">${intro.b}</div>`
+    + `<div style="font-size:13px;color:#334155;line-height:1.6;margin:0 0 22px;">${intro.b}</div>`
     + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 28px;"><tr>`
     + `<td width="44" style="width:44px;font-size:1px;line-height:1px;">&nbsp;</td>`
     + `<td style="padding-right:20px;font-size:46px;font-weight:800;color:${overallColor};line-height:1;white-space:nowrap;vertical-align:middle;">${overallRate == null ? 'n/a' : overallRate + '%'}</td>`
-    + `<td style="font-size:13px;color:#475569;line-height:1.55;vertical-align:middle;">Overall maintenance compliance<br><span style="color:#94a3b8;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></td>`
+    + `<td style="font-size:13px;color:#334155;line-height:1.55;vertical-align:middle;">Overall maintenance compliance<br><span style="color:#334155;font-size:12px;">${totalItems} item${totalItems === 1 ? '' : 's'} to schedule</span></td>`
     + `</tr></table>`
-    + `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 14px;">Compliance by site</div>`
+    + `<div style="font-size:14px;font-weight:700;color:#0a0d12;margin:0 0 14px;">Compliance by site</div>`
     + _complianceBars(chartRows)
     + (siteSections
-        ? `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:28px 0 14px;">Things to do</div>${siteSections}`
-        : `<div style="margin:18px 0;padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px;color:#166534;">You're all caught up &mdash; nothing needs attention right now.</div>`)
-    + `<div style="margin:18px 0 0;padding:14px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:13px;color:#1e3a5f;">${contact}</div>`
+        ? `<div style="font-size:14px;font-weight:700;color:#0a0d12;margin:28px 0 14px;">Things to do</div>${siteSections}`
+        : `<div style="margin:18px 0;padding:12px 14px;background:#dcfce7;border:1px solid #15803d;border-radius:6px;font-size:13px;color:#15803d;">You're all caught up &mdash; nothing needs attention right now.</div>`)
+    + `<div style="margin:18px 0 0;padding:14px 16px;background:#e6f0f5;border:1px solid #073a52;border-radius:6px;font-size:13px;color:#1e293b;">${contact}</div>`
     + `</div>`
-    + `<div style="padding:16px 24px;border-top:1px solid #e2e8f0;"><a href="${appUrl}/dashboard" style="background:#0d4f6e;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">View your equipment &rarr;</a></div>`
-    + `<div style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.5;">The attached spreadsheet lists everything on your maintenance schedule. You're receiving this monthly summary for ${_esc(companyName)}.</div>`
+    + `<div style="padding:16px 24px;border-top:1px solid #e3e7ee;"><a href="${appUrl}/dashboard" style="background:#073a52;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">View your equipment &rarr;</a></div>`
+    + `<div style="padding:14px 24px;background:#fafbfd;border-top:1px solid #e3e7ee;font-size:12px;color:#334155;line-height:1.5;">The attached spreadsheet lists everything on your maintenance schedule. You're receiving this monthly summary for ${_esc(companyName)}.</div>`
     + `</div></body></html>`;
 }
 

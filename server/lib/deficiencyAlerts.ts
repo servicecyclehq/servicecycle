@@ -81,42 +81,42 @@ function buildHtml(items: DefItem[], accountName: string, tier: number): string 
     .map(
       (d) => `
     <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">
-        <strong style="color:#dc2626;">IMMEDIATE</strong>
+      <td style="padding:10px 12px;border-bottom:1px solid #e3e7ee;">
+        <strong style="color:#b91c1c;">IMMEDIATE</strong>
         &nbsp;&middot;&nbsp;${escHtml(d.assetName)}
-        ${d.site ? `<span style="color:#6b7280;font-size:12px;"> (${escHtml(d.site)})</span>` : ''}
+        ${d.site ? `<span style="color:#334155;font-size:12px;"> (${escHtml(d.site)})</span>` : ''}
       </td>
-      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px;">${escHtml(d.description)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:12px;white-space:nowrap;">${escHtml(d.ageLabel)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e3e7ee;color:#1e293b;font-size:13px;">${escHtml(d.description)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e3e7ee;color:#334155;font-size:12px;white-space:nowrap;">${escHtml(d.ageLabel)}</td>
     </tr>`,
     )
     .join('');
 
   return `<!DOCTYPE html>
 <html>
-<body style="font-family:system-ui,sans-serif;color:#111827;background:#f9fafb;margin:0;padding:20px;">
-  <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-    <div style="background:#dc2626;padding:16px 24px;">
+<body style="font-family:system-ui,sans-serif;color:#0a0d12;background:#fafbfd;margin:0;padding:20px;">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+    <div style="background:#b91c1c;padding:16px 24px;">
       <h2 style="margin:0;color:#fff;font-size:18px;">&#9888; IMMEDIATE Deficiency Alert</h2>
-      <p style="margin:4px 0 0;color:#fecaca;font-size:13px;">${escHtml(accountName)}</p>
+      <p style="margin:4px 0 0;color:#fee2e2;font-size:13px;">${escHtml(accountName)}</p>
     </div>
     <div style="padding:20px 24px;">
-      <p style="font-size:14px;color:#374151;margin:0 0 4px;">${escHtml(tierLabel)}</p>
-      <p style="font-size:13px;color:#6b7280;margin:0 0 16px;">
+      <p style="font-size:14px;color:#1e293b;margin:0 0 4px;">${escHtml(tierLabel)}</p>
+      <p style="font-size:13px;color:#334155;margin:0 0 16px;">
         IMMEDIATE deficiencies represent an active safety or reliability risk and should be
         addressed without delay per NFPA 70B:2023.
       </p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
-          <tr style="background:#f3f4f6;">
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#6b7280;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Asset</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#6b7280;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Finding</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#6b7280;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Age</th>
+          <tr style="background:#e3e7ee;">
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#334155;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Asset</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#334155;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Finding</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#334155;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Age</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
-      <p style="font-size:12px;color:#9ca3af;margin:20px 0 0;">
+      <p style="font-size:12px;color:#334155;margin:20px 0 0;">
         Log in to ServiceCycle to assign corrective actions or submit a quote request.
         This is an automated notification &mdash; do not reply to this email.
       </p>

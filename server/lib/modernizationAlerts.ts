@@ -126,9 +126,9 @@ function scoreLabel(score: number): string {
 }
 
 function scoreColor(score: number): string {
-  if (score > 1.0) return '#dc2626'; // red
-  if (score >= 0.85) return '#ea580c'; // orange
-  return '#d97706'; // amber
+  if (score > 1.0) return '#b91c1c'; // red
+  if (score >= 0.85) return '#b91c1c'; // red (locked palette has no separate orange tier)
+  return '#b45309'; // amber
 }
 
 interface AlertItem {
@@ -149,15 +149,15 @@ function buildModernizationHtml(
       const label = scoreLabel(item.score);
       return `
     <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">
+      <td style="padding:10px 12px;border-bottom:1px solid #e3e7ee;">
         <strong style="color:${color};">${escHtml(label)}</strong>
         &nbsp;&middot;&nbsp;${escHtml(item.assetLabel)}
-        ${item.site ? `<span style="color:#6b7280;font-size:12px;"> (${escHtml(item.site)})</span>` : ''}
+        ${item.site ? `<span style="color:#334155;font-size:12px;"> (${escHtml(item.site)})</span>` : ''}
       </td>
-      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px;">
+      <td style="padding:10px 12px;border-bottom:1px solid #e3e7ee;color:#1e293b;font-size:13px;">
         Score: <strong>${(item.score * 100).toFixed(0)}%</strong>
-        ${item.rateRange ? `<br/><span style="color:#6b7280;font-size:11px;">Est. CapEx: ${escHtml(item.rateRange)}</span>` : ''}
-        ${item.catalogNote ? `<br/><span style="color:#6b7280;font-size:11px;">${escHtml(item.catalogNote.slice(0, 120))}</span>` : ''}
+        ${item.rateRange ? `<br/><span style="color:#334155;font-size:11px;">Est. CapEx: ${escHtml(item.rateRange)}</span>` : ''}
+        ${item.catalogNote ? `<br/><span style="color:#334155;font-size:11px;">${escHtml(item.catalogNote.slice(0, 120))}</span>` : ''}
       </td>
     </tr>`;
     })
@@ -165,31 +165,31 @@ function buildModernizationHtml(
 
   return `<!DOCTYPE html>
 <html>
-<body style="font-family:system-ui,sans-serif;color:#111827;background:#f9fafb;margin:0;padding:20px;">
-  <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-    <div style="background:#0d4f6e;padding:16px 24px;">
+<body style="font-family:system-ui,sans-serif;color:#0a0d12;background:#fafbfd;margin:0;padding:20px;">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+    <div style="background:#073a52;padding:16px 24px;">
       <h2 style="margin:0;color:#fff;font-size:18px;">&#9873; Modernization Planning Alert</h2>
-      <p style="margin:4px 0 0;color:#bae6fd;font-size:13px;">${escHtml(accountName)}</p>
+      <p style="margin:4px 0 0;color:#e6f0f5;font-size:13px;">${escHtml(accountName)}</p>
     </div>
     <div style="padding:20px 24px;">
-      <p style="font-size:14px;color:#374151;margin:0 0 4px;">
+      <p style="font-size:14px;color:#1e293b;margin:0 0 4px;">
         The following assets have reached the modernization planning threshold based on
         age, condition rating, and OEM support status.
       </p>
-      <p style="font-size:13px;color:#6b7280;margin:0 0 16px;">
+      <p style="font-size:13px;color:#334155;margin:0 0 16px;">
         Scores reflect IEEE/NFPA/NETA-calibrated Remaining Useful Life analysis.
         Quote requests have been automatically opened for your service representative.
       </p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
-          <tr style="background:#f3f4f6;">
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#6b7280;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Asset</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#6b7280;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Risk Detail</th>
+          <tr style="background:#e3e7ee;">
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#334155;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Asset</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:#334155;text-transform:uppercase;font-size:11px;letter-spacing:.05em;">Risk Detail</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
-      <p style="font-size:12px;color:#9ca3af;margin:20px 0 0;">
+      <p style="font-size:12px;color:#334155;margin:20px 0 0;">
         Log in to ServiceCycle to view the full fleet modernization forecast and CapEx projections.
         This is an automated notification &mdash; do not reply.
       </p>

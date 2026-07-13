@@ -186,10 +186,10 @@ function tierCrosses(tier: { leadDays: number }, daysUntil: number): boolean {
 }
 
 const TYPE_CONFIG = {
-  regulatory_breach: { label: 'Regulatory Breach Risk', color: '#dc2626', bg: '#fef2f2' },
-  escalation:        { label: 'Escalation',             color: '#dc2626', bg: '#fef2f2' },
-  overdue:           { label: 'Overdue',                color: '#d97706', bg: '#fffbeb' },
-  maintenance_due:   { label: 'Maintenance Due',        color: '#0d4f6e', bg: '#eaf2f6' },
+  regulatory_breach: { label: 'Regulatory Breach Risk', color: '#b91c1c', bg: '#fee2e2' },
+  escalation:        { label: 'Escalation',             color: '#b91c1c', bg: '#fee2e2' },
+  overdue:           { label: 'Overdue',                color: '#b45309', bg: '#fef3c7' },
+  maintenance_due:   { label: 'Maintenance Due',        color: '#073a52', bg: '#e6f0f5' },
 };
 
 // Per-user AlertPreference.daysBeforeList only applies to the positive
@@ -237,14 +237,14 @@ function buildDigestHtml(alerts, userName) {
     const assetUrl = `${appUrl}/assets/${asset.id}`;
     return `
       <tr>
-        <td style="padding:14px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;${hasUrgent ? 'border-left:3px solid #dc2626;padding-left:13px;' : ''}">
+        <td style="padding:14px 16px;border-bottom:1px solid #e3e7ee;vertical-align:top;${hasUrgent ? 'border-left:3px solid #b91c1c;padding-left:13px;' : ''}">
           <div style="margin-bottom:6px;">
             <a href="${assetUrl}" style="font-weight:700;color:#1e293b;text-decoration:none;font-size:14px;">${assetDisplayName(asset)}</a>
-            <span style="font-size:12px;color:#94a3b8;margin-left:8px;">${siteName}</span>
+            <span style="font-size:12px;color:#334155;margin-left:8px;">${siteName}</span>
           </div>
           <div style="margin-bottom:6px;">${badges}</div>
           <div>
-            <a href="${assetUrl}" style="font-size:12px;color:#0f172a;text-decoration:underline;font-weight:500;">View asset & schedule →</a>
+            <a href="${assetUrl}" style="font-size:12px;color:#0a0d12;text-decoration:underline;font-weight:500;">View asset & schedule →</a>
           </div>
         </td>
       </tr>`;
@@ -255,14 +255,14 @@ function buildDigestHtml(alerts, userName) {
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;">
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fafbfd;">
   <div style="max-width:640px;margin:32px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-    <div style="background:#0f172a;padding:20px 28px;">
-      <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,0.6);letter-spacing:0.08em;text-transform:uppercase;">ServiceCycle — Maintenance Digest</div>
+    <div style="background:#073a52;padding:20px 28px;">
+      <div style="font-size:13px;font-weight:700;color:#e6f0f5;letter-spacing:0.08em;text-transform:uppercase;">ServiceCycle — Maintenance Digest</div>
       <div style="font-size:20px;font-weight:700;color:#fff;margin-top:4px;">
         ${assetCount} asset${assetCount !== 1 ? 's' : ''} need${assetCount === 1 ? 's' : ''} attention
       </div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.55);margin-top:4px;">
+      <div style="font-size:13px;color:#e6f0f5;margin-top:4px;">
         Hi ${userName} — here's your maintenance compliance summary for ${fmtDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
         ${alertCount > assetCount ? `<span style="opacity:0.8;">(${alertCount} active alerts across ${assetCount} asset${assetCount !== 1 ? 's' : ''})</span>` : ''}
       </div>
@@ -272,14 +272,14 @@ function buildDigestHtml(alerts, userName) {
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <div style="padding:20px 28px;border-top:1px solid #e2e8f0;">
-      <a href="${appUrl}/assets" style="display:inline-block;background:#0f172a;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">
+    <div style="padding:20px 28px;border-top:1px solid #e3e7ee;">
+      <a href="${appUrl}/assets" style="display:inline-block;background:#073a52;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;">
         Open ServiceCycle →
       </a>
     </div>
-    <div style="padding:16px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;">
+    <div style="padding:16px 28px;background:#fafbfd;border-top:1px solid #e3e7ee;font-size:12px;color:#334155;">
       Sent by ServiceCycle — your equipment maintenance compliance platform.
-      <a href="${appUrl}/users" style="color:#64748b;">Manage notification preferences</a>
+      <a href="${appUrl}/users" style="color:#334155;">Manage notification preferences</a>
     </div>
   </div>
 </body>
