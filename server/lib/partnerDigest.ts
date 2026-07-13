@@ -130,6 +130,10 @@ async function runPartnerDigestCron(): Promise<DigestResult> {
         const totalCount = repLogs.length;
         const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
+        // C2d: inline styles use LITERAL hexes from the locked brand palette
+        // (lib/pdfStyle PDF_COLORS) -- email HTML cannot use CSS variables.
+        // petrol #073a52, ink #0a0d12, textMuted #1e293b, textFaint #334155,
+        // borderSubtle #e3e7ee, pageBg #fafbfd.
         const accountSections = Array.from(byAccount.entries()).map(([acId, acLogs]) => {
           const acName = acLogs[0].account.companyName;
           const eventLines = acLogs.map((l: any) => {
@@ -138,20 +142,20 @@ async function runPartnerDigestCron(): Promise<DigestResult> {
             return `<li>${badge}: ${detail}</li>`;
           }).join('');
           return `
-            <div style="margin:16px 0;padding:12px;border-left:4px solid #2980b9;">
+            <div style="margin:16px 0;padding:12px;border-left:4px solid #073a52;background:#fafbfd;font-family:system-ui,sans-serif;font-size:14px;color:#1e293b;">
               <strong>${acName}</strong>
               <ul style="margin:8px 0 8px 16px;">${eventLines}</ul>
-              <a href="${clientUrl}/accounts/${acId}">Open ${acName} →</a>
+              <a href="${clientUrl}/accounts/${acId}" style="color:#073a52;">Open ${acName} →</a>
             </div>
           `;
         }).join('');
 
         const html = `
-          <h2>Your ServiceCycle Activity Digest</h2>
-          <p>${totalCount} update${totalCount !== 1 ? 's' : ''} across ${accountCount} account${accountCount !== 1 ? 's' : ''} from <strong>${org.name}</strong>.</p>
+          <h2 style="margin:0 0 8px;font-family:system-ui,sans-serif;font-size:18px;color:#0a0d12;">Your ServiceCycle Activity Digest</h2>
+          <p style="margin:0 0 12px;font-family:system-ui,sans-serif;font-size:14px;color:#1e293b;">${totalCount} update${totalCount !== 1 ? 's' : ''} across ${accountCount} account${accountCount !== 1 ? 's' : ''} from <strong>${org.name}</strong>.</p>
           ${accountSections}
-          <hr/>
-          <p style="color:#888;font-size:12px;">You received this because you are a service representative at ${org.name}. Sharing is controlled by each customer account.</p>
+          <hr style="border:none;border-top:1px solid #e3e7ee;"/>
+          <p style="color:#334155;font-size:12px;font-family:system-ui,sans-serif;">You received this because you are a service representative at ${org.name}. Sharing is controlled by each customer account.</p>
         `;
 
         // Send ALL emails first — if any throw, none of the records are marked.

@@ -30,6 +30,7 @@ const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 const prisma = require('../lib/prisma').default;
 const { getAccountBranding } = require('../lib/partnerBranding');
+const { PDF_COLORS, PDF_FONTS } = require('../lib/pdfStyle'); // C2d: shared doc theme (typography/colors ONLY -- never geometry)
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -53,16 +54,21 @@ const PER_PAGE = GRID.cols * GRID.rows; // 24
 const QR_SIZE = 60;  // ≈ 21 mm
 const QR_PAD  = 5;   // inset from the label's left/top edge
 
-const FONT_REG  = 'Helvetica';
-const FONT_BOLD = 'Helvetica-Bold';
-const TEXT_MUTED = '#5b6373';
-const TEXT_FAINT = '#9aa3b2';
+// C2d micro-typography: faces/text colors from the shared theme (lib/pdfStyle).
+// Values only -- the GRID label geometry above is physical Avery 5160-class
+// stock and is deliberately NOT themed.
+const FONT_REG  = PDF_FONTS.sans;        // 'Helvetica' -- same face as before
+const FONT_BOLD = PDF_FONTS.sansBold;    // 'Helvetica-Bold'
+const TEXT_MUTED = PDF_COLORS.textMuted; // secondary label lines
+const TEXT_FAINT = PDF_COLORS.textFaint; // tiny brand footer
 
 // #7 condition-of-maintenance label (NFPA 70B §4.2 / Annex). The standard's EMP
 // element list calls for the equipment to carry its condition designation and
 // the date that condition was established. The NETA decal (a completed work
 // order's netaDecal result) supplies the Serviceable / Limited / Non-serviceable
 // designation; the asset's governingCondition supplies the C1/C2/C3 rating.
+// C2d: decal swatch colors mirror the physical NETA decal (green/yellow/red)
+// signal colors -- deliberately NOT mapped to the brand palette.
 const DECAL_DESIGNATION: any = { GREEN: 'Serviceable', YELLOW: 'Limited Service', RED: 'Non-serviceable' };
 const DECAL_COLOR: any = { GREEN: '#16a34a', YELLOW: '#d97706', RED: '#dc2626' };
 
@@ -110,7 +116,7 @@ function drawLabel(doc, x, y, asset, qrPng, brandName) {
   const tw = x + GRID.labelW - tx - 4;
 
   // Line 1 — asset identity, bold.
-  doc.font(FONT_BOLD).fontSize(8).fillColor('#000000');
+  doc.font(FONT_BOLD).fontSize(8).fillColor(PDF_COLORS.ink);
   doc.text(fitText(doc, assetLine(asset), tw), tx, y + 9, { lineBreak: false });
 
   // Line 2 — site · position.
@@ -145,9 +151,12 @@ function drawLabel(doc, x, y, asset, qrPng, brandName) {
   // Footer — tiny brand mark, bottom of the text block. #15 co-brand: the
   // contractor's name in front of the ServiceCycle mark when present.
   doc.font(FONT_REG).fontSize(5.5).fillColor(TEXT_FAINT);
+  // C2d note: pdfStyle's mono footer voice was tried and rejected here --
+  // Courier at 5.5pt ellipsizes the co-branded mark ('<brand> - ServiceCycle')
+  // inside the ~101pt label text column; the sans face keeps it whole.
   const footerText = brandName ? `${brandName} · ServiceCycle` : 'ServiceCycle';
   doc.text(fitText(doc, footerText, tw), tx, y + GRID.labelH - 11, { lineBreak: false });
-  doc.fillColor('#000000');
+  doc.fillColor(PDF_COLORS.ink);
 }
 
 // PURE renderer — the exact PDFDocument setup + label-grid loop, decoupled from

@@ -138,6 +138,10 @@ async function buildCustomerDigest(prisma: any, accountId: string) {
   };
 }
 
+// C2d: inline styles use LITERAL hexes from the locked brand palette
+// (lib/pdfStyle PDF_COLORS) -- email HTML cannot use CSS variables. Keep in
+// sync with pdfStyle.ts: petrol #073a52, ink #0a0d12, textMuted #1e293b,
+// textFaint #334155, borderSubtle #e3e7ee, pageBg #fafbfd, petrolTint #e6f0f5.
 function buildDigestHtml(companyName: string, d: any): string {
   const c = d.compliance;
   const trend = c.delta == null
@@ -151,24 +155,24 @@ function buildDigestHtml(companyName: string, d: any): string {
 
   return `<!DOCTYPE html>
 <html>
-<body style="font-family:system-ui,sans-serif;color:#0a0d12;background:#f9fafb;margin:0;padding:20px;">
-  <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-    <div style="background:#0d4f6e;padding:16px 24px;">
+<body style="font-family:system-ui,sans-serif;color:#0a0d12;background:#fafbfd;margin:0;padding:20px;">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
+    <div style="background:#073a52;padding:16px 24px;">
       <h2 style="margin:0;color:#fff;font-size:18px;">Your weekly compliance digest</h2>
-      <p style="margin:4px 0 0;color:#cfe3ee;font-size:13px;">${escHtml(companyName)}</p>
+      <p style="margin:4px 0 0;color:#e6f0f5;font-size:13px;">${escHtml(companyName)}</p>
     </div>
     <div style="padding:20px 24px;">
-      <p style="font-size:15px;margin:0 0 6px;"><strong>NFPA 70B program maturity:</strong> ${escHtml(String(d.maturity.score))}/100 &mdash; Level ${escHtml(String(d.maturity.level))} of 5 (${escHtml(d.maturity.levelLabel)})${d.maturity.nextLevel ? ` &middot; <span style="color:#6b7280;">${escHtml(String(d.maturity.nextLevel.pointsToNext))} pts to ${escHtml(d.maturity.nextLevel.label)}</span>` : ''}</p>
+      <p style="font-size:15px;margin:0 0 6px;"><strong>NFPA 70B program maturity:</strong> ${escHtml(String(d.maturity.score))}/100 &mdash; Level ${escHtml(String(d.maturity.level))} of 5 (${escHtml(d.maturity.levelLabel)})${d.maturity.nextLevel ? ` &middot; <span style="color:#334155;">${escHtml(String(d.maturity.nextLevel.pointsToNext))} pts to ${escHtml(d.maturity.nextLevel.label)}</span>` : ''}</p>
       <p style="font-size:15px;margin:0 0 12px;"><strong>Compliance:</strong> ${trend}</p>
-      <ul style="margin:0 0 16px 16px;font-size:14px;color:#374151;">
+      <ul style="margin:0 0 16px 16px;font-size:14px;color:#1e293b;">
         <li>${d.thisWeek.wentOverdue} item${d.thisWeek.wentOverdue === 1 ? '' : 's'} went overdue this week</li>
         <li>${d.thisWeek.fixed} deficienc${d.thisWeek.fixed === 1 ? 'y' : 'ies'} resolved</li>
         <li>${d.thisWeek.workOrdersCompleted} work order${d.thisWeek.workOrdersCompleted === 1 ? '' : 's'} completed</li>
       </ul>
-      <p style="font-size:14px;color:#374151;margin:0 0 16px;">${outageLine}</p>
-      ${actionItems ? `<p style="font-size:13px;color:#374151;margin:0 0 4px;"><strong>Top items to close:</strong></p><ul style="margin:0 0 16px 16px;font-size:13px;color:#374151;">${actionItems}</ul>` : ''}
-      <a href="${clientUrl}/dashboard" style="display:inline-block;background:#0d4f6e;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-size:14px;">Open ServiceCycle</a>
-      <p style="font-size:12px;color:#9ca3af;margin:20px 0 0;">You receive this because weekly digests are enabled for your account. An admin can turn them off in Settings.</p>
+      <p style="font-size:14px;color:#1e293b;margin:0 0 16px;">${outageLine}</p>
+      ${actionItems ? `<p style="font-size:13px;color:#1e293b;margin:0 0 4px;"><strong>Top items to close:</strong></p><ul style="margin:0 0 16px 16px;font-size:13px;color:#1e293b;">${actionItems}</ul>` : ''}
+      <a href="${clientUrl}/dashboard" style="display:inline-block;background:#073a52;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-size:14px;">Open ServiceCycle</a>
+      <p style="font-size:12px;color:#334155;margin:20px 0 0;">You receive this because weekly digests are enabled for your account. An admin can turn them off in Settings.</p>
     </div>
   </div>
 </body>
