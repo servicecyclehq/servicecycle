@@ -153,7 +153,7 @@ export function AuthProvider({ children }) {
     }
 
     api
-      .get('/api/auth/me')
+      .get('/api/auth/me', { timeout: 6000 }) /* v0.95 C1: boot probe must not hold first paint for the global 30s */
       .then((res) => {
         const u = res.data.data.user;
         setUser(u);
@@ -166,13 +166,19 @@ export function AuthProvider({ children }) {
         if (u?.account?.companyName) localStorage.setItem('servicecycle_company', u.account.companyName);
         fetchAccountSettings(u);
       })
-      .catch(() => {
-        // Token rejected (expired, revoked, or wrong signing key after a
-        // server JWT_SECRET rotation). Wipe ALL session state, including
-        // servicecycle_company — otherwise the prior tenant's company name
-        // bleeds into the sidebar of the next tenant that registers in
-        // this same browser session (F022 audit observation, 2026-05-07).
-        clearAuthStorage();
+      .catch((e) => {
+        // v0.95 (design-review C1): only wipe the session when the SERVER
+        // rejected the token. A timeout / network failure keeps the token and
+        // just finishes boot -- the visitor lands on the public page instead
+        // of staring at "Loading…" or being logged out by a transient stall.
+        if (e?.response) {
+          // Token rejected (expired, revoked, or wrong signing key after a
+          // server JWT_SECRET rotation). Wipe ALL session state, including
+          // servicecycle_company — otherwise the prior tenant's company name
+          // bleeds into the sidebar of the next tenant that registers in
+          // this same browser session (F022 audit observation, 2026-05-07).
+          clearAuthStorage();
+        }
       })
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

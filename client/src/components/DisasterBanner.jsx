@@ -73,9 +73,11 @@ export default function DisasterBanner() {
         type="button"
         onClick={() => navigate('/disaster-response')}
         style={{
+          /* v0.95 alarm budget: outline treatment -- the banner already carries
+             the severity color; a solid block here outranked page content. */
           padding: '4px 14px', borderRadius: 6, cursor: 'pointer',
-          background: sty.color, color: '#fff',
-          border: 'none', fontWeight: 700,
+          background: 'transparent', color: sty.color,
+          border: `1px solid ${sty.color}`, fontWeight: 600,
           fontSize: 'var(--font-size-xs)', whiteSpace: 'nowrap',
           flexShrink: 0,
         }}

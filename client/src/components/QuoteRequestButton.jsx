@@ -67,7 +67,7 @@ const TIMELINE_VALUE_LABELS = {
 const STATUS_META = {
   draft:     { label: 'Draft',      color: 'var(--chip-amber-fg)', bg: 'var(--chip-amber-bg)' },
   requested: { label: 'Requested',  color: 'var(--chip-blue-fg)', bg: 'var(--chip-blue-bg)' },
-  quoted:    { label: 'Quote sent', color: '#7c3aed', bg: 'var(--chip-purple-bg)' },
+  quoted:    { label: 'Quote sent', color: 'var(--chip-slate-fg)', bg: 'var(--chip-slate-bg)' }, // v0.95: purple retired; slate = in customer's court
   accepted:  { label: 'Accepted',   color: 'var(--chip-green-fg)', bg: 'var(--chip-green-bg)' },
   declined:  { label: 'Declined',   color: 'var(--chip-red-fg)', bg: 'var(--chip-red-bg)' },
 };

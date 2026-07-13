@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServiceCycle — Design Direction Board · 2026-07-12</title>
+<style>
+/* ============ board chrome ============ */
+:root{
+  --b-bg:#0f1318; --b-surface:#161c24; --b-surface2:#1c242e; --b-border:#2a3441;
+  --b-text:#e6edf3; --b-muted:#94a3b8; --b-accent:#3ab2dc; --b-emerald:#34d399;
+  --petrol:#073a52; --petrol-h:#0d4f6e; --ink:#0a0d12; --emerald:#10b981;
+  --mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--b-bg);color:var(--b-text);font:15px/1.55 Inter,-apple-system,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto;padding:0 28px 80px}
+.board-head{padding:44px 0 20px}
+.board-head .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;color:var(--b-accent);text-transform:uppercase}
+.board-head h1{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:10px 0 8px}
+.board-head p{color:var(--b-muted);max-width:820px}
+.board-head p b{color:var(--b-text);font-weight:600}
+nav.jump{position:sticky;top:0;z-index:50;background:rgba(15,19,24,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--b-border);margin:18px -28px 0;padding:10px 28px;display:flex;gap:8px;flex-wrap:wrap}
+nav.jump a{color:var(--b-muted);text-decoration:none;font-size:13px;font-weight:600;padding:6px 12px;border:1px solid var(--b-border);border-radius:999px}
+nav.jump a:hover{color:var(--b-text);border-color:var(--b-accent)}
+nav.jump a.hot{color:#0a0d12;background:var(--b-accent);border-color:var(--b-accent)}
+section.dir{margin-top:56px;scroll-margin-top:70px}
+.dir-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.dir-head .tag{font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:5px 10px;border-radius:4px}
+.tag.t-cur{background:#3a2e0a;color:#fcd34d}.tag.t-a{background:#0f2f24;color:#34d399}.tag.t-b{background:#102b3d;color:#3ab2dc}.tag.t-c{background:#2a1e44;color:#c4b5fd}
+.dir-head h2{font-size:22px;font-weight:700;letter-spacing:-.015em}
+.dir-meta{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 16px;color:var(--b-muted);font-size:13px}
+.dir-meta b{color:var(--b-text)}
+.thesis{background:var(--b-surface);border:1px solid var(--b-border);border-left:3px solid var(--b-accent);border-radius:8px;padding:14px 18px;margin-bottom:18px;max-width:960px}
+.thesis p{color:#cbd5e1;font-size:14px}
+ul.notes{margin:16px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px 22px;max-width:1100px}
+ul.notes li{font-size:13px;color:var(--b-muted);padding-left:20px;position:relative}
+ul.notes li::before{content:"";position:absolute;left:2px;top:7px;width:7px;height:7px;border-radius:2px;background:var(--b-accent)}
+ul.notes li b{color:var(--b-text);font-weight:600}
+ul.notes.warn li::before{background:#fbbf24}
+/* browser frame around each mock */
+.frame{border:1px solid var(--b-border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 24px 60px -24px rgba(0,0,0,.6)}
+.frame-bar{display:flex;align-items:center;gap:10px;background:#1c242e;border-bottom:1px solid var(--b-border);padding:9px 14px}
+.frame-bar .dots{display:flex;gap:5px}
+.frame-bar .dots i{width:10px;height:10px;border-radius:50%;background:#2a3441;display:block}
+.frame-bar .url{font:500 12px var(--mono);color:#94a3b8;background:#0f1318;border:1px solid #2a3441;border-radius:6px;padding:4px 12px}
+.frame-body{overflow-x:auto}
+.mock{min-width:1120px}
+/* comparison verdict table */
+table.verdict{width:100%;border-collapse:collapse;margin-top:14px;background:var(--b-surface);border:1px solid var(--b-border);border-radius:8px;overflow:hidden}
+table.verdict th{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--b-muted);text-align:left;padding:12px 16px;border-bottom:1px solid var(--b-border);background:var(--b-surface2)}
+table.verdict td{padding:12px 16px;border-bottom:1px solid var(--b-border);font-size:13.5px;color:#cbd5e1;vertical-align:top}
+table.verdict tr:last-child td{border-bottom:none}
+table.verdict td b{color:var(--b-text)}
+.pick{background:var(--b-surface);border:1px solid var(--b-border);border-radius:8px;padding:16px 20px;margin-top:18px;max-width:960px}
+.pick h3{font-size:15px;margin-bottom:6px}
+.pick p{font-size:14px;color:var(--b-muted)}
+.pick p b{color:var(--b-text)}
+
+/* ============ MOCK 0 — CURRENT (faithful recreation) ============ */
+.m0{background:#fafbfd;color:#0a0d12;font-size:15px;display:flex}
+.m0 .side{width:220px;background:#0a0d12;flex-shrink:0;display:flex;flex-direction:column;min-height:880px}
+.m0 .s-org{color:#9aa3b2;font-size:11px;padding:10px 16px 4px}
+.m0 .s-search{margin:6px 12px 10px;background:#13171f;border:1px solid #1e293b;border-radius:6px;color:#64748b;font-size:12px;padding:7px 10px}
+.m0 .s-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#9aa3b2;padding:10px 16px 3px}
+.m0 .s-item{display:flex;align-items:center;gap:8px;color:#9aa3b2;font-size:13px;font-weight:500;padding:7px 16px;margin:0 8px 1px;border-radius:6px}
+.m0 .s-item.on{background:linear-gradient(120deg,#0e567a 0%,#0a3f5b 100%);color:#fff}
+.m0 .s-item svg{width:15px;height:15px;flex-shrink:0}
+.m0 .main{flex:1;min-width:0}
+.m0 .nws{background:#fffbeb;border-bottom:1px solid #fde68a;color:#0a0d12;font-size:13px;display:flex;align-items:center;gap:10px;padding:9px 20px}
+.m0 .nws .w{color:#b45309;font-weight:700;font-size:12px}
+.m0 .nws .cta{margin-left:auto;background:#ea580c;color:#fff;font-size:12px;font-weight:700;border-radius:6px;padding:6px 12px;white-space:nowrap}
+.m0 .nws .x{color:#b45309;font-weight:600;margin-left:10px}
+.m0 .phead{background:#fff;border-bottom:1px solid #dde2eb;padding:18px 32px;display:flex;align-items:center;justify-content:space-between}
+.m0 .ptitle{font-size:28px;font-weight:800;letter-spacing:-.025em;color:#0e6a99}
+.m0 .psub{font-size:13px;color:#1e293b;margin-top:1px}
+.m0 .btn-p{background:linear-gradient(180deg,#0d4f6e,#073a52);color:#fff;font-size:13px;font-weight:600;border-radius:6px;padding:8px 16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 2px rgba(7,58,82,.28)}
+.m0 .body{padding:28px 32px}
+.m0 .card{background:#fff;border:1px solid #dde2eb;border-radius:10px;box-shadow:0 1px 2px rgba(10,13,18,.05),0 4px 12px -4px rgba(10,13,18,.07);margin-bottom:20px}
+.m0 .card.rib{border-top:3px solid #b91c1c}
+.m0 .ch{padding:16px 20px;border-bottom:1px solid #dde2eb;display:flex;align-items:center;justify-content:space-between}
+.m0 .ct{font-size:15px;font-weight:600}
+.m0 .cb{padding:20px}
+.m0 .insp{display:flex;gap:12px;align-items:flex-start;padding:16px 20px}
+.m0 .insp .ic{color:#b91c1c;font-size:18px;line-height:1.2}
+.m0 .insp b{font-size:15px}
+.m0 .insp .sub{font-size:13px;color:#1e293b;margin-top:3px}
+.m0 .insp a{color:#0d4f6e;text-decoration:underline}
+.m0 .stats{display:flex}
+.m0 .stat{flex:1;padding:4px 20px}
+.m0 .stat .n{font-size:24px;font-weight:700}
+.m0 .stat .n.red{color:#b91c1c}.m0 .stat .n.amber{color:#b45309}
+.m0 .stat .l{font-size:12px;color:#334155;margin-top:2px}
+.m0 .hot{border-top:1px solid #dde2eb;margin-top:14px;padding:12px 20px;display:flex;justify-content:space-between;font-size:13px}
+.m0 .hot a{color:#0d4f6e}
+.m0 .hot .cal{color:#b91c1c;font-weight:700}
+.m0 .gaugewrap{display:flex;gap:24px;align-items:center;padding:4px 20px 0}
+.m0 .pill-red{background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;display:inline-block}
+.m0 .mat-sub{font-size:13px;color:#1e293b;margin-top:8px;max-width:640px}
+.m0 .lever{font-size:13px;margin-top:6px}
+.m0 .bigpct{font-size:28px;font-weight:800;color:#b91c1c}
+.m0 .bar{height:10px;border-radius:999px;background:#eef1f6;overflow:hidden;margin-top:10px}
+.m0 .bar i{display:block;height:100%;width:24.3%;background:#b91c1c;border-radius:999px}
+.m0 .path-stats{display:flex;gap:26px;align-items:baseline}
+.m0 .ps .v{font-size:22px;font-weight:700}.m0 .ps .v.red{color:#b91c1c}
+.m0 .ps .k{font:600 10px var(--mono);letter-spacing:.06em;color:#334155;text-transform:uppercase}
+.m0 .row{display:flex;align-items:center;gap:12px;padding:11px 20px;border-top:1px solid #eef1f6;font-size:13.5px}
+.m0 .row .ov{background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;flex-shrink:0}
+.m0 .row .site{margin-left:auto;color:#1e293b;font-size:12.5px;white-space:nowrap}
+.m0 .row .gain{color:#15803d;font-weight:700;font-size:12.5px;white-space:nowrap}
+.m0 table{width:100%;border-collapse:collapse}
+.m0 th{text-align:left;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#334155;padding:13px 16px;border-bottom:1px solid #dde2eb;background:#fafbfd;white-space:nowrap}
+.m0 td{padding:14px 16px;border-bottom:1px solid #eef1f6;font-size:14px;vertical-align:middle}
+.m0 td .aname{color:#0d4f6e;font-weight:600}
+.m0 td .aid{font:500 12px var(--mono);color:#334155}
+.m0 td .asub{font-size:12px;color:#334155;margin-top:2px}
+.m0 .crit{width:26px;height:26px;border-radius:50%;border:1.5px solid #fca5a5;color:#b91c1c;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.m0 .redpill{border:1px solid #fca5a5;color:#b91c1c;background:#fff;font-size:11px;font-weight:600;border-radius:999px;padding:3px 10px;white-space:nowrap}
+.m0 .due{color:#b91c1c;font-weight:700;font-size:13px;white-space:nowrap}
+.m0 .duesub{font-size:12px;color:#334155;margin-top:2px}
+.m0 .cwo{border:1px solid #c7cfdb;border-radius:6px;background:#fff;font-size:12.5px;font-weight:600;padding:7px 12px;white-space:nowrap;box-shadow:0 1px 2px rgba(10,13,18,.04)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="board-head">
+  <div class="eyebrow">servicecycle · design review artifact · 2026-07-12</div>
+  <h1>Design direction board</h1>
+  <p>The same dashboard — <b>Meridian Manufacturing demo data, live as of today</b> — rendered four ways.
+  <b>Current</b> is a faithful HTML recreation of production. <b>A / B / C</b> are modernization directions,
+  all using the locked petrol/ink/emerald brand — what changes is composition and discipline, not color identity.
+  Scroll, compare, pick what feels right. Full evidence and the ranked punch list live in
+  <b>DESIGN_REVIEW_2026-07-12.md</b> next to this file.</p>
+  <nav class="jump">
+    <a href="#cur">Current</a>
+    <a href="#dir-a" class="hot">A · Finish Quietly Modern</a>
+    <a href="#dir-b">B · Control Room</a>
+    <a href="#dir-c">C · Field Report</a>
+    <a href="#verdict">Verdict & next step</a>
+  </nav>
+</header>
+<!-- ================= CURRENT ================= -->
+<section class="dir" id="cur">
+  <div class="dir-head"><span class="tag t-cur">Current</span><h2>Production today — faithful recreation</h2></div>
+  <div class="dir-meta"><span>Source: <b>live demo, 2026-07-12</b></span><span>Palette: <b>already on-brand</b></span><span>Problem: <b>composition, not color</b></span></div>
+  <div class="frame">
+    <div class="frame-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">servicecycle.app/dashboard</div></div>
+    <div class="frame-body"><div class="mock m0">
+      <div class="side">
+        <div class="s-org">Meridian Manufacturing</div>
+        <div class="s-search">&#128269;&nbsp; Search assets...</div>
+        <div class="s-item on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>Dashboard</div>
+        <div class="s-label">Equipment</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 1 3 9h4l-1 6 6-8H8l1-6z"/></svg>Assets</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="10" rx="1"/><path d="M2 7h12"/></svg>Archive</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5l6-3 6 3-6 3-6-3z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></svg>Templates</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="6" r="2.5"/><path d="M8 1a5 5 0 0 1 5 5c0 3.5-5 9-5 9S3 9.5 3 6a5 5 0 0 1 5-5z"/></svg>Sites</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5L13 5v9.5H4z"/><path d="M9 1.5V5h4"/></svg>Documents</div>
+        <div class="s-label">Work</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M6 5h4M6 8h4M6 11h2"/></svg>Work Orders</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1"/><path d="M2 6h12M5 1.5V4M11 1.5V4"/></svg>Compliance Calendar</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5"/></svg>Outage Planner</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 14 5v6l-6 3.5L2 11V5z"/><path d="M8 8v6.5M2 5l6 3 6-3"/></svg>Parts</div>
+        <div class="s-item"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5L13 5v9.5H4z"/><path d="M6 9h4M6 11.5h4"/></svg>Quote Requests</div>
+        <div class="s-label">Compliance &nbsp;›</div>
+        <div class="s-label">Data In &nbsp;›</div>
+        <div class="s-label">Monitoring &nbsp;›</div>
+        <div class="s-label">Partners &nbsp;›</div>
+        <div class="s-label">Admin &nbsp;›</div>
+      </div>
+      <div class="main">
+        <div class="nws"><span class="w">&#9888; WARNING:</span> Extreme Heat Warning issued July 12 at 1:44PM CDT until July 14 at 1:00AM CDT by NWS Duluth MN <span class="cta">View &amp; Declare Emergency</span><span class="x">✕</span></div>
+        <div class="phead">
+          <div><div class="ptitle">Good evening, Avery</div><div class="psub">Maintenance compliance at a glance</div></div>
+          <div class="btn-p">+ New asset</div>
+        </div>
+        <div class="body">
+          <div class="card rib"><div class="insp"><div class="ic">&#9888;</div><div><b>56 items would look incomplete to an inspector</b><div class="sub">Close them on the <a>Path to 100% Compliance</a> list before the inspector opens the report.</div></div></div></div>
+          <div class="card">
+            <div class="ch"><div class="ct">Arc flash</div><div style="font-size:12px;color:#334155">IEEE 1584 data layer · a PE runs the study</div></div>
+            <div class="cb" style="padding-top:12px">
+              <div class="stats">
+                <div class="stat"><div class="n red">1</div><div class="l">DANGER buses</div></div>
+                <div class="stat"><div class="n amber">1</div><div class="l">studies expiring</div></div>
+                <div class="stat"><div class="n">0</div><div class="l">buses needing data</div></div>
+                <div class="stat"><div class="n">0</div><div class="l">open field tasks</div></div>
+              </div>
+              <div class="hot"><span style="color:#334155">Hottest equipment&nbsp;&nbsp;·&nbsp;&nbsp;<a>SWGR-1A Main Bus</a> (13.8kV)</span><span class="cal">19.6 cal/cm²</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ch"><div class="ct">&#9207; NFPA 70B Program Maturity &#9432;</div><div style="font:600 10px var(--mono);letter-spacing:.06em;color:#334155">VS THE STANDARD &#9432;</div></div>
+            <div class="cb gaugewrap">
+              <svg width="104" height="104" viewBox="0 0 104 104"><circle cx="52" cy="52" r="44" fill="none" stroke="#eef1f6" stroke-width="9"/><circle cx="52" cy="52" r="44" fill="none" stroke="#b91c1c" stroke-width="9" stroke-linecap="round" stroke-dasharray="67 210" transform="rotate(-90 52 52)"/><text x="52" y="50" text-anchor="middle" font-size="22" font-weight="700" fill="#0a0d12">24.3</text><text x="52" y="66" text-anchor="middle" font-size="10" fill="#334155">/ 100</text></svg>
+              <div>
+                <span class="pill-red">Level 1 of 5 · Reactive</span> <span style="font-size:13px;color:#1e293b">&nbsp;&#8599; 15.7 pts to <b>Developing</b></span>
+                <div class="mat-sub">Maintenance is largely ad-hoc or run-to-failure. Little of the equipment is on a documented NFPA 70B program yet.</div>
+                <div class="lever">Biggest lever: <b>Equipment coverage</b> (recovers 73.6 pts).</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ch"><div class="ct">&#9678; Path to 100% Compliance</div>
+              <div class="path-stats">
+                <div class="ps"><span class="v red">24.3%</span> <span class="k">Overall &#9432;</span></div>
+                <div class="ps"><span class="v">92%</span> <span class="k">On-time &#9432;</span></div>
+                <div class="ps"><span class="v">26.9%</span> <span class="k">Tracked 18/67 &#9432;</span></div>
+              </div>
+            </div>
+            <div class="cb" style="padding-bottom:8px"><span class="bigpct">24.3%</span><span style="float:right;font-size:13px;color:#1e293b">75.7% to fully compliant</span><div class="bar"><i></i></div></div>
+            <div class="row"><span class="ov">Overdue</span> Insulation resistance test — 235d overdue on NorthStar Switchgear Co. NS-LV600 <span class="aid">#NS-99-7702</span><span class="site">Riverside Plant</span><span class="gain">+0.3%</span></div>
+            <div class="row"><span class="ov">Overdue</span> Infrared thermography scan — 120d overdue on NorthStar Switchgear Co. NS-LV600 <span class="aid">#NS-99-7702</span><span class="site">Riverside Plant</span><span class="gain">+0.3%</span></div>
+            <div class="row"><span class="ov">Overdue</span> Oil quality screen — 25d overdue on Kestrel Power Apparatus KPA-2500S <span class="aid">#KPA-97-18254</span><span class="site">Riverside Plant</span><span class="gain">+0.3%</span></div>
+            <div class="row" style="border-top:1px solid #dde2eb;font-size:12.5px;color:#334155">Showing top 3 of 56. <a style="color:#0d4f6e">See the full list →</a></div>
+          </div>
+          <div class="card">
+            <div class="ch"><div><div class="ct">Priority assets</div><div style="font-size:12.5px;color:#334155;margin-top:2px">Where to spend the next maintenance dollar — by risk, replacement cost, or fleet volume</div></div></div>
+            <table>
+              <tr><th>Asset</th><th>Criticality</th><th>Redundancy</th><th>Next due</th><th>Overdue</th><th>Open def.</th><th></th></tr>
+              <tr><td><span class="aname">Kestrel Power Apparatus KPA-2500S</span> <span class="aid">#KPA-97-18254</span><div class="asub">Transformer (Liquid) · Riverside Plant</div></td><td><span class="crit">5</span></td><td><span class="redpill">N (no redundancy)</span></td><td><div class="due">Jun 17, 2026 · overdue</div><div class="duesub">Oil quality screen</div></td><td>1</td><td>1</td><td><span class="cwo">Create work order</span></td></tr>
+              <tr><td><span class="aname">Sentry Transfer Systems STS-800A</span> <span class="aid">#STS-05-1187</span><div class="asub">Transfer Switch (ATS) · Riverside Plant</div></td><td><span class="crit">5</span></td><td><span class="redpill">N (no redundancy)</span></td><td><div class="due">Jun 24, 2026 · overdue</div><div class="duesub">Infrared thermography scan</div></td><td>1</td><td>0</td><td><span class="cwo">Create work order</span></td></tr>
+              <tr><td><span class="aname">Stonebridge Power Systems SB-125DC</span> <span class="aid">#SB-10-2241</span><div class="asub">Battery System · Riverside Plant</div></td><td><span class="crit" style="border-color:#fde68a;color:#b45309">4</span></td><td>—</td><td><div class="due">Jun 28, 2026 · overdue</div><div class="duesub">Quarterly ohmic + per-cell float voltage</div></td><td>1</td><td>1</td><td><span class="cwo">Create work order</span></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+  <ul class="notes warn">
+    <li><b>Six red/amber alarms compete</b> on one screen: NWS banner, inspector ribbon, gauge, 24.3% bar, DANGER stat, overdue pills — alarm fatigue by design.</li>
+    <li><b>Full-bleed cards:</b> arc-flash stat labels sit ~350px apart; the "+0.3%" gains are ~1,100px from the task text they belong to.</li>
+    <li><b>"Good evening, Avery"</b> spends the H1 on a greeting (28px/weight-800 — a weight the brand ladder bans and the shipped fonts don't include).</li>
+    <li><b>Every module is the same white card</b> — same border, radius, title size — so the verdict (24.3%) has the same visual rank as a filter list.</li>
+    <li><b>What's already right:</b> petrol/ink palette, dark chrome, mono asset IDs, and content depth (DPS, cal/cm², +0.3% recovery math) — none of this needs replacing.</li>
+  </ul>
+</section>
+<style>
+/* ============ MOCK A — Finish Quietly Modern ============ */
+.m1{background:#fafbfd;color:#0a0d12;display:flex;font-size:14px}
+.m1 .side{width:220px;background:#0a0d12;flex-shrink:0;min-height:820px;padding-top:2px}
+.m1 .s-org{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid #13171f;margin-bottom:8px}
+.m1 .s-org .mark{width:26px;height:26px;border-radius:6px;background:#073a52;position:relative;flex-shrink:0}
+.m1 .s-org .mark::after{content:"";position:absolute;left:64%;top:22%;width:3px;height:56%;background:#10b981;border-radius:2px}
+.m1 .s-org b{color:#fff;font-size:13px;font-weight:500;display:block;line-height:1.2}
+.m1 .s-org span{color:#94a3b8;font-size:11px}
+.m1 .s-item{display:flex;align-items:center;gap:9px;color:#9aa3b2;font-size:13px;font-weight:500;padding:7px 10px;margin:0 8px 1px;border-radius:6px}
+.m1 .s-item.on{background:#0d4f6e;color:#fff}
+.m1 .s-label{font:500 10.5px var(--mono);text-transform:uppercase;letter-spacing:.1em;color:#5b6373;padding:14px 18px 4px}
+.m1 .main{flex:1;min-width:0}
+.m1 .nws{background:#fffbeb;border-bottom:1px solid #fde68a;font-size:13px;display:flex;align-items:center;gap:10px;padding:8px 20px;color:#0a0d12}
+.m1 .nws .w{color:#b45309;font-weight:700;font-size:12px}
+.m1 .nws .cta{margin-left:auto;border:1px solid #b45309;color:#b45309;font-size:12px;font-weight:600;border-radius:6px;padding:5px 12px;white-space:nowrap;background:transparent}
+.m1 .shell{max-width:1000px;margin:0 auto;padding:26px 32px}
+.m1 .ophead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:18px;border-bottom:1px solid #e3e7ee;margin-bottom:24px}
+.m1 .eyebrow{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#334155}
+.m1 .eyebrow b{color:#073a52;font-weight:600}
+.m1 h1{font-size:22px;font-weight:700;letter-spacing:-.02em;color:#0a0d12;margin-top:6px}
+.m1 .fresh{display:flex;align-items:center;gap:7px;font-size:12.5px;color:#334155;white-space:nowrap}
+.m1 .fresh i{width:7px;height:7px;border-radius:50%;background:#10b981;display:block}
+.m1 .btn-p{background:#073a52;color:#fff;font-size:13px;font-weight:600;border-radius:6px;padding:8px 16px;margin-left:16px;white-space:nowrap}
+.m1 .alarm{border:1px solid #fca5a5;border-left:3px solid #b91c1c;background:#fff;border-radius:8px;padding:13px 18px;display:flex;align-items:center;gap:12px;margin-bottom:26px}
+.m1 .alarm b{font-size:14.5px}
+.m1 .alarm .sub{font-size:13px;color:#334155;margin-top:2px}
+.m1 .alarm .go{margin-left:auto;color:#073a52;font-weight:600;font-size:13px;white-space:nowrap}
+.m1 .sec{margin-bottom:26px}
+.m1 .sec-eyebrow{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#334155;display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
+.m1 .sec-eyebrow .aux{letter-spacing:.02em;text-transform:none;font:400 12px Inter,sans-serif;color:#64748b}
+.m1 .panel{background:#fff;border:1px solid #e3e7ee;border-radius:8px}
+.m1 .kpis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.m1 .kpi{background:#fff;border:1px solid #e3e7ee;border-radius:8px;padding:16px 18px}
+.m1 .kpi .k{font-size:12.5px;color:#334155}
+.m1 .kpi .v{font:600 26px var(--mono);letter-spacing:-.02em;margin-top:4px;color:#0a0d12}
+.m1 .kpi .v small{font:500 13px var(--mono);color:#64748b}
+.m1 .kpi .d{font-size:12.5px;color:#334155;margin-top:6px}
+.m1 .kpi .d b{color:#0a0d12}
+.m1 .kpi .v .danger{color:#b91c1c}
+.m1 .minibar{height:6px;border-radius:999px;background:#eef1f6;overflow:hidden;margin-top:10px}
+.m1 .minibar i{display:block;height:100%;width:24.3%;background:#073a52}
+.m1 .qrow{display:flex;align-items:center;gap:12px;padding:11px 18px;border-top:1px solid #eef1f6;font-size:13.5px}
+.m1 .qrow:first-child{border-top:none}
+.m1 .qrow .d{font:600 12px var(--mono);color:#b91c1c;width:44px;flex-shrink:0}
+.m1 .qrow .t b{font-weight:600}
+.m1 .qrow .t .on{color:#334155}
+.m1 .qrow .aid{font:500 12px var(--mono);color:#64748b}
+.m1 .qrow .gain{margin-left:auto;font:600 12px var(--mono);color:#15803d;white-space:nowrap}
+.m1 .qrow .act{color:#073a52;font-weight:600;font-size:12.5px;white-space:nowrap}
+.m1 table{width:100%;border-collapse:collapse}
+.m1 th{text-align:left;font:500 10.5px var(--mono);text-transform:uppercase;letter-spacing:.1em;color:#334155;padding:10px 18px;border-bottom:1px solid #e3e7ee;white-space:nowrap}
+.m1 td{padding:12px 18px;border-bottom:1px solid #eef1f6;font-size:13.5px;vertical-align:middle}
+.m1 tr:last-child td{border-bottom:none}
+.m1 td .aname{color:#073a52;font-weight:600}
+.m1 td .aid{font:500 11.5px var(--mono);color:#64748b}
+.m1 td .asub{font-size:12px;color:#64748b;margin-top:2px}
+.m1 .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #e3e7ee;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;color:#334155;white-space:nowrap}
+.m1 .chip i{width:6px;height:6px;border-radius:50%;display:block}
+.m1 .chip.c5 i{background:#b91c1c}.m1 .chip.c4 i{background:#b45309}.m1 .chip.ok i{background:#10b981}
+.m1 .duev{font:600 12.5px var(--mono);color:#b91c1c;white-space:nowrap}
+.m1 .duesub{font-size:12px;color:#64748b;margin-top:2px}
+.m1 .ghost{border:1px solid #c7cfdb;border-radius:6px;background:#fff;font-size:12.5px;font-weight:600;padding:6px 12px;white-space:nowrap;color:#0a0d12}
+</style>
+
+<!-- ================= DIRECTION A ================= -->
+<section class="dir" id="dir-a">
+  <div class="dir-head"><span class="tag t-a">Direction A</span><h2>Finish Quietly Modern</h2></div>
+  <div class="dir-meta"><span>Effort: <b>~1–2 agent sessions</b></span><span>Layout risk: <b>none</b> — CSS/token work</span><span>Recommended: <b>ship regardless; it's the floor for B and C</b></span></div>
+  <div class="thesis"><p>Your brand doc already says it: <b>"premium feel comes from craft, not noise."</b> Direction A changes zero layouts and zero features — it executes the doc. Width discipline, one alarm per screen, hairline borders, an operational header instead of a greeting, and data set in the mono face. This is the same dashboard; it just stops shouting.</p></div>
+  <div class="frame">
+    <div class="frame-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">servicecycle.app/dashboard — direction A</div></div>
+    <div class="frame-body"><div class="mock m1">
+      <div class="side">
+        <div class="s-org"><div class="mark"></div><div><b>Meridian Manufacturing</b><span>Riverside · Eastgate</span></div></div>
+        <div class="s-item on">Dashboard</div>
+        <div class="s-label">Equipment</div>
+        <div class="s-item">Assets</div><div class="s-item">Sites</div><div class="s-item">Documents</div>
+        <div class="s-label">Work</div>
+        <div class="s-item">Work Orders</div><div class="s-item">Compliance Calendar</div><div class="s-item">Outage Planner</div><div class="s-item">Parts</div>
+        <div class="s-label">Compliance ›</div>
+        <div class="s-label">Data In ›</div>
+        <div class="s-label">Admin ›</div>
+      </div>
+      <div class="main">
+        <div class="nws"><span class="w">&#9888; NWS</span> Extreme Heat Warning · until Jul 14, 1:00 AM CDT · Duluth MN <span class="cta">View &amp; declare emergency</span></div>
+        <div class="shell">
+          <div class="ophead">
+            <div>
+              <div class="eyebrow"><b>Meridian Manufacturing</b> · 2 sites · 67 tracked assets</div>
+              <h1>Compliance overview</h1>
+            </div>
+            <div style="display:flex;align-items:center"><span class="fresh"><i></i>Data current · Sat Jul 12, 6:02 PM</span><span class="btn-p">+ New asset</span></div>
+          </div>
+          <div class="alarm">
+            <div><b>56 items would look incomplete to an inspector</b><div class="sub">Closing the top five recovers 1.5% today. Each closed item shows its exact recovery below.</div></div>
+            <span class="go">Work the list →</span>
+          </div>
+          <div class="sec">
+            <div class="sec-eyebrow">Program status<span class="aux">vs NFPA 70B · IEEE 1584</span></div>
+            <div class="kpis">
+              <div class="kpi"><div class="k">Path to 100% compliance</div><div class="v">24.3<small>%</small></div><div class="minibar"><i></i></div><div class="d">92% on-time · 18/67 tracked</div></div>
+              <div class="kpi"><div class="k">NFPA 70B maturity</div><div class="v">24.3<small>/100</small></div><div class="d">Level 1 · Reactive — biggest lever: <b>equipment coverage</b> (+73.6 pts)</div></div>
+              <div class="kpi"><div class="k">Arc flash</div><div class="v"><span class="danger">19.6</span><small> cal/cm²</small></div><div class="d">hottest: <b>SWGR-1A Main Bus</b> (13.8kV) · 1 study expiring</div></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="sec-eyebrow">Work the list — top recoveries<span class="aux">top 3 of 56 · sorted by days overdue</span></div>
+            <div class="panel">
+              <div class="qrow"><span class="d">235d</span><span class="t"><b>Insulation resistance test</b> <span class="on">— NorthStar NS-LV600</span> <span class="aid">#NS-99-7702</span></span><span class="gain">+0.3%</span><span class="act">Create WO</span></div>
+              <div class="qrow"><span class="d">120d</span><span class="t"><b>Infrared thermography scan</b> <span class="on">— NorthStar NS-LV600</span> <span class="aid">#NS-99-7702</span></span><span class="gain">+0.3%</span><span class="act">Create WO</span></div>
+              <div class="qrow"><span class="d">25d</span><span class="t"><b>Oil quality screen</b> <span class="on">— Kestrel KPA-2500S</span> <span class="aid">#KPA-97-18254</span></span><span class="gain">+0.3%</span><span class="act">Create WO</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="sec-eyebrow">Priority assets<span class="aux">by risk · replacement cost · fleet volume</span></div>
+            <div class="panel">
+              <table>
+                <tr><th>Asset</th><th>Criticality</th><th>Next due</th><th style="text-align:right">Open def.</th><th></th></tr>
+                <tr><td><span class="aname">Kestrel Power Apparatus KPA-2500S</span> <span class="aid">#KPA-97-18254</span><div class="asub">Transformer (Liquid) · Riverside</div></td><td><span class="chip c5"><i></i>Crit 5 · no redundancy</span></td><td><div class="duev">Jun 17 · 25d over</div><div class="duesub">Oil quality screen</div></td><td style="text-align:right">1</td><td style="text-align:right"><span class="ghost">Create work order</span></td></tr>
+                <tr><td><span class="aname">Sentry Transfer Systems STS-800A</span> <span class="aid">#STS-05-1187</span><div class="asub">Transfer Switch (ATS) · Riverside</div></td><td><span class="chip c5"><i></i>Crit 5 · no redundancy</span></td><td><div class="duev">Jun 24 · 18d over</div><div class="duesub">Infrared thermography</div></td><td style="text-align:right">0</td><td style="text-align:right"><span class="ghost">Create work order</span></td></tr>
+                <tr><td><span class="aname">Stonebridge Power Systems SB-125DC</span> <span class="aid">#SB-10-2241</span><div class="asub">Battery System · Riverside</div></td><td><span class="chip c4"><i></i>Crit 4</span></td><td><div class="duev">Jun 28 · 14d over</div><div class="duesub">Ohmic + float voltage</div></td><td style="text-align:right">1</td><td style="text-align:right"><span class="ghost">Create work order</span></td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+  <ul class="notes">
+    <li><b>Content max-width (~1000px)</b> — same cards, suddenly composed. The single highest-value change; it's one CSS rule.</li>
+    <li><b>One alarm per screen:</b> only the inspector strip is red. The 24.3% bar is petrol; red survives only on datum glyphs (day counts, 19.6 cal/cm²).</li>
+    <li><b>Operational header:</b> org · scope eyebrow, "Compliance overview" H1, live-data pulse — the greeting moves to nowhere, nothing lost.</li>
+    <li><b>KPI numerals in mono</b> (brand rule: data should feel "data-y"); hairline #e3e7ee borders per the locked spec; flat petrol button, no gradient.</li>
+    <li><b>NWS banner CTA becomes outline</b> — still present, no longer the loudest element on the page.</li>
+    <li><b>Chips consolidated</b> to one language: dot + label, semantic hues only (kills the stock-Tailwind blue/purple chip block).</li>
+  </ul>
+</section>
+<style>
+/* ============ MOCK B — Control Room ============ */
+.m2{background:#f3f5f9;color:#0a0d12;display:flex;font-size:14px}
+.m2 .side{width:220px;background:#0a0d12;flex-shrink:0;min-height:860px}
+.m2 .s-org{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid #13171f}
+.m2 .s-org .mark{width:26px;height:26px;border-radius:6px;background:#073a52;position:relative;flex-shrink:0}
+.m2 .s-org .mark::after{content:"";position:absolute;left:64%;top:22%;width:3px;height:56%;background:#10b981;border-radius:2px}
+.m2 .s-org b{color:#fff;font-size:13px;font-weight:500;display:block;line-height:1.2}
+.m2 .s-org span{color:#94a3b8;font-size:11px}
+.m2 .s-item{display:flex;align-items:center;gap:9px;color:#9aa3b2;font-size:13px;font-weight:500;padding:7px 10px;margin:0 8px 1px;border-radius:6px}
+.m2 .s-item.on{background:#0d4f6e;color:#fff}
+.m2 .s-label{font:500 10.5px var(--mono);text-transform:uppercase;letter-spacing:.1em;color:#5b6373;padding:14px 18px 4px}
+.m2 .main{flex:1;min-width:0}
+/* instrument band */
+.m2 .band{background:#0a0d12;color:#e6edf3;padding:0 28px 22px}
+.m2 .band-top{display:flex;align-items:center;justify-content:space-between;padding:16px 0 14px}
+.m2 .band-top .t{font-size:16px;font-weight:700;letter-spacing:-.01em;color:#fff}
+.m2 .band-top .t small{font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#94a3b8;display:block;margin-bottom:3px}
+.m2 .live{display:flex;align-items:center;gap:7px;font:500 11.5px var(--mono);color:#34d399}
+.m2 .live i{width:7px;height:7px;border-radius:50%;background:#34d399;display:block;box-shadow:0 0 8px #34d399}
+.m2 .nws2{display:flex;align-items:center;gap:10px;background:#1c1607;border:1px solid #3a2e0a;color:#fcd34d;font-size:12.5px;border-radius:6px;padding:7px 12px;margin-bottom:14px}
+.m2 .nws2 .cta{margin-left:auto;border:1px solid #b45309;color:#fcd34d;border-radius:5px;font-size:11.5px;font-weight:600;padding:4px 10px;white-space:nowrap}
+.m2 .instruments{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.m2 .inst{background:#13171f;border:1px solid #1e293b;border-radius:8px;padding:14px 16px;position:relative}
+.m2 .inst .k{font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#94a3b8}
+.m2 .inst .v{font:600 30px var(--mono);letter-spacing:-.03em;color:#fff;margin-top:6px;line-height:1}
+.m2 .inst .v small{font-size:14px;color:#94a3b8}
+.m2 .inst .v.red{color:#f87171}
+.m2 .inst .d{font-size:11.5px;color:#94a3b8;margin-top:7px}
+.m2 .inst .d b{color:#e6edf3;font-weight:600}
+.m2 .ticks{display:flex;gap:3px;margin-top:10px}
+.m2 .ticks i{height:14px;flex:1;border-radius:1.5px;background:#1e293b}
+.m2 .ticks i.f{background:#2e95c2}
+.m2 .ticks i.r{background:#b91c1c}
+.m2 .ticks i.a{background:#b45309}
+.m2 .ticks i.g{background:#10b981}
+/* content zones */
+.m2 .zones{display:grid;grid-template-columns:1fr 380px;gap:20px;padding:22px 28px;max-width:1180px}
+.m2 .z-eyebrow{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#334155;margin-bottom:8px;display:flex;justify-content:space-between}
+.m2 .z-eyebrow .aux{text-transform:none;letter-spacing:.02em;font:400 12px Inter,sans-serif;color:#64748b}
+.m2 .panel{background:#fff;border:1px solid #e3e7ee;border-radius:8px;margin-bottom:20px}
+.m2 .prow{display:flex;align-items:center;gap:10px;padding:11px 16px;border-top:1px solid #eef1f6;font-size:13px}
+.m2 .prow:first-of-type{border-top:none}
+.m2 .sitebar{flex:1;height:7px;border-radius:999px;background:#eef1f6;overflow:hidden;margin:0 10px}
+.m2 .sitebar i{display:block;height:100%;border-radius:999px}
+.m2 .pct{font:600 13px var(--mono)}
+.m2 .std{display:flex;align-items:baseline;gap:10px;padding:10px 16px;border-top:1px solid #eef1f6;font-size:13px}
+.m2 .std:first-of-type{border-top:none}
+.m2 .std b{font-weight:600}
+.m2 .std .ed{font:500 11px var(--mono);color:#64748b}
+.m2 .std .pv{margin-left:auto;font:600 13px var(--mono)}
+.m2 .queue{background:#fff;border:1px solid #e3e7ee;border-radius:8px;position:sticky;top:14px}
+.m2 .queue-h{padding:13px 16px;border-bottom:1px solid #e3e7ee;display:flex;align-items:baseline;justify-content:space-between}
+.m2 .queue-h b{font-size:14px}
+.m2 .queue-h span{font:500 11px var(--mono);color:#64748b}
+.m2 .qi{padding:12px 16px;border-bottom:1px solid #eef1f6}
+.m2 .qi:last-child{border-bottom:none}
+.m2 .qi .top{display:flex;align-items:baseline;gap:8px}
+.m2 .qi .days{font:600 12px var(--mono);color:#b91c1c;flex-shrink:0;width:40px}
+.m2 .qi .task{font-weight:600;font-size:13px}
+.m2 .qi .gain{margin-left:auto;font:600 11.5px var(--mono);color:#15803d}
+.m2 .qi .sub{font-size:12px;color:#64748b;margin:3px 0 8px 48px}
+.m2 .qi .sub .aid{font:500 11px var(--mono)}
+.m2 .qi .act{margin-left:48px;display:inline-block;border:1px solid #c7cfdb;border-radius:5px;font-size:11.5px;font-weight:600;padding:4px 10px;color:#073a52}
+.m2 .qfoot{padding:11px 16px;font-size:12.5px;color:#073a52;font-weight:600;background:#e6f0f5;border-radius:0 0 8px 8px}
+</style>
+
+<!-- ================= DIRECTION B ================= -->
+<section class="dir" id="dir-b">
+  <div class="dir-head"><span class="tag t-b">Direction B</span><h2>Control Room</h2></div>
+  <div class="dir-meta"><span>Effort: <b>~3–5 agent sessions</b> (dashboard restructure; other pages get A)</span><span>Layout risk: <b>dashboard only</b></span><span>Best for: <b>the 10-second demo impression</b></span></div>
+  <div class="thesis"><p>The dark chrome stops at the sidebar today. Direction B extends it into an <b>instrument band</b> — the four numbers that decide "are we in trouble?" live on ink, in mono, like a test set's readout. Below, the light zone splits into <b>evidence (left)</b> and a <b>sticky action queue (right)</b> so "what do I do next?" is always on screen. This is the layout your content has been asking for: verdict → proof → action.</p></div>
+  <div class="frame">
+    <div class="frame-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">servicecycle.app/dashboard — direction B</div></div>
+    <div class="frame-body"><div class="mock m2">
+      <div class="side">
+        <div class="s-org"><div class="mark"></div><div><b>Meridian Manufacturing</b><span>Riverside · Eastgate</span></div></div>
+        <div class="s-item on" style="margin-top:8px">Dashboard</div>
+        <div class="s-label">Equipment</div>
+        <div class="s-item">Assets</div><div class="s-item">Sites</div><div class="s-item">Documents</div>
+        <div class="s-label">Work</div>
+        <div class="s-item">Work Orders</div><div class="s-item">Compliance Calendar</div><div class="s-item">Outage Planner</div><div class="s-item">Parts</div>
+        <div class="s-label">Compliance ›</div>
+        <div class="s-label">Admin ›</div>
+      </div>
+      <div class="main">
+        <div class="band">
+          <div class="band-top">
+            <div class="t"><small>Meridian Manufacturing · 2 sites</small>Operations — Sat Jul 12</div>
+            <div class="live"><i></i>LIVE · SYNCED 18:02</div>
+          </div>
+          <div class="nws2">&#9888; NWS: Extreme Heat Warning until Jul 14 01:00 CDT <span class="cta">View &amp; declare</span></div>
+          <div class="instruments">
+            <div class="inst"><div class="k">Compliance</div><div class="v">24.3<small>%</small></div><div class="ticks"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="d">92% on-time · <b>18/67 tracked</b></div></div>
+            <div class="inst"><div class="k">70B maturity</div><div class="v">L1<small> · 24.3</small></div><div class="ticks"><i class="a"></i><i></i><i></i><i></i><i></i></div><div class="d">Reactive · lever: <b>coverage +73.6</b></div></div>
+            <div class="inst"><div class="k">Arc flash · hottest</div><div class="v red">19.6</div><div class="d"><b>SWGR-1A Main Bus</b> 13.8kV · cal/cm² · 1 study expiring</div></div>
+            <div class="inst"><div class="k">Inspector view</div><div class="v red">56</div><div class="d">items look incomplete · top 5 recover <b>+1.5%</b></div></div>
+          </div>
+        </div>
+        <div class="zones">
+          <div>
+            <div class="z-eyebrow">Compliance by site<span class="aux">% schedules not overdue</span></div>
+            <div class="panel">
+              <div class="prow"><b style="width:170px">Riverside Plant</b><div class="sitebar"><i style="width:89%;background:#b45309"></i></div><span class="pct">89%</span><span style="color:#64748b;font-size:12px;width:96px;text-align:right">7 overdue / 66</span></div>
+              <div class="prow"><b style="width:170px">Eastgate Distribution</b><div class="sitebar"><i style="width:100%;background:#10b981"></i></div><span class="pct">100%</span><span style="color:#64748b;font-size:12px;width:96px;text-align:right">0 overdue / 22</span></div>
+            </div>
+            <div class="z-eyebrow">Standards coverage<span class="aux">estimated vs edition on file</span></div>
+            <div class="panel">
+              <div class="std"><b>NFPA 70B</b><span class="ed">2023 ed.</span><span style="font-size:12px;color:#64748b">Electrical equipment maintenance</span><span class="pv" style="color:#b45309">~70%</span></div>
+              <div class="std"><b>NETA MTS</b><span class="ed">2023 ed.</span><span style="font-size:12px;color:#64748b">Maintenance testing specs</span><span class="pv" style="color:#15803d">~96.1%</span></div>
+              <div class="std"><b>IEEE 450</b><span class="ed">2010 ed.</span><span style="font-size:12px;color:#64748b">Vented lead-acid batteries</span><span class="pv" style="color:#b91c1c">~66.7%</span></div>
+            </div>
+            <div class="z-eyebrow">Priority assets<span class="aux">critical infrastructure</span></div>
+            <div class="panel">
+              <div class="qi"><div class="top"><span class="days">DPS 15</span><span class="task">Kestrel Power Apparatus KPA-2500S</span><span class="gain" style="color:#b91c1c">crit 5 · no redun</span></div><div class="sub"><span class="aid">#KPA-97-18254</span> · Transformer (Liquid) · oil quality screen 25d overdue</div></div>
+              <div class="qi"><div class="top"><span class="days">DPS 10</span><span class="task">Sentry Transfer Systems STS-800A</span><span class="gain" style="color:#b91c1c">crit 5 · no redun</span></div><div class="sub"><span class="aid">#STS-05-1187</span> · Transfer Switch (ATS) · IR thermography 18d overdue</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="z-eyebrow">Work the list<span class="aux">top 3 of 56</span></div>
+            <div class="queue">
+              <div class="queue-h"><b>Inspector-visible items</b><span>+0.3% each</span></div>
+              <div class="qi"><div class="top"><span class="days">235d</span><span class="task">Insulation resistance test</span><span class="gain">+0.3%</span></div><div class="sub">NorthStar NS-LV600 <span class="aid">#NS-99-7702</span> · Riverside</div><span class="act">Create work order</span></div>
+              <div class="qi"><div class="top"><span class="days">120d</span><span class="task">Infrared thermography</span><span class="gain">+0.3%</span></div><div class="sub">NorthStar NS-LV600 <span class="aid">#NS-99-7702</span> · Riverside</div><span class="act">Create work order</span></div>
+              <div class="qi"><div class="top"><span class="days">25d</span><span class="task">Oil quality screen</span><span class="gain">+0.3%</span></div><div class="sub">Kestrel KPA-2500S <span class="aid">#KPA-97-18254</span> · Riverside</div><span class="act">Create work order</span></div>
+              <div class="qfoot">See all 56 → each closes +0.3%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+  <ul class="notes">
+    <li><b>Instrument band:</b> the four verdict numbers live on ink with mono numerals and tick-gauges — unmistakably an engineering tool, impossible to confuse with a template.</li>
+    <li><b>Evidence / action split:</b> left column proves the numbers; the right-rail queue is sticky, so "what do I do next" never scrolls away. Lead-with-action-lists is your product north star — this makes the layout say it.</li>
+    <li><b>NWS alert docks inside the band</b> as an amber instrument-line, not a full-width browser-chrome bar.</li>
+    <li><b>Red budget still enforced:</b> red appears only on danger data (19.6, 56, crit-5 flags) — never as decoration.</li>
+    <li><b>Cost is real but contained:</b> Dashboard.jsx restructure + the A token pass. Every other page keeps its layout and inherits A.</li>
+  </ul>
+</section>
+<style>
+/* ============ MOCK C — Field Report ============ */
+.m3{background:#fff;color:#0a0d12;display:flex;font-size:14px}
+.m3 .rail{width:56px;background:#0a0d12;flex-shrink:0;min-height:900px;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px}
+.m3 .rail .mark{width:30px;height:30px;border-radius:7px;background:#073a52;position:relative;margin-bottom:14px}
+.m3 .rail .mark::after{content:"";position:absolute;left:64%;top:22%;width:3.5px;height:56%;background:#10b981;border-radius:2px}
+.m3 .rail .ri{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#9aa3b2}
+.m3 .rail .ri.on{background:#0d4f6e;color:#fff}
+.m3 .rail .ri svg{width:17px;height:17px}
+.m3 .page{flex:1;min-width:0;padding:34px 56px;max-width:1010px}
+.m3 .masthead{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.m3 .masthead .t{font-size:30px;font-weight:700;letter-spacing:-.03em}
+.m3 .masthead .meta{font:500 11px var(--mono);letter-spacing:.06em;color:#334155;text-align:right}
+.m3 .rule{border-top:2.5px solid #0a0d12;margin-top:12px;position:relative}
+.m3 .rule::after{content:"";display:block;border-top:1px solid #0a0d12;margin-top:2.5px}
+.m3 .briefline{display:flex;gap:26px;font:500 11px var(--mono);letter-spacing:.05em;color:#334155;padding:10px 0 0;flex-wrap:wrap}
+.m3 .briefline b{color:#0a0d12}
+.m3 .briefline .alert{color:#b45309}
+.m3 .secno{display:flex;align-items:baseline;gap:14px;border-top:1px solid #c7cfdb;margin-top:36px;padding-top:14px}
+.m3 .secno .n{font:600 13px var(--mono);color:#073a52}
+.m3 .secno h3{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.m3 .secno .aux{margin-left:auto;font-size:12px;color:#64748b}
+.m3 .figures{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;padding:22px 0 6px}
+.m3 .fig .v{font:300 58px/1 var(--mono);letter-spacing:-.045em}
+.m3 .fig .v b{font-weight:600}
+.m3 .fig .v small{font:400 20px var(--mono);color:#64748b}
+.m3 .fig .v .dgr{color:#b91c1c}
+.m3 .fig .k{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#334155;margin-top:10px}
+.m3 .fig .d{font-size:13px;color:#334155;margin-top:5px;line-height:1.5}
+.m3 .fig .d b{color:#0a0d12}
+.m3 .verdictline{margin-top:18px;padding:13px 16px;background:#fafbfd;border-left:3px solid #b91c1c;font-size:14px}
+.m3 .verdictline b{font-weight:700}
+.m3 table{width:100%;border-collapse:collapse;margin-top:6px}
+.m3 th{text-align:left;font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#334155;padding:12px 4px;border-bottom:1.5px solid #0a0d12}
+.m3 th.num,.m3 td.num{text-align:right}
+.m3 td{padding:13px 4px;border-bottom:1px solid #e3e7ee;font-size:13.5px;vertical-align:baseline}
+.m3 td .days{font:600 13px var(--mono);color:#b91c1c}
+.m3 td .task{font-weight:600}
+.m3 td .aid{font:500 12px var(--mono);color:#334155}
+.m3 td .gain{font:600 12.5px var(--mono);color:#15803d}
+.m3 td .act{font-size:12.5px;font-weight:600;color:#073a52;border-bottom:1.5px solid #073a52;padding-bottom:1px;white-space:nowrap}
+.m3 .sig{display:flex;justify-content:space-between;align-items:baseline;margin-top:30px;padding-top:12px;border-top:1px solid #c7cfdb;font:500 11px var(--mono);letter-spacing:.06em;color:#334155}
+</style>
+
+<!-- ================= DIRECTION C ================= -->
+<section class="dir" id="dir-c">
+  <div class="dir-head"><span class="tag t-c">Direction C</span><h2>Field Report</h2></div>
+  <div class="dir-meta"><span>Effort: <b>1–2 weeks, incremental</b> (re-template core pages)</span><span>Layout risk: <b>highest</b></span><span>Best for: <b>unmistakable identity</b></span></div>
+  <div class="thesis"><p>Your users live in NETA test reports, PE-stamped studies, and inspection PDFs. Direction C makes the app read like the <b>documents this industry already trusts</b>: a masthead instead of a greeting, numbered sections, double-rules, big light-weight mono figures, hairline-ruled tables — almost no boxes at all. Navigation collapses to an ink icon rail. Nothing on the market looks like this; nothing AI-generated does either.</p></div>
+  <div class="frame">
+    <div class="frame-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">servicecycle.app/dashboard — direction C</div></div>
+    <div class="frame-body"><div class="mock m3">
+      <div class="rail">
+        <div class="mark"></div>
+        <div class="ri on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg></div>
+        <div class="ri"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 1 3 9h4l-1 6 6-8H8l1-6z"/></svg></div>
+        <div class="ri"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M6 5h4M6 8h4M6 11h2"/></svg></div>
+        <div class="ri"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1"/><path d="M2 6h12M5 1.5V4M11 1.5V4"/></svg></div>
+        <div class="ri"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5L13 5v9.5H4z"/><path d="M9 1.5V5h4"/></svg></div>
+      </div>
+      <div class="page">
+        <div class="masthead">
+          <div class="t">Maintenance Compliance Brief</div>
+          <div class="meta">MERIDIAN MANUFACTURING<br>SAT 12 JUL 2026 · 18:02 CDT · SYNCED</div>
+        </div>
+        <div class="rule"></div>
+        <div class="briefline"><span>SITES <b>RIVERSIDE · EASTGATE</b></span><span>ASSETS <b>67 TRACKED</b></span><span>OPEN WORK <b>660 JOBS</b></span><span class="alert">&#9888; NWS EXTREME HEAT WARNING → JUL 14 01:00</span></div>
+
+        <div class="secno"><span class="n">01</span><h3>Status</h3><span class="aux">vs NFPA 70B (2023) · IEEE 1584 · NETA MTS (2023)</span></div>
+        <div class="figures">
+          <div class="fig"><div class="v"><b>24.3</b><small>%</small></div><div class="k">Path to compliance</div><div class="d">92% on-time · 18/67 tracked · 75.7% remaining</div></div>
+          <div class="fig"><div class="v">L<b>1</b><small> / 5</small></div><div class="k">70B maturity · reactive</div><div class="d">Biggest lever: <b>equipment coverage</b> — recovers 73.6 pts</div></div>
+          <div class="fig"><div class="v"><span class="dgr">19.6</span><small> cal/cm²</small></div><div class="k">Arc flash · hottest bus</div><div class="d"><b>SWGR-1A Main Bus</b> (13.8 kV) · 1 study expiring</div></div>
+        </div>
+        <div class="verdictline"><b>56 items would look incomplete to an inspector.</b> Closing the five below recovers 1.5% immediately.</div>
+
+        <div class="secno"><span class="n">02</span><h3>Action queue</h3><span class="aux">top 3 of 56 · each closes +0.3%</span></div>
+        <table>
+          <tr><th style="width:64px">Age</th><th>Task</th><th>Asset</th><th class="num">Recovers</th><th class="num" style="width:150px"></th></tr>
+          <tr><td><span class="days">235d</span></td><td><span class="task">Insulation resistance test</span></td><td>NorthStar NS-LV600 <span class="aid">#NS-99-7702</span></td><td class="num"><span class="gain">+0.3%</span></td><td class="num"><span class="act">Create work order</span></td></tr>
+          <tr><td><span class="days">120d</span></td><td><span class="task">Infrared thermography scan</span></td><td>NorthStar NS-LV600 <span class="aid">#NS-99-7702</span></td><td class="num"><span class="gain">+0.3%</span></td><td class="num"><span class="act">Create work order</span></td></tr>
+          <tr><td><span class="days">25d</span></td><td><span class="task">Oil quality screen</span></td><td>Kestrel KPA-2500S <span class="aid">#KPA-97-18254</span></td><td class="num"><span class="gain">+0.3%</span></td><td class="num"><span class="act">Create work order</span></td></tr>
+        </table>
+
+        <div class="secno"><span class="n">03</span><h3>Equipment at risk</h3><span class="aux">criticality 4+ · critical infrastructure</span></div>
+        <table>
+          <tr><th>Asset</th><th>Class</th><th class="num">DPS</th><th>Exposure</th><th>Next action</th></tr>
+          <tr><td><span class="task">Kestrel Power Apparatus KPA-2500S</span> <span class="aid">#KPA-97-18254</span></td><td>Transformer (Liquid)</td><td class="num"><span class="days">15</span></td><td>Crit 5 · no redundancy</td><td>Oil quality screen — 25d overdue</td></tr>
+          <tr><td><span class="task">Sentry Transfer Systems STS-800A</span> <span class="aid">#STS-05-1187</span></td><td>Transfer Switch (ATS)</td><td class="num"><span class="days">10</span></td><td>Crit 5 · no redundancy</td><td>IR thermography — 18d overdue</td></tr>
+          <tr><td><span class="task">Stonebridge Power Systems SB-125DC</span> <span class="aid">#SB-10-2241</span></td><td>Battery System</td><td class="num">8</td><td>Crit 4</td><td>Ohmic + float voltage — 14d overdue</td></tr>
+        </table>
+        <div class="sig"><span>SERVICECYCLE · MAINTENANCE COMPLIANCE THAT RESPECTS YOUR DATA</span><span>PAGE 1 / 1 · GENERATED LIVE</span></div>
+      </div>
+    </div></div>
+  </div>
+  <ul class="notes">
+    <li><b>Report grammar, live data:</b> masthead + double-rule + numbered sections — the visual language of a PE-stamped study, rendered from the same API calls.</li>
+    <li><b>Almost no boxes:</b> hierarchy comes from rules, type, and whitespace. This is the strongest possible break from "AI dashboard card stack".</li>
+    <li><b>Big figures set light, in mono</b> — 24.3% reads like an instrument reading, not a KPI widget.</li>
+    <li><b>Icon rail nav</b> frees ~165px of width; full nav opens on hover/click (drawer). Field Mode gets a dedicated slot.</li>
+    <li><b>Honest cost:</b> this re-templates list/detail pages over time; ship it screen-by-screen after A lands. Also the easiest direction to carry into marketing, PDFs, and the pilot kickoff doc — one language everywhere.</li>
+  </ul>
+</section>
+
+<!-- ================= VERDICT ================= -->
+<section class="dir" id="verdict">
+  <div class="dir-head"><h2>Verdict &amp; next step</h2></div>
+  <table class="verdict">
+    <tr><th style="width:15%"></th><th>A · Finish Quietly Modern</th><th>B · Control Room</th><th>C · Field Report</th></tr>
+    <tr><td><b>Thesis</b></td><td>Execute the locked brand doc</td><td>Instrument band + evidence/action zones</td><td>The app reads like the industry's own documents</td></tr>
+    <tr><td><b>Effort</b></td><td>~1–2 agent sessions</td><td>~3–5 sessions (dashboard only)</td><td>1–2 weeks, incremental</td></tr>
+    <tr><td><b>Risk</b></td><td>None — CSS/tokens</td><td>One page's layout</td><td>Re-templating, needs discipline</td></tr>
+    <tr><td><b>Kills the generic feel?</b></td><td>~90% — composed, quiet, on-brand</td><td>Yes — visibly an engineering console</td><td>Completely — nothing else looks like this</td></tr>
+    <tr><td><b>Demo impact</b></td><td>Moderate — polish reads subconsciously</td><td>High — first 10 seconds</td><td>High, and carries into PDFs/marketing</td></tr>
+  </table>
+  <div class="pick">
+    <h3>Recommendation</h3>
+    <p><b>Do A now regardless</b> — it's the punch list P0/P1 items and nothing in it is throwaway; B and C both sit on top of it. Then pick the personality: <b>B</b> if the near-term goal is the strongest possible live demo with contained risk; <b>C</b> if you want an identity no competitor or template can imitate and you're happy shipping it screen-by-screen. They also compose: B's instrument band + C's report tables is a legitimate end state.</p>
+    <p style="margin-top:8px">Next step: pick a direction (or a blend) and I'll turn the punch list into a branch with before/after screenshots per change — nothing deploys without your review.</p>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

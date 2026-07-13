@@ -834,13 +834,6 @@ export default function Dashboard() {
     );
   }
 
-  const greeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 17) return 'Good afternoon';
-    return 'Good evening';
-  };
-  const firstName = user?.name?.split(' ')[0] || 'there';
   const canWrite = ['admin', 'manager'].includes(user?.role);
 
   const due = data?.dueCounts || { due30: 0, due60: 0, due90: 0, overdue: 0 };
@@ -855,16 +848,24 @@ export default function Dashboard() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">{greeting()}, {firstName}</h1>
-          <div className="page-subtitle">
-            Maintenance compliance at a glance
+          {/* v0.95 A-pass: operational header replaces the consumer greeting --
+              org + scope eyebrow, task-focused title (brand voice: quiet, serious). */}
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+            {user?.account?.companyName || 'Your organization'}{bySite.length > 0 ? ` \u00b7 ${bySite.length} site${bySite.length !== 1 ? 's' : ''}` : ''}
           </div>
+          <h1 className="page-title">Compliance overview</h1>
         </div>
-        {canWrite && (
-          <button className="btn btn-primary" onClick={() => navigate('/assets/new')}>
-            + New asset
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
+            <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-emerald)' }} />
+            Data current {'\u00b7'} {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+          </span>
+          {canWrite && (
+            <button className="btn btn-primary" onClick={() => navigate('/assets/new')}>
+              + New asset
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="page-body">

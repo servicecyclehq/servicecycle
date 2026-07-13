@@ -38,7 +38,7 @@ const STEP_COLORS = {
   isolation: { bg: 'var(--chip-blue-bg)', color: 'var(--chip-blue-fg)', label: 'Isolation' },
   lockout:   { bg: 'var(--chip-red-bg)', color: 'var(--chip-red-fg)', label: 'Lockout' },
   verify:    { bg: 'var(--chip-green-bg)', color: 'var(--chip-green-fg)', label: 'Verify' },
-  restore:   { bg: 'var(--chip-purple-bg)', color: 'var(--chip-purple-fg)', label: 'Restore' },
+  restore:   { bg: 'var(--chip-slate-bg)', color: 'var(--chip-slate-fg)', label: 'Restore' }, // v0.95: purple retired -- brand semantic set only
   release:   { bg: 'var(--chip-blue-bg)', color: 'var(--chip-blue-fg)', label: 'Release' },
 };
 

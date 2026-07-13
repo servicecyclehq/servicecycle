@@ -1028,7 +1028,7 @@ export default function AssetDetail() {
             </button>
             <button
               type="button"
-              className={asset.archivedAt ? 'btn btn-secondary' : 'btn btn-danger'}
+              className="btn btn-secondary" /* v0.95: red demoted -- destructive intent is confirmed in the dialog, the header button stays quiet */
               onClick={handleArchiveToggle}
             >
               {asset.archivedAt ? 'Unarchive' : 'Archive'}

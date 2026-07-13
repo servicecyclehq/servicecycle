@@ -21,13 +21,13 @@ const LEVEL_COLOR = {
   1: '#b91c1c', // Reactive
   2: '#c2410c', // Developing
   3: '#92400e', // Defined
-  4: '#1d4ed8', // Managed
+  4: '#0d4f6e', // Managed (v0.95: petrol, stock blue retired)
   5: '#15803d', // Audit-Ready
 };
 
 function scoreColor(score) {
   if (score >= 95) return '#15803d';
-  if (score >= 80) return '#1d4ed8';
+  if (score >= 80) return '#0d4f6e'; // v0.95: petrol, stock blue retired
   if (score >= 60) return '#92400e';
   if (score >= 40) return '#c2410c';
   return '#b91c1c';
@@ -39,7 +39,7 @@ function MaturityRing({ score }) {
   const c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(100, Number(score) || 0));
   const off = c * (1 - pct / 100);
-  const col = scoreColor(score);
+  const col = 'var(--color-primary)'; // v0.95: the ring reads brand; severity is carried by the level pill
   return (
     <div style={{ position: 'relative', width: 132, height: 132, flexShrink: 0 }}>
       <svg className="sc-ring" width="132" height="132" viewBox="0 0 132 132" fill="none" aria-hidden="true">
@@ -48,7 +48,7 @@ function MaturityRing({ score }) {
           strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: col }}>{score}</span>
+        <span style={{ fontSize: 34, fontWeight: 700, lineHeight: 1, color: 'var(--color-text)' }}>{score}</span>
         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)' }}>/ 100</span>
       </div>
     </div>
