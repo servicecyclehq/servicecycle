@@ -12,7 +12,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 function fmtDate(d) { try { return d ? new Date(d).toLocaleDateString() : '—'; } catch { return '—'; } }
 function n(v) { return (v == null || v === '') ? '—' : String(v); }
 function sevColor(s) { return s === 'danger' ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)'; }
-function bandColor(score) { return score == null ? 'var(--color-text-secondary)' : score >= 80 ? '#15803d' : score >= 50 ? '#b45309' : '#b91c1c'; }
+function bandColor(score) { return score == null ? 'var(--color-text-secondary)' : score >= 80 ? 'var(--color-success, #15803d)' : score >= 50 ? 'var(--color-warning, #b45309)' : 'var(--color-danger, #b91c1c)'; }
 
 // C2b (2026-07-13): the inline PRINT_CSS constant that lived here was the
 // app's only real print stylesheet. Folded into the shared standard at
@@ -110,9 +110,9 @@ export default function ArcFlashReport() {
             <table className="data-table print-table" style={{ width: '100%', fontSize: '0.8rem' }}>
               <thead>
                 <tr>
-                  <th>Bus / equipment</th><th>Site</th><th>Voltage</th>
-                  <th>Incident energy</th><th>Boundary</th><th>PPE / arc rating</th>
-                  <th>Severity</th><th>Confidence</th><th>Study date</th><th>Expires</th>
+                  <th>Bus / equipment</th><th>Site</th><th className="num">Voltage</th>
+                  <th className="num">Incident energy</th><th className="num">Boundary</th><th className="num">PPE / arc rating</th>
+                  <th>Severity</th><th className="num">Confidence</th><th>Study date</th><th>Expires</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,12 +120,12 @@ export default function ArcFlashReport() {
                   <tr key={(r.assetId || '') + i}>
                     <td>{r.assetId ? <Link to={`/assets/${r.assetId}`}>{r.busName || '(bus)'}</Link> : (r.busName || '(bus)')}{r.equipmentType ? <span style={{ color: 'var(--color-text-secondary)' }}> · {r.equipmentType}</span> : null}</td>
                     <td>{n(r.site)}</td>
-                    <td>{n(r.nominalVoltage)}</td>
-                    <td>{r.incidentEnergyCalCm2 != null ? `${r.incidentEnergyCalCm2} cal/cm²` : '—'}</td>
-                    <td>{r.arcFlashBoundaryIn != null ? `${r.arcFlashBoundaryIn} in` : '—'}</td>
-                    <td>{r.requiredArcRatingCalCm2 != null ? `${r.requiredArcRatingCalCm2} cal/cm²` : (r.ppeCategory != null ? `Cat ${r.ppeCategory}` : '—')}</td>
+                    <td className="num">{n(r.nominalVoltage)}</td>
+                    <td className="num">{r.incidentEnergyCalCm2 != null ? `${r.incidentEnergyCalCm2} cal/cm²` : '—'}</td>
+                    <td className="num">{r.arcFlashBoundaryIn != null ? `${r.arcFlashBoundaryIn} in` : '—'}</td>
+                    <td className="num">{r.requiredArcRatingCalCm2 != null ? `${r.requiredArcRatingCalCm2} cal/cm²` : (r.ppeCategory != null ? `Cat ${r.ppeCategory}` : '—')}</td>
                     <td style={{ fontWeight: 700, color: r.labelSeverity ? sevColor(r.labelSeverity) : 'inherit' }}>{r.labelSeverity ? r.labelSeverity.toUpperCase() : '—'}</td>
-                    <td style={{ fontWeight: 600, color: bandColor(r.confidence?.score) }}>{r.confidence?.score != null ? `${r.confidence.score}%` : '—'}</td>
+                    <td className="num" style={{ fontWeight: 600, color: bandColor(r.confidence?.score) }}>{r.confidence?.score != null ? `${r.confidence.score}%` : '—'}</td>
                     <td>{fmtDate(r.performedDate)}</td>
                     <td style={{ color: r.expiringSoon ? 'var(--color-danger)' : 'inherit' }}>{fmtDate(r.expiresAt)}{r.expiringSoon ? ' ⚠' : ''}</td>
                   </tr>

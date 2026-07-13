@@ -10,7 +10,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 function bandColor(score) {
   if (score == null) return 'var(--color-text-secondary)';
-  return score >= 80 ? '#15803d' : score >= 50 ? '#b45309' : '#b91c1c';
+  return score >= 80 ? 'var(--color-success, #15803d)' : score >= 50 ? 'var(--color-warning, #b45309)' : 'var(--color-danger, #b91c1c)';
 }
 
 export default function ArcFlashFleet() {
@@ -118,29 +118,29 @@ export default function ArcFlashFleet() {
             <table className="data-table print-table" style={{ width: '100%', fontSize: '0.8rem' }}>
               <thead>
                 <tr>
-                  <th>Site</th><th>Buses</th><th>DANGER</th><th>Blocked</th>
-                  <th>Avg confidence</th><th>Low confidence</th><th>Sanity (err / chk)</th>
-                  <th>Studies</th><th>Expiring</th><th>Incidents (12mo)</th>
+                  <th>Site</th><th className="num">Buses</th><th className="num">DANGER</th><th className="num">Blocked</th>
+                  <th className="num">Avg confidence</th><th className="num">Low confidence</th><th className="num">Sanity (err / chk)</th>
+                  <th className="num">Studies</th><th className="num">Expiring</th><th className="num">Incidents (12mo)</th>
                 </tr>
               </thead>
               <tbody>
                 {sites.map((s) => (
                   <tr key={s.siteId}>
                     <td>{s.siteId === 'unassigned' ? s.siteName : <Link to={`/sites/${s.siteId}`}>{s.siteName}</Link>}</td>
-                    <td>{s.busCount}</td>
-                    <td style={{ fontWeight: s.dangerCount > 0 ? 700 : 400, color: s.dangerCount > 0 ? 'var(--color-danger)' : 'inherit' }}>
+                    <td className="num">{s.busCount}</td>
+                    <td className="num" style={{ fontWeight: s.dangerCount > 0 ? 700 : 400, color: s.dangerCount > 0 ? 'var(--color-danger)' : 'inherit' }}>
                       {s.dangerCount} {s.busCount ? <span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>({s.dangerPct}%)</span> : null}
                     </td>
-                    <td style={{ color: s.blockedCount > 0 ? 'var(--color-warning)' : 'inherit' }}>{s.blockedCount}</td>
-                    <td><span style={{ fontWeight: 700, color: bandColor(s.avgConfidence) }}>{s.avgConfidence == null ? '—' : `${s.avgConfidence}%`}</span></td>
-                    <td style={{ color: s.lowConfidenceCount > 0 ? 'var(--color-danger)' : 'inherit' }}>{s.lowConfidenceCount}</td>
-                    <td>
+                    <td className="num" style={{ color: s.blockedCount > 0 ? 'var(--color-warning)' : 'inherit' }}>{s.blockedCount}</td>
+                    <td className="num"><span style={{ fontWeight: 700, color: bandColor(s.avgConfidence) }}>{s.avgConfidence == null ? '—' : `${s.avgConfidence}%`}</span></td>
+                    <td className="num" style={{ color: s.lowConfidenceCount > 0 ? 'var(--color-danger)' : 'inherit' }}>{s.lowConfidenceCount}</td>
+                    <td className="num">
                       <span style={{ color: s.contradictionErrors > 0 ? 'var(--color-danger)' : 'inherit', fontWeight: s.contradictionErrors > 0 ? 700 : 400 }}>{s.contradictionErrors}</span>
                       {' / '}{s.contradictionWarnings}
                     </td>
-                    <td>{s.studyCount}</td>
-                    <td style={{ color: s.expiringStudies > 0 ? 'var(--color-danger)' : 'inherit' }}>{s.expiringStudies}</td>
-                    <td style={{ fontWeight: s.recentIncidents > 0 ? 700 : 400, color: s.recentIncidents > 0 ? 'var(--color-danger)' : 'inherit' }}
+                    <td className="num">{s.studyCount}</td>
+                    <td className="num" style={{ color: s.expiringStudies > 0 ? 'var(--color-danger)' : 'inherit' }}>{s.expiringStudies}</td>
+                    <td className="num" style={{ fontWeight: s.recentIncidents > 0 ? 700 : 400, color: s.recentIncidents > 0 ? 'var(--color-danger)' : 'inherit' }}
                       title={s.recentIncidents > 0 ? `${s.openIncidents} open · ${s.incidentInjuries} with injury${s.lastIncidentAt ? ` · last ${new Date(s.lastIncidentAt).toLocaleDateString()}` : ''}` : 'No incidents logged in the last 12 months'}>
                       {s.recentIncidents}{s.incidentInjuries > 0 ? <span style={{ color: 'var(--color-danger)' }}> ⚠</span> : null}
                     </td>

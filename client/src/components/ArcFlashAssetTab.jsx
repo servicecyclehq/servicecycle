@@ -265,8 +265,13 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
 
       {/* Current label */}
       {current && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Current label</h2>
+        </div>
         <div style={card}>
-          <h3 style={h3}>Current label{current.study?.superseded ? ' (latest study superseded)' : ''}</h3>
+          <h3 style={h3} className="no-print">Current label{current.study?.superseded ? ' (latest study superseded)' : ''}</h3>
           <div style={dlGrid}>
             <Field label="Bus" value={current.busName || '—'} />
             <Field label="Nominal voltage" value={current.nominalVoltage || '—'} />
@@ -284,12 +289,18 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
             <Field label="Engineer" value={current.study?.peName || current.study?.method || '—'} />
           </div>
         </div>
+        </section>
       )}
 
       {/* IEEE 1584 inputs */}
       {current && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">IEEE 1584-2018 inputs</h2>
+        </div>
         <div style={card}>
-          <h3 style={h3}>IEEE 1584-2018 inputs</h3>
+          <h3 style={h3} className="no-print">IEEE 1584-2018 inputs</h3>
           <div style={dlGrid}>
             <Field label="Bolted fault current" value={num(current.boltedFaultCurrentKA, 'kA')} />
             <Field label="Arcing current" value={num(current.arcingCurrentKA, 'kA')} />
@@ -319,12 +330,18 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
             <Field label="NEC 240.87 method" value={current.nec24087Method || '—'} />
           </div>
         </div>
+        </section>
       )}
 
       {/* Source / system model */}
       {src && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Source / system model (PCC)</h2>
+        </div>
         <div style={card}>
-          <h3 style={h3}>Source / system model (PCC)</h3>
+          <h3 style={h3} className="no-print">Source / system model (PCC)</h3>
           <div style={dlGrid}>
             <Field label="Utility max fault" value={num(src.utilityMaxFaultKA, 'kA')} />
             <Field label="Utility min fault" value={num(src.utilityMinFaultKA, 'kA')} />
@@ -337,12 +354,18 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
             <Field label="<125 kVA flag" value={src.below125kvaFlag == null ? '—' : (src.below125kvaFlag ? 'Flagged — PE to verify (IEEE 1584-2018 §4.3)' : 'No')} />
           </div>
         </div>
+        </section>
       )}
 
       {/* Study coverage */}
       {data?.studyAssets?.length > 1 && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Study coverage</h2>
+        </div>
         <div style={card}>
-          <h3 style={h3}>Study coverage ({data.studyAssets.length})</h3>
+          <h3 style={h3} className="no-print">Study coverage ({data.studyAssets.length})</h3>
           <table className="data-table print-table" style={{ width: '100%', fontSize: '0.78rem' }}>
             <thead><tr><th>Study date</th><th>Method</th><th>IE (cal/cm²)</th><th>Severity</th><th>Trust</th><th>Status</th></tr></thead>
             <tbody>
@@ -359,12 +382,18 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
             </tbody>
           </table>
         </div>
+        </section>
       )}
 
       {/* Protective devices */}
       {data?.devices?.length > 0 && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Protective devices</h2>
+        </div>
         <div style={card}>
-          <h3 style={h3}>Protective devices ({data.devices.length})</h3>
+          <h3 style={h3} className="no-print">Protective devices ({data.devices.length})</h3>
           <table className="data-table print-table" style={{ width: '100%', fontSize: '0.78rem' }}>
             <thead><tr><th>Label</th><th>Type</th><th>Frame / sensor</th><th>Settings</th><th>Source</th></tr></thead>
             <tbody>
@@ -380,12 +409,18 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
             </tbody>
           </table>
         </div>
+        </section>
       )}
 
       {/* Open collection tasks */}
       {data?.collectionTasks?.length > 0 && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Open field-collection tasks</h2>
+        </div>
         <div style={card}>
-          <h3 style={h3}>Open field-collection tasks ({data.collectionTasks.length})</h3>
+          <h3 style={h3} className="no-print">Open field-collection tasks ({data.collectionTasks.length})</h3>
           {data.collectionTasks.map(t => (
             <div key={t.id} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 8, marginTop: 8, fontSize: '0.8rem' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -397,6 +432,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
             </div>
           ))}
         </div>
+        </section>
       )}
 
       {/* NETA device tests (as-found / as-left) */}
@@ -404,8 +440,13 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
 
       {/* Arc-flash custom fields (long tail) */}
       {data?.customFields?.length > 0 && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Arc-flash fields</h2>
+        </div>
         <div style={card}>
-          <h3 style={h3}>Arc-flash fields</h3>
+          <h3 style={h3} className="no-print">Arc-flash fields</h3>
           <div style={dlGrid}>
             {data.customFields.map(f => (
               <Field key={f.definitionId} label={f.name} value={f.value == null || f.value === '' ? '—' : f.value} />
@@ -415,6 +456,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
             Edit these in the asset Edit form. Admins define arc-flash fields under Settings → Custom Fields.
           </div>
         </div>
+        </section>
       )}
 
       {data?.mitigations?.options?.length > 0 && <div className="no-print"><MitigationCard assetId={assetId} mitigations={data.mitigations} current={current} canWrite={canWrite} /></div>}
@@ -476,9 +518,14 @@ function IncidentsCard({ assetId, incidents, canWrite, onChange }) {
   }
 
   return (
+    <section className="print-sec">
+    <div className="print-sec-head print-only">
+      <span className="print-sec-no" />
+      <h2 className="print-sec-title">Incidents &amp; near-misses</h2>
+    </div>
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <h3 style={{ ...h3, marginBottom: 0 }}>Incidents &amp; near-misses{incidents.length > 0 ? ` (${incidents.length})` : ''}</h3>
+        <h3 style={{ ...h3, marginBottom: 0 }} className="no-print">Incidents &amp; near-misses{incidents.length > 0 ? ` (${incidents.length})` : ''}</h3>
         {canWrite && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? 'Cancel' : 'Log an event'}</button>}
       </div>
       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
@@ -550,6 +597,7 @@ function IncidentsCard({ assetId, incidents, canWrite, onChange }) {
         <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: 10 }}>No events logged.</div>
       )}
     </div>
+    </section>
   );
 }
 
@@ -568,8 +616,13 @@ function ArcFlashTimelineCard({ assetId }) {
 
   if (!events || events.length === 0) return null;
   return (
+    <section className="print-sec">
+    <div className="print-sec-head print-only">
+      <span className="print-sec-no" />
+      <h2 className="print-sec-title">History timeline</h2>
+    </div>
     <div style={card}>
-      <h3 style={h3}>History timeline ({events.length})</h3>
+      <h3 style={h3} className="no-print">History timeline ({events.length})</h3>
       <div style={{ position: 'relative', paddingLeft: 18 }}>
         {events.map((e, i) => (
           <div key={i} style={{ position: 'relative', paddingBottom: 12 }}>
@@ -582,6 +635,7 @@ function ArcFlashTimelineCard({ assetId }) {
         ))}
       </div>
     </div>
+    </section>
   );
 }
 
@@ -773,7 +827,7 @@ function MitigationCard({ assetId, mitigations, current, canWrite }) {
         <div key={o.key} style={{ borderTop: '1px solid var(--color-border)', paddingTop: 8, marginTop: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <strong style={{ fontSize: '0.84rem' }}>{o.label}
-              <span style={{ marginLeft: 6, fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: o.category === 'reduce_energy' ? '#15803d' : '#2563eb', padding: '1px 6px', borderRadius: 3 }}>{o.category === 'reduce_energy' ? 'REDUCE ENERGY' : 'WORKER SAFETY'}</span>
+              <span style={{ marginLeft: 6, fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: o.category === 'reduce_energy' ? 'var(--color-success, #15803d)' : 'var(--color-info, #2563eb)', padding: '1px 6px', borderRadius: 3 }}>{o.category === 'reduce_energy' ? 'REDUCE ENERGY' : 'WORKER SAFETY'}</span>
             </strong>
             {canWrite && (quoted[o.key]
               ? <span style={{ fontSize: '0.76rem', color: 'var(--color-success, #16a34a)' }}>✓ Quote requested</span>
@@ -975,9 +1029,14 @@ function DeviceTests({ data, assetId, canWrite, onChange, current }) {
   const inp = { width: '100%', fontSize: '0.8rem' };
 
   return (
+    <section className="print-sec">
+    <div className="print-sec-head print-only">
+      <span className="print-sec-no" />
+      <h2 className="print-sec-title">NETA test records</h2>
+    </div>
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ ...h3, marginBottom: 0 }}>NETA test records {tests.length > 0 ? `(${tests.length})` : ''}</h3>
+        <h3 style={{ ...h3, marginBottom: 0 }} className="no-print">NETA test records {tests.length > 0 ? `(${tests.length})` : ''}</h3>
         {canWrite && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? 'Cancel' : 'Record test'}</button>}
       </div>
 
@@ -1105,5 +1164,6 @@ function DeviceTests({ data, assetId, canWrite, onChange, current }) {
         </table>
       )}
     </div>
+    </section>
   );
 }
