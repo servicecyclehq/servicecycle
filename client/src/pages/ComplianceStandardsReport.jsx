@@ -10,11 +10,16 @@
 // /reports/compliance/:standardCode (code is encodeURIComponent-encoded — it
 // contains spaces, e.g. "NFPA 70B"). The compliance-rate bar reuses the
 // Dashboard treatment: green ≥90, amber ≥70, red below.
+//
+// C2e (2026-07-13): opts into the shared Field Report print standard
+// (styles/print.css): Print button, print-only masthead/footer, one numbered
+// section for the summary table. The interactive insight cards are no-print
+// -- the printed artifact is the standards table itself.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, Printer } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
@@ -58,7 +63,7 @@ function ComplianceRateBar({ rate }) {
 export default function ComplianceStandardsReport() {
   useDocumentTitle('Compliance by Standard');
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const canSeeProposal = ['admin', 'manager', 'oem_admin'].includes(role);
   // #3 insurer package + break-glass links: creation is requireManager (admin/manager).
   const canManageInsurer = ['admin', 'manager'].includes(role);
@@ -90,6 +95,15 @@ export default function ComplianceStandardsReport() {
 
   const openStandard = (code) => navigate(`/reports/compliance/${encodeURIComponent(code)}`, { state: fromState });
 
+  // C2e print support: masthead/briefline inputs (screen behavior unchanged).
+  const companyName = user?.account?.companyName || '';
+  const activeSiteName = siteId ? (sites.find(s => String(s.id) === String(siteId))?.name || '') : '';
+  const totals = rows.reduce((t, r) => ({
+    assets: t.assets + (r.assetCount ?? 0),
+    schedules: t.schedules + (r.scheduleCount ?? 0),
+    overdue: t.overdue + (r.overdueCount ?? 0),
+  }), { assets: 0, schedules: 0, overdue: 0 });
+
   return (
     <>
       <div className="page-header">
@@ -100,12 +114,32 @@ export default function ComplianceStandardsReport() {
             Maintenance compliance rolled up per governing standard. Click a row for the full evidence table.
           </div>
         </div>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => window.print()}
+          title="Print this report"
+        >
+          <Printer size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+          Print
+        </button>
       </div>
 
-      <div className="page-body">
+      <div className="page-body print-doc">
+        {/* C2e: shared Field Report print standard (styles/print.css) */}
+        <header className="print-masthead print-only">
+          <h1 className="print-masthead-title">Compliance by Standard</h1>
+          <div className="print-masthead-meta">
+            {companyName ? <>{companyName}<br /></> : null}
+            {activeSiteName || 'All sites'}<br />
+            Generated {new Date().toLocaleDateString()}
+          </div>
+        </header>
+        <div className="print-rule print-only"></div>
+
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div className="no-print" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
           <label htmlFor="compliance-site-filter" className="form-label" style={{ margin: 0 }}>Site</label>
           <select
             id="compliance-site-filter"
@@ -118,6 +152,11 @@ export default function ComplianceStandardsReport() {
             {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
+
+        {/* C2e: the interactive insight cards (drill-downs, generators, buttons)
+            are screen tools, not printed-report content -- excluded from the
+            printed artifact wholesale. The printed doc is the standards table. */}
+        <div className="no-print">
 
         {/* #1 — "What will fail an audit": one ranked list of likely findings. */}
         <AuditFailureCard siteId={siteId || null} />
@@ -152,6 +191,8 @@ export default function ComplianceStandardsReport() {
         {/* Path to 100% — the ranked fix-it list that closes the gap (N2). */}
         <PathTo100 siteId={siteId || null} />
 
+        </div>
+
         {loading ? (
           <div className="loading">Loading compliance summary…</div>
         ) : rows.length === 0 ? (
@@ -163,17 +204,33 @@ export default function ComplianceStandardsReport() {
             />
           </div>
         ) : (
-          <div className="card">
+          <>
+            {/* Summary brief line (print) */}
+            <div className="print-briefline print-only">
+              <span>standards <b>{rows.length}</b></span>
+              <span>assets <b>{totals.assets}</b></span>
+              <span>schedules <b>{totals.schedules}</b></span>
+              <span>overdue <b>{totals.overdue}</b></span>
+            </div>
+
+            {/* Section 1 — compliance summary by standard */}
+            <section className="print-sec">
+            <div className="print-sec-head print-only">
+              <span className="print-sec-no" />
+              <h2 className="print-sec-title">Compliance summary by standard</h2>
+              <span className="print-sec-aux">{rows.length} standard{rows.length === 1 ? '' : 's'}</span>
+            </div>
+            <div className="card">
             <div className="table-wrap">
-              <table>
+              <table className="print-table">
                 <thead>
                   <tr>
                     <th>Standard</th>
                     <th>Title</th>
-                    <th style={{ textAlign: 'right' }}>Assets</th>
-                    <th style={{ textAlign: 'right' }}>Schedules</th>
+                    <th className="num" style={{ textAlign: 'right' }}>Assets</th>
+                    <th className="num" style={{ textAlign: 'right' }}>Schedules</th>
                     <th>Compliance</th>
-                    <th style={{ textAlign: 'right' }}>Overdue</th>
+                    <th className="num" style={{ textAlign: 'right' }}>Overdue</th>
                     <th>Next Due</th>
                   </tr>
                 </thead>
@@ -201,8 +258,8 @@ export default function ComplianceStandardsReport() {
                           )}
                         </td>
                         <td className="td-muted">{std.title || '—'}</td>
-                        <td style={{ textAlign: 'right' }}>{row.assetCount ?? 0}</td>
-                        <td style={{ textAlign: 'right' }}>
+                        <td className="num" style={{ textAlign: 'right' }}>{row.assetCount ?? 0}</td>
+                        <td className="num" style={{ textAlign: 'right' }}>
                           {row.scheduleCount ?? 0}
                           {(row.unbaselinedCount ?? 0) > 0 && (
                             <div style={{ fontSize: 'var(--font-size-xs)', color: '#d97706' }}>
@@ -211,7 +268,7 @@ export default function ComplianceStandardsReport() {
                           )}
                         </td>
                         <td><ComplianceRateBar rate={row.complianceRate} /></td>
-                        <td style={{ textAlign: 'right' }}>
+                        <td className="num" style={{ textAlign: 'right' }}>
                           {(row.overdueCount ?? 0) > 0
                             ? <span style={{ color: 'var(--color-danger)', fontWeight: 700 }}>{row.overdueCount}</span>
                             : <span className="text-muted">0</span>}
@@ -223,8 +280,15 @@ export default function ComplianceStandardsReport() {
                 </tbody>
               </table>
             </div>
-          </div>
+            </div>
+            </section>
+          </>
         )}
+
+        <footer className="print-footer print-only">
+          <span>ServiceCycle</span>
+          <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+        </footer>
       </div>
     </>
   );

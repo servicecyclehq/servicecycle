@@ -14,11 +14,16 @@
 // {standardCode, siteId} → snapshot {id, sha256, filename}, then the PDF is
 // auto-downloaded via the authed GET /api/compliance/snapshots/:id/download
 // and a toast surfaces the SHA-256 prefix that was anchored in the audit log.
+//
+// C2e (2026-07-13): opts into the shared Field Report print standard
+// (styles/print.css): Print button (all roles), print-only masthead/footer,
+// numbered Evidence / Open-deficiencies sections. Additive only -- the
+// snapshot download flow above is untouched.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileCheck2 } from 'lucide-react';
+import { FileCheck2, Printer } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -78,6 +83,8 @@ export default function ComplianceStandardDetailReport() {
   const fromState = useFromState();
   const { user } = useAuth();
   const canSnapshot = ['admin', 'manager'].includes(user?.role);
+  // C2e print support: masthead company line (screen behavior unchanged).
+  const companyName = user?.account?.companyName || '';
 
   const [sites, setSites]       = useState([]);
   const [siteId, setSiteId]     = useState('');
@@ -188,8 +195,8 @@ export default function ComplianceStandardDetailReport() {
             {summary.complianceRate != null && <SummaryChip label="compliance" value={`${summary.complianceRate}%`} />}
           </div>
         </div>
-        {canSnapshot && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          {canSnapshot && (
             <button
               type="button"
               className="btn btn-primary"
@@ -199,11 +206,40 @@ export default function ComplianceStandardDetailReport() {
             >
               {snapBusy ? 'Generating…' : 'Download audit snapshot (this standard)'}
             </button>
-          </div>
-        )}
+          )}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => window.print()}
+            title="Print this report"
+          >
+            <Printer size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+            Print
+          </button>
+        </div>
       </div>
 
-      <div className="page-body">
+      <div className="page-body print-doc">
+        {/* C2e: shared Field Report print standard (styles/print.css) */}
+        <header className="print-masthead print-only">
+          <h1 className="print-masthead-title">{std.code || standardCode} Compliance Report</h1>
+          <div className="print-masthead-meta">
+            {companyName ? <>{companyName}<br /></> : null}
+            {std.edition ? <>{std.edition}<br /></> : null}
+            {report.scope || 'All sites'}<br />
+            Generated {report.generatedAt ? fmtDate(report.generatedAt) : new Date().toLocaleDateString()}
+          </div>
+        </header>
+        <div className="print-rule print-only"></div>
+        <div className="print-briefline print-only">
+          <span>assets <b>{summary.assetCount ?? 0}</b></span>
+          <span>schedules <b>{summary.scheduleCount ?? 0}</b></span>
+          <span>current <b>{summary.currentCount ?? 0}</b></span>
+          <span>overdue <b>{summary.overdueCount ?? 0}</b></span>
+          <span>unbaselined <b>{summary.unbaselinedCount ?? 0}</b></span>
+          {summary.complianceRate != null && <span>compliance <b>{summary.complianceRate}%</b></span>}
+        </div>
+
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
 
         {std.keyMandate && (
@@ -219,7 +255,7 @@ export default function ComplianceStandardDetailReport() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div className="no-print" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
           <label htmlFor="compliance-detail-site-filter" className="form-label" style={{ margin: 0 }}>Site</label>
           <select
             id="compliance-detail-site-filter"
@@ -234,8 +270,14 @@ export default function ComplianceStandardDetailReport() {
         </div>
 
         {/* ── Evidence table ─────────────────────────────────────────────── */}
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Evidence</h2>
+          <span className="print-sec-aux">{rows.length} schedule{rows.length === 1 ? '' : 's'}</span>
+        </div>
         <div className="card mb-16">
-          <div className="card-header">
+          <div className="card-header no-print">
             <div className="card-title">Evidence ({rows.length})</div>
           </div>
           {rows.length === 0 ? (
@@ -246,7 +288,7 @@ export default function ComplianceStandardDetailReport() {
             />
           ) : (
             <div className="table-wrap">
-              <table>
+              <table className="print-table">
                 <thead>
                   <tr>
                     <th>Asset</th>
@@ -324,9 +366,17 @@ export default function ComplianceStandardDetailReport() {
           )}
         </div>
 
+        </section>
+
         {/* ── Open deficiencies ───────────────────────────────────────────── */}
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Open deficiencies</h2>
+          <span className="print-sec-aux">{defs.length} open</span>
+        </div>
         <div className="card mb-16">
-          <div className="card-header">
+          <div className="card-header no-print">
             <div className="card-title" style={defs.length > 0 ? { color: 'var(--color-danger)' } : undefined}>
               Open Deficiencies ({defs.length})
             </div>
@@ -339,7 +389,7 @@ export default function ComplianceStandardDetailReport() {
             </div>
           ) : (
             <div className="table-wrap">
-              <table>
+              <table className="print-table">
                 <thead>
                   <tr>
                     <th>Severity</th>
@@ -370,7 +420,12 @@ export default function ComplianceStandardDetailReport() {
             </div>
           )}
         </div>
+        </section>
 
+        <footer className="print-footer print-only">
+          <span>ServiceCycle</span>
+          <span className="print-footer-pages">Generated {report.generatedAt ? fmtDate(report.generatedAt) : new Date().toLocaleDateString()}</span>
+        </footer>
       </div>
       <Toast toast={toast} onClose={() => setToast(null)} />
     </>
