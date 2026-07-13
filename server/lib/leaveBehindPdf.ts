@@ -28,15 +28,12 @@ const { PDF_COLORS, PDF_FONTS, PDF_PAGE, finalizeFooters, drawMasthead } = requi
 
 // ── Palette (matches compliancePdf.ts house style) ───────────────────────────
 // Legacy aliases onto the locked palette (values from lib/pdfStyle.ts).
-// ON_DARK_MUTED: on-dark muted text for the co-brandable header band -- the
-// locked palette has no on-dark slot. The Section 3 "What to Budget For" chip
+// The Section 3 "What to Budget For" chip
 // now uses the locked PDF_COLORS.ai token (C2i / G6, Dustin's purple-family
 // decision -- same hex #7c3aed, so a zero visual change token-ification).
-const ON_DARK_MUTED = '#9aa3b2';
 const C = {
   bg:          PDF_COLORS.ink,
   textOnDark:  PDF_COLORS.card,
-  textMuted:   ON_DARK_MUTED,      // used on the dark header band only
   text:        PDF_COLORS.ink,
   subtext:     PDF_COLORS.textMuted,
   border:      PDF_COLORS.border,

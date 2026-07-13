@@ -14,14 +14,9 @@ const PDFDocument = require('pdfkit');
 // block (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
 const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
-// On-dark muted text for the co-brandable masthead band -- the locked palette
-// has no on-dark slot (the band itself may be a partner brandColor).
-const ON_DARK_MUTED = '#9aa3b2';
-
 // Legacy aliases onto the locked palette (accent/rec-colors move to the locked
 // petrol/status values; the old accent #0d4f6e was the hover shade).
 const COLORS = {
-  bgDark: PDF_COLORS.ink, textOnDark: PDF_COLORS.card, textOnDarkMuted: ON_DARK_MUTED,
   text: PDF_COLORS.ink, textMuted: PDF_COLORS.textMuted, textSubtle: PDF_COLORS.textFaint,
   border: PDF_COLORS.border, accent: PDF_COLORS.petrol, cardBg: PDF_COLORS.pageBg,
   replace: PDF_COLORS.danger, repair: PDF_COLORS.warning, defer: PDF_COLORS.textMuted, warnBg: PDF_COLORS.warningBg,

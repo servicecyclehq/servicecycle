@@ -346,11 +346,9 @@ async function buildEmpData(prisma, accountId) {
 // Palette / page geometry identical to lib/compliancePdf so the two
 // documents read as one product family.
 
-const ON_DARK_MUTED = '#9aa3b2'; // on-dark muted text for the co-brand cover band (locked palette has no on-dark slot)
 const COLORS = {
   bgDark:          PDF_COLORS.ink,
   textOnDark:      PDF_COLORS.card,
-  textOnDarkMuted: ON_DARK_MUTED,
   text:            PDF_COLORS.ink,
   textMuted:       PDF_COLORS.textMuted,
   textSubtle:      PDF_COLORS.textFaint,

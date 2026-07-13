@@ -65,18 +65,11 @@ const PDFDocument = require('pdfkit');
 // (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md, Help Center row).
 const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
-// On-dark muted text for the dark header band -- the locked palette has no
-// on-dark slot (same local exception as cfoReport.ts).
-const ON_DARK_MUTED = '#9aa3b2';
-
 // Legacy aliases onto the locked palette: body code keeps its COLORS.* names;
 // the values come from PDF_COLORS (accent moves from the old hover shade
 // #0d4f6e to the locked petrol primary). Unused codeBg was dropped -- it has
 // no locked slot and nothing referenced it.
 const COLORS = {
-  bgDark:    PDF_COLORS.ink,
-  textOnDark: PDF_COLORS.card,
-  textOnDarkMuted: ON_DARK_MUTED,
   text:      PDF_COLORS.ink,
   textMuted: PDF_COLORS.textMuted,
   textSubtle: PDF_COLORS.textFaint,

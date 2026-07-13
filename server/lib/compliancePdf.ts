@@ -39,11 +39,9 @@ const PDFDocument = require('pdfkit');
 // historical snapshot bytes are never re-rendered by this change.
 const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
-const ON_DARK_MUTED = '#9aa3b2'; // on-dark muted text for the co-brand header band (locked palette has no on-dark slot)
 const COLORS = {
   bgDark:          PDF_COLORS.ink,
   textOnDark:      PDF_COLORS.card,
-  textOnDarkMuted: ON_DARK_MUTED,
   text:            PDF_COLORS.ink,
   textMuted:       PDF_COLORS.textMuted,
   textSubtle:      PDF_COLORS.textFaint,

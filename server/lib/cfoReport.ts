@@ -25,15 +25,10 @@ const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require(
 
 const MS_PER_DAY = 86_400_000;
 
-// On-dark muted text for the co-brandable masthead band -- the locked palette
-// has no on-dark slot (the band itself may be a partner brandColor).
-const ON_DARK_MUTED = '#9aa3b2';
-
 // Legacy aliases onto the locked palette: body code keeps its COLORS.* names;
 // the values come from PDF_COLORS (accent moves from the old hover shade
 // #0d4f6e to the locked petrol primary).
 const COLORS = {
-  bgDark: PDF_COLORS.ink, textOnDark: PDF_COLORS.card, textOnDarkMuted: ON_DARK_MUTED,
   text: PDF_COLORS.ink, textMuted: PDF_COLORS.textMuted, textSubtle: PDF_COLORS.textFaint,
   border: PDF_COLORS.border, accent: PDF_COLORS.petrol, cardBg: PDF_COLORS.pageBg,
   danger: PDF_COLORS.danger, warn: PDF_COLORS.warning, warnBg: PDF_COLORS.warningBg, ok: PDF_COLORS.success,
