@@ -38,6 +38,12 @@ const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
 const PDFDocument = require('pdfkit');
+// C2a: shared Field Report theme (lib/pdfStyle.ts) -- masthead, footer,
+// locked palette (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
+const {
+  PDF_COLORS, PDF_FONTS, PDF_PAGE, formatTimestamp,
+  drawMasthead, drawSectionHeading, attachFooter,
+} = require('../lib/pdfStyle');
 const { sendXlsx } = require('../lib/xlsxExport');
 
 const WINDOW_DAYS = 90;
@@ -406,31 +412,49 @@ router.get('/plan/export.xlsx', async (req: any, res: any) => {
 function renderOutagePlanPdf(data: any): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const d = new Date(data.target.date);
-    const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margins: { top: PDF_PAGE.margin, bottom: PDF_PAGE.margin, left: PDF_PAGE.margin, right: PDF_PAGE.margin },
+    });
     const chunks: any[] = [];
     doc.on('error', reject);
     doc.on('data', (c: any) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-    doc.fontSize(18).text('Outage Work Plan', { continued: false });
-    doc.moveDown(0.2);
-    doc.fontSize(11).fillColor('#555')
-       .text(`Outage date: ${d.toLocaleDateString()}    Scope: ${data.target.scopeLabel}`);
-    const s = data.summary;
-    doc.text(`${s.totalTasks} tasks on ${s.totalDevices} devices · ${s.overdueCount} overdue · ${s.carryOverCount} carry-over · ${s.opportunisticCount} opportunistic (${s.pulledForwardCount} pulled forward)`);
-    if (s.shutdownsAvoided > 0) doc.fillColor('#15803d').text(`Consolidating saves ${s.shutdownsAvoided} separate shutdown(s).`);
-    doc.fillColor('#000').moveDown(0.5);
+    // C2a: shared footer on page 1 + every auto-added page (lib/pdfStyle).
+    attachFooter(doc, { generatedAtIso: new Date().toISOString() });
 
+    drawMasthead(doc, {
+      title: 'Outage Work Plan',
+      metaLines: [
+        'Outage ' + d.toLocaleDateString(),
+        String(data.target.scopeLabel || ''),
+        formatTimestamp(new Date()),
+      ],
+    });
+
+    const s = data.summary;
+    doc.font(PDF_FONTS.sans).fontSize(9.5).fillColor(PDF_COLORS.textMuted)
+       .text(`${s.totalTasks} tasks on ${s.totalDevices} devices · ${s.overdueCount} overdue · ${s.carryOverCount} carry-over · ${s.opportunisticCount} opportunistic (${s.pulledForwardCount} pulled forward)`,
+         PDF_PAGE.margin, doc.y, { width: PDF_PAGE.contentW });
+    if (s.shutdownsAvoided > 0) {
+      doc.fillColor(PDF_COLORS.success)
+         .text(`Consolidating saves ${s.shutdownsAvoided} separate shutdown(s).`, PDF_PAGE.margin, doc.y + 2, { width: PDF_PAGE.contentW });
+    }
+    doc.fillColor(PDF_COLORS.ink).moveDown(0.5);
+
+    let locNum = 0;
     for (const loc of data.locations) {
-      doc.moveDown(0.4).fontSize(13).fillColor('#0f172a').text(loc.siteName);
+      locNum += 1;
+      drawSectionHeading(doc, { number: locNum, title: loc.siteName });
       for (const eq of loc.equipment) {
-        doc.moveDown(0.15).fontSize(11).fillColor('#334155')
+        doc.moveDown(0.15).font(PDF_FONTS.sansBold).fontSize(11).fillColor(PDF_COLORS.textFaint)
            .text(`  ${eq.isFeeder ? '▸ ' : ''}${eq.equipmentName}${eq.isFeeder ? '' : '  (standalone)'}`);
         for (const dev of eq.devices) {
-          doc.fontSize(10).fillColor('#0f172a').text(`     ${dev.assetName}  [${dev.condition}]`);
+          doc.font(PDF_FONTS.sans).fontSize(10).fillColor(PDF_COLORS.ink).text(`     ${dev.assetName}  [${dev.condition}]`);
           for (const t of dev.tasks) {
             const dd = t.dueDate ? new Date(t.dueDate).toLocaleDateString() : '—';
-            doc.fontSize(9).fillColor('#475569')
+            doc.fontSize(9).fillColor(PDF_COLORS.textFaint)
                .text(`        [  ]  ${t.taskName}   (${t.reason}, due ${dd})${t.standardRef ? '  ·  ' + t.standardRef : ''}`);
           }
         }

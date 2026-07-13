@@ -193,7 +193,10 @@ function drawMasthead(doc, opts) {
     const w = doc.widthOfString(l, { characterSpacing: TRACK });
     if (w > metaW) metaW = w;
   }
-  metaW = Math.min(metaW, PDF_PAGE.contentW * 0.45);
+  // +2pt cushion: pdfkit's wrapper ellipsizes a line rendered into a width
+  // exactly equal to its own measured width (rounding epsilon), which cut the
+  // trailing " UTC" off the longest meta line (C2a finding).
+  metaW = Math.min(metaW + 2, PDF_PAGE.contentW * 0.45);
 
   const titleW = PDF_PAGE.contentW - (metaLines.length ? metaW + 18 : 0);
   doc.font(PDF_FONTS.sansBold).fontSize(21).fillColor(PDF_COLORS.ink);

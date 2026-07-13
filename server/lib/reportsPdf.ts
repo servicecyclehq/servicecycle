@@ -3,27 +3,27 @@
 /**
  * lib/reportsPdf.ts
  * ------------------
- * Minimal generic tabular PDF renderer for the /api/reports/* named reports
- * (2026-07-05, §9). Not a NETA-styled document (no letterhead/branding) —
- * this is a plain, functional table export for operators who want a printable
- * snapshot; it deliberately does not try to match the polish of the arc-flash
- * label / EMP document renderers (lib/arcFlashLabelDoc.ts, lib/empDocument.ts),
- * which are purpose-built compliance documents. If a report ever needs that
- * level of polish, give it its own renderer — don't grow this one bespoke
- * report at a time.
+ * Generic tabular PDF renderer for the /api/reports/* named reports
+ * (2026-07-05, section 9). C2a (2026-07-13): migrated onto the shared Field
+ * Report theme in lib/pdfStyle.ts -- masthead, branded hairline table, mono
+ * footer -- replacing the previous deliberately-unbranded plain table
+ * (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6 named this
+ * the biggest visual win). Still ONE generic renderer: a report that needs
+ * bespoke layout gets its own module -- don't grow this one report at a time.
  *
  * Usage: renderReportTablePdf(res, { title, subtitle, generatedAt, columns,
  * rows }) streams a PDF directly to an Express response. `columns` is
- * [{ key, label, width? }]; `rows` is an array of plain objects keyed by
- * `columns[].key`. Values are stringified with String() — callers are
- * responsible for formatting (dates, decimals) before passing rows in.
+ * [{ key, label, width? }] (width is a relative weight); `rows` is an array
+ * of plain objects keyed by `columns[].key`. Values are stringified -- callers
+ * are responsible for formatting (dates, decimals) before passing rows in.
+ * Empty cells render as the shared table style em dash.
  */
 
 const PDFDocument = require('pdfkit');
-
-const PAGE_MARGIN = 40;
-const ROW_HEIGHT = 18;
-const HEADER_HEIGHT = 20;
+const {
+  PDF_COLORS, PDF_FONTS, PDF_PAGE, formatTimestamp,
+  drawMasthead, drawTable, attachFooter,
+} = require('./pdfStyle');
 
 function renderReportTablePdf(res: any, opts: {
   title: string;
@@ -33,7 +33,11 @@ function renderReportTablePdf(res: any, opts: {
   rows: any[];
 }) {
   const { title, subtitle, generatedAt, columns, rows } = opts;
-  const doc = new PDFDocument({ size: 'letter', margin: PAGE_MARGIN, info: { Title: title, Author: 'ServiceCycle' } });
+  const doc = new PDFDocument({
+    size: 'LETTER',
+    margins: { top: PDF_PAGE.margin, bottom: PDF_PAGE.margin, left: PDF_PAGE.margin, right: PDF_PAGE.margin },
+    info: { Title: title, Author: 'ServiceCycle' },
+  });
 
   res.setHeader('Content-Type', 'application/pdf');
   const safeName = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 64);
@@ -46,50 +50,24 @@ function renderReportTablePdf(res: any, opts: {
   doc.pipe(res);
 
   try {
-    const pageWidth = doc.page.width - PAGE_MARGIN * 2;
-    const totalWeight = columns.reduce((s, c) => s + (c.width || 1), 0);
-    const colWidths = columns.map((c) => (pageWidth * (c.width || 1)) / totalWeight);
+    const when = generatedAt || new Date();
+    // Footer on page 1 now + on every pageAdded (incl. drawTable's breaks).
+    attachFooter(doc, { generatedAtIso: when.toISOString() });
 
-    doc.fontSize(16).font('Helvetica-Bold').text(title);
-    if (subtitle) doc.fontSize(10).font('Helvetica').fillColor('#555').text(subtitle);
-    doc.fillColor('#000').fontSize(9).font('Helvetica')
-      .text(`Generated ${(generatedAt || new Date()).toISOString()}`, { align: 'right' });
-    doc.moveDown(0.5);
+    let y = drawMasthead(doc, { title, metaLines: [formatTimestamp(when)] });
 
-    const drawHeaderRow = () => {
-      let x = PAGE_MARGIN;
-      const y = doc.y;
-      doc.font('Helvetica-Bold').fontSize(9);
-      columns.forEach((c, i) => {
-        doc.text(c.label, x, y, { width: colWidths[i], continued: false });
-        x += colWidths[i];
-      });
-      doc.moveDown(0.3);
-      doc.moveTo(PAGE_MARGIN, doc.y).lineTo(PAGE_MARGIN + pageWidth, doc.y).strokeColor('#ccc').stroke();
-      doc.moveDown(0.2);
-      doc.font('Helvetica').fontSize(9);
-    };
-
-    drawHeaderRow();
-
-    for (const row of rows) {
-      if (doc.y > doc.page.height - PAGE_MARGIN - ROW_HEIGHT) {
-        doc.addPage();
-        drawHeaderRow();
-      }
-      let x = PAGE_MARGIN;
-      const y = doc.y;
-      columns.forEach((c, i) => {
-        const val = row[c.key];
-        doc.text(val === null || val === undefined ? '' : String(val), x, y, { width: colWidths[i] });
-        x += colWidths[i];
-      });
-      doc.moveDown(0.4);
+    if (subtitle) {
+      doc.font(PDF_FONTS.sans).fontSize(9).fillColor(PDF_COLORS.textMuted)
+         .text(subtitle, PDF_PAGE.margin, y, { width: PDF_PAGE.contentW });
+      y = doc.y + 10;
     }
 
-    if (rows.length === 0) {
-      doc.font('Helvetica-Oblique').fillColor('#777').text('No rows to display.');
-    }
+    drawTable(doc, {
+      y,
+      cols: columns.map((c) => ({ key: c.key, label: c.label, w: c.width || 1 })),
+      rows,
+      emptyText: 'No rows to display.',
+    });
   } catch (e) {
     console.error('[reportsPdf] render error:', e);
   }
