@@ -54,6 +54,15 @@ function fmtDate(d) { try { return d ? new Date(d).toLocaleDateString() : '—';
 function num(v, unit) { return (v == null || v === '') ? '—' : (unit ? `${v} ${unit}` : String(v)); }
 function yn(v) { return v == null ? '—' : (v ? 'Yes' : 'No'); }
 
+// C2b: focused QR-label reprint -- arms print.css's body.print-focus-label
+// mode so only the .print-label-sheet block prints, then disarms after the
+// print dialog closes (afterprint fires on cancel too).
+function printLabelSheet() {
+  document.body.classList.add('print-focus-label');
+  window.addEventListener('afterprint', () => document.body.classList.remove('print-focus-label'), { once: true });
+  window.print();
+}
+
 const card = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '14px 16px', marginTop: 16 };
 const h3 = { margin: '0 0 10px', fontSize: '0.95rem' };
 const dlGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px 18px', fontSize: '0.82rem' };
@@ -185,7 +194,17 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
   const src = current?.study?.sourceModel || null;
 
   return (
-    <div id="arc-flash-asset-report">
+    <div id="arc-flash-asset-report" className="print-doc">
+      {/* C2b: shared Field Report print standard (styles/print.css) */}
+      <header className="print-masthead print-only">
+        <h1 className="print-masthead-title">Arc Flash Report</h1>
+        <div className="print-masthead-meta">
+          {current?.busName || 'Asset'}<br />
+          Generated {new Date().toLocaleDateString()}
+        </div>
+      </header>
+      <div className="print-rule print-only"></div>
+
       {/* Header / status */}
       <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div>
@@ -314,7 +333,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
       {data?.studyAssets?.length > 1 && (
         <div style={card}>
           <h3 style={h3}>Study coverage ({data.studyAssets.length})</h3>
-          <table className="data-table" style={{ width: '100%', fontSize: '0.78rem' }}>
+          <table className="data-table print-table" style={{ width: '100%', fontSize: '0.78rem' }}>
             <thead><tr><th>Study date</th><th>Method</th><th>IE (cal/cm²)</th><th>Severity</th><th>Trust</th><th>Status</th></tr></thead>
             <tbody>
               {data.studyAssets.map((s, i) => (
@@ -336,7 +355,7 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
       {data?.devices?.length > 0 && (
         <div style={card}>
           <h3 style={h3}>Protective devices ({data.devices.length})</h3>
-          <table className="data-table" style={{ width: '100%', fontSize: '0.78rem' }}>
+          <table className="data-table print-table" style={{ width: '100%', fontSize: '0.78rem' }}>
             <thead><tr><th>Label</th><th>Type</th><th>Frame / sensor</th><th>Settings</th><th>Source</th></tr></thead>
             <tbody>
               {data.devices.map(d => (
@@ -388,19 +407,24 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
         </div>
       )}
 
-      {data?.mitigations?.options?.length > 0 && <MitigationCard assetId={assetId} mitigations={data.mitigations} current={current} canWrite={canWrite} />}
+      {data?.mitigations?.options?.length > 0 && <div className="no-print"><MitigationCard assetId={assetId} mitigations={data.mitigations} current={current} canWrite={canWrite} /></div>}
 
       {data?.current && <PermitCard assetId={assetId} />}
 
       {data?.current && <LabelPortal assetId={assetId} canWrite={canWrite} />}
 
-      {canWrite && <TccLookup />}
+      {canWrite && <div className="no-print"><TccLookup /></div>}
 
       <ArcFlashTrend assetId={assetId} />
 
       <ArcFlashTimelineCard assetId={assetId} />
 
       <IncidentsCard assetId={assetId} incidents={data?.incidents || []} canWrite={canWrite} onChange={load} />
+
+      <footer className="print-footer print-only">
+        <span>ServiceCycle</span>
+        <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+      </footer>
     </div>
   );
 }
@@ -802,12 +826,12 @@ function LabelPortal({ assetId, canWrite }) {
       {err && <div role="alert" className="alert alert-error" style={{ marginTop: 10 }}>{err}</div>}
 
       {out && (
-        <div style={{ marginTop: 12, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="print-label-sheet" style={{ marginTop: 12, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           {out.qrDataUrl && <img src={out.qrDataUrl} alt="Arc flash label QR code" width={140} height={140} style={{ border: '1px solid var(--color-border)', borderRadius: 6 }} />}
           <div style={{ fontSize: '0.8rem' }}>
             <div style={{ color: 'var(--color-text-secondary)' }}>Scan to open the live label:</div>
             <div style={{ wordBreak: 'break-all', fontFamily: 'monospace', fontSize: '0.74rem', marginTop: 4 }}>{out.url}</div>
-            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => window.print()}>Print</button>
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={printLabelSheet}>Print</button>
           </div>
         </div>
       )}

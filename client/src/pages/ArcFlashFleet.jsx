@@ -61,7 +61,17 @@ export default function ArcFlashFleet() {
         </div>
       </div>
 
-      <div className="page-body">
+      <div className="page-body print-doc">
+
+      {/* C2b: shared Field Report print standard (styles/print.css) */}
+      <header className="print-masthead print-only">
+        <h1 className="print-masthead-title">Arc Flash Fleet Dashboard</h1>
+        <div className="print-masthead-meta">
+          Portfolio rollup<br />
+          Generated {new Date().toLocaleDateString()}
+        </div>
+      </header>
+      <div className="print-rule print-only"></div>
 
       <LoadGrowthBanner />
 
@@ -71,7 +81,18 @@ export default function ArcFlashFleet() {
       {!loading && !error && (
         <>
           {t && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <>
+            <div className="print-briefline print-only">
+              <span>Sites <b>{t.sites}</b></span>
+              <span>Labelled buses <b>{t.busCount}</b></span>
+              <span>DANGER <b>{t.dangerCount}</b></span>
+              <span>Avg confidence <b>{t.avgConfidence == null ? '\u2014' : `${t.avgConfidence}%`}</b></span>
+              <span>Blocked <b>{t.blockedCount}</b></span>
+              <span>Sanity errors <b>{t.contradictionErrors}</b></span>
+              <span>Expiring (90d) <b>{t.expiringStudies}</b></span>
+              <span>Incidents (12mo) <b>{t.recentIncidents}</b></span>
+            </div>
+            <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
               <Tile label="Sites" value={t.sites} />
               <Tile label="Labelled buses" value={t.busCount} />
               <Tile label="DANGER buses" value={t.dangerCount} color="var(--color-danger)" />
@@ -81,6 +102,7 @@ export default function ArcFlashFleet() {
               <Tile label="Studies expiring (90d)" value={t.expiringStudies} />
               <Tile label="Incidents (12mo)" value={t.recentIncidents} color={t.recentIncidents > 0 ? 'var(--color-danger)' : undefined} />
             </div>
+            </>
           )}
 
           {sites.length === 0 ? (
@@ -88,7 +110,12 @@ export default function ArcFlashFleet() {
               No arc-flash labels recorded yet. Upload a one-line or study report on a site, or bind a study to assets.
             </div>
           ) : (
-            <table className="data-table" style={{ width: '100%', fontSize: '0.8rem' }}>
+            <section className="print-sec">
+            <div className="print-sec-head print-only">
+              <span className="print-sec-no" />
+              <h2 className="print-sec-title">Per-site rollup</h2>
+            </div>
+            <table className="data-table print-table" style={{ width: '100%', fontSize: '0.8rem' }}>
               <thead>
                 <tr>
                   <th>Site</th><th>Buses</th><th>DANGER</th><th>Blocked</th>
@@ -121,19 +148,27 @@ export default function ArcFlashFleet() {
                 ))}
               </tbody>
             </table>
+            </section>
           )}
 
           <p style={{ marginTop: 14, fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
             Confidence is a deterministic 0–100 data-trust score (input completeness, study freshness, field verification, setting drift) — not a certification of the calculation. Sanity errors are physically impossible or under-protective values to fix before the label is trusted.
           </p>
 
-          <RiskScore />
-          <AuditBundle />
-          <RegulatoryReview />
-          <ImportResults onApplied={load} />
-          <AfxPanel />
+          <div className="no-print">
+            <RiskScore />
+            <AuditBundle />
+            <RegulatoryReview />
+            <ImportResults onApplied={load} />
+            <AfxPanel />
+          </div>
         </>
       )}
+
+      <footer className="print-footer print-only">
+        <span>ServiceCycle</span>
+        <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+      </footer>
     </div>
   </>
   );

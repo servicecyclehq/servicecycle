@@ -269,3 +269,40 @@
   .print-footer--running { position: fixed; bottom: 0; left: 0; right: 0; margin-top: 0; }
   .print-doc--running-footer { padding-bottom: 34pt; }
 }
+
+/* ===========================================================================
+   C2b (2026-07-13) -- app-page compat for the browser-print migrations.
+   Rules live app pages need when they opt in via .print-doc: extra chrome
+   suppression, control hiding, screen-card flattening, app-table
+   neutralization, and a focused mode for the QR label reprint. Token-pure,
+   same as everything above.
+   =========================================================================== */
+@media print {
+  /* Asset-detail tab strip is app chrome (sits outside .page-body). */
+  body:has(.print-doc) .detail-tabs { display: none !important; }
+
+  /* Buttons are interactive controls, never document content. */
+  .print-doc button { display: none !important; }
+
+  /* Class-based screen cards flatten to plain flow inside the printed
+     document. Inline-styled cards (e.g. the energized-work permit card in
+     ArcFlashAssetTab) are deliberately NOT matched -- the permit is a
+     regulated surface deferred to its own pass. */
+  .print-doc .card {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  /* Neutralize the app's global th chrome inside standard print tables. */
+  .print-doc .print-table th { background: transparent; white-space: normal; }
+
+  /* Focused QR-label reprint (ArcFlashAssetTab LabelPortal): the reprint
+     button arms this class on <body> and disarms it on afterprint; while
+     armed, only the .print-label-sheet subtree renders. */
+  body.print-focus-label *:not(:has(.print-label-sheet)):not(.print-label-sheet):not(.print-label-sheet *) {
+    display: none !important;
+  }
+}

@@ -155,10 +155,20 @@ export default function OverdueReport() {
         </button>
       </div>
 
-      <div className="page-body">
+      <div className="page-body print-doc">
+        {/* C2b: shared Field Report print standard (styles/print.css) */}
+        <header className="print-masthead print-only">
+          <h1 className="print-masthead-title">Overdue Maintenance by Severity</h1>
+          <div className="print-masthead-meta">
+            {report?.scope?.siteName || 'All sites'}<br />
+            Generated {report?.generatedAt ? fmtDate(report.generatedAt) : new Date().toLocaleDateString()}
+          </div>
+        </header>
+        <div className="print-rule print-only"></div>
+
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div className="no-print" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
           <label htmlFor="overdue-site-filter" className="form-label" style={{ margin: 0 }}>Site</label>
           <select
             id="overdue-site-filter"
@@ -186,13 +196,21 @@ export default function OverdueReport() {
           </div>
         ) : (
           <>
-            {/* Summary chips */}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+            {/* Summary chips (screen) / brief line (print) */}
+            <div className="print-briefline print-only">
+              {chips.map(c => <span key={c.label}>{c.label} <b>{c.value}</b></span>)}
+            </div>
+            <div className="no-print" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
               {chips.map(c => <SummaryChip key={c.label} label={c.label} value={c.value} danger={c.danger} />)}
             </div>
 
             {/* Section 1 — overdue maintenance tasks */}
-            <h2 style={{ fontSize: 'var(--font-size-lg, 17px)', fontWeight: 600, margin: '0 0 10px' }}>
+            <section className="print-sec">
+            <div className="print-sec-head print-only">
+              <span className="print-sec-no" />
+              <h2 className="print-sec-title">Overdue maintenance tasks</h2>
+            </div>
+            <h2 className="no-print" style={{ fontSize: 'var(--font-size-lg, 17px)', fontWeight: 600, margin: '0 0 10px' }}>
               Overdue maintenance tasks
             </h2>
             <div className="card" style={{ marginBottom: 28 }}>
@@ -200,14 +218,14 @@ export default function OverdueReport() {
                 <EmptyState icon={AlertTriangle} title="No overdue tasks" sub="Every scheduled task in scope is current." />
               ) : (
                 <div className="table-wrap">
-                  <table>
+                  <table className="print-table">
                     <thead>
                       <tr>
                         <th>Asset</th>
                         <th>Site</th>
                         <th>Task</th>
                         <th>Due date</th>
-                        <th style={{ textAlign: 'right' }}>Days overdue</th>
+                        <th className="num" style={{ textAlign: 'right' }}>Days overdue</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -235,7 +253,7 @@ export default function OverdueReport() {
                               )}
                             </td>
                             <td>{fmtDate(row?.nextDueDate)}</td>
-                            <td style={{ textAlign: 'right' }}>
+                            <td className="num" style={{ textAlign: 'right' }}>
                               <span style={{ color: 'var(--color-danger)', fontWeight: 700 }}>
                                 {row?.daysOverdue ?? '—'}
                               </span>
@@ -248,9 +266,15 @@ export default function OverdueReport() {
                 </div>
               )}
             </div>
+            </section>
 
             {/* Section 2 — open deficiencies by severity */}
-            <h2 style={{ fontSize: 'var(--font-size-lg, 17px)', fontWeight: 600, margin: '0 0 10px' }}>
+            <section className="print-sec">
+            <div className="print-sec-head print-only">
+              <span className="print-sec-no" />
+              <h2 className="print-sec-title">Open deficiencies by severity</h2>
+            </div>
+            <h2 className="no-print" style={{ fontSize: 'var(--font-size-lg, 17px)', fontWeight: 600, margin: '0 0 10px' }}>
               Open deficiencies by severity
             </h2>
             {totalDeficiencies === 0 ? (
@@ -302,8 +326,14 @@ export default function OverdueReport() {
                 </div>
               ))
             )}
+            </section>
           </>
         )}
+
+        <footer className="print-footer print-only">
+          <span>ServiceCycle</span>
+          <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+        </footer>
       </div>
     </>
   );

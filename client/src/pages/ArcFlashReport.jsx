@@ -14,15 +14,11 @@ function n(v) { return (v == null || v === '') ? '—' : String(v); }
 function sevColor(s) { return s === 'danger' ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)'; }
 function bandColor(score) { return score == null ? 'var(--color-text-secondary)' : score >= 80 ? '#15803d' : score >= 50 ? '#b45309' : '#b91c1c'; }
 
-// Print stylesheet: drop the app chrome + interactive controls, tighten the table
-// so the label schedule prints as a clean one-page-per-section document.
-const PRINT_CSS = `@media print {
-  .no-print { display: none !important; }
-  .page-body { padding: 0 !important; }
-  .data-table { font-size: 0.7rem !important; }
-  .data-table th, .data-table td { padding: 3px 6px !important; }
-  a { color: inherit !important; text-decoration: none !important; }
-}`;
+// C2b (2026-07-13): the inline PRINT_CSS constant that lived here was the
+// app's only real print stylesheet. Folded into the shared standard at
+// styles/print.css (imported app-wide from index.css): .no-print hiding and
+// link neutralization are global there; chrome/padding suppression comes from
+// the .print-doc opt-in, and the table tightening from .print-table below.
 
 export default function ArcFlashReport() {
   useDocumentTitle('Arc Flash Label Report');
@@ -49,7 +45,6 @@ export default function ArcFlashReport() {
 
   return (
     <>
-      <style>{PRINT_CSS}</style>
       <div className="page-header no-print">
         <div>
           <h1 className="page-title">Arc Flash Label Report</h1>
@@ -61,7 +56,16 @@ export default function ArcFlashReport() {
         </div>
       </div>
 
-      <div className="page-body">
+      <div className="page-body print-doc">
+
+      <header className="print-masthead print-only">
+        <h1 className="print-masthead-title">Arc Flash Label Report</h1>
+        <div className="print-masthead-meta">
+          Label schedule<br />
+          Generated {new Date().toLocaleDateString()}
+        </div>
+      </header>
+      <div className="print-rule print-only"></div>
 
       {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
       {loading && <div className="card" style={{ padding: 16 }}>Loading…</div>}
@@ -69,13 +73,22 @@ export default function ArcFlashReport() {
       {!loading && !error && (
         <>
           {s && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <>
+            <div className="print-briefline print-only">
+              <span>Labelled buses <b>{s.total}</b></span>
+              <span>DANGER <b>{s.danger}</b></span>
+              <span>WARNING <b>{s.warning}</b></span>
+              <span>Avg confidence <b>{s.avgConfidence == null ? '\u2014' : `${s.avgConfidence}%`}</b></span>
+              <span>Expiring (90d) <b>{s.expiringSoon}</b></span>
+            </div>
+            <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
               <Tile label="Labelled buses" value={s.total} />
               <Tile label="DANGER" value={s.danger} color="var(--color-danger)" />
               <Tile label="WARNING" value={s.warning} color="var(--color-warning)" />
               <Tile label="Avg confidence" value={s.avgConfidence == null ? '—' : `${s.avgConfidence}%`} color={bandColor(s.avgConfidence)} />
               <Tile label="Studies expiring (90d)" value={s.expiringSoon} />
             </div>
+            </>
           )}
 
           <label className="no-print" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', marginBottom: 10 }}>
@@ -88,7 +101,13 @@ export default function ArcFlashReport() {
               No arc-flash labels recorded yet. Upload a one-line or study report on a site, or bind a study to assets.
             </div>
           ) : (
-            <table className="data-table" style={{ width: '100%', fontSize: '0.8rem' }}>
+            <section className="print-sec">
+            <div className="print-sec-head print-only">
+              <span className="print-sec-no" />
+              <h2 className="print-sec-title">Label schedule</h2>
+              <span className="print-sec-aux">NFPA 70E 130.5(H)</span>
+            </div>
+            <table className="data-table print-table" style={{ width: '100%', fontSize: '0.8rem' }}>
               <thead>
                 <tr>
                   <th>Bus / equipment</th><th>Site</th><th>Voltage</th>
@@ -113,9 +132,15 @@ export default function ArcFlashReport() {
                 ))}
               </tbody>
             </table>
+            </section>
           )}
         </>
       )}
+
+      <footer className="print-footer print-only">
+        <span>ServiceCycle</span>
+        <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+      </footer>
     </div>
     </>
   );
