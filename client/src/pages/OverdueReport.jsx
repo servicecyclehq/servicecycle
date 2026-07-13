@@ -332,7 +332,7 @@ export default function OverdueReport() {
 
         <footer className="print-footer print-only">
           <span>ServiceCycle</span>
-          <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+          <span className="print-footer-pages">Generated {report?.generatedAt ? fmtDate(report.generatedAt) : new Date().toLocaleDateString()}</span>
         </footer>
       </div>
     </>

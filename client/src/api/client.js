@@ -312,4 +312,65 @@ api.interceptors.response.use(
   }
 );
 
+
+// ---------------------------------------------------------------------------
+// In-flight GET de-duplication -- dashboard cleanup pass (2026-07-13)
+//
+// Several dashboard components self-fetch the same endpoints independently
+// (e.g. InstrumentBand + PathTo100 variant="queue" + ArcFlashDashboardCard
+// all call /api/compliance/path-to-100 and /api/arc-flash/dashboard on the
+// same page load) -- a deliberate "self-contained data" convention, not a
+// bug, so this fix lives at the HTTP layer instead of restructuring those
+// components to share props/state.
+//
+// While a GET to a given URL+params is in flight, any additional identical
+// GET reuses the SAME pending promise instead of firing a second network
+// request. The entry is removed as soon as the request settles (success or
+// failure) -- this is a short-lived de-dupe window, not a cache; the next
+// call after settlement always hits the network again. Returning the same
+// (already-immutable-once-settled) promise to multiple callers is safe --
+// each caller reads its own local response, nothing is mutated.
+//
+// Scope: GET only. POST/PUT/PATCH/DELETE are never deduped here -- mutations
+// must never be silently coalesced. No caller in this codebase currently
+// attaches a cache-busting param (timestamp/nonce) to a GET (checked via
+// grep across client/src), so keying on url + sorted params is safe today;
+// if one is ever added, its unique param value naturally changes the key
+// and that call skips the de-dupe window on its own.
+// ---------------------------------------------------------------------------
+
+const _inflightGets = new Map(); // dedupe key -> in-flight Promise
+
+function _getDedupeKey(url, config) {
+  const params = config && config.params;
+  let paramsKey = '';
+  if (params && typeof params === 'object') {
+    try {
+      paramsKey = JSON.stringify(params, Object.keys(params).sort());
+    } catch (_) {
+      paramsKey = String(params);
+    }
+  } else if (params != null) {
+    paramsKey = String(params);
+  }
+  return `${url}::${paramsKey}`;
+}
+
+const _rawApiGet = api.get.bind(api);
+
+api.get = function dedupedGet(url, config) {
+  const key = _getDedupeKey(url, config);
+  const inflight = _inflightGets.get(key);
+  if (inflight) return inflight;
+
+  const promise = _rawApiGet(url, config).finally(() => {
+    // Defensive identity check -- always true in practice since this key
+    // is set once and deleted once, but guards against a hypothetical
+    // future re-entrant call replacing the map entry before this settles.
+    if (_inflightGets.get(key) === promise) _inflightGets.delete(key);
+  });
+  _inflightGets.set(key, promise);
+  return promise;
+};
+
 export default api;

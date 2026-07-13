@@ -104,6 +104,15 @@ export default function ComplianceStandardsReport() {
     overdue: t.overdue + (r.overdueCount ?? 0),
   }), { assets: 0, schedules: 0, overdue: 0 });
 
+  // Dashboard cleanup pass (2026-07-13): single computed value shared by the
+  // print masthead and footer so they can never drift apart. Unlike
+  // OverdueReport.jsx / ComplianceStandardDetailReport.jsx, this endpoint
+  // (GET /api/compliance/summary) has no server-side generatedAt field to
+  // key off of -- verified against buildStandardsSummary in
+  // server/lib/complianceReport.ts -- so this is computed client-side once
+  // per render instead of two independent `new Date()` calls.
+  const generatedAt = new Date();
+
   return (
     <>
       <div className="page-header">
@@ -132,7 +141,7 @@ export default function ComplianceStandardsReport() {
           <div className="print-masthead-meta">
             {companyName ? <>{companyName}<br /></> : null}
             {activeSiteName || 'All sites'}<br />
-            Generated {new Date().toLocaleDateString()}
+            Generated {generatedAt.toLocaleDateString()}
           </div>
         </header>
         <div className="print-rule print-only"></div>
@@ -287,7 +296,7 @@ export default function ComplianceStandardsReport() {
 
         <footer className="print-footer print-only">
           <span>ServiceCycle</span>
-          <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+          <span className="print-footer-pages">Generated {generatedAt.toLocaleDateString()}</span>
         </footer>
       </div>
     </>

@@ -7,34 +7,29 @@
 //
 // The banner links to /disaster-response where the customer can read event
 // details and click "Declare Emergency" to join the priority service queue.
+//
+// Dashboard cleanup pass (2026-07-13): the fetch + severity-label mapping
+// used to be duplicated here and in InstrumentBand.jsx (the dashboard-only
+// docked line that replaces this banner on /dashboard -- see Layout.jsx).
+// Both now share useDisasterEvents(); dismiss state stays local to each
+// component on purpose -- dismissing one must not hide the other.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, X } from 'lucide-react';
-import api from '../api/client';
+import { useDisasterEvents, severityLabel } from '../hooks/useDisasterEvents';
 
 const SEV_STYLES = {
-  emergency: { bg: 'var(--chip-red-bg)', border: '#ef4444', color: 'var(--chip-red-fg)', label: 'EMERGENCY' },
-  warning:   { bg: 'var(--chip-amber-bg)', border: '#f59e0b', color: 'var(--chip-amber-fg)', label: 'WARNING' },
-  watch:     { bg: 'var(--chip-orange-bg)', border: '#f97316', color: 'var(--chip-orange-fg)', label: 'WATCH' },
+  emergency: { bg: 'var(--chip-red-bg)', border: '#ef4444', color: 'var(--chip-red-fg)' },
+  warning:   { bg: 'var(--chip-amber-bg)', border: '#f59e0b', color: 'var(--chip-amber-fg)' },
+  watch:     { bg: 'var(--chip-orange-bg)', border: '#f97316', color: 'var(--chip-orange-fg)' },
 };
 
 export default function DisasterBanner() {
   const navigate = useNavigate();
-  const [events, setEvents]       = useState([]);
+  const { events } = useDisasterEvents();
   const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.get('/api/disaster-events')
-      .then(r => {
-        if (cancelled) return;
-        setEvents(r.data?.data?.events || []);
-      })
-      .catch(() => {}); // silent — banner is non-critical
-    return () => { cancelled = true; };
-  }, []);
 
   if (!events.length || dismissed) return null;
 
@@ -59,7 +54,7 @@ export default function DisasterBanner() {
         style={{ color: sty.color, flexShrink: 0 }}
       />
       <span style={{ color: sty.color, fontWeight: 700, whiteSpace: 'nowrap' }}>
-        {sty.label}:
+        {severityLabel(top.severity)}:
       </span>
       <span style={{ color: 'var(--color-text)', flex: 1 }}>
         {top.title}

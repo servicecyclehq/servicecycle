@@ -27,8 +27,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import api from '../api/client';
-
-const SEV_LABEL = { emergency: 'EMERGENCY', warning: 'WARNING', watch: 'WATCH' };
+import { useDisasterEvents, severityLabel } from '../hooks/useDisasterEvents';
 
 function Instrument({ label, value, unit, detail, danger, ariaLabel }) {
   return (
@@ -69,7 +68,11 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
   const [path, setPath] = useState(null);
   const [maturity, setMaturity] = useState(null);
   const [arcFlash, setArcFlash] = useState(null);
-  const [events, setEvents] = useState([]);
+  // Dashboard cleanup pass (2026-07-13): fetch + severity-label mapping now
+  // live in useDisasterEvents (shared with DisasterBanner.jsx); dismiss
+  // state stays local -- this docked line and the global banner dismiss
+  // independently.
+  const { topEvent } = useDisasterEvents();
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -77,14 +80,12 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
     api.get('/api/compliance/path-to-100').then(r => { if (on) setPath(r.data.data); }).catch(() => {});
     api.get('/api/compliance/maturity').then(r => { if (on) setMaturity(r.data.data); }).catch(() => {});
     api.get('/api/arc-flash/dashboard').then(r => { if (on) setArcFlash(r.data?.data || null); }).catch(() => {});
-    api.get('/api/disaster-events').then(r => { if (on) setEvents(r.data?.data?.events || []); }).catch(() => {});
     return () => { on = false; };
   }, []);
 
   const complianceReady = path && path.summary.fullyCompliant;
   const inspectorCount = path ? path.summary.totalActions : null;
   const hottest = arcFlash?.topDanger?.[0];
-  const topEvent = events[0];
 
   return (
     <div data-theme="dark" style={{ background: 'var(--color-sidebar-bg)' }}>
@@ -124,7 +125,7 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
             borderRadius: 'var(--radius)', padding: '7px 12px', marginBottom: 14,
           }}>
             <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
-            <strong style={{ whiteSpace: 'nowrap' }}>{SEV_LABEL[topEvent.severity] || 'WARNING'}:</strong>
+            <strong style={{ whiteSpace: 'nowrap' }}>{severityLabel(topEvent.severity)}:</strong>
             <span style={{ flex: 1 }}>{topEvent.title}</span>
             <button
               type="button"
