@@ -14,6 +14,14 @@ export {};
 const prisma = require('./prisma').default;
 const { sendEmail } = require('./email');
 
+// Account names, org names, and event details below are user-entered text
+// (companyName, PartnerOrganization.name, asset names/descriptions) rendered
+// into HTML digest emails — escape before interpolating (same 4-entity
+// pattern used by server/lib/email.ts and server/lib/deficiencyAlerts.ts).
+function esc(v: any): string {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 interface DigestResult {
   orgsProcessed: number;
   emailsSent: number;
@@ -139,23 +147,23 @@ async function runPartnerDigestCron(): Promise<DigestResult> {
           const eventLines = acLogs.map((l: any) => {
             const badge = EVENT_BADGE[l.eventType] || l.eventType;
             const detail = formatEventDetail(l);
-            return `<li>${badge}: ${detail}</li>`;
+            return `<li>${esc(badge)}: ${esc(detail)}</li>`;
           }).join('');
           return `
             <div style="margin:16px 0;padding:12px;border-left:4px solid #073a52;background:#fafbfd;font-family:system-ui,sans-serif;font-size:14px;color:#1e293b;">
-              <strong>${acName}</strong>
+              <strong>${esc(acName)}</strong>
               <ul style="margin:8px 0 8px 16px;">${eventLines}</ul>
-              <a href="${clientUrl}/accounts/${acId}" style="color:#073a52;">Open ${acName} →</a>
+              <a href="${clientUrl}/accounts/${acId}" style="color:#073a52;">Open ${esc(acName)} →</a>
             </div>
           `;
         }).join('');
 
         const html = `
           <h2 style="margin:0 0 8px;font-family:system-ui,sans-serif;font-size:18px;color:#0a0d12;">Your ServiceCycle Activity Digest</h2>
-          <p style="margin:0 0 12px;font-family:system-ui,sans-serif;font-size:14px;color:#1e293b;">${totalCount} update${totalCount !== 1 ? 's' : ''} across ${accountCount} account${accountCount !== 1 ? 's' : ''} from <strong>${org.name}</strong>.</p>
+          <p style="margin:0 0 12px;font-family:system-ui,sans-serif;font-size:14px;color:#1e293b;">${totalCount} update${totalCount !== 1 ? 's' : ''} across ${accountCount} account${accountCount !== 1 ? 's' : ''} from <strong>${esc(org.name)}</strong>.</p>
           ${accountSections}
           <hr style="border:none;border-top:1px solid #e3e7ee;"/>
-          <p style="color:#334155;font-size:12px;font-family:system-ui,sans-serif;">You received this because you are a service representative at ${org.name}. Sharing is controlled by each customer account.</p>
+          <p style="color:#334155;font-size:12px;font-family:system-ui,sans-serif;">You received this because you are a service representative at ${esc(org.name)}. Sharing is controlled by each customer account.</p>
         `;
 
         // Send ALL emails first — if any throw, none of the records are marked.

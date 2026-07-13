@@ -188,8 +188,11 @@ function assetDisplayName(asset) {
 // equivalent. Keeps the brand visible in the user's inbox after signup +
 // gives a single click back into the app.
 function welcomeHtml({ name, companyName, appUrl }) {
-  const safeName = name || 'there';
-  const safeCompany = companyName || 'your team';
+  // name/companyName are user-entered profile fields; escape before
+  // interpolating into HTML (same helper as feedbackHtml/loginLockoutAlertHtml).
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const safeName = esc(name || 'there');
+  const safeCompany = esc(companyName || 'your team');
   const safeUrl = appUrl || 'https://servicecycle.app';
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
@@ -245,6 +248,9 @@ function passwordResetHtml({ link }) {
 
 function inviteHtml({ inviterName, companyName, role, link }) {
   const roleLabel = { admin: 'Admin', manager: 'Manager', viewer: 'Viewer' }[role] || role;
+  // inviterName/companyName are user-entered profile fields; escape before
+  // interpolating into HTML (same helper as feedbackHtml/loginLockoutAlertHtml).
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
   <div style="background:#073a52;padding:20px 24px;">
@@ -255,8 +261,8 @@ function inviteHtml({ inviterName, companyName, role, link }) {
   <div style="padding:24px 24px 28px;">
   <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">You've been invited to join ServiceCycle</h2>
   <p style="margin:0 0 8px;color:#1e293b;font-size:14px;line-height:1.6;">
-    <strong style="color:#0a0d12;">${inviterName}</strong> has invited you to join
-    <strong style="color:#0a0d12;">${companyName}</strong> on ServiceCycle as a
+    <strong style="color:#0a0d12;">${esc(inviterName)}</strong> has invited you to join
+    <strong style="color:#0a0d12;">${esc(companyName)}</strong> on ServiceCycle as a
     <strong style="color:#0a0d12;">${roleLabel}</strong>.
   </p>
   <p style="margin:0 0 24px;color:#1e293b;font-size:14px;line-height:1.6;">
@@ -319,6 +325,9 @@ function feedbackHtml({ userName, userEmail, userRole, companyName, category, me
 
 // Sent to all admins when a scoped viewer accepts their invite and activates.
 function newViewerActivationHtml({ viewerName, viewerEmail, assetCount, settingsUrl }) {
+  // viewerName/viewerEmail are user-entered profile fields; escape before
+  // interpolating into HTML (same helper as feedbackHtml/loginLockoutAlertHtml).
+  const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   return `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
   <div style="background:#073a52;padding:20px 24px;">
@@ -329,7 +338,7 @@ function newViewerActivationHtml({ viewerName, viewerEmail, assetCount, settings
   <div style="padding:24px 24px 28px;">
   <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#0a0d12;">New viewer activated</h2>
   <p style="margin:0 0 16px;color:#1e293b;font-size:14px;line-height:1.6;">
-    <strong style="color:#0a0d12;">${viewerName}</strong> (${viewerEmail}) just activated their ServiceCycle account.
+    <strong style="color:#0a0d12;">${esc(viewerName)}</strong> (${esc(viewerEmail)}) just activated their ServiceCycle account.
   </p>
   <div style="background:#fef3c7;border-radius:6px;padding:14px 18px;margin-bottom:20px;border-left:3px solid #b45309;">
     <p style="margin:0;font-size:14px;color:#b45309;font-weight:600;">

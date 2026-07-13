@@ -140,6 +140,19 @@ function fmt(d) {
   return fmtDate(d, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+// assetDisplayName/siteName/userName below are user-entered text
+// (manufacturer, model, serial, site name, account user name) rendered into
+// the HTML digest — escape before interpolating (same helper as sibling
+// alert builders: deficiencyAlerts.ts, qemwAlerts.ts, modernizationAlerts.ts).
+function escHtml(s: string | null | undefined): string {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // ── Tier definitions ──────────────────────────────────────────────────────────
 // Positive = days BEFORE nextDueDate; negative = days AFTER (overdue tiers).
 // roles: which account roles receive the email for that tier. The in-app
@@ -239,8 +252,8 @@ function buildDigestHtml(alerts, userName) {
       <tr>
         <td style="padding:14px 16px;border-bottom:1px solid #e3e7ee;vertical-align:top;${hasUrgent ? 'border-left:3px solid #b91c1c;padding-left:13px;' : ''}">
           <div style="margin-bottom:6px;">
-            <a href="${assetUrl}" style="font-weight:700;color:#1e293b;text-decoration:none;font-size:14px;">${assetDisplayName(asset)}</a>
-            <span style="font-size:12px;color:#334155;margin-left:8px;">${siteName}</span>
+            <a href="${assetUrl}" style="font-weight:700;color:#1e293b;text-decoration:none;font-size:14px;">${escHtml(assetDisplayName(asset))}</a>
+            <span style="font-size:12px;color:#334155;margin-left:8px;">${escHtml(siteName)}</span>
           </div>
           <div style="margin-bottom:6px;">${badges}</div>
           <div>
@@ -263,7 +276,7 @@ function buildDigestHtml(alerts, userName) {
         ${assetCount} asset${assetCount !== 1 ? 's' : ''} need${assetCount === 1 ? 's' : ''} attention
       </div>
       <div style="font-size:13px;color:#e6f0f5;margin-top:4px;">
-        Hi ${userName} — here's your maintenance compliance summary for ${fmtDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+        Hi ${escHtml(userName)} — here's your maintenance compliance summary for ${fmtDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
         ${alertCount > assetCount ? `<span style="opacity:0.8;">(${alertCount} active alerts across ${assetCount} asset${assetCount !== 1 ? 's' : ''})</span>` : ''}
       </div>
     </div>
