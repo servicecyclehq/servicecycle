@@ -71,8 +71,20 @@ export default function SharedCompliancePage() {
     const uwColor = rd.overallRate == null ? '#64748b' : rd.overallRate >= 90 ? '#15803d' : rd.overallRate >= 70 ? '#92400e' : '#b91c1c';
     const cell = { padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8 };
     return (
-      <div style={wrap}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+      <div style={wrap} className="print-doc">
+        {/* C2c: shared Field Report print standard (styles/print.css). Screen
+            layout unchanged; print swaps the app-ish header for the masthead.
+            Watermark line below prints untouched. */}
+        <header className="print-masthead print-only">
+          <h1 className="print-masthead-title">Insurer Underwriting Package</h1>
+          <div className="print-masthead-meta">
+            {data.companyName}<br />
+            Read-only · Generated {fmtDate(data.generatedAt)}
+          </div>
+        </header>
+        <div className="print-rule print-only"></div>
+
+        <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
           <h1 style={{ fontSize: 20, margin: 0 }}>ServiceCycle · Insurer Underwriting Package</h1>
           <span style={{ fontSize: 12, color: '#6d28d9', fontWeight: 700 }}>READ-ONLY</span>
         </div>
@@ -83,6 +95,11 @@ export default function SharedCompliancePage() {
 
         <h2 style={{ fontSize: 24, marginTop: 24, marginBottom: 2 }}>{data.companyName}</h2>
 
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Readiness</h2>
+        </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginTop: 12 }}>
           <div style={{ fontSize: 48, fontWeight: 800, color: uwColor }}>{rd.overallRate == null ? '—' : `${rd.overallRate}%`}</div>
           <div style={{ fontSize: 13, color: '#5b6373' }}>
@@ -91,8 +108,14 @@ export default function SharedCompliancePage() {
             {' '}({rd.coveredAssets ?? 0}/{rd.totalAssets ?? 0} assets) · Evidence on file {rd.documentedPct ?? '—'}%
           </div>
         </div>
+        </section>
 
-        <h3 style={{ fontSize: 16, marginTop: 28 }}>Risk posture</h3>
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Risk posture</h2>
+        </div>
+        <h3 className="no-print" style={{ fontSize: 16, marginTop: 28 }}>Risk posture</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
           <div style={cell}>
             <div style={{ fontSize: 22, fontWeight: 800 }}>{rp.totalFindings ?? 0}</div>
@@ -122,8 +145,14 @@ export default function SharedCompliancePage() {
             ))}
           </ul>
         )}
+        </section>
 
-        <h3 style={{ fontSize: 16, marginTop: 28 }}>Capital plan ({fin.currency || 'USD'} ranges)</h3>
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Capital plan ({fin.currency || 'USD'} ranges)</h2>
+        </div>
+        <h3 className="no-print" style={{ fontSize: 16, marginTop: 28 }}>Capital plan ({fin.currency || 'USD'} ranges)</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
           <div style={cell}><div style={{ fontSize: 12, color: '#5b6373' }}>1-year</div><div style={{ fontSize: 16, fontWeight: 700 }}>{fmtRange(fin.plan?.year1)}</div></div>
           <div style={cell}><div style={{ fontSize: 12, color: '#5b6373' }}>3-year (cumulative)</div><div style={{ fontSize: 16, fontWeight: 700 }}>{fmtRange(fin.plan?.year3)}</div></div>
@@ -132,9 +161,15 @@ export default function SharedCompliancePage() {
         <div style={{ fontSize: 12, color: '#5b6373', marginTop: 8 }}>
           Total maintenance debt {fmtRange(fin.debtTotal)} · repair backlog {fmtUsd(fin.repairBacklog?.amount)} across {fin.repairBacklog?.assets ?? 0} asset(s).
         </div>
+        </section>
 
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Evidence integrity</h2>
+        </div>
         <div style={{ marginTop: 24, ...cell }}>
-          <strong>Evidence integrity:</strong>{' '}
+          <strong className="no-print">Evidence integrity:</strong>{' '}
           {ev.snapshotCount ?? 0} immutable, hash-chained snapshot(s) on file.
           {ev.latestSnapshot ? (
             <>
@@ -143,21 +178,42 @@ export default function SharedCompliancePage() {
             </>
           ) : ' No snapshot generated yet.'}
         </div>
+        </section>
 
         <div style={{ marginTop: 24, fontSize: 11, color: '#94a3b8' }}>{data.disclaimer}</div>
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 11, color: '#94a3b8' }}>
           Read-only summary shared by the facility for underwriting review. Powered by ServiceCycle.
         </div>
+
+        <footer className="print-footer print-only">
+          <span>ServiceCycle</span>
+          <span className="print-footer-pages">Generated {fmtDate(data.generatedAt)}</span>
+        </footer>
       </div>
     );
   }
 
   const rate = data.overallRate;
   const rateColor = rate == null ? '#64748b' : rate >= 90 ? '#15803d' : rate >= 70 ? '#92400e' : '#b91c1c';
+  const pathTitle = data.summary?.fullyCompliant
+    ? 'Fully compliant — nothing outstanding'
+    : `Path to 100% — ${data.summary?.totalActions ?? 0} open action${(data.summary?.totalActions ?? 0) === 1 ? '' : 's'}`;
 
   return (
-    <div style={wrap}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+    <div style={wrap} className="print-doc">
+      {/* C2c: shared Field Report print standard (styles/print.css). Screen
+          layout unchanged; print swaps the app-ish header for the masthead.
+          Watermark line below prints untouched. */}
+      <header className="print-masthead print-only">
+        <h1 className="print-masthead-title">Compliance Record</h1>
+        <div className="print-masthead-meta">
+          {data.companyName}<br />
+          Read-only · Generated {fmtDate(data.generatedAt)}
+        </div>
+      </header>
+      <div className="print-rule print-only"></div>
+
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
         <h1 style={{ fontSize: 20, margin: 0 }}>ServiceCycle · Compliance Record</h1>
         <span style={{ fontSize: 12, color: '#6d28d9', fontWeight: 700 }}>READ-ONLY</span>
       </div>
@@ -168,6 +224,11 @@ export default function SharedCompliancePage() {
 
       <h2 style={{ fontSize: 24, marginTop: 24, marginBottom: 2 }}>{data.companyName}</h2>
 
+      <section className="print-sec">
+      <div className="print-sec-head print-only">
+        <span className="print-sec-no" />
+        <h2 className="print-sec-title">Compliance status</h2>
+      </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', marginTop: 12 }}>
         <div style={{ fontSize: 48, fontWeight: 800, color: rateColor }}>{rate == null ? '—' : `${rate}%`}</div>
         <div style={{ fontSize: 13, color: '#5b6373' }}>
@@ -176,8 +237,14 @@ export default function SharedCompliancePage() {
           {' '}({data.coverage?.coveredAssets ?? 0}/{data.coverage?.totalAssets ?? 0} assets)
         </div>
       </div>
+      </section>
 
       {data.latestSnapshot && (
+        <section className="print-sec">
+        <div className="print-sec-head print-only">
+          <span className="print-sec-no" />
+          <h2 className="print-sec-title">Evidence integrity</h2>
+        </div>
         <div style={{ marginTop: 18, padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13 }}>
           <strong>Latest hash-chained snapshot:</strong> {data.latestSnapshot.kind === 'emp' ? 'Electrical Maintenance Program (EMP)' : 'Compliance evidence pack'}
           {' '}generated {fmtDate(data.latestSnapshot.date)}.
@@ -185,21 +252,31 @@ export default function SharedCompliancePage() {
             SHA-256 {data.latestSnapshot.sha256}
           </div>
         </div>
+        </section>
       )}
 
-      <h3 style={{ fontSize: 16, marginTop: 28 }}>
-        {data.summary?.fullyCompliant ? 'Fully compliant — nothing outstanding' : `Path to 100% — ${data.summary?.totalActions ?? 0} open action${(data.summary?.totalActions ?? 0) === 1 ? '' : 's'}`}
-      </h3>
+      <section className="print-sec">
+      <div className="print-sec-head print-only">
+        <span className="print-sec-no" />
+        <h2 className="print-sec-title">{pathTitle}</h2>
+      </div>
+      <h3 className="no-print" style={{ fontSize: 16, marginTop: 28 }}>{pathTitle}</h3>
       {data.topActions && data.topActions.length > 0 && (
         <ul style={{ paddingLeft: 18, lineHeight: 1.7 }}>
           {data.topActions.map((a, i) => <li key={i} style={{ fontSize: 14 }}>{a.title}</li>)}
         </ul>
       )}
+      </section>
 
       <div style={{ marginTop: 36, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 11, color: '#94a3b8' }}>
         This is a read-only summary shared by the facility for audit/underwriting review. Figures reflect live
         system data at the generation time above. Powered by ServiceCycle.
       </div>
+
+      <footer className="print-footer print-only">
+        <span>ServiceCycle</span>
+        <span className="print-footer-pages">Generated {fmtDate(data.generatedAt)}</span>
+      </footer>
     </div>
   );
 }

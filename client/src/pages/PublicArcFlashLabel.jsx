@@ -86,8 +86,21 @@ export default function PublicArcFlashLabel() {
   const mm = data?.mismatch;
 
   return (
-    <div style={wrap}>
-      <div style={{ textAlign: 'center', marginBottom: 14 }}>
+    <div style={wrap} className="print-doc">
+      {/* C2c: print masthead/footer treatment for the portal's own chrome ONLY
+          (title block + page footer). The label content below -- severity
+          banner, mismatch banner, field grid -- mirrors the regulatory label
+          and is deliberately untouched (ANSI-aligned severity colors). */}
+      <header className="print-masthead print-only">
+        <h1 className="print-masthead-title">Arc Flash Label</h1>
+        <div className="print-masthead-meta">
+          {data?.busName || 'Bus'}<br />
+          {[data?.site, data?.equipmentType].filter(Boolean).join(' · ') || 'Live record'}
+        </div>
+      </header>
+      <div className="print-rule print-only"></div>
+
+      <div className="no-print" style={{ textAlign: 'center', marginBottom: 14 }}>
         <div style={{ fontSize: '0.74rem', letterSpacing: '0.08em', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Arc Flash Label · live record</div>
         <h1 style={{ fontSize: '1.4rem', margin: '4px 0 0', color: 'var(--color-text)' }}>{data?.busName || 'Bus'}</h1>
         <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.86rem' }}>{[data?.site, data?.equipmentType].filter(Boolean).join(' · ') || ''}</div>
@@ -131,6 +144,11 @@ export default function PublicArcFlashLabel() {
       <p style={{ marginTop: 16, fontSize: '0.74rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
         ServiceCycle is the data layer; a licensed PE runs and stamps the study. Always follow the equipment's physical label and your site's electrical safety program.
       </p>
+
+      <footer className="print-footer print-only">
+        <span>ServiceCycle</span>
+        <span className="print-footer-pages">Live record · {fmtDate(new Date())}</span>
+      </footer>
     </div>
   );
 }

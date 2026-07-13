@@ -1,8 +1,9 @@
 /**
  * pdfHelpDoc.js -- Stream a per-module help doc as a PDF.
  *
- * pdfkit + the marketing color palette so the visual identity matches the
- * rest of ServiceCycle's PDF surfaces.
+ * pdfkit + the shared Field Report theme (lib/pdfStyle) for colors/fonts/
+ * geometry/footer, so the visual identity matches the rest of
+ * ServiceCycle's PDF surfaces (C2c 2026-07-13).
  *
  * Markdown -> pdfkit walker: handles the subset we actually use in the
  * help docs:
@@ -58,29 +59,40 @@
 
 const PDFDocument = require('pdfkit');
 
-// v0.36.5 polish (Pass-3 B V-01): align with marketing tokens.
+// C2c (2026-07-13): locked palette, house fonts/geometry, and the standard
+// footer now come from the shared theme module (lib/pdfStyle.ts) instead of
+// the local v0.36.5 marketing COLORS block
+// (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md, Help Center row).
+const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter } = require('./pdfStyle');
+
+// On-dark muted text for the dark header band -- the locked palette has no
+// on-dark slot (same local exception as cfoReport.ts).
+const ON_DARK_MUTED = '#9aa3b2';
+
+// Legacy aliases onto the locked palette: body code keeps its COLORS.* names;
+// the values come from PDF_COLORS (accent moves from the old hover shade
+// #0d4f6e to the locked petrol primary). Unused codeBg was dropped -- it has
+// no locked slot and nothing referenced it.
 const COLORS = {
-  bgDark:    '#0a0d12',
-  textOnDark:'#ffffff',
-  textOnDarkMuted: '#9aa3b2',
-  text:      '#0a0d12',
-  textMuted: '#5b6373',
-  textSubtle:'#9aa3b2',
-  border:    '#dde2eb',
-  accent:    '#0d4f6e',
-  cardBg:    '#fafbfd',
-  codeBg:    '#eef1f6',
+  bgDark:    PDF_COLORS.ink,
+  textOnDark: PDF_COLORS.card,
+  textOnDarkMuted: ON_DARK_MUTED,
+  text:      PDF_COLORS.ink,
+  textMuted: PDF_COLORS.textMuted,
+  textSubtle: PDF_COLORS.textFaint,
+  border:    PDF_COLORS.border,
+  accent:    PDF_COLORS.petrol,
+  cardBg:    PDF_COLORS.pageBg,
 };
 
-const FONT_REG    = 'Helvetica';
-const FONT_BOLD   = 'Helvetica-Bold';
-const FONT_OBL    = 'Helvetica-Oblique';
-const FONT_MONO   = 'Courier';
+const FONT_REG    = PDF_FONTS.sans;
+const FONT_BOLD   = PDF_FONTS.sansBold;
+const FONT_OBL    = PDF_FONTS.sansOblique;
+const FONT_MONO   = PDF_FONTS.mono;
 
-const PAGE = {
-  margin:   54,           // 0.75in
-  contentW: 612 - 54 * 2, // letter width minus margins
-};
+// House page geometry (LETTER, 54pt margins): PDF_PAGE carries the same
+// margin/contentW values this file declared locally.
+const PAGE = PDF_PAGE;
 
 const MAX_BLOCKS = 5000; // defensive ceiling vs. pathological tokenizer
 
@@ -183,37 +195,11 @@ function drawHeaderBand(doc, title) {
   doc.y = top + 56 + 18;
 }
 
-// -- Footer - repeats on every page via pageAdded listener -----------------
-// v0.36.8 (Pass-6 W3 follow-up to W2 PDF P0):
-//   drawFooter writes at y = page.height - margin + 10 (= 748 on LETTER).
-//   The footer text() lands at y + 4 = 752, which is below the usable
-//   bottom of the page (page.height - margin = 738). With pdfkit's default
-//   lineBreak:true, an out-of-margin write triggers an auto page break ->
-//   pageAdded listener fires -> drawFooter() is called again -> recursion
-//   -> Max call stack -> 500. lineBreak:false suppresses the auto-break.
-//   _renderingFooter is belt-and-suspenders against any future drawFooter
-//   call paths (e.g. an inner text() that we didn't account for).
-function drawFooter(doc, pageNum) {
-  if (doc._renderingFooter) return;
-  doc._renderingFooter = true;
-  const sx = doc.x, sy = doc.y; // cursor-neutral: footer draws below the bottom margin
-  try {
-    const y = doc.page.height - PAGE.margin + 10;
-    doc.moveTo(PAGE.margin, y).lineTo(doc.page.width - PAGE.margin, y)
-       .strokeColor(COLORS.border).lineWidth(0.5).stroke();
-    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8)
-       .text('servicecycle.app - generated help reference', PAGE.margin, y + 4, { align: 'left', lineBreak: false });
-    // Page number tracked by the caller (bufferedPageRange().start is NaN without
-    // bufferPages -> "Page NaN"), right-aligned by computed x (a width + align:'right'
-    // flows below the bottom margin and spawns a blank page).
-    doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(8);
-    const pageLabel = `Page ${pageNum}`;
-    doc.text(pageLabel, doc.page.width - PAGE.margin - doc.widthOfString(pageLabel), y + 4, { lineBreak: false });
-  } finally {
-    doc.x = sx; doc.y = sy;
-    doc._renderingFooter = false;
-  }
-}
+// -- Footer -----------------------------------------------------------------
+// C2c: the bespoke per-file footer was replaced by lib/pdfStyle's shared
+// drawFooter/attachFooter, which carries forward this file's v0.36.8
+// hardening (recursion guard, cursor-neutral save/restore, lineBreak:false
+// below the bottom margin).
 
 /**
  * Render the help doc PDF to a Buffer (pure — no Express response object).
@@ -259,10 +245,14 @@ function renderHelpDocPdf({ slug, title, markdown }: { slug: string; title: stri
       }
     });
 
-    let pageNum = 1;
+    // C2c: shared standard footer -- attachFooter draws the page-1 footer
+    // now and re-draws on every pageAdded (wired before any content).
+    attachFooter(doc, {
+      generatedAtIso: new Date().toISOString(),
+      docId: `help/${slug}`,
+    });
+    // Running per-page header (page 2+) stays local to this renderer.
     doc.on('pageAdded', () => {
-      pageNum += 1;
-      drawFooter(doc, pageNum);
       doc.fillColor(COLORS.textSubtle).font(FONT_REG).fontSize(9)
          .text(`Help . ${title || slug}`, PAGE.margin, PAGE.margin - 18);
       doc.fillColor(COLORS.text);
@@ -270,7 +260,6 @@ function renderHelpDocPdf({ slug, title, markdown }: { slug: string; title: stri
     });
 
     drawHeaderBand(doc, title || slug);
-    drawFooter(doc, 1); // first page footer while page 1 is current
 
     const blocks = tokenize(markdown);
     let firstH1Skipped = false;
