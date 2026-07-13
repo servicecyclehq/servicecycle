@@ -1168,3 +1168,78 @@ select.filter-select option,
 .sc-spark { display: block; width: 100%; height: 36px; }
 .sc-ring { transform: rotate(-90deg); }
 .sc-ring-fill { transition: stroke-dashoffset .5s ease; }
+
+/* ============================================================================
+   (B1, 2026-07-13) InstrumentBand responsive grid -- 4-up on desktop,
+   2x2 under 900px. See docs/design/direction-board-2026-07-12.html #dir-b.
+   ========================================================================== */
+.instrument-band-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 900px) {
+  .instrument-band-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ==========================================================================
+   14) Dashboard zones grid -- Direction B (B2/B4): evidence panels left,
+   sticky action queue right; collapses to ONE column, queue first, under
+   1100px. Queue = PathTo100 variant="queue". Mono uppercase eyebrows match
+   the instrument-band labels. See direction-board-2026-07-12.html #dir-b.
+   ========================================================================== */
+.dash-zones {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+.dash-zones-left, .dash-zones-right { min-width: 0; }
+.dash-zones-right { position: sticky; top: 14px; }
+.dash-zone-eyebrow {
+  font: 500 10.5px var(--font-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.dash-zone-eyebrow .aux {
+  text-transform: none;
+  letter-spacing: .02em;
+  font: 400 12px var(--font-sans);
+  color: var(--color-text-secondary);
+}
+.dash-queue-head {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dash-queue-head b { font-size: 14px; color: var(--color-text); }
+.dash-queue-head span { font: 500 11px var(--font-mono); color: var(--color-text-secondary); }
+.dash-queue-item { padding: 12px 16px; border-bottom: 1px solid var(--color-border); }
+.dash-queue-item:last-of-type { border-bottom: none; }
+.dash-queue-foot {
+  display: block;
+  padding: 11px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
+  text-decoration: none;
+}
+/* B4: one column below 1100px, queue first so the action list is not buried
+   under a long evidence column on tablet widths. */
+@media (max-width: 1100px) {
+  .dash-zones { grid-template-columns: 1fr; }
+  .dash-zones-right { position: static; order: -1; }
+}
+/* B4: keep tap targets ~40px on touch devices. */
+@media (pointer: coarse) {
+  .dash-queue-item .btn-sm { min-height: 40px; }
+  .dash-zones .hover-row { min-height: 40px; }
+}

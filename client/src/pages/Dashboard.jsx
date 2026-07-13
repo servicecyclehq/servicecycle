@@ -2,12 +2,15 @@
 // Dashboard.jsx — ServiceCycle compliance dashboard.
 //
 // Replaces the contract-era renewal dashboard with the NFPA 70B compliance
-// view backed by GET /api/dashboard:
+// view. Direction B "Control Room" (2026-07-13): dark instrument band on
+// top (InstrumentBand.jsx), then a two-zone grid — evidence panels left
+// (compliance by site / standards coverage / condensed priority assets),
+// sticky action queue right (PathTo100 variant="queue") — then the
+// remaining modules stacked full-width:
 //   • KPI tile row: due in 30/60/90 days + overdue (red when > 0)
-//   • Open deficiencies by NETA severity + overall compliance rate
-//   • Compliance-by-site horizontal bar list
+//   • Open deficiencies by NETA severity
+//   • Maintenance horizon + recent work orders
 //   • Next maintenance due (nearest schedules incl. overdue)
-//   • Recent work orders
 // Welcome/empty card when the account has no assets yet.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -16,8 +19,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import WelcomeTourPanel from '../components/WelcomeTourPanel';
+import InstrumentBand from '../components/InstrumentBand';
 import PathTo100 from '../components/PathTo100';
-import MaturityScoreCard from '../components/MaturityScoreCard';
 import AuditReadyBanner from '../components/AuditReadyBanner';
 import ComplianceDocsCard from '../components/ComplianceDocsCard';
 import DashboardTrends from '../components/DashboardTrends';
@@ -27,7 +30,7 @@ import { kbdActivate } from '../lib/a11y';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { CriticalityBadge } from './AssetsList';
 import {
-  SEVERITY_META, WO_STATUS_META, REDUNDANCY_META, IEEE_STATUS_META,
+  SEVERITY_META, WO_STATUS_META, IEEE_STATUS_META,
   EQUIPMENT_TYPE_LABELS, assetLabel, fmtDate, fmtMoney,
 } from '../lib/equipment';
 
@@ -375,67 +378,9 @@ function MaintenanceHorizon({ navigate }) {
   );
 }
 
-// ── Priority assets ──────────────────────────────────────────────────────────
-// Three-tab risk triage card backed by GET /api/dashboard/priority?tab=…
-// Each tab fetches lazily on first activation and caches in state for the
-// life of the dashboard mount — switching back is instant.
-const PRIORITY_TABS = [
-  { key: 'critical', label: '🚨 Critical Infrastructure' },
-  { key: 'value',    label: '💸 High Value' },
-  { key: 'volume',   label: '📈 By Volume' },
-];
-
-// Pill chip from a {label,color,bg} meta record (Dashboard-local twin of
-// AssetDetail's MetaChip).
-function PillChip({ meta, fallback, title }) {
-  if (!meta) return <span className="text-muted">{fallback || '—'}</span>;
-  return (
-    <span title={title} style={{
-      display: 'inline-block', padding: '3px 10px', borderRadius: 999,
-      fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '0.01em', whiteSpace: 'nowrap',
-      background: meta.bg, color: meta.color,
-      border: `1px solid color-mix(in srgb, ${meta.color} 40%, transparent)`,
-    }}>
-      {meta.label}
-    </span>
-  );
-}
-
-// Red count pill (overdue / open deficiencies); muted zero.
-function DangerCount({ count }) {
-  if (!count) return <span className="text-muted">0</span>;
-  return (
-    <span style={{
-      display: 'inline-block', minWidth: 20, textAlign: 'center',
-      padding: '2px 7px', borderRadius: 20, fontWeight: 700,
-      fontSize: 'var(--font-size-xs)',
-      background: 'var(--color-danger-bg, #fef2f2)', color: 'var(--color-danger, #dc2626)',
-    }}>
-      {count}
-    </span>
-  );
-}
-
-// Latest predictive-test signal — IEEE C57.104 status colored amber/red when
-// 2/3, with the fault code and sample date alongside.
-function PredictiveSignalChip({ signal }) {
-  const m = IEEE_STATUS_META[signal?.ieeeStatus];
-  if (!m) return <span className="text-muted">—</span>;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-      <PillChip
-        meta={{ ...m, label: `IEEE ${signal.ieeeStatus} — ${m.label}${signal.faultCode ? ` · ${signal.faultCode}` : ''}` }}
-        title="Latest predictive test result (IEEE C57.104 DGA status)"
-      />
-      {signal.sampleDate && (
-        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-          {fmtDate(signal.sampleDate)}
-        </span>
-      )}
-    </span>
-  );
-}
-
+// ── Asset link cell ───────────────────────────────────────────────────────────
+// Asset-name link + equipment-type · site subline. Shared by the condensed
+// priority panel (B2); formerly by the full three-tab priority card.
 function AssetLinkCell({ asset }) {
   return (
     <>
@@ -449,191 +394,257 @@ function AssetLinkCell({ asset }) {
   );
 }
 
-function PriorityNextDue({ nextDue }) {
-  if (!nextDue?.date) return <span className="text-muted">—</span>;
-  const overdue = isPast(nextDue.date);
+// ── B2 zone panels ─────────────────────────────────────────────────────────────
+// Direction B zones grid (docs/design/direction-board-2026-07-12.html #dir-b):
+// left-column evidence panels under mono uppercase eyebrows. Each panel
+// self-fetches (same convention as InstrumentBand) and self-hides when it has
+// nothing to show, so the zone never renders an empty shell.
+
+function ZoneSection({ eyebrow, aux, ariaLabel, children }) {
   return (
-    <div>
-      <div style={{ fontWeight: overdue ? 700 : 400, color: overdue ? 'var(--color-danger)' : undefined, fontSize: 'var(--font-size-ui)' }}>
-        {fmtDate(nextDue.date)}{overdue ? ' · overdue' : ''}
+    <section role="group" aria-label={ariaLabel || eyebrow} style={{ marginBottom: 20 }}>
+      <div className="dash-zone-eyebrow">
+        {eyebrow}
+        {aux && <span className="aux">{aux}</span>}
       </div>
-      {nextDue.taskName && (
-        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-          {nextDue.taskName}
-        </div>
-      )}
-    </div>
+      {children}
+    </section>
   );
 }
 
+// Standards coverage — one row per governing standard with live schedules,
+// from GET /api/compliance/summary (the reports hub's source). The maturity
+// endpoint's `dimensions` were considered and rejected: those are program
+// dimensions (coverage / on-time / baselining / EMP), not standards. Rows
+// deep-link to the per-standard report (manager/admin route — same
+// unconditional-link precedent as PathTo100's "see the full list").
+function StandardsCoveragePanel({ navigate }) {
+  const [standards, setStandards] = useState(null);
+
+  useEffect(() => {
+    let on = true;
+    api.get('/api/compliance/summary')
+      .then(r => { if (on) setStandards(r.data.data?.standards || []); })
+      .catch(() => { if (on) setStandards([]); });
+    return () => { on = false; };
+  }, []);
+
+  if (!standards || standards.length === 0) return null;
+
+  return (
+    <ZoneSection eyebrow="Standards coverage" aux="on-time % vs edition on file">
+      <div className="card">
+        {standards.map((s, i) => {
+          const code = s.standard?.code || 'Account-defined';
+          const go = () => navigate(`/reports/compliance/${encodeURIComponent(code)}`);
+          return (
+            <div
+              key={code}
+              className="hover-row"
+              role="button" tabIndex={0} onClick={go} onKeyDown={kbdActivate(go)}
+              title={`${code}: ${s.overdueCount} overdue of ${s.scheduleCount} schedules — open the standard report`}
+              style={{
+                display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 16px',
+                cursor: 'pointer', fontSize: 13, borderRadius: 0,
+                borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
+              }}
+            >
+              <b style={{ fontWeight: 600, whiteSpace: 'nowrap', color: 'var(--color-text)' }}>{code}</b>
+              {s.standard?.edition && (
+                <span style={{ font: '500 11px var(--font-mono)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                  {s.standard.edition} ed.
+                </span>
+              )}
+              <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                {s.standard?.title || ''}
+              </span>
+              <span style={{ font: '600 13px var(--font-mono)', color: s.complianceRate != null ? complianceColor(s.complianceRate) : 'var(--color-text-secondary)', flexShrink: 0 }}>
+                {s.complianceRate != null ? `${s.complianceRate}%` : '—'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </ZoneSection>
+  );
+}
+
+// Priority assets, condensed and tabbed — top-5 rows per cut from
+// GET /api/dashboard/priority?tab=critical|value|volume. B5 removed the
+// full-width three-tab card and the condensed replacement kept only the
+// critical cut; review brought the other two back — replacement-cost
+// exposure (value) and fleet-wide type gaps (volume) aren't readable from
+// the critical view. Same per-tab lazy fetch-and-cache as the old card:
+// switching back to a visited tab never refetches.
+const PRIORITY_TABS = [
+  { key: 'critical', label: 'Critical', aux: 'critical infrastructure' },
+  { key: 'value', label: 'High value', aux: 'replacement-cost exposure' },
+  { key: 'volume', label: 'By volume', aux: 'fleet by equipment type' },
+];
+
 const PRIORITY_EMPTY = {
-  critical: 'No assets scored criticality 4–5 yet — set scores on the asset pages to populate this view.',
-  value:    'No repair-cost estimates recorded yet — add them under Risk & Criticality on the asset pages.',
-  volume:   'No assets registered yet.',
+  critical: 'No assets scored criticality 4–5 yet — set scores on the asset pages.',
+  value: 'No repair-cost estimates recorded yet — add them under Risk & Criticality.',
+  volume: 'No assets registered yet.',
 };
 
-function PriorityAssetsCard({ navigate }) {
-  const [tab, setTab]       = useState('critical');
-  const [cache, setCache]   = useState({});  // tab key → rows[]
-  const [failed, setFailed] = useState({});  // tab key → true after a fetch error
+function PriorityAssetsPanel({ navigate }) {
+  const [tab, setTab] = useState('critical');
+  const [cache, setCache] = useState({});   // tab key → top-5 rows[]
+  const [failed, setFailed] = useState({}); // tab key → true after a fetch error
 
   useEffect(() => {
     if (cache[tab] || failed[tab]) return;
-    let cancelled = false;
+    let on = true;
     api.get('/api/dashboard/priority', { params: { tab } })
       .then(res => {
-        if (cancelled) return;
-        // The server flattens asset fields onto each row (id, equipmentType,
-        // site, criticalityScore… at top level alongside nextDue/counts);
-        // normalize to the nested { asset, ...extras } shape the cells read,
-        // accepting both forms so neither side breaks the other.
+        if (!on) return;
+        // Server may flatten asset fields onto the row — same normalization
+        // the full card used. Volume rows are per equipment type, not per
+        // asset, so they pass through as-is.
         const raw = res.data.data?.rows || [];
-        const rows = tab === 'volume' ? raw : raw.map(r => (r.asset ? r : { ...r, asset: r }));
+        const rows = (tab === 'volume' ? raw : raw.map(r => (r.asset ? r : { ...r, asset: r }))).slice(0, 5);
         setCache(p => ({ ...p, [tab]: rows }));
       })
-      .catch(() => { if (!cancelled) setFailed(p => ({ ...p, [tab]: true })); });
-    return () => { cancelled = true; };
+      .catch(() => { if (on) setFailed(p => ({ ...p, [tab]: true })); });
+    return () => { on = false; };
   }, [tab, cache, failed]);
+
+  // Self-hide only until the first fetch settles (no empty-shell flash —
+  // the zone convention). After that the panel stays up even when one cut
+  // is empty: the other tabs may still have data, and the per-tab empty
+  // line says what would fill the view.
+  if (Object.keys(cache).length === 0 && Object.keys(failed).length === 0) return null;
 
   const rows = cache[tab];
 
   return (
-    <div className="card" style={{ marginBottom: 20 }}>
-      <div className="card-header">
-        <div>
-          <div className="card-title">Priority assets</div>
-          <div className="card-subtitle">
-            Where to spend the next maintenance dollar — by risk, replacement cost, or fleet volume
-          </div>
-        </div>
-      </div>
-      {/* Tab row */}
-      <div role="tablist" aria-label="Priority asset views" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 16px 0' }}>
-        {PRIORITY_TABS.map(t => {
-          const active = t.key === tab;
-          return (
+    <ZoneSection eyebrow="Priority assets" aux={PRIORITY_TABS.find(t => t.key === tab).aux}>
+      <div className="card">
+        <div role="tablist" aria-label="Priority asset views" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 12px', borderBottom: '1px solid var(--color-border)' }}>
+          {PRIORITY_TABS.map(t => (
             <button
               key={t.key}
               type="button"
               role="tab"
+              id={`priority-tab-${t.key}`}
+              aria-selected={t.key === tab}
+              aria-controls="priority-tabpanel"
               className="tab-pill"
-              aria-selected={active}
               onClick={() => setTab(t.key)}
             >
               {t.label}
             </button>
-          );
-        })}
-      </div>
-
-      {failed[tab] ? (
-        <div style={{ padding: '20px 16px', fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          Couldn’t load this view.
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFailed(p => ({ ...p, [tab]: false }))}>
-            Retry
-          </button>
+          ))}
         </div>
-      ) : rows == null ? (
-        <div style={{ padding: '20px 16px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-          Loading…
-        </div>
-      ) : rows.length === 0 ? (
-        <div style={{ padding: '24px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-ui)' }}>
-          {PRIORITY_EMPTY[tab]}
-        </div>
-      ) : tab === 'critical' ? (
-        <div className="table-wrap" style={{ marginTop: 10 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Asset</th>
-                <th>Criticality</th>
-                <th>Redundancy</th>
-                <th>Next due</th>
-                <th style={{ textAlign: 'right' }}>Overdue</th>
-                <th style={{ textAlign: 'right' }}>Open def.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.asset?.id}>
-                  <td><AssetLinkCell asset={r.asset} /></td>
-                  <td><CriticalityBadge score={r.asset?.criticalityScore} /></td>
-                  <td><PillChip meta={REDUNDANCY_META[r.asset?.redundancyStatus]} fallback="—" title="Power-path redundancy" /></td>
-                  <td><PriorityNextDue nextDue={r.nextDue} /></td>
-                  <td style={{ textAlign: 'right' }}><DangerCount count={r.overdueCount} /></td>
-                  <td style={{ textAlign: 'right' }}><DangerCount count={r.openDeficiencyCount} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : tab === 'value' ? (
-        <div className="table-wrap" style={{ marginTop: 10 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Asset</th>
-                <th style={{ textAlign: 'right' }}>Repair cost</th>
-                <th style={{ textAlign: 'right' }}>Spare lead time</th>
-                <th>Predictive signal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.asset?.id}>
-                  <td><AssetLinkCell asset={r.asset} /></td>
-                  <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmtMoney(r.repairCostEstimate)}</td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {r.spareLeadTimeWeeks != null
-                      ? `${r.spareLeadTimeWeeks} wk`
-                      : <span className="text-muted">—</span>}
-                  </td>
-                  <td><PredictiveSignalChip signal={r.latestPredictiveSignal} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="table-wrap" style={{ marginTop: 10 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Equipment type</th>
-                <th style={{ textAlign: 'right' }}>Assets</th>
-                <th style={{ textAlign: 'right' }}>Open schedules</th>
-                <th style={{ textAlign: 'right' }}>Overdue</th>
-                <th style={{ textAlign: 'right' }}>Due ≤ 30d</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => {
-                const go = () => navigate(`/assets?equipmentType=${encodeURIComponent(r.equipmentType)}`);
-                return (
-                  <tr
-                    key={r.equipmentType}
-                    style={{ cursor: 'pointer' }}
-                    onClick={go} tabIndex={0} onKeyDown={kbdActivate(go)}
-                    title={`Open the asset register filtered to ${EQUIPMENT_TYPE_LABELS[r.equipmentType] || r.equipmentType}`}
-                  >
-                    <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
+        <div id="priority-tabpanel" role="tabpanel" aria-labelledby={`priority-tab-${tab}`}>
+          {failed[tab] ? (
+            <div style={{ padding: '14px 16px', fontSize: 12, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              Couldn’t load this view.
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFailed(p => ({ ...p, [tab]: false }))}>
+                Retry
+              </button>
+            </div>
+          ) : rows == null ? (
+            <div style={{ padding: '14px 16px', fontSize: 12, color: 'var(--color-text-secondary)' }}>Loading…</div>
+          ) : rows.length === 0 ? (
+            <div style={{ padding: '14px 16px', fontSize: 12, color: 'var(--color-text-secondary)' }}>{PRIORITY_EMPTY[tab]}</div>
+          ) : tab === 'critical' ? (
+            rows.map((r, i) => {
+              const overdueDays = r.nextDue?.date && isPast(r.nextDue.date)
+                ? Math.floor((Date.now() - new Date(r.nextDue.date).getTime()) / 86400000)
+                : null;
+              return (
+                <div key={r.asset?.id || i} style={{ padding: '11px 16px', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 160 }}><AssetLinkCell asset={r.asset} /></div>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <CriticalityBadge score={r.asset?.criticalityScore} />
+                      {r.asset?.redundancyStatus === 'N' && (
+                        <span style={{ font: '600 11px var(--font-mono)', color: 'var(--color-danger)', whiteSpace: 'nowrap' }}>
+                          no redundancy
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {(r.nextDue?.date || r.openDeficiencyCount > 0) && (
+                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                      {r.nextDue?.taskName || (r.nextDue?.date ? 'Next maintenance' : '')}
+                      {overdueDays != null ? (
+                        <> — <span style={{ font: '600 12px var(--font-mono)', color: 'var(--color-danger)' }}>{overdueDays}d overdue</span></>
+                      ) : (r.nextDue?.date && <> — due {fmtDate(r.nextDue.date)}</>)}
+                      {r.openDeficiencyCount > 0 && (
+                        <> · {r.openDeficiencyCount} open deficienc{r.openDeficiencyCount === 1 ? 'y' : 'ies'}</>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : tab === 'value' ? (
+            rows.map((r, i) => {
+              const sig = IEEE_STATUS_META[r.latestPredictiveSignal?.ieeeStatus];
+              return (
+                <div key={r.asset?.id || i} style={{ padding: '11px 16px', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 160 }}><AssetLinkCell asset={r.asset} /></div>
+                    <span title="Repair cost estimate" style={{ font: '600 13px var(--font-mono)', color: 'var(--color-text)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {fmtMoney(r.repairCostEstimate)}
+                    </span>
+                  </div>
+                  {(r.spareLeadTimeWeeks != null || sig) && (
+                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                      {r.spareLeadTimeWeeks != null && <>spare lead {r.spareLeadTimeWeeks} wk</>}
+                      {r.spareLeadTimeWeeks != null && sig && <> · </>}
+                      {sig && (
+                        <span
+                          title="Latest predictive test result (IEEE C57.104 DGA status)"
+                          style={{ font: '600 12px var(--font-mono)', color: sig.color, whiteSpace: 'nowrap' }}
+                        >
+                          IEEE {r.latestPredictiveSignal.ieeeStatus} {sig.label}
+                          {r.latestPredictiveSignal.faultCode ? ` · ${r.latestPredictiveSignal.faultCode}` : ''}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            rows.map((r, i) => {
+              const go = () => navigate(`/assets?equipmentType=${encodeURIComponent(r.equipmentType)}`);
+              return (
+                <div
+                  key={r.equipmentType}
+                  className="hover-row"
+                  role="button" tabIndex={0} onClick={go} onKeyDown={kbdActivate(go)}
+                  title={`Open the asset register filtered to ${EQUIPMENT_TYPE_LABELS[r.equipmentType] || r.equipmentType}`}
+                  style={{ padding: '11px 16px', cursor: 'pointer', borderRadius: 0, borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: 'var(--color-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {EQUIPMENT_TYPE_LABELS[r.equipmentType] || r.equipmentType}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>{r.assetCount ?? 0}</td>
-                    <td style={{ textAlign: 'right' }} className="td-muted">{r.openScheduleCount ?? 0}</td>
-                    <td style={{ textAlign: 'right' }}><DangerCount count={r.overdueCount} /></td>
-                    <td style={{ textAlign: 'right', fontWeight: r.due30Count > 0 ? 700 : 400, color: r.due30Count > 0 ? 'var(--color-warning, #b45309)' : 'var(--color-text-muted)' }}>
-                      {r.due30Count ?? 0}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </span>
+                    <span style={{ font: '600 13px var(--font-mono)', color: 'var(--color-text)', flexShrink: 0 }}>
+                      {r.assetCount ?? 0} asset{(r.assetCount ?? 0) === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                    {r.openScheduleCount ?? 0} open schedule{(r.openScheduleCount ?? 0) === 1 ? '' : 's'}
+                    {r.overdueCount > 0 && (
+                      <> · <span style={{ font: '600 12px var(--font-mono)', color: 'var(--color-danger)' }}>{r.overdueCount} overdue</span></>
+                    )}
+                    {r.due30Count > 0 && (
+                      <> · <span style={{ font: '600 12px var(--font-mono)', color: 'var(--color-warning)' }}>{r.due30Count} due ≤30d</span></>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </ZoneSection>
   );
 }
 
@@ -846,27 +857,12 @@ export default function Dashboard() {
 
   return (
     <>
-      <div className="page-header">
-        <div>
-          {/* v0.95 A-pass: operational header replaces the consumer greeting --
-              org + scope eyebrow, task-focused title (brand voice: quiet, serious). */}
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {user?.account?.companyName || 'Your organization'}{bySite.length > 0 ? ` \u00b7 ${bySite.length} site${bySite.length !== 1 ? 's' : ''}` : ''}
-          </div>
-          <h1 className="page-title">Compliance overview</h1>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--color-text-secondary)' }}>
-            <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-emerald)' }} />
-            Data current {'\u00b7'} {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-          </span>
-          {canWrite && (
-            <button className="btn btn-primary" onClick={() => navigate('/assets/new')}>
-              + New asset
-            </button>
-          )}
-        </div>
-      </div>
+      <InstrumentBand
+        companyName={user?.account?.companyName}
+        siteCount={bySite.length}
+        canWrite={canWrite}
+        onNewAsset={() => navigate('/assets/new')}
+      />
 
       <div className="page-body">
         {/* One-shot welcome panel (post-onboarding) — kept from the previous
@@ -910,14 +906,40 @@ export default function Dashboard() {
 
         {data && data.assetCount > 0 && (
           <>
-            {/* V5 "Inspector's here" readiness + one-click EMP, and V6 fix-it
-                list — verbs before counts, both above the KPI tiles. */}
+            {/* V5 "Inspector's here" readiness + one-click EMP — stays on
+                top as the single red MODULE the alarm budget allows. */}
             <AuditReadyBanner />
+
+            {/* ── B2 zones (direction-board #dir-b): evidence (left) proves
+                the band's numbers; the sticky queue (right) keeps "what do I
+                do next" on screen. Collapses to one column, queue first,
+                under 1100px (.dash-zones, index.css). Replaced here: the
+                compact PathTo100 + MaturityScoreCard cards (band + queue
+                carry those numbers) and the standalone compliance-by-site +
+                three-tab priority cards (moved/condensed into the left
+                zone). */}
+            <div className="dash-zones">
+              <div className="dash-zones-left">
+                {bySite.length > 0 && (
+                  <ZoneSection eyebrow="Compliance by site" aux="% schedules not overdue">
+                    <div className="card" style={{ padding: 8 }}>
+                      {bySite.map(row => (
+                        <SiteComplianceRow key={row.siteId} row={row} navigate={navigate} />
+                      ))}
+                    </div>
+                  </ZoneSection>
+                )}
+                <StandardsCoveragePanel navigate={navigate} />
+                <PriorityAssetsPanel navigate={navigate} />
+              </div>
+              <div className="dash-zones-right">
+                <PathTo100 variant="queue" />
+              </div>
+            </div>
+
             <ArcFlashDashboardCard />
             <ConditionChangesCard />
             <IdentifiedWorkCard />
-            <MaturityScoreCard compact />
-            <PathTo100 compact />
             <ComplianceDocsCard />
             <DashboardTrends />
 
@@ -986,9 +1008,6 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
-
-            {/* ── Priority assets (critical / high value / by volume) ───── */}
-            <PriorityAssetsCard navigate={navigate} />
 
             {/* ── CapEx forecast — B3 (2026-06-11): promoted to slot ~4; the
                 3-year exposure range is the budget conversation and should
@@ -1065,25 +1084,6 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-
-            {/* ── Compliance by site ─────────────────────────────────────── */}
-            {bySite.length > 0 && (
-              <div className="card" style={{ marginBottom: 20 }}>
-                <div className="card-header">
-                  <div>
-                    <div className="card-title">Compliance by site</div>
-                    <div className="card-subtitle">
-                      % of active maintenance schedules not overdue — click a site to drill in
-                    </div>
-                  </div>
-                </div>
-                <div style={{ padding: '8px 16px 16px' }}>
-                  {bySite.map(row => (
-                    <SiteComplianceRow key={row.siteId} row={row} navigate={navigate} />
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* ── Next maintenance due ───────────────────────────────────── */}
             <div className="card" style={{ marginBottom: 20 }}>

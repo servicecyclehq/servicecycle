@@ -214,7 +214,10 @@ export default function Layout() {
           with nothing to announce. See src/components/OfflineBanner.jsx. */}
       <OfflineBanner />
       <DemoModeBanner />
-      <DisasterBanner />
+      {/* B1 (2026-07-13): dashboard shows its own docked disaster line inside
+          InstrumentBand -- suppress the global full-width banner there so
+          an active event isn't shown twice. */}
+      {location.pathname !== '/dashboard' && <DisasterBanner />}
       <ContinueSetupBanner />
       <div
         ref={sidebarRef}

@@ -41,7 +41,7 @@ function ActionButton({ row, busy, onRun }) {
   );
 }
 
-export default function PathTo100({ siteId = null, compact = false, limit = 50, onChanged }) {
+export default function PathTo100({ siteId = null, compact = false, limit = 50, onChanged, variant = 'card' }) {
   const { role } = useAuth();
   const canWrite = ['admin', 'manager'].includes(role);
 
@@ -97,10 +97,82 @@ export default function PathTo100({ siteId = null, compact = false, limit = 50, 
   if (error)   return <div className="card mb-16"><div className="card-body" style={{ color: '#b91c1c' }}>{error}</div></div>;
   if (!data)   return null;
 
-  const rows = data.actions.slice(0, compact ? Math.min(limit, 5) : limit);
+  const rows = data.actions.slice(0, variant === 'queue' ? 5 : (compact ? Math.min(limit, 5) : limit));
   const fully = data.summary.fullyCompliant;
   const overallColor = 'var(--color-primary)'; // v0.95 alarm budget: bar reads brand; severity lives in the inspector strip + per-row pills
   const overallPct = Math.max(0, Math.min(100, data.overallRate));
+
+  // B2 (2026-07-13): "Work the list" right-rail variant — the same data +
+  // mutations rendered as the Control Room sticky action queue
+  // (direction-board #dir-b .queue) instead of the full card. Top-5 rows:
+  // age (mono red — datum glyph, alarm-budget-safe), task, asset + site,
+  // point gain, one-click action. Age is parsed from the overdue titles the
+  // server already emits ("<task> — <n>d overdue on <asset>"); other row
+  // kinds show an em dash and keep their full self-describing title.
+  if (variant === 'queue') {
+    const total = data.summary.totalActions;
+    const avgGain = total > 0 ? Math.round((data.pointsToFull / total) * 10) / 10 : 0;
+    return (
+      <>
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        <div className="dash-zone-eyebrow">
+          Work the list
+          <span className="aux">{fully ? 'all clear' : (total > rows.length ? `top ${rows.length} of ${total}` : `${total} open`)}</span>
+        </div>
+        <div className="card" role="group" aria-label="Action queue — inspector-visible items">
+          <div className="dash-queue-head">
+            <b>Inspector-visible items</b>
+            <span>{fully ? '0 open' : (avgGain > 0 ? `~+${avgGain}% each` : `${total} open`)}</span>
+          </div>
+          {fully ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--color-success)', padding: '14px 16px', fontSize: 'var(--font-size-sm)' }}>
+              <CheckCircle2 size={18} /> <span style={{ fontWeight: 700 }}>Fully compliant — nothing to fix.</span>
+            </div>
+          ) : (
+            <>
+              {rows.map((row, i) => {
+                const key = row.scheduleId || row.assetId;
+                const od = row.kind === 'overdue' ? row.title.match(/^(.+) \u2014 (\d+)d overdue on /) : null;
+                return (
+                  <div key={i} className="dash-queue-item">
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <span
+                        aria-label={od ? `${od[2]} days overdue` : undefined}
+                        style={{ font: '600 12px var(--font-mono)', color: od ? 'var(--color-danger)' : 'var(--color-text-secondary)', flexShrink: 0, width: 40 }}
+                      >
+                        {od ? `${od[2]}d` : '—'}
+                      </span>
+                      <Link to={row.assetId ? `/assets/${row.assetId}` : '/settings?tab=emp'} style={{ fontWeight: 600, fontSize: 13, color: 'var(--color-text)', minWidth: 0, textDecoration: 'none' }}>
+                        {od ? od[1] : row.title}
+                      </Link>
+                      <span style={{ marginLeft: 'auto', font: '600 11.5px var(--font-mono)', color: 'var(--color-success)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        +{row.pointsRecovered}%
+                      </span>
+                    </div>
+                    {(row.assetName || row.siteName) && (
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '3px 0 0 48px' }}>
+                        {[row.assetName, row.siteName].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    {canWrite && (
+                      <div style={{ margin: '8px 0 0 48px' }}>
+                        <ActionButton row={row} busy={busyId === key} onRun={runAction} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {total > rows.length && (
+                <Link to="/reports/compliance" className="dash-queue-foot">
+                  See all {total} →{avgGain > 0 ? ` each closes ~+${avgGain}%` : ''}
+                </Link>
+              )}
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="card mb-16">
