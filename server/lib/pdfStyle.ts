@@ -88,6 +88,10 @@ const PDF_COLORS = {
   successBg:    '#dcfce7',
   warningBg:    '#fef3c7',
   dangerBg:     '#fee2e2',
+  ai:           '#7c3aed', // AI / assistive accent (import mapping, model-suggested values)
+  aiBg:         '#f5f3ff', // AI accent soft wash
+  aiBorder:     '#ddd6fe', // AI accent hairline border
+  aiEmphasis:   '#6d28d9', // AI accent darker emphasis text
 };
 
 // pdfkit built-in (AFM) fonts only -- no font files to ship or license.
@@ -168,12 +172,57 @@ function cellFont(col) {
   return col.bold ? PDF_FONTS.sansBold : PDF_FONTS.sans;
 }
 
+// -- color / contrast utilities ----------------------------------------------
+
+// Parse '#rrggbb' or '#rgb' to { r, g, b } (0-255); null if unparseable.
+function parseHexColor(hex) {
+  if (typeof hex !== 'string') return null;
+  let h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+// WCAG relative luminance (0..1) of a hex color; null if unparseable.
+function relativeLuminance(hex) {
+  const c = parseHexColor(hex);
+  if (!c) return null;
+  const lin = (v) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+}
+
+// Legible label colors for text drawn ON a solid `bg` band. Picks black-vs-
+// white by whichever yields the higher WCAG contrast, then returns a strong
+// (title) + muted (meta) pair. The on-dark pair mirrors the co-brand PDFs'
+// white / #9aa3b2. Unparseable bg -> the on-dark pair (safe default).
+function bandTextColors(bg) {
+  const L = relativeLuminance(bg);
+  if (L == null) return { strong: PDF_COLORS.card, muted: '#9aa3b2' };
+  const contrastWhite = 1.05 / (L + 0.05);
+  const contrastBlack = (L + 0.05) / 0.05;
+  return contrastBlack >= contrastWhite
+    ? { strong: PDF_COLORS.ink,  muted: PDF_COLORS.textMuted }
+    : { strong: PDF_COLORS.card, muted: '#9aa3b2' };
+}
+
 // -- masthead -----------------------------------------------------------------
 
 /**
  * Title + right-aligned mono org/meta block + the double hairline rule.
  *
- * opts: { title, org?, metaLines?: string[], y? }
+ * opts: { title, org?, metaLines?: string[], y?, brandColor? }
+ *  - brandColor: optional '#rrggbb'. When set, the title/meta area is filled
+ *    with that color (partner co-brand band) and the labels switch to a
+ *    contrast-legible pair via bandTextColors(); the double rule, meta
+ *    layout, positioning, and returned cursor-y are otherwise IDENTICAL to
+ *    the default (omitted) path. Existing callers pass no brandColor.
  * Returns the y below the rule (also sets doc.x/doc.y there).
  */
 function drawMasthead(doc, opts) {
@@ -181,6 +230,8 @@ function drawMasthead(doc, opts) {
   const m = PDF_PAGE.margin;
   const y = o.y != null ? o.y : m;
   const title = String(o.title || '');
+  const brandColor = o.brandColor ? String(o.brandColor) : null;
+  const band = brandColor ? bandTextColors(brandColor) : null;
 
   const metaLines = [];
   if (o.org) metaLines.push(String(o.org).toUpperCase());
@@ -199,12 +250,24 @@ function drawMasthead(doc, opts) {
   metaW = Math.min(metaW + 2, PDF_PAGE.contentW * 0.45);
 
   const titleW = PDF_PAGE.contentW - (metaLines.length ? metaW + 18 : 0);
-  doc.font(PDF_FONTS.sansBold).fontSize(21).fillColor(PDF_COLORS.ink);
+  doc.font(PDF_FONTS.sansBold).fontSize(21);
   const titleH = doc.heightOfString(title, { width: titleW });
+
+  // Optional co-brand color band behind the title/meta block.
+  if (brandColor) {
+    const bandTop = Math.max(0, y - 18);
+    const bandH = (y - bandTop) + Math.max(titleH, metaLines.length * 11) + 14;
+    doc.save();
+    doc.rect(0, bandTop, doc.page.width, bandH).fill(brandColor);
+    doc.restore();
+  }
+
+  doc.fillColor(brandColor ? band.strong : PDF_COLORS.ink);
   doc.text(title, m, y, { width: titleW });
 
   if (metaLines.length) {
-    doc.font(PDF_FONTS.mono).fontSize(7.5).fillColor(PDF_COLORS.textFaint);
+    doc.font(PDF_FONTS.mono).fontSize(7.5)
+       .fillColor(brandColor ? band.muted : PDF_COLORS.textFaint);
     let my = y + 5; // optically aligned with the title cap height
     for (const l of metaLines) {
       doc.text(l, m + PDF_PAGE.contentW - metaW, my, {
@@ -514,6 +577,9 @@ module.exports = {
   PDF_PAGE,
   formatTimestamp,
   ensureSpace,
+  parseHexColor,
+  relativeLuminance,
+  bandTextColors,
   drawMasthead,
   drawSectionHeading,
   drawTableHeader,
