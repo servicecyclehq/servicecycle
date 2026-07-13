@@ -24,16 +24,15 @@ const PDFDocument = require('pdfkit');
 import { coBrandLine, type PartnerBranding } from './partnerBranding';
 // C2a: locked palette + house fonts/geometry/footer come from the shared theme
 // module (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
-const { PDF_COLORS, PDF_FONTS, PDF_PAGE, finalizeFooters } = require('./pdfStyle');
+const { PDF_COLORS, PDF_FONTS, PDF_PAGE, finalizeFooters, drawMasthead } = require('./pdfStyle');
 
 // ── Palette (matches compliancePdf.ts house style) ───────────────────────────
 // Legacy aliases onto the locked palette (values from lib/pdfStyle.ts).
 // ON_DARK_MUTED: on-dark muted text for the co-brandable header band -- the
-// locked palette has no on-dark slot. SECTION3_PURPLE: the Section 3 chip
-// color, kept verbatim pending the open purple-family decision (not a locked
-// palette color).
+// locked palette has no on-dark slot. The Section 3 "What to Budget For" chip
+// now uses the locked PDF_COLORS.ai token (C2i / G6, Dustin's purple-family
+// decision -- same hex #7c3aed, so a zero visual change token-ification).
 const ON_DARK_MUTED = '#9aa3b2';
-const SECTION3_PURPLE = '#7c3aed';
 const C = {
   bg:          PDF_COLORS.ink,
   textOnDark:  PDF_COLORS.card,
@@ -45,7 +44,7 @@ const C = {
   danger:      PDF_COLORS.danger,
   warning:     PDF_COLORS.warning,
   success:     PDF_COLORS.success,
-  purple:      SECTION3_PURPLE,
+  purple:      PDF_COLORS.ai,
   cardBg:      PDF_COLORS.pageBg,
 };
 
@@ -167,22 +166,21 @@ export function renderLeaveBehindPdf(data: LeaveBehindData): Promise<Buffer> {
     const W = PAGE.contentW;
 
     // ── Header band ──────────────────────────────────────────────────────────
-    // #15 co-brand: use the contractor's accent color for the band when present.
-    const headerBg = data.branding?.primaryColor || C.bg;
-    doc.rect(0, 0, PAGE.width, 78).fill(headerBg);
-    // Thin brand accent rule grounds the band and reads as a finished masthead.
-    doc.rect(0, 78, PAGE.width, 3).fill(data.branding?.primaryColor ? C.bg : C.accent);
-    doc.font(FONT_BOLD).fontSize(17).fillColor(C.textOnDark)
-       .text('Service Completion Report', M, 18, { width: W });
-    doc.font(FONT_BOLD).fontSize(9.5).fillColor(C.textOnDark)
-       .text(data.workOrder.account.companyName, M, 40, { width: W });
-    doc.font(FONT_REG).fontSize(8.5).fillColor(C.textMuted)
-       .text(`Work Order ${data.workOrder.id.slice(-8).toUpperCase()}  ·  Completed ${data.workOrder.completedDate ? new Date(data.workOrder.completedDate).toLocaleDateString() : '—'}`, M, 53, { width: W });
-
-    doc.font(FONT_REG).fontSize(7.5).fillColor(C.textMuted)
-       .text(`${coBrandLine(data.branding)} · Summary leave-behind for the facility representative.`, M, 65, { width: W });
-
-    y = 96;
+    // C2i (G6): the bespoke co-brand header band is replaced by the shared
+    // field-report masthead (lib/pdfStyle.drawMasthead). #15 co-brand: the
+    // contractor's accent color passes through as brandColor when present;
+    // otherwise the standard ink-on-white masthead + double hairline rule
+    // renders. Co-brand attribution moves to a line just below the masthead.
+    const woLine = `Work Order ${data.workOrder.id.slice(-8).toUpperCase()}  ·  Completed ${data.workOrder.completedDate ? new Date(data.workOrder.completedDate).toLocaleDateString() : '—'}`;
+    y = drawMasthead(doc, {
+      title: 'Service Completion Report',
+      org: data.workOrder.account.companyName,
+      metaLines: [woLine],
+      brandColor: data.branding?.primaryColor || undefined,
+    });
+    doc.font(FONT_REG).fontSize(7.5).fillColor(C.subtext)
+       .text(`${coBrandLine(data.branding)} · Summary leave-behind for the facility representative.`, M, y, { width: W });
+    y = doc.y + 10;
 
     // ── Asset summary bar ────────────────────────────────────────────────────
     // Light card panel makes the equipment identity read as one grounded block.

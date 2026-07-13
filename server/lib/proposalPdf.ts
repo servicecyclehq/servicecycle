@@ -12,7 +12,7 @@ const PDFDocument = require('pdfkit');
 // C2a: locked palette, house fonts/geometry, and the standard footer now come
 // from the shared theme module (lib/pdfStyle.ts) instead of a local COLORS
 // block (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
-const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter } = require('./pdfStyle');
+const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
 // On-dark muted text for the co-brandable masthead band -- the locked palette
 // has no on-dark slot (the band itself may be a partner brandColor).
@@ -24,7 +24,7 @@ const COLORS = {
   bgDark: PDF_COLORS.ink, textOnDark: PDF_COLORS.card, textOnDarkMuted: ON_DARK_MUTED,
   text: PDF_COLORS.ink, textMuted: PDF_COLORS.textMuted, textSubtle: PDF_COLORS.textFaint,
   border: PDF_COLORS.border, accent: PDF_COLORS.petrol, cardBg: PDF_COLORS.pageBg,
-  replace: PDF_COLORS.danger, repair: PDF_COLORS.warning, defer: PDF_COLORS.textMuted,
+  replace: PDF_COLORS.danger, repair: PDF_COLORS.warning, defer: PDF_COLORS.textMuted, warnBg: PDF_COLORS.warningBg,
 };
 const FONT_REG = PDF_FONTS.sans, FONT_BOLD = PDF_FONTS.sansBold, FONT_OBL = PDF_FONTS.sansOblique;
 const PAGE = PDF_PAGE;
@@ -65,11 +65,14 @@ function renderProposalPdf(data: any, meta: any): Promise<Buffer> {
 
     try {
       attachFooter(doc, meta); // shared footer: page 1 now + every pageAdded
-      doc.rect(0, 0, doc.page.width, 96).fill(meta.brandColor || COLORS.bgDark);
-      doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(22).text(meta.brandName || 'ServiceCycle', PAGE.margin, 26, { lineBreak: false });
-      doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(12).text('Multi-Year Maintenance Proposal', PAGE.margin, 56, { lineBreak: false });
-
-      let y = 120;
+      // C2i (G6): bespoke co-brand band replaced by the shared field-report
+      // masthead (lib/pdfStyle.drawMasthead); brandColor passes through for the
+      // partner co-brand band, else the standard ink-on-white masthead renders.
+      let y = drawMasthead(doc, {
+        title: 'Multi-Year Maintenance Proposal',
+        org: meta.brandName || 'ServiceCycle',
+        brandColor: meta.brandColor,
+      });
       doc.fillColor(COLORS.text).font(FONT_BOLD).fontSize(16).text(`Prepared for ${data.accountName}`, PAGE.margin, y, { width: PAGE.contentW });
       y = doc.y + 2;
       doc.fillColor(COLORS.textMuted).font(FONT_REG).fontSize(10).text(`${data.scope.siteName ? data.scope.siteName + ' · ' : ''}Generated ${meta.generatedAtIso}`, PAGE.margin, y, { width: PAGE.contentW });
@@ -125,10 +128,10 @@ function renderProposalPdf(data: any, meta: any): Promise<Buffer> {
       const disText = data.disclaimer;
       doc.font(FONT_REG).fontSize(9);
       const disH = doc.heightOfString(disText, { width: PAGE.contentW - 24, lineGap: 2 }) + 28;
-      doc.rect(PAGE.margin, y, PAGE.contentW, disH).fill('#fffbeb');
+      doc.rect(PAGE.margin, y, PAGE.contentW, disH).fill(COLORS.warnBg);
       doc.rect(PAGE.margin, y, 3, disH).fill(COLORS.repair);
-      doc.rect(PAGE.margin, y, PAGE.contentW, disH).strokeColor('#fde68a').lineWidth(0.75).stroke();
-      doc.fillColor('#92400e').font(FONT_BOLD).fontSize(9).text('SCOPE & LIMITATIONS', PAGE.margin + 12, y + 8, { width: PAGE.contentW - 24, lineBreak: false });
+      doc.rect(PAGE.margin, y, PAGE.contentW, disH).strokeColor(COLORS.border).lineWidth(0.75).stroke();
+      doc.fillColor(COLORS.repair).font(FONT_BOLD).fontSize(9).text('SCOPE & LIMITATIONS', PAGE.margin + 12, y + 8, { width: PAGE.contentW - 24, lineBreak: false });
       doc.fillColor(COLORS.text).font(FONT_REG).fontSize(9).text(disText, PAGE.margin + 12, y + 22, { width: PAGE.contentW - 24, lineGap: 2 });
 
       doc.end();

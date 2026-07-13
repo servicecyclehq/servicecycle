@@ -63,7 +63,7 @@ const PDFDocument = require('pdfkit');
 // footer now come from the shared theme module (lib/pdfStyle.ts) instead of
 // the local v0.36.5 marketing COLORS block
 // (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md, Help Center row).
-const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter } = require('./pdfStyle');
+const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
 // On-dark muted text for the dark header band -- the locked palette has no
 // on-dark slot (same local exception as cfoReport.ts).
@@ -176,23 +176,22 @@ function drawInlineText(doc, chunks, opts: any = {}) {
   }
 }
 
-// -- Header band - matches the email digest / report PDFs ------------------
+// -- Masthead - shared field-report masthead (lib/pdfStyle.drawMasthead) ----
+// C2c/C2i (G6): the bespoke dark header band is replaced by the shared
+// masthead. The help docs are single-brand (no co-brand color), so no
+// brandColor is passed -- the standard ink-on-white masthead + double
+// hairline rule renders.
 function drawHeaderBand(doc, title) {
-  const top = doc.y;
-  doc.rect(0, top - 12, doc.page.width, 56).fill(COLORS.bgDark);
-  doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(18)
-     .text('ServiceCycle Help', PAGE.margin, top, { align: 'left' });
-  doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(10)
-     .text(title, PAGE.margin, top + 22, { align: 'left' });
-
   const d = new Date().toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
   });
-  doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(9)
-     .text(d, PAGE.margin, top + 24, { align: 'right' });
-
+  const y = drawMasthead(doc, {
+    title: 'ServiceCycle Help',
+    org: title,
+    metaLines: [d],
+  });
   doc.fillColor(COLORS.text);
-  doc.y = top + 56 + 18;
+  doc.y = y;
 }
 
 // -- Footer -----------------------------------------------------------------

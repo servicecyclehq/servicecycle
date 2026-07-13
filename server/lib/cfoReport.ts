@@ -21,7 +21,7 @@ const { buildMaintenanceDebtData } = require('./maintenanceDebt');
 // C2a: locked palette, house fonts/geometry, and the standard footer now come
 // from the shared theme module (lib/pdfStyle.ts) instead of a local COLORS
 // block (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
-const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter } = require('./pdfStyle');
+const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
 const MS_PER_DAY = 86_400_000;
 
@@ -36,7 +36,7 @@ const COLORS = {
   bgDark: PDF_COLORS.ink, textOnDark: PDF_COLORS.card, textOnDarkMuted: ON_DARK_MUTED,
   text: PDF_COLORS.ink, textMuted: PDF_COLORS.textMuted, textSubtle: PDF_COLORS.textFaint,
   border: PDF_COLORS.border, accent: PDF_COLORS.petrol, cardBg: PDF_COLORS.pageBg,
-  danger: PDF_COLORS.danger, warn: PDF_COLORS.warning, ok: PDF_COLORS.success,
+  danger: PDF_COLORS.danger, warn: PDF_COLORS.warning, warnBg: PDF_COLORS.warningBg, ok: PDF_COLORS.success,
 };
 const FONT_REG = PDF_FONTS.sans, FONT_BOLD = PDF_FONTS.sansBold, FONT_OBL = PDF_FONTS.sansOblique;
 const PAGE = PDF_PAGE;
@@ -204,14 +204,15 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
     try {
       // Footer on page 1 now + every pageAdded (shared attachFooter).
       attachFooter(doc, meta);
-      // Header band — masthead with a thin accent rule for a finished, board-grade top.
-      doc.rect(0, 0, doc.page.width, 96).fill(meta.brandColor || COLORS.bgDark);
-      doc.rect(0, 96, doc.page.width, 3).fill(meta.brandColor ? COLORS.bgDark : COLORS.accent);
-      doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(22).text('ServiceCycle', PAGE.margin, 24, { lineBreak: false });
-      doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(11.5).text('Quarterly Compliance & Budget Report', PAGE.margin, 54, { lineBreak: false });
-      doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(8).text('BOARD & BUDGET REVIEW', PAGE.margin, 72, { characterSpacing: 1.5, lineBreak: false });
-
-      let y = 124;
+      // C2i (G6): bespoke co-brand band replaced by the shared field-report
+      // masthead (lib/pdfStyle.drawMasthead); brandColor passes through for the
+      // partner co-brand band, else the standard ink-on-white masthead renders.
+      let y = drawMasthead(doc, {
+        title: 'Quarterly Compliance & Budget Report',
+        org: 'ServiceCycle',
+        metaLines: ['Board & Budget Review'],
+        brandColor: meta.brandColor,
+      });
       if (meta.brandName) {
         doc.font(FONT_REG).fontSize(10).fillColor(COLORS.textMuted).text(`Prepared by ${meta.brandName} · powered by ServiceCycle`, PAGE.margin, y, { width: PAGE.contentW });
         y = doc.y + 8;
@@ -305,10 +306,10 @@ function renderCfoReportPdf(data: any, meta: any): Promise<Buffer> {
       const disText = 'ESTIMATE — NOT A CERTIFICATION. Figures are estimates computed from the data configured in ServiceCycle on the generation date and may lag the current published standard editions. The spend forecast reflects only assets with recorded repair-cost estimates. Have a qualified professional review before relying on it for budget commitments.';
       doc.font(FONT_REG).fontSize(9);
       const disH = doc.heightOfString(disText, { width: PAGE.contentW - 24, lineGap: 2 }) + 28;
-      doc.rect(PAGE.margin, y, PAGE.contentW, disH).fill('#fffbeb');
+      doc.rect(PAGE.margin, y, PAGE.contentW, disH).fill(COLORS.warnBg);
       doc.rect(PAGE.margin, y, 3, disH).fill(COLORS.warn);
-      doc.rect(PAGE.margin, y, PAGE.contentW, disH).strokeColor('#fde68a').lineWidth(0.75).stroke();
-      doc.fillColor('#92400e').font(FONT_BOLD).fontSize(9).text('SCOPE & LIMITATIONS', PAGE.margin + 12, y + 8, { width: PAGE.contentW - 24, lineBreak: false });
+      doc.rect(PAGE.margin, y, PAGE.contentW, disH).strokeColor(COLORS.border).lineWidth(0.75).stroke();
+      doc.fillColor(COLORS.warn).font(FONT_BOLD).fontSize(9).text('SCOPE & LIMITATIONS', PAGE.margin + 12, y + 8, { width: PAGE.contentW - 24, lineBreak: false });
       doc.fillColor(COLORS.text).font(FONT_REG).fontSize(9).text(disText, PAGE.margin + 12, y + 22, { width: PAGE.contentW - 24, lineGap: 2 });
 
       doc.end();

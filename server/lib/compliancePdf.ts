@@ -37,7 +37,7 @@ const PDFDocument = require('pdfkit');
 // block (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
 // Forward-only: affects newly generated snapshots only -- stored/hashed
 // historical snapshot bytes are never re-rendered by this change.
-const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter } = require('./pdfStyle');
+const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
 const ON_DARK_MUTED = '#9aa3b2'; // on-dark muted text for the co-brand header band (locked palette has no on-dark slot)
 const COLORS = {
@@ -52,6 +52,8 @@ const COLORS = {
   cardBg:          PDF_COLORS.pageBg,
   danger:          PDF_COLORS.danger,
   dangerBg:        PDF_COLORS.dangerBg,
+  warnBg:          PDF_COLORS.warningBg,
+  warn:            PDF_COLORS.warning,
 };
 
 const FONT_REG  = PDF_FONTS.sans;
@@ -112,15 +114,20 @@ function statusLabel(status) {
 // ── cover page ────────────────────────────────────────────────────────────────
 
 function drawCoverPage(doc, reportBundles, meta) {
-  // Header band — matches the other ServiceCycle PDF surfaces. #15 co-brand.
-  doc.rect(0, 0, doc.page.width, 96).fill(meta.brandColor || COLORS.bgDark);
-  doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(22)
-     .text('ServiceCycle', PAGE.margin, 30, { lineBreak: false });
-  doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(12)
-     .text('Compliance Snapshot — Audit Evidence Record', PAGE.margin, 60, { lineBreak: false });
+  // C2i (G6): the bespoke co-brand cover band is replaced by the shared
+  // field-report masthead (lib/pdfStyle.drawMasthead). brandColor is passed
+  // through for the partner co-brand band; when absent the standard
+  // ink-on-white masthead + double hairline rule renders. Forward-only chrome:
+  // the title/descriptor text is preserved verbatim and no legal/structural
+  // content changes — stored/hashed historical snapshot bytes are never
+  // re-rendered by this change.
+  let y = drawMasthead(doc, {
+    title: 'Compliance Snapshot — Audit Evidence Record',
+    org: 'ServiceCycle',
+    brandColor: meta.brandColor,
+  });
 
   doc.fillColor(COLORS.text);
-  let y = 140;
 
   if (meta.brandName) {
     doc.font(FONT_REG).fontSize(10).fillColor(COLORS.textMuted)
@@ -181,10 +188,10 @@ function drawCoverPage(doc, reportBundles, meta) {
     'and have a qualified professional review before relying on it.';
   doc.font(FONT_REG).fontSize(9);
   const disH = doc.heightOfString(disText, { width: noteInnerW, lineGap: 2 }) + 34;
-  doc.rect(PAGE.margin, y, PAGE.contentW, disH).fill('#fffbeb');
-  doc.rect(PAGE.margin, y, 3, disH).fill('#b45309');
-  doc.rect(PAGE.margin, y, PAGE.contentW, disH).strokeColor('#fde68a').lineWidth(0.75).stroke();
-  doc.fillColor('#92400e').font(FONT_BOLD).fontSize(9)
+  doc.rect(PAGE.margin, y, PAGE.contentW, disH).fill(COLORS.warnBg);
+  doc.rect(PAGE.margin, y, 3, disH).fill(COLORS.warn);
+  doc.rect(PAGE.margin, y, PAGE.contentW, disH).strokeColor(COLORS.border).lineWidth(0.75).stroke();
+  doc.fillColor(COLORS.warn).font(FONT_BOLD).fontSize(9)
      .text('SCOPE & LIMITATIONS', PAGE.margin + 12, y + 10, { width: noteInnerW, lineBreak: false });
   doc.fillColor(COLORS.text).font(FONT_REG).fontSize(9)
      .text(disText, PAGE.margin + 12, y + 24, { width: noteInnerW, lineGap: 2 });

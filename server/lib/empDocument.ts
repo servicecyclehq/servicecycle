@@ -56,7 +56,7 @@ const PDFDocument = require('pdfkit');
 // block (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
 // Forward-only: affects newly generated EMP documents only -- stored/hashed
 // historical bytes are never re-rendered by this change.
-const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter } = require('./pdfStyle');
+const { PDF_COLORS, PDF_FONTS, PDF_PAGE, attachFooter, drawMasthead } = require('./pdfStyle');
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -560,15 +560,19 @@ function table(doc, ctx, cols, rows) {
 // ── cover page ────────────────────────────────────────────────────────────────
 
 function drawCoverPage(doc, empData, meta) {
-  // #15 co-brand: contractor accent on the cover band when present.
-  doc.rect(0, 0, doc.page.width, 96).fill(meta.brandColor || COLORS.bgDark);
-  doc.fillColor(COLORS.textOnDark).font(FONT_BOLD).fontSize(22)
-     .text('ServiceCycle', PAGE.margin, 30, { lineBreak: false });
-  doc.fillColor(COLORS.textOnDarkMuted).font(FONT_REG).fontSize(12)
-     .text('Electrical Maintenance Program — NFPA 70B §4.2', PAGE.margin, 60, { lineBreak: false });
+  // C2i (G6): the bespoke co-brand cover band is replaced by the shared
+  // field-report masthead (lib/pdfStyle.drawMasthead). brandColor is passed
+  // through for the partner co-brand band; when absent the standard
+  // ink-on-white masthead + double hairline rule renders. Forward-only chrome
+  // only: the 11 numbered sections, signature block, and all program content
+  // are untouched, and stored/hashed historical bytes are never re-rendered.
+  let y = drawMasthead(doc, {
+    title: 'Electrical Maintenance Program — NFPA 70B §4.2',
+    org: 'ServiceCycle',
+    brandColor: meta.brandColor,
+  });
 
   doc.fillColor(COLORS.text);
-  let y = 140;
 
   if (meta.brandName) {
     doc.font(FONT_REG).fontSize(10).fillColor(COLORS.textMuted)
