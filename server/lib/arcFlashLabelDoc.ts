@@ -14,12 +14,20 @@
 
 const { shockApproachBoundaries } = require('./arcFlashLabel');
 const { assetLabel } = require('./assetLabel');
+// C2f: shared PDF theme -- non-ANSI text colors + fonts ONLY (docs/design/
+// EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 4). ANSI signal colors
+// (SAFETY_RED/SAFETY_ORANGE) and all label geometry below are untouched.
+const { PDF_FONTS, PDF_COLORS } = require('./pdfStyle');
 
-// ANSI Z535.4 signal-word colors.
+// ANSI Z535.4 signal-word colors -- NORMATIVE, exempt from the brand
+// palette. Do not touch regardless of any future palette change.
 const SAFETY_RED = '#C8102E';     // DANGER
 const SAFETY_ORANGE = '#FF8200';  // WARNING
-const INK = '#0f172a';
-const MUTED = '#475569';
+// Non-ANSI text colors + fonts -- sourced from the shared PDF theme.
+const INK = PDF_COLORS.ink;
+const MUTED = PDF_COLORS.textMuted;
+const FONT_REG = PDF_FONTS.sans;
+const FONT_BOLD = PDF_FONTS.sansBold;
 
 // 4x6 in at 72 pt/in (portrait).
 const LABEL_W = 288;
@@ -126,7 +134,7 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
 
   // Signal-word panel — ANSI Z535.4 banner with a black separating rule beneath.
   doc.rect(x, y, w, headerH).fill(headerColor);
-  doc.fillColor(headerText).font('Helvetica-Bold').fontSize(30)
+  doc.fillColor(headerText).font(FONT_BOLD).fontSize(30)
     .text(m.signalWord, x, y + 12, { width: w, align: 'center' });
   doc.moveTo(x, y + headerH).lineTo(x + w, y + headerH).lineWidth(1.5).strokeColor('#000000').stroke();
 
@@ -135,15 +143,15 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
   // DANGER (IE > 40 cal/cm2): NFPA 70E §130.5 — no PPE category applies above
   // 40 cal/cm²; the label must direct workers to de-energize.
   if (m.danger) {
-    doc.fillColor(SAFETY_RED).font('Helvetica-Bold').fontSize(8.5)
+    doc.fillColor(SAFETY_RED).font(FONT_BOLD).fontSize(8.5)
       .text('Incident energy exceeds 40 cal/cm² — no PPE category applies. Per NFPA 70E §130.5.',
         x + pad, cy, { width: w - 2 * pad, align: 'center' });
     cy += 30;
   }
-  doc.fillColor(INK).font('Helvetica-Bold').fontSize(11)
+  doc.fillColor(INK).font(FONT_BOLD).fontSize(11)
     .text('ARC FLASH AND SHOCK HAZARD', x + pad, cy, { width: w - 2 * pad, align: 'center' });
   cy += 15;
-  doc.font('Helvetica').fontSize(8).fillColor(MUTED)
+  doc.font(FONT_REG).fontSize(8).fillColor(MUTED)
     .text('Appropriate PPE required. Follow your electrical safety program.', x + pad, cy, { width: w - 2 * pad, align: 'center' });
   cy += 16;
   // Hairline divider before the data fields — separates warning from metrics.
@@ -152,8 +160,8 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
 
   // Field rows
   function row(label: string, value: string, big?: boolean) {
-    doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(label.toUpperCase(), x + pad, cy);
-    doc.font('Helvetica-Bold').fontSize(big ? 13 : 10).fillColor(INK)
+    doc.font(FONT_REG).fontSize(7.5).fillColor(MUTED).text(label.toUpperCase(), x + pad, cy);
+    doc.font(FONT_BOLD).fontSize(big ? 13 : 10).fillColor(INK)
       .text(value, x + pad, cy + 9, { width: w - 2 * pad });
     cy += big ? 30 : 26;
   }
@@ -190,7 +198,7 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
     row('Shock approach boundary', `${limitedVal}  /  ${restrictVal}`);
     const tableDerived = m.shockLimitedApproachSource === 'table130_4' || m.shockRestrictedApproachSource === 'table130_4';
     if (tableDerived) {
-      doc.font('Helvetica').fontSize(6).fillColor(MUTED)
+      doc.font(FONT_REG).fontSize(6).fillColor(MUTED)
         .text('Shock boundaries per NFPA 70E Table 130.4 — confirm against the study.', x + pad, cy);
       cy += 9;
     }
@@ -204,10 +212,10 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
   const footY = y + h - 92;
   doc.moveTo(x + pad, footY).lineTo(x + w - pad, footY).lineWidth(0.75).strokeColor('#94a3b8').stroke();
   let fy = footY + 6;
-  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(m.busName, x + pad, fy, { width: w - 2 * pad });
+  doc.font(FONT_BOLD).fontSize(9.5).fillColor(INK).text(m.busName, x + pad, fy, { width: w - 2 * pad });
   fy += 13;
-  if (m.facilityName) { doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(m.facilityName, x + pad, fy, { width: w - 2 * pad }); fy += 11; }
-  doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(`Study date: ${m.studyDate}`, x + pad, fy);
+  if (m.facilityName) { doc.font(FONT_REG).fontSize(8).fillColor(MUTED).text(m.facilityName, x + pad, fy, { width: w - 2 * pad }); fy += 11; }
+  doc.font(FONT_REG).fontSize(7.5).fillColor(MUTED).text(`Study date: ${m.studyDate}`, x + pad, fy);
   fy += 11;
   // INS-7: Render study expiry date; flag as EXPIRED if past.
   if (m.studyExpiresAt) {
@@ -216,7 +224,7 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
     const expiryLabel = isExpired
       ? `Study expiry: ${expiryDate.toLocaleDateString()} ⚠ EXPIRED`
       : `Study expiry: ${expiryDate.toLocaleDateString()}`;
-    doc.font(isExpired ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5)
+    doc.font(isExpired ? FONT_BOLD : FONT_REG).fontSize(7.5)
       .fillColor(isExpired ? SAFETY_RED : MUTED)
       .text(expiryLabel, x + pad, fy, { width: w - 2 * pad });
     fy += 11;
@@ -225,10 +233,10 @@ function drawArcFlashLabel(doc: any, x: number, y: number, w: number, h: number,
   const studyByLine = (m.firmName || m.peName)
     ? `Study by: ${[m.firmName, peLabel].filter(Boolean).join(' / ')}`
     : 'Study by: [PE firm name — enter in study record]';
-  doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(studyByLine, x + pad, fy, { width: w - 2 * pad });
+  doc.font(FONT_REG).fontSize(7).fillColor(MUTED).text(studyByLine, x + pad, fy, { width: w - 2 * pad });
   fy += 10;
-  // INS-8: Disclaimer — increased to 8pt and darkened to #374151 for legibility.
-  doc.font('Helvetica').fontSize(8).fillColor('#374151')
+  // INS-8: Disclaimer -- 8pt, sourced from the shared theme's faint-footer token.
+  doc.font(FONT_REG).fontSize(8).fillColor(PDF_COLORS.textFaint)
     .text(`Printed from ${m.brandName || 'ServiceCycle'} — verify against the stamped study. Per NFPA 70E 130.5(H).`, x + pad, fy, { width: w - 2 * pad });
 }
 

@@ -306,3 +306,45 @@
     display: none !important;
   }
 }
+
+/* ===========================================================================
+   C2f (2026-07-13) -- regulated-surface print isolation: the energized-work
+   permit (ArcFlashAssetTab PermitCard, NFPA 70E 130.2(B)). Per the C0
+   inventory, the permit is a signable compliance/safety document that
+   shared a raw window.print() trigger with the rest of the arc-flash tab;
+   it now gets its own focused isolation (mirrors print-focus-label above)
+   plus a hairline-checklist + blank-signature-line vocabulary for its
+   print-only standalone rendering. Token-pure -- no ANSI/regulatory content
+   here, pure print-layout scaffolding.
+   =========================================================================== */
+@media print {
+  body.print-focus-permit *:not(:has(.print-permit-sheet)):not(.print-permit-sheet):not(.print-permit-sheet *) {
+    display: none !important;
+  }
+
+  /* Hairline checklist rows -- a bordered-section presentation for "to
+     complete on the permit" (the same list the screen shows as a plain
+     <ul>). */
+  .print-checklist { list-style: none; margin: 0; padding: 0; }
+  .print-checklist li {
+    padding: 7pt 3pt;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 9.5pt;
+  }
+  .print-checklist li:last-child { border-bottom: 1px solid var(--color-border-strong); }
+
+  /* Blank signature lines for the qualified person / responsible manager
+     who complete and sign the printed permit by hand. Structural only. */
+  .print-sig-block { display: flex; gap: 24pt; margin-top: 22pt; }
+  .print-sig-line {
+    flex: 1;
+    border-top: 1px solid var(--color-ink, var(--color-text));
+    padding-top: 4pt;
+    font-family: var(--font-mono);
+    font-size: 7.5pt;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+}

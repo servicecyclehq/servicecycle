@@ -135,11 +135,25 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
       '</div>'
       );
     }).join('');
+    // C2f: page CHROME only (masthead / hairline rule / footer) mirrors the
+    // shared Field Report print standard (client/src/styles/print.css,
+    // server/lib/pdfStyle.ts) -- this popup is a standalone window with no
+    // access to the app's CSS custom properties, so the locked brand hex
+    // literals are mirrored directly below (same values as PDF_COLORS / the
+    // print-mode token overrides in index.css). The label cards themselves
+    // (.lbl/.hd/.sub/.rows/.warn/.ft below) are the ANSI Z535.4 label
+    // content -- colors AND typography there are UNCHANGED.
+    const genDate = esc(fmtDate(new Date())).toUpperCase();
     const html =
       '<!doctype html><html><head><meta charset="utf-8"><title>Arc-flash labels - ' + esc(s.siteName || '') + '</title>' +
       '<style>' +
       'body{font-family:Arial,Helvetica,sans-serif;margin:18px;color:#111}' +
       'h1{font-size:16px;margin:0 0 12px}' +
+      '.doc-masthead{font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;display:flex;align-items:baseline;justify-content:space-between;gap:16px}' +
+      '.doc-masthead h1{font-size:21px;font-weight:700;letter-spacing:-0.03em;margin:0;color:#0a0d12}' +
+      '.doc-meta{font-family:"JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;font-size:8px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;color:#1e293b;text-align:right;line-height:1.6}' +
+      '.doc-rule{border-top:2.5px solid #0a0d12;margin-top:9px}' +
+      '.doc-rule::after{content:"";display:block;border-top:1px solid #0a0d12;margin:2.5px 0 14px}' +
       '.grid{display:flex;flex-wrap:wrap;gap:12px}' +
       '.lbl{width:300px;border:2px solid #c2410c;border-radius:6px;overflow:hidden;page-break-inside:avoid}' +
       '.lbl.inc{border-color:#b91c1c}' +
@@ -154,10 +168,15 @@ export default function StudyAssetBinding({ study, siteAssets = [], canWrite = f
       '.rows .m{display:block;color:#7c2d12;font-weight:600;margin-top:4px}' +
       '.ft{font-size:10px;color:#555;padding:6px 10px;border-top:1px solid #eee}' +
       '.warn{background:#fef2f2;color:#991b1b;font-size:10px;font-weight:700;text-align:center;padding:4px}' +
+      '.doc-footer{font-family:"JetBrains Mono","IBM Plex Mono",Menlo,Consolas,monospace;display:flex;justify-content:space-between;gap:12px;margin-top:20px;padding-top:7px;border-top:1px solid #c7cfdb;font-size:7.5px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;color:#1e293b}' +
       '@media print{body{margin:6px}}' +
       '</style></head><body onload="window.print()">' +
-      '<h1>Arc-flash warning labels - ' + esc(s.siteName || '') + ' (' + labels.length + ')</h1>' +
-      '<div class="grid">' + cards + '</div></body></html>';
+      '<header class="doc-masthead"><h1>Arc-flash warning labels - ' + esc(s.siteName || '') + '</h1>' +
+      '<div class="doc-meta">' + labels.length + ' label' + (labels.length === 1 ? '' : 's') + '<br>GENERATED ' + genDate + '</div></header>' +
+      '<div class="doc-rule"></div>' +
+      '<div class="grid">' + cards + '</div>' +
+      '<footer class="doc-footer"><span>SERVICECYCLE</span><span>GENERATED ' + genDate + '</span></footer>' +
+      '</body></html>';
     const w = window.open('', '_blank');
     if (!w) { setErr('Allow pop-ups to print the labels.'); return; }
     w.document.write(html);

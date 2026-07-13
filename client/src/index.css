@@ -1255,8 +1255,15 @@ select.filter-select option,
    print standard (.print-doc), force the light literals back at print time.
    Values mirror the :root light declarations above -- print.css itself stays
    token-pure, and index.css is where these literals already live. Scoped
-   with :has(.print-doc) so non-migrated print paths (energized-work permit,
-   StudyAssetBinding label popup) keep today's behavior. */
+   with :has(.print-doc) so non-migrated print paths keep today's behavior.
+   C2f (2026-07-13): the energized-work permit (ArcFlashAssetTab PermitCard)
+   now has its own print-only .print-permit-sheet content -- it lives inside
+   the same #arc-flash-asset-report.print-doc ancestor as the rest of the
+   tab, so it already inherits this re-pin; no longer "non-migrated." The
+   StudyAssetBinding label popup remains genuinely out of scope for this
+   rule -- it is a separate window (its own `document`, no shared .print-doc
+   ancestor, no access to these custom properties at all), so its chrome
+   hardcodes the equivalent light-literal hex values directly instead. */
 @media print {
   [data-theme="dark"]:has(.print-doc) {
     --color-primary: #073a52;

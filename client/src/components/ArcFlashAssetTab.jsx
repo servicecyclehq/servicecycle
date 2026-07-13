@@ -63,6 +63,16 @@ function printLabelSheet() {
   window.print();
 }
 
+// C2f: focused energized-work-permit print -- arms print.css's
+// body.print-focus-permit mode so only the .print-permit-sheet subtree
+// prints, isolating the signable NFPA 70E 130.2(B) permit from the rest of
+// the arc-flash tab (same pattern as printLabelSheet() above).
+function printPermitSheet() {
+  document.body.classList.add('print-focus-permit');
+  window.addEventListener('afterprint', () => document.body.classList.remove('print-focus-permit'), { once: true });
+  window.print();
+}
+
 const card = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '14px 16px', marginTop: 16 };
 const h3 = { margin: '0 0 10px', fontSize: '0.95rem' };
 const dlGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px 18px', fontSize: '0.82rem' };
@@ -592,6 +602,9 @@ function PermitCard({ assetId }) {
 
   const h = permit?.hazard || {};
   const canIssue = permit?.validation?.canIssue;
+  // Reused verbatim in both the screen and print renderings below -- same
+  // expression, no new/altered content.
+  const equipmentId = permit ? ([permit.equipment.busName, permit.equipment.equipmentType].filter(Boolean).join(' · ') || '—') : '—';
   return (
     <div style={card} id="arc-flash-permit">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
@@ -601,7 +614,10 @@ function PermitCard({ assetId }) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={generate} disabled={busy}>{busy ? <><Spinner />Building…</> : (permit ? 'Refresh' : 'Generate permit')}</button>
-          {permit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>}
+          {/* C2f: focused print -- isolates just this permit via
+              body.print-focus-permit instead of raw window.print() (which
+              printed the whole tab, per the C0 finding). */}
+          {permit && <button type="button" className="btn btn-secondary btn-sm" onClick={printPermitSheet}>Print</button>}
         </div>
       </div>
 
@@ -609,35 +625,108 @@ function PermitCard({ assetId }) {
 
       {permit && (
         <>
-          {canIssue ? (
-            <div className="alert alert-success" style={{ marginTop: 12 }}>Study is valid — permit may be issued. A qualified person and the responsible manager complete and sign it.</div>
-          ) : (
-            <div className="alert alert-error" style={{ marginTop: 12 }}>
-              <strong>Do not issue — study not valid:</strong>
-              <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{permit.validation.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
-            </div>
-          )}
+          <div className="no-print">
+            {canIssue ? (
+              <div className="alert alert-success" style={{ marginTop: 12 }}>Study is valid — permit may be issued. A qualified person and the responsible manager complete and sign it.</div>
+            ) : (
+              <div className="alert alert-error" style={{ marginTop: 12 }}>
+                <strong>Do not issue — study not valid:</strong>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{permit.validation.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+              </div>
+            )}
 
-          <div style={{ marginTop: 12, ...dlGrid }}>
-            <Field label="Equipment" value={[h && permit.equipment.busName, permit.equipment.equipmentType].filter(Boolean).join(' · ') || '—'} />
-            <Field label="Voltage" value={permit.equipment.nominalVoltage || '—'} />
-            <Field label="Incident energy" value={num(h.incidentEnergyCalCm2, 'cal/cm²')} />
-            <Field label="Arc-flash boundary" value={num(h.arcFlashBoundaryIn, 'in')} />
-            <Field label="Limited approach" value={num(h.shockLimitedApproachIn, 'in')} />
-            <Field label="Restricted approach" value={num(h.shockRestrictedApproachIn, 'in')} />
-            <Field label="PPE category" value={h.ppeCategory != null ? `Cat ${h.ppeCategory}` : '—'} />
-            <Field label="Min arc rating" value={num(h.requiredArcRatingCalCm2, 'cal/cm²')} />
-            <Field label="Hazard class" value={h.hazardClass || '—'} />
-            <Field label="Study date" value={fmtDate(permit.study.performedDate)} />
-            <Field label="Study expires" value={fmtDate(permit.study.expiresAt)} />
-            <Field label="Engineer" value={permit.study.peName || permit.study.method || '—'} />
+            <div style={{ marginTop: 12, ...dlGrid }}>
+              <Field label="Equipment" value={equipmentId} />
+              <Field label="Voltage" value={permit.equipment.nominalVoltage || '—'} />
+              <Field label="Incident energy" value={num(h.incidentEnergyCalCm2, 'cal/cm²')} />
+              <Field label="Arc-flash boundary" value={num(h.arcFlashBoundaryIn, 'in')} />
+              <Field label="Limited approach" value={num(h.shockLimitedApproachIn, 'in')} />
+              <Field label="Restricted approach" value={num(h.shockRestrictedApproachIn, 'in')} />
+              <Field label="PPE category" value={h.ppeCategory != null ? `Cat ${h.ppeCategory}` : '—'} />
+              <Field label="Min arc rating" value={num(h.requiredArcRatingCalCm2, 'cal/cm²')} />
+              <Field label="Hazard class" value={h.hazardClass || '—'} />
+              <Field label="Study date" value={fmtDate(permit.study.performedDate)} />
+              <Field label="Study expires" value={fmtDate(permit.study.expiresAt)} />
+              <Field label="Engineer" value={permit.study.peName || permit.study.method || '—'} />
+            </div>
+
+            <h4 style={{ margin: '14px 0 6px', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>To complete on the permit</h4>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem' }}>
+              {permit.toComplete.map((t, i) => <li key={i} style={{ marginBottom: 2 }}>{t}</li>)}
+            </ul>
+            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: 8, fontStyle: 'italic' }}>{permit.disclaimer}</div>
           </div>
 
-          <h4 style={{ margin: '14px 0 6px', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>To complete on the permit</h4>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem' }}>
-            {permit.toComplete.map((t, i) => <li key={i} style={{ marginBottom: 2 }}>{t}</li>)}
-          </ul>
-          <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: 8, fontStyle: 'italic' }}>{permit.disclaimer}</div>
+          {/* C2f: print-only standalone permit document -- masthead, hairline
+              table, checklist, signature lines, footer, all from the shared
+              print.css vocabulary (client/src/styles/print.css). Same field
+              values and wording as the screen version above -- visual
+              framing only, no regulatory content added, changed, or removed. */}
+          <div className="print-permit-sheet print-only">
+            <header className="print-masthead">
+              <h1 className="print-masthead-title">Energized-work permit</h1>
+              <div className="print-masthead-meta">
+                NFPA 70E 130.2(B)<br />
+                {equipmentId}<br />
+                Generated {fmtDate(new Date())}
+              </div>
+            </header>
+            <div className="print-rule"></div>
+
+            <p style={{ marginTop: 14, fontSize: '9.5pt' }}>
+              {canIssue
+                ? 'Study is valid — permit may be issued. A qualified person and the responsible manager complete and sign it.'
+                : 'Do not issue — study not valid:'}
+            </p>
+            {!canIssue && (
+              <ul style={{ margin: '0 0 10pt', paddingLeft: 18, fontSize: '9.5pt' }}>
+                {permit.validation.reasons.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            )}
+
+            <table className="print-table">
+              <tbody>
+                <tr><td>Equipment</td><td className="num">{equipmentId}</td></tr>
+                <tr><td>Voltage</td><td className="num">{permit.equipment.nominalVoltage || '—'}</td></tr>
+                <tr><td>Incident energy</td><td className="num">{num(h.incidentEnergyCalCm2, 'cal/cm²')}</td></tr>
+                <tr><td>Arc-flash boundary</td><td className="num">{num(h.arcFlashBoundaryIn, 'in')}</td></tr>
+                <tr><td>Limited approach</td><td className="num">{num(h.shockLimitedApproachIn, 'in')}</td></tr>
+                <tr><td>Restricted approach</td><td className="num">{num(h.shockRestrictedApproachIn, 'in')}</td></tr>
+                <tr><td>PPE category</td><td className="num">{h.ppeCategory != null ? `Cat ${h.ppeCategory}` : '—'}</td></tr>
+                <tr><td>Min arc rating</td><td className="num">{num(h.requiredArcRatingCalCm2, 'cal/cm²')}</td></tr>
+                <tr><td>Hazard class</td><td className="num">{h.hazardClass || '—'}</td></tr>
+                <tr><td>Study date</td><td className="num">{fmtDate(permit.study.performedDate)}</td></tr>
+                <tr><td>Study expires</td><td className="num">{fmtDate(permit.study.expiresAt)}</td></tr>
+                <tr><td>Engineer</td><td className="num">{permit.study.peName || permit.study.method || '—'}</td></tr>
+              </tbody>
+            </table>
+
+            <div className="print-sec">
+              <div className="print-sec-head">
+                <span className="print-sec-no" />
+                <h2 className="print-sec-title">To complete on the permit</h2>
+              </div>
+              <ul className="print-checklist">
+                {permit.toComplete.map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
+            </div>
+
+            <p style={{ fontSize: '8pt', fontStyle: 'italic', marginTop: '10pt' }}>{permit.disclaimer}</p>
+
+            {/* Blank signature lines -- structural only. Captions reuse the
+                exact "qualified person" / "responsible manager" wording
+                already present in the disclaimer/status text above; no new
+                regulatory terminology introduced. */}
+            <div className="print-sig-block">
+              <div className="print-sig-line">Qualified person — signature / date</div>
+              <div className="print-sig-line">Responsible manager — signature / date</div>
+            </div>
+
+            <footer className="print-footer">
+              <span>ServiceCycle</span>
+              <span className="print-footer-pages">Generated {fmtDate(new Date())}</span>
+            </footer>
+          </div>
         </>
       )}
     </div>
