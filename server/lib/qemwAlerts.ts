@@ -81,26 +81,35 @@ function buildQemwGapHtml(
   accountName: string,
   rateRange: string | null,
 ): string {
+  // [C3 G8 palette migration] this template was entirely unmigrated (raw
+  // Tailwind-gray + violet) -- audit EXPORT_STANDARD_ACCEPTANCE_2026-07-13.md
+  // gap G8. Mapped onto the locked palette using the same C2g convention as
+  // alertEngine.ts / deficiencyAlerts.ts: violet masthead is now the locked
+  // PDF_COLORS.ai token (#7c3aed) with PDF_COLORS.aiBg (#f5f3ff) for the
+  // subtitle-on-dark-band text (mirrors dangerBg-on-danger elsewhere); grays
+  // map to PDF_COLORS ink (#0a0d12), pageBg (#fafbfd), borderSubtle (#e3e7ee),
+  // textMuted (#1e293b), textFaint (#334155). Literal hex, not an import --
+  // matches how alertEngine.ts/deficiencyAlerts.ts reference the palette.
   return `<!DOCTYPE html>
 <html>
-<body style="font-family:system-ui,sans-serif;color:#111827;background:#f9fafb;margin:0;padding:20px;">
-  <div style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+<body style="font-family:system-ui,sans-serif;color:#0a0d12;background:#fafbfd;margin:0;padding:20px;">
+  <div style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #e3e7ee;border-radius:8px;overflow:hidden;">
     <div style="background:#7c3aed;padding:16px 24px;">
       <h2 style="margin:0;color:#fff;font-size:18px;">&#9888; QEMW Compliance Gap Detected</h2>
-      <p style="margin:4px 0 0;color:#ede9fe;font-size:13px;">${escHtml(accountName)}</p>
+      <p style="margin:4px 0 0;color:#f5f3ff;font-size:13px;">${escHtml(accountName)}</p>
     </div>
     <div style="padding:20px 24px;">
-      <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+      <p style="font-size:14px;color:#1e293b;margin:0 0 12px;">
         <strong>${gapCount} asset${gapCount !== 1 ? 's' : ''}</strong> have NETA maintenance due
         with no assigned technician holding a valid QEMW certification.
       </p>
-      <p style="font-size:13px;color:#374151;margin:0 0 12px;">
+      <p style="font-size:13px;color:#1e293b;margin:0 0 12px;">
         Your account has REQUIRE_QEMW enabled. ANSI/NETA EMW-2026 requires QEMW-certified
         technicians for qualifying electrical equipment maintenance work. A quote request
         has been opened to schedule QEMW training for your service team.
       </p>
-      ${rateRange ? `<p style="font-size:13px;color:#374151;margin:0 0 12px;">Estimated training cost: <strong>${escHtml(rateRange)} per technician</strong> (platform benchmark; group rates and on-site delivery may vary).</p>` : ''}
-      <p style="font-size:12px;color:#9ca3af;margin:20px 0 0;">
+      ${rateRange ? `<p style="font-size:13px;color:#1e293b;margin:0 0 12px;">Estimated training cost: <strong>${escHtml(rateRange)} per technician</strong> (platform benchmark; group rates and on-site delivery may vary).</p>` : ''}
+      <p style="font-size:12px;color:#334155;margin:20px 0 0;">
         Log in to ServiceCycle to view affected assets and manage technician credentials.
         Do not reply to this email.
       </p>

@@ -23,7 +23,7 @@
 // ARGB ('FFRRGGBB'). Mirrors the PDF palette; one accent + neutrals + status.
 const BRAND = {
   ink:     'FF111827', // titles / strong text
-  accent:  'FF0D4F6E', // petrol — the single brand accent (header, rules)
+  accent:  'FF073A52', // petrol — the single brand accent (header, rules)
   accentLt:'FFE9F1F5', // accent tint (KPI card wash)
   barFill: 'FFAFCFDD', // light petrol — data-bar fill, so dark cell text stays readable over it
   band:    'FFF7F9FB', // faint zebra

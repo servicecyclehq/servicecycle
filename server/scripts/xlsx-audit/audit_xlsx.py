@@ -20,7 +20,7 @@ import openpyxl
 
 # Canonical brand fills (ARGB, upper). Mirrors lib/xlsxStyle BRAND.
 BRAND_FILLS = {
-    'FF0D4F6E',          # petrol header
+    'FF073A52',          # petrol header
     'FF0A0D12', 'FF111827',  # ink masthead
     'FFE9F1F5',          # accentLt KPI wash
     'FFF7F9FB', 'FFF4F7FB',  # zebra band
