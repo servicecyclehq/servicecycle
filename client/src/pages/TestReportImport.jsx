@@ -143,7 +143,11 @@ export default function TestReportImport() {
         const fd = new FormData();
         fd.append('file', file);
         if (targetAccountId) fd.append('targetAccountId', targetAccountId);
-        const res = await api.post('/api/test-reports/import/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        // 2026-07-14: AI gap-fill on this sync path can run past the client's
+        // global 30s default (observed ~30-33s on a real multi-section
+        // report's arc-flash sibling path) -- override per-request rather
+        // than raising the global default.
+        const res = await api.post('/api/test-reports/import/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 90000 });
         applyPreview(res.data.data);
       }
     } catch (err) {
