@@ -489,8 +489,15 @@ async function _seedAccount() {
     bcrypt.hash('Consultant1234!', 12),
     bcrypt.hash('Tech1234!', 12),
   ]);
+  // 2026-07-14: admin email set to a REAL inbox (servicecyclehq@gmail.com) so the
+  // live demo box actually DELIVERS alert digests here — a controlled live-email
+  // test. The seeded overdue MaintenanceSchedules below (dueIn -120/-25/-18/-14/-9)
+  // cross the admin alert tiers (-7 escalation, -30, -90 regulatory_breach) every
+  // cycle, and those tiers are NEVER preference-suppressed (alertEngine.ts ~L692),
+  // so the 07:00 alertEngine cron emails this inbox after each nightly reseed.
+  // Requires EMAIL_MOCK=false on the droplet. Login: servicecyclehq@gmail.com / Admin1234!
   const admin = await prisma.user.create({ data: {
-    accountId: account.id, name: 'Avery Sandoval', email: 'admin@demo.local',
+    accountId: account.id, name: 'Avery Sandoval', email: 'servicecyclehq@gmail.com',
     passwordHash: adminHash, role: 'admin',
   } });
   const manager = await prisma.user.create({ data: {
@@ -3549,7 +3556,7 @@ if (require.main === module) {
       console.log('Demo seed complete:');
       console.log(JSON.stringify(s, null, 2));
       console.log('\nLogin credentials:');
-      console.log('  admin@demo.local      / Admin1234!');
+      console.log('  servicecyclehq@gmail.com / Admin1234!   (admin — REAL inbox for live alert-email test)');
       console.log('  manager@demo.local    / Manager1234!');
       console.log('  viewer@demo.local     / Viewer1234!');
       console.log('  consultant@demo.local / Consultant1234!');
