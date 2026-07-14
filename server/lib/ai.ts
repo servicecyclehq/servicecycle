@@ -259,7 +259,7 @@ async function _cascadeComplete(args, chain) {
 // equivalent per-block caching primitives, so we accept the larger first-call
 // cost rather than emit a confusing error.
 
-async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSystem = false, task = null }) {
+async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSystem = false, task = null, responseMimeType = null }) {
   const s = resolveSettings(settings);
 
   let result;
@@ -287,7 +287,7 @@ async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSy
     // structural error (auth, bad request) still surfaces. Configurable via
     // AI_TEXT_FALLBACK.
     try {
-      result = await _geminiComplete({ system, user, maxTokens, s });
+      result = await _geminiComplete({ system, user, maxTokens, s, responseMimeType });
     } catch (err: any) {
       const exhausted = _isGeminiQuotaError(err) || _isGeminiOverloadedError(err) || /exhausted their free-tier/i.test(err?.message || '');
       const fb = (process.env.AI_TEXT_FALLBACK || 'groq').toLowerCase();
@@ -378,6 +378,62 @@ async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt
   } else {
     throw new Error(`[ai] Provider "${visionProvider}" does not support image input`);
   }
+}
+
+// ── Native-PDF completion (W1) ────────────────────────────────────────────────
+// [W1 native-PDF ingestion, 2026-07-14] Send the PDF FILE ITSELF to a model that
+// reads PDFs natively — Gemini reads text + layout + scanned page images in ONE
+// call at ~258 tokens/page (up to ~1000 pages) — instead of the old lossy
+// pre-extraction (24k-char text clip) or capped rasterization (4-page vision
+// cap). Only providers with a native document part are supported (Gemini,
+// Anthropic). A caller MUST treat a throw as "fall back to the deterministic
+// text/vision path": there is no same-shape second provider for native PDF
+// (Groq/HF vision read images, not documents), so this never silently degrades
+// provider — it surfaces, and extractArcFlashDocument owns the fallback. Inline
+// base64 only, gated to MAX_INLINE_PDF_BYTES; a larger file throws
+// AI_NATIVE_PDF_TOO_LARGE so the caller chunks (structural boundaries) or falls
+// back rather than sending a request past the provider's inline ceiling.
+async function completeWithPdf({ pdfBuffer, system, user, maxTokens = 8192, settings = {}, responseMimeType = null }) {
+  if (!Buffer.isBuffer(pdfBuffer) || !pdfBuffer.length) {
+    const err: any = new Error('[ai] completeWithPdf: empty or invalid pdfBuffer');
+    err.code = 'AI_NATIVE_PDF_UNSUPPORTED';
+    throw err;
+  }
+  if (pdfBuffer.length > MAX_INLINE_PDF_BYTES) {
+    const err: any = new Error(
+      `[ai] completeWithPdf: PDF ${(pdfBuffer.length / 1048576).toFixed(1)}MB exceeds the `
+      + `${Math.floor(MAX_INLINE_PDF_BYTES / 1048576)}MB inline limit — caller should chunk or fall back`,
+    );
+    err.code = 'AI_NATIVE_PDF_TOO_LARGE';
+    throw err;
+  }
+  const s = resolveSettings(settings);
+
+  // cloudflare has no native-PDF path; honor an explicit doc-provider detour
+  // (mirrors AI_VISION_PROVIDER for the vision path).
+  let docProvider = s.provider;
+  if (docProvider === 'cloudflare') {
+    docProvider = (process.env.AI_DOC_PROVIDER || process.env.AI_VISION_PROVIDER || 'gemini').toLowerCase();
+  }
+
+  let result: any;
+  if (docProvider === 'gemini') {
+    result = await _geminiPdf({ pdfBuffer, system, user, maxTokens, s, responseMimeType });
+  } else if (docProvider === 'anthropic') {
+    result = await _anthropicPdf({ pdfBuffer, system, user, maxTokens, s });
+  } else {
+    const err: any = new Error(
+      `[ai] Provider "${docProvider}" has no native-PDF path — caller should fall back to text/vision`,
+    );
+    err.code = 'AI_NATIVE_PDF_UNSUPPORTED';
+    throw err;
+  }
+
+  // F-AI-LEAK: same output guard the text path applies in complete().
+  if (result && typeof result.text === 'string') {
+    result.text = scrubPromptLeak(result.text, 'task=extract');
+  }
+  return result;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -497,6 +553,14 @@ async function _anthropicImage({ imageBuffer, mediaType, prompt, maxTokens, s })
 // own requestOptions.timeout rather than hand-rolling a Promise.race, since
 // both SDKs expose one.
 const PROVIDER_TIMEOUT_MS = 60_000; // 60s — same bound as the Anthropic client
+
+// [W1 native-PDF, 2026-07-14] Native-PDF extraction bounds. A large multi-page
+// study read natively can legitimately take minutes, so the PDF call gets a
+// longer timeout than the 60s vision/text bound — it runs in the async ingest
+// worker, never a request handler. Inline base64 is capped under the provider's
+// ~20MB request ceiling; larger PDFs must be chunked or fall back.
+const PDF_TIMEOUT_MS = Number(process.env.AI_PDF_TIMEOUT_MS) || 180_000; // 3 min
+const MAX_INLINE_PDF_BYTES = 18 * 1024 * 1024; // ~18MB, under Gemini's ~20MB inline limit
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
 
@@ -668,7 +732,7 @@ function _isGeminiCascadeError(err) {
   return /\b404\b|NOT_FOUND|models?\/\S+ is not found|is not supported for generateContent|no longer supported|deprecated/i.test(msg);
 }
 
-async function _geminiComplete({ system, user, maxTokens, s }) {
+async function _geminiComplete({ system, user, maxTokens, s, responseMimeType = null }) {
   let GoogleGenerativeAI;
   try { ({ GoogleGenerativeAI } = require('@google/generative-ai')); } catch {
     throw new Error('[ai] @google/generative-ai not installed. Run: npm install @google/generative-ai');
@@ -685,7 +749,19 @@ async function _geminiComplete({ system, user, maxTokens, s }) {
       const m = genai.getGenerativeModel({ model: modelName, systemInstruction: system }, { timeout: PROVIDER_TIMEOUT_MS });
       const result = await m.generateContent({
         contents: [{ role: 'user', parts: [{ text: user }] }],
-        generationConfig: { maxOutputTokens: maxTokens },
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          // 2026-07-14: same fix as _geminiImage below -- Gemini 2.5 Flash is a
+          // THINKING model whose internal reasoning bills against maxOutputTokens.
+          // Without JSON mode, a verbose extraction schema (e.g. a multi-bus
+          // arc-flash study) can have its output truncated mid-JSON because
+          // reasoning ate most of the token budget before any content was
+          // written (root-caused via a direct-call repro against a real
+          // 13-bus report: 8144 raw chars cut off mid-string, well short of
+          // where a naturally-ending JSON body would stop). Callers opt in by
+          // passing responseMimeType; providers other than Gemini ignore it.
+          ...(responseMimeType ? { responseMimeType } : {}),
+        },
       });
       if (i > 0) {
         console.log(`[ai][gemini] cascaded ${cascade[0]} → ${modelName} after ${i} quota-exhausted hop(s)`);
@@ -752,6 +828,82 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s, resp
   throw lastError || new Error('[ai][gemini] all cascade image models exhausted their free-tier quotas for today');
 }
 
+// [W1 native-PDF, 2026-07-14] Native-PDF extraction on Gemini. Mirrors
+// _geminiImage's cascade + timeout, but sends an application/pdf inlineData part
+// so the model reads the whole document (text layer, layout, AND any scanned
+// page images) in one call instead of us pre-extracting or rasterizing. Uses
+// PDF_TIMEOUT_MS (longer than the 60s vision bound) because a large multi-page
+// study legitimately takes minutes — this runs in the async ingest worker, not
+// a request handler, so the longer bound is safe.
+async function _geminiPdf({ pdfBuffer, system, user, maxTokens, s, responseMimeType = null }) {
+  let GoogleGenerativeAI;
+  try { ({ GoogleGenerativeAI } = require('@google/generative-ai')); } catch {
+    throw new Error('[ai] @google/generative-ai not installed. Run: npm install @google/generative-ai');
+  }
+  const genai = new GoogleGenerativeAI(s.apiKey);
+
+  const cascade = _resolveGeminiCascade(s.model);
+  let lastError = null;
+  for (let i = 0; i < cascade.length; i++) {
+    const modelName = cascade[i];
+    try {
+      const m = genai.getGenerativeModel({ model: modelName, systemInstruction: system }, { timeout: PDF_TIMEOUT_MS });
+      const result = await m.generateContent({
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: 'application/pdf', data: pdfBuffer.toString('base64') } },
+            { text: user },
+          ],
+        }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          // JSON mode (opt-in): 2.5 Flash is a thinking model whose reasoning
+          // bills against maxOutputTokens — same rationale as _geminiComplete /
+          // _geminiImage. Callers pass responseMimeType:'application/json'.
+          ...(responseMimeType ? { responseMimeType } : {}),
+        },
+      });
+      if (i > 0) {
+        console.log(`[ai][gemini] pdf cascade ${cascade[0]} → ${modelName} after ${i} unavailable hop(s)`);
+      }
+      return { text: result.response.text().trim(), model: modelName };
+    } catch (err) {
+      if (_isGeminiCascadeError(err)) {
+        console.warn(`[ai][gemini] pdf: ${modelName} unavailable (${(err && err.message) || err}); trying next model in cascade`);
+        lastError = err;
+        continue;
+      }
+      throw err;  // real error (auth, bad input, network) — surface immediately
+    }
+  }
+  throw lastError || new Error('[ai][gemini] all cascade models exhausted their free-tier quotas for native-PDF extraction');
+}
+
+// [W1 native-PDF, 2026-07-14] Native-PDF extraction on Anthropic (self-host
+// operators on AI_PROVIDER=anthropic). Claude reads a base64 application/pdf
+// `document` content block directly. Same 3-min bound as the Gemini path.
+async function _anthropicPdf({ pdfBuffer, system, user, maxTokens, s }) {
+  let Anthropic;
+  try { Anthropic = require('@anthropic-ai/sdk'); } catch {
+    throw new Error('[ai] @anthropic-ai/sdk not installed. Run: npm install @anthropic-ai/sdk');
+  }
+  const client = new Anthropic({ apiKey: s.apiKey, timeout: PDF_TIMEOUT_MS, maxRetries: 1 });
+  const msg = await client.messages.create({
+    model: s.model,
+    max_tokens: maxTokens,
+    system,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBuffer.toString('base64') } },
+        { type: 'text', text: user },
+      ],
+    }],
+  });
+  return { text: _anthropicText(msg), model: s.model };
+}
+
 // ── Groq vision (cross-provider fallback) ─────────────────────────────────────
 // Groq's OpenAI-compatible chat endpoint with a multimodal vision model. Used
 // as the second free tier behind Gemini for image reads (nameplate OCR). The
@@ -794,6 +946,6 @@ async function _groqImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTo
   return { text: String(text || '').trim(), model };
 }
 
-module.exports = { complete, completeWithImage, parseJSON };
+module.exports = { complete, completeWithImage, completeWithPdf, parseJSON };
 
 export {};

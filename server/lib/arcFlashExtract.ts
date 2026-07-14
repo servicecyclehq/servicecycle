@@ -24,6 +24,7 @@ const ai = require('./ai');
 const { extractPdfText } = require('./testReportParse');
 const { rasterizePdf } = require('./rasterizePdf');
 const { extractPdfPlumber } = require('./pdfText');
+const { pdfPageCount, splitPdfByRanges } = require('./pdfSplit');
 // [2026-07-08 acquisition audit W2-AI] photo-inspect + maintenance-brief run
 // untrusted text through promptSanitize before it reaches a prompt; this
 // module's text path (buildUserPrompt) was concatenating raw
@@ -332,12 +333,143 @@ function finalize(method: string, aiProvider: any, norm: any, warnings: string[]
   return { method, aiProvider: aiProvider ?? null, promptVersion: PROMPT_VERSION, provenance, systemMeta: norm.systemMeta ?? null, buses: norm.buses || [], warnings: all, rawJsonText: norm.rawJsonText || '' };
 }
 
+// ── W1 native-PDF path ────────────────────────────────────────────────────────
+// [2026-07-14] Instruction half of the native-PDF call. The document rides as a
+// file part (inlineData) — NOT concatenated text — so there is no untrusted-text
+// wrapping here; the EXTRACT_SYSTEM rule already tells the model to treat
+// document content as data, not instructions.
+const NATIVE_PDF_USER =
+  'The attached PDF is an electrical arc-flash / short-circuit study report or one-line diagram. '
+  + 'Extract the structured system model per the schema in your instructions. Read EVERY page and '
+  + 'EVERY bus / switchgear / MCC / panel / transformer row — do not stop early, do not summarize, '
+  + 'do not deduplicate distinct equipment. Output STRICT JSON only.';
+
+// Native-PDF output budget. Native reading is heavier than the text path (the
+// model reads layout + page images, and 2.5 Flash's thinking bills against this
+// budget), so a dense multi-bus study needs more room than the 16384 the text
+// path uses or the JSON truncates mid-emission (0-bus parse failures observed on
+// a real 13-bus report at 16384). Gemini 2.5 Flash allows up to 65536 output.
+const NATIVE_MAX_TOKENS = Number(process.env.AF_NATIVE_MAX_TOKENS) || 32768;
+
+// Overlapping page windows: window size `win`, `ov` pages of overlap between
+// consecutive windows. Overlap guarantees a table spanning ONE window seam is
+// wholly contained in at least one window (needs ov >= max table page-span - 1).
+// With ov=0 this reduces to the OLD fixed-page-count scheme — the thing that
+// split bus tables across calls. Returns 1-based inclusive [start,end] ranges
+// covering every page.
+function planOverlapWindows(pages: number, win: number, ov: number): Array<[number, number]> {
+  const w = Math.max(1, win | 0);
+  const overlap = Math.max(0, Math.min(ov | 0, w - 1));
+  const step = Math.max(1, w - overlap);
+  const ranges: Array<[number, number]> = [];
+  let start = 1;
+  while (start <= pages) {
+    const end = Math.min(pages, start + w - 1);
+    ranges.push([start, end]);
+    if (end >= pages) break;
+    start += step;
+  }
+  return ranges;
+}
+
+// Estimate the bus/equipment count for the chunk decision, cheaply and BEFORE
+// spending an extraction call (the doc's preferred trigger — estimate up front,
+// don't extract-then-discover-truncation). Prefer real deterministic table rows
+// (text PDFs); fall back to a per-page density assumption (scanned PDFs, where
+// pdfplumber found nothing).
+function estimateBuses(tables: any[], pages: number): number {
+  let rows = 0;
+  if (Array.isArray(tables)) {
+    for (const t of tables) if (Array.isArray(t)) rows += Math.max(0, t.length - 1); // minus a header row
+  }
+  const perPage = Number(process.env.AF_ASSUMED_BUSES_PER_PAGE) || 6;
+  return Math.max(rows, (pages || 0) * perPage);
+}
+
+// Parse + normalize one native-PDF model response into the finalize() norm shape.
+function parseNativeOut(out: any): { systemMeta: any; buses: any[]; warnings: string[]; rawJsonText: string } {
+  const text = out && out.text ? out.text : '';
+  let parsed: any;
+  try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
+  catch { return { systemMeta: null, buses: [], warnings: ['Could not parse the AI response as JSON.'], rawJsonText: text }; }
+  const norm = normalizeExtraction(parsed);
+  return { systemMeta: norm.systemMeta, buses: norm.buses, warnings: norm.warnings, rawJsonText: text };
+}
+
+// Run the native-PDF extraction: one call when the report fits the output-token
+// budget, else overlapping-window chunks merged by bus name. THROWS on any
+// native failure (unsupported provider, quota/overload exhaustion, oversize,
+// split failure) so extractArcFlashDocument falls back to the deterministic
+// text/vision path. `chunkOpts`: { maxPagesPerCall?, overlapPages? } — an
+// explicit maxPagesPerCall forces windowing (the eval harness uses it to
+// exercise the boundary); production derives the window from the bus estimate.
+async function extractNativePdf(buffer: Buffer, settings: any, tables: any[], chunkOpts: any = {}): Promise<any> {
+  const warnings: string[] = [];
+  const pages = await pdfPageCount(buffer);
+  const SAFE = Number(process.env.AF_SAFE_BUSES_PER_CALL) || 60;
+  const overlap = (chunkOpts && chunkOpts.overlapPages != null)
+    ? chunkOpts.overlapPages
+    : (Number(process.env.AF_CHUNK_OVERLAP_PAGES) || 1);
+
+  let win: number;
+  if (chunkOpts && chunkOpts.maxPagesPerCall) {
+    win = chunkOpts.maxPagesPerCall; // explicit override (eval harness / operator)
+  } else {
+    const est = estimateBuses(tables, pages);
+    win = (!pages || est <= SAFE) ? (pages || 1) : Math.max(1, Math.floor(pages * SAFE / est));
+  }
+
+  const ranges: Array<[number, number]> = (pages && win < pages)
+    ? planOverlapWindows(pages, win, overlap)
+    : [[1, pages || 1]];
+
+  // Single call — the whole document fits the output budget.
+  if (ranges.length <= 1) {
+    const out = await ai.completeWithPdf({ pdfBuffer: buffer, system: EXTRACT_SYSTEM, user: NATIVE_PDF_USER, maxTokens: NATIVE_MAX_TOKENS, responseMimeType: 'application/json', settings });
+    const norm = parseNativeOut(out);
+    // Fail-soft: a native read that yields NO buses (unparseable/truncated JSON,
+    // or a document the model couldn't structure) must NOT masquerade as a
+    // successful empty extraction — throw so the deterministic pdfplumber/vision
+    // fallback gets a shot (it is strictly more capable on ruled study tables).
+    if (!norm.buses || !norm.buses.length) {
+      const e: any = new Error('native-PDF single call produced no buses (' + (norm.warnings && norm.warnings[0] ? norm.warnings[0] : 'empty') + ')');
+      e.code = 'AI_NATIVE_PDF_EMPTY';
+      throw e;
+    }
+    const label = (out && out.model) || (out && out.provider) || 'gemini';
+    return finalize('native_pdf', label, norm, warnings);
+  }
+
+  // Chunked — split into overlapping windows, extract each natively, merge by bus.
+  const subPdfs = await splitPdfByRanges(buffer, ranges);
+  if (!subPdfs.length) {
+    const e: any = new Error('native-PDF chunk split produced no sub-documents');
+    e.code = 'AI_NATIVE_PDF_SPLIT_FAILED';
+    throw e;
+  }
+  const perChunk: any[] = [];
+  for (const sub of subPdfs) {
+    const out = await ai.completeWithPdf({ pdfBuffer: sub, system: EXTRACT_SYSTEM, user: NATIVE_PDF_USER, maxTokens: NATIVE_MAX_TOKENS, responseMimeType: 'application/json', settings });
+    perChunk.push(parseNativeOut(out));
+  }
+  const merged = mergeExtractions(perChunk);
+  // Fail-soft: if EVERY window came back empty/unparseable, don't ship a blank
+  // result — throw so the deterministic fallback runs.
+  if (!merged.buses || !merged.buses.length) {
+    const e: any = new Error('native-PDF chunked extraction produced no buses across all windows');
+    e.code = 'AI_NATIVE_PDF_EMPTY';
+    throw e;
+  }
+  merged.warnings.push(`Large report (${pages} pages): read in ${ranges.length} overlapping page windows (size ${win}, overlap ${overlap}) and merged by bus.`);
+  return finalize('native_pdf_chunked', 'gemini', merged, warnings);
+}
+
 // Extract a structured arc-flash system model from an uploaded document.
 // Image -> vision; text-layer PDF -> text parse; scanned/vector PDF -> AUTO
 // rasterize to image(s) -> vision (no manual conversion). Fails SOFT: an
 // unreadable / unsupported file yields an empty model + a clear warning.
-async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string; fileName?: string; settings?: any }): Promise<any> {
-  const { buffer, mimeType, fileName, settings = {} } = opts;
+async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string; fileName?: string; settings?: any; nativePdf?: any }): Promise<any> {
+  const { buffer, mimeType, fileName, settings = {}, nativePdf = {} } = opts;
   const warnings: string[] = [];
   const isImage = /image\/(png|jpe?g|webp)/i.test(mimeType || '') || /\.(png|jpe?g|webp)$/i.test(fileName || '');
   const isPdf = /pdf/i.test(mimeType || '') || /\.pdf$/i.test(fileName || '');
@@ -365,7 +497,13 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
       warnings.push('The Word document has too little text to extract a system model.');
       return { method: 'text', aiProvider: null, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText: '' };
     }
-    const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(docxText), maxTokens: 8192, task: 'extract', settings });
+    // 2026-07-14: responseMimeType + bumped maxTokens -- root-caused via a
+    // direct-call repro (13-bus real report) that the JSON was truncating
+    // mid-string. Gemini 2.5 Flash's internal reasoning bills against
+    // maxOutputTokens same as the vision path (see the responseMimeType
+    // comment in _geminiComplete); without JSON mode a verbose multi-bus
+    // schema can lose the whole output to truncation before the array closes.
+    const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(docxText), maxTokens: 16384, task: 'extract', responseMimeType: 'application/json', settings });
     const text = out && out.text ? out.text : '';
     let parsed: any;
     try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
@@ -375,15 +513,37 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
   }
 
   if (isPdf) {
-    // Deterministic-first: pdfplumber (best at the ruled tables study reports are
-    // full of) -> pdfjs fallback. Vision only fires when there is NO text layer,
-    // so we never spend vision tokens on a text-based study.
+    // W1 (2026-07-14): NATIVE-PDF FIRST. Send the PDF itself to the model — it
+    // reads text layer, layout, AND scanned page images in one call at
+    // ~258 tok/page (up to ~1000 pages) — instead of pre-clipping text to 24k
+    // chars or capping vision at 4 rasterized pages. Chunk (overlapping page
+    // windows) only when dense enough to risk the output-token ceiling. On ANY
+    // native failure we fall through to the deterministic text/vision path
+    // below, retained UNCHANGED as the safety net (today's stopgap included).
+    //
+    // The pdfplumber pre-pass runs first regardless: cheap, tokenless, and
+    // double-duty — the bus-count estimate for the chunk decision AND the payload
+    // for the deterministic fallback, so it is never run twice.
     let pdfText = '';
     let tables: any[] = [];
     try {
       const det = await extractPdfPlumber(buffer);
       if (det && det.ok && det.text) { pdfText = det.text; tables = Array.isArray(det.tables) ? det.tables : []; }
     } catch { /* fail-open to pdfjs */ }
+
+    const nativeDisabled = (nativePdf && nativePdf.disable === true) || process.env.AF_NATIVE_PDF === 'off';
+    if (!nativeDisabled) {
+      try {
+        return await extractNativePdf(buffer, settings, tables, nativePdf);
+      } catch (e: any) {
+        warnings.push('Native-PDF read unavailable (' + (e && e.message ? e.message : e) + '); used deterministic text/vision fallback.');
+        // fall through to the deterministic path below
+      }
+    }
+
+    // ── Deterministic fallback (pre-W1 path, retained as the safety net) ──
+    // pdfplumber (best at the ruled tables study reports are full of) -> pdfjs
+    // fallback. Vision only fires when there is NO text layer.
     if (!pdfText || pdfText.replace(/\s+/g, ' ').trim().length < 120) {
       try { pdfText = await extractPdfText(buffer); } catch (e: any) { warnings.push('PDF text extraction failed: ' + (e && e.message ? e.message : e)); }
       tables = [];
@@ -391,7 +551,9 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
     const meaningful = (pdfText || '').replace(/\s+/g, ' ').trim();
     if (meaningful.length >= 120) {
       // Text-layer PDF (study report) -> text path.
-      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(pdfText, tables), maxTokens: 8192, task: 'extract', settings });
+      // 2026-07-14: responseMimeType + bumped maxTokens -- see the docx branch
+      // above for the root cause (multi-bus reports were truncating mid-JSON).
+      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(pdfText, tables), maxTokens: 16384, task: 'extract', responseMimeType: 'application/json', settings });
       const text = out && out.text ? out.text : '';
       let parsed: any;
       try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
@@ -416,4 +578,4 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
   return { method: 'unsupported', aiProvider: null, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText: '' };
 }
 
-export { extractArcFlashDocument, normalizeExtraction, mapEquipmentType, PROMPT_VERSION };
+export { extractArcFlashDocument, normalizeExtraction, mapEquipmentType, PROMPT_VERSION, planOverlapWindows, mergeExtractions, EXTRACT_SYSTEM, NATIVE_PDF_USER };
