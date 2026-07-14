@@ -1356,10 +1356,24 @@ router.post('/:id/archive', requireManager, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Asset not found' });
     }
 
-    const asset = await prisma.asset.update({
-      where: { id: req.params.id },
+    // Atomic claim (same guarded-updateMany pattern as workOrders.ts /approve
+    // and deficiencies.ts /resolve, 2026-07-12 race-siblings sweep): the where
+    // clause re-checks archivedAt===null at write time, not just at the
+    // findFirst read above. A losing concurrent archive gets count 0 -> 409
+    // instead of silently re-archiving and re-firing the activity log +
+    // decommission notification a second time. NOTE: this also closes a
+    // pre-existing non-concurrent gap -- unlike standards.ts (which already
+    // 400s on a second sequential archive call), this endpoint previously had
+    // no archivedAt precondition at all, so repeated non-racing calls also
+    // duplicated the log entry + notification; this guard now rejects those too.
+    const claim = await prisma.asset.updateMany({
+      where: { id: req.params.id, accountId: req.user.accountId, archivedAt: null },
       data:  { archivedAt: new Date() },
     });
+    if (claim.count === 0) {
+      return res.status(409).json({ success: false, error: 'Asset was already archived by another request.' });
+    }
+    const asset = await prisma.asset.findFirst({ where: { id: req.params.id } });
 
     await logActivity(req.params.id, req.user.id, req.user.accountId, 'asset_archived', null);
     // Decommission alert — fire-and-forget

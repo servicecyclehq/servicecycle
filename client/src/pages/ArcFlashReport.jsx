@@ -47,11 +47,14 @@ export default function ArcFlashReport() {
     <>
       <div className="page-header no-print">
         <div>
+          {/* 2026-07-13 fix: BackLink was in the top-right controls strip --
+              moved above the title to match the standard position every
+              report uses. */}
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Arc Flash Label Report</h1>
           <div className="page-subtitle">Study results and label status by asset</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span className="no-print"><BackLink fallback="/reports" fallbackLabel="Reports" /></span>
           <button type="button" className="btn btn-secondary btn-sm no-print" onClick={() => window.print()}>Print</button>
         </div>
       </div>

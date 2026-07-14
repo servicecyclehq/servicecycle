@@ -40,6 +40,13 @@ export default function ForgottenAssetsCard({ siteId = null }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 2026-07-13 fix: "+N more" used to be dead text -- Dustin's live-review
+  // call ("we want to be the data layer... data needs to be SIMPLE to get
+  // to"). The full untracked/forgotten arrays are already unbounded in the
+  // API response (forgottenAssets.ts), just capped at 12 for display here,
+  // so an in-place expand toggle is the simplest fix -- no extra round trip.
+  const [showAllUntracked, setShowAllUntracked] = useState(false);
+  const [showAllForgotten, setShowAllForgotten] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -96,16 +103,32 @@ export default function ForgottenAssetsCard({ siteId = null }) {
             {untracked.length > 0 && (
               <div style={{ marginBottom: forgotten.length > 0 ? 14 : 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--chip-red-fg)', marginBottom: 2 }}>No maintenance program ({untracked.length})</div>
-                {untracked.slice(0, 12).map((a) => <AssetRow key={a.assetId} a={a} kind="untracked" />)}
-                {untracked.length > 12 && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', paddingTop: 6 }}>+{untracked.length - 12} more</div>}
+                {(showAllUntracked ? untracked : untracked.slice(0, 12)).map((a) => <AssetRow key={a.assetId} a={a} kind="untracked" />)}
+                {untracked.length > 12 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllUntracked(v => !v)}
+                    style={{ background: 'none', border: 'none', padding: '6px 0 0', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--color-primary)' }}
+                  >
+                    {showAllUntracked ? 'Show fewer' : `Show all ${untracked.length} →`}
+                  </button>
+                )}
               </div>
             )}
 
             {forgotten.length > 0 && (
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--chip-amber-fg)', marginBottom: 2 }}>On a program but not serviced ({forgotten.length})</div>
-                {forgotten.slice(0, 12).map((a) => <AssetRow key={a.assetId} a={a} kind="forgotten" />)}
-                {forgotten.length > 12 && <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', paddingTop: 6 }}>+{forgotten.length - 12} more</div>}
+                {(showAllForgotten ? forgotten : forgotten.slice(0, 12)).map((a) => <AssetRow key={a.assetId} a={a} kind="forgotten" />)}
+                {forgotten.length > 12 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllForgotten(v => !v)}
+                    style={{ background: 'none', border: 'none', padding: '6px 0 0', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--color-primary)' }}
+                  >
+                    {showAllForgotten ? 'Show fewer' : `Show all ${forgotten.length} →`}
+                  </button>
+                )}
               </div>
             )}
           </>

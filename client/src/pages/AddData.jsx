@@ -5,17 +5,24 @@
 // they don't re-pick it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { UploadCloud, FileText, Table2, Database, Mail, Archive } from 'lucide-react';
+import { UploadCloud, FileText, Table2, Database, Mail, Archive, Copy, Check } from 'lucide-react';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { setPendingImport } from '../lib/pendingImport';
+import api from '../api/client';
 
+// Extension-level first pass. PDFs and .docx are NOT routed by extension alone —
+// an arc-flash study and an instrument test report are both PDFs/Word docs, so
+// they go through a server content pre-scan (POST /api/ingest/classify) that
+// reads a text sample and picks the right importer. Legacy binary .doc has no
+// lightweight extractor and is rejected with a "save as .docx" message.
 function sniff(file) {
   const name = (file.name || '').toLowerCase();
   if (name.endsWith('.zip')) return { kind: 'backfill', route: '/backfill', label: 'zip of report PDFs/photos' };
-  if (name.endsWith('.pdf')) return { kind: 'test-report', route: '/test-reports/import', label: 'test-report PDF' };
   if (/\.(csv|xlsx|xls)$/.test(name)) return { kind: 'assets', route: '/assets/import', label: 'asset / schedule spreadsheet' };
+  if (name.endsWith('.pdf') || name.endsWith('.docx')) return { kind: 'document', label: 'PDF / Word document' };
+  if (name.endsWith('.doc')) return { kind: 'legacy-doc', label: 'legacy Word .doc' };
   return null;
 }
 
@@ -23,14 +30,91 @@ export default function AddData() {
   useDocumentTitle('Add data');
   const navigate = useNavigate();
   const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);            // classify request in flight
+  const [choice, setChoice] = useState(null);          // { file } awaiting manual type pick
+  const [choiceKind, setChoiceKind] = useState('');    // user's pick in the fallback dropdown
 
-  function onFile(e) {
+  // 2026-07-13 fix: this card used to show a literal "reports-…@servicecycle.app"
+  // placeholder -- no real account had a working address, since nothing ever
+  // provisioned one. GET /api/settings/inbound-email now auto-creates + returns
+  // the account's actual forwarding address.
+  const [inboundEmail, setInboundEmail] = useState(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    let on = true;
+    api.get('/api/settings/inbound-email')
+      .then(r => { if (on) setInboundEmail(r.data?.data?.email || null); })
+      .catch(() => { if (on) setInboundEmail(null); });
+    return () => { on = false; };
+  }, []);
+
+  function copyInboundEmail() {
+    if (!inboundEmail) return;
+    navigator.clipboard?.writeText(inboundEmail).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  async function onFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setErr(''); setChoice(null); setChoiceKind('');
     const s = sniff(file);
-    if (!s) { setErr(`Not sure how to read "${file.name}". Use a PDF test report, or a CSV/XLSX spreadsheet.`); return; }
-    setPendingImport(file);
-    navigate(s.route);
+    if (!s) { setErr(`Not sure how to read "${file.name}". Use a PDF/Word test report, a CSV/XLSX spreadsheet, or a .zip of reports.`); return; }
+    if (s.kind === 'legacy-doc') {
+      setErr(`Legacy .doc (Word 97-2003) isn't supported. Open "${file.name}" in Word and "Save As" .docx, then try again.`);
+      return;
+    }
+    if (s.kind === 'backfill' || s.kind === 'assets') {
+      setPendingImport(file);
+      navigate(s.route);
+      return;
+    }
+    // PDF / .docx: classify by content so an arc-flash study doesn't land in the
+    // test-report parser (and vice-versa). Fails soft — if the scan can't decide
+    // (or the endpoint errors), we ask the user rather than guessing.
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await api.post('/api/ingest/classify', fd);
+      const kind = r.data?.data?.kind;
+      if (kind === 'test_report') { setPendingImport(file); navigate('/test-reports/import'); return; }
+      if (kind === 'arc_flash')   {
+        // Pre-fill the arc-flash page's "one-line diagram" vs "study report"
+        // dropdown from the server's text-density hint -- still just a default,
+        // the dropdown stays editable, so a wrong guess costs one click, not a
+        // misroute.
+        const suggestedSourceType = r.data?.data?.suggestedSourceType || 'study_report';
+        setPendingImport(file, { sourceType: suggestedSourceType });
+        navigate('/arc-flash/import');
+        return;
+      }
+      setChoice({ file }); // ambiguous / unreadable
+    } catch {
+      setChoice({ file }); // classify unavailable — ask, don't guess
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function chooseType(kind) {
+    if (!choice?.file || !kind) return;
+    // 'one_line' and 'arc_flash' both land on the same arc-flash importer --
+    // the only difference is which sourceType the page pre-selects.
+    if (kind === 'one_line') {
+      setPendingImport(choice.file, { sourceType: 'one_line' });
+      navigate('/arc-flash/import');
+      return;
+    }
+    if (kind === 'arc_flash') {
+      setPendingImport(choice.file, { sourceType: 'study_report' });
+      navigate('/arc-flash/import');
+      return;
+    }
+    setPendingImport(choice.file);
+    navigate('/test-reports/import');
   }
 
   return (
@@ -48,10 +132,33 @@ export default function AddData() {
       <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}>
         <UploadCloud size={40} strokeWidth={1.25} style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }} />
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Drop a file or choose one</div>
-        <input type="file" accept=".pdf,.csv,.xlsx,.xls,.zip" onChange={onFile} />
+        <input type="file" accept=".pdf,.doc,.docx,.csv,.xlsx,.xls,.zip" onChange={onFile} disabled={busy} />
         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 10 }}>
-          PDF test report · asset CSV/XLSX · .zip of reports (bulk backfill)
+          PDF / Word test report · arc-flash study · asset CSV/XLSX · .zip of reports (bulk backfill)
         </div>
+        {busy && (
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>
+            Reading the document to route it to the right importer…
+          </div>
+        )}
+
+        {/* Ambiguous-case fallback — mirrors the ArcFlashIngestPanel type dropdown */}
+        {choice && (
+          <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 8, textAlign: 'left', maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
+            <div style={{ fontSize: 'var(--font-size-sm)', marginBottom: 8 }}>
+              We couldn't tell what <strong>{choice.file.name}</strong> is. Which kind of document is it?
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={choiceKind} onChange={e => setChoiceKind(e.target.value)}>
+                <option value="">— choose type —</option>
+                <option value="test_report">Instrument test report (PowerDB / Megger / NETA)</option>
+                <option value="arc_flash">Arc-flash / short-circuit study (has incident-energy results)</option>
+                <option value="one_line">One-line / single-line diagram (equipment layout, no results yet)</option>
+              </select>
+              <button type="button" className="btn" disabled={!choiceKind} onClick={() => chooseType(choiceKind)}>Continue</button>
+            </div>
+          </div>
+        )}
       </div></div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
@@ -83,9 +190,35 @@ export default function AddData() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Database size={16} /> CMMS export</div>
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Maximo / SAP PM / Oracle EAM</div>
         </Link>
-        <div className="card" style={{ flex: '1 1 200px', padding: 16 }}>
+        <div className="card" style={{ flex: '1 1 260px', padding: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}><Mail size={16} /> Email-in <span style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 700, color: 'var(--color-success)', border: '1px solid var(--color-success)', borderRadius: 4, padding: '1px 5px' }}>LIVE</span></div>
-          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>Forward a test report to your account's <code>reports-…@servicecycle.app</code> address — it parses every line and creates the asset cards automatically. No upload step.</div>
+          <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+            Forward a test report as an email attachment — it parses every line and creates the asset cards automatically. No upload step.
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 'var(--font-size-2xs)', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+              Your account's address
+            </div>
+            {inboundEmail ? (
+              <button
+                type="button"
+                onClick={copyInboundEmail}
+                title="Copy to clipboard"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                  background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                  borderRadius: 6, padding: '6px 10px', cursor: 'pointer', textAlign: 'left',
+                }}
+              >
+                <code style={{ fontSize: 'var(--font-size-xs)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inboundEmail}</code>
+                {copied
+                  ? <Check size={13} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
+                  : <Copy size={13} style={{ color: 'var(--color-text-secondary)', flexShrink: 0 }} />}
+              </button>
+            ) : (
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Loading your address…</div>
+            )}
+          </div>
         </div>
       </div>
     </div>

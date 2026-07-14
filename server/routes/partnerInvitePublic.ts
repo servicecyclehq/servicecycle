@@ -134,20 +134,67 @@ router.post('/accept', authenticateToken, async (req: any, res: any) => {
       return res.status(409).json({ error: 'This account is already linked to a different partner organization. Contact support to transfer it.' });
     }
 
-    // Atomically: link account, mark invite accepted
-    await prisma.$transaction([
-      prisma.account.update({
-        where: { id: user.accountId },
-        data: { partnerOrgId: invite.partnerOrgId },
-      }),
-      prisma.partnerInvite.update({
-        where: { id: invite.id },
-        data: {
-          acceptedAt: new Date(),
-          accountId:  user.accountId,
-        },
-      }),
-    ]);
+    // 2026-07-12 race-siblings sweep: the array-form $transaction below did
+    // TWO unconditional updates with no re-check of either row's state at
+    // write time -- the same missing-atomic-guard shape as workOrders.ts
+    // /approve and deficiencies.ts /resolve, but the actual exploitable race
+    // here has a DIFFERENT shape than "the same invite accepted twice": it's
+    // a race between TWO DIFFERENT invites (from two different partner orgs)
+    // both targeting the SAME account.
+    //
+    // Same-invite-twice (single-record double-apply, same shape as the rest
+    // of this sweep): guarded via the partnerInvite claim below
+    // (acceptedAt: null at write time).
+    //
+    // Two-different-invites (the real distinct race, per task instructions):
+    // if inviteeEmail has two pending invites from org A and org B and the
+    // user accepts both nearly simultaneously, BOTH requests can read
+    // `currentOrgId` as null (or as some third already-linked org) BEFORE
+    // either transaction commits, both pass the `currentOrgId !==
+    // invite.partnerOrgId` check above, then both unconditionally overwrite
+    // account.partnerOrgId. Whichever transaction commits last silently wins
+    // the account row -- but BOTH invites still get marked acceptedAt and
+    // both responses report success, so the LOSING org's caller sees "linked"
+    // while the account is actually linked to the other org. Guarded via the
+    // account claim below (partnerOrgId must still be null or already this
+    // same org, re-checked at write time, not just at the read above).
+    try {
+      await prisma.$transaction(async (tx: any) => {
+        const inviteClaim = await tx.partnerInvite.updateMany({
+          where: { id: invite.id, acceptedAt: null },
+          data: {
+            acceptedAt: new Date(),
+            accountId:  user.accountId,
+          },
+        });
+        if (inviteClaim.count === 0) {
+          const e: any = new Error('INVITE_ALREADY_ACCEPTED');
+          e.code = 'INVITE_ALREADY_ACCEPTED';
+          throw e;
+        }
+
+        const acctClaim = await tx.account.updateMany({
+          where: {
+            id: user.accountId,
+            OR: [{ partnerOrgId: null }, { partnerOrgId: invite.partnerOrgId }],
+          },
+          data: { partnerOrgId: invite.partnerOrgId },
+        });
+        if (acctClaim.count === 0) {
+          const e: any = new Error('ACCOUNT_LINKED_ELSEWHERE');
+          e.code = 'ACCOUNT_LINKED_ELSEWHERE';
+          throw e;
+        }
+      });
+    } catch (e: any) {
+      if (e?.code === 'INVITE_ALREADY_ACCEPTED') {
+        return res.status(409).json({ error: 'Invite already accepted' });
+      }
+      if (e?.code === 'ACCOUNT_LINKED_ELSEWHERE') {
+        return res.status(409).json({ error: 'This account is already linked to a different partner organization. Contact support to transfer it.' });
+      }
+      throw e;
+    }
 
     res.json({
       success: true,

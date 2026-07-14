@@ -20,13 +20,6 @@ import {
 
 export const REPORTS = [
   {
-    id: 'export-everything',
-    name: 'Export Everything (Account Backup)',
-    description: 'Download a complete, portable copy of your account in open formats — every site, asset, schedule, work order, deficiency, quote request, arc-flash study and label, LOTO procedure, parts catalog, spare inventory record, and asset part requirement, plus document and compliance-snapshot metadata with integrity hashes and retrieval paths. No lock-in: lossless JSON or multi-sheet XLSX, yours to keep or re-import anywhere.',
-    icon: Archive,
-    accountExport: true,
-  },
-  {
     id: 'revenue-attribution',
     name: 'Revenue Attribution',
     description: 'The closed loop from platform signal to paid work: how Path-to-100 / modernization / arc-flash / QEMW alerts become quote requests, accepted quotes, and completed work orders — with estimated dollar value and conversion at each stage.',
@@ -110,6 +103,16 @@ export const REPORTS = [
     description: 'Download the full asset register as an XLSX workbook — equipment type, manufacturer, model, serial number, site, condition, and schedule status for every asset.',
     icon: Download,
     exportView: 'assets',
+  },
+  // 2026-07-13 fix: moved from first to last per Dustin's live review -- this
+  // is the "nuclear option" full-account dump, not something most people open
+  // day-to-day; the report cards people actually use belong up top.
+  {
+    id: 'export-everything',
+    name: 'Export Everything (Account Backup)',
+    description: 'Download a complete, portable copy of your account as an Excel workbook — every site, asset, schedule, work order, deficiency, quote request, arc-flash study and label, LOTO procedure, parts catalog, spare inventory record, and asset part requirement, plus document and compliance-snapshot metadata with integrity hashes and retrieval paths, one sheet per record type. No lock-in: opens directly in Excel/Sheets, yours to keep or re-import anywhere.',
+    icon: Archive,
+    accountExport: true,
   },
 ];
 

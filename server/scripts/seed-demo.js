@@ -238,6 +238,24 @@ async function _resetDemoAccount() {
   } catch (_) { /* storage module unavailable — rows still wiped below */ }
   await prisma.complianceSnapshot.deleteMany({ where: filter }).catch(() => {});
 
+  // ── Demo disaster events ──────────────────────────────────────────────────
+  // 2026-07-13 (pre-go-live review fix): these are guarded by nwsAlertId
+  // ('demo-seed-*') so re-running the seed doesn't duplicate them, but that
+  // same guard meant they were NEVER deleted on reset -- and every one pins
+  // affectedSiteIds to riverside/eastgate's UUIDs, which are freshly
+  // regenerated on every reset (site.create with no pinned id, below). Net
+  // effect: after the FIRST reseed post-deploy, every seeded disaster event
+  // still exists but points at dead site UUIDs, so GET /api/disaster-events'
+  // affectedSiteIds-intersection filter (routes/disasterEvents.ts) matches
+  // nothing and the Disaster Response page silently goes back to "no active
+  // events" -- exactly what these rows exist to prevent. Some of these carry
+  // accountId: account.id (grid-failure-eastgate, earthquake-report) and
+  // others are accountId-null regional broadcasts, so this can't use the
+  // `filter` (accountId-scoped) where-clause above -- match by the nwsAlertId
+  // prefix instead, which is demo-seed-only and can never touch a real NWS
+  // alert (those use FEMA/NWS's own id format, not this literal prefix).
+  await prisma.disasterEvent.deleteMany({ where: { nwsAlertId: { startsWith: 'demo-seed-' } } }).catch(() => {});
+
   // ── Account-scoped lookups / infra ────────────────────────────────────────
   await prisma.standardRevisionAlert.deleteMany({ where: filter }).catch(() => {});
   await prisma.notificationLog.deleteMany({ where: filter }).catch(() => {});
@@ -506,10 +524,14 @@ async function _seedAccount() {
   // reproducible and survives any future default flip.
   await prisma.accountSetting.createMany({
     data: [
-      ...['dga_import', 'thermography_import', 'qemw_wallet',
+      ...['dga_import', 'thermography_import',
         'enterprise_trust', 'neta_full_battery',
       ].map((f) => ({ accountId: account.id, key: `feature.${f}`, value: 'false' })),
       { accountId: account.id, key: 'feature.arc_flash_studies', value: 'true' },
+      // Dustin approved (2026-07): QEMW wallet ON for the demo only — the QEMW
+      // cert-wallet page + the 60d/14d expiry-alert cron have real, varied
+      // ContractorTech credential data seeded below to show off.
+      { accountId: account.id, key: 'feature.qemw_wallet', value: 'true' },
     ],
     skipDuplicates: true,
   });
@@ -592,10 +614,16 @@ async function _seedAccount() {
   // ~2 years ago, retraining clock ~1 year out (inside the ≤3yr interval).
   // Rios carries thermographer Level II — the insurer minimum for signing
   // IR reports — since she runs the annual IR campaign.
+  // qemwDays = days-from-now this tech's QEMW cert (ANSI/NETA EMW-2026) expires.
+  // Mix straddles the runQemwAlerts cron tiers (fires at 60d and 14d, ±1-day
+  // window): rios comfortably valid; okafor sits ON the 60-day tier; lindgren ON
+  // the 14-day tier — so the daily cron actually emits an alert against the demo
+  // account. qemwCert=null means "no QEMW credential on file yet" (rios keeps one
+  // too so the wallet has a clearly-green row).
   for (const t of [
-    { key: 'rios',    name: 'Carmen Rios',    title: 'Field Technician',        level: 'LEVEL_II',  email: 'c.rios@apextesting-demo.local', therm: 'II' },
-    { key: 'okafor',  name: 'David Okafor',   title: 'Senior Test Technician',  level: 'LEVEL_III', email: 'd.okafor@apextesting-demo.local' },
-    { key: 'lindgren', name: 'Sofia Lindgren', title: 'Principal Engineer',     level: 'LEVEL_IV',  email: 's.lindgren@apextesting-demo.local' },
+    { key: 'rios',    name: 'Carmen Rios',    title: 'Field Technician',        level: 'LEVEL_II',  email: 'c.rios@apextesting-demo.local', therm: 'II', qemwCert: 'NETA-QEMW-2025-0417', qemwDays: 400 },
+    { key: 'okafor',  name: 'David Okafor',   title: 'Senior Test Technician',  level: 'LEVEL_III', email: 'd.okafor@apextesting-demo.local', qemwCert: 'NETA-QEMW-2022-0139', qemwDays: 60 },
+    { key: 'lindgren', name: 'Sofia Lindgren', title: 'Principal Engineer',     level: 'LEVEL_IV',  email: 's.lindgren@apextesting-demo.local', qemwCert: 'NETA-QEMW-2022-0088', qemwDays: 14 },
   ]) {
     apexTechs[t.key] = await prisma.contractorTech.create({ data: {
       contractorId: apex.id, name: t.name, title: t.title,
@@ -603,6 +631,9 @@ async function _seedAccount() {
       qualifiedPersonDesignatedAt: addDays(now, -730),
       trainingExpiresAt:           addDays(now, 365),
       thermographerCertLevel:      t.therm || null,
+      qemwCertNumber:  t.qemwCert || null,
+      qemwExpiresAt:   t.qemwCert ? addDays(now, t.qemwDays) : null,
+      qemwIssuingBody: t.qemwCert ? 'NETA' : null,
     } });
   }
   const murphy = await prisma.contractor.create({ data: {
@@ -613,15 +644,40 @@ async function _seedAccount() {
     notes: 'Switchgear/breaker specialty shop; preferred for retrofit and breaker-shop work.',
   } });
   const murphyTechs = {};
+  // tran's QEMW cert is already EXPIRED (renewal lapsed); hale's is comfortably
+  // valid — the wallet shows both an expired-red and a valid-green row.
   for (const t of [
-    { key: 'tran', name: 'Kim Tran',     title: 'Switchgear Technician', level: 'LEVEL_II',  email: 'k.tran@murphyswgr-demo.local' },
-    { key: 'hale', name: 'Gabriel Hale', title: 'Lead Field Engineer',   level: 'LEVEL_III', email: 'g.hale@murphyswgr-demo.local' },
+    { key: 'tran', name: 'Kim Tran',     title: 'Switchgear Technician', level: 'LEVEL_II',  email: 'k.tran@murphyswgr-demo.local', qemwCert: 'NETA-QEMW-2020-0271', qemwDays: -30 },
+    { key: 'hale', name: 'Gabriel Hale', title: 'Lead Field Engineer',   level: 'LEVEL_III', email: 'g.hale@murphyswgr-demo.local', qemwCert: 'NETA-QEMW-2025-0602', qemwDays: 600 },
   ]) {
     murphyTechs[t.key] = await prisma.contractorTech.create({ data: {
       contractorId: murphy.id, name: t.name, title: t.title,
       netaCertLevel: t.level, email: t.email,
+      qemwCertNumber:  t.qemwCert || null,
+      qemwExpiresAt:   t.qemwCert ? addDays(now, t.qemwDays) : null,
+      qemwIssuingBody: t.qemwCert ? 'NETA' : null,
     } });
   }
+
+  // ── Demo-completeness techs: exercise every credential state ────────────────
+  // A NETA Level I apprentice, a Level III thermographer, an entry-level (I)
+  // thermographer, and one already-LAPSED 70E retraining date so the
+  // ContractorDetail cert wallet shows the full NETA level range (I-IV), all
+  // three thermographer levels (I/II/III), and an expired-training (red) state.
+  apexTechs['delacruz'] = await prisma.contractorTech.create({ data: {
+    contractorId: apex.id, name: 'Miguel De La Cruz', title: 'Apprentice Test Technician',
+    netaCertLevel: 'LEVEL_I', email: 'm.delacruz@apextesting-demo.local',
+    qualifiedPersonDesignatedAt: addDays(now, -300),
+    trainingExpiresAt:           addDays(now, -45), // 70E retraining lapsed -> expired (red)
+    thermographerCertLevel:      'III',
+  } });
+  murphyTechs['boyd'] = await prisma.contractorTech.create({ data: {
+    contractorId: murphy.id, name: 'Nadia Boyd', title: 'Thermography Technician',
+    netaCertLevel: 'LEVEL_II', email: 'n.boyd@murphyswgr-demo.local',
+    qualifiedPersonDesignatedAt: addDays(now, -500),
+    trainingExpiresAt:           addDays(now, 300),
+    thermographerCertLevel:      'I',
+  } });
 
   // ── Assets ────────────────────────────────────────────────────────────────
   // Tier 1 (liquid transformers, switchgear, generators) have global task
@@ -763,6 +819,102 @@ async function _seedAccount() {
       manufacturer: 'Pinnacle Drive Systems', model: 'PD-600', serialNumber: 'PD-09-8821',
       installDate: new Date('2009-12-01'),
       nameplateData: { voltage: '480 V', busRating: '600 A', sections: 4, aic: '35 kA' } },
+    // — Demo-completeness assets: one per remaining EquipmentType so no
+    //   classification bucket / equipment report reads empty. FIRE_PUMP_CONTROLLER
+    //   and GROUNDING_SYSTEM auto-enroll into the NFPA 25 / IEEE 81 global task
+    //   matrix via _createSchedules, filling those two otherwise-empty programs.
+    { key: 'SWBD-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'SWITCHBOARD',
+      manufacturer: 'NorthStar Switchgear Co.', model: 'NS-SB416', serialNumber: 'NS-14-5502',
+      installDate: new Date('2014-03-19'), criticalityScore: 4, conditionScore: 2,
+      nameplateData: { voltage: '4.16 kV', busRating: '2000 A', sections: 5, aic: '50 kA' },
+      notes: 'Medium-voltage distribution switchboard feeding the Substation A unit substations.' },
+    { key: 'BUS-1', siteId: riverside.id, buildingId: mainProduction.id,
+      equipmentType: 'BUSWAY',
+      manufacturer: 'Galvan Bus Systems', model: 'GB-1600P', serialNumber: 'GB-17-2231',
+      installDate: new Date('2017-07-08'),
+      nameplateData: { voltage: '480 V', ampacity: '1600 A', type: 'plug-in', lengthFt: 220 },
+      notes: 'Plug-in busway riser serving the stamping-line MCCs.' },
+    { key: 'MTR-1', siteId: riverside.id, buildingId: mainProduction.id,
+      equipmentType: 'MOTOR',
+      manufacturer: 'Crestline Electric Machines', model: 'CE-449T', serialNumber: 'CE-15-8890',
+      installDate: new Date('2015-11-02'), criticalityScore: 3, conditionScore: 2,
+      nameplateData: { hp: 400, voltage: '460 V', rpm: 1785, frame: '449T', service: 'induced-draft fan' },
+      notes: 'ID fan motor on the process exhaust train; driven by VFD-1.' },
+    { key: 'VFD-1', siteId: riverside.id, buildingId: mainProduction.id, fedFromKey: 'MCC-1',
+      equipmentType: 'VFD',
+      manufacturer: 'Pinnacle Drive Systems', model: 'PD-VF400', serialNumber: 'PD-15-9014',
+      installDate: new Date('2015-11-02'),
+      nameplateData: { hp: 400, voltage: '480 V', ampacity: '477 A', service: 'ID fan drive' },
+      notes: 'Variable-frequency drive for the ID fan motor (MTR-1).' },
+    { key: 'FSG-1', siteId: eastgate.id,
+      equipmentType: 'FUSE_GEAR',
+      manufacturer: 'Ironclad Power Products', model: 'IC-FS600', serialNumber: 'IC-11-4471',
+      installDate: new Date('2011-05-14'),
+      nameplateData: { voltage: '600 V', ampacity: '400 A', fuseClass: 'RK1', switches: 6 },
+      notes: 'Fusible-switch distribution cabinet; Class RK1 current-limiting fuses.' },
+    { key: 'GFP-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'GROUND_FAULT_PROTECTION',
+      manufacturer: 'Sentinel Protection', model: 'SP-GFP12', serialNumber: 'SP-16-3320',
+      installDate: new Date('2016-02-28'),
+      nameplateData: { type: 'zero-sequence', pickupA: 1200, standard: 'NEC 230.95' },
+      notes: 'Ground-fault protection on the 2000 A service main — NEC 230.95 performance test.' },
+    { key: 'SPD-1', siteId: riverside.id, buildingId: mainProduction.id,
+      equipmentType: 'SURGE_ARRESTER',
+      manufacturer: 'Voltguard Systems', model: 'VG-T1-100', serialNumber: 'VG-20-7761',
+      installDate: new Date('2020-08-11'),
+      nameplateData: { class: 'Type 1', voltage: '480Y/277 V', ratingKA: 100, modes: 'L-N/L-G/N-G' },
+      notes: 'Service-entrance surge protective device at the main switchboard.' },
+    { key: 'CBL-LV-1', siteId: eastgate.id,
+      equipmentType: 'CABLE_LV',
+      manufacturer: 'Copperline Cable', model: '500-XHHW2', serialNumber: 'CL-13-1180',
+      installDate: new Date('2013-09-01'),
+      nameplateData: { voltage: '600 V', size: '500 kcmil', material: 'Cu', run: 'MSB -> MCC-E1' },
+      notes: 'Low-voltage feeder run; annual IR test history tracked.' },
+    { key: 'CBL-MV-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'CABLE_MV_HV', criticalityScore: 4,
+      manufacturer: 'Copperline Cable', model: '2/0-EPR-15KV', serialNumber: 'CL-12-6640',
+      installDate: new Date('2012-04-22'),
+      nameplateData: { voltage: '15 kV', size: '2/0 AWG', insulation: 'EPR 133%', run: 'utility -> SWGR-1A' },
+      notes: 'Medium-voltage service cable; VLF / partial-discharge program.' },
+    { key: 'TRAY-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'CABLE_TRAY',
+      manufacturer: 'Girder & Rung Co.', model: 'GR-LAD24', serialNumber: 'GR-14-9902',
+      installDate: new Date('2014-03-19'),
+      nameplateData: { material: 'aluminum ladder', widthIn: 24, fillPercent: 42, run: 'Substation A feeders' },
+      notes: 'Cable tray run over Substation A; corrosion / loading inspection.' },
+    { key: 'GND-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'GROUNDING_SYSTEM',
+      conditionEnvironment: 'C1', // clean, indoor substation ground grid -> best environment axis
+      manufacturer: 'Terrafirm Grounding', model: 'TF-GRID', serialNumber: 'TF-14-5503',
+      installDate: new Date('2014-03-19'),
+      nameplateData: { type: 'ground grid', resistanceOhms: 1.8, method: 'fall-of-potential', electrodes: 12 },
+      notes: 'Substation A ground grid — IEEE 81 fall-of-potential program.' },
+    { key: 'AFP-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'ARC_FLASH_PANEL',
+      manufacturer: 'Sentinel Protection', model: 'SP-ARC751', serialNumber: 'SP-19-8140',
+      installDate: new Date('2019-10-05'),
+      nameplateData: { type: 'remote-racking + arc-flash relay', zones: 4, relay: 'SEL-751' },
+      notes: 'Arc-flash mitigation panel (remote racking + light-sensing relay) for SWGR-1A.' },
+    { key: 'FPC-1', siteId: riverside.id, buildingId: mainProduction.id,
+      equipmentType: 'FIRE_PUMP_CONTROLLER',
+      criticalityScore: 5, conditionScore: 2, redundancyStatus: 'N',
+      manufacturer: 'Redland Fire Controls', model: 'RF-EFC100', serialNumber: 'RF-13-2205',
+      installDate: new Date('2013-06-17'),
+      nameplateData: { hp: 100, voltage: '480 V', type: 'electric across-the-line', pumpGpm: 1500, standard: 'NFPA 20/25' },
+      notes: 'Electric fire-pump controller — NFPA 25 weekly churn + annual flow program.' },
+    { key: 'DISC-1', siteId: eastgate.id,
+      equipmentType: 'DISCONNECT_SWITCH',
+      manufacturer: 'Ironclad Power Products', model: 'IC-DS400', serialNumber: 'IC-12-7788',
+      installDate: new Date('2012-05-14'),
+      nameplateData: { voltage: '600 V', ampacity: '400 A', type: 'fused load-break', poles: 3 },
+      notes: 'Fused load-break disconnect ahead of the dock MCC.' },
+    { key: 'RLY-1', siteId: riverside.id, buildingId: mainProduction.id, areaId: substationA.id,
+      equipmentType: 'PROTECTION_RELAY',
+      manufacturer: 'Sentinel Protection', model: 'SEL-751', serialNumber: 'SEL-18-4417',
+      installDate: new Date('2018-01-30'),
+      nameplateData: { type: 'multifunction feeder relay', functions: '50/51/87', comms: 'IEC 61850' },
+      notes: 'Feeder protection relay on SWGR-1A — calibration vs coordination-study settings.' },
   ];
 
   const assets = {};
@@ -1453,6 +1605,46 @@ async function _seedAccount() {
       resolvedAt:       addDays(now, -173),
     } });
   }
+  // Active tornado warning at Riverside (highest NWS severity) — shows the
+  // Disaster Response page with an urgent open event, not just a watch.
+  const _deExisting3 = await prisma.disasterEvent.findFirst(
+    { where: { nwsAlertId: 'demo-seed-tornado-warning' } }
+  ).catch(() => null);
+  if (!_deExisting3) {
+    await prisma.disasterEvent.create({ data: {
+      eventType:        'tornado',
+      severity:         'warning',
+      title:            'Tornado Warning -- Scott County, IA -- take shelter now',
+      region:           'Quad Cities -- Scott County (IA)',
+      affectedStates:   ['IA'],
+      affectedSiteIds:  [riverside.id],
+      nwsAlertId:       'demo-seed-tornado-warning',
+      source:           'nws',
+      declaredAt:       addDays(now, -1),
+    } });
+  }
+  // Customer-declared grid-failure emergency at Eastgate (source=manual,
+  // declaredBy set) — demonstrates the "Declare Emergency" self-service path
+  // alongside the system-detected NWS events above.
+  const _deExisting4 = await prisma.disasterEvent.findFirst(
+    { where: { nwsAlertId: 'demo-seed-grid-failure-eastgate' } }
+  ).catch(() => null);
+  if (!_deExisting4) {
+    await prisma.disasterEvent.create({ data: {
+      accountId:        account.id,
+      eventType:        'grid_failure',
+      severity:         'emergency',
+      title:            'Utility Grid Failure -- Eastgate DC on standby generator',
+      region:           'Moline, IL -- Eastgate Distribution Center',
+      affectedStates:   ['IL'],
+      affectedSiteIds:  [eastgate.id],
+      nwsAlertId:       'demo-seed-grid-failure-eastgate',
+      source:           'manual',
+      declaredBy:       admin.id,
+      declaredAt:       addDays(now, -4),
+      resolvedAt:       addDays(now, -3),
+    } });
+  }
 
   // ── System studies — the documents loss-control auditors ask for by name ──
   // Arc flash study approaching the NFPA 70E 5-year clock.
@@ -1786,22 +1978,33 @@ async function _seedAccount() {
     budgeted: false, budgetNotes: 'Need a number for Q3 capital request',
     attachmentNotes: 'DGA trend report from oil lab (emailed separately)',
     emergencyMode: false, dossierSnapshot: dossierSnapshotT1,
+    // triggerType feeds the Revenue Attribution funnel (lib/revenueAttribution.ts):
+    // any non-null triggerType counts as platform/system-triggered. T-1 is the
+    // 1997 main transformer flagged by the modernization RUL model + rising DGA,
+    // so this quote plausibly originated from a MODERNIZATION_EOL alert.
+    triggerType: 'MODERNIZATION_EOL',
     quotedAt: addDays(now, -3),
     quoteNotes: 'Quote for full power transformer testing + oil sampling: $4,200. Includes DGA, power factor, and turns ratio. Available ' + outageRange + '.',
   } });
 
-  await prisma.quoteRequest.create({ data: {
+  // Accepted T-1 quote — wired to a COMPLETE work order below so it shows as
+  // REALIZED (accepted → converted → completed) revenue in the attribution report.
+  const qrT1Accepted = await prisma.quoteRequest.create({ data: {
     accountId: account.id, assetId: assets['T-1'].id, requestedById: admin.id,
     status: 'accepted', driver: 'failed_inspection', timeline: 'within_30_days',
     outageAvailable: true, outageWindow: 'Any weekday after 6pm',
     budgeted: true,
     emergencyMode: false, dossierSnapshot: dossierSnapshotT1,
+    triggerType: 'MODERNIZATION_EOL',
     quotedAt: addDays(now, -60), respondedAt: addDays(now, -55),
     resolvedAt: addDays(now, -55),
     quoteNotes: 'Infrared thermography + partial discharge survey: $1,800.',
     createdAt: addDays(now, -65),
   } });
 
+  // GEN-1 budget-estimate request — deliberately LEFT MANUAL (no triggerType):
+  // a genuine customer-submitted quote keeps platformDrivenPct realistic (< 100%)
+  // instead of every quote looking system-generated.
   await prisma.quoteRequest.create({ data: {
     accountId: account.id, assetId: assets['GEN-1'].id, requestedById: manager.id,
     status: 'requested', driver: 'budgetary', timeline: 'next_budget_cycle',
@@ -1817,12 +2020,139 @@ async function _seedAccount() {
     budgeted: false,
     emergencyMode: false,
     dossierSnapshot: { assetId: assets['SWGR-2M'].id, name: 'SWGR-2M Mezzanine Switchgear', snapshotAt: now.toISOString() },
+    triggerType: 'MODERNIZATION_EOL',
     quotedAt: addDays(now, -90), respondedAt: addDays(now, -85),
     resolvedAt: addDays(now, -85),
     quoteNotes: 'Quote sent for switchgear replacement: $180,000.',
     declineReason: 'Capital project deferred to FY2027. Will re-request closer to budget approval.',
     createdAt: addDays(now, -95),
   } });
+
+  // ── Additional platform-triggered quote requests (Revenue Attribution demo) ──
+  // Widen the funnel so lib/revenueAttribution.ts reports non-trivial numbers on
+  // EVERY stage: a mix of all four triggerTypes, statuses spanning
+  // requested→quoted→accepted→declined, and three accepted quotes wired to a
+  // COMPLETE WorkOrder (quoteRequestId) so `attribution.systemTriggered`,
+  // `value.realized`, funnel.converted and funnel.completed are all meaningful.
+  // Dossier snapshots kept minimal (mirrors the four above; live snapshots are
+  // built server-side on real POST /api/quote-requests).
+  const snap = (key, name) => ({ assetId: assets[key].id, name, snapshotAt: now.toISOString() });
+
+  // (1) REALIZED — SWGR-1A-1 arc-flash re-study, accepted + completed. repairCost 250k.
+  const qrArcAccepted = await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['SWGR-1A-1'].id, requestedById: admin.id,
+    status: 'accepted', driver: 'failed_inspection', timeline: 'within_30_days',
+    outageAvailable: true, budgeted: true, emergencyMode: false,
+    dossierSnapshot: snap('SWGR-1A-1', 'SWGR-1A-1 Lead 15kV Switchgear'),
+    triggerType: 'ARC_FLASH_STUDY',
+    quotedAt: addDays(now, -48), respondedAt: addDays(now, -44), resolvedAt: addDays(now, -44),
+    quoteNotes: 'IEEE 1584-2018 arc-flash re-study of the SWGR-1A lineup after the utility fault-current increase: $9,500.',
+    createdAt: addDays(now, -52),
+  } });
+
+  // (2) REALIZED — UPS-1 telemetry-CRIT driven inspection, accepted + completed. repairCost 60k.
+  const qrTelemAccepted = await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['UPS-1'].id, requestedById: manager.id,
+    status: 'accepted', driver: 'suspected_failing', timeline: 'within_1_week',
+    outageAvailable: false, budgeted: true, emergencyMode: false,
+    dossierSnapshot: snap('UPS-1', 'UPS-1 Stamping-Line PLC UPS'),
+    triggerType: 'TELEMETRY_CRIT',
+    quotedAt: addDays(now, -30), respondedAt: addDays(now, -27), resolvedAt: addDays(now, -27),
+    quoteNotes: 'Battery-string capacity test + module inspection after a continuous-monitoring CRIT alert on cell voltage: $3,400.',
+    createdAt: addDays(now, -33),
+  } });
+
+  // (3) REALIZED — ATS-1 modernization, accepted + completed. repairCost 45k.
+  const qrAtsAccepted = await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['ATS-1'].id, requestedById: manager.id,
+    status: 'accepted', driver: 'planned_replacement', timeline: 'next_budget_cycle',
+    outageAvailable: true, budgeted: true, emergencyMode: false,
+    dossierSnapshot: snap('ATS-1', 'ATS-1 Life-Safety Transfer Switch'),
+    triggerType: 'MODERNIZATION_EOL',
+    quotedAt: addDays(now, -70), respondedAt: addDays(now, -66), resolvedAt: addDays(now, -66),
+    quoteNotes: 'Controls upgrade / modernization of the 2005 transfer switch: $38,000.',
+    createdAt: addDays(now, -75),
+  } });
+
+  // (4) OPEN pipeline — SWGR-2M second arc-flash quote, requested (priced 90k).
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['SWGR-2M'].id, requestedById: manager.id,
+    status: 'requested', driver: 'failed_inspection', timeline: 'within_30_days',
+    outageAvailable: true, budgeted: false, emergencyMode: false,
+    dossierSnapshot: snap('SWGR-2M', 'SWGR-2M Mezzanine Switchgear'),
+    triggerType: 'ARC_FLASH_STUDY',
+    notes: 'Auto-triggered: IMMEDIATE B-phase hot-joint deficiency on SWGR-2M may affect protective-device behaviour — arc-flash re-study recommended (NFPA 70E §130.5(G)).',
+  } });
+
+  // (5) OPEN pipeline — BATT-1 QEMW training, quoted (priced 28k).
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['BATT-1'].id, requestedById: admin.id,
+    status: 'quoted', driver: 'budgetary', timeline: 'next_budget_cycle',
+    outageAvailable: false, budgeted: false, emergencyMode: false,
+    dossierSnapshot: snap('BATT-1', 'BATT-1 Substation-A Control Battery'),
+    triggerType: 'QEMW_TRAINING',
+    quotedAt: addDays(now, -12),
+    quoteNotes: 'QEMW certification training for two Substation-A maintenance techs per ANSI/NETA EMW-2026: $2,600 per technician.',
+    createdAt: addDays(now, -15),
+  } });
+
+  // (6) OPEN pipeline — MCC-1 modernization, requested. UNPRICED (no repairCostEstimate)
+  // so the report's priced-vs-unpriced split is exercised.
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['MCC-1'].id, requestedById: manager.id,
+    status: 'requested', driver: 'planned_replacement', timeline: 'next_budget_cycle',
+    outageAvailable: true, budgeted: false, emergencyMode: false,
+    dossierSnapshot: snap('MCC-1', 'MCC-1 Mezzanine Motor Control Center'),
+    triggerType: 'MODERNIZATION_EOL',
+    notes: 'Auto-triggered: 2001-vintage MCC past its condition-adjusted expected life; modernization planning quote.',
+  } });
+
+  // (7) DECLINED — GEN-E1 modernization at Eastgate (priced 70k, declined → funnel only).
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['GEN-E1'].id, requestedById: admin.id,
+    status: 'declined', driver: 'planned_replacement', timeline: 'next_budget_cycle',
+    outageAvailable: true, budgeted: false, emergencyMode: false,
+    dossierSnapshot: snap('GEN-E1', 'GEN-E1 Eastgate Standby Generator'),
+    triggerType: 'MODERNIZATION_EOL',
+    quotedAt: addDays(now, -120), respondedAt: addDays(now, -110), resolvedAt: addDays(now, -110),
+    quoteNotes: 'Natural-gas generator controls modernization: $52,000.',
+    declineReason: 'DC ride-through only — deferred; no capital allocated this cycle.',
+    createdAt: addDays(now, -125),
+  } });
+
+  // (8) OPEN pipeline — SWGR-1A-2 arc-flash, quoted. UNPRICED.
+  await prisma.quoteRequest.create({ data: {
+    accountId: account.id, assetId: assets['SWGR-1A-2'].id, requestedById: admin.id,
+    status: 'quoted', driver: 'failed_inspection', timeline: 'within_30_days',
+    outageAvailable: true, budgeted: false, emergencyMode: false,
+    dossierSnapshot: snap('SWGR-1A-2', 'SWGR-1A-2 Switchgear Cubicle 2'),
+    triggerType: 'ARC_FLASH_STUDY',
+    quotedAt: addDays(now, -6),
+    quoteNotes: 'Arc-flash label refresh for cubicle 2 following the lineup re-study: $1,200.',
+    createdAt: addDays(now, -9),
+  } });
+
+  // COMPLETE work orders that realize the three accepted quotes above (and the
+  // accepted T-1 modernization quote). quoteRequestId is the #22 closed-loop link
+  // lib/revenueAttribution.ts reads for funnel.converted / funnel.completed and
+  // value.realized (summing each asset's repairCostEstimate).
+  const _realizedWOs = [
+    { qr: qrT1Accepted,    key: 'T-1',       note: 'IR thermography + partial-discharge survey on T-1 completed; hot-spot cleared, PD within limits.' },
+    { qr: qrArcAccepted,   key: 'SWGR-1A-1', note: 'IEEE 1584-2018 arc-flash re-study of the SWGR-1A lineup completed; labels reissued.' },
+    { qr: qrTelemAccepted, key: 'UPS-1',     note: 'UPS-1 battery-string capacity test + module inspection completed after the CRIT alert.' },
+    { qr: qrAtsAccepted,   key: 'ATS-1',     note: 'ATS-1 transfer-switch controls modernization completed; NFPA 110 transfer test passed.' },
+  ];
+  for (let i = 0; i < _realizedWOs.length; i++) {
+    const w = _realizedWOs[i];
+    await prisma.workOrder.create({ data: {
+      accountId: account.id, assetId: assets[w.key].id, quoteRequestId: w.qr.id,
+      contractorId: apex.id, assignedTechId: apexTechs.okafor.id,
+      status: 'COMPLETE', workOrderType: 'CORRECTIVE', netaDecal: 'GREEN',
+      scheduledDate: addDays(now, -(40 - i * 3)), startedAt: addDays(now, -(38 - i * 3)),
+      completedDate: addDays(now, -(38 - i * 3)),
+      notes: w.note,
+    } });
+  }
 
   // -- Parts catalog + spare inventory ----------------------------------------
   // 7 parts; mix of below-min and healthy stock. Demonstrates the Parts page
@@ -2195,6 +2525,79 @@ async function _seedAccount() {
     ]},
   }});
 
+  // Active procedure on the SWGR-1A-1 lead 15kV switchgear (Riverside).
+  await prisma.lotoProc.create({ data: {
+    accountId: account.id,
+    assetId:   assets['SWGR-1A-1'].id,
+    title:     '15kV Switchgear SWGR-1A-1 Lockout Procedure Rev 2',
+    status:    'active',
+    version:   2,
+    createdById:  admin.id,
+    approvedById: manager.id,
+    approvedAt:   addDays(now, -30),
+    notes: 'Metal-clad MV switchgear; racking-out the breaker is the primary isolation. Minimum 2-person crew.',
+    energySources: { create: [
+      {
+        accountId: account.id, sortOrder: 0,
+        energyType: 'electrical',
+        description: '13.8kV bus energised from the T-1 secondary via the SWGR-1A main breaker',
+        isolationPoint: 'SWGR-1A-1 main breaker, racked to TEST/DISCONNECT',
+        isolationMethod: 'Rack the breaker to the disconnected position using the remote racking tool. Apply LOTO hasp to the racking port and insert personal lock.',
+        verificationMethod: 'Confirm disconnected-position indication; test bus with hotstick voltage indicator through the viewing port.',
+      },
+      {
+        accountId: account.id, sortOrder: 1,
+        energyType: 'electrical',
+        description: 'Control power for the breaker close/trip coils and space heaters',
+        isolationPoint: 'Control-power fuse block / disconnect on the cubicle door',
+        isolationMethod: 'Open the control-power disconnect and apply lock.',
+        verificationMethod: 'Confirm no close/trip response at the control switch.',
+      },
+    ]},
+    steps: { create: [
+      { accountId: account.id, sortOrder: 0, category: 'shutdown', instruction: 'Notify operations; transfer downstream loads and obtain a written switching permit.' },
+      { accountId: account.id, sortOrder: 1, category: 'isolation', instruction: 'Trip the SWGR-1A-1 main breaker and rack it out to the disconnected position with the remote racking tool.' },
+      { accountId: account.id, sortOrder: 2, category: 'isolation', instruction: 'Open the cubicle control-power disconnect.' },
+      { accountId: account.id, sortOrder: 3, category: 'lockout', instruction: 'Apply LOTO hasps to the racking port and control-power disconnect. Each crew member inserts a personal lock and danger tag.' },
+      { accountId: account.id, sortOrder: 4, category: 'verify', instruction: 'Test the bus with a hotstick voltage indicator through the viewing port. Confirm absence of voltage on all phases.', requiresVerification: true },
+    ]},
+  }});
+
+  // Draft procedure on the Eastgate dock transformer T-E1.
+  await prisma.lotoProc.create({ data: {
+    accountId: account.id,
+    assetId:   assets['T-E1'].id,
+    title:     '1000 kVA Dock Transformer T-E1 Lockout Procedure Draft',
+    status:    'draft',
+    version:   1,
+    createdById: manager.id,
+    notes: 'DRAFT -- pending Eastgate site-lead review. FR3-fluid transformer feeding the DC main switchboard.',
+    energySources: { create: [
+      {
+        accountId: account.id, sortOrder: 0,
+        energyType: 'electrical',
+        description: '12.47kV primary feed from the utility riser pole',
+        isolationPoint: 'Utility sectionalizing switch / primary fused cutout at the pad',
+        isolationMethod: 'Open the primary cutouts; apply LOTO and confirm with the utility if it is a shared point.',
+        verificationMethod: 'Test primary terminals with a hotstick voltage indicator.',
+      },
+      {
+        accountId: account.id, sortOrder: 1,
+        energyType: 'electrical',
+        description: '480V secondary to the DC main switchboard main breaker',
+        isolationPoint: 'Main switchboard incoming main breaker MSB-M1',
+        isolationMethod: 'Open MSB-M1; apply hasp and personal lock.',
+        verificationMethod: 'Test 480V secondary terminals with a Fluke T6. Confirm 0V.',
+      },
+    ]},
+    steps: { create: [
+      { accountId: account.id, sortOrder: 0, category: 'shutdown', instruction: 'Coordinate the DC outage window; transfer critical loads to the standby generator if required.' },
+      { accountId: account.id, sortOrder: 1, category: 'isolation', instruction: 'Open the primary cutouts at the pad and the MSB-M1 secondary main.' },
+      { accountId: account.id, sortOrder: 2, category: 'lockout', instruction: 'Apply LOTO hasps and personal locks at both isolation points.' },
+      { accountId: account.id, sortOrder: 3, category: 'verify', instruction: 'Test primary and secondary terminals for absence of voltage.', requiresVerification: true },
+    ]},
+  }});
+
   // -- Documents -- OEM manual URL + test report ----------------------------
   await prisma.document.create({ data: {
     accountId:   account.id,
@@ -2230,6 +2633,41 @@ async function _seedAccount() {
     encrypted:   false,
     docType:     'oem_manual',
     externalUrl: 'https://www.cat.com/en_US/support/documentation/c175-generator-set.html',
+  }});
+
+  // -- Eastgate documents (spread coverage off Riverside) --------------------
+  await prisma.document.create({ data: {
+    accountId:   account.id,
+    assetId:     assets['T-E1'].id,
+    uploadedBy:  manager.id,
+    filename:    'Cooper Power FR3 Fluid-Filled Transformer O&M Manual',
+    fileType:    'text/uri-list',
+    filePath:    '__external__',
+    encrypted:   false,
+    docType:     'oem_manual',
+    externalUrl: 'https://www.cooperpowerseriesservice.com/documents/fr3-transformer-om',
+  }});
+  await prisma.document.create({ data: {
+    accountId:   account.id,
+    assetId:     assets['MCC-E1'].id,
+    uploadedBy:  admin.id,
+    filename:    'MCC-E1 NETA Acceptance Test Report (Eastgate DC)',
+    fileType:    'text/uri-list',
+    filePath:    '__external__',
+    encrypted:   false,
+    docType:     'test_report',
+    externalUrl: 'https://internal.example-electrical.com/docs/mcc-e1-neta-report',
+  }});
+  await prisma.document.create({ data: {
+    accountId:   account.id,
+    assetId:     assets['GEN-E1'].id,
+    uploadedBy:  manager.id,
+    filename:    'GEN-E1 Natural-Gas Generator Commissioning (SAT) Report',
+    fileType:    'text/uri-list',
+    filePath:    '__external__',
+    encrypted:   false,
+    docType:     'commissioning_report',
+    externalUrl: 'https://internal.example-electrical.com/docs/gen-e1-sat',
   }});
 
   // -- Real downloadable one-line drawings (SITE-level) ----------------------
@@ -2413,6 +2851,385 @@ async function _seedAccount() {
   const { seedPowerDbInto } = require('./seed-powerdb-demo');
   const pdb = await seedPowerDbInto(prisma, account.id, { siteName: 'Cedar Ridge Facility', ownerUserId: admin.id });
 
+  // ── Extra arc-flash bus coverage across sites (Fleet Dashboard / Heat Map /
+  //    Label Report demo) ──────────────────────────────────────────────────────
+  // Before this, only SWGR-1A-1 was an instrumented bus, so the arc-flash Fleet
+  // rollup showed "1 labelled bus" account-wide. Bind more switchgear/MCC-class
+  // assets to arc_flash studies with realistic, VARIED IEEE 1584 label data:
+  // a spread of incident energies + PPE categories 1-4, a mix of DANGER
+  // (>40 cal/cm2 OR >600 V) and lower-severity buses, one deliberately BLOCKED
+  // bus (missing fault current + device) and varied study age / device
+  // provenance so the dashboard's avg-confidence and blocked-bus stats are not
+  // trivially 100%/0. Riverside buses bind to the existing current arc_flash
+  // study; Eastgate and Cedar Ridge get their own. (LabelSeverity enum is only
+  // warning|danger — there is no 'safe' band — so low-energy 480 V buses read as
+  // low-PPE WARNING. No 4.16 kV-class asset exists in the seed, so the voltage
+  // spread here is 13.8 kV / 600 V / 480 V.) Runs after the PowerDB seed so the
+  // Cedar Ridge site + its unit-substation assets already exist. NOT wrapped in a
+  // swallowing try/catch on purpose — a write error here should fail the seed
+  // loudly, not silently drop the buses.
+  const cedarRidge = await prisma.site.findFirst({ where: { accountId: account.id, name: 'Cedar Ridge Facility' } });
+  const cedarSubs = cedarRidge
+    ? await prisma.asset.findMany({ where: { accountId: account.id, siteId: cedarRidge.id, equipmentType: 'SWITCHGEAR' }, orderBy: { serialNumber: 'asc' }, take: 4 })
+    : [];
+
+  const egPerformed = addDays(now, -Math.round(1.5 * 365)); // fresh study
+  const egStudy = await prisma.systemStudy.create({ data: {
+    accountId: account.id, siteId: eastgate.id, studyType: 'arc_flash',
+    performedDate: egPerformed, expiresAt: addMonths(egPerformed, 60),
+    performedBy: 'Hawthorne Power Engineering, PLLC', method: 'IEEE 1584-2018',
+    peName: 'S. Hawthorne, PE', peLicense: 'IA PE 21487', trigger: 'scheduled',
+    notes: 'Eastgate DC incident-energy analysis: main switchboard + MCC lineup.',
+  } });
+
+  let crStudy = null;
+  if (cedarRidge) {
+    const crPerformed = addDays(now, -Math.round(2.6 * 365));
+    crStudy = await prisma.systemStudy.create({ data: {
+      accountId: account.id, siteId: cedarRidge.id, studyType: 'arc_flash',
+      performedDate: crPerformed, expiresAt: addMonths(crPerformed, 60),
+      performedBy: 'Meridian Power Studies, Inc.', method: 'IEEE 1584-2018',
+      peName: 'R. Okonkwo, PE', peLicense: 'WI PE 44120', trigger: 'scheduled',
+      notes: 'Cedar Ridge four unit-substation incident-energy analysis (480Y/277 V).',
+    } });
+  }
+
+  // ppeMethod + calcMethod default onto EVERY bus (they were 100% null before);
+  // per-bus `o` can still override. enclosureType is set per bus (varies by class).
+  const _busRow = (studyId, assetId, o) => ({ accountId: account.id, studyId, assetId, ppeMethod: 'incident_energy', calcMethod: 'ieee_1584_2018', ...o });
+  const extraBuses = [
+    // Riverside — bind to the current arc_flash study (`arcFlash`). 13.8 kV = DANGER.
+    _busRow(arcFlash.id, assets['SWGR-1A-2'].id, { busName: 'SWGR-1A Cubicle 2', nominalVoltage: '13.8kV',
+      incidentEnergyCalCm2: 16.8, arcFlashBoundaryIn: 74, workingDistanceIn: 36, ppeCategory: 3, requiredArcRatingCalCm2: 25, labelSeverity: 'danger',
+      boltedFaultCurrentKA: 24.0, arcingCurrentKA: 22.7, electrodeConfig: 'VCB', conductorGapMm: 152, clearingTimeMs: 255,
+      upstreamDevice: 'SWGR-1A feeder relay', deviceType: 'relay', tripUnitType: 'electronic_lsig', deviceRatingA: 1200 }),
+    // SWGR-1A-3 — deliberately BLOCKED: no fault current, no protective device →
+    // analyzeBusGaps readiness 'blocked' → non-zero blockedBuses + lowConfidence.
+    _busRow(arcFlash.id, assets['SWGR-1A-3'].id, { busName: 'SWGR-1A Cubicle 3', nominalVoltage: '13.8kV',
+      incidentEnergyCalCm2: 13.1, arcFlashBoundaryIn: 66, workingDistanceIn: 36, ppeCategory: 3, labelSeverity: 'danger' }),
+    // SWGR-2M — 600 V (NOT >600) low-severity WARNING, PPE 2.
+    _busRow(arcFlash.id, assets['SWGR-2M'].id, { busName: 'SWGR-2M Mezzanine LV Switchgear', nominalVoltage: '600V',
+      incidentEnergyCalCm2: 8.4, arcFlashBoundaryIn: 44, workingDistanceIn: 18, ppeCategory: 2, requiredArcRatingCalCm2: 8, labelSeverity: 'warning',
+      boltedFaultCurrentKA: 42.0, arcingCurrentKA: 31.4, electrodeConfig: 'VCB', conductorGapMm: 32, clearingTimeMs: 60,
+      upstreamDevice: 'MCC-1 main breaker', deviceType: 'breaker', tripUnitType: 'thermal_magnetic', deviceRatingA: 2000 }),
+    // MCC-1 — 480 V, low incident energy, PPE 1 (the low end of the spread).
+    _busRow(arcFlash.id, assets['MCC-1'].id, { busName: 'MCC-1 Lineup', nominalVoltage: '480V',
+      incidentEnergyCalCm2: 4.2, arcFlashBoundaryIn: 30, workingDistanceIn: 18, ppeCategory: 1, requiredArcRatingCalCm2: 4, labelSeverity: 'warning',
+      boltedFaultCurrentKA: 35.0, arcingCurrentKA: 24.1, electrodeConfig: 'VCB', conductorGapMm: 25, clearingTimeMs: 50,
+      upstreamDevice: 'SWGR-2M feeder', deviceType: 'breaker', tripUnitType: 'thermal_magnetic', deviceRatingA: 800 }),
+    // Eastgate — 480 V DANGER by incident energy (>40 cal), PPE 4; field-verified
+    // device (added below) pushes this bus to GREEN confidence.
+    _busRow(egStudy.id, assets['MCC-E1'].id, { busName: 'MCC-E1 Main Bus', nominalVoltage: '480V',
+      incidentEnergyCalCm2: 48.2, arcFlashBoundaryIn: 120, workingDistanceIn: 18, ppeCategory: 4, requiredArcRatingCalCm2: 40, labelSeverity: 'danger',
+      boltedFaultCurrentKA: 38.0, arcingCurrentKA: 27.3, electrodeConfig: 'VCB', conductorGapMm: 25, clearingTimeMs: 480,
+      upstreamDevice: 'MSB main breaker', deviceType: 'breaker', tripUnitType: 'electronic_lsi', deviceRatingA: 600,
+      deviceSettings: { ltPickupA: 540, ltDelayS: 12, stPickupX: 6, instX: 8 } }),
+  ];
+  // Cedar Ridge — four 480 V unit substations, spread of severities + PPE 1-4.
+  const _crBusSpecs = [
+    { ie: 2.1,  ppe: 1, ab: 24,  wd: 18, req: 2,  sev: 'warning', bolt: 33, arc: 23, gap: 25, clr: 45,  tu: 'thermal_magnetic', dr: 3000 },
+    { ie: 6.8,  ppe: 2, ab: 40,  wd: 18, req: 6,  sev: 'warning', bolt: 40, arc: 28, gap: 25, clr: 90,  tu: 'electronic_lsig', dr: 2000, ds: { ltPickupA: 1800, ltDelayS: 15 } },
+    { ie: 12.4, ppe: 2, ab: 58,  wd: 18, req: 12, sev: 'warning', bolt: 44, arc: 31, gap: 25, clr: 150, tu: 'thermal_magnetic', dr: 1600 },
+    { ie: 41.6, ppe: 4, ab: 110, wd: 18, req: 40, sev: 'danger',  bolt: 46, arc: 33, gap: 25, clr: 420, tu: 'electronic_lsi', dr: 3000, ds: { ltPickupA: 2700, ltDelayS: 18, instX: 8 } },
+  ];
+  if (crStudy) {
+    cedarSubs.forEach((sub, i) => {
+      const s = _crBusSpecs[i % _crBusSpecs.length];
+      extraBuses.push(_busRow(crStudy.id, sub.id, {
+        busName: (sub.serialNumber || ('Unit Sub ' + (i + 1))) + ' Main Bus', nominalVoltage: '480V',
+        incidentEnergyCalCm2: s.ie, arcFlashBoundaryIn: s.ab, workingDistanceIn: s.wd, ppeCategory: s.ppe,
+        requiredArcRatingCalCm2: s.req, labelSeverity: s.sev, enclosureType: 'lv_switchgear',
+        boltedFaultCurrentKA: s.bolt, arcingCurrentKA: s.arc, electrodeConfig: 'VCB', conductorGapMm: s.gap, clearingTimeMs: s.clr,
+        upstreamDevice: 'Unit-sub main breaker', deviceType: 'breaker', tripUnitType: s.tu, deviceRatingA: s.dr,
+        ...(s.ds ? { deviceSettings: s.ds } : {}),
+      }));
+    });
+  }
+  // Demo-completeness buses: fill the arc-flash buckets that read empty across
+  // ALL seeded buses so far — a 4.16 kV bus (nominalVoltage), a PPE-category-0
+  // very-low-energy bus, and fuse- + switch-protected buses (deviceType +
+  // FuseClass). enclosureType set here; ppeMethod/calcMethod come from _busRow.
+  // 4.16 kV MV switchboard: >600 V => DANGER by voltage, but a fast current-
+  // limiting upstream device keeps incident energy < 1.2 cal/cm2 => PPE cat 0.
+  extraBuses.push(_busRow(arcFlash.id, assets['SWBD-1'].id, { busName: 'SWBD-1 4.16 kV Main Bus', nominalVoltage: '4.16kV',
+    incidentEnergyCalCm2: 0.9, arcFlashBoundaryIn: 18, workingDistanceIn: 36, ppeCategory: 0, requiredArcRatingCalCm2: 1.2, labelSeverity: 'danger',
+    boltedFaultCurrentKA: 18.0, arcingCurrentKA: 16.4, electrodeConfig: 'VCB', conductorGapMm: 104, clearingTimeMs: 20,
+    upstreamDevice: 'SWBD-1 MV feeder relay', deviceType: 'relay', tripUnitType: 'electronic_lsig', deviceRatingA: 200, enclosureType: 'mv_switchgear' }));
+  // 600 V fusible switchgear: fuse-protected (deviceType=fuse + FuseClass RK1).
+  extraBuses.push(_busRow(egStudy.id, assets['FSG-1'].id, { busName: 'FSG-1 600 V Fusible Switchgear', nominalVoltage: '600V',
+    incidentEnergyCalCm2: 5.6, arcFlashBoundaryIn: 36, workingDistanceIn: 18, ppeCategory: 2, requiredArcRatingCalCm2: 6, labelSeverity: 'warning',
+    boltedFaultCurrentKA: 22.0, arcingCurrentKA: 14.8, electrodeConfig: 'VCB', conductorGapMm: 32, clearingTimeMs: 8,
+    upstreamDevice: 'FSG-1 Class RK1 current-limiting fuse', deviceType: 'fuse', fuseClass: 'RK1', deviceRatingA: 400, enclosureType: 'lv_switchgear' }));
+  // 480 V fused disconnect: switch-protected (deviceType=switch), low PPE 1.
+  extraBuses.push(_busRow(egStudy.id, assets['DISC-1'].id, { busName: 'DISC-1 480 V Fused Disconnect', nominalVoltage: '480V',
+    incidentEnergyCalCm2: 3.1, arcFlashBoundaryIn: 26, workingDistanceIn: 18, ppeCategory: 1, requiredArcRatingCalCm2: 4, labelSeverity: 'warning',
+    boltedFaultCurrentKA: 20.0, arcingCurrentKA: 13.5, electrodeConfig: 'VCB', conductorGapMm: 25, clearingTimeMs: 55,
+    upstreamDevice: 'DISC-1 load-break switch + fuses', deviceType: 'switch', deviceRatingA: 400, enclosureType: 'other' }));
+  for (const data of extraBuses) {
+    await prisma.systemStudyAsset.create({ data });
+  }
+  // Field-verified device on the Eastgate DANGER bus → device provenance 'field'
+  // scores +20 confidence, giving the fleet at least one GREEN bus.
+  await prisma.protectiveDevice.create({ data: {
+    accountId: account.id, siteId: eastgate.id, assetId: assets['MCC-E1'].id,
+    label: 'MSB main breaker', deviceType: 'breaker',
+    manufacturer: 'Square D', model: 'PowerPact', sensorRatingA: 600,
+    settings: { ltPickupA: 540, ltDelayS: 12 },
+    source: 'field', settingsCollectedAt: addDays(now, -40),
+  } }).catch(() => {});
+
+  // Cedar Ridge documents + one active LOTO (third site with a procedure).
+  if (cedarRidge && cedarSubs[0]) {
+    await prisma.document.create({ data: {
+      accountId: account.id, assetId: cedarSubs[0].id, uploadedBy: admin.id,
+      filename: 'Cedar Ridge Unit-Substation One-Line (As-Built)',
+      fileType: 'text/uri-list', filePath: '__external__', encrypted: false,
+      docType: 'wiring_diagram', provenance: 'as_built',
+      externalUrl: 'https://internal.example-electrical.com/docs/cedar-ridge-oneline',
+    }});
+    await prisma.document.create({ data: {
+      accountId: account.id, assetId: cedarSubs[0].id, uploadedBy: admin.id,
+      filename: 'Square D Unit Substation O&M Manual',
+      fileType: 'text/uri-list', filePath: '__external__', encrypted: false,
+      docType: 'oem_manual', externalUrl: 'https://www.se.com/us/en/product-range/unit-substation-om',
+    }});
+    if (cedarSubs[1]) {
+      await prisma.document.create({ data: {
+        accountId: account.id, assetId: cedarSubs[1].id, uploadedBy: admin.id,
+        filename: 'Cedar Ridge Annual NETA Breaker Test Report',
+        fileType: 'text/uri-list', filePath: '__external__', encrypted: false,
+        docType: 'test_report', externalUrl: 'https://internal.example-electrical.com/docs/cedar-ridge-neta',
+      }});
+    }
+    await prisma.lotoProc.create({ data: {
+      accountId: account.id, assetId: cedarSubs[0].id,
+      title: 'Cedar Ridge Unit Substation Lockout Procedure Rev 1',
+      status: 'active', version: 1, createdById: admin.id, approvedById: manager.id, approvedAt: addDays(now, -20),
+      notes: '480Y/277 V LV unit substation; rack out the main and lock the transformer primary.',
+      energySources: { create: [
+        { accountId: account.id, sortOrder: 0, energyType: 'electrical',
+          description: '480 V main bus energised from the unit-substation transformer secondary',
+          isolationPoint: 'Unit-substation main breaker (racked to DISCONNECT)',
+          isolationMethod: 'Trip and rack out the main breaker; apply LOTO hasp and personal lock.',
+          verificationMethod: 'Test the bus for absence of voltage with a Fluke T6.' },
+      ]},
+      steps: { create: [
+        { accountId: account.id, sortOrder: 0, category: 'isolation', instruction: 'Trip and rack out the unit-substation main breaker.' },
+        { accountId: account.id, sortOrder: 1, category: 'lockout', instruction: 'Apply LOTO hasp and personal locks to the racking port.' },
+        { accountId: account.id, sortOrder: 2, category: 'verify', instruction: 'Confirm 0 V on all phases at the bus.', requiresVerification: true },
+      ]},
+    }});
+  }
+  console.log('  seeded ' + extraBuses.length + ' additional arc-flash labelled buses across Riverside/Eastgate/Cedar Ridge (+ Cedar Ridge docs + LOTO)');
+
+  // ── Demo-completeness backfill ──────────────────────────────────────────────
+  // Fills the remaining classification buckets that otherwise read empty in the
+  // demo account: work-order status/type, quote driver/timeline/status, alert
+  // type/status, document type/provenance, LOTO energy types + archived status,
+  // IR-thermography measurement priorities, and edge disaster event types. Runs
+  // after all base data so the compliance snapshot below captures it.
+  {
+    // -- Work orders: EMERGENCY, AWAITING_APPROVAL, CANCELLED, INSPECTION --
+    await prisma.workOrder.create({ data: {
+      accountId: account.id, assetId: assets['SWGR-2M'].id,
+      contractorId: murphy.id, assignedTechId: murphyTechs.tran.id,
+      status: 'IN_PROGRESS', workOrderType: 'EMERGENCY', netaCertLevel: 'LEVEL_II',
+      scheduledDate: addDays(now, -1), startedAt: addDays(now, -1),
+      notes: 'EMERGENCY: smoke reported from the SWGR-2M mezzanine lineup; de-energized and dispatched for immediate inspection/repair.',
+    } });
+    await prisma.workOrder.create({ data: {
+      accountId: account.id, assetId: assets['T-1'].id,
+      status: 'AWAITING_APPROVAL', workOrderType: 'CORRECTIVE', netaCertLevel: 'LEVEL_III',
+      scheduledDate: addDays(now, 20), laborCostCents: 4200000,
+      notes: 'Proposed T-1 bushing replacement + oil processing ($42k) — awaiting manager approval before the outage is scheduled.',
+    } });
+    await prisma.workOrder.create({ data: {
+      accountId: account.id, assetId: assets['T-1'].id,
+      status: 'CANCELLED', workOrderType: 'PREVENTIVE', netaCertLevel: 'LEVEL_II',
+      scheduledDate: addDays(now, 30),
+      notes: 'Routine TTR PM cancelled — folded into the approved T-1 modernization scope instead of running as a standalone visit.',
+    } });
+    // INSPECTION: an IR-thermography survey with NETA priority hot-spots. Fills
+    // both the INSPECTION work-order type and severityPriority, which was 100%
+    // null across every seeded measurement.
+    const irWO = await prisma.workOrder.create({ data: {
+      accountId: account.id, assetId: assets['SWGR-1A-1'].id,
+      contractorId: apex.id, assignedTechId: apexTechs.rios.id,
+      status: 'COMPLETE', workOrderType: 'INSPECTION', netaDecal: 'YELLOW', netaCertLevel: 'LEVEL_II',
+      scheduledDate: addDays(now, -12), startedAt: addDays(now, -12), completedDate: addDays(now, -12),
+      notes: 'Annual IR thermography survey of the SWGR-1A lineup (Infraspection Level II). Hot-spots graded to NETA Table 100.18 dT priorities.',
+    } });
+    const _irSpots = [
+      { loc: 'SWGR-1A-1 Phase A line-side lug', dt: 22.4, p: 1, load: 68 },
+      { loc: 'SWGR-1A-1 Phase B line-side lug', dt: 3.1,  p: 4, load: 68 },
+      { loc: 'SWGR-1A-1 Phase C line-side lug', dt: 1.8,  p: 4, load: 68 },
+      { loc: 'Main breaker load-side terminal A', dt: 9.6, p: 2, load: 72 },
+      { loc: 'Main breaker load-side terminal B', dt: 7.2, p: 2, load: 72 },
+      { loc: 'Feeder 3 disconnect stab', dt: 18.9, p: 1, load: 55 },
+      { loc: 'Feeder 5 lug torque joint', dt: 5.4, p: 3, load: 61 },
+      { loc: 'Bus tie splice plate', dt: 12.1, p: 2, load: 64 },
+      { loc: 'CT secondary terminal block', dt: 2.3, p: 4, load: 58 },
+      { loc: 'PT primary fuse clip', dt: 6.7, p: 3, load: 58 },
+      { loc: 'Ground bus bond', dt: 16.8, p: 1, load: 70 },
+      { loc: 'Feeder 2 cable termination', dt: 4.9, p: 3, load: 66 },
+      { loc: 'Neutral bus connection', dt: 10.3, p: 2, load: 66 },
+      { loc: 'Space heater circuit lug', dt: 1.2, p: 4, load: 40 },
+    ];
+    for (const h of _irSpots) {
+      await prisma.testMeasurement.create({ data: {
+        accountId: account.id, workOrderId: irWO.id,
+        measurementType: 'ir_thermography', label: h.loc,
+        asFoundValue: h.dt, asFoundUnit: 'C',
+        loadPercent: h.load, severityPriority: h.p,
+        passFail: h.p <= 1 ? 'RED' : h.p <= 2 ? 'YELLOW' : 'GREEN',
+        expectedRange: 'dT <= 3C vs similar component (NETA Table 100.18)',
+        notes: 'IR hot-spot dT vs. similar component under load.',
+      } });
+    }
+
+    // -- Quote requests: down_now + immediately + emergencyMode, and a draft --
+    await prisma.quoteRequest.create({ data: {
+      accountId: account.id, assetId: assets['SWGR-2M'].id, requestedById: manager.id,
+      status: 'requested', driver: 'down_now', timeline: 'immediately',
+      outageAvailable: true, budgeted: false, emergencyMode: true, priority: 'emergency',
+      dossierSnapshot: snap('SWGR-2M', 'SWGR-2M Mezzanine Switchgear'),
+      notes: 'EMERGENCY — mezzanine switchgear tripped and will not reclose; production line down. Need a tech on site today.',
+      createdAt: addDays(now, -1),
+    } });
+    await prisma.quoteRequest.create({ data: {
+      accountId: account.id, assetId: assets['MCC-1'].id, requestedById: admin.id,
+      status: 'draft', driver: 'planned_replacement', timeline: 'next_budget_cycle',
+      outageAvailable: false, budgeted: false, emergencyMode: false,
+      dossierSnapshot: snap('MCC-1', 'MCC-1 Lineup'),
+      notes: 'DRAFT — gathering scope for an MCC-1 bucket refurbishment; not yet submitted to the service rep.',
+      createdAt: addDays(now, -3),
+    } });
+
+    // -- Documents: fill the remaining docType + provenance buckets --
+    const _extDoc = (o) => prisma.document.create({ data: {
+      accountId: account.id, uploadedBy: admin.id,
+      fileType: 'text/uri-list', filePath: '__external__', encrypted: false, ...o,
+    }});
+    await _extDoc({ assetId: assets['SWGR-1A-1'].id, filename: 'Riverside Substation A One-Line (PE-Sealed)',
+      docType: 'wiring_diagram', provenance: 'pe_sealed',
+      externalUrl: 'https://internal.example-electrical.com/docs/riverside-subA-oneline-sealed' });
+    await _extDoc({ assetId: assets['T-1'].id, filename: 'Riverside Property Insurance Electrical Inspection Report',
+      docType: 'inspection_report', provenance: 'engineered',
+      externalUrl: 'https://internal.example-electrical.com/docs/riverside-insurer-inspection' });
+    await _extDoc({ assetId: assets['UPS-1'].id, filename: 'Stonebridge SB-80U UPS Warranty Certificate',
+      docType: 'warranty', provenance: 'vendor',
+      externalUrl: 'https://www.stonebridge-demo.local/warranty/SB-18-0954' });
+    await _extDoc({ assetId: assets['SWGR-2M'].id, filename: 'SWGR-2M Scanned LOTO Procedure (PDF backup)',
+      docType: 'loto_pdf', provenance: 'as_built',
+      externalUrl: 'https://internal.example-electrical.com/docs/swgr-2m-loto-scan' });
+    await _extDoc({ assetId: assets['GEN-1'].id, filename: 'GEN-1 Site Photo Set (misc)',
+      docType: 'other', provenance: 'unverified',
+      externalUrl: 'https://internal.example-electrical.com/docs/gen-1-photos' });
+
+    // -- LOTO: a multi-energy active procedure (pneumatic / hydraulic / chemical /
+    //    gravity, which were absent) + one archived (superseded) revision --
+    await prisma.lotoProc.create({ data: {
+      accountId: account.id, assetId: assets['MTR-1'].id,
+      title: 'MTR-1 ID-Fan Motor Skid Lockout Procedure Rev 2',
+      status: 'active', version: 2, createdById: admin.id, approvedById: manager.id, approvedAt: addDays(now, -30),
+      notes: 'Multi-energy isolation for the ID-fan motor skid: electrical + stored mechanical, hydraulic, pneumatic, gravity, and process-chemical sources.',
+      energySources: { create: [
+        { accountId: account.id, sortOrder: 0, energyType: 'electrical',
+          description: '480 V VFD feed to the ID-fan motor (VFD-1 output).',
+          isolationPoint: 'MCC-1 bucket for VFD-1', isolationMethod: 'Open and lock the feeder breaker; apply hasp + personal lock.',
+          verificationMethod: 'Test motor terminals for absence of voltage.' },
+        { accountId: account.id, sortOrder: 1, energyType: 'mechanical',
+          description: 'Stored rotational energy in the fan wheel / motor rotor.',
+          isolationPoint: 'Fan shaft coupling', isolationMethod: 'Allow spin-down; engage the shaft brake pin.',
+          verificationMethod: 'Confirm zero rotation for 60 s.' },
+        { accountId: account.id, sortOrder: 2, energyType: 'hydraulic',
+          description: 'Pressurized lube-oil system for the sleeve bearings.',
+          isolationPoint: 'Lube-oil supply valve LV-14', isolationMethod: 'Close and lock LV-14; bleed the accumulator.',
+          verificationMethod: 'Confirm 0 psi on the lube-oil gauge.' },
+        { accountId: account.id, sortOrder: 3, energyType: 'pneumatic',
+          description: 'Instrument air to the inlet-damper actuator.',
+          isolationPoint: 'Air header block valve AV-3', isolationMethod: 'Close and lock AV-3; vent the actuator.',
+          verificationMethod: 'Confirm 0 psi at the actuator; damper drifts to fail position.' },
+        { accountId: account.id, sortOrder: 4, energyType: 'gravity',
+          description: 'Suspended inlet-damper counterweight can fall when air is removed.',
+          isolationPoint: 'Counterweight arm', isolationMethod: 'Pin the counterweight arm in the down position.',
+          verificationMethod: 'Confirm the pin is seated and load-bearing.' },
+        { accountId: account.id, sortOrder: 5, energyType: 'chemical',
+          description: 'Process gas / coolant line tapping into the fan housing.',
+          isolationPoint: 'Coolant isolation valve CV-2 (double-block-and-bleed)', isolationMethod: 'Close both block valves; open the bleed; lock all three.',
+          verificationMethod: 'Confirm 0 flow and atmospheric pressure at the bleed.' },
+      ]},
+      steps: { create: [
+        { accountId: account.id, sortOrder: 0, category: 'shutdown', instruction: 'Stop the drive from the local HMI and confirm the fan is coasting down.' },
+        { accountId: account.id, sortOrder: 1, category: 'isolation', instruction: 'Isolate all six energy sources per the source list.' },
+        { accountId: account.id, sortOrder: 2, category: 'lockout', instruction: 'Apply LOTO hasps and personal locks at every isolation point.' },
+        { accountId: account.id, sortOrder: 3, category: 'verify', instruction: 'Verify zero energy at every source before work begins.', requiresVerification: true },
+      ]},
+    }});
+    await prisma.lotoProc.create({ data: {
+      accountId: account.id, assetId: assets['SWGR-2M'].id,
+      title: 'SWGR-2M Mezzanine Switchgear Lockout Procedure Rev 1 (superseded)',
+      status: 'archived', version: 1, createdById: admin.id, approvedById: manager.id, approvedAt: addDays(now, -400),
+      notes: 'Superseded by Rev 2 after the 2025 bus-bracing modification changed the racking sequence. Retained for audit history.',
+      energySources: { create: [
+        { accountId: account.id, sortOrder: 0, energyType: 'electrical',
+          description: '600 V feed from the MCC-1 main breaker (pre-modification arrangement).',
+          isolationPoint: 'MCC-1 main breaker', isolationMethod: 'Open and lock the main breaker.',
+          verificationMethod: 'Test the bus for absence of voltage.' },
+      ]},
+      steps: { create: [
+        { accountId: account.id, sortOrder: 0, category: 'lockout', instruction: 'Open and lock the MCC-1 main breaker (old sequence).' },
+        { accountId: account.id, sortOrder: 1, category: 'verify', instruction: 'Confirm 0 V on the SWGR-2M bus.', requiresVerification: true },
+      ]},
+    }});
+
+    // -- Alerts: fill the remaining alertType + status buckets. Guarded by
+    //    schedule presence (task-matrix drift => skip rather than crash). --
+    const _mkAlert = async (schedKey, type, status, extra = {}) => {
+      const sched = schedules[schedKey];
+      if (!sched) return;
+      await prisma.alert.create({ data: {
+        accountId: account.id, scheduleId: sched.id, assetId: sched.assetId,
+        alertType: type, scheduledAt: addDays(now, -10), createdAt: addDays(now, -10),
+        sentAt: status === 'pending' ? null : addDays(now, -10),
+        status, ...extra,
+      }});
+    };
+    await _mkAlert('SWGR-2M:SWGR_IR_THERMO', 'condition_degradation', 'escalated', { escalatedAt: addDays(now, -4) });
+    await _mkAlert('SWGR-1A-1:SWGR_INSULATION_RES', 'deficiency_alert', 'sent');
+    await _mkAlert('SWGR-1A-1:SWGR_IR_THERMO', 'arc_flash_expiry', 'sent');
+    await _mkAlert('BATT-1:BATT_OHMIC_FLOAT', 'asset_decommission', 'cancelled');
+
+    // -- Disaster events: edge eventTypes (hurricane / ice_storm / earthquake).
+    //    Guarded by nwsAlertId (accountId-null NWS rows survive the reset). --
+    const _mkDisaster = async (guardId, data) => {
+      const exists = await prisma.disasterEvent.findFirst({ where: { nwsAlertId: guardId } }).catch(() => null);
+      if (!exists) await prisma.disasterEvent.create({ data: { ...data, nwsAlertId: guardId } });
+    };
+    await _mkDisaster('demo-seed-hurricane-remnants', {
+      eventType: 'hurricane', severity: 'watch',
+      title: 'Flood Watch — remnants of a Gulf hurricane tracking up the Mississippi Valley',
+      region: 'Upper Mississippi Valley — Quad Cities metro',
+      affectedStates: ['IA', 'IL'], affectedSiteIds: [riverside.id, eastgate.id],
+      source: 'nws', declaredAt: addDays(now, -95), resolvedAt: addDays(now, -92),
+    });
+    await _mkDisaster('demo-seed-ice-storm-warning', {
+      eventType: 'ice_storm', severity: 'warning',
+      title: 'Ice Storm Warning — 0.5 in. ice accumulation, widespread outages likely',
+      region: 'Eastern Iowa / Northwestern Illinois — Quad Cities metro',
+      affectedStates: ['IA', 'IL'], affectedSiteIds: [riverside.id, eastgate.id],
+      source: 'nws', declaredAt: addDays(now, -60), resolvedAt: addDays(now, -58),
+    });
+    await _mkDisaster('demo-seed-earthquake-report', {
+      accountId: account.id,
+      eventType: 'earthquake', severity: 'emergency',
+      title: 'M4.6 Earthquake — New Madrid seismic activity felt at Riverside; inspection triggered',
+      region: 'Riverside Plant — Scott County, IA',
+      affectedStates: ['IA'], affectedSiteIds: [riverside.id],
+      source: 'manual', declaredBy: admin.id, declaredAt: addDays(now, -30), resolvedAt: addDays(now, -29),
+    });
+  }
+
   // ── Compliance snapshots (G1) — REAL generated evidence packs ─────────────
   // Snapshot downloads stream the stored file and verify sha256, so fake rows
   // 404. lib/snapshotPipeline.generateSnapshot is the same render → hash →
@@ -2422,19 +3239,29 @@ async function _seedAccount() {
   // reset deletes the stored files + rows (see _resetDemoAccount).
   // Best-effort — a storage/render failure must not sink the whole seed.
   let snapshotCount = 0;
-  try {
+  {
     const { generateSnapshot } = require('../lib/snapshotPipeline');
-    await generateSnapshot(prisma, {
-      accountId: account.id, userId: admin.id, userName: admin.name,
-    }); // all standards, all sites
-    snapshotCount++;
-    await generateSnapshot(prisma, {
-      accountId: account.id, userId: admin.id, userName: admin.name,
-      siteId: riverside.id,
-    }); // all standards, Riverside only
-    snapshotCount++;
-  } catch (e) {
-    console.warn('[seed-demo] compliance snapshot generation skipped:', e.message);
+    // Each scope is generated + guarded INDEPENDENTLY. generateSnapshot throws
+    // NO_DATA for a site with no standard/schedule coverage (e.g. the Cedar Ridge
+    // PowerDB breaker site has WorkOrders/measurements but no maintenance
+    // schedules) — that must skip only THAT scope, not abort the whole block the
+    // way a single shared try/catch did.
+    const _snapScopes = [
+      { label: 'account-wide (all sites)', args: {} },
+      { label: 'Riverside Plant', args: { siteId: riverside.id } },
+      { label: 'Eastgate Distribution Center', args: { siteId: eastgate.id } },
+      ...(cedarRidge ? [{ label: 'Cedar Ridge Facility', args: { siteId: cedarRidge.id } }] : []),
+    ];
+    for (const scope of _snapScopes) {
+      try {
+        await generateSnapshot(prisma, {
+          accountId: account.id, userId: admin.id, userName: admin.name, ...scope.args,
+        });
+        snapshotCount++;
+      } catch (e) {
+        console.warn('[seed-demo] compliance snapshot skipped for ' + scope.label + ':', e.message);
+      }
+    }
   }
 
   return {
@@ -2448,13 +3275,13 @@ async function _seedAccount() {
       contractors: 2, contractorTechs: 5,
       assets: assetSpecs.length, archivedAssets: archivedAssetCount,
       schedules: scheduleCount,
-      workOrders: 25, testMeasurements: wo2Measurements.length,
-      deficiencies: 9, labSamples: 4, systemStudies: 3,
+      workOrders: 29, testMeasurements: wo2Measurements.length,
+      deficiencies: 9, labSamples: 4, systemStudies: 5,
       auditVisits: 4, auditRecommendations: 6,
       alerts: alertCount,
-      assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 4, parts: 7, incidentLogs: 6,
+      assetsWithOwner: 6, blackoutWindows: 1, quoteRequests: 12, parts: 7, incidentLogs: 6,
       activityLogs: 9,
-      lotoProcs: 2, documents: 3,
+      lotoProcs: 5, documents: 9,
       assetTemplates: templateCount, newsItems: newsCount,
       complianceSnapshots: snapshotCount,
     },

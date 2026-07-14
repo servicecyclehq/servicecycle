@@ -142,7 +142,7 @@ async function buildAssetEvidenceTrace(prisma: any, accountId: string, assetId: 
  * backed by documented evidence, which test types are most under-evidenced, and
  * which assets have the biggest gaps (the contractor's upsell list).
  */
-async function buildEvidenceGapSummary(prisma: any, accountId: string, { siteId = null }: { siteId?: string | null } = {}) {
+async function buildEvidenceGapSummary(prisma: any, accountId: string, { siteId = null, topAssetsLimit = 25 }: { siteId?: string | null; topAssetsLimit?: number } = {}) {
   const now = new Date();
   let site = null;
   if (siteId) {
@@ -185,7 +185,10 @@ async function buildEvidenceGapSummary(prisma: any, accountId: string, { siteId 
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : 0);
 
   const byRequirementType = [...byType.values()].filter((t) => t.gaps > 0).sort((a, b) => b.gaps - a.gaps);
-  const topAssets = [...byAsset.values()].filter((a) => a.gaps > 0).sort((a, b) => b.gaps - a.gaps).slice(0, 25);
+  // 2026-07-13: default 25 preserves existing callers (the dashboard card).
+  // auditFindings.ts passes a much larger topAssetsLimit for its "show every
+  // matching asset" drill-down page -- see fullKind there.
+  const topAssets = [...byAsset.values()].filter((a) => a.gaps > 0).sort((a, b) => b.gaps - a.gaps).slice(0, topAssetsLimit);
 
   return {
     generatedAt: now,

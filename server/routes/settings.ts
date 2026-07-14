@@ -11,10 +11,20 @@
 
 const express    = require('express');
 const router     = express.Router();
-const { requireAdmin } = require('../middleware/roles');
+const { requireAdmin, requireViewer } = require('../middleware/roles');
 import prisma from '../lib/prisma';
 const { encryptIfNeeded, decryptIfEncrypted, isEncrypted } = require('../lib/crypto');
 const { normalizeEvalLeadTimes, DEFAULT_EVAL_LEAD_TIMES } = require('../utils/dates'); // #28 configurable evaluation lead times
+
+// 2026-07-13: shared with the inbound-email slug scheme (routes/inboundEmail.ts
+// resolveAccountByTo matches on this exact string shape) -- keep in sync if
+// either copy changes.
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'account';
+}
 
 // v0.68.0 (audit Medium): pattern-match key names that look sensitive and
 // auto-encrypt their values on write. The ENCRYPTED_KEYS allowlist below
@@ -1262,6 +1272,66 @@ router.get('/branding', async (req, res) => {
   } catch (err) {
     console.error('[settings/branding GET]', err);
     return res.status(500).json({ success: false, error: 'Failed to load branding' });
+  }
+});
+
+// ── GET /api/settings/inbound-email — any authenticated role ───────────────────
+// Returns the account's "forward a test report here" address so AddData.jsx can
+// show the real, copyable value instead of a placeholder. Auto-provisions an
+// AccountSetting inbound_slug (derived from company name) on first request if
+// the account doesn't have one yet -- there was previously no self-serve path
+// to get one at all; only a one-off test seed (scripts/seedWestAllis.js) ever
+// created this row. See routes/inboundEmail.ts resolveAccountByTo() for how the
+// slug routes an inbound message back to this account.
+router.get('/inbound-email', requireViewer, async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    let setting = await prisma.accountSetting.findFirst({
+      where: { accountId, key: 'inbound_slug' },
+    });
+
+    if (!setting) {
+      const account = await prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } });
+      const base = slugify(account?.companyName);
+
+      // 2026-07-13 (pre-go-live review N2): the old findFirst-then-create had
+      // no DB-level guarantee -- AccountSetting's only unique constraint is
+      // (accountId, key) (schema.prisma:2200), not (key, value), so two
+      // concurrent first-time GETs (from two different accounts, or two tabs
+      // of the same account racing before their row exists) could both read
+      // "slug free" and both create it, letting inbound-email routing
+      // (routes/inboundEmail.ts resolveAccountByTo) match the wrong account.
+      // A Postgres advisory xact-lock serializes provisioning across the
+      // whole table without a schema/migration change -- cheap since this
+      // only ever runs once per account, on the first /inbound-email GET.
+      setting = await prisma.$transaction(async (tx) => {
+        // Re-check for this account's row inside the lock: another request
+        // for the SAME account may have provisioned it while we waited.
+        const existingForAccount = await tx.accountSetting.findFirst({ where: { accountId, key: 'inbound_slug' } });
+        if (existingForAccount) return existingForAccount;
+
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('inbound_slug_provision')::bigint)`;
+
+        let slug = base;
+        // Slug is the ONLY thing inbound routing matches on, so it must be
+        // globally unique across all accounts -- append a short random suffix
+        // on collision rather than retrying forever.
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const existing = await tx.accountSetting.findFirst({ where: { key: 'inbound_slug', value: slug } });
+          if (!existing) break;
+          slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+        }
+        return tx.accountSetting.create({ data: { accountId, key: 'inbound_slug', value: slug } });
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: { slug: setting.value, email: `reports-${setting.value}@servicecycle.app` },
+    });
+  } catch (err) {
+    console.error('[settings/inbound-email GET]', err);
+    return res.status(500).json({ success: false, error: 'Failed to load inbound email address' });
   }
 });
 

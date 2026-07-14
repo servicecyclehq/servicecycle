@@ -35,6 +35,7 @@ const { checkSystemContradictions, checkBusContradictions } = require('../lib/ar
 const { parseQuery, matchRow } = require('../lib/arcFlashSearch');
 const { buildExportRows, toCsv, EXPORT_COLUMNS } = require('../lib/arcFlashExport');
 const { applyTemplateHeader } = require('../lib/xlsxStyle');
+const { csvCell } = require('../lib/exportHelpers');
 const { parseResultsCsv, matchResults } = require('../lib/arcFlashResultsImport');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
@@ -81,7 +82,18 @@ async function logActivity(userId: string, accountId: string, action: string, de
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB
-  fileFilter: (_req: any, file: any, cb: any) => cb(null, /application\/pdf|image\/(png|jpe?g|webp)/i.test(file.mimetype || '')),
+  // #docx (2026-07-13): an arc-flash study can arrive as a Word .docx too —
+  // extractArcFlashDocument now reads it via mammoth -> the AI text path.
+  // Accept by MIME OR extension (browsers sometimes send octet-stream for
+  // .docx); reject legacy .doc with a clear message.
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const name = file.originalname || '';
+    const mime = file.mimetype || '';
+    if (/application\/pdf|image\/(png|jpe?g|webp)|officedocument\.wordprocessingml\.document/i.test(mime)
+        || /\.(pdf|png|jpe?g|webp|docx)$/i.test(name)) return cb(null, true);
+    if (/\.doc$/i.test(name) || mime === 'application/msword') return cb(new Error('Legacy .doc (Word 97-2003) is not supported — save as .docx.'));
+    return cb(null, false);
+  },
 });
 
 const ELECTRODE_CONFIGS = new Set(['VCB', 'VCBB', 'HCB', 'VOA', 'HOA']);
@@ -1162,9 +1174,14 @@ router.get('/fleet', requireManager, async (req: any, res: any) => {
         ['Incidents (12mo)', 'recentIncidents'], ['Open incidents', 'openIncidents'],
         ['Incident injuries', 'incidentInjuries'], ['Last incident', 'lastIncidentAt'],
       ];
-      const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-      const lines = [cols.map((c) => c[0]).join(',')];
-      for (const s of siteList) lines.push(cols.map((c) => esc((s as any)[c[1]])).join(','));
+      // 2026-07-13 (pre-go-live review N3 follow-up): this used to have its own
+      // local `esc` that quoted commas/quotes/newlines but was MISSING the H6
+      // formula-injection guard (exportHelpers.ts's csvCell has it) -- a
+      // user-named site like `=cmd|'/c calc'!A1` would round-trip straight
+      // into this CSV, and Excel auto-executes a leading =/+/-/@ on CSV open.
+      // Reuse the already-guarded shared csvCell instead of re-diverging.
+      const lines = [cols.map((c) => csvCell(c[0])).join(',')];
+      for (const s of siteList) lines.push(cols.map((c) => csvCell((s as any)[c[1]])).join(','));
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="arc-flash-fleet-${new Date().toISOString().slice(0, 10)}.csv"`);
       return res.send(lines.join('\r\n'));

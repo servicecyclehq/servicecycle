@@ -27,6 +27,13 @@
  */
 
 const { buildRateResolver } = require('./rateResolver');
+// 2026-07-13 (pre-go-live review N3 follow-up): csvCell used to be a local
+// copy that escaped quotes/commas/newlines but was MISSING the H6 formula-
+// injection guard (exportHelpers.ts:135) -- a site named e.g. `=cmd|'/c
+// calc'!A1` would round-trip straight into this CSV untouched, and Excel
+// auto-executes a leading =/+/-/@ on CSV open. Reuse the shared, already-
+// guarded helper instead of re-diverging.
+const { csvCell } = require('./exportHelpers');
 
 // Risk-score -> funding year bucket (mirrors fleetDashboard forecast tiers).
 function scoreToBucket(score: number): 1 | 3 | 5 {
@@ -214,10 +221,8 @@ async function buildMaintenanceDebtData(prisma: any, accountId: string) {
 }
 
 // ── CSV export ────────────────────────────────────────────────────────────────
-function csvCell(s: any): string {
-  const v = s == null ? '' : String(s);
-  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
+// csvCell is imported from ./exportHelpers (see top of file) -- it already
+// includes the H6 formula-injection guard.
 
 function debtLedgerToCsv(data: any): string {
   // CFO-8-6: make the column semantics unambiguous so the workbook reconciles.

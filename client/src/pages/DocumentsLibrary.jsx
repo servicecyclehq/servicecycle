@@ -56,7 +56,11 @@ export default function DocumentsLibrary({ siteId = null, embedded = false }) {
   // Site dropdown (only for the standalone page, not when locked to one site)
   useEffect(() => {
     if (embedded || siteId) return;
-    api.get('/api/sites').then((r) => setSites(r.data?.data || r.data || [])).catch(() => {});
+    // 2026-07-13 fix: GET /api/sites returns { data: { sites, total, pagination } },
+    // not { data: [...] } -- the old fallback chain (r.data?.data || r.data || [])
+    // set the whole { sites, total, pagination } OBJECT as state, so sites.map()
+    // below threw "sites.map is not a function" every time this page loaded.
+    api.get('/api/sites').then((r) => setSites(r.data?.data?.sites || [])).catch(() => {});
   }, [embedded, siteId]);
 
   // Fetch (debounced on the search box)

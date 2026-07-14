@@ -46,15 +46,18 @@
  * row per call with counts — no per-row rows (would dilute asset timelines).
  *
  * Hardening inherited from the retired contracts importer: multer memory
- * storage + size cap + extension filter, exceljs (not SheetJS — CVE-2023-30533/
- * CVE-2024-22363), formula-injection sanitization on every free-text column
- * on the way IN, per-row error collection with 1-indexed+header row numbers.
+ * storage + size cap + extension filter, exceljs for .xlsx (a PATCHED SheetJS
+ * >= 0.20.2 handles the legacy .xls path only, where CVE-2023-30533 and
+ * CVE-2024-22363 are both already fixed — see lib/xlsParse.ts), formula-
+ * injection sanitization on every free-text column on the way IN, per-row error
+ * collection with 1-indexed+header row numbers.
  */
 
 const router = require('express').Router();
 const multer = require('multer');
 const Papa = require('papaparse');
-// exceljs, not xlsx/SheetJS — see header. Already a dependency (export path).
+// exceljs reads .xlsx (already a dependency, export path); the legacy .xls
+// branch uses SheetJS lazily via lib/xlsParse — see header.
 const ExcelJS = require('exceljs');
 
 const { requireManager } = require('../middleware/roles');
@@ -103,7 +106,15 @@ function _cellToString(v) {
  * where each row is a plain object keyed by header string (papaparse shape).
  */
 async function parseUploadedFile(buffer, originalname) {
-  const isXlsx = /\.(xlsx|xls)$/i.test(originalname || '');
+  const isXls  = /\.xls$/i.test(originalname || '');
+  const isXlsx = /\.xlsx$/i.test(originalname || '');
+
+  // Legacy .xls (BIFF8/OLE2) — ExcelJS reads only OOXML .xlsx and silently
+  // fails on a real .xls. SheetJS (patched >= 0.20.2) reads it; see lib/xlsParse.
+  if (isXls) {
+    const { parseXlsBuffer } = require('../lib/xlsParse');
+    return parseXlsBuffer(buffer);
+  }
 
   if (isXlsx) {
     const wb = new ExcelJS.Workbook();

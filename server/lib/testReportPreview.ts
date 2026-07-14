@@ -19,8 +19,10 @@ const { runDeterministic } = require('./testReportExtract');
 const { aiFillReadings, aiFillReadingsFromImage } = require('./aiTestReportExtract');
 const { sha256Hex, confStats, recordExtraction, findPriorImport } = require('./extractionTelemetry');
 const { resolveAsset } = require('./assetIdentity');
+const { extractDocxText } = require('./docxText');
 
 const IMAGE_RE = /\.(jpe?g|png|heic|heif|webp)$/i;
+const DOCX_RE  = /\.docx$/i;
 
 function assetLabel(a: any): string {
   return [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || 'Asset';
@@ -149,10 +151,17 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   const { accountId, userId } = opts;
   let buffer = inputBuffer;
 
+  // .docx (Word) test report: mammoth pulls the plain text, which feeds the
+  // SAME deterministic parseTestReport() vocabulary matcher as PDF-extracted
+  // text. Extracted once here and reused for the AI gap-fill below (no PDF
+  // engines run for a docx). extractDocxText rejects legacy .doc / zip-bombs.
+  const isDocx = DOCX_RE.test(opts.originalName || '');
+  let docxText: string | null = null;
+
   // #20 photo-of-paper: wrap an image into a single-page PDF so the same OCR +
   // parse pipeline reads it unchanged.
   let photoOfPaper = false;
-  if (IMAGE_RE.test(opts.originalName || '')) {
+  if (!isDocx && IMAGE_RE.test(opts.originalName || '')) {
     const { imageToPdf } = require('./imageToPdf');
     buffer = await imageToPdf(buffer, opts.mimetype || 'image/jpeg');
     photoOfPaper = true;
@@ -181,6 +190,14 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   // to ingestWorker's pageProgress checkpoint.
   let pageError: string | null = null;
   let sectionDefs: any[] = [];
+  if (isDocx) {
+    // Word .docx path: mammoth text -> deterministic parse. No PDF/OCR engines.
+    docxText = await extractDocxText(buffer);
+    source = 'docx';
+    const parsed = parseTestReport(docxText || '');
+    meta = parsed.meta;
+    measurements = parsed.measurements;
+  } else {
   const py = await runDeterministic(buffer, { resumeFrom: opts.resumeFrom });
   if (py && py.ok && Array.isArray(py.measurements) && py.measurements.length > 0) {
     source = py.ocr ? 'pdfplumber-ocr' : 'pdfplumber';
@@ -229,6 +246,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     meta = parsed.meta;
     measurements = parsed.measurements;
   }
+  }
 
   // W1-AI deterministic-first gap-fill.
   let aiUsed = false;
@@ -244,7 +262,7 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
   const lowCoverage = source === 'pdfjs' || measurements.length < MIN_READINGS;
   if (process.env.AI_ENABLED !== 'false' && lowCoverage) {
     try {
-      const aiText = await extractPdfText(buffer);
+      const aiText = isDocx ? (docxText || '') : await extractPdfText(buffer);
       if (aiText && aiText.trim().length > 60) {
         const filled = await aiFillReadings(aiText);
         if (filled.ok) mergeMeta(filled.fields);
@@ -273,7 +291,18 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
       if (vres.ok && vres.measurements.length) {
         visionAdded += mergeExtractedMeasurements(measurements, vres.measurements);
         visionUsed = visionAdded > 0;
-        if (visionUsed) source = source.includes('ai') ? `${source}+vision` : `${source}+vision`;
+        if (visionUsed) {
+          source = source.includes('ai') ? `${source}+vision` : `${source}+vision`;
+          // SEC (2026-07-12 audit): this branch reads pixels from a
+          // photo-of-paper upload via a multimodal model — the same
+          // "read from a photo/scan" risk ingestConfidenceGate's `ocr===true`
+          // rule exists to catch (it forces a 'red' identity-review floor).
+          // Previously only the Python/Tesseract OCR path (`py.ocr`) set this
+          // flag, so a document whose readings came entirely from the vision
+          // fallback (photoOfPaper && low deterministic coverage) never
+          // tripped the strongest review rule. See maintenance-brief note.
+          ocr = true;
+        }
       }
     } catch (e: any) {
       console.warn('[testReportPreview] vision fallback skipped:', e && e.message ? e.message : String(e));

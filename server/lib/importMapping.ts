@@ -252,14 +252,26 @@ function _cellToString(v: any): string {
 }
 
 /**
- * Parse an uploaded buffer by filename extension. CSV -> papaparse; .xlsx/.xls
- * -> exceljs (lazy-required so CSV-only callers and unit tests never load it).
- * exceljs, not SheetJS -- CVE-2023-30533/CVE-2024-22363 posture inherited from
- * routes/assetsImport.ts; exceljs is already a server dependency.
+ * Parse an uploaded buffer by filename extension. CSV -> papaparse; .xlsx ->
+ * exceljs; legacy binary .xls (BIFF8/OLE2) -> SheetJS (lib/xlsParse) — ExcelJS
+ * only reads OOXML .xlsx and silently fails on a real .xls, so those files were
+ * accepted by extension but never actually loaded. All lazy-required so CSV-only
+ * callers and unit tests never load the spreadsheet engines.
+ *
+ * exceljs stays the .xlsx reader (CVE-2023-30533/CVE-2024-22363 avoidance); the
+ * .xls path uses a PATCHED SheetJS build (>= 0.20.2) where both CVEs are fixed —
+ * see lib/xlsParse.ts.
  */
 async function parseUploadBuffer(buffer: Buffer, originalname: string): Promise<{ headers: string[]; rows: any[] }> {
-  const isXlsx = /\.(xlsx|xls)$/i.test(originalname || '');
-  if (!isXlsx) return parseCsvText(buffer.toString('utf8'));
+  const isXls  = /\.xls$/i.test(originalname || '');
+  const isXlsx = /\.xlsx$/i.test(originalname || '');
+  if (!isXls && !isXlsx) return parseCsvText(buffer.toString('utf8'));
+
+  // Legacy .xls (OLE2) — ExcelJS can't read it; SheetJS can.
+  if (isXls) {
+    const { parseXlsBuffer } = require('./xlsParse');
+    return parseXlsBuffer(buffer);
+  }
 
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();

@@ -113,7 +113,7 @@ function ReportCard({ report, onActivate, busy }) {
             ) : report.accountExport ? (
               <>
                 <Download size={14} />
-                {busy ? 'Preparing export…' : 'Download backup (JSON)'}
+                {busy ? 'Preparing export…' : 'Download backup (Excel)'}
               </>
             ) : (
               <>
@@ -161,14 +161,19 @@ export default function ReportsHub() {
       return;
     }
 
-    // #5 Export-everything — full-account portable backup (lossless JSON).
+    // #5 Export-everything — full-account portable backup. 2026-07-13 fix:
+    // the hub button now downloads the multi-sheet XLSX (one tab per record
+    // type) instead of raw JSON — Dustin's live-review call: "most users
+    // will have no clue what a JSON is." The lossless JSON export still
+    // exists server-side (GET /api/export/account?format=json) for anyone
+    // who wants it, just not surfaced as the default hub download anymore.
     if (report.accountExport) {
       if (exporting) return;
       setExporting(true);
       setToast({ title: 'Preparing account export…', message: 'Bundling every record into a portable file — this may take a moment.', variant: 'info', duration: 6000 });
       try {
-        const url = `${import.meta.env.VITE_API_URL ?? ''}/api/export/account?format=json`;
-        await downloadAuthedFile(url, `ServiceCycle-Account-Export-${new Date().toISOString().split('T')[0]}.json`);
+        const url = `${import.meta.env.VITE_API_URL ?? ''}/api/export/account?format=xlsx`;
+        await downloadAuthedFile(url, `ServiceCycle-Account-Export-${new Date().toISOString().split('T')[0]}.xlsx`);
         setToast({ title: 'Export ready', message: 'Your complete account backup is downloading.', variant: 'success', duration: 4000 });
       } catch (e) {
         setToast({ title: 'Export failed', message: e.message || 'Please try again.', variant: 'error', duration: 8000 });

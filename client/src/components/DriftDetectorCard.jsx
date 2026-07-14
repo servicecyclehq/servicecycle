@@ -23,6 +23,12 @@ export default function DriftDetectorCard({ siteId = null }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 2026-07-13 fix: this card silently capped at 15 findings with NO "+N
+  // more" indicator at all -- worse than AuditFailureCard's original bug,
+  // since there wasn't even a hint more existed. data.findings is already
+  // unbounded from the server (driftDetector.ts), so an in-place expand is
+  // the simplest fix.
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -58,7 +64,7 @@ export default function DriftDetectorCard({ siteId = null }) {
               {s.worseningTrend} worsening trend · {s.unclosedCorrective} unclosed corrective · {s.repeatFailure} repeat failure — each with a recommended program change, not just a new ticket.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {data.findings.slice(0, 15).map((f) => {
+              {(showAll ? data.findings : data.findings.slice(0, 15)).map((f) => {
                 const m = TYPE_META[f.driftType] || TYPE_META.repeat_failure;
                 return (
                   <div key={f.assetId} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--color-border)' }}>
@@ -76,6 +82,15 @@ export default function DriftDetectorCard({ siteId = null }) {
                 );
               })}
             </div>
+            {data.findings.length > 15 && (
+              <button
+                type="button"
+                onClick={() => setShowAll(v => !v)}
+                style={{ background: 'none', border: 'none', padding: '8px 0 0', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--color-primary)' }}
+              >
+                {showAll ? 'Show fewer' : `Show all ${data.findings.length} →`}
+              </button>
+            )}
           </>
         )}
       </div>

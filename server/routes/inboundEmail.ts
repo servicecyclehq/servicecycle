@@ -42,8 +42,11 @@ const { uploadFile } = require('../lib/storage');
 // The acknowledgement to the sender is sent AFTER parsing+gating (lib/ingestAck),
 // not here — so it can reflect whether anything was parked for review.
 
-const PDFISH_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
-const PDF_TYPES = /(application\/pdf|image\/(jpeg|png|heic|heif|webp))/i;
+// #docx (2026-07-13): a forwarded report can be a Word .docx attachment — the
+// worker parses it via buildTestReportPreview (mammoth text -> parse), same path
+// as a PDF. Legacy .doc is NOT accepted (no lightweight extractor).
+const PDFISH_RE = /\.(pdf|docx|jpe?g|png|heic|heif|webp)$/i;
+const PDF_TYPES = /(application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|image\/(jpeg|png|heic|heif|webp))/i;
 
 // Belt-and-suspenders bounds on a (signature-authenticated) inbound message so
 // one email can't fan out into an unbounded number of auto-commit jobs or

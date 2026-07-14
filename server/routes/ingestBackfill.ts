@@ -21,19 +21,38 @@ const prisma = require('../lib/prisma').default;
 const { uploadFile } = require('../lib/storage');
 const { requireManager } = require('../middleware/roles');
 const { resolveTargetAccount } = require('../lib/oemTargetAccount');
+const { assertZipInflatesWithinBudget } = require('../lib/zipInflateGuard');
 
 const MAX_ZIP_BYTES  = 100 * 1024 * 1024; // 100 MB archive (compressed)
 const MAX_FILES      = 200;               // jobs per batch
 const MAX_FILE_BYTES = 15 * 1024 * 1024;  // per report (uncompressed)
-// Decompression-bomb guard: cap the TOTAL uncompressed bytes we will inflate
-// across the whole batch so a small archive of highly-compressible entries
-// cannot blow up memory. 200 * 15MB is the theoretical max of accepted files;
-// we stop well before that and never inflate a single oversized entry.
+// PROCESSING budget (loop, below): stop materializing report files once this
+// much has been inflated in the accepted set; remaining entries are skipped (the
+// batch still succeeds). This is a throughput/skip budget, NOT the memory guard.
 const MAX_TOTAL_UNCOMPRESSED = 400 * 1024 * 1024;
-const REPORT_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
+// Hard SAFETY ceilings for the pre-inflation bomb guard (assertZipInflatesWithin
+// budget), deliberately distinct from the processing budget above. A legit
+// report batch is a <=100MB archive of PDFs/images (already-compressed, so it
+// inflates to only a few hundred MB); a decompression bomb inflates a tiny
+// archive to many GB. These ceilings sit in the wide gap between the two:
+//  - per entry: bounds each entry's REAL inflation, so the loop's uncapped
+//    JSZip .async() (which trusts no size) can never be handed a single entry
+//    that inflates to GB. 128MB is ~8.5x the 15MB per-file cap — any honestly
+//    oversized report is well under it (and is skipped in the loop regardless);
+//  - per archive: aborts a distributed bomb (many medium entries) and bounds the
+//    guard's own CPU. 1GB is several times any realistic legit batch, far below
+//    bomb scale. Exceeding either -> the archive is rejected (fails closed).
+const MAX_GUARD_ENTRY_BYTES = 128 * 1024 * 1024;  // 128 MB real inflation / entry
+const MAX_GUARD_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GB real inflation / archive
+// #docx (2026-07-13): a backfill zip can carry Word .docx reports too — the
+// worker runs them through buildTestReportPreview (mammoth text -> parse), same
+// as a PDF. Legacy .doc is excluded (no lightweight extractor; skipped as a
+// non-report entry rather than silently mis-parsed).
+const REPORT_RE = /\.(pdf|docx|jpe?g|png|heic|heif|webp)$/i;
 const MIME: Record<string, string> = {
   pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
   heic: 'image/heic', heif: 'image/heif', webp: 'image/webp',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
 const mimeFor = (name: string) => MIME[(name.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
 
@@ -74,6 +93,21 @@ router.post('/backfill', requireManager, upload.single('file'), async (req: any,
       if (!site) return res.status(400).json({ success: false, error: 'siteId not found in this account' });
     }
 
+    // Decompression-bomb guard (REAL inflation, runs before JSZip touches the
+    // archive): inflate every entry's actual DEFLATE stream and count true output
+    // bytes, aborting the moment any entry's real inflation exceeds the per-entry
+    // ceiling or the archive's real total exceeds the per-archive ceiling. This
+    // never trusts the central-directory declared sizes (which an attacker
+    // controls) and fails CLOSED on anything it cannot verify, so a zip bomb can
+    // never reach JSZip's uncapped .async() inflation below. See lib/zipInflateGuard.
+    const zipBudget = assertZipInflatesWithinBudget(req.file.buffer, {
+      maxTotalBytes: MAX_GUARD_TOTAL_BYTES,
+      maxEntryBytes: MAX_GUARD_ENTRY_BYTES,
+    });
+    if (!zipBudget.ok) {
+      return res.status(400).json({ success: false, error: 'Archive rejected: it decompresses beyond the allowed size or could not be verified.' });
+    }
+
     let zip: any;
     try { zip = await JSZip.loadAsync(req.file.buffer); }
     catch { return res.status(400).json({ success: false, error: 'Could not read the .zip archive' }); }
@@ -89,9 +123,12 @@ router.post('/backfill', requireManager, upload.single('file'), async (req: any,
     let totalUncompressed = 0;
 
     for (const entry of take) {
-      // Decompression-bomb guard #1: reject on the size the archive DECLARES,
-      // before we inflate a single byte. A zip bomb advertises a huge
-      // uncompressed size; skip those without materializing them in memory.
+      // Per-file fast-skip (optimization, NOT the security boundary): skip an
+      // entry whose DECLARED uncompressed size already exceeds the per-file cap,
+      // to avoid materializing an obviously-too-big file. The real memory bound
+      // is the assertZipInflatesWithinBudget pre-pass above, which has already
+      // verified the archive's ACTUAL total inflation — a lying (small) declared
+      // size here just falls through to the real buf.length check below.
       const declared = (entry as any)?._data?.uncompressedSize;
       if (typeof declared === 'number' && declared > MAX_FILE_BYTES) {
         skipped.push({ name: (entry as any).name, reason: 'too large (declared)' });

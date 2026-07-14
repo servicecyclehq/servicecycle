@@ -78,6 +78,23 @@
   .no-print { display: none !important; }
   a { color: inherit !important; text-decoration: none !important; }
 
+  /* 2026-07-13 fix: the mobile hamburger trigger (Layout.jsx
+     .mobile-menu-btn) is gated on `@media (max-width: 900px)` in index.css
+     with `display: inline-flex !important`. Chrome's print preview lays the
+     page out at the printed paper width (letter minus margins is well under
+     900px), so that breakpoint matches during print and the button renders
+     over the masthead -- reproduced from Dustin's screenshot of
+     /reports/arc-flash. Ungated (not behind body:has(.print-doc)): this is
+     global app chrome that must never appear in ANY printed output, not
+     just pages that opted into the .print-doc standard.
+     Specificity note: index.css's mobile rule is `.mobile-menu-btn` alone
+     (0,0,1,0) with !important. Since @import pastes print.css BEFORE the
+     rest of index.css, a same-specificity !important rule here would LOSE
+     the source-order tie-break to that later rule even while @media print
+     is active. `body .mobile-menu-btn` (0,0,1,1) outranks it on specificity
+     instead, so this wins unconditionally regardless of import position. */
+  body .mobile-menu-btn { display: none !important; }
+
   /* Re-display print-only elements; component rules below refine display. */
   .print-only { display: block; }
 
@@ -96,12 +113,28 @@
     line-height: 1.45;
   }
 
-  /* ---- Masthead: title + org/meta + double hairline rule ----------------- */
+  /* ---- Masthead: co-brand petrol band + org/meta + double hairline rule --
+     2026-07-13: brought to parity with the PDF masthead's co-brand band
+     (server/lib/pdfStyle.ts drawMasthead brandColor path) -- Dustin's
+     reaction to the plain black-on-white browser-print masthead ("pretty
+     weak branding") was correct: the two export surfaces had drifted apart.
+     Uses --color-primary/--color-on-primary so the pairing stays
+     contrast-correct even if dark-mode tokens are active at print time (see
+     the open dark-mode caveat above) -- both flip together.
+     Browser caveat (no PDF equivalent): most browsers only print background
+     colors when the user has "Background graphics" checked in the print
+     dialog -- unlike the PDF path, this band can silently not appear if
+     that's off. Worth a one-line callout in user-facing print instructions
+     if this becomes a support question. */
   .print-masthead {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 16pt;
+    background: var(--color-primary);
+    padding: 12pt 16pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   .print-masthead-title {
     font-size: 21pt;
@@ -109,7 +142,7 @@
     letter-spacing: -0.03em;
     line-height: 1.1;
     margin: 0;
-    color: var(--color-ink, var(--color-text));
+    color: var(--color-on-primary);
   }
   .print-masthead-meta {
     font-family: var(--font-mono);
@@ -117,9 +150,26 @@
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--color-text-muted);
+    color: var(--color-on-primary);
+    opacity: 0.72;
     text-align: right;
     line-height: 1.6;
+  }
+
+  /* Safety-format exemption (see file-header RULES): the energized-work
+     permit's masthead (ArcFlashAssetTab .print-permit-sheet) is a normative
+     NFPA 70E 130.2(B) document and must NOT adopt the co-brand band -- keep
+     it exactly as before this pass, plain ink-on-white. */
+  .print-permit-sheet .print-masthead {
+    background: none;
+    padding: 0;
+  }
+  .print-permit-sheet .print-masthead-title {
+    color: var(--color-ink, var(--color-text));
+  }
+  .print-permit-sheet .print-masthead-meta {
+    color: var(--color-text-muted);
+    opacity: 1;
   }
   /* Double rule: heavy line + hairline echo -- the field-report signature. */
   .print-rule {

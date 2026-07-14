@@ -23,6 +23,12 @@ export default function EvidenceGapCard({ siteId = null }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 2026-07-13 fix: both lists below silently truncated with no "+N more"
+  // indicator at all -- Dustin's live-review call ("data needs to be SIMPLE
+  // to get to"). byRequirementType is unbounded from the server; topAssets
+  // is capped at 25 server-side (evidenceTrace.ts) regardless of this toggle.
+  const [showAllTypes, setShowAllTypes] = useState(false);
+  const [showAllAssets, setShowAllAssets] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -71,19 +77,28 @@ export default function EvidenceGapCard({ siteId = null }) {
             {data.byRequirementType.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: 4 }}>Most under-evidenced tests</div>
-                {data.byRequirementType.slice(0, 6).map((r) => (
+                {(showAllTypes ? data.byRequirementType : data.byRequirementType.slice(0, 6)).map((r) => (
                   <div key={r.taskCode} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-sm)', padding: '3px 0' }}>
                     <span>{r.taskName}</span>
                     <span style={{ color: 'var(--chip-red-fg)', fontWeight: 600 }}>{r.gaps} gap{r.gaps === 1 ? '' : 's'}</span>
                   </div>
                 ))}
+                {data.byRequirementType.length > 6 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllTypes(v => !v)}
+                    style={{ background: 'none', border: 'none', padding: '4px 0 0', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--color-primary)' }}
+                  >
+                    {showAllTypes ? 'Show fewer' : `Show all ${data.byRequirementType.length} →`}
+                  </button>
+                )}
               </div>
             )}
 
             {data.topAssets.length > 0 && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-text-secondary)', marginBottom: 4 }}>Assets with the biggest gaps</div>
-                {data.topAssets.slice(0, 8).map((a) => (
+                {(showAllAssets ? data.topAssets : data.topAssets.slice(0, 8)).map((a) => (
                   <div key={a.assetId} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 'var(--font-size-sm)', padding: '4px 0', borderTop: '1px solid var(--color-border)' }}>
                     <Link to={`/assets/${a.assetId}`} style={{ color: 'var(--color-text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {a.assetLabel}{a.siteName ? <span style={{ color: 'var(--color-text-secondary)' }}> · {a.siteName}</span> : ''}
@@ -91,6 +106,15 @@ export default function EvidenceGapCard({ siteId = null }) {
                     <span style={{ color: 'var(--chip-red-fg)', fontWeight: 600, whiteSpace: 'nowrap' }}>{a.gaps}/{a.requirements}</span>
                   </div>
                 ))}
+                {data.topAssets.length > 8 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllAssets(v => !v)}
+                    style={{ background: 'none', border: 'none', padding: '4px 0 0', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--color-primary)' }}
+                  >
+                    {showAllAssets ? 'Show fewer' : `Show top ${data.topAssets.length} →`}
+                  </button>
+                )}
               </div>
             )}
           </>

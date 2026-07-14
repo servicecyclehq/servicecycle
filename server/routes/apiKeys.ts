@@ -155,10 +155,19 @@ router.delete('/:id', async (req, res) => {
   }
 
   try {
-    await prisma.apiKey.update({
-      where: { id },
+    // Atomic claim (same guarded-updateMany pattern as workOrders.ts /approve
+    // and deficiencies.ts /resolve, 2026-07-12 race-siblings sweep): the where
+    // clause re-checks revokedAt===null at write time, not just at the
+    // findFirst read above. A losing concurrent revoke gets count 0 -> 409
+    // instead of silently re-revoking (no data corruption since revokedAt is
+    // monotonic, but this avoids double-firing the activity log below).
+    const claim = await prisma.apiKey.updateMany({
+      where: { id, accountId: req.user.accountId, revokedAt: null },
       data:  { revokedAt: new Date() },
     });
+    if (claim.count === 0) {
+      return res.status(409).json({ success: false, error: 'API key was already revoked by another request.' });
+    }
 
     // H8 (audit High, 2026-05-22): audit-log the revoke.
     try {

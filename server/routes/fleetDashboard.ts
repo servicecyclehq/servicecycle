@@ -804,10 +804,18 @@ router.delete('/invites/:id', async (req: any, res: any) => {
     if (!invite) return res.status(404).json({ error: 'Invite not found' });
     if (invite.revokedAt) return res.status(409).json({ error: 'Already revoked' });
 
-    await prisma.partnerInvite.update({
-      where: { id: invite.id },
+    // Atomic claim (same guarded-updateMany pattern as workOrders.ts /approve
+    // and deficiencies.ts /resolve, 2026-07-12 race-siblings sweep): the where
+    // clause re-checks revokedAt===null at write time, not just at the
+    // findFirst read above. A losing concurrent revoke gets count 0 -> 409
+    // instead of silently re-revoking a second time.
+    const claim = await prisma.partnerInvite.updateMany({
+      where: { id: invite.id, partnerOrgId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (claim.count === 0) {
+      return res.status(409).json({ error: 'Invite was already revoked by another request.' });
+    }
     res.json({ success: true });
   } catch (err: any) {
     console.error('[fleet/invites DELETE]', err);

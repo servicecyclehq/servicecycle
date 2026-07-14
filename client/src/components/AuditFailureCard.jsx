@@ -101,15 +101,22 @@ export default function AuditFailureCard({ siteId = null }) {
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {data.findings.map((f) => {
                 const m = SEV_META[f.severity] || SEV_META.medium;
+                // 2026-07-13 fix: "Assets with no maintenance program 49 · 73 pts"
+                // and "+44 more" used to be plain, unclickable text -- Dustin's
+                // live-review call ("what are the 44 more? I can't easily get to
+                // them... we want to be the data layer"). Every row now drills
+                // into AuditFindingDetail.jsx, which shows the FULL matching list
+                // via GET /api/compliance/audit-findings?fullKind=<kind>.
+                const detailTo = `/reports/audit-findings/${f.kind}${siteId ? `?siteId=${siteId}` : ''}`;
                 return (
                   <div key={f.kind} style={{ padding: '10px 0', borderTop: '1px solid var(--color-border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                    <Link to={detailTo} style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', textDecoration: 'none', color: 'inherit' }}>
                       <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: m.color, background: m.bg, borderRadius: 4, padding: '2px 6px' }}>{m.label}</span>
-                      <span style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)' }}>{f.title}</span>
+                      <span style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)' }}>{f.title}</span>
                       <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
                         {f.count}{typeof f.pointsAtRisk === 'number' && f.pointsAtRisk > 0 ? ` · ${f.pointsAtRisk} pts` : ''}
                       </span>
-                    </div>
+                    </Link>
                     <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '3px 0 4px' }}>{f.recommendation}</div>
                     {f.examples && f.examples.length > 0 && (
                       <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
@@ -122,7 +129,9 @@ export default function AuditFailureCard({ siteId = null }) {
                             {ex.siteName ? <span> ({ex.siteName})</span> : ''}
                           </span>
                         ))}
-                        {f.count > f.examples.length && <span> · +{f.count - f.examples.length} more</span>}
+                        {f.count > f.examples.length && (
+                          <span> · <Link to={detailTo} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>+{f.count - f.examples.length} more</Link></span>
+                        )}
                       </div>
                     )}
                   </div>

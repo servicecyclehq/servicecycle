@@ -24,29 +24,45 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import api from '../api/client';
 import { useDisasterEvents, severityLabel } from '../hooks/useDisasterEvents';
 
-function Instrument({ label, value, unit, detail, danger, ariaLabel }) {
+// Instrument (2026-07-13 fix): tiles were previously inert display-only
+// <div>s with no way to drill into the underlying data -- Dustin flagged
+// this in local review ("these cards don't link to anything so how do I
+// know what data needs my review?"). Each tile now renders as a real link
+// (keyboard-focusable, Enter activates) to the report page that carries the
+// detail behind its headline number. `to` is required; ariaLabel/label still
+// drive the accessible name so screen-reader behavior is unchanged.
+function Instrument({ to, label, value, unit, detail, danger, ariaLabel }) {
   return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
+    <Link
+      to={to}
+      aria-label={ariaLabel ? `${ariaLabel}. View details.` : undefined}
       style={{
+        display: 'block',
         background: 'var(--color-sidebar-hover)',
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-lg)',
         padding: '14px 16px',
         minWidth: 0,
+        textDecoration: 'none',
+        color: 'inherit',
+        transition: 'border-color .15s, background .15s',
       }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-border-strong)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
     >
-      <div style={{
-        font: '500 10px var(--font-mono)', letterSpacing: '.12em',
-        textTransform: 'uppercase', color: 'var(--color-text-muted)',
-      }}>
-        {label}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <div style={{
+          font: '500 10px var(--font-mono)', letterSpacing: '.12em',
+          textTransform: 'uppercase', color: 'var(--color-text-muted)',
+        }}>
+          {label}
+        </div>
+        <ChevronRight size={13} aria-hidden="true" style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
       </div>
       <div style={{
         font: '600 30px var(--font-mono)', letterSpacing: '-.03em',
@@ -59,7 +75,7 @@ function Instrument({ label, value, unit, detail, danger, ariaLabel }) {
       <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 7 }}>
         {detail}
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -153,6 +169,7 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
         {/* four instruments -- 2x2 under 900px, see .instrument-band-grid in index.css */}
         <div className="instrument-band-grid">
           <Instrument
+            to="/reports/compliance"
             label="Compliance"
             value={path ? `${path.overallRate}%` : '—'}
             detail={path ? `${path.coverage.coveredAssets}/${path.coverage.totalAssets} tracked` : 'Loading…'}
@@ -161,6 +178,7 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
               : 'Overall compliance, loading'}
           />
           <Instrument
+            to="/reports/compliance"
             label="NFPA 70B maturity"
             value={maturity ? maturity.score : '—'}
             unit={maturity ? '/100' : undefined}
@@ -170,6 +188,7 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
               : 'NFPA 70B maturity, loading'}
           />
           <Instrument
+            to="/reports/arc-flash-fleet"
             label="Arc flash"
             value={hottest ? (hottest.incidentEnergyCalCm2 ?? 'DANGER') : '—'}
             unit={hottest?.incidentEnergyCalCm2 != null ? 'cal/cm²' : undefined}
@@ -180,6 +199,7 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
               : 'Arc flash, no data yet'}
           />
           <Instrument
+            to="/reports/compliance"
             label="Inspector-visible"
             value={inspectorCount != null ? inspectorCount : '—'}
             detail={path ? (complianceReady ? 'Audit-ready' : `item${inspectorCount !== 1 ? 's' : ''} open`) : 'Loading…'}

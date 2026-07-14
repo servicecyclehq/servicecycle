@@ -342,9 +342,10 @@ router.post('/declare', requireManager, async (req: any, res) => {
 });
 
 // ── POST /api/disaster-events/:id/resolve ────────────────────────────────────
-// Resolve a declaration. [manager+] — matches the documented intent and the
-// client (which only renders the Resolve control for admin/manager). Blocks
-// read-only consultant/viewer writes, consistent with the sibling /scan route.
+// Resolve a declaration. Manager+ can resolve their OWN account's manual
+// declaration; only admin can resolve a system-wide (NWS-detected) event,
+// since that's shared across every affected tenant (2026-07-09 fix — see
+// disasterEventsResolveGate.test.js).
 router.post('/:id/resolve', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
@@ -357,10 +358,20 @@ router.post('/:id/resolve', requireManager, async (req: any, res) => {
       return res.status(404).json({ success: false, error: 'Event not found' });
     }
 
-    // Tenancy: only the owning account can resolve their declaration;
-    // admins can resolve system events that affect their account.
-    if (event.accountId && event.accountId !== accountId) {
-      return res.status(403).json({ success: false, error: 'Not authorised to resolve this event' });
+    // Tenancy: only the owning account can resolve their own declaration.
+    // System events (accountId===null, NWS-detected regional broadcasts
+    // visible to every affected tenant) can only be resolved by an admin --
+    // NOT any manager from any account, which the old `event.accountId &&`
+    // check silently allowed (short-circuited to false whenever
+    // event.accountId was null, so the check never even ran for system
+    // events). 2026-07-09 audit: matches this route's own req.user.role
+    // check pattern used elsewhere, and the comment's original intent.
+    if (event.accountId) {
+      if (event.accountId !== accountId) {
+        return res.status(403).json({ success: false, error: 'Not authorised to resolve this event' });
+      }
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Admin access required to resolve a system-wide event' });
     }
 
     if (event.resolvedAt) {

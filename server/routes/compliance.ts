@@ -281,7 +281,10 @@ router.get('/drift', async (req, res) => {
 router.get('/audit-findings', async (req, res) => {
   try {
     const siteId = req.query.siteId ? String(req.query.siteId) : null;
-    const data = await buildAuditFindings(prisma, req.user.accountId, { siteId });
+    // 2026-07-13: ?fullKind=<kind> requests the unsliced examples list for one
+    // category (the drill-down page) instead of the dashboard card's 5-item cap.
+    const fullKind = req.query.fullKind ? String(req.query.fullKind) : null;
+    const data = await buildAuditFindings(prisma, req.user.accountId, { siteId, fullKind });
     return res.json({ success: true, data });
   } catch (err) {
     if (handleBuilderError(res, err)) return;

@@ -296,10 +296,22 @@ router.post('/:id/archive', requireManager, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Site not found' });
     }
 
-    const site = await prisma.site.update({
-      where: { id: req.params.id },
+    // Atomic claim (same guarded-updateMany pattern as workOrders.ts /approve
+    // and deficiencies.ts /resolve, 2026-07-12 race-siblings sweep): the where
+    // clause re-checks archivedAt===null at write time, not just at the
+    // findFirst read above. A losing concurrent archive gets count 0 -> 409
+    // instead of silently re-archiving and re-firing the activity log a
+    // second time. NOTE: like assets.ts, this endpoint previously had no
+    // archivedAt precondition at all, so this also closes a pre-existing
+    // non-concurrent duplicate-side-effect gap, not just the race window.
+    const claim = await prisma.site.updateMany({
+      where: { id: req.params.id, accountId: req.user.accountId, archivedAt: null },
       data:  { archivedAt: new Date() },
     });
+    if (claim.count === 0) {
+      return res.status(409).json({ success: false, error: 'Site was already archived by another request.' });
+    }
+    const site = await prisma.site.findFirst({ where: { id: req.params.id } });
 
     await logActivity(req.user.id, req.user.accountId, 'site_archived', { name: site.name });
 

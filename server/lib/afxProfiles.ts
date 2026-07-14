@@ -69,11 +69,12 @@ function buildToolTemplate(tool: string): any {
   return { tool: t, label: TOOL_LABEL[t], fieldCount: fields.length, fields };
 }
 
-function csvCell(v: any): string {
-  if (v == null) return '';
-  const s = String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+// 2026-07-13 (pre-go-live review N3 follow-up): not currently reachable with
+// attacker data -- toolTemplateCsv() only ever renders static CROSSWALK
+// labels, never account/user data -- but align with the shared, H6-guarded
+// csvCell (exportHelpers.ts) anyway so this local copy can't become an
+// exploitable gap if a future change starts feeding it real data.
+const { csvCell } = require('./exportHelpers');
 
 // A header row of the tool's column names + one blank sample row.
 function toolTemplateCsv(tool: string): string | null {

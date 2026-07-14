@@ -41,10 +41,13 @@ export default function ArcFlashSearch() {
     <>
       <div className="page-header">
         <div>
+          {/* 2026-07-13 fix: BackLink was a page-header sibling (floats
+              top-right) -- moved inside the title block, above the h1, to
+              match the standard position every report uses. */}
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Arc Flash AI Search</h1>
           <div className="page-subtitle">Natural language queries across arc flash study data</div>
         </div>
-        <BackLink fallback="/reports" fallbackLabel="Reports" />
       </div>
 
       <div className="page-body">

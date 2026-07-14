@@ -103,25 +103,47 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       return res.status(400).json({ success: false, error: 'This access has already been revoked' });
     }
 
-    // Mark revoked in ConsultantAccess + deactivate the user in one transaction
-    const [updated] = await prisma.$transaction([
-      prisma.consultantAccess.update({
-        where: { id: record.id },
-        data: {
-          isActive:   false,
-          revokedById: req.user.id,
-          revokedAt:   new Date(),
-        },
-        include: {
-          consultant: { select: { id: true, name: true, email: true } },
-          revokedBy:  { select: { id: true, name: true } },
-        },
-      }),
-      prisma.user.update({
-        where: { id: record.consultantId },
-        data: { isActive: false },
-      }),
-    ]);
+    // Atomic claim (same guarded-updateMany pattern as workOrders.ts /approve
+    // and deficiencies.ts /resolve, 2026-07-12 race-siblings sweep): the where
+    // clause re-checks isActive===true at write time, not just at the
+    // findFirst read above. A losing concurrent revoke gets count 0 -> 409
+    // instead of silently re-revoking and overwriting revokedById/revokedAt a
+    // second time. The whole thing stays ONE transaction so the user
+    // deactivation only happens if the claim actually won the race.
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const claim = await tx.consultantAccess.updateMany({
+          where: { id: record.id, accountId: req.user.accountId, isActive: true },
+          data: {
+            isActive:    false,
+            revokedById: req.user.id,
+            revokedAt:   new Date(),
+          },
+        });
+        if (claim.count === 0) {
+          const e: any = new Error('ALREADY_REVOKED');
+          e.code = 'ALREADY_REVOKED';
+          throw e;
+        }
+        await tx.user.update({
+          where: { id: record.consultantId },
+          data: { isActive: false },
+        });
+        return tx.consultantAccess.findUnique({
+          where: { id: record.id },
+          include: {
+            consultant: { select: { id: true, name: true, email: true } },
+            revokedBy:  { select: { id: true, name: true } },
+          },
+        });
+      });
+    } catch (e) {
+      if (e && e.code === 'ALREADY_REVOKED') {
+        return res.status(409).json({ success: false, error: 'This consultant access was already revoked by another request.' });
+      }
+      throw e;
+    }
 
     res.json({ success: true, data: { record: updated } });
   } catch (err) {

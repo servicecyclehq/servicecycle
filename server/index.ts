@@ -240,6 +240,7 @@ const importAssetsRoutes    = require('./routes/importAssets'); // smart CSV/XLS
 const dobleImportRoutes     = require('./routes/dobleImport'); // Doble TestGuide/TDMS ingest
 const ingestJobsRoutes = require('./routes/ingestJobs'); // #2 async ingest jobs
 const ingestBackfillRoutes = require('./routes/ingestBackfill'); // #34 bulk backfill
+const ingestClassifyRoutes = require('./routes/ingestClassify'); // AddData doc-type pre-scan (test-report vs arc-flash)
 const ingestReviewRoutes = require('./routes/ingestReview'); // confidence-gated review queue
 const workOrdersImportRoutes = require('./routes/workOrdersImport'); // WO history import
 const deficienciesImportRoutes = require('./routes/deficienciesImport'); // findings import
@@ -1073,6 +1074,27 @@ const leaveBehindLimiter = rateLimit({
 
 app.use('/api/', apiLimiter);
 
+// SEC (2026-07-12 Protocol & Encoding audit): default every /api/* response to
+// Cache-Control: no-store. This API authenticates via a bearer token (not a
+// cookie/session), and route paths don't vary per tenant, so nothing in the
+// URL itself signals "this response is tenant/user-specific" to a generic
+// cache -- a misconfigured intermediary cache (corporate proxy, CDN, browser
+// back-forward cache) sitting between the client and this server could
+// otherwise replay one caller's cached JSON response to a later, different
+// caller hitting the identical URL. A handful of routes (reports/compliance/
+// documents/export/proposals/fieldRoutes/help) already set an explicit
+// `private, no-store` themselves (pre-existing, kept as-is -- harmless
+// redundant override); this makes that the DEFAULT for every /api/* response
+// so a newly added route isn't exposed by omission. Routes that intentionally
+// want to be cacheable (the OpenAPI spec/docs endpoints, the versioned
+// swagger-ui asset bundle -- see routes/openapi.ts) call res.setHeader(
+// 'Cache-Control', ...) themselves later in the chain, which overrides this
+// default (last header write wins).
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
 // ── Setup Routes (S8) — must mount BEFORE the gate below ─────────────────────
 // /api/setup/* is reachable on a fresh, unconfigured instance because the
 // gate that follows excludes /setup paths. Each setup endpoint additionally
@@ -1420,6 +1442,7 @@ app.use('/api/doble/import',    authenticateToken, ingestLimiter, dobleImportRou
 app.use('/api/ingest', authenticateToken, ingestReviewRoutes); // confidence-gated review
 app.use('/api/ingest', authenticateToken, ingestLimiter, ingestJobsRoutes); // #2 async ingest jobs
 app.use('/api/ingest', authenticateToken, ingestLimiter, ingestBackfillRoutes); // #34 bulk backfill
+app.use('/api/ingest', authenticateToken, ingestLimiter, ingestClassifyRoutes); // doc-type pre-scan for AddData
 app.use('/api/assets',          authenticateToken, assetRoutes);
 // AI maintenance brief — second router on the same mount; paths don't
 // collide (POST /:id/brief only), Express falls through. aiIpLimiter is

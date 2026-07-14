@@ -550,66 +550,93 @@ function PriorityAssetsPanel({ navigate }) {
           ) : rows.length === 0 ? (
             <div style={{ padding: '14px 16px', fontSize: 12, color: 'var(--color-text-secondary)' }}>{PRIORITY_EMPTY[tab]}</div>
           ) : tab === 'critical' ? (
-            rows.map((r, i) => {
-              const overdueDays = r.nextDue?.date && isPast(r.nextDue.date)
-                ? Math.floor((Date.now() - new Date(r.nextDue.date).getTime()) / 86400000)
-                : null;
-              return (
-                <div key={r.asset?.id || i} style={{ padding: '11px 16px', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 160 }}><AssetLinkCell asset={r.asset} /></div>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <CriticalityBadge score={r.asset?.criticalityScore} />
-                      {r.asset?.redundancyStatus === 'N' && (
-                        <span style={{ font: '600 11px var(--font-mono)', color: 'var(--color-danger)', whiteSpace: 'nowrap' }}>
-                          no redundancy
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  {(r.nextDue?.date || r.openDeficiencyCount > 0) && (
-                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                      {r.nextDue?.taskName || (r.nextDue?.date ? 'Next maintenance' : '')}
-                      {overdueDays != null ? (
-                        <> — <span style={{ font: '600 12px var(--font-mono)', color: 'var(--color-danger)' }}>{overdueDays}d overdue</span></>
-                      ) : (r.nextDue?.date && <> — due {fmtDate(r.nextDue.date)}</>)}
-                      {r.openDeficiencyCount > 0 && (
-                        <> · {r.openDeficiencyCount} open deficienc{r.openDeficiencyCount === 1 ? 'y' : 'ies'}</>
-                      )}
+            <>
+              {rows.map((r, i) => {
+                const overdueDays = r.nextDue?.date && isPast(r.nextDue.date)
+                  ? Math.floor((Date.now() - new Date(r.nextDue.date).getTime()) / 86400000)
+                  : null;
+                return (
+                  <div key={r.asset?.id || i} style={{ padding: '11px 16px', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 160 }}><AssetLinkCell asset={r.asset} /></div>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <CriticalityBadge score={r.asset?.criticalityScore} />
+                        {r.asset?.redundancyStatus === 'N' && (
+                          <span style={{ font: '600 11px var(--font-mono)', color: 'var(--color-danger)', whiteSpace: 'nowrap' }}>
+                            no redundancy
+                          </span>
+                        )}
+                      </span>
                     </div>
-                  )}
-                </div>
-              );
-            })
+                    {(r.nextDue?.date || r.openDeficiencyCount > 0) && (
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                        {r.nextDue?.taskName || (r.nextDue?.date ? 'Next maintenance' : '')}
+                        {overdueDays != null ? (
+                          <> — <span style={{ font: '600 12px var(--font-mono)', color: 'var(--color-danger)' }}>{overdueDays}d overdue</span></>
+                        ) : (r.nextDue?.date && <> — due {fmtDate(r.nextDue.date)}</>)}
+                        {r.openDeficiencyCount > 0 && (
+                          <> · {r.openDeficiencyCount} open deficienc{r.openDeficiencyCount === 1 ? 'y' : 'ies'}</>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {/* 2026-07-13 fix: this tab showed only the top 5 with no way
+                  to see the rest -- Dustin's live-review call ("data needs
+                  to be SIMPLE to get to"). Mirrors the volume tab's existing
+                  click-through. */}
+              <div
+                role="button" tabIndex={0}
+                className="hover-row"
+                onClick={() => navigate('/assets?sort=criticality')}
+                onKeyDown={kbdActivate(() => navigate('/assets?sort=criticality'))}
+                style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)', fontSize: 12, fontWeight: 600, color: 'var(--color-primary)', cursor: 'pointer' }}
+              >
+                View all assets sorted by criticality →
+              </div>
+            </>
           ) : tab === 'value' ? (
-            rows.map((r, i) => {
-              const sig = IEEE_STATUS_META[r.latestPredictiveSignal?.ieeeStatus];
-              return (
-                <div key={r.asset?.id || i} style={{ padding: '11px 16px', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 160 }}><AssetLinkCell asset={r.asset} /></div>
-                    <span title="Repair cost estimate" style={{ font: '600 13px var(--font-mono)', color: 'var(--color-text)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {fmtMoney(r.repairCostEstimate)}
-                    </span>
-                  </div>
-                  {(r.spareLeadTimeWeeks != null || sig) && (
-                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                      {r.spareLeadTimeWeeks != null && <>spare lead {r.spareLeadTimeWeeks} wk</>}
-                      {r.spareLeadTimeWeeks != null && sig && <> · </>}
-                      {sig && (
-                        <span
-                          title="Latest predictive test result (IEEE C57.104 DGA status)"
-                          style={{ font: '600 12px var(--font-mono)', color: sig.color, whiteSpace: 'nowrap' }}
-                        >
-                          IEEE {r.latestPredictiveSignal.ieeeStatus} {sig.label}
-                          {r.latestPredictiveSignal.faultCode ? ` · ${r.latestPredictiveSignal.faultCode}` : ''}
-                        </span>
-                      )}
+            <>
+              {rows.map((r, i) => {
+                const sig = IEEE_STATUS_META[r.latestPredictiveSignal?.ieeeStatus];
+                return (
+                  <div key={r.asset?.id || i} style={{ padding: '11px 16px', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 160 }}><AssetLinkCell asset={r.asset} /></div>
+                      <span title="Repair cost estimate" style={{ font: '600 13px var(--font-mono)', color: 'var(--color-text)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {fmtMoney(r.repairCostEstimate)}
+                      </span>
                     </div>
-                  )}
-                </div>
-              );
-            })
+                    {(r.spareLeadTimeWeeks != null || sig) && (
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                        {r.spareLeadTimeWeeks != null && <>spare lead {r.spareLeadTimeWeeks} wk</>}
+                        {r.spareLeadTimeWeeks != null && sig && <> · </>}
+                        {sig && (
+                          <span
+                            title="Latest predictive test result (IEEE C57.104 DGA status)"
+                            style={{ font: '600 12px var(--font-mono)', color: sig.color, whiteSpace: 'nowrap' }}
+                          >
+                            IEEE {r.latestPredictiveSignal.ieeeStatus} {sig.label}
+                            {r.latestPredictiveSignal.faultCode ? ` · ${r.latestPredictiveSignal.faultCode}` : ''}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {/* 2026-07-13 fix: same gap as the critical tab above. */}
+              <div
+                role="button" tabIndex={0}
+                className="hover-row"
+                onClick={() => navigate('/assets?sort=repairCost')}
+                onKeyDown={kbdActivate(() => navigate('/assets?sort=repairCost'))}
+                style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)', fontSize: 12, fontWeight: 600, color: 'var(--color-primary)', cursor: 'pointer' }}
+              >
+                View all assets sorted by repair cost →
+              </div>
+            </>
           ) : (
             rows.map((r, i) => {
               const go = () => navigate(`/assets?equipmentType=${encodeURIComponent(r.equipmentType)}`);
@@ -718,6 +745,12 @@ function ConditionChangesCard() {
   const [changes, setChanges] = useState(null);
   const [error, setError]     = useState(null);
   const navigate = useNavigate();
+  // 2026-07-13 fix: "+N more — view in Assets list" was plain text with no
+  // actual link -- Dustin's live-review call ("we want to be the data
+  // layer... data needs to be SIMPLE to get to"). The full `changes` array
+  // is already loaded client-side (one 30-day fetch above), so an in-place
+  // expand toggle is the simplest fix -- no extra round trip or new filter.
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     api.get('/api/assets/condition-changes?days=30')
@@ -759,7 +792,7 @@ function ConditionChangesCard() {
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {changes.slice(0, 8).map(ch => {
+        {(showAll ? changes : changes.slice(0, 8)).map(ch => {
           const from = ch.details?.from;
           const to   = ch.details?.to;
           const name = ch.asset?.name || ch.assetId;
@@ -794,9 +827,17 @@ function ConditionChangesCard() {
         })}
       </div>
       {changes.length > 8 && (
-        <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', margin: '8px 0 0', textAlign: 'center' }}>
-          + {changes.length - 8} more — view in Assets list
-        </p>
+        <button
+          type="button"
+          onClick={() => setShowAll(v => !v)}
+          style={{
+            display: 'block', width: '100%', background: 'none', border: 'none',
+            cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-primary)',
+            margin: '8px 0 0', textAlign: 'center', padding: '4px 0 0',
+          }}
+        >
+          {showAll ? 'Show fewer' : `Show all ${changes.length} →`}
+        </button>
       )}
     </div>
   );

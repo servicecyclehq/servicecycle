@@ -10,6 +10,15 @@
 
 'use strict';
 
+// 2026-07-13 (pre-go-live review N3 follow-up): csvCell used to be a local
+// copy (quote/comma/newline escaping only) that was MISSING the H6 formula-
+// injection guard exportHelpers.ts's csvCell has -- a bus/site label like
+// `=cmd|'/c calc'!A1` would round-trip straight into this export's CSV
+// untouched, and Excel auto-executes a leading =/+/-/@ on CSV open. This is
+// the ONLY external dependency in this otherwise-pure module; exportHelpers
+// is itself pure/side-effect-free, so it doesn't change that.
+const { csvCell } = require('./exportHelpers');
+
 function voltsOf(raw: any): number | null {
   if (raw == null) return null;
   const m = String(raw).match(/([\d.]+)\s*(kv|v)?/i);
@@ -145,14 +154,6 @@ export function buildExportRows(rows: any[]): any[] {
       studyPeName: s.study?.peName || '',
     };
   });
-}
-
-// RFC-4180-ish CSV cell: quote when the value contains a comma, quote, or newline;
-// double embedded quotes.
-function csvCell(v: any): string {
-  if (v == null) return '';
-  const s = String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /**

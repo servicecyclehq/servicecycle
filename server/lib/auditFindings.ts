@@ -51,6 +51,15 @@ const CATEGORY: Record<string, any> = {
     title: 'Completed tasks with no record on file',
     standardRef: 'NFPA 70B - documentation of maintenance',
     recommendation: 'Attach the test report / measurements that prove the work was performed.',
+    // 2026-07-13 (pre-go-live review, nice-to-have #4): unlike every other
+    // category, this one's `count` (evidence.totals.undocumented, a WORK-ITEM
+    // count) and `examples` (evidence.topAssets, one row per ASSET, each
+    // possibly bundling several undocumented items) are different units --
+    // AuditFindingDetail.jsx's generic "Every matching item (N)" header was
+    // literally true for every other kind (1 example = 1 item there) but
+    // wrong here. Flag the unit so the client can label honestly instead of
+    // hardcoding an assumption that no longer holds for this one kind.
+    exampleUnit: 'asset',
   },
   unclosed_finding: {
     severity: 'high',
@@ -84,12 +93,20 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  * Build the single ranked audit-failure list for one account (optionally one
  * site). Customer-facing -- same read tier as Path-to-100 / drift / evidence.
  */
-async function buildAuditFindings(prisma: any, accountId: string, { siteId = null }: { siteId?: string | null } = {}) {
+async function buildAuditFindings(
+  prisma: any,
+  accountId: string,
+  { siteId = null, fullKind = null }: { siteId?: string | null; fullKind?: string | null } = {},
+) {
   // Unbounded gap so every action is present for accurate counts, examples, and
   // the points-at-risk roll-up (buildComplianceGap trims `actions` to `limit`).
+  // fullKind (2026-07-13, drill-down page): when set, ALSO ask the evidence
+  // builder for its full topAssets list (normally capped at 25) so the
+  // undocumented_work drill-down isn't silently re-capped one layer down.
+  // Path-to-100 and drift are already unbounded regardless of fullKind.
   const [gap, evidence, drift] = await Promise.all([
     buildComplianceGap(prisma, accountId, { siteId, limit: Number.MAX_SAFE_INTEGER }),
-    buildEvidenceGapSummary(prisma, accountId, { siteId }),
+    buildEvidenceGapSummary(prisma, accountId, { siteId, topAssetsLimit: fullKind ? Number.MAX_SAFE_INTEGER : 25 }),
     buildDriftDetector(prisma, accountId, { siteId }),
   ]);
 
@@ -109,6 +126,11 @@ async function buildAuditFindings(prisma: any, accountId: string, { siteId = nul
   function push(kind: string, count: number, examples: any[], extra: any = {}) {
     if (!count || count <= 0) return;
     const meta = CATEGORY[kind];
+    // 2026-07-13: the dashboard card only ever shows 5 examples + "+N more" --
+    // that "+N more" used to be dead text. fullKind lets a caller (the
+    // drill-down page) ask for ONE category's examples unsliced so "+N more"
+    // can be a real link to a page that shows literally every match.
+    const full = fullKind && kind === fullKind;
     findings.push({
       kind,
       severity: meta.severity,
@@ -116,7 +138,8 @@ async function buildAuditFindings(prisma: any, accountId: string, { siteId = nul
       standardRef: meta.standardRef,
       recommendation: meta.recommendation,
       count,
-      examples: (examples || []).slice(0, 5),
+      exampleUnit: meta.exampleUnit || 'item',
+      examples: full ? (examples || []) : (examples || []).slice(0, 5),
       ...extra,
     });
   }

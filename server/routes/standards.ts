@@ -308,10 +308,19 @@ router.post('/task-definitions/:id/archive', requireAdmin, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Task definition is already archived' });
     }
 
-    const taskDefinition = await prisma.maintenanceTaskDefinition.update({
-      where: { id: gate.def.id },
+    // Atomic claim (same guarded-updateMany pattern as workOrders.ts /approve
+    // and deficiencies.ts /resolve, 2026-07-12 race-siblings sweep): the where
+    // clause re-checks archivedAt===null at write time, not just at the gate
+    // read above. A losing concurrent archive gets count 0 -> 409 instead of
+    // silently re-archiving a second time.
+    const claim = await prisma.maintenanceTaskDefinition.updateMany({
+      where: { id: gate.def.id, archivedAt: null },
       data: { archivedAt: new Date() },
     });
+    if (claim.count === 0) {
+      return res.status(409).json({ success: false, error: 'Task definition was already archived by another request.' });
+    }
+    const taskDefinition = await prisma.maintenanceTaskDefinition.findFirst({ where: { id: gate.def.id } });
 
     res.json({ success: true, data: { taskDefinition } });
   } catch (err) {

@@ -1346,8 +1346,14 @@ router.post('/:id/approve', requireRole(['admin', 'manager']), async (req, res) 
       return res.status(404).json({ success: false, error: 'Work order not found or not awaiting approval' });
     }
 
-    const updated = await prisma.workOrder.update({
-      where: { id },
+    // Atomic claim (same guarded-updateMany pattern as the COMPLETE
+    // transition above): the where clause re-checks status==='AWAITING_APPROVAL'
+    // at write time, not just at the findFirst read above. A losing concurrent
+    // /approve (or a request that raced a cancel/complete in between) gets
+    // count 0 -> 409, instead of silently re-approving and overwriting
+    // approvedBy/approvedAt/startedAt a second time.
+    const claim = await prisma.workOrder.updateMany({
+      where: { id, accountId: req.user.accountId, status: 'AWAITING_APPROVAL' },
       data: {
         status:      'IN_PROGRESS',
         startedAt:   new Date(),
@@ -1355,6 +1361,13 @@ router.post('/:id/approve', requireRole(['admin', 'manager']), async (req, res) 
         approvedAt:  new Date(),
         approvalNote: note ? String(note).trim() : null,
       },
+    });
+    if (claim.count === 0) {
+      return res.status(409).json({ success: false, error: 'This work order was already approved or is no longer awaiting approval.' });
+    }
+
+    const updated = await prisma.workOrder.findUnique({
+      where: { id },
       include: listInclude,
     });
 

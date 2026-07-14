@@ -237,9 +237,21 @@ router.post('/:id/resolve', requireManager, async (req, res) => {
         : note;
     }
 
-    const deficiency = await prisma.deficiency.update({
-      where: { id: existing.id },
+    // Atomic claim (same guarded-updateMany pattern as workOrders.ts'
+    // COMPLETE/approve transitions): the where clause re-checks
+    // resolvedAt===null at write time, not just at the findFirst read above.
+    // A losing concurrent /resolve gets count 0 -> 409, instead of silently
+    // re-resolving and double-applying resolvedById/correctiveAction.
+    const claim = await prisma.deficiency.updateMany({
+      where: { id: existing.id, accountId: req.user.accountId, resolvedAt: null },
       data: updateData,
+    });
+    if (claim.count === 0) {
+      return res.status(409).json({ success: false, error: 'This deficiency was already resolved by another request.' });
+    }
+
+    const deficiency = await prisma.deficiency.findFirst({
+      where: { id: existing.id },
       include: deficiencyInclude,
     });
 

@@ -25,24 +25,40 @@ const { sha256Hex, confStats, recordExtraction, findPriorImport, recordCommit } 
 const { resolveAsset } = require('../lib/assetIdentity'); // #3 fuzzy asset identity resolution
 const { buildTestReportPreview } = require('../lib/testReportPreview'); // #2 shared buffer->preview builder
 
-const MAX_BYTES = 10 * 1024 * 1024;
+// 2026-07-13 (pre-go-live review N4): was 10 MB, raised to 15 MB to match
+// routes/ingestClassify.ts's own 15 MB cap. Classify pre-scans a file BEFORE
+// the client knows which real importer it'll land on, so it must accept
+// anything any downstream importer would -- with the old 10 MB cap here, a
+// 12 MB test-report PDF passed classify's check, got routed here, then failed
+// on this route's OWN multer limit. Now classify and this route agree.
+const MAX_BYTES = 15 * 1024 * 1024;
 // #20 photo-of-paper: accept a phone photo of a paper field sheet alongside
 // PDFs. Images are wrapped into a single-page PDF below so the same OCR + parse
 // pipeline reads them.
-const ACCEPTED_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
+// #docx (2026-07-13): a Word .docx test report feeds the same parseTestReport
+// vocabulary matcher (mammoth text -> parse) via buildTestReportPreview. Legacy
+// binary .doc is not supported (no lightweight extractor) and is rejected with a
+// clear "save as .docx" message rather than a confusing parse failure.
+const ACCEPTED_RE = /\.(pdf|docx|jpe?g|png|heic|heif|webp)$/i;
 const IMAGE_RE = /\.(jpe?g|png|heic|heif|webp)$/i;
+const LEGACY_DOC_RE = /\.doc$/i;
+function reportFileFilter(_req: any, file: any, cb: any) {
+  const name = file.originalname || '';
+  if (ACCEPTED_RE.test(name)) return cb(null, true);
+  if (LEGACY_DOC_RE.test(name)) return cb(new Error('Legacy .doc (Word 97-2003) is not supported — save as .docx and re-upload.'));
+  return cb(new Error('Upload a .pdf, a Word .docx, or a photo (JPG/PNG/HEIC)'));
+}
 const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: MAX_BYTES, files: 1 },
-  fileFilter: (req: any, file: any, cb: any) =>
-    ACCEPTED_RE.test(file.originalname || '') ? cb(null, true) : cb(new Error('Upload a .pdf or a photo (JPG/PNG/HEIC)')),
+  fileFilter: reportFileFilter,
 });
 
 // â”€â”€ Bulk drop-zone (many PDFs per request) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // BULK_MAX_FILES caps files PER REQUEST. Justification: multer.memoryStorage()
 // buffers every file in RAM, so the worst-case working set is
-// BULK_MAX_FILES Ã— MAX_BYTES (=10 MB) held simultaneously before extraction
-// starts. 8 Ã— 10 MB = ~80 MB ceiling per request â€” safe on the droplet even
+// BULK_MAX_FILES Ã— MAX_BYTES (=15 MB) held simultaneously before extraction
+// starts. 8 Ã— 15 MB = ~120 MB ceiling per request â€” safe on the droplet even
 // with a couple of concurrent uploaders â€” while staying comfortably under the
 // ingestLimiter (20 requests/min): a 50-PDF drop chunks client-side into 7
 // requests (below 20/min with headroom for retries). Real test-report PDFs are
@@ -58,8 +74,7 @@ const BULK_CONCURRENCY = 2;
 const bulkUpload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: MAX_BYTES, files: BULK_MAX_FILES },
-  fileFilter: (req: any, file: any, cb: any) =>
-    ACCEPTED_RE.test(file.originalname || '') ? cb(null, true) : cb(new Error('Upload PDFs or photos (JPG/PNG/HEIC)')),
+  fileFilter: reportFileFilter,
 });
 
 // Fire-and-forget activity writer (same module the role gates use). One row per
@@ -85,12 +100,24 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (item: T, index: num
 }
 
 // â”€â”€ POST /preview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// V7: any authenticated role can preview (read-only); commit stays manager+.
+// 2026-07-13 (pre-go-live security review): was "any authenticated role can
+// preview" (V7) -- read-only, but this pipeline now also runs docx extraction
+// (mammoth) and AI gap-fill, so a viewer/consultant could trigger real
+// AI-cost and CPU load with no write happening at all. Tightened to the same
+// writer-or-OEM-with-target gate /commit already uses, so it doesn't just
+// bar oem_admin's legitimate cross-account preview from a bare requireManager.
 // The buffer -> preview pipeline lives in lib/testReportPreview (shared with the
 // #2 async ingest worker); this handler owns only request concerns.
 router.post('/preview', upload.single('file'), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+
+    const isWriter = ['admin', 'manager'].includes(req.user.role);
+    const isOem = req.user.role === 'oem_admin';
+    const hasTarget = !!(req.body && req.body.targetAccountId);
+    if (!isWriter && !(isOem && hasTarget)) {
+      return res.status(403).json({ success: false, error: 'Not permitted to preview reports for this account' });
+    }
 
     // #14: oem_admin may preview against a fleet customer account (targetAccountId).
     let accountId: string;
@@ -107,6 +134,12 @@ router.post('/preview', upload.single('file'), async (req: any, res: any) => {
       // Image-wrap failure has a friendlier message than a generic parse failure.
       if (IMAGE_RE.test(req.file.originalname || '')) {
         return res.status(400).json({ success: false, error: 'Could not process that photo. Try a clearer, well-lit image.' });
+      }
+      // docx extraction errors (legacy .doc, zip-bomb, corrupt) carry a clear,
+      // user-facing message from lib/docxText — surface it instead of the
+      // generic PDF message below.
+      if (/\.docx$/i.test(req.file.originalname || '')) {
+        return res.status(400).json({ success: false, error: (e && e.message) || 'Could not read that Word document.' });
       }
       throw e;
     }
@@ -279,11 +312,23 @@ router.post('/commit', async (req: any, res: any) => {
 // inside buildTestReportPreview) so bulk-commit can thread it back exactly like
 // the single-file flow.
 //
-// Read-only (no DB writes beyond the fire-and-forget extraction telemetry row),
-// so any authenticated role may preview â€” commit stays manager+. #14 oem_admin
-// may preview against a fleet customer via targetAccountId.
+// 2026-07-13 (pre-go-live security review): was "any authenticated role may
+// preview" -- read-only, but this now fans out docx extraction + AI gap-fill
+// across up to BULK_MAX_FILES files per request, so it's a real AI-cost/CPU
+// abuse surface for a viewer/consultant even with zero writes. Tightened to
+// the same writer-or-OEM-with-target gate /bulk-commit uses (not a bare
+// requireManager, which would also block oem_admin's legitimate cross-account
+// preview via targetAccountId). #14 oem_admin may preview against a fleet
+// customer via targetAccountId.
 router.post('/bulk-preview', bulkUpload.array('files', BULK_MAX_FILES), async (req: any, res: any) => {
   try {
+    const isWriter = ['admin', 'manager'].includes(req.user.role);
+    const isOem = req.user.role === 'oem_admin';
+    const hasTarget = !!(req.body && req.body.targetAccountId);
+    if (!isWriter && !(isOem && hasTarget)) {
+      return res.status(403).json({ success: false, error: 'Not permitted to preview reports for this account' });
+    }
+
     const files: any[] = Array.isArray(req.files) ? req.files : [];
     if (!files.length) return res.status(400).json({ success: false, error: 'No files uploaded' });
 

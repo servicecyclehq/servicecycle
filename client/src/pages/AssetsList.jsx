@@ -241,19 +241,34 @@ export default function AssetsList() {
   const [highPriority,   setHighPriority]   = useState(false);
   // Server-side sort: '' (default order) | 'criticality' | 'repairCost' | 'priorityScore',
   // all descending server-side. Toggled by clicking the column headers.
-  const [sort, setSort] = useState('');
+  // 2026-07-13 fix: also read the initial value from the URL (mirrors
+  // siteId/equipmentType above) so a deep link like /assets?sort=criticality
+  // from the Dashboard's Priority Assets panel actually applies the sort
+  // instead of landing on the unsorted default view.
+  const [sort, setSort] = useState(() => searchParams.get('sort') || '');
 
   // ─── Column visibility (ColumnPicker, D6) ──────────────────────────────────
   // Persisted to localStorage and merged over DEFAULT_VISIBILITY so columns
   // added later still appear with their default state.
   const [colVis, setColVisState] = useState(() => {
+    let base = DEFAULT_VISIBILITY;
     try {
       const saved = JSON.parse(localStorage.getItem(COL_VIS_KEY) || 'null');
       if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
-        return { ...DEFAULT_VISIBILITY, ...saved };
+        base = { ...DEFAULT_VISIBILITY, ...saved };
       }
     } catch { /* corrupted storage — fall through to defaults */ }
-    return DEFAULT_VISIBILITY;
+    // 2026-07-13 (pre-go-live review, nice-to-have #2): a deep link like
+    // /assets?sort=repairCost (Dashboard's Value tab) sorts by a column
+    // that's hidden by default (repairCost: false above), so the user
+    // landed on a correctly-ordered list without the column they sorted
+    // by. Mirrors the `sort` URL-read fix above -- force the sorted-by
+    // column visible for this landing if it isn't already.
+    const sortCol = searchParams.get('sort');
+    if (sortCol && Object.prototype.hasOwnProperty.call(base, sortCol) && !base[sortCol]) {
+      return { ...base, [sortCol]: true };
+    }
+    return base;
   });
   const setColVis = (next) => {
     setColVisState(next);

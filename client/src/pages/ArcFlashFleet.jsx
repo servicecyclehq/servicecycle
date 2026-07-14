@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { downloadAuthedFile } from '../api/download';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import BackLink from '../components/BackLink';
 
 function bandColor(score) {
   if (score == null) return 'var(--color-text-secondary)';
@@ -50,6 +51,10 @@ export default function ArcFlashFleet() {
     <>
       <div className="page-header">
         <div>
+          {/* 2026-07-13 fix: this report had no way back at all -- Dustin's
+              live-review call. Anchored top-left above the title, same spot
+              every report uses. */}
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Arc Flash Fleet Dashboard</h1>
           <div className="page-subtitle">Portfolio-wide incident energy and PPE overview</div>
         </div>

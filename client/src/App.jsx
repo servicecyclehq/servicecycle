@@ -124,6 +124,7 @@ const NewAsset                = lazyWithReload(() => import('./pages/NewAsset'))
 const ImportAssets            = lazyWithReload(() => import('./pages/ImportAssets'));
 const TestReportImport        = lazyWithReload(() => import('./pages/TestReportImport'));
 const AddData                 = lazyWithReload(() => import('./pages/AddData'));
+const ArcFlashImport          = lazyWithReload(() => import('./pages/ArcFlashImport')); // standalone arc-flash study/one-line import (Add-data hand-off)
 const BackfillImport          = lazyWithReload(() => import('./pages/BackfillImport')); // #34 bulk backfill (zip of reports)
 const ReviewQueue             = lazyWithReload(() => import('./pages/ReviewQueue')); // confidence-gated ingest review
 const ImportAssetsSmart       = lazyWithReload(() => import('./pages/ImportAssetsPage')); // smart CSV/XLSX import (AI column mapping)
@@ -157,6 +158,7 @@ const RevenueAttributionDashboard = lazyWithReload(() => import('./pages/Revenue
 // Per-standard compliance suite (launched from the Reports hub)
 const ComplianceStandardsReport      = lazyWithReload(() => import('./pages/ComplianceStandardsReport'));
 const ComplianceStandardDetailReport = lazyWithReload(() => import('./pages/ComplianceStandardDetailReport'));
+const AuditFindingDetail             = lazyWithReload(() => import('./pages/AuditFindingDetail'));
 const AuditSnapshotsPage             = lazyWithReload(() => import('./pages/AuditSnapshotsPage'));
 const OverdueReport                  = lazyWithReload(() => import('./pages/OverdueReport'));    // overdue maintenance report (admin/manager)
 const ArcFlashReport                 = lazyWithReload(() => import('./pages/ArcFlashReport'));   // arc-flash label report (admin/manager)
@@ -376,6 +378,11 @@ function AppRoutes() {
                 <ImportAssetsSmart />
               </RequireRole>
             } />
+            <Route path="arc-flash/import" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <ArcFlashImport />
+              </RequireRole>
+            } />
             <Route path="test-reports/bulk-import" element={
               <RequireRole roles={['admin', 'manager', 'oem_admin']}>
                 <BulkReportImport />
@@ -453,6 +460,11 @@ function AppRoutes() {
             <Route path="reports/compliance/:standardCode" element={
               <RequireRole roles={['admin', 'manager']}>
                 <ComplianceStandardDetailReport />
+              </RequireRole>
+            } />
+            <Route path="reports/audit-findings/:kind" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <AuditFindingDetail />
               </RequireRole>
             } />
             <Route path="reports/snapshots" element={

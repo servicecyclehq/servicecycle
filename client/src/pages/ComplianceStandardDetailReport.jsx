@@ -183,7 +183,7 @@ export default function ComplianceStandardDetailReport() {
           </h1>
           <div className="page-subtitle">
             {std.title || 'Compliance evidence report'}
-            {report.scope && <> · Scope: {report.scope}</>}
+            {report.scope?.siteName && <> · Scope: {report.scope.siteName}</>}
             {report.generatedAt && <> · Generated {fmtDate(report.generatedAt)}</>}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
@@ -226,7 +226,7 @@ export default function ComplianceStandardDetailReport() {
           <div className="print-masthead-meta">
             {companyName ? <>{companyName}<br /></> : null}
             {std.edition ? <>{std.edition}<br /></> : null}
-            {report.scope || 'All sites'}<br />
+            {report.scope?.siteName || 'All sites'}<br />
             Generated {report.generatedAt ? fmtDate(report.generatedAt) : new Date().toLocaleDateString()}
           </div>
         </header>
@@ -324,7 +324,7 @@ export default function ComplianceStandardDetailReport() {
                             </div>
                           )}
                         </td>
-                        <td className="td-muted">{asset.site?.name || '—'}</td>
+                        <td className="td-muted">{asset.siteName || '—'}</td>
                         <td>
                           <div style={{ fontWeight: 600 }}>{task.taskName || '—'}</div>
                           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>

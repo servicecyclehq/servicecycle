@@ -29,7 +29,8 @@ const router = express.Router();
 // Server-side MIME and size enforcement. Anything outside the allowlist is
 // rejected with HTTP 415 BEFORE the bytes are persisted to disk/S3.
 //
-// Allowlist: PDFs, Word (legacy + OOXML), and any image/* type.
+// Allowlist: PDFs, Word (legacy + OOXML), Excel (.xls/.xlsx), CSV, plain text,
+// and any image/* type.
 // Size cap: 20 MB enforced at the multer `limits` level — multer aborts the
 // stream as soon as the threshold is crossed, so a malicious 5 GB upload never
 // hits storage.
@@ -40,10 +41,20 @@ const router = express.Router();
 // We pass an Error tagged with .status = 415 so the route handler can return
 // a precise status code instead of multer's default 500.
 
+// 2026-07-13: widened to match what AssetDocumentsCard already advertises in
+// its file picker (.pdf/.doc/.docx/.xls/.xlsx/.csv/.txt/images). This surface is
+// STORAGE-ONLY — files are served forced-download + nosniff (see GET /file), so
+// a spreadsheet/CSV/text upload never renders in our origin. Previously xls/xlsx/
+// csv/txt were offered by the client but 415-rejected here (client/server drift).
 const ALLOWED_DOC_MIME = new Set([
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',                                                     // .xls
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',            // .xlsx
+  'text/csv',
+  'application/csv',
+  'text/plain',                                                                   // .txt
 ]);
 
 // Image MIMEs to actively reject regardless of magic bytes (F011 / 2026-05-03 audit).
@@ -87,7 +98,7 @@ const upload = multer({
     // The magic-byte gate below (magicBytesRejected) remains a second layer.
     if (!isAllowedUploadMime(file.mimetype)) {
       const err: any = new Error(
-        `File type '${file.mimetype}' is not allowed. Accepted types: PDF, Word (.doc/.docx), and common image formats.`
+        `File type '${file.mimetype}' is not allowed. Accepted types: PDF, Word (.doc/.docx), Excel (.xls/.xlsx), CSV, text, and common image formats.`
       );
       err.status = 415;
       err.code   = 'UNSUPPORTED_MEDIA_TYPE';

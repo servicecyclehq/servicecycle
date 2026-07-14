@@ -69,11 +69,14 @@ export default function ArcFlashHeatMap() {
     <>
       <div className="page-header">
         <div>
+          {/* 2026-07-13 fix: BackLink was in the top-right controls strip --
+              Dustin's live-review call: every report needs it anchored
+              top-left, above the title, same spot every time. */}
+          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <h1 className="page-title">Arc Flash Heat Map</h1>
           <div className="page-subtitle">Incident energy distribution across sites and equipment</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <BackLink fallback="/reports" fallbackLabel="Reports" />
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.82rem' }}>
             <input type="checkbox" checked={onlyDanger} onChange={e => setOnlyDanger(e.target.checked)} />
             DANGER only

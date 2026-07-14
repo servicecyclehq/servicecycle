@@ -114,8 +114,25 @@ router.post('/:id/revoke', requireManager, async (req: any, res: any) => {
     });
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
     if (!existing.revokedAt) {
-      await prisma.shareLink.update({ where: { id: existing.id }, data: { revokedAt: new Date() } });
-      writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'share_link_revoked', details: { id: existing.id } });
+      // Atomic claim (same guarded-updateMany pattern as workOrders.ts
+      // /approve and deficiencies.ts /resolve, 2026-07-12 race-siblings
+      // sweep): the where clause re-checks revokedAt===null at write time,
+      // not just at the findFirst read above. Unlike the other fixes in this
+      // sweep, this endpoint's contract is deliberately idempotent-quiet --
+      // revoking an already-revoked link has never been an error here (see
+      // the `if (!existing.revokedAt)` no-op branch above, present before
+      // this fix) -- so a losing concurrent request still gets
+      // `{ success: true }`, same as before. What the guard actually fixes:
+      // without it, two concurrent revokes could both pass this pre-write
+      // check and both fire writeActivityLog below, double-logging the
+      // revoke. The claim ensures the log entry is written at most once.
+      const claim = await prisma.shareLink.updateMany({
+        where: { id: existing.id, accountId: req.user.accountId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (claim.count > 0) {
+        writeActivityLog({ accountId: req.user.accountId, userId: req.user.id, assetId: null, action: 'share_link_revoked', details: { id: existing.id } });
+      }
     }
     return res.json({ success: true });
   } catch (err: any) {
