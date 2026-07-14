@@ -280,17 +280,19 @@ async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSy
   } else if (s.provider === 'gemini') {
     // Cross-provider TEXT fallback (Gemini → Groq), mirroring completeWithImage.
     // _geminiComplete cascades across Gemini's OWN models first; if the WHOLE
-    // free-tier family is quota-exhausted it throws — at which point we fall to
-    // Groq so the gap-fill keeps working on a second provider's free tier
-    // instead of failing the extraction. Only on quota exhaustion; a structural
-    // error (auth, bad request) still surfaces. Configurable via AI_TEXT_FALLBACK.
+    // free-tier family is quota-exhausted OR every model is 503 "experiencing
+    // high demand" (2026-07-14 -- Google-side overload, not a quota issue) it
+    // throws — at which point we fall to Groq so the gap-fill keeps working on
+    // a second provider's free tier instead of failing the extraction. A
+    // structural error (auth, bad request) still surfaces. Configurable via
+    // AI_TEXT_FALLBACK.
     try {
       result = await _geminiComplete({ system, user, maxTokens, s });
     } catch (err: any) {
-      const exhausted = _isGeminiQuotaError(err) || /exhausted their free-tier/i.test(err?.message || '');
+      const exhausted = _isGeminiQuotaError(err) || _isGeminiOverloadedError(err) || /exhausted their free-tier/i.test(err?.message || '');
       const fb = (process.env.AI_TEXT_FALLBACK || 'groq').toLowerCase();
       if (exhausted && fb === 'groq' && process.env.GROQ_API_KEY) {
-        console.warn('[ai] gemini text quota exhausted → falling back to groq text');
+        console.warn(`[ai] gemini text ${_isGeminiOverloadedError(err) ? 'overloaded' : 'quota exhausted'} → falling back to groq text`);
         result = await groqProvider.complete({ system, user, maxTokens, task, settings: s });
       } else {
         throw err;
@@ -354,17 +356,19 @@ async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt
     return _openaiImage({ imageBuffer, prompt, maxTokens, azure: visionProvider === 'azure_openai', s });
   } else if (visionProvider === 'gemini') {
     // Cross-provider vision fallback (Gemini → Groq). When Gemini's free daily
-    // quota is exhausted across the WHOLE model cascade, fall to Groq's Llama-4
-    // Scout vision model so the demo keeps working on a second provider's free
-    // tier. Only on quota exhaustion — a structural error (bad image, auth)
-    // surfaces immediately. Configurable via AI_VISION_FALLBACK (default groq).
+    // quota is exhausted across the WHOLE model cascade, OR every model is 503
+    // "experiencing high demand" (2026-07-14 -- Google-side overload, a real
+    // production error, not a quota issue), fall to Groq's vision model so
+    // nameplate/photo reads keep working on a second provider's free tier. A
+    // structural error (bad image, auth) still surfaces immediately.
+    // Configurable via AI_VISION_FALLBACK (default groq).
     try {
       return await _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s, responseMimeType });
     } catch (err: any) {
-      const exhausted = _isGeminiQuotaError(err) || /exhausted their free-tier/i.test(err?.message || '');
+      const exhausted = _isGeminiQuotaError(err) || _isGeminiOverloadedError(err) || /exhausted their free-tier/i.test(err?.message || '');
       const fb = (process.env.AI_VISION_FALLBACK || 'groq').toLowerCase();
       if (exhausted && fb === 'groq' && process.env.GROQ_API_KEY) {
-        console.warn('[ai] gemini vision quota exhausted → falling back to groq vision');
+        console.warn(`[ai] gemini vision ${_isGeminiOverloadedError(err) ? 'overloaded' : 'quota exhausted'} → falling back to groq vision`);
         return await _groqImage({ imageBuffer, mediaType, prompt, maxTokens, s });
       }
       throw err;
@@ -625,6 +629,23 @@ function _isGeminiQuotaError(err) {
   return /\b429\b|RESOURCE_EXHAUSTED|quota exceeded|rate.?limit/i.test(msg);
 }
 
+// 2026-07-14: Gemini's own infra returns 503 "This model is currently
+// experiencing high demand" during capacity spikes -- a real, observed
+// production error (hit live during an ingestion run: "[503 Service
+// Unavailable] This model is currently experiencing high demand"). Unlike a
+// quota exhaustion (429) or a retired model (404), this is GOOGLE'S servers
+// being overloaded -- transient, model-specific, and not the caller's fault.
+// Treated the same as the other two cascade triggers below: try the next
+// Gemini model first (a demand spike on gemini-2.5-flash doesn't necessarily
+// hit flash-lite or the -latest aliases -- separate capacity pools), and if
+// EVERY model in the Gemini cascade is overloaded, fall through to Groq same
+// as a real quota exhaustion (see the `complete()` / `completeWithImage()`
+// gemini branches below).
+function _isGeminiOverloadedError(err) {
+  const msg = err?.message || String(err);
+  return /\[?503\b|Service Unavailable|\bUNAVAILABLE\b|overloaded|experiencing high demand/i.test(msg);
+}
+
 // A model that gets retired by Google returns 404 NOT_FOUND from
 // generateContent, which is NOT a quota error. Left untreated, that throws
 // mid-cascade (the exact 1.5-flash retirement bug). Treat 404 / model-not-found
@@ -632,7 +653,7 @@ function _isGeminiQuotaError(err) {
 // of hard-failing. Any other non-quota error still surfaces immediately
 // (auth, bad input, network — cascading those wastes calls).
 function _isGeminiCascadeError(err) {
-  if (_isGeminiQuotaError(err)) return true;
+  if (_isGeminiQuotaError(err) || _isGeminiOverloadedError(err)) return true;
   const msg = err?.message || String(err);
   // [2026-07-05 review fix] The bare `not.?found` alternative was broad
   // enough to match ANY error whose message happened to contain "not found"
