@@ -112,3 +112,19 @@ audit-reports/*
 qa/
 .unlighthouse/
 data/jx.txt
+
+# Dustin's personal files (resume, job search, career planning, CCA-F exam
+# prep, competitor intel) that live in his local ServiceCycle folder for
+# convenience but have no business in the product's git history -- flagged
+# 2026-07-13 during pre-go-live cleanup with acquisition diligence in mind.
+# Never tracked, so no history to purge -- this just stops them from ever
+# landing in a commit.
+/AI_CAREER_BRIEF_2026.md
+/AI_RESUME_KIT.md
+/AI_TARGET_COMPANIES.md
+/CCA_Exam_Prep_Master_Prompt.md
+/Dustin_Denis_Resume_2026.docx
+/Job_Search_Kit_Free_Claude.md
+/Resume_Defense_CheatSheet.docx
+/COMPETITOR_PAIN_POINT_INTEL_2026-07-04.md
+/job-watch/
