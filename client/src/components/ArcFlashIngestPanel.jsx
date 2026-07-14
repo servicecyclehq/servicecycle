@@ -248,6 +248,7 @@ function ContradictionsPanel({ contradictions }) {
 export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
   const [ingests, setIngests] = useState([]);
   const [draft, setDraft] = useState(null); // { ingest, buses, reviewPackage }
+  const [phase, setPhase] = useState(''); // '' | 'queued' | 'processing' — background worker progress
   const [file, setFile] = useState(null);
   const [sourceType, setSourceType] = useState('one_line');
   const [busy, setBusy] = useState(false);
@@ -270,27 +271,52 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
       .catch(() => setErr('Could not load draft.'));
   }, []);
 
+  // W1 part 2 (2026-07-14): extraction runs in a background worker; poll the
+  // ingest until it leaves queued/processing, then open the finished draft.
+  async function pollIngest(ingestId, intervalMs = 3000, timeoutMs = 10 * 60 * 1000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((res) => setTimeout(res, intervalMs));
+      let ing;
+      try {
+        const r = await api.get('/api/arc-flash/ingest/' + ingestId);
+        ing = r.data?.data?.ingest;
+      } catch (e2) {
+        if (e2?.response?.status === 404) throw new Error('Ingest not found.');
+        continue; // transient — keep polling
+      }
+      if (!ing) continue;
+      if (ing.status !== 'queued' && ing.status !== 'processing' && ing.status !== 'extracting') return ing;
+      setPhase(ing.status);
+    }
+    throw new Error('Extraction is taking longer than expected — reopen the draft from the list in a moment.');
+  }
+
   async function upload(e) {
     e.preventDefault();
     if (!file) { setErr('Choose a PDF study or PNG/JPG one-line first.'); return; }
-    setBusy(true); setErr(null); setConfirmMsg(null);
+    setBusy(true); setErr(null); setConfirmMsg(null); setPhase('queued');
     try {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('siteId', siteId);
       fd.append('sourceType', sourceType);
+      // /ingest returns 202 { ingestId, status:'queued' } immediately; the heavy
+      // native-PDF extraction runs in arcFlashIngestWorker. Poll for it rather
+      // than holding one long request open.
       const r = await api.post('/api/arc-flash/ingest', fd);
-      const d = r.data?.data;
-      loadList();
-      if (d?.ingestId) {
-        if (d.status === 'failed') setErr((d.warnings && d.warnings[0]) || 'Extraction failed.');
-        openDraft(d.ingestId);
-      }
+      const enq = r.data?.data;
       setFile(null);
+      if (!enq?.ingestId) throw new Error('Upload did not return an ingest id.');
+      loadList();
+      const ing = await pollIngest(enq.ingestId);
+      loadList();
+      if (ing.status === 'failed') setErr(ing.error || 'Extraction failed.');
+      openDraft(enq.ingestId);
     } catch (e2) {
-      setErr(e2?.response?.data?.error || 'Upload failed.');
+      setErr(e2?.response?.data?.error || e2?.message || 'Upload failed.');
     } finally {
-      setBusy(false);
+      setBusy(false); setPhase('');
     }
   }
 

@@ -3364,7 +3364,7 @@ model ArcFlashIngest {
   extractionMethod String? // vision | text | hybrid
   aiProvider       String?
   promptVersion    String?
-  status           String    @default("extracting") // extracting|extracted|needs_review|confirmed|failed
+  status           String    @default("extracting") // queued|processing|extracting|extracted|needs_review|confirmed|failed
   overallBand      String? // green | yellow | red
   readyBusCount    Int       @default(0)
   totalBusCount    Int       @default(0)
@@ -3374,6 +3374,8 @@ model ArcFlashIngest {
   producedStudyId  String?
   confirmedById    String?
   confirmedAt      DateTime?
+  attempts         Int       @default(0) // W1 async worker: extraction attempt count (retry cap)
+  startedAt        DateTime? // W1 async worker: when the current 'processing' claim began (for stale-crash recovery)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

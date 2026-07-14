@@ -1336,6 +1336,23 @@ app.get('/api/ready', async (req, res) => {
   } catch (e) {
     checks.ingestWorker = `error: ${(e as any).message}`;
   }
+  // W1 async arc-flash ingest worker — same liveness contract as ingestWorker.
+  try {
+    const { getArcFlashIngestWorkerStatus } = require('./lib/arcFlashIngestWorker');
+    const w = getArcFlashIngestWorkerStatus();
+    if (!w.started) {
+      checks.arcFlashIngestWorker = 'not_started';
+    } else if (w.ageMs == null) {
+      checks.arcFlashIngestWorker = 'no_tick_yet';
+    } else {
+      const staleMs = Math.max(90_000, (w.pollMs || 4000) * 6);
+      const isStale = w.ageMs > staleMs;
+      checks.arcFlashIngestWorker = isStale ? `stale: ${Math.round(w.ageMs / 1000)}s` : 'ok';
+      if (isStale && deep) status = 503;
+    }
+  } catch (e) {
+    checks.arcFlashIngestWorker = `error: ${(e as any).message}`;
+  }
   res.status(status).json({
     success: status === 200,
     data: {
@@ -2569,6 +2586,14 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
       startIngestWorker();
     } catch (e) {
       console.error('[ingestWorker] failed to start:', (e as any).message);
+    }
+
+    // ── W1 async arc-flash ingest worker — in-process poller (no Redis) ──────
+    try {
+      const { startArcFlashIngestWorker } = require('./lib/arcFlashIngestWorker');
+      startArcFlashIngestWorker();
+    } catch (e) {
+      console.error('[arcFlashIngestWorker] failed to start:', (e as any).message);
     }
 
     // ── Customer digest — RETIRED as a standalone weekly cron ───────────────

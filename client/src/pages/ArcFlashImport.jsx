@@ -28,6 +28,7 @@ export default function ArcFlashImport() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState(null); // { ingestId, status, totalBusCount, warnings, siteId }
+  const [phase, setPhase] = useState(''); // '' | 'queued' | 'processing' — while the background worker runs
 
   // W2 hand-off: adopt the file the Add-data door passed us (consumed once),
   // plus an optional sourceType hint (one_line vs study_report) -- Add Data's
@@ -43,9 +44,33 @@ export default function ArcFlashImport() {
     api.get('/api/sites').then(r => setSites(r.data?.data?.sites || [])).catch(() => setSites([]));
   }, []);
 
+  // W1 part 2 (2026-07-14): extraction runs in a background worker, so we poll
+  // GET /api/arc-flash/ingest/:id until the row leaves queued/processing. A
+  // transient poll error is ignored (keep polling); a 404 or the overall
+  // deadline surfaces. Native-PDF on a large report can take a minute+, hence
+  // the generous deadline.
+  async function pollIngest(ingestId, intervalMs = 3000, timeoutMs = 10 * 60 * 1000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((res) => setTimeout(res, intervalMs));
+      let ing;
+      try {
+        const r = await api.get(`/api/arc-flash/ingest/${ingestId}`);
+        ing = r.data?.data?.ingest;
+      } catch (e2) {
+        if (e2?.response?.status === 404) throw new Error('Ingest not found.');
+        continue; // transient network/db blip — keep polling
+      }
+      if (!ing) continue;
+      if (ing.status !== 'queued' && ing.status !== 'processing' && ing.status !== 'extracting') return ing;
+      setPhase(ing.status);
+    }
+    throw new Error("Extraction is taking longer than expected — check the site's Arc Flash panel in a moment.");
+  }
+
   async function submit(e) {
     e.preventDefault();
-    setErr(''); setResult(null);
+    setErr(''); setResult(null); setPhase('queued');
     if (!file) { setErr('Choose a PDF/Word study or a PNG/JPG one-line first.'); return; }
     if (!siteId) { setErr('Pick the site this study belongs to.'); return; }
     setBusy(true);
@@ -54,14 +79,24 @@ export default function ArcFlashImport() {
       fd.append('file', file);
       fd.append('siteId', siteId);
       fd.append('sourceType', sourceType);
+      // /ingest returns 202 { ingestId, status:'queued' } immediately; the heavy
+      // native-PDF extraction runs in arcFlashIngestWorker. Poll for the result
+      // instead of holding one long request open (the old 90s sync wait would
+      // time out on a large chunked report).
       const r = await api.post('/api/arc-flash/ingest', fd);
-      const d = r.data?.data || {};
-      setResult({ ...d, siteId });
-      if (d.status === 'failed') setErr((d.warnings && d.warnings[0]) || 'Extraction failed — try a clearer file.');
+      const enq = r.data?.data || {};
+      if (!enq.ingestId) throw new Error('Upload did not return an ingest id.');
+      const ing = await pollIngest(enq.ingestId);
+      setResult({
+        ingestId: enq.ingestId, status: ing.status,
+        totalBusCount: ing.totalBusCount, readyBusCount: ing.readyBusCount,
+        warnings: [], siteId,
+      });
+      if (ing.status === 'failed') setErr(ing.error || 'Extraction failed — try a clearer file.');
     } catch (e2) {
-      setErr(e2?.response?.data?.error || 'Upload failed.');
+      setErr(e2?.response?.data?.error || e2?.message || 'Upload failed.');
     } finally {
-      setBusy(false);
+      setBusy(false); setPhase('');
     }
   }
 
@@ -107,8 +142,13 @@ export default function ArcFlashImport() {
 
           <div>
             <button type="submit" className="btn" disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <UploadCloud size={16} /> {busy ? 'Reading…' : 'Extract'}
+              <UploadCloud size={16} /> {busy ? (phase === 'processing' || phase === 'extracting' ? 'Extracting…' : 'Queued…') : 'Extract'}
             </button>
+            {busy && (
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>
+                Reading the document in the background — a large report can take a minute.
+              </div>
+            )}
           </div>
         </div></form>
       )}

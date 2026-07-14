@@ -317,63 +317,32 @@ router.post('/ingest', requireManager, (req: any, res: any) => {
         console.error('arc-flash ingest storage error:', e?.message);
       }
 
+      // W1 part 2 (async): native-PDF extraction runs 50-150s (a chunked large
+      // report is several native calls) — too long to hold the request open, and
+      // the old 90s sync path would time out on a big report. Extraction now runs
+      // in arcFlashIngestWorker, which reads the file back from storage, so a
+      // stored fileKey is REQUIRED here (the old sync path could fall back to the
+      // in-memory buffer; a background worker has no request buffer). Fail fast
+      // rather than enqueue a job that can never run.
+      if (!fileKey) {
+        return res.status(502).json({ success: false, error: 'Could not store the uploaded file for background processing — please retry.' });
+      }
+
       const ingest = await prisma.arcFlashIngest.create({
         data: {
           accountId: req.user.accountId, siteId, uploadedById: req.user.id, sourceType,
-          fileKey, fileName: req.file.originalname || null, mimeType: req.file.mimetype || null, status: 'extracting',
+          fileKey, fileName: req.file.originalname || null, mimeType: req.file.mimetype || null, status: 'queued',
         },
       });
 
-      let ext: any;
-      try {
-        ext = await extractArcFlashDocument({ buffer: req.file.buffer, mimeType: req.file.mimetype, fileName: req.file.originalname });
-      } catch (e: any) {
-        await prisma.arcFlashIngest.update({ where: { id: ingest.id }, data: { status: 'failed', error: String(e?.message || e).slice(0, 500) } });
-        return res.status(200).json({ success: true, data: { ingestId: ingest.id, status: 'failed', error: 'Extraction failed', warnings: [String(e?.message || e)] } });
-      }
+      await logActivity(req.user.id, req.user.accountId, 'arc_flash_ingest_uploaded', { ingestId: ingest.id, queued: true });
 
-      const gapResults = ext.buses.map((b: any) => analyzeBusGaps(busForGap(b)));
-      const summary = summarizeIngestBands(gapResults);
-
-      const finalStatus = ext.buses.length ? 'needs_review' : 'failed';
-      // Atomic: persist every extracted bus + flip the ingest status together, so
-      // a crash mid-loop rolls back rather than leaving a half-written ingest.
-      await prisma.$transaction(async (tx: any) => {
-        for (let i = 0; i < ext.buses.length; i++) {
-          const b = ext.buses[i];
-          const g = gapResults[i];
-          await tx.arcFlashIngestBus.create({
-            data: {
-              accountId: req.user.accountId, ingestId: ingest.id, seq: i,
-              busName: b.busName, equipmentTypeGuess: b.equipmentTypeGuess, fedFromBusName: b.fedFromBusName,
-              nominalVoltage: b.nominalVoltage, boltedFaultCurrentKA: b.boltedFaultCurrentKA, arcingCurrentKA: b.arcingCurrentKA,
-              electrodeConfig: b.electrodeConfig, conductorGapMm: b.conductorGapMm, clearingTimeMs: b.clearingTimeMs,
-              workingDistanceIn: b.workingDistanceIn, upstreamDevice: b.upstreamDevice,
-              deviceType: b.deviceType, deviceManufacturer: b.deviceManufacturer, deviceModel: b.deviceModel,
-              deviceRatingA: b.deviceRatingA, deviceSettings: b.deviceSettings ?? undefined,
-              cableLengthFt: b.cableLengthFt, cableSize: b.cableSize, cableMaterial: b.cableMaterial,
-              incidentEnergyCalCm2: b.incidentEnergyCalCm2, arcFlashBoundaryIn: b.arcFlashBoundaryIn, ppeCategory: b.ppeCategory,
-              gaps: g, readiness: g.readiness, confidence: g.confidence, resolution: b.equipmentTypeGuess ? 'create' : 'pending',
-            },
-          });
-        }
-
-        await tx.arcFlashIngest.update({
-          where: { id: ingest.id },
-          data: {
-            status: finalStatus, extractionMethod: ext.method, aiProvider: ext.aiProvider, promptVersion: ext.promptVersion,
-            systemMeta: ext.systemMeta ?? undefined, rawExtraction: ext.rawJsonText ? { text: String(ext.rawJsonText).slice(0, 20000) } : undefined,
-            overallBand: summary.overallBand, readyBusCount: summary.readyBusCount, totalBusCount: summary.totalBusCount,
-            error: ext.buses.length ? null : (ext.warnings[0] || 'No buses extracted'),
-          },
-        });
-      }, { timeout: 30000 }); // ingest can be slow with many buses
-
-      await logActivity(req.user.id, req.user.accountId, 'arc_flash_ingest_uploaded', { ingestId: ingest.id, method: ext.method, buses: ext.buses.length, overallBand: summary.overallBand });
-
-      return res.status(201).json({
+      // 202 Accepted: extraction proceeds in the background. The client polls
+      // GET /api/arc-flash/ingest/:id until status leaves queued/processing
+      // (-> needs_review / failed).
+      return res.status(202).json({
         success: true,
-        data: { ingestId: ingest.id, status: finalStatus, method: ext.method, overallBand: summary.overallBand, readyBusCount: summary.readyBusCount, totalBusCount: summary.totalBusCount, warnings: ext.warnings },
+        data: { ingestId: ingest.id, status: 'queued' },
       });
     } catch (e) {
       console.error('arc-flash ingest error:', e);
