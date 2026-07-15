@@ -26,6 +26,15 @@ The most common path: your PE firm delivers a study report as a PDF.
    verification.
 4. Save. The study is now live and linked to the site.
 
+> **AI extraction is a draft, not a verified model.** Whether you upload a study
+> report or a one-line diagram, ServiceCycle's automated extraction is a starting
+> point that a qualified person must review. Even best-in-class tools in this field
+> reach only about 90-95% accuracy -- equipment types, ratings, and especially how
+> buses feed each other (the topology) can be wrong or missing. Check every bus and
+> connection against the source drawing before you confirm. This is the same
+> human-sign-off discipline the industry applies to all automated drawing
+> digitization; it does not replace engineering judgment.
+
 ### Manual entry
 
 If you have a data table rather than a PDF, use the manual-entry path on the

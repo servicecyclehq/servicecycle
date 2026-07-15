@@ -269,6 +269,18 @@ function TopologyGapsPanel({ topology }) {
   );
 }
 
+// [safety] Industry-standard caveat surfaced in the one-line / study ingest. Automated
+// extraction is a strong DRAFT, not a verified model: even best-in-class tools in this
+// field reach only ~90-95% accuracy and REQUIRE review by a qualified person -- the same
+// human-sign-off policy we apply to arc-flash studies. Always shown while a draft is reviewed.
+function ExtractionCaveat() {
+  return (
+    <div style={{ border: '1px solid var(--color-warning, #c2410c)', background: 'var(--color-warning-bg, #fff7ed)', borderRadius: 6, padding: '10px 12px', marginTop: 12, fontSize: '0.76rem', lineHeight: 1.5 }}>
+      <strong>&#9888; AI draft &mdash; verify before confirming.</strong> Check every bus and connection against the source drawing. Requires qualified human review.
+    </div>
+  );
+}
+
 function ContradictionsPanel({ contradictions }) {
   const findings = contradictions?.findings || [];
   if (findings.length === 0) return null;
@@ -480,6 +492,8 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
           <DriftBanner ingestId={ing.id} key={ing.id} />
 
           {/* Contradiction / sanity-check findings */}
+          {/* [safety] industry-standard AI-extraction caveat, always shown on a draft */}
+          <ExtractionCaveat />
           <ContradictionsPanel contradictions={draft.contradictions} />
 
           {/* [multi-source topology] gap flags for human correction */}
