@@ -365,15 +365,17 @@ export default function ArcFlashAssetTab({ assetId, canWrite }) {
           <h2 className="print-sec-title">Study coverage</h2>
         </div>
         <div style={card}>
-          <h3 style={h3} className="no-print">Study coverage ({data.studyAssets.length})</h3>
+          <h3 style={h3} className="no-print">Study revisions ({data.studyAssets.length}) — newest first</h3>
           <table className="data-table print-table" style={{ width: '100%', fontSize: '0.78rem' }}>
-            <thead><tr><th>Study date</th><th>Method</th><th>IE (cal/cm²)</th><th>Severity</th><th>Trust</th><th>Status</th></tr></thead>
+            <thead><tr><th>Study date</th><th>Method</th><th>IE (cal/cm²)</th><th>PE</th><th>Reason</th><th>Severity</th><th>Trust</th><th>Status</th></tr></thead>
             <tbody>
               {data.studyAssets.map((s, i) => (
                 <tr key={s.id || i}>
                   <td>{fmtDate(s.study?.performedDate)}</td>
                   <td>{s.study?.method || '—'}</td>
                   <td>{num(s.incidentEnergyCalCm2)}</td>
+                  <td>{s.study?.peName || '—'}</td>
+                  <td style={{ color: 'var(--color-text-secondary)' }}>{s.study?.trigger ? String(s.study.trigger).replace(/_/g, ' ') : '—'}</td>
                   <td style={{ fontWeight: 600, color: s.labelSeverity ? sevColor(s.labelSeverity) : 'inherit' }}>{s.labelSeverity ? s.labelSeverity.toUpperCase() : '—'}</td>
                   <td>{s.confidence ? <ConfidenceBadge c={s.confidence} size="sm" /> : '—'}</td>
                   <td>{s.study?.superseded ? 'superseded' : 'current'}</td>

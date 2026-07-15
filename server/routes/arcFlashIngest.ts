@@ -1420,7 +1420,7 @@ function studyAssetOut(s: any) {
     ermsPresent: s.ermsPresent, zsiEnabled: s.zsiEnabled, differentialPresent: s.differentialPresent, arcResistant: s.arcResistant, nec24087Method: s.nec24087Method,
     calcMethod: s.calcMethod,
     study: {
-      id: st.id, studyType: st.studyType, performedDate: st.performedDate, expiresAt: st.expiresAt,
+      id: st.id, studyType: st.studyType, trigger: st.trigger || null, performedDate: st.performedDate, expiresAt: st.expiresAt,
       method: st.method, peName: st.peName, peLicense: st.peLicense, superseded: !!st.supersededById,
       studyDateSource: st.studyDateSource || null,
       sourceModel: st.sourceModel ? sourceModelOut(st.sourceModel) : null,
@@ -1474,7 +1474,7 @@ router.get('/asset/:assetId', async (req: any, res: any) => {
     const [studyAssetsRaw, devices, tasks, tests, customValues, incidents] = await Promise.all([
       prisma.systemStudyAsset.findMany({
         where: { assetId: asset.id, accountId },
-        include: { study: { select: { id: true, studyType: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true, reportPdfUrl: true, reportFileKey: true, studyDateSource: true } } },
+        include: { study: { select: { id: true, studyType: true, trigger: true, performedDate: true, expiresAt: true, method: true, peName: true, peLicense: true, supersededById: true, sourceModel: true, reportPdfUrl: true, reportFileKey: true, studyDateSource: true } } },
         orderBy: { createdAt: 'desc' },
       }),
       prisma.protectiveDevice.findMany({ where: { assetId: asset.id, accountId, status: 'active' }, orderBy: { createdAt: 'desc' } }),
