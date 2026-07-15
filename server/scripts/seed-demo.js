@@ -257,6 +257,9 @@ async function _resetDemoAccount() {
   await prisma.disasterEvent.deleteMany({ where: { nwsAlertId: { startsWith: 'demo-seed-' } } }).catch(() => {});
 
   // ── Account-scoped lookups / infra ────────────────────────────────────────
+  // [C-13/reseed fix] PartnerEventLog has a required, non-cascading accountId FK;
+  // clear it before account.delete() or the reset throws P2003 (partner_event_logs_accountId_fkey).
+  await prisma.partnerEventLog.deleteMany({ where: filter }).catch(() => {});
   await prisma.standardRevisionAlert.deleteMany({ where: filter }).catch(() => {});
   await prisma.notificationLog.deleteMany({ where: filter }).catch(() => {});
   await prisma.outboundWebhookDLQ.deleteMany({ where: filter }).catch(() => {});
