@@ -20,6 +20,7 @@ const prisma = require('./prisma').default;
 const { extractArcFlashDocument } = require('./arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('./arcFlashGap');
 const { deriveForBusRows } = require('./persistMultiSourceFeeds');
+const { extractVectorTopology, reconcileVectorTopology } = require('./vectorTopology');
 
 // [KEEP IN SYNC with routes/arcFlashIngest.ts numOrNull/busForGap — pure
 // gap-input shaping, duplicated here so this worker path doesn't have to import
@@ -63,11 +64,37 @@ async function processArcFlashIngestExtraction(ingest: any, buffer: Buffer, opts
   const extractor = opts.extractor || extractArcFlashDocument;
   const ext = await extractor({ buffer, mimeType: ingest.mimeType, fileName: ingest.fileName });
 
-  const buses = Array.isArray(ext.buses) ? ext.buses : [];
-  // [multi-source topology] Derive AssetFeed-shaped edges + gap flags from the extracted
-  // model at draft time. Surfaced in the review UI; RE-derived from the reviewer-corrected
-  // rows and persisted as AssetFeed at confirm (lib/persistMultiSourceFeeds).
-  const derivedTopology = deriveForBusRows(buses);
+  let buses = Array.isArray(ext.buses) ? ext.buses : [];
+
+  // [vector topology] For a vector "card tree" one-line PDF, the PDF's own geometry is
+  // ground truth for connectivity + equipment type -- overlay it onto the AI extraction
+  // (matched by bus name) instead of trusting the model's guess at dashed connections.
+  // FAILS OPEN: a non-PDF / non-vector / non-card-tree input leaves the AI result as-is.
+  // Every override where the AI disagreed becomes a review gap for the human.
+  let vectorOverrides: any[] = [];
+  try {
+    const isPdf = /pdf/i.test(ingest.mimeType || '') || /\.pdf$/i.test(ingest.fileName || '');
+    if (isPdf && buses.length) {
+      const vec = await extractVectorTopology(buffer);
+      const rec = reconcileVectorTopology(buses, vec);
+      if (rec.applied) { buses = rec.buses; vectorOverrides = rec.disagreements; }
+    }
+  } catch (verr: any) {
+    console.error('vector-topology reconcile (non-fatal):', verr && verr.message ? verr.message : verr);
+  }
+
+  // [multi-source topology] Derive AssetFeed-shaped edges + gap flags from the (vector-
+  // reconciled) model at draft time. Surfaced in the review UI; RE-derived from the
+  // reviewer-corrected rows and persisted as AssetFeed at confirm (persistMultiSourceFeeds).
+  const derivedTopology: any = deriveForBusRows(buses);
+  if (vectorOverrides.length && derivedTopology && Array.isArray(derivedTopology.gaps)) {
+    for (const d of vectorOverrides) {
+      derivedTopology.gaps.push({
+        code: 'VECTOR_OVERRIDE', busName: d.busName,
+        message: `${d.field === 'fedFromBusName' ? 'Feed source' : 'Equipment type'} corrected from the drawing geometry (AI read "${d.ai ?? 'none'}", drawing shows "${d.vector ?? 'none'}") -- verify.`,
+      });
+    }
+  }
   const gapResults = buses.map((b: any) => analyzeBusGaps(busForGap(b)));
   const summary = summarizeIngestBands(gapResults);
   const finalStatus = buses.length ? 'needs_review' : 'failed';

@@ -227,6 +227,7 @@ const TOPO_GAP_LABEL = {
   INCOMPLETE_TRANSFER: 'Incomplete transfer',
   UNTRACED_ALTERNATE: 'Untraced alternate',
   REDUNDANCY_CONTRADICTION: 'Redundancy contradiction',
+  VECTOR_OVERRIDE: 'Corrected from drawing',
 };
 
 /**
