@@ -1,0 +1,127 @@
+{
+  "name": "One_Line_Diagram_Original",
+  "pdf": "One Lines DC Chat/One_Line_Diagram_Original.pdf",
+  "note": "synthetic card-tree drift-test one-line; ground truth = drawn indent tree, verified by reading the PDF",
+  "buses": [
+    {
+      "busName": "MAIN-15KV-SWGR_DUSTIN-TEST",
+      "equipmentType": "SWITCHGEAR",
+      "fedFromBusName": null
+    },
+    {
+      "busName": "FEEDER-15KV-TO-XFMR1_DUSTIN-TEST",
+      "equipmentType": "CIRCUIT_BREAKER",
+      "fedFromBusName": "MAIN-15KV-SWGR_DUSTIN-TEST"
+    },
+    {
+      "busName": "XFMR-1500kVA-1_DUSTIN-TEST",
+      "equipmentType": "TRANSFORMER_LIQUID",
+      "fedFromBusName": "FEEDER-15KV-TO-XFMR1_DUSTIN-TEST"
+    },
+    {
+      "busName": "SWGR-480-MAIN-1_DUSTIN-TEST",
+      "equipmentType": "SWITCHGEAR",
+      "fedFromBusName": "XFMR-1500kVA-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "MCC-1-PROCESS_DUSTIN-TEST",
+      "equipmentType": "MCC",
+      "fedFromBusName": "SWGR-480-MAIN-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "MTR-PUMP-1_DUSTIN-TEST",
+      "equipmentType": "MOTOR",
+      "fedFromBusName": "MCC-1-PROCESS_DUSTIN-TEST"
+    },
+    {
+      "busName": "MTR-PUMP-2_DUSTIN-TEST",
+      "equipmentType": "MOTOR",
+      "fedFromBusName": "MCC-1-PROCESS_DUSTIN-TEST"
+    },
+    {
+      "busName": "XFMR-300kVA-1_DUSTIN-TEST",
+      "equipmentType": "TRANSFORMER_LIQUID",
+      "fedFromBusName": "SWGR-480-MAIN-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "PANEL-LIGHTING-1_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "XFMR-300kVA-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "PANEL-OFFICE-1_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "XFMR-300kVA-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "DISCONNECT-FEEDER-1_DUSTIN-TEST",
+      "equipmentType": "DISCONNECT_SWITCH",
+      "fedFromBusName": "SWGR-480-MAIN-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "PANEL-WAREHOUSE_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "SWGR-480-MAIN-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "SWGR-480-MAIN-2_DUSTIN-TEST",
+      "equipmentType": "SWITCHGEAR",
+      "fedFromBusName": "XFMR-1500kVA-1_DUSTIN-TEST"
+    },
+    {
+      "busName": "MCC-2-UTILITY_DUSTIN-TEST",
+      "equipmentType": "MCC",
+      "fedFromBusName": "SWGR-480-MAIN-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "MTR-CHILLER-1_DUSTIN-TEST",
+      "equipmentType": "MOTOR",
+      "fedFromBusName": "MCC-2-UTILITY_DUSTIN-TEST"
+    },
+    {
+      "busName": "XFMR-300kVA-2_DUSTIN-TEST",
+      "equipmentType": "TRANSFORMER_LIQUID",
+      "fedFromBusName": "SWGR-480-MAIN-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "PANEL-LIGHTING-2_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "XFMR-300kVA-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "PANEL-OFFICE-2_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "XFMR-300kVA-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "DISCONNECT-FEEDER-2_DUSTIN-TEST",
+      "equipmentType": "DISCONNECT_SWITCH",
+      "fedFromBusName": "SWGR-480-MAIN-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "DISCONNECT-ROOF-RTU-1_DUSTIN-TEST",
+      "equipmentType": "DISCONNECT_SWITCH",
+      "fedFromBusName": "SWGR-480-MAIN-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "PANEL-MAINT-SHOP_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "SWGR-480-MAIN-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "XFMR-75kVA-IT_DUSTIN-TEST",
+      "equipmentType": "TRANSFORMER_LIQUID",
+      "fedFromBusName": "SWGR-480-MAIN-2_DUSTIN-TEST"
+    },
+    {
+      "busName": "UPS-IT-PANEL_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "XFMR-75kVA-IT_DUSTIN-TEST"
+    },
+    {
+      "busName": "PANEL-SERVER-ROOM_DUSTIN-TEST",
+      "equipmentType": "PANELBOARD",
+      "fedFromBusName": "XFMR-75kVA-IT_DUSTIN-TEST"
+    }
+  ]
+}
