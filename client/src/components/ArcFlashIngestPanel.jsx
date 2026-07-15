@@ -222,6 +222,53 @@ function SevTag({ severity }) {
   return <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: isErr ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)', padding: '1px 6px', borderRadius: 3 }}>{isErr ? 'ERROR' : 'CHECK'}</span>;
 }
 
+const TOPO_GAP_LABEL = {
+  MISSED_FEED: 'Missed feed',
+  INCOMPLETE_TRANSFER: 'Incomplete transfer',
+  UNTRACED_ALTERNATE: 'Untraced alternate',
+  REDUNDANCY_CONTRADICTION: 'Redundancy contradiction',
+};
+
+/**
+ * Multi-source topology gap flags derived from the drawing at draft time. Errors here
+ * are places where the extractor could not fully trace the redundant topology (a missed
+ * second feed, a transfer switch with no traceable alternate, an untraced alternate
+ * source, or a 2N/N+1 label the graph does not support) -- a human corrects the equipment
+ * types + "fed from" below, then confirm persists the AssetFeed redundancy graph.
+ */
+function TopologyGapsPanel({ topology }) {
+  if (!topology) return null;
+  const gaps = Array.isArray(topology.gaps) ? topology.gaps : [];
+  const feedCount = topology.feedCount || 0;
+  const dual = Array.isArray(topology.dualCorded) ? topology.dualCorded : [];
+  if (gaps.length === 0 && feedCount === 0) return null;
+  const borderColor = gaps.length > 0 ? 'var(--color-warning, #c2410c)' : 'var(--color-border, #d1d5db)';
+  return (
+    <div style={{ border: `1px solid ${borderColor}`, borderRadius: 6, padding: '10px 12px', marginTop: 12, fontSize: '0.78rem' }}>
+      <strong>Multi-source topology</strong>
+      <span style={{ color: 'var(--color-text-secondary)', marginLeft: 8 }}>
+        {feedCount} feed{feedCount === 1 ? '' : 's'}{dual.length > 0 ? `, ${dual.length} dual-corded` : ''}{gaps.length > 0 ? `, ${gaps.length} to review` : ', no gaps'}
+      </span>
+      {dual.length > 0 && (
+        <div style={{ color: 'var(--color-text-secondary)', marginTop: 6, fontSize: '0.72rem' }}>Dual-corded: {dual.join(', ')}</div>
+      )}
+      {gaps.length > 0 && (
+        <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+          {gaps.map((g, i) => (
+            <li key={i} style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#fff', background: 'var(--color-warning, #c2410c)', padding: '1px 6px', borderRadius: 3 }}>{TOPO_GAP_LABEL[g.code] || g.code}</span>{' '}
+              <strong>{g.busName}</strong> - {g.message}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div style={{ color: 'var(--color-text-secondary)', marginTop: 6, fontSize: '0.7rem' }}>
+        Derived from the drawing as a draft. Correct the equipment types and &ldquo;fed from&rdquo; below, then confirm to persist the redundancy graph. System of record - no study math.
+      </div>
+    </div>
+  );
+}
+
 function ContradictionsPanel({ contradictions }) {
   const findings = contradictions?.findings || [];
   if (findings.length === 0) return null;
@@ -434,6 +481,9 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
 
           {/* Contradiction / sanity-check findings */}
           <ContradictionsPanel contradictions={draft.contradictions} />
+
+          {/* [multi-source topology] gap flags for human correction */}
+          <TopologyGapsPanel topology={draft.topology} />
 
           {/* [dedupe visibility] reuse-vs-create summary BEFORE confirm */}
           {!confirmed && draft.dedupeSummary && draft.dedupeSummary.willReuse > 0 && (
