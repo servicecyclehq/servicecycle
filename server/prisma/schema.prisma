@@ -3381,6 +3381,7 @@ model ArcFlashIngest {
   totalBusCount    Int       @default(0)
   systemMeta       Json?
   rawExtraction    Json?
+  derivedTopology  Json?    // multi-source topology derived at draft (feeds/sides/dualCorded/gaps + busHints) -- surfaced in review, persisted as AssetFeed at confirm
   error            String?
   producedStudyId  String?
   confirmedById    String?

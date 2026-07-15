@@ -19,6 +19,7 @@
 const prisma = require('./prisma').default;
 const { extractArcFlashDocument } = require('./arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('./arcFlashGap');
+const { deriveForBusRows } = require('./persistMultiSourceFeeds');
 
 // [KEEP IN SYNC with routes/arcFlashIngest.ts numOrNull/busForGap — pure
 // gap-input shaping, duplicated here so this worker path doesn't have to import
@@ -63,6 +64,10 @@ async function processArcFlashIngestExtraction(ingest: any, buffer: Buffer, opts
   const ext = await extractor({ buffer, mimeType: ingest.mimeType, fileName: ingest.fileName });
 
   const buses = Array.isArray(ext.buses) ? ext.buses : [];
+  // [multi-source topology] Derive AssetFeed-shaped edges + gap flags from the extracted
+  // model at draft time. Surfaced in the review UI; RE-derived from the reviewer-corrected
+  // rows and persisted as AssetFeed at confirm (lib/persistMultiSourceFeeds).
+  const derivedTopology = deriveForBusRows(buses);
   const gapResults = buses.map((b: any) => analyzeBusGaps(busForGap(b)));
   const summary = summarizeIngestBands(gapResults);
   const finalStatus = buses.length ? 'needs_review' : 'failed';
@@ -93,6 +98,7 @@ async function processArcFlashIngestExtraction(ingest: any, buffer: Buffer, opts
       data: {
         status: finalStatus, extractionMethod: ext.method, aiProvider: ext.aiProvider, promptVersion: ext.promptVersion,
         systemMeta: ext.systemMeta ?? undefined, rawExtraction: ext.rawJsonText ? { text: String(ext.rawJsonText).slice(0, 20000) } : undefined,
+        derivedTopology: (derivedTopology as any) ?? undefined,
         overallBand: summary.overallBand, readyBusCount: summary.readyBusCount, totalBusCount: summary.totalBusCount,
         error: buses.length ? null : ((ext.warnings && ext.warnings[0]) || 'No buses extracted'),
       },

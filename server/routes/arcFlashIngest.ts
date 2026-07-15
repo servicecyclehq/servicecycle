@@ -48,6 +48,7 @@ const { buildAfxSpec, validateAfxCsv } = require('../lib/arcFlashAfx');
 const { CROSSWALK, TOOLS, buildAliasIndex, buildToolTemplate, toolTemplateCsv } = require('../lib/afxProfiles');
 const { buildMultiTable, renderForTool, parseSheetRows, validateMultiTable, planMultiTableImport, buildFillUpdates, buildMergeConflictPreview, mapEquipmentType, mapEquipmentTypeResult, TABLES: MT_TABLES, TOOLS: MT_TOOLS } = require('../lib/arcFlashAfxMultiTable');
 const { normalizeKey: idemNormalizeKey, findStored: idemFindStored, store: idemStore } = require('../lib/apiIdempotency');
+const { persistMultiSourceFeeds, deriveForBusRows, mergeHints } = require('../lib/persistMultiSourceFeeds');
 const { listToolTemplates, getToolTemplate, applyTemplate: applyAfxToolTemplate, afxRecordsToTables, rowsFromCsv: afxRowsFromCsv } = require('../lib/afxToolTemplates');
 const normBusKey = (s: any) => String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '');
 const MAX_AFX_MULTI_ROWS = 5000; // DoS guard: cap total rows an import request may carry
@@ -259,6 +260,22 @@ function busOut(b: any) {
 
 // Build the auto-generated "Review Package" — the extract → findings → gap list
 // → 2-question engineer ask that replaces the hand-built demo.
+// [multi-source topology] Compact the draft-derived topology for the review UI: the
+// gap/contradiction flags a human corrects, plus small counts. Null-safe.
+function topologySummaryForReview(dt: any) {
+  if (!dt || typeof dt !== 'object') return null;
+  const feeds = Array.isArray(dt.feeds) ? dt.feeds : [];
+  const gaps = Array.isArray(dt.gaps) ? dt.gaps : [];
+  const dualCorded = Array.isArray(dt.dualCorded) ? dt.dualCorded : [];
+  return {
+    feedCount: feeds.length,
+    dualCordedCount: dualCorded.length,
+    dualCorded,
+    gaps: gaps.map((g: any) => ({ code: g.code, busName: g.busName, message: g.message })),
+    gapCount: gaps.length,
+  };
+}
+
 function buildReviewPackage(ingest: any, buses: any[]) {
   const sm = (ingest.systemMeta || {}) as any;
   const tx = sm.mainTransformer || {};
@@ -416,6 +433,7 @@ router.get('/ingest/:id', async (req: any, res: any) => {
         dedupeSummary,
         reviewPackage: buildReviewPackage(ingest, buses),
         contradictions: checkSystemContradictions(buses, ingest.systemMeta || {}),
+        topology: topologySummaryForReview((ingest as any).derivedTopology),
       },
     });
   } catch (e) {
@@ -659,6 +677,8 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     // Atomic: assets, feed links, optional study + bound buses, and the final
     // ingest status flip all commit together (or roll back as one).
     let feedsWired = 0;
+    let feedsPersisted = 0;
+    let topologyGaps: any[] = [];
     let studyId: string | null = null;
     // [F1] Where the produced study's performedDate actually came from —
     // set inside the transaction below, read afterward for the audit log +
@@ -735,6 +755,23 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
         await txn.asset.update({ where: { id: selfId }, data: { fedFromAssetId: upstreamId } });
         feedsWired++;
       }
+    }
+
+    // [multi-source topology] Beyond the single-cord fedFromAssetId tree wired above,
+    // materialize the FULL multi-source graph as AssetFeed edges. Re-derive from the
+    // reviewer-corrected rows (merged with the draft-time hints stashed on the ingest),
+    // map bus names -> confirmed asset ids, and persist. Idempotent per load asset so a
+    // re-study REPLACES the graph instead of doubling it. Participates in this txn: a
+    // failure rolls the whole confirm back, same as any other confirm error.
+    {
+      const storedTopo: any = (ingest as any).derivedTopology || null;
+      const mergedRows = mergeHints(buses, storedTopo && storedTopo.busHints);
+      const confirmDerived = deriveForBusRows(mergedRows);
+      const feedResult = await persistMultiSourceFeeds(txn, {
+        accountId, siteId: ingest.siteId, derived: confirmDerived, nameToAssetId,
+      });
+      feedsPersisted = feedResult.feedsPersisted;
+      topologyGaps = Array.isArray(feedResult.gaps) ? feedResult.gaps : [];
     }
 
     // Optional: spin up a SystemStudy from the extracted inputs and bind buses.
@@ -857,7 +894,7 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     // false unless a PE name was carried onto the produced study.
     const peOnStudy = (((ingest as any).systemMeta || {}).studyMeta || {}).peName || null;
     await logActivity(req.user.id, accountId, 'arc_flash_ingest_confirmed', {
-      ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount, superseded: supersededCount,
+      ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, feedsPersisted, studyId, boundCount, superseded: supersededCount,
       confirmedBy: req.user.id,
       provenance: {
         // The bus values came from the ingest extraction pipeline.
@@ -899,6 +936,8 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
       success: true,
       data: {
         ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount,
+        // [multi-source topology] AssetFeed edges persisted from the derived graph + gap flags.
+        feedsPersisted, topologyGaps,
         // Lets any caller (current confirmMsg text, or future UI) warn the
         // user when the study date is an unverified placeholder rather than
         // a value actually read from the source document.
