@@ -99,6 +99,14 @@ enum EquipmentType {
   EMERGENCY_LIGHTING // egress/battery units — NFPA 101 monthly/annual tests
   ARC_FLASH_PANEL
   FIRE_PUMP_CONTROLLER
+  // Data-center multi-source / backup-power classes (feature/datacenter-multisource)
+  UTILITY_SERVICE          // utility service entrance / source (feed A/B)
+  STATIC_TRANSFER_SWITCH   // STS - sub-cycle transfer between two live sources (A/B)
+  PARALLELING_SWITCHGEAR   // gen-plant paralleling switchgear (genCount, N+x)
+  REMOTE_POWER_PANEL       // RPP - final distribution ahead of PDUs
+  POWER_DISTRIBUTION_UNIT  // PDU (floor/rack) - input source(s), side A/B
+  MECHANICAL_LOAD          // CRAH/CRAC/chiller - modeled as a load (N+1)
+  IT_RACK                  // rack load - dualCorded (A-input, B-input); path stops at rack PDU
 }
 
 // NFPA 70B:2023 condition of maintenance ratings.
@@ -250,6 +258,7 @@ enum EnergyType {
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model Account {
+  assetFeeds             AssetFeed[]
   id                       String        @id @default(uuid())
   companyName              String
   status                   AccountStatus @default(active)
@@ -716,6 +725,7 @@ model ContractorTech {
 // (e.g. asset.areaId must belong to asset.buildingId when both are set).
 
 model Site {
+  assetFeeds          AssetFeed[]
   id                  String    @id @default(uuid())
   accountId           String
   name                String
@@ -3799,4 +3809,49 @@ model RateSheet {
   lastConfirmedById               String?
 
   @@map("rate_sheet")
+}
+
+/// Multi-source / backup-power topology edge (data-center redundancy backbone).
+/// Asset.fedFromAssetId stays the NORMAL/primary tree edge (backward compatible);
+/// AssetFeed adds the extra source edges a tree cannot express: dual utility feeds,
+/// A/B distribution trains, ATS/STS transfer sources, UPS/generator/BESS backup, and
+/// dual-corded loads. The redundancyImpact engine (lib/redundancyImpact.ts) reads
+/// these edges to answer "what still has power if I take X (or side B) offline."
+///
+/// ATS/STS = a node with 2+ input edges (normal + alternate/emergency) + one output.
+/// dualCorded load = a load with >=2 'normal' feeds whose source paths do not share a
+/// single common upstream source. Backfill (see migration): one AssetFeed per existing
+/// Asset.fedFromAssetId (role='normal', sourceKind='derived', side=null) - additive.
+///
+/// account + site are Prisma relations with onDelete: Cascade, so deleting the demo
+/// account cascades these rows (the prod reseed's _resetDemoAccount account-delete is
+/// therefore auto-safe - no seed-demo.js change needed; contrast PartnerEventLog
+/// 2026-07-16 which had a non-cascading required accountId and broke the reseed).
+/// loadAssetId / sourceAssetId / transferAssetId are INTENTIONALLY scalar (no @relation):
+/// they are graph-edge references into assets, left un-enforced to avoid multiple
+/// cascade paths into the assets table and to keep edge deletion under app control.
+/// RESEED TODO (do NOT act on this on this branch): if a reviewer removes the account
+/// cascade, _resetDemoAccount must deleteMany AssetFeed before the account delete.
+/// Do NOT edit seed-demo.js on this branch (truncation-prone big file the reseed runs).
+model AssetFeed {
+  id              String   @id @default(cuid())
+  accountId       String
+  siteId          String
+  loadAssetId     String   // downstream (fed) asset
+  sourceAssetId   String   // upstream (feeding) asset
+  role            String   // 'normal' | 'alternate' | 'emergency' | 'bypass'
+  side            String?  // 'A' | 'B' | null
+  sourceKind      String   // 'utility' | 'generator' | 'ups' | 'bess' | 'grid' | 'derived'
+  transferAssetId String?  // the ATS/STS selecting between sources, if any
+  seq             Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  site    Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, siteId])
+  @@index([loadAssetId])
+  @@index([sourceAssetId])
+  @@map("asset_feeds")
 }
