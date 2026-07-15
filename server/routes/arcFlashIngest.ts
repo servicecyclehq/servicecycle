@@ -375,6 +375,34 @@ router.get('/ingest/:id', async (req: any, res: any) => {
     const ingest = await prisma.arcFlashIngest.findFirst({ where: { id: req.params.id, accountId: req.user.accountId } });
     if (!ingest) return res.status(404).json({ success: false, error: 'Ingest not found' });
     const buses = await prisma.arcFlashIngestBus.findMany({ where: { ingestId: ingest.id }, orderBy: { seq: 'asc' } });
+
+    // [dedupe visibility] Mirror the confirm-time Pass-1 asset match so the
+    // reviewer can SEE, before confirming, which buses will REUSE an existing
+    // same-site asset vs CREATE a new one. Same normalized bus-name key the
+    // confirm handler uses (trim + lowercase); an explicit reviewer match wins.
+    const dedupeKeyNorm = (s: any) => String(s == null ? '' : s).trim().toLowerCase();
+    const siteAssetsForDedupe = ingest.siteId ? await prisma.asset.findMany({
+      where: { accountId: ingest.accountId, siteId: ingest.siteId, archivedAt: null },
+      select: { id: true, nameplateData: true },
+    }) : [];
+    const dedupeAssetByBusKey = new Map<string, string>();
+    for (const ex of siteAssetsForDedupe) {
+      const k = dedupeKeyNorm((ex.nameplateData as any)?.busName);
+      if (k && !dedupeAssetByBusKey.has(k)) dedupeAssetByBusKey.set(k, ex.id);
+    }
+    const dedupeForBus = (b: any) => {
+      if (b.resolution === 'match' && b.matchedAssetId) return { willReuse: true, existingAssetId: b.matchedAssetId, reason: 'reviewer_match' };
+      const k = dedupeKeyNorm(b.busName);
+      const hit = k ? dedupeAssetByBusKey.get(k) : null;
+      if (hit) return { willReuse: true, existingAssetId: hit, reason: 'bus_name_match' };
+      return { willReuse: false, existingAssetId: null, reason: null };
+    };
+    const busesOut = buses.map((b: any) => ({ ...busOut(b), dedupe: dedupeForBus(b) }));
+    const dedupeSummary = {
+      willReuse: busesOut.filter((b: any) => b.dedupe.willReuse).length,
+      willCreate: busesOut.filter((b: any) => !b.dedupe.willReuse && b.resolution === 'create').length,
+    };
+
     res.json({
       success: true,
       data: {
@@ -384,7 +412,8 @@ router.get('/ingest/:id', async (req: any, res: any) => {
           readyBusCount: ingest.readyBusCount, totalBusCount: ingest.totalBusCount, systemMeta: ingest.systemMeta,
           producedStudyId: ingest.producedStudyId, error: ingest.error, createdAt: ingest.createdAt, confirmedAt: ingest.confirmedAt,
         },
-        buses: buses.map(busOut),
+        buses: busesOut,
+        dedupeSummary,
         reviewPackage: buildReviewPackage(ingest, buses),
         contradictions: checkSystemContradictions(buses, ingest.systemMeta || {}),
       },

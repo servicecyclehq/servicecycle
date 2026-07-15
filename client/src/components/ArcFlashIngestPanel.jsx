@@ -342,7 +342,7 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
     try {
       const r = await api.post(`/api/arc-flash/ingest/${draft.ingest.id}/confirm`, { createStudy, studyType: 'arc_flash' });
       const d = r.data?.data;
-      setConfirmMsg(`Created ${d.assetsCreated} asset(s), matched ${d.assetsMatched}, wired ${d.feedsWired} feed link(s)` + (d.studyId ? `, and a study covering ${d.boundCount} bus(es).` : '.'));
+      setConfirmMsg(`Reused ${d.assetsMatched} existing asset(s), created ${d.assetsCreated} new, wired ${d.feedsWired} feed link(s)` + (d.studyId ? `, and a study covering ${d.boundCount} bus(es).` : '.'));
       openDraft(draft.ingest.id);
       loadList();
     } catch (e2) {
@@ -435,6 +435,12 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
           {/* Contradiction / sanity-check findings */}
           <ContradictionsPanel contradictions={draft.contradictions} />
 
+          {/* [dedupe visibility] reuse-vs-create summary BEFORE confirm */}
+          {!confirmed && draft.dedupeSummary && draft.dedupeSummary.willReuse > 0 && (
+            <div style={{ background: 'var(--color-success-bg, #ecfdf5)', border: '1px solid var(--color-success, #16a34a)', borderRadius: 6, padding: '8px 12px', marginTop: 12, fontSize: '0.75rem' }}>
+              <strong>{draft.dedupeSummary.willReuse}</strong> bus(es) already exist on this site and will be reused; <strong>{draft.dedupeSummary.willCreate}</strong> new will be created. Confirming updates the existing assets instead of duplicating them.
+            </div>
+          )}
           {/* Per-bus model + gaps */}
           <table className="data-table" style={{ width: '100%', fontSize: '0.74rem', marginTop: 12 }}>
             <thead><tr><th>Bus</th><th>Equipment</th><th>Voltage</th><th>Fed from</th><th>Readiness</th><th>Still needs</th>{!confirmed && canWrite && <th>Action</th>}</tr></thead>
@@ -443,7 +449,12 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
                 const missing = (b.gaps?.missingRequired || []).map(f => (b.gaps?.fields || []).find(x => x.field === f)?.label || f);
                 return (
                   <tr key={b.id}>
-                    <td><strong>{b.busName}</strong></td>
+                    <td>
+                      <strong>{b.busName}</strong>
+                      {b.dedupe?.willReuse
+                        ? <div style={{ fontSize: '0.66rem', color: 'var(--color-success, #16a34a)', fontWeight: 600, marginTop: 2 }}>matches existing &middot; will reuse</div>
+                        : (b.resolution === 'create' && <div style={{ fontSize: '0.66rem', color: 'var(--color-text-secondary)', marginTop: 2 }}>new asset</div>)}
+                    </td>
                     <td>
                       {!confirmed && canWrite ? (
                         <select value={b.equipmentTypeGuess || ''} onChange={e => patchBus(b.id, { equipmentTypeGuess: e.target.value || null })} style={{ fontSize: '0.72rem', maxWidth: 150 }}>
