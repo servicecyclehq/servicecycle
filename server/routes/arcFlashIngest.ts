@@ -667,6 +667,7 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     let studyDateSource: 'client' | 'extracted' | 'unverified_default' = 'unverified_default';
     let studyDateRaw: string | null = null;
     let boundCount = 0;
+    let supersededCount = 0;
     await prisma.$transaction(async (txn: any) => {
       // PEN-7-7: Re-check status inside the transaction to prevent a concurrent
       // double-confirm race from creating duplicate assets. The pre-transaction
@@ -779,6 +780,15 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
         select: { id: true },
       });
       studyId = study.id;
+      // [A-3 supersession] A re-study of this site supersedes the prior active
+      // study OF THE SAME TYPE so history becomes a chain, not a pile of
+      // "active" studies. Scoped to studyType so an arc-flash re-study never
+      // supersedes a one-line-review study (or vice-versa).
+      const superseded = await txn.systemStudy.updateMany({
+        where: { accountId, siteId: ingest.siteId, studyType, supersededById: null, id: { not: study.id } },
+        data: { supersededById: study.id },
+      });
+      supersededCount = superseded.count;
 
       // Slice E: persist the extracted source/system model (utility + main
       // transformer) onto a durable StudySourceModel for the produced study.
@@ -843,7 +853,7 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
     // false unless a PE name was carried onto the produced study.
     const peOnStudy = (((ingest as any).systemMeta || {}).studyMeta || {}).peName || null;
     await logActivity(req.user.id, accountId, 'arc_flash_ingest_confirmed', {
-      ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount,
+      ingestId: ingest.id, assetsCreated, assetsMatched, feedsWired, studyId, boundCount, superseded: supersededCount,
       confirmedBy: req.user.id,
       provenance: {
         // The bus values came from the ingest extraction pipeline.
