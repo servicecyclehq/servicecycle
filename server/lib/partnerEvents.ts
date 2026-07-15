@@ -37,7 +37,14 @@ const CONSENT_KEYS: Record<string, string> = {
 async function emitPartnerEvent(
   accountId: string,
   eventType: string,
-  payload: Record<string, any>
+  payload: Record<string, any>,
+  // [C-13] Optional dedup scoping. When set, the in-window dedup below only
+  // collapses this event against prior UNSENT events that carry the same
+  // payload.dedupeKey — so a distinct signal class (e.g. an arc-flash re-study,
+  // dedupeKey='ARC_FLASH_STUDY') is never swallowed by an unrelated same-type
+  // event (a generic quote request) queued in the same digest window. Omitted =
+  // exactly the original behavior (zero change for every existing caller).
+  opts?: { dedupeKey?: string }
 ): Promise<void> {
   // 1. Load account with partner org and rep assignment
   const account = await prisma.account.findUnique({
@@ -79,17 +86,37 @@ async function emitPartnerEvent(
     const windowStart = new Date(
       Date.now() - partnerOrg.digestIntervalDays * 24 * 60 * 60 * 1000
     );
-    const existing = await prisma.partnerEventLog.findFirst({
-      where: {
-        accountId,
-        eventType,
-        digestSentAt: null,
-        immediateEmailSentAt: null,
-        createdAt: { gte: windowStart },
-        archived: false,
-      },
-    });
-    if (existing) return; // already queued in this digest window
+    const dedupeKey = opts?.dedupeKey;
+    if (dedupeKey) {
+      // [C-13] Scoped dedup. JSON-path filtering isn't used anywhere else in
+      // this codebase, so fetch the (few) unsent same-type candidates and
+      // discriminate in memory rather than pushing a payload filter into
+      // Prisma. Only collapse against events carrying the same dedupeKey.
+      const candidates = await prisma.partnerEventLog.findMany({
+        where: {
+          accountId,
+          eventType,
+          digestSentAt: null,
+          immediateEmailSentAt: null,
+          createdAt: { gte: windowStart },
+          archived: false,
+        },
+        select: { payload: true },
+      });
+      if (candidates.some((c: any) => c.payload && c.payload.dedupeKey === dedupeKey)) return;
+    } else {
+      const existing = await prisma.partnerEventLog.findFirst({
+        where: {
+          accountId,
+          eventType,
+          digestSentAt: null,
+          immediateEmailSentAt: null,
+          createdAt: { gte: windowStart },
+          archived: false,
+        },
+      });
+      if (existing) return; // already queued in this digest window
+    }
   }
 
   // 4. Resolve rep: assignedRep → fallbackRep → all oem_admins in partner org

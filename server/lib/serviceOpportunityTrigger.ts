@@ -17,6 +17,10 @@
  * directly, matching this session's fallback-masks-capture test pattern).
  */
 import prisma from './prisma';
+// [C-13] Route each auto-surfaced opportunity to the owning rep via the partner
+// flywheel — the same QUOTE_REQUEST_CREATED path the manual quote /send route
+// uses. Before this, auto-created QuoteRequests reached no one.
+const { emitPartnerEvent } = require('./partnerEvents');
 
 export interface ServiceOpportunityTriggerResult {
   created: number;
@@ -94,14 +98,14 @@ export async function runServiceOpportunityTrigger(): Promise<ServiceOpportunity
 
     // Helper: create quote if not already quoted
     const maybeCreate = async (accountId: string, assetId: string, opts: {
-      driver: string; notes: string;
+      driver: string; notes: string; assetName: string;
     }) => {
       const key = `${accountId}:${assetId}`;
       if (quotedSet.has(key)) { skipped++; return; }
       const requestedById = adminMap.get(accountId);
       if (!requestedById) { skipped++; return; }
       quotedSet.add(key); // mark in-memory so dupes in same run don't double-create
-      await prisma.quoteRequest.create({
+      const qr = await prisma.quoteRequest.create({
         data: {
           accountId,
           assetId,
@@ -112,16 +116,29 @@ export async function runServiceOpportunityTrigger(): Promise<ServiceOpportunity
           notes:    opts.notes,
           emergencyMode: false,
         },
+        select: { id: true },
       });
       created++;
+      // Route to the owning rep (partnerDigest / partner inbox). Fire-and-forget:
+      // consent + rep resolution + dedup all live in emitPartnerEvent, and an
+      // emit failure must never fail the trigger's primary writes.
+      emitPartnerEvent(accountId, 'QUOTE_REQUEST_CREATED', {
+        quoteRequestId: qr.id,
+        assetId,
+        assetName: opts.assetName,
+        driver: opts.driver,
+        autoTriggered: true,
+      }).catch((e: any) => console.error('[serviceOpportunityTrigger] emit failed (non-fatal):', e && e.message));
     };
 
     // Process escalated deficiencies
     for (const def of escalatedDefs) {
       try {
+        const defAssetName = def.asset ? `${def.asset.manufacturer || ''} ${def.asset.model || def.asset.equipmentType || 'Unknown Equipment'}`.trim() : def.assetId;
         await maybeCreate(def.accountId, def.assetId, {
           driver: 'suspected_failing',
-          notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${def.asset ? `${def.asset.manufacturer || ''} ${def.asset.model || def.asset.equipmentType || 'Unknown Equipment'}`.trim() : def.assetId}.`,
+          assetName: defAssetName,
+          notes:  `Auto-triggered: IMMEDIATE deficiency open 30+ days — "${def.description?.slice(0, 120) ?? 'see asset'}". Asset: ${defAssetName}.`,
         });
       } catch (itemErr) {
         console.error('[serviceOpportunityTrigger] Failed to create quote request for asset', def.assetId, ':', (itemErr as Error).message);
@@ -131,9 +148,11 @@ export async function runServiceOpportunityTrigger(): Promise<ServiceOpportunity
     // Process C3 condition assets
     for (const sched of c3Schedules) {
       try {
+        const schedAssetName = sched.asset ? `${sched.asset.manufacturer || ''} ${sched.asset.model || sched.asset.equipmentType || 'Unknown Equipment'}`.trim() : sched.assetId;
         await maybeCreate(sched.accountId, sched.assetId, {
           driver: 'failed_inspection',
-          notes:  `Auto-triggered: Asset "${sched.asset ? `${sched.asset.manufacturer || ''} ${sched.asset.model || sched.asset.equipmentType || 'Unknown Equipment'}`.trim() : sched.assetId}" in C3 (immediate service required) condition.`,
+          assetName: schedAssetName,
+          notes:  `Auto-triggered: Asset "${schedAssetName}" in C3 (immediate service required) condition.`,
         });
       } catch (itemErr) {
         console.error('[serviceOpportunityTrigger] Failed to create quote request for asset', sched.assetId, ':', (itemErr as Error).message);

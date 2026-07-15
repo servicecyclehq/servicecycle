@@ -31,6 +31,8 @@ const { analyzeBusGaps, summarizeIngestBands } = require('../lib/arcFlashGap');
 const { buildCollectionTasks, extractDeviceFromPhoto } = require('../lib/arcFlashDevice');
 const { scoreBusConfidence, pickDeviceSource } = require('../lib/arcFlashConfidence');
 const { diffIngestRevisions } = require('../lib/arcFlashDrift');
+const { createReStudyOpportunity } = require('../lib/arcFlashOpportunity');
+const { emitPartnerEvent } = require('../lib/partnerEvents');
 const { checkSystemContradictions, checkBusContradictions } = require('../lib/arcFlashSanity');
 const { parseQuery, matchRow } = require('../lib/arcFlashSearch');
 const { buildExportRows, toCsv, EXPORT_COLUMNS } = require('../lib/arcFlashExport');
@@ -803,6 +805,23 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
       studyDate: studyId ? { source: studyDateSource, extractedRaw: studyDateRaw } : null,
     });
 
+    // [C-13 revenue loop] A confirmed MATERIAL change vs the prior confirmed
+    // revision means the stamped study no longer reflects the field — surface a
+    // routed "new study required" opportunity to the account's owning rep
+    // (QuoteRequest{triggerType:'ARC_FLASH_STUDY'} + QUOTE_REQUEST_CREATED
+    // event). Runs AFTER the confirm transaction has committed and is fully
+    // non-fatal: a failure here must never affect the confirm or its response.
+    let reStudyOpportunity = false;
+    try {
+      const opp = await createReStudyOpportunity(
+        { prisma, emitPartnerEvent, diffIngestRevisions, busForDrift },
+        { accountId, ingest, buses, nameToAssetId, userId: req.user.id }
+      );
+      reStudyOpportunity = !!(opp && opp.created);
+    } catch (oppErr: any) {
+      console.error('[arcFlashIngest] re-study opportunity failed (non-fatal):', oppErr && oppErr.message);
+    }
+
     res.json({
       success: true,
       data: {
@@ -811,6 +830,9 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
         // user when the study date is an unverified placeholder rather than
         // a value actually read from the source document.
         studyDateSource: studyId ? studyDateSource : null,
+        // [C-13] true when this confirm raised a routed arc-flash re-study
+        // opportunity (material change vs the prior confirmed revision).
+        reStudyOpportunity,
       },
     });
   } catch (e: any) {

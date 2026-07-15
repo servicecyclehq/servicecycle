@@ -145,7 +145,7 @@ async function runPartnerDigestCron(): Promise<DigestResult> {
         const accountSections = Array.from(byAccount.entries()).map(([acId, acLogs]) => {
           const acName = acLogs[0].account.companyName;
           const eventLines = acLogs.map((l: any) => {
-            const badge = EVENT_BADGE[l.eventType] || l.eventType;
+            const badge = eventBadge(l);
             const detail = formatEventDetail(l);
             return `<li>${esc(badge)}: ${esc(detail)}</li>`;
           }).join('');
@@ -203,6 +203,17 @@ const EVENT_BADGE: Record<string, string> = {
   TASK_OVERDUE:          '🟡 Overdue Task',
 };
 
+// [C-13] An arc-flash re-study rides the QUOTE_REQUEST_CREATED event type but is
+// a distinct sales signal ("the prior study is invalid, a new one is required"),
+// so it gets its own badge/detail rather than reading as a generic quote.
+function eventBadge(log: any): string {
+  const p = (log.payload as any) || {};
+  if (log.eventType === 'QUOTE_REQUEST_CREATED' && p.triggerType === 'ARC_FLASH_STUDY') {
+    return '⚡ Arc-Flash Re-Study Required';
+  }
+  return EVENT_BADGE[log.eventType] || log.eventType;
+}
+
 function formatEventDetail(log: any): string {
   const p = log.payload as any;
   switch (log.eventType) {
@@ -211,6 +222,9 @@ function formatEventDetail(log: any): string {
     case 'INSPECTION_COMPLETED':
       return `${p.assetName ?? 'Asset'} — ${p.deficiencyCount ?? 0} deficiencies found`;
     case 'QUOTE_REQUEST_CREATED':
+      if (p?.triggerType === 'ARC_FLASH_STUDY') {
+        return `${p.assetName ?? 'Asset'} — prior study invalidated by a field change; new study required`;
+      }
       return `${p.assetName ?? 'Asset'} — quote requested`;
     case 'TASK_OVERDUE':
       return `${p.overdueCount ?? 1} task${(p.overdueCount ?? 1) !== 1 ? 's' : ''} overdue`;
