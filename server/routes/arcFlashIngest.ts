@@ -646,7 +646,39 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
       if (fresh?.status === 'confirmed') throw Object.assign(new Error('ALREADY_CONFIRMED'), { _alreadyConfirmed: true });
 
       // Pass 1: create / match assets (no feed links yet).
+      // [dedupe] A re-ingest of the same site (a re-study, a corrected one-line)
+      // must NOT duplicate the asset inventory: a bus that already exists on this
+      // site — created by a prior ingest — is REUSED, so successive study
+      // revisions accumulate on ONE asset card instead of spawning a parallel one
+      // each time. Match on the same normalized bus-name key the drift engine
+      // uses (trim + lowercase) so matching and drift always agree. An explicit
+      // reviewer match (resolution:'match') still takes precedence.
+      const busKeyNorm = (s: any) => String(s == null ? '' : s).trim().toLowerCase();
+      const existingSiteAssets = await txn.asset.findMany({
+        where: { accountId, siteId: ingest.siteId, archivedAt: null },
+        select: { id: true, nameplateData: true },
+      });
+      const assetByBusKey = new Map<string, string>();
+      for (const ex of existingSiteAssets) {
+        const k = busKeyNorm((ex.nameplateData as any)?.busName);
+        if (k && !assetByBusKey.has(k)) assetByBusKey.set(k, ex.id);
+      }
     for (const b of buses) {
+      // 1. An explicit reviewer match wins.
+      if (b.resolution === 'match' && b.matchedAssetId) {
+        const a = await txn.asset.findFirst({ where: { id: b.matchedAssetId, accountId }, select: { id: true } });
+        if (a) { nameToAssetId.set(b.busName, a.id); assetsMatched++; }
+        continue;
+      }
+      // 2. Dedupe: reuse an existing same-site asset carrying this bus name.
+      const bk = busKeyNorm(b.busName);
+      const existingId = bk ? assetByBusKey.get(bk) : null;
+      if (existingId) {
+        nameToAssetId.set(b.busName, existingId);
+        assetsMatched++;
+        continue;
+      }
+      // 3. Otherwise create — only for a 'create'-resolved bus.
       if (b.resolution === 'create') {
         const asset = await txn.asset.create({
           data: {
@@ -658,9 +690,7 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
         });
         nameToAssetId.set(b.busName, asset.id);
         assetsCreated++;
-      } else if (b.resolution === 'match' && b.matchedAssetId) {
-        const a = await txn.asset.findFirst({ where: { id: b.matchedAssetId, accountId }, select: { id: true } });
-        if (a) { nameToAssetId.set(b.busName, a.id); assetsMatched++; }
+        if (bk) assetByBusKey.set(bk, asset.id); // guard against dup bus names within THIS ingest
       }
     }
 
