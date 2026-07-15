@@ -515,7 +515,10 @@ async function extractNativePdf(buffer: Buffer, settings: any, tables: any[], ch
 // rasterize to image(s) -> vision (no manual conversion). Fails SOFT: an
 // unreadable / unsupported file yields an empty model + a clear warning.
 async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string; fileName?: string; settings?: any; nativePdf?: any }): Promise<any> {
-  const { buffer, mimeType, fileName, settings = {}, nativePdf = {} } = opts;
+  const { buffer, mimeType, fileName, nativePdf = {} } = opts;
+  // [determinism] Pin extraction to temperature 0 so re-reading the same drawing is stable
+  // run-to-run (cuts false topology drift). A caller can still override via opts.settings.
+  const settings = { temperature: 0, ...(opts.settings || {}) };
   const warnings: string[] = [];
   const isImage = /image\/(png|jpe?g|webp)/i.test(mimeType || '') || /\.(png|jpe?g|webp)$/i.test(fileName || '');
   const isPdf = /pdf/i.test(mimeType || '') || /\.pdf$/i.test(fileName || '');

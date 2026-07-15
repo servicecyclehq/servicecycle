@@ -97,6 +97,8 @@ function resolveSettings(settings: any = {}) {
   return {
     provider,
     apiKey,
+    // [determinism] Optional per-call sampling temperature (passthrough). Undefined = provider default.
+    temperature:     settings.temperature,
     model:           modelName,
     azureEndpoint:   settings.azureEndpoint   || process.env.AZURE_OPENAI_ENDPOINT,
     azureDeployment: settings.azureDeployment || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
@@ -761,6 +763,8 @@ async function _geminiComplete({ system, user, maxTokens, s, responseMimeType = 
           // where a naturally-ending JSON body would stop). Callers opt in by
           // passing responseMimeType; providers other than Gemini ignore it.
           ...(responseMimeType ? { responseMimeType } : {}),
+          // [determinism] opt-in temperature (extraction pins 0 for stable re-reads).
+          ...(s && s.temperature != null ? { temperature: s.temperature } : {}),
         },
       });
       if (i > 0) {
@@ -810,6 +814,8 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s, resp
           // the model emit a single valid, escaped JSON object — the caller is
           // still responsible for a generous maxTokens so thinking + JSON fit.
           ...(responseMimeType ? { responseMimeType } : {}),
+          // [determinism] opt-in temperature (extraction pins 0 for stable re-reads).
+          ...(s && s.temperature != null ? { temperature: s.temperature } : {}),
         },
       });
       if (i > 0) {
@@ -862,6 +868,8 @@ async function _geminiPdf({ pdfBuffer, system, user, maxTokens, s, responseMimeT
           // bills against maxOutputTokens — same rationale as _geminiComplete /
           // _geminiImage. Callers pass responseMimeType:'application/json'.
           ...(responseMimeType ? { responseMimeType } : {}),
+          // [determinism] opt-in temperature (extraction pins 0 for stable re-reads).
+          ...(s && s.temperature != null ? { temperature: s.temperature } : {}),
         },
       });
       if (i > 0) {
