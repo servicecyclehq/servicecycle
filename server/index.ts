@@ -295,6 +295,7 @@ const outagePlannerRoutes   = require('./routes/outagePlanner');
 const lotoRoutes            = require('./routes/loto');
 const disasterEventRoutes   = require('./routes/disasterEvents');
 const arcFlashIncidentRoutes = require('./routes/arcFlashIncidents'); // ESP-5 arc-flash incident register
+const arcFlashRedundancyRoutes = require('./routes/arcFlashRedundancy'); // DC multi-source redundancy-impact (read-only)
 const installedBaseRoutes   = require('./routes/installedBase'); // IBI: fleet benchmarks + modernization pipeline + attach-rate
 const protectionCurveRoutes = require('./routes/protectionCurves'); // TCC backend prep (2026-07-05, §10 A3) — schema+API only, no UI yet
 const leaveBehindRoutes     = require('./routes/leaveBehind');
@@ -1693,6 +1694,7 @@ app.use('/api/disaster-events', authenticateToken, disasterEventRoutes);
 
 // ── Arc-flash incident / near-miss register (ESP-5) ──────────────────────────
 app.use('/api/arc-flash-incidents', authenticateToken, arcFlashIncidentRoutes);
+app.use('/api/arc-flash-redundancy', authenticateToken, arcFlashRedundancyRoutes);
 
 // ── Parts / Spare Inventory ────────────────────────────────────────────────────
 app.use('/api/parts', authenticateToken, require('./routes/parts'));
