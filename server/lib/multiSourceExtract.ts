@@ -81,6 +81,17 @@ function roleFrom(bus: ExtractedBus, fallback: MSRole): MSRole {
 export function deriveMultiSourceTopology(model: ExtractedModel): DerivedTopology {
   const buses = model.buses ?? [];
   const known = new Set(buses.map((b) => b.busName));
+  // A bus that feeds nothing downstream is a LEAF (a load endpoint). In a 2N/N+1
+  // facility, redundancy is delivered to the LOAD via two independent trains -- the
+  // intermediate distribution + source buses are single-path by design. So the
+  // MISSED_FEED heuristic below fires only for leaves, not for every 2N-labeled bus
+  // (which was flooding real 2N drawings with false positives on gear and sources).
+  const usedAsSource = new Set<string>();
+  for (const b of buses) {
+    if (b.fedFromBusName) usedAsSource.add(b.fedFromBusName);
+    if (b.secondFeedFromBusName) usedAsSource.add(b.secondFeedFromBusName);
+    if (b.alternateSourceBusName) usedAsSource.add(b.alternateSourceBusName);
+  }
   const feeds: DerivedFeed[] = [];
   const sides: Record<string, 'A' | 'B' | null> = {};
   const sourceKinds: Record<string, MSSourceKind | undefined> = {};
@@ -116,7 +127,7 @@ export function deriveMultiSourceTopology(model: ExtractedModel): DerivedTopolog
       gaps.push({ code: 'INCOMPLETE_TRANSFER', busName: bus.busName, message: `${bus.transferType} has no traceable alternate/emergency source` });
     }
     // a load labeled in a 2N zone that resolved to a single cord = possible missed feed
-    if (is2NZone(bus) && cords.length < 2) {
+    if (is2NZone(bus) && cords.length < 2 && !usedAsSource.has(bus.busName)) {
       gaps.push({ code: 'MISSED_FEED', busName: bus.busName, message: `bus is in a 2N zone but only ${cords.length} feed(s) were extracted -- a second feeder may have been missed` });
     }
   }
