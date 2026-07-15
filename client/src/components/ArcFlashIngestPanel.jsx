@@ -496,7 +496,7 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
                 <input type="checkbox" checked={createStudy} onChange={e => setCreateStudy(e.target.checked)} />
                 Also create an arc-flash study from these inputs
               </label>
-              <button className="btn" onClick={confirm} disabled={busy}>{busy ? <><Spinner />Working…</> : 'Confirm & create assets'}</button>
+              <button className="btn btn-primary" onClick={confirm} disabled={busy}>{busy ? <><Spinner />Working…</> : 'Confirm & create assets'}</button>
             </div>
           )}
           {confirmed && <div style={{ fontSize: '0.8rem', color: 'var(--color-success, #16a34a)', marginTop: 10, fontWeight: 600 }}>✓ Confirmed — assets {ing.producedStudyId ? 'and study ' : ''}created from this document.</div>}

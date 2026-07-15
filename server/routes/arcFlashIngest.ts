@@ -758,12 +758,16 @@ router.post('/ingest/:id/confirm', requireManager, async (req: any, res: any) =>
       const dateWarning = studyDateSource === 'unverified_default'
         ? `⚠️ Study date could not be read from the source document${studyDateRaw ? ` ("${studyDateRaw}" did not parse as a date)` : ''} — the confirm date was used as a placeholder. Verify the actual performed date against the report and correct it above.\n\n`
         : '';
+      // [T5 truthful trigger] First study for this site+type is 'initial';
+      // any subsequent confirm supersedes a prior active study (a re-study).
+      const priorActiveStudies = await txn.systemStudy.count({ where: { accountId, siteId: ingest.siteId, studyType, supersededById: null } });
+      const studyTrigger = priorActiveStudies > 0 ? 'system_change' : 'initial';
       const study = await txn.systemStudy.create({
         data: {
           accountId, siteId: ingest.siteId, studyType,
           performedDate: performed, expiresAt: new Date(performed.getFullYear() + 5, performed.getMonth(), performed.getDate()),
           performedBy: (sm.studyMeta && sm.studyMeta.peName) || null, method: (sm.studyMeta && sm.studyMeta.method) || null,
-          peName: (sm.studyMeta && sm.studyMeta.peName) || null, trigger: 'system_change',
+          peName: (sm.studyMeta && sm.studyMeta.peName) || null, trigger: studyTrigger,
           notes: `${dateWarning}Created from ingested ${ingest.sourceType === 'study_report' ? 'study report' : 'one-line'} (${ingest.fileName || 'upload'}).`,
           // [W3] Link the source PDF this study was ingested from (asset-precise
           // via the existing SystemStudyAsset relation bound below) — a raw
