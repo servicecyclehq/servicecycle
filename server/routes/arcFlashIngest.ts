@@ -2484,6 +2484,14 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
 
       const existingAssetByKey = new Map<string, string>();
       for (const r of existing) { const k = normBusKey(r.busName); if (r.assetId && !existingAssetByKey.has(k)) existingAssetByKey.set(k, r.assetId); }
+      // [T6] Dedupe AFX imports against ALL active site assets (not only those
+      // already study-bound), so a re-import reuses existing assets by
+      // normalized bus key instead of duplicating — mirrors the confirm dedupe.
+      const siteAssetByKey = new Map<string, string>();
+      if (createSiteId) {
+        const siteAssetsForDedupe = await prisma.asset.findMany({ where: { accountId, siteId: createSiteId, archivedAt: null }, select: { id: true, nameplateData: true } });
+        for (const a of siteAssetsForDedupe) { const k = normBusKey((a.nameplateData as any)?.busName); if (k && !siteAssetByKey.has(k)) siteAssetByKey.set(k, a.id); }
+      }
 
       // ── All writes run in ONE interactive transaction: a mid-import failure
       // rolls back cleanly (no orphan study/assets/devices). Every update is
@@ -2525,14 +2533,19 @@ router.post('/afx/import-multi/apply', requireManager, (req: any, res: any) => {
               if (!eqResult.matched && b.equipmentType != null && String(b.equipmentType).trim() !== '') {
                 unmatchedEquipmentTypes.push({ busId, raw: String(b.equipmentType) });
               }
-              const asset = await tx.asset.create({
-                data: { accountId, siteId: createSiteId, equipmentType: eqResult.type as any, nameplateData: { busName: busId, nominalVoltage: voltStr || null, importedFrom: 'afx_import' }, notes: `Created from AFX multi-table import (bus ${busId}).` },
-                select: { id: true },
-              });
+              // [T6] Reuse an existing active site asset for this bus (study-bound
+              // first, then any active site asset) instead of creating a duplicate.
+              const reuseAssetId = existingAssetByKey.get(k) || siteAssetByKey.get(k) || null;
+              const asset = reuseAssetId
+                ? { id: reuseAssetId }
+                : await tx.asset.create({
+                    data: { accountId, siteId: createSiteId, equipmentType: eqResult.type as any, nameplateData: { busName: busId, nominalVoltage: voltStr || null, importedFrom: 'afx_import' }, notes: `Created from AFX multi-table import (bus ${busId}).` },
+                    select: { id: true },
+                  });
               await tx.systemStudyAsset.create({
                 data: { accountId, studyId: study.id, assetId: asset.id, busName: busId, nominalVoltage: voltStr, cableLengthFt: numOrNull(cable.cableLengthFt) ?? undefined, cableSize: cable.cableSize || undefined, cableMaterial: cable.cableMaterial || undefined, conductorsPerPhase: intOrNull(cable.conductorsPerPhase) ?? undefined },
               });
-              newAssetByKey.set(k, asset.id); created++;
+              newAssetByKey.set(k, asset.id); if (!reuseAssetId) created++;
             }
             // StudySourceModel: populate from a single unambiguous transformer when kVA data present.
             // Design choice: 1 transformer with non-null kVA = unambiguous main source.
