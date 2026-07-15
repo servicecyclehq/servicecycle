@@ -215,6 +215,91 @@ router.post('/reassign', async (req: any, res: any) => {
   }
 });
 
+// ── GET /api/sales/opportunities ── read-only roll-up of the opportunities the
+// SYSTEM identified (QuoteRequests) across the manager's in-scope accounts. This
+// is a DATA LAYER, not a CRM: it shows what SC flagged — arc-flash re-studies,
+// auto-surfaced service opportunities, and customer-submitted quotes — so the
+// manager can talk to reps about qualifying them and entering them in their own
+// CRM. No pipeline stages, no manual entry. Same fail-closed scope as /rollup.
+router.get('/opportunities', async (req: any, res: any) => {
+  try {
+    const scope = await resolveScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ success: false, error: scope.error });
+
+    const accounts = await prisma.account.findMany({
+      where: scope.accountWhere,
+      select: { id: true, companyName: true, assignedRepId: true },
+    });
+    if (accounts.length === 0) {
+      return res.json({ success: true, data: { opportunities: [], summary: { total: 0, byTrigger: {}, byStatus: {} } } });
+    }
+    const accountIds = accounts.map((a: any) => a.id);
+    const acctById = new Map(accounts.map((a: any) => [a.id, a]));
+
+    // Resolve the assigned-rep display names (the owning reps).
+    const repIds = Array.from(new Set(accounts.map((a: any) => a.assignedRepId).filter(Boolean)));
+    const repRows = repIds.length
+      ? await prisma.user.findMany({ where: { id: { in: repIds as string[] } }, select: { id: true, name: true, email: true } })
+      : [];
+    const repById = new Map(repRows.map((r: any) => [r.id, r]));
+
+    // Every opportunity SC is tracking for these accounts. Read-only; capped.
+    const quotes = await prisma.quoteRequest.findMany({
+      where: { accountId: { in: accountIds } },
+      select: {
+        id: true, accountId: true, assetId: true, status: true, driver: true, triggerType: true,
+        timeline: true, notes: true, createdAt: true,
+        asset: {
+          select: {
+            id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+
+    const opportunities = quotes.map((q: any) => {
+      const acct = acctById.get(q.accountId);
+      const rep = acct?.assignedRepId ? repById.get(acct.assignedRepId) : null;
+      const a = q.asset || {};
+      const base = [a.manufacturer, a.model].filter(Boolean).join(' ');
+      const assetLabel = (base ? base + (a.serialNumber ? ` #${a.serialNumber}` : '') : (a.equipmentType || 'Asset'));
+      return {
+        id: q.id,
+        createdAt: q.createdAt,
+        status: q.status,
+        driver: q.driver,
+        triggerType: q.triggerType || null, // null = customer-submitted (not system-generated)
+        timeline: q.timeline,
+        notes: q.notes || null,
+        accountId: q.accountId,
+        companyName: acct?.companyName || '—',
+        repId: acct?.assignedRepId || null,
+        repName: rep ? (rep.name || rep.email || 'Unnamed') : null,
+        siteId: a.site?.id || null,
+        siteName: a.site?.name || null,
+        assetId: q.assetId,
+        assetLabel: assetLabel.trim() || 'Asset',
+      };
+    });
+
+    const byTrigger: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
+    for (const o of opportunities) {
+      const t = o.triggerType || 'customer_request';
+      byTrigger[t] = (byTrigger[t] || 0) + 1;
+      byStatus[o.status] = (byStatus[o.status] || 0) + 1;
+    }
+
+    return res.json({ success: true, data: { opportunities, summary: { total: opportunities.length, byTrigger, byStatus } } });
+  } catch (err: any) {
+    console.error('[sales/opportunities]', err);
+    return res.status(500).json({ success: false, error: 'Opportunities query failed' });
+  }
+});
+
 module.exports = router;
 
 export {};

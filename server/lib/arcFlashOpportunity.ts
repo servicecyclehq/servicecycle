@@ -16,16 +16,12 @@
  * with fakes (no DB): see __tests__/lib/arcFlashOpportunity.test.ts.
  */
 
-// The QuoteRequest.driver enum has no exact "compliance re-study" value
-// (down_now | suspected_failing | failed_inspection | planned_replacement |
-// budgetary). The true reason is carried by triggerType='ARC_FLASH_STUDY' + the
-// notes; driver is a secondary category hint. 'planned_replacement' is used
-// deliberately because it implies a scheduled engineering action and — unlike
-// 'down_now' — never sets emergencyMode, and — unlike 'failed_inspection' —
-// makes no claim that the equipment itself failed (SC asserts a re-study is
-// required, not that any asset failed). Overridable if Dustin wants a dedicated
-// driver value (that would be an additive enum migration).
-export const RESTUDY_DRIVER = 'planned_replacement';
+// A confirmed arc-flash environment change is its own opportunity class, so it
+// gets a DEDICATED QuoteDriver value (`compliance_restudy`, added 2026-07-15)
+// rather than borrowing a generic one — this makes "trigger" a real, filterable
+// dimension in the sales-manager opportunities roll-up. Non-emergency (never
+// sets emergencyMode); the specifics still ride on triggerType + notes.
+export const RESTUDY_DRIVER = 'compliance_restudy';
 
 export interface BusChangeLike { busName: string; change: 'added' | 'removed' | 'changed'; }
 export interface DriftReportLike {

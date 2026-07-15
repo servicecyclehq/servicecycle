@@ -16,6 +16,7 @@ enum QuoteDriver {
   failed_inspection // Failed NETA/NFPA inspection or audit finding
   planned_replacement // Scheduled capital replacement project
   budgetary // Just gathering numbers for future budget cycle
+  compliance_restudy // C-13: arc-flash study invalidated by a field change — new study required (system-generated)
 }
 
 // Quote Request: customer's target timeline to proceed.

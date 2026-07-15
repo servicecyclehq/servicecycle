@@ -186,8 +186,147 @@ function ReassignPanel({ data, onDone }) {
   );
 }
 
+// ── Opportunities (C-13) ─────────────────────────────────────────────────────
+// A read-only roll-up of what the SYSTEM flagged (QuoteRequests): arc-flash
+// re-studies, auto-surfaced service opportunities, and customer quotes. Data
+// layer, not a CRM — the manager sees them, then talks to reps about qualifying.
+const TRIGGER_LABEL = {
+  ARC_FLASH_STUDY: '⚡ Arc-flash re-study',
+  MODERNIZATION_EOL: 'Modernization / EOL',
+  QEMW_TRAINING: 'QEMW training',
+  customer_request: 'Customer request',
+};
+const DRIVER_LABEL = {
+  down_now: 'Down now', suspected_failing: 'Suspected failing', failed_inspection: 'Failed inspection',
+  planned_replacement: 'Planned replacement', budgetary: 'Budgetary', compliance_restudy: 'Compliance re-study',
+};
+const TIMELINE_LABEL = {
+  immediately: 'Immediately', within_1_week: 'Within 1 week', within_30_days: 'Within 30 days', next_budget_cycle: 'Next budget cycle',
+};
+const STATUS_LABEL = { requested: 'Requested', quoted: 'Quoted', accepted: 'Accepted', declined: 'Declined', draft: 'Draft' };
+const selStyle = { padding: '6px 8px', fontSize: '0.82rem', border: '1px solid var(--color-border)', borderRadius: 4, background: 'var(--color-bg)', color: 'var(--color-text)' };
+
+function fmtDate(s) { try { return new Date(s).toLocaleDateString(); } catch { return '—'; } }
+
+function OpportunitiesView() {
+  const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [fTrigger, setFTrigger] = useState('');
+  const [fSite, setFSite] = useState('');
+  const [fRep, setFRep] = useState('');
+  const [fStatus, setFStatus] = useState('open'); // default: open (requested + quoted)
+
+  useEffect(() => {
+    setLoading(true); setErr('');
+    api.get('/api/sales/opportunities')
+      .then(r => setRows(r.data?.data?.opportunities || []))
+      .catch(e => {
+        if (e?.response?.status === 403) setErr('Opportunities are available to operator staff only.');
+        else setErr('Could not load opportunities.');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const all = rows || [];
+  // Derive filter options from the FULL set so filtering never hides a choice.
+  const triggerOpts = Array.from(new Set(all.map(o => o.triggerType || 'customer_request')));
+  const siteOpts = Array.from(new Map(all.filter(o => o.siteId).map(o => [o.siteId, o.siteName || o.siteId])).entries());
+  const repOpts = Array.from(new Map(all.filter(o => o.repId).map(o => [o.repId, o.repName || 'Unnamed'])).entries());
+
+  const filtered = all.filter(o => {
+    if (fTrigger && (o.triggerType || 'customer_request') !== fTrigger) return false;
+    if (fSite && o.siteId !== fSite) return false;
+    if (fRep && o.repId !== fRep) return false;
+    if (fStatus === 'open') { if (!(o.status === 'requested' || o.status === 'quoted')) return false; }
+    else if (fStatus && o.status !== fStatus) return false;
+    return true;
+  });
+
+  if (loading) return <div style={card}>Loading…</div>;
+  if (err) return <div role="alert" className="alert alert-error">{err}</div>;
+
+  return (
+    <>
+      <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+        <label style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>Trigger<br />
+          <select style={selStyle} value={fTrigger} onChange={e => setFTrigger(e.target.value)}>
+            <option value="">All triggers</option>
+            {triggerOpts.map(t => <option key={t} value={t}>{TRIGGER_LABEL[t] || t}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>Site<br />
+          <select style={selStyle} value={fSite} onChange={e => setFSite(e.target.value)}>
+            <option value="">All sites</option>
+            {siteOpts.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>Rep<br />
+          <select style={selStyle} value={fRep} onChange={e => setFRep(e.target.value)}>
+            <option value="">All reps</option>
+            {repOpts.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>Status<br />
+          <select style={selStyle} value={fStatus} onChange={e => setFStatus(e.target.value)}>
+            <option value="open">Open (requested + quoted)</option>
+            <option value="">All statuses</option>
+            {Object.keys(STATUS_LABEL).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+          </select>
+        </label>
+        <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+          {filtered.length} of {all.length} opportunit{all.length === 1 ? 'y' : 'ies'}
+        </span>
+      </div>
+
+      {all.length === 0 ? (
+        <div style={card}>No opportunities identified yet. Arc-flash re-studies and auto-surfaced service opportunities will appear here as the system flags them.</div>
+      ) : (
+        <div style={card}>
+          <div className="table-wrap">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={th}>Trigger</th>
+                <th style={th}>Account</th>
+                <th style={th}>Site</th>
+                <th style={th}>Asset</th>
+                <th style={th}>Rep</th>
+                <th style={th}>Needed</th>
+                <th style={th}>Status</th>
+                <th style={{ ...th, textAlign: 'right' }}>Flagged</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(o => {
+                  const trig = o.triggerType || 'customer_request';
+                  const isRestudy = o.triggerType === 'ARC_FLASH_STUDY';
+                  return (
+                    <tr key={o.id}>
+                      <td title={DRIVER_LABEL[o.driver] || o.driver || ''} style={{ ...td, fontWeight: isRestudy ? 700 : 400, color: isRestudy ? 'var(--chip-amber-fg, #d97706)' : 'inherit' }}>{TRIGGER_LABEL[trig] || trig}</td>
+                      <td style={td}>{o.companyName}</td>
+                      <td style={td}>{o.siteName || '—'}</td>
+                      <td style={td}>{o.assetLabel}</td>
+                      <td style={{ ...td, color: o.repName ? 'inherit' : 'var(--chip-amber-fg, #d97706)' }}>{o.repName || 'Unassigned'}</td>
+                      <td style={td}>{TIMELINE_LABEL[o.timeline] || o.timeline || '—'}</td>
+                      <td style={td}>{STATUS_LABEL[o.status] || o.status}</td>
+                      <td style={{ ...td, textAlign: 'right', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{fmtDate(o.createdAt)}</td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr><td style={{ ...td, color: 'var(--color-text-secondary)' }} colSpan={8}>No opportunities match these filters.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function SalesRollup() {
   useDocumentTitle('Sales roll-up');
+  const [view, setView] = useState('rollup');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -204,39 +343,59 @@ export default function SalesRollup() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const tabBtn = (active) => ({
+    all: 'unset', cursor: 'pointer', padding: '6px 14px', fontSize: '0.85rem', fontWeight: 600,
+    borderRadius: 6, border: '1px solid var(--color-border)',
+    background: active ? 'var(--color-surface)' : 'transparent',
+    color: active ? 'var(--color-text)' : 'var(--color-text-secondary)',
+  });
+
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '8px 4px 40px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
         <h1 style={{ fontSize: '1.4rem', margin: 0 }}>Sales roll-up</h1>
-        {data && (
+        {view === 'rollup' && data && (
           <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
             {data.summary.repCount} reps · {data.summary.accountCount} accounts
           </span>
         )}
       </div>
-      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: '4px 0 16px', lineHeight: 1.5 }}>
-        Each account manager's book, sorted worst-compliance-first — the opportunity surface. Read-only; pulled from the compliance, deficiency, and work-order data ServiceCycle already tracks. No manual entry.
+      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: '4px 0 12px', lineHeight: 1.5 }}>
+        {view === 'rollup'
+          ? "Each account manager's book, sorted worst-compliance-first — the opportunity surface. Read-only; pulled from the compliance, deficiency, and work-order data ServiceCycle already tracks. No manual entry."
+          : 'Every opportunity ServiceCycle identified — arc-flash re-studies, auto-surfaced service needs, and customer quotes — routed to the owning rep. Read-only: review what the system flagged, then work with your reps to qualify and enter them in your CRM.'}
       </p>
 
-      {loading && <div style={card}>Loading…</div>}
-      {err && !loading && <div role="alert" className="alert alert-error">{err}</div>}
+      <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <button type="button" role="tab" aria-selected={view === 'rollup'} style={tabBtn(view === 'rollup')} onClick={() => setView('rollup')}>Account books</button>
+        <button type="button" role="tab" aria-selected={view === 'opportunities'} style={tabBtn(view === 'opportunities')} onClick={() => setView('opportunities')}>Opportunities</button>
+      </div>
 
-      {!loading && !err && data && (
+      {view === 'opportunities' ? (
+        <OpportunitiesView />
+      ) : (
         <>
-          <ReassignPanel data={data} onDone={load} />
-          {data.reps.length === 0 && data.unassigned.length === 0 && (
-            <div style={card}>No accounts in scope yet.</div>
-          )}
-          {data.reps.map(rep => <RepCard key={rep.repId} rep={rep} />)}
+          {loading && <div style={card}>Loading…</div>}
+          {err && !loading && <div role="alert" className="alert alert-error">{err}</div>}
 
-          {data.unassigned.length > 0 && (
-            <div style={{ ...card, borderColor: 'var(--chip-amber-fg, #d97706)' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
-                <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--chip-amber-fg, #d97706)' }}>Unassigned</span>
-                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{data.unassigned.length} account{data.unassigned.length === 1 ? '' : 's'} with no account manager</span>
-              </div>
-              <Book accounts={data.unassigned} />
-            </div>
+          {!loading && !err && data && (
+            <>
+              <ReassignPanel data={data} onDone={load} />
+              {data.reps.length === 0 && data.unassigned.length === 0 && (
+                <div style={card}>No accounts in scope yet.</div>
+              )}
+              {data.reps.map(rep => <RepCard key={rep.repId} rep={rep} />)}
+
+              {data.unassigned.length > 0 && (
+                <div style={{ ...card, borderColor: 'var(--chip-amber-fg, #d97706)' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+                    <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--chip-amber-fg, #d97706)' }}>Unassigned</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{data.unassigned.length} account{data.unassigned.length === 1 ? '' : 's'} with no account manager</span>
+                  </div>
+                  <Book accounts={data.unassigned} />
+                </div>
+              )}
+            </>
           )}
         </>
       )}
