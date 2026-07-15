@@ -12,7 +12,7 @@
 // the way a physical NETA decal would.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Mirrors the server's 26-value EquipmentType enum (prisma/schema.prisma),
+// Mirrors the server's 33-value EquipmentType enum (prisma/schema.prisma),
 // in the same order. Every key must exist here — selects enumerate this map.
 export const EQUIPMENT_TYPE_LABELS = {
   TRANSFORMER_LIQUID:      'Transformer (Liquid)',
@@ -41,6 +41,13 @@ export const EQUIPMENT_TYPE_LABELS = {
   EMERGENCY_LIGHTING:      'Emergency Lighting',
   ARC_FLASH_PANEL:         'Arc Flash Panel',
   FIRE_PUMP_CONTROLLER:    'Fire Pump Controller',
+  UTILITY_SERVICE:         'Utility Service Entrance',
+  STATIC_TRANSFER_SWITCH:  'Static Transfer Switch (STS)',
+  PARALLELING_SWITCHGEAR:  'Paralleling Switchgear',
+  REMOTE_POWER_PANEL:      'Remote Power Panel (RPP)',
+  POWER_DISTRIBUTION_UNIT: 'Power Distribution Unit (PDU)',
+  MECHANICAL_LOAD:         'Mechanical Load (CRAH/CRAC/Chiller)',
+  IT_RACK:                 'IT Rack',
 };
 
 // Power-path redundancy at the asset's position. N = single point of failure
