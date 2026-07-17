@@ -1,6 +1,6 @@
 {
   "name": "servicecycle-server",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "license": "UNLICENSED",
   "description": "ServiceCycle API Server - ServiceCycle",
   "main": "index.ts",
