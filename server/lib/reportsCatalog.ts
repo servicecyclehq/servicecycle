@@ -302,6 +302,154 @@ async function buildArcFlashCoverageReport(prisma: any, accountId: string, _opts
   };
 }
 
+// ── 7. 1 / 3 / 5-Year Maintenance Plan ───────────────────────────────────────
+// Projects every ACTIVE maintenance schedule forward over a 5-year horizon from
+// its task interval + the asset's governing condition, so a customer (or a
+// contractor quoting the work) can see the maintenance load coming in Year 1,
+// Years 1-3, and Years 1-5 — the "1/3/5-year plan" NFPA 70B programs are built
+// around. Pure projection from data already in the system (MaintenanceSchedule
+// nextDueDate + MaintenanceTaskDefinition.intervalC{1,2,3}Months); it forecasts
+// cadence, it does NOT assert condition or PPE (system of record, not analysis).
+const PLAN_HORIZON_YEARS = 5;
+const MAX_OCC_PER_SCHEDULE = 240; // safety cap (monthly task over 5 yr = 60)
+
+function addMonths(d: Date, n: number): Date {
+  const x = new Date(d.getTime());
+  x.setMonth(x.getMonth() + n);
+  return x;
+}
+
+// Interval (months) that applies for the asset's governing condition. C2 is the
+// always-present baseline; C1/C3 are used only when the standard defines a
+// condition-specific interval and the asset carries that condition.
+function intervalForCondition(td: any, cond: string): number | null {
+  if (cond === 'C1' && td.intervalC1Months) return td.intervalC1Months;
+  if (cond === 'C3' && td.intervalC3Months) return td.intervalC3Months;
+  return td.intervalC2Months || null;
+}
+
+async function buildMultiYearMaintenancePlanReport(prisma: any, accountId: string, opts: any = {}): Promise<any> {
+  const now = new Date();
+  const horizonEnd = addMonths(now, PLAN_HORIZON_YEARS * 12);
+  const siteFilter = opts.siteId ? { siteId: String(opts.siteId) } : {};
+
+  const schedules = await prisma.maintenanceSchedule.findMany({
+    where: { accountId, isActive: true, asset: { archivedAt: null, ...siteFilter } },
+    select: {
+      nextDueDate: true,
+      conditionOverride: true,
+      asset: { select: { id: true, siteId: true, equipmentType: true, governingCondition: true } },
+      taskDefinition: {
+        select: {
+          taskName: true, intervalC1Months: true, intervalC2Months: true, intervalC3Months: true,
+          requiresOutage: true, requiresNetaCertified: true,
+        },
+      },
+    },
+  });
+
+  const sites = await siteNameMap(prisma, accountId);
+
+  const byYear = Array.from({ length: PLAN_HORIZON_YEARS }, (_v, i) => ({
+    year: i + 1,
+    label: `Year ${i + 1}`,
+    tasks: 0, outageTasks: 0, netaTasks: 0,
+    _assets: new Set<string>(), _sites: new Set<string>(),
+  }));
+  const byAsset = new Map<string, any>();
+  const bySite = new Map<string, any>();
+  const byType = new Map<string, any>();
+
+  let schedulesProjected = 0;
+  let schedulesSkipped = 0;
+
+  for (const s of schedules) {
+    const td = s.taskDefinition;
+    const asset = s.asset;
+    if (!td || !asset) { schedulesSkipped++; continue; }
+    const cond = s.conditionOverride || asset.governingCondition || 'C2';
+    const interval = intervalForCondition(td, cond);
+    if (!interval || interval <= 0) { schedulesSkipped++; continue; }
+
+    // First occurrence AT OR AFTER now: overdue schedules roll forward to their
+    // next future occurrence (overdue backlog is its own report, not the plan).
+    let occ: Date;
+    if (s.nextDueDate) {
+      occ = new Date(s.nextDueDate);
+      let guard = 0;
+      while (occ < now && guard < MAX_OCC_PER_SCHEDULE) { occ = addMonths(occ, interval); guard++; }
+    } else {
+      occ = addMonths(now, interval);
+    }
+
+    schedulesProjected++;
+    const siteKey = asset.siteId || '__unassigned__';
+    const siteName = asset.siteId ? (sites.get(asset.siteId) || 'Unknown site') : 'Unassigned';
+    const etype = asset.equipmentType || 'UNKNOWN';
+
+    let count = 0;
+    while (occ <= horizonEnd && count < MAX_OCC_PER_SCHEDULE) {
+      // Calendar-month difference so Year 1 = months 0-11, Year 2 = 12-23, etc.
+      // (a task due at exactly the 12-month mark is Year 2, not a rounding edge).
+      const monthsFromNow = (occ.getFullYear() - now.getFullYear()) * 12 + (occ.getMonth() - now.getMonth());
+      const yIdx = Math.min(PLAN_HORIZON_YEARS - 1, Math.max(0, Math.floor(monthsFromNow / 12)));
+      if (yIdx >= 0) {
+        const yb = byYear[yIdx];
+        yb.tasks++;
+        if (td.requiresOutage) yb.outageTasks++;
+        if (td.requiresNetaCertified) yb.netaTasks++;
+        yb._assets.add(asset.id);
+        yb._sites.add(siteKey);
+
+        if (!byAsset.has(asset.id)) byAsset.set(asset.id, { assetId: asset.id, siteName, equipmentType: etype, y1: 0, y3: 0, y5: 0 });
+        const ab = byAsset.get(asset.id);
+        if (yIdx < 1) ab.y1++;
+        if (yIdx < 3) ab.y3++;
+        ab.y5++;
+
+        if (!bySite.has(siteKey)) bySite.set(siteKey, { siteId: asset.siteId || null, siteName, y1: 0, y3: 0, y5: 0 });
+        const sb = bySite.get(siteKey);
+        if (yIdx < 1) sb.y1++;
+        if (yIdx < 3) sb.y3++;
+        sb.y5++;
+
+        if (!byType.has(etype)) byType.set(etype, { equipmentType: etype, y1: 0, y3: 0, y5: 0 });
+        const tb = byType.get(etype);
+        if (yIdx < 1) tb.y1++;
+        if (yIdx < 3) tb.y3++;
+        tb.y5++;
+      }
+      occ = addMonths(occ, interval);
+      count++;
+    }
+  }
+
+  const byYearRows = byYear.map((y) => ({
+    year: y.year, label: y.label,
+    tasks: y.tasks, outageTasks: y.outageTasks, netaTasks: y.netaTasks,
+    assets: y._assets.size, sites: y._sites.size,
+  }));
+
+  const oneYearTasks = byYearRows[0] ? byYearRows[0].tasks : 0;
+  const threeYearTasks = byYearRows.slice(0, 3).reduce((sum, y) => sum + y.tasks, 0);
+  const fiveYearTasks = byYearRows.reduce((sum, y) => sum + y.tasks, 0);
+
+  return {
+    generatedAt: now,
+    horizonYears: PLAN_HORIZON_YEARS,
+    summary: {
+      oneYearTasks, threeYearTasks, fiveYearTasks,
+      assetsPlanned: byAsset.size,
+      sitesPlanned: bySite.size,
+      schedulesProjected, schedulesSkipped,
+    },
+    byYear: byYearRows,
+    byEquipmentType: Array.from(byType.values()).sort((a, b) => b.y5 - a.y5),
+    bySite: Array.from(bySite.values()).sort((a, b) => b.y5 - a.y5),
+    byAsset: Array.from(byAsset.values()).sort((a, b) => b.y5 - a.y5).slice(0, 500),
+  };
+}
+
 module.exports = {
   buildDeficiencySummaryReport,
   buildOverdueWorkOrdersReport,
@@ -309,6 +457,7 @@ module.exports = {
   buildInstalledBaseAgeByOemReport,
   buildAssetRulWatchlistReport,
   buildArcFlashCoverageReport,
+  buildMultiYearMaintenancePlanReport,
 };
 
 export {};

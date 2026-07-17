@@ -13,6 +13,7 @@ const {
   buildInstalledBaseAgeByOemReport,
   buildAssetRulWatchlistReport,
   buildArcFlashCoverageReport,
+  buildMultiYearMaintenancePlanReport,
 } = require('../lib/reportsCatalog');
 
 // Shared site lookup every report calls once via siteNameMap().
@@ -180,5 +181,80 @@ describe('buildArcFlashCoverageReport', () => {
     const studyWhere = prisma.systemStudyAsset.findMany.mock.calls[0][0].where;
     expect(studyWhere.study.supersededById).toBe(null);
     expect(studyWhere.study.studyType).toBe('arc_flash');
+  });
+});
+
+describe('buildMultiYearMaintenancePlanReport', () => {
+  const plusMonths = (n) => { const d = new Date(); d.setMonth(d.getMonth() + n); return d; };
+
+  test('projects active schedules across 1/3/5-year horizons; skips broken rows', async () => {
+    const prisma = {
+      site: { findMany: jest.fn(async () => mockSites()) },
+      maintenanceSchedule: {
+        findMany: jest.fn(async () => [
+          // 12-month interval, first due in 3 months -> one occurrence per year
+          { nextDueDate: plusMonths(3), conditionOverride: null,
+            asset: { id: 'a1', siteId: 'site-1', equipmentType: 'SWITCHGEAR', governingCondition: 'C2' },
+            taskDefinition: { taskName: 'IR', intervalC1Months: null, intervalC2Months: 12, intervalC3Months: null, requiresOutage: true, requiresNetaCertified: true } },
+          // 6-month interval, no nextDueDate -> first occurrence at +6 months
+          { nextDueDate: null, conditionOverride: null,
+            asset: { id: 'a2', siteId: 'site-1', equipmentType: 'MCC', governingCondition: 'C2' },
+            taskDefinition: { taskName: 'Thermo', intervalC1Months: null, intervalC2Months: 6, intervalC3Months: null, requiresOutage: false, requiresNetaCertified: false } },
+          // overdue -> rolls forward to its next future occurrence, still planned
+          { nextDueDate: plusMonths(-8), conditionOverride: null,
+            asset: { id: 'a3', siteId: 'site-2', equipmentType: 'TRANSFORMER', governingCondition: 'C2' },
+            taskDefinition: { taskName: 'DGA', intervalC1Months: null, intervalC2Months: 12, intervalC3Months: null, requiresOutage: false, requiresNetaCertified: false } },
+          // missing taskDefinition -> skipped
+          { nextDueDate: plusMonths(2), conditionOverride: null,
+            asset: { id: 'a4', siteId: 'site-1', equipmentType: 'MCC', governingCondition: 'C2' },
+            taskDefinition: null },
+          // zero interval -> skipped (cannot project a cadence)
+          { nextDueDate: plusMonths(2), conditionOverride: null,
+            asset: { id: 'a5', siteId: 'site-1', equipmentType: 'MCC', governingCondition: 'C2' },
+            taskDefinition: { taskName: 'x', intervalC1Months: null, intervalC2Months: 0, intervalC3Months: null, requiresOutage: false, requiresNetaCertified: false } },
+        ]),
+      },
+    };
+    const out = await buildMultiYearMaintenancePlanReport(prisma, 'acct-1', {});
+    expect(out.horizonYears).toBe(5);
+    expect(out.byYear).toHaveLength(5);
+    expect(out.summary.schedulesProjected).toBe(3);
+    expect(out.summary.schedulesSkipped).toBe(2);
+    // cumulative horizons are monotonic
+    expect(out.summary.oneYearTasks).toBeLessThanOrEqual(out.summary.threeYearTasks);
+    expect(out.summary.threeYearTasks).toBeLessThanOrEqual(out.summary.fiveYearTasks);
+    // 12-month task -> exactly one occurrence per year
+    const a1 = out.byAsset.find((a) => a.assetId === 'a1');
+    expect(a1.y1).toBe(1);
+    expect(a1.y3).toBe(3);
+    expect(a1.y5).toBe(5);
+    // 6-month task -> 10 occurrences across five years
+    const a2 = out.byAsset.find((a) => a.assetId === 'a2');
+    expect(a2.y5).toBe(10);
+    // grouping surfaces are populated
+    expect(out.byEquipmentType.some((t) => t.equipmentType === 'SWITCHGEAR')).toBe(true);
+    expect(out.bySite.some((s) => s.siteName === 'Plant A')).toBe(true);
+    expect(out.summary.sitesPlanned).toBe(2);
+    // only active + non-archived schedules are queried
+    const where = prisma.maintenanceSchedule.findMany.mock.calls[0][0].where;
+    expect(where.isActive).toBe(true);
+    expect(where.asset.archivedAt).toBe(null);
+  });
+
+  test('uses the condition-specific interval (C3) over the C2 baseline', async () => {
+    const prisma = {
+      site: { findMany: jest.fn(async () => mockSites()) },
+      maintenanceSchedule: {
+        findMany: jest.fn(async () => [
+          { nextDueDate: plusMonths(1), conditionOverride: null,
+            asset: { id: 'a1', siteId: 'site-1', equipmentType: 'PANELBOARD', governingCondition: 'C3' },
+            taskDefinition: { taskName: 'Insp', intervalC1Months: 24, intervalC2Months: 12, intervalC3Months: 3, requiresOutage: false, requiresNetaCertified: false } },
+        ]),
+      },
+    };
+    const out = await buildMultiYearMaintenancePlanReport(prisma, 'acct-1', {});
+    // 3-month cadence (C3) => ~20 occurrences over five years, not 5 (C2=12mo)
+    const a1 = out.byAsset.find((a) => a.assetId === 'a1');
+    expect(a1.y5).toBeGreaterThanOrEqual(19);
   });
 });

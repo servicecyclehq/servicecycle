@@ -47,6 +47,7 @@ const {
   buildInstalledBaseAgeByOemReport,
   buildAssetRulWatchlistReport,
   buildArcFlashCoverageReport,
+  buildMultiYearMaintenancePlanReport,
 } = require('../lib/reportsCatalog');
 
 const NAMED_REPORTS = [
@@ -56,6 +57,7 @@ const NAMED_REPORTS = [
   { id: 'installed-base-age', title: 'Installed-Base Age by OEM', path: '/api/reports/installed-base-age' },
   { id: 'rul-watchlist', title: 'Asset RUL Watchlist', path: '/api/reports/rul-watchlist' },
   { id: 'arc-flash-coverage', title: 'Arc-Flash Coverage by Site', path: '/api/reports/arc-flash-coverage' },
+  { id: 'multi-year-plan', title: '1 / 3 / 5-Year Maintenance Plan', path: '/api/reports/multi-year-plan' },
 ];
 
 // -- GET /api/reports ---------------------------------------------------------
@@ -184,6 +186,28 @@ router.get('/arc-flash-coverage', requireManager, namedReportHandler(
     ],
     rows: data.bySite,
     subtitle: `${data.summary.coveragePct ?? 0}% fleet coverage (${data.summary.covered}/${data.summary.totalAssets})`,
+  }),
+));
+
+// -- GET /api/reports/multi-year-plan -----------------------------------------
+// 1/3/5-year forward maintenance plan: projects active schedules over a 5-year
+// horizon from task intervals + governing condition. The PDF shows the per-year
+// rollup; the JSON additionally carries per-asset / per-site / per-equipment
+// breakdowns (byAsset/bySite/byEquipmentType) for a richer in-app view later.
+router.get('/multi-year-plan', requireManager, namedReportHandler(
+  buildMultiYearMaintenancePlanReport,
+  '1 / 3 / 5-Year Maintenance Plan',
+  (data) => ({
+    columns: [
+      { key: 'label', label: 'Horizon', width: 1.4 },
+      { key: 'tasks', label: 'Tasks Due', width: 1 },
+      { key: 'outageTasks', label: 'Outage-Req', width: 1 },
+      { key: 'netaTasks', label: 'NETA-Cert', width: 1 },
+      { key: 'assets', label: 'Assets', width: 1 },
+      { key: 'sites', label: 'Sites', width: 1 },
+    ],
+    rows: data.byYear,
+    subtitle: `Planned maintenance load — next 1 yr: ${data.summary.oneYearTasks} · 3 yr: ${data.summary.threeYearTasks} · 5 yr: ${data.summary.fiveYearTasks} tasks across ${data.summary.assetsPlanned} assets, ${data.summary.sitesPlanned} site(s)`,
   }),
 ));
 
