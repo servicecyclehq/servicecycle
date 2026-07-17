@@ -80,7 +80,7 @@ const SITES = [
         prior: { ie: 10.2, afb: 78, ppe: 3, bolted: 14.2, arcing: 8.6, clearing: 520, sev: 'danger' },
         cur:   { ie: 5.8, afb: 40, ppe: 2, bolted: 16.8, arcing: 10.0, clearing: 170, sev: 'warning', reqArc: 8 } },
       { model: 'PNL-EQ', busName: 'PNL-EQ (Equipment Branch)', nominalVoltage: '480V', upstream: 'EMSB FDR-3',
-        prior: { ie: 3.1, afb: 28, ppe: 1, bolted: 12.8, arcing: 7.8, clearing: 160, sev: 'normal' },
+        prior: { ie: 3.1, afb: 28, ppe: 1, bolted: 12.8, arcing: 7.8, clearing: 160 },
         cur:   { ie: 8.9, afb: 68, ppe: 3, bolted: 16.1, arcing: 9.6, clearing: 440, sev: 'warning', reqArc: 8 } },
     ],
   },
