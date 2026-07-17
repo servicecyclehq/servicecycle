@@ -21,6 +21,7 @@ const { extractArcFlashDocument } = require('./arcFlashExtract');
 const { analyzeBusGaps, summarizeIngestBands } = require('./arcFlashGap');
 const { deriveForBusRows } = require('./persistMultiSourceFeeds');
 const { extractVectorTopology, reconcileVectorTopology } = require('./vectorTopology');
+const { extractSchematicTopology, reconcileSchematicTopology } = require('./schematicTopology');
 
 // [KEEP IN SYNC with routes/arcFlashIngest.ts numOrNull/busForGap — pure
 // gap-input shaping, duplicated here so this worker path doesn't have to import
@@ -72,15 +73,37 @@ async function processArcFlashIngestExtraction(ingest: any, buffer: Buffer, opts
   // FAILS OPEN: a non-PDF / non-vector / non-card-tree input leaves the AI result as-is.
   // Every override where the AI disagreed becomes a review gap for the human.
   let vectorOverrides: any[] = [];
+  let vectorApplied = false;
   try {
     const isPdf = /pdf/i.test(ingest.mimeType || '') || /\.pdf$/i.test(ingest.fileName || '');
     if (isPdf && buses.length) {
       const vec = await extractVectorTopology(buffer);
       const rec = reconcileVectorTopology(buses, vec);
-      if (rec.applied) { buses = rec.buses; vectorOverrides = rec.disagreements; }
+      if (rec.applied) { buses = rec.buses; vectorOverrides = rec.disagreements; vectorApplied = true; }
     }
   } catch (verr: any) {
     console.error('vector-topology reconcile (non-fatal):', verr && verr.message ? verr.message : verr);
+  }
+
+  // [schematic geometry topology] For a true schematic one-line (drawn bus bars + drop
+  // conductors, as opposed to the vector "card tree" that the pass above handles), the drawn
+  // geometry is deterministic ground truth for connectivity. Run the geometry follower as a
+  // reconciliation pass that SUPPLEMENTS the AI extraction: it auto-corrects "who feeds whom"
+  // ONLY when its own name read is reliable enough to match buses by name, and ALWAYS surfaces a
+  // non-destructive geometry advisory (bus/feed/tie counts + ring-bus / low-confidence notes) as
+  // a review flag. FAILS OPEN exactly like the vector pass. Skipped when the card-tree pass
+  // already reconciled this document (the two drawing styles are mutually exclusive).
+  let schematicAdvisory: any = null;
+  try {
+    const isPdf = /pdf/i.test(ingest.mimeType || '') || /\.pdf$/i.test(ingest.fileName || '');
+    if (isPdf && buses.length && !vectorApplied) {
+      const sch = await extractSchematicTopology(buffer);
+      const rec = reconcileSchematicTopology(buses, sch);
+      if (rec.applied) { buses = rec.buses; vectorOverrides = vectorOverrides.concat(rec.disagreements); }
+      schematicAdvisory = rec.advisory;
+    }
+  } catch (serr: any) {
+    console.error('schematic-topology reconcile (non-fatal):', serr && serr.message ? serr.message : serr);
   }
 
   // [multi-source topology] Derive AssetFeed-shaped edges + gap flags from the (vector-
@@ -94,6 +117,16 @@ async function processArcFlashIngestExtraction(ingest: any, buffer: Buffer, opts
         message: `${d.field === 'fedFromBusName' ? 'Feed source' : 'Equipment type'} corrected from the drawing geometry (AI read "${d.ai ?? 'none'}", drawing shows "${d.vector ?? 'none'}") -- verify.`,
       });
     }
+  }
+  // Non-destructive geometry advisory from the schematic follower (surfaced even when it did NOT
+  // auto-override, e.g. a low-name-confidence read) so the reviewer sees what the drawing shows.
+  if (schematicAdvisory && derivedTopology && Array.isArray(derivedTopology.gaps)) {
+    const a = schematicAdvisory;
+    const noteStr = (a.notes && a.notes.length) ? ` Notes: ${a.notes.join(', ')}.` : '';
+    derivedTopology.gaps.push({
+      code: 'SCHEMATIC_GEOMETRY', busName: null,
+      message: `Deterministic drawing-geometry read${a.page != null ? ` (one-line sheet p${a.page + 1})` : ''}: ${a.busCount} buses, ${a.feedCount} feeds, ${a.tieCount} ties, name-confidence ${a.nameConfidence}.${noteStr} Advisory -- compare against the AI extraction.`,
+    });
   }
   const gapResults = buses.map((b: any) => analyzeBusGaps(busForGap(b)));
   const summary = summarizeIngestBands(gapResults);
