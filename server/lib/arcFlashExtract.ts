@@ -25,6 +25,10 @@ const { extractPdfText } = require('./testReportParse');
 const { rasterizePdf } = require('./rasterizePdf');
 const { extractPdfPlumber } = require('./pdfText');
 const { pdfPageCount, splitPdfByRanges } = require('./pdfSplit');
+// [deterministic-first] Free/instant per-bus table read for text-based study
+// reports (SKM Dapper / IEEE-1584 Bus Report). High-confidence parses skip the AI
+// cascade entirely; fails OPEN to AI. See lib/afxDeterministicTable.ts.
+const { tryDeterministicTableExtract } = require('./afxDeterministicTable');
 // [2026-07-08 acquisition audit W2-AI] photo-inspect + maintenance-brief run
 // untrusted text through promptSanitize before it reaches a prompt; this
 // module's text path (buildUserPrompt) was concatenating raw
@@ -374,7 +378,11 @@ function finalize(method: string, aiProvider: any, norm: any, warnings: string[]
   // and the confirm-time audit rely on this to record that a worker is looking at an
   // AI-extracted number until a qualified person signs off. text/vision/hybrid parses
   // are AI-derived; only an empty/unsupported result carries no AI-sourced data.
-  const provenance = ((aiProvider || /vision|text|hybrid/.test(method)) && norm.buses && norm.buses.length)
+  // deterministic_table is a machine read of the report's own numbers (no AI), but
+  // still UNVERIFIED until a PE signs off -- route it through the same review gate as
+  // an AI extract. (Distinct source is preserved in `method`; a dedicated provenance
+  // value is a small follow-up if the audit surface should say "deterministic".)
+  const provenance = ((aiProvider || /vision|text|hybrid|deterministic/.test(method)) && norm.buses && norm.buses.length)
     ? 'ai_extracted'
     : 'none';
   return { method, aiProvider: aiProvider ?? null, promptVersion: PROMPT_VERSION, provenance, systemMeta: norm.systemMeta ?? null, buses: norm.buses || [], warnings: all, rawJsonText: norm.rawJsonText || '' };
@@ -524,6 +532,27 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
   const isImage = /image\/(png|jpe?g|webp)/i.test(mimeType || '') || /\.(png|jpe?g|webp)$/i.test(fileName || '');
   const isPdf = /pdf/i.test(mimeType || '') || /\.pdf$/i.test(fileName || '');
   const isDocx = /officedocument\.wordprocessingml\.document/i.test(mimeType || '') || /\.docx$/i.test(fileName || '');
+
+  // [deterministic-first] Before ANY AI: if this is a text-based study report whose
+  // per-bus IEEE-1584 results table parses at high confidence, return those buses and
+  // SKIP the AI cascade entirely -- free, instant, and resilient to AI-provider outages
+  // (a Gemini 503 must not block a clean SKM report). The confidence GATE lives in
+  // tryDeterministicTableExtract; a wrong deterministic read never silently replaces AI.
+  // Fails OPEN (applied:false / throw) to the unchanged AI path below. method stays
+  // 'deterministic_table' (honest source); finalize() marks it provenance:'ai_extracted'
+  // so it flows through the SAME unverified-machine-read review / PE sign-off gate.
+  if (isPdf) {
+    try {
+      const det = await tryDeterministicTableExtract(buffer);
+      if (det.applied) {
+        const norm = normalizeExtraction({ system: {}, buses: det.buses });
+        if (norm.buses && norm.buses.length) {
+          warnings.push(`Read ${norm.buses.length} buses deterministically from the ${det.parser} results table (confidence ${det.confidence}) -- AI extraction skipped.`);
+          return finalize('deterministic_table', null, { systemMeta: norm.systemMeta, buses: norm.buses, warnings: [], rawJsonText: '' }, warnings);
+        }
+      }
+    } catch { /* fail open to the AI path below */ }
+  }
 
   // Image upload -> vision directly.
   if (isImage) {
