@@ -22,7 +22,6 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
 
 const DEMO_ACCOUNT_ID = '11111111-1111-4111-8111-111111111111';
 const MARKER = '[cedar-northgate-drift-demo]';
@@ -88,7 +87,7 @@ const SITES = [
 
 function addMonths(date, months) { const d = new Date(date); d.setMonth(d.getMonth() + months); return d; }
 
-async function seedSite(spec) {
+async function seedSite(prisma, spec) {
   // find-or-create the site (wholly owned by this seed)
   let site = await prisma.site.findFirst({ where: { accountId: DEMO_ACCOUNT_ID, name: spec.name }, select: { id: true } });
   if (!site) site = await prisma.site.create({ data: { accountId: DEMO_ACCOUNT_ID, name: spec.name, oneLineDiagramOnFile: true }, select: { id: true } });
@@ -150,12 +149,18 @@ async function seedSite(spec) {
   for (const b of spec.bind) console.log('    ' + b.busName + ': ' + b.prior.ie + ' -> ' + b.cur.ie + ' cal/cm2');
 }
 
-async function main() {
+async function run(prisma) {
   const acct = await prisma.account.findFirst({ where: { id: DEMO_ACCOUNT_ID }, select: { id: true, companyName: true } });
   if (!acct) { console.log('SKIP: pinned demo account not found (' + DEMO_ACCOUNT_ID + ')'); return; }
   console.log('Seeding Cedar Hollow + Northgate drift demo into account: ' + (acct.companyName || acct.id));
-  for (const spec of SITES) await seedSite(spec);
+  for (const spec of SITES) await seedSite(prisma, spec);
   console.log('OK: cedar-northgate drift demo seeded (2 sites, 4 studies, 5 drift buses).');
 }
 
-main().then(() => prisma.$disconnect()).catch(async (e) => { console.error('SEED ERROR', e); await prisma.$disconnect(); process.exit(1); });
+module.exports = { run };
+
+// Standalone CLI (also invoked from seed-demo.js's resetAndSeedDemo via run(prisma)).
+if (require.main === module) {
+  const prisma = new PrismaClient();
+  run(prisma).then(() => prisma.$disconnect()).catch(async (e) => { console.error('SEED ERROR', e); await prisma.$disconnect(); process.exit(1); });
+}

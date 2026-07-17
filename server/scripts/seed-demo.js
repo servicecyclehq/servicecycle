@@ -3549,6 +3549,17 @@ async function resetAndSeedDemo(opts = {}) {
   } catch (e) {
     console.error('[resetAndSeedDemo] contractor-book seed failed (non-fatal):', (e && e.message) || e);
   }
+  // Cedar Hollow + Northgate matched 2022->2026 drift demo: two extra sites with prior/current
+  // arc-flash studies + the four downloadable report PDFs. Best-effort (must never break the core
+  // seed) and runs AFTER the account reset above, so these survive the nightly demo reseed. Sites
+  // first, then the documents that attach to them.
+  try {
+    await require('./seed-cedar-northgate-drift-demo').run(prisma);
+    await require('./seed-demo-documents').run(prisma);
+  } catch (e) {
+    console.error('[resetAndSeedDemo] cedar/northgate drift add-on failed (non-fatal):', (e && e.message) || e);
+  }
+
   return { ...summary, contractor, trigger: opts.trigger || 'cli' };
 }
 
