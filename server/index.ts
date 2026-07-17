@@ -253,6 +253,7 @@ const complianceRoutes      = require('./routes/compliance');   // per-standard 
 const auditRoutes           = require('./routes/audits');       // audit visits + recommendations (RECs)
 const newsRoutes            = require('./routes/news');         // regulatory/industry news feed (global)
 const dashboardRoutes       = require('./routes/dashboard');
+const glossaryRoutes        = require('./routes/glossary'); // punch #4 symbol/marking glossary
 const userRoutes            = require('./routes/users');
 const preferencesRoutes     = require('./routes/preferences'); // v0.42 per-user key/value prefs
 const bootstrapRoutes       = require('./routes/bootstrap');   // v0.47 single-RT mount-time bundle
@@ -1502,6 +1503,7 @@ app.use('/api/news',            authenticateToken, newsRoutes);
 // signal; the offline outbox replays mutations against the normal routes.
 app.use('/api/field',           authenticateToken, fieldRoutes);
 app.use('/api/dashboard',       authenticateToken, dashboardRoutes);
+app.use('/api/glossary',        authenticateToken, glossaryRoutes);
 // v0.32.4: per-user AI quota state for in-UI helper text. Authenticated;
 // no limiter — read-only inspection of the quota counters.
 app.use('/api/ai/usage',        authenticateToken, aiUsageRoutes);
