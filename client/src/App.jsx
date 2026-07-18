@@ -170,6 +170,8 @@ const ArcFlashSearch                 = lazyWithReload(() => import('./pages/ArcF
 const StandardsLibrary               = lazyWithReload(() => import('./pages/StandardsLibrary')); // standards reference library (admin/manager)
 const MultiYearPlanReport            = lazyWithReload(() => import('./pages/MultiYearPlanReport')); // 1/3/5-year plan (admin/manager)
 const EmpReport                      = lazyWithReload(() => import('./pages/EmpReport'));           // EMP document (admin/manager)
+const AssetRegisterReport            = lazyWithReload(() => import('./pages/AssetRegisterReport')); // asset register export (admin/manager)
+const AccountBackupReport            = lazyWithReload(() => import('./pages/AccountBackupReport')); // full account backup (admin/manager)
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 const EquipmentTemplates             = lazyWithReload(() => import('./pages/EquipmentTemplates')); // equipment template library
 const OutagePlannerPage              = lazyWithReload(() => import('./pages/OutagePlannerPage')); // account-wide outage consolidation planner
@@ -494,6 +496,16 @@ function AppRoutes() {
             <Route path="reports/emp" element={
               <RequireRole roles={['admin', 'manager']}>
                 <EmpReport />
+              </RequireRole>
+            } />
+            <Route path="reports/asset-register" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <AssetRegisterReport />
+              </RequireRole>
+            } />
+            <Route path="reports/account-backup" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <AccountBackupReport />
               </RequireRole>
             } />
             <Route path="reports/revenue" element={

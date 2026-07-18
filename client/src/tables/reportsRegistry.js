@@ -105,20 +105,20 @@ export const REPORTS = [
   },
   {
     id: 'export-asset-register',
-    name: 'Export Asset Register',
+    name: 'Asset Register',
     description: 'Download the full asset register as an XLSX workbook — equipment type, manufacturer, model, serial number, site, condition, and schedule status for every asset.',
     icon: Download,
-    exportView: 'assets',
+    to: '/reports/asset-register',
   },
   // 2026-07-13 fix: moved from first to last per Dustin's live review -- this
   // is the "nuclear option" full-account dump, not something most people open
   // day-to-day; the report cards people actually use belong up top.
   {
     id: 'export-everything',
-    name: 'Export Everything (Account Backup)',
+    name: 'Account Backup',
     description: 'Download a complete, portable copy of your account as an Excel workbook — every site, asset, schedule, work order, deficiency, quote request, arc-flash study and label, LOTO procedure, parts catalog, spare inventory record, and asset part requirement, plus document and compliance-snapshot metadata with integrity hashes and retrieval paths, one sheet per record type. No lock-in: opens directly in Excel/Sheets, yours to keep or re-import anywhere.',
     icon: Archive,
-    accountExport: true,
+    to: '/reports/account-backup',
   },
 ];
 

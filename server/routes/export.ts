@@ -19,6 +19,7 @@ const express = require('express');
 // sendXlsx lives in server/lib/xlsxExport.js so report routes can reuse the
 // same workbook builder without duplicating ExcelJS plumbing.
 const { sendXlsx, sendAccountXlsx } = require('../lib/xlsxExport');
+const { renderReportTablePdf } = require('../lib/reportsPdf');
 const { buildAccountExport, streamAccountExportJson, EXPORT_SHEETS } = require('../lib/accountExport');
 const { requireManager } = require('../middleware/roles');
 const { writeLog: writeActivityLog } = require('../lib/activityLog');
@@ -190,6 +191,23 @@ async function exportAssets(req, res) {
   const columnDefs = appendTruncationRow(
     assets, filterToRequestedColumns(ASSETS_COLUMN_REGISTRY, req.query.columns), truncated, EXPORT_HARD_CEILING,
   );
+
+  if (String(req.query.format || '').toLowerCase() === 'pdf') {
+    return renderReportTablePdf(res, {
+      title: 'Asset Register',
+      subtitle: wantArchived ? 'Archived assets' : 'Active asset register',
+      columns: columnDefs.map((c: any) => ({ key: c.id, label: c.header, width: c.width ? c.width / 10 : 1 })),
+      rows: assets.map((a: any) => {
+        const row: any = {};
+        for (const c of columnDefs) {
+          let v = c.get(a);
+          if (v instanceof Date) v = v.toISOString().slice(0, 10);
+          row[c.id] = v == null ? '' : v;
+        }
+        return row;
+      }),
+    });
+  }
 
   if (String(req.query.format || '').toLowerCase() === 'csv') {
     return sendCsv(res, { columnDefs, rows: assets, filename: `Assets-${dateStamp()}.csv` });
