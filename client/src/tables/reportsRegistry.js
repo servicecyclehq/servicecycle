@@ -63,11 +63,10 @@ export const REPORTS = [
   },
   {
     id: 'emp-document',
-    name: 'Export EMP Document',
+    name: 'EMP Document',
     description: 'Download your formal Electrical Maintenance Program (NFPA 70B §4.2) as a PDF — asset inventory, maintenance intervals, 24-month work-order history, condition ratings, open deficiencies, and personnel qualifications. Required by insurance carriers at policy renewal.',
     icon: ShieldCheck,
-    empDownload: true,
-    empMonths: 24,
+    to: '/reports/emp',
   },
   {
     id: 'compliance-by-standard',
@@ -79,9 +78,9 @@ export const REPORTS = [
   {
     id: 'multi-year-plan',
     name: '1 / 3 / 5-Year Maintenance Plan',
-    description: 'The forward maintenance plan an NFPA 70B program is built around: active schedules projected over a 5-year horizon from each task\'s interval and the asset\'s governing condition — maintenance load by year (Year 1 through Year 5) with outage-required and NETA-certified counts and the assets and sites touched. The multi-year view for budgeting and scoping the work.',
+    description: 'The forward maintenance plan at the heart of an NFPA 70B program: active schedules projected over a 5-year horizon from each task\'s interval and the asset\'s governing condition — maintenance load by year (Year 1 through Year 5) with outage-required and NETA-certified counts and the assets and sites touched. The multi-year view for budgeting and scoping the work.',
     icon: CalendarClock,
-    reportPdf: '/api/reports/multi-year-plan',
+    to: '/reports/multi-year-plan',
   },
   {
     id: 'overdue-maintenance-by-severity',

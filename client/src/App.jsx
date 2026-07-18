@@ -6,6 +6,7 @@ import { ConfirmProvider } from './context/ConfirmContext';
 import AiConsentModal from './components/AiConsentModal';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
+import ChunkErrorBoundary from './components/ChunkErrorBoundary';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 
 // Role guard — always rendered so the route exists in the tree during auth
@@ -167,6 +168,8 @@ const SalesRollup                    = lazyWithReload(() => import('./pages/Sale
 const ArcFlashHeatMap                = lazyWithReload(() => import('./pages/ArcFlashHeatMap'));  // arc-flash heat-map (admin/manager)
 const ArcFlashSearch                 = lazyWithReload(() => import('./pages/ArcFlashSearch'));   // arc-flash NL search (admin/manager)
 const StandardsLibrary               = lazyWithReload(() => import('./pages/StandardsLibrary')); // standards reference library (admin/manager)
+const MultiYearPlanReport            = lazyWithReload(() => import('./pages/MultiYearPlanReport')); // 1/3/5-year plan (admin/manager)
+const EmpReport                      = lazyWithReload(() => import('./pages/EmpReport'));           // EMP document (admin/manager)
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 const EquipmentTemplates             = lazyWithReload(() => import('./pages/EquipmentTemplates')); // equipment template library
 const OutagePlannerPage              = lazyWithReload(() => import('./pages/OutagePlannerPage')); // account-wide outage consolidation planner
@@ -280,6 +283,7 @@ function AppRoutes() {
           The wizard is admin/manager onboarding by design. */}
       {user && !onboardingDone && ['admin', 'manager'].includes(user.role) && <OnboardingWizard />}
 
+      <ChunkErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           {/* Root: marketing landing page for visitors, dashboard for logged-in users */}
@@ -482,6 +486,16 @@ function AppRoutes() {
                 <StandardsLibrary />
               </RequireRole>
             } />
+            <Route path="reports/multi-year-plan" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <MultiYearPlanReport />
+              </RequireRole>
+            } />
+            <Route path="reports/emp" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <EmpReport />
+              </RequireRole>
+            } />
             <Route path="reports/revenue" element={
               <RequireRole roles={['admin', 'manager']}>
                 <RevenueAttributionDashboard />
@@ -577,6 +591,7 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
+      </ChunkErrorBoundary>
 
       {/* v0.37.1 W5 MT-023: HelpDrawer mounted at the App root with its
           own Suspense boundary (null fallback) so the lazy chunk loads
