@@ -328,6 +328,22 @@ function intervalForCondition(td: any, cond: string): number | null {
   return td.intervalC2Months || null;
 }
 
+// EQUIPMENT_TYPE enum -> readable label ("SWITCHGEAR" -> "Switchgear").
+function prettyType(t: string): string {
+  return String(t || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Cadence in months -> plain English ("12" -> "Annual", "6" -> "Every 6 mo").
+function everyLabel(months: number): string {
+  if (!months || months <= 0) return '—';
+  if (months === 12) return 'Annual';
+  if (months === 24) return 'Every 2 yr';
+  if (months === 36) return 'Every 3 yr';
+  if (months === 60) return 'Every 5 yr';
+  if (months % 12 === 0) return `Every ${months / 12} yr`;
+  return `Every ${months} mo`;
+}
+
 async function buildMultiYearMaintenancePlanReport(prisma: any, accountId: string, opts: any = {}): Promise<any> {
   const now = new Date();
   const horizonEnd = addMonths(now, PLAN_HORIZON_YEARS * 12);
@@ -338,10 +354,16 @@ async function buildMultiYearMaintenancePlanReport(prisma: any, accountId: strin
     select: {
       nextDueDate: true,
       conditionOverride: true,
-      asset: { select: { id: true, siteId: true, equipmentType: true, governingCondition: true } },
+      asset: {
+        select: {
+          id: true, siteId: true, equipmentType: true, governingCondition: true,
+          manufacturer: true, model: true, serialNumber: true,
+          position: { select: { name: true, code: true } },
+        },
+      },
       taskDefinition: {
         select: {
-          taskName: true, intervalC1Months: true, intervalC2Months: true, intervalC3Months: true,
+          taskName: true, standardRef: true, intervalC1Months: true, intervalC2Months: true, intervalC3Months: true,
           requiresOutage: true, requiresNetaCertified: true,
         },
       },
@@ -359,6 +381,10 @@ async function buildMultiYearMaintenancePlanReport(prisma: any, accountId: strin
   const byAsset = new Map<string, any>();
   const bySite = new Map<string, any>();
   const byType = new Map<string, any>();
+  // The PLAN itself: one line per active schedule — equipment, task, cadence,
+  // and when it's next due. This is what makes the report a maintenance plan
+  // rather than a per-year tally.
+  const plan: any[] = [];
 
   let schedulesProjected = 0;
   let schedulesSkipped = 0;
@@ -386,6 +412,31 @@ async function buildMultiYearMaintenancePlanReport(prisma: any, accountId: strin
     const siteKey = asset.siteId || '__unassigned__';
     const siteName = asset.siteId ? (sites.get(asset.siteId) || 'Unknown site') : 'Unassigned';
     const etype = asset.equipmentType || 'UNKNOWN';
+
+    // Build the plan line item from the FIRST future occurrence (occ, before the
+    // projection loop advances it). Label the asset by its position/tag if it
+    // has one, else equipment type + make/model.
+    const pos = asset.position;
+    const makeModel = [asset.manufacturer, asset.model].filter(Boolean).join(' ');
+    const assetLabel = (pos && (pos.code || pos.name))
+      || (makeModel ? `${prettyType(etype)} — ${makeModel}` : prettyType(etype))
+      || etype;
+    const firstMonths = (occ.getFullYear() - now.getFullYear()) * 12 + (occ.getMonth() - now.getMonth());
+    const firstYear = Math.min(PLAN_HORIZON_YEARS, Math.max(1, Math.floor(firstMonths / 12) + 1));
+    plan.push({
+      dueDate: occ.toISOString().slice(0, 10),
+      year: firstYear,
+      site: siteName,
+      asset: assetLabel,
+      serial: asset.serialNumber || null,
+      equipmentType: etype,
+      task: td.taskName,
+      standardRef: td.standardRef || null,
+      everyMonths: interval,
+      cadence: everyLabel(interval),
+      requiresOutage: !!td.requiresOutage,
+      requiresNeta: !!td.requiresNetaCertified,
+    });
 
     let count = 0;
     while (occ <= horizonEnd && count < MAX_OCC_PER_SCHEDULE) {
@@ -447,6 +498,8 @@ async function buildMultiYearMaintenancePlanReport(prisma: any, accountId: strin
     byEquipmentType: Array.from(byType.values()).sort((a, b) => b.y5 - a.y5),
     bySite: Array.from(bySite.values()).sort((a, b) => b.y5 - a.y5),
     byAsset: Array.from(byAsset.values()).sort((a, b) => b.y5 - a.y5).slice(0, 500),
+    // The line-by-line plan: every active schedule, earliest-due first.
+    plan: plan.sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0)).slice(0, 500),
   };
 }
 

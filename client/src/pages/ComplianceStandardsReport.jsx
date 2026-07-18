@@ -88,7 +88,12 @@ export default function ComplianceStandardsReport() {
     const params = {};
     if (siteId) params.siteId = siteId;
     api.get('/api/compliance/summary', { params })
-      .then(r => setRows(r.data?.data?.summary || []))
+      // API returns the rows under `data.standards` (buildStandardsSummary);
+      // this page previously read `data.summary`, which is undefined — so every
+      // account rendered the empty "No compliance data yet" state despite having
+      // full compliance data. Read the correct key (fall back to `summary` in
+      // case an older/newer server ever ships that shape).
+      .then(r => setRows(r.data?.data?.standards || r.data?.data?.summary || []))
       .catch(err => setError(err.response?.data?.error || 'Failed to load compliance summary.'))
       .finally(() => setLoading(false));
   }, [siteId]);

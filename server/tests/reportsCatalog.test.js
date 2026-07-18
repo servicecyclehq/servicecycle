@@ -239,6 +239,12 @@ describe('buildMultiYearMaintenancePlanReport', () => {
     const where = prisma.maintenanceSchedule.findMany.mock.calls[0][0].where;
     expect(where.isActive).toBe(true);
     expect(where.asset.archivedAt).toBe(null);
+    // the PLAN line items spell out each scheduled task (one per projected
+    // schedule), earliest-due first, with equipment + task + cadence + due date
+    expect(Array.isArray(out.plan)).toBe(true);
+    expect(out.plan.length).toBe(out.summary.schedulesProjected);
+    expect(out.plan.every((p) => p.dueDate && p.task && p.cadence && p.asset)).toBe(true);
+    expect(out.plan[0].dueDate <= out.plan[out.plan.length - 1].dueDate).toBe(true);
   });
 
   test('uses the condition-specific interval (C3) over the C2 baseline', async () => {

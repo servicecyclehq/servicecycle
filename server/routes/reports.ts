@@ -198,16 +198,23 @@ router.get('/multi-year-plan', requireManager, namedReportHandler(
   buildMultiYearMaintenancePlanReport,
   '1 / 3 / 5-Year Maintenance Plan',
   (data) => ({
+    // The PLAN itself: one line per scheduled maintenance task — equipment,
+    // what task, how often, when it's next due, and which year it falls in —
+    // earliest-due first. The per-year totals live in the subtitle.
     columns: [
-      { key: 'label', label: 'Horizon', width: 1.4 },
-      { key: 'tasks', label: 'Tasks Due', width: 1 },
-      { key: 'outageTasks', label: 'Outage-Req', width: 1 },
-      { key: 'netaTasks', label: 'NETA-Cert', width: 1 },
-      { key: 'assets', label: 'Assets', width: 1 },
-      { key: 'sites', label: 'Sites', width: 1 },
+      { key: 'dueDate', label: 'Next Due', width: 1.0 },
+      { key: 'year',    label: 'Yr',       width: 0.35 },
+      { key: 'asset',   label: 'Equipment', width: 2.1 },
+      { key: 'task',    label: 'Maintenance Task', width: 2.1 },
+      { key: 'cadence', label: 'Frequency', width: 0.9 },
+      { key: 'site',    label: 'Site',      width: 1.2 },
     ],
-    rows: data.byYear,
-    subtitle: `Planned maintenance load — next 1 yr: ${data.summary.oneYearTasks} · 3 yr: ${data.summary.threeYearTasks} · 5 yr: ${data.summary.fiveYearTasks} tasks across ${data.summary.assetsPlanned} assets, ${data.summary.sitesPlanned} site(s)`,
+    rows: (data.plan || []).map((p: any) => ({
+      ...p,
+      year: `Y${p.year}`,
+      task: p.task + (p.requiresOutage ? ' (outage)' : '') + (p.requiresNeta ? ' [NETA]' : ''),
+    })),
+    subtitle: `${data.summary.fiveYearTasks} scheduled tasks over ${data.horizonYears} years across ${data.summary.assetsPlanned} assets, ${data.summary.sitesPlanned} site(s) — Year 1: ${data.summary.oneYearTasks} · through Year 3: ${data.summary.threeYearTasks} · through Year 5: ${data.summary.fiveYearTasks}. Listed earliest-due first; "(outage)" = de-energized work, "[NETA]" = NETA-certified tech required.`,
   }),
 ));
 
