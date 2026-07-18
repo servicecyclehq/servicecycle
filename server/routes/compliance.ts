@@ -59,6 +59,8 @@ const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { getAccountBranding } = require('../lib/partnerBranding');
 const { buildCustomerDigest } = require('../lib/customerDigest');
 const { buildCfoReportData, renderCfoReportPdf } = require('../lib/cfoReport');
+const { renderReportDocPdf } = require('../lib/reportsPdf');
+const { formatTimestamp } = require('../lib/pdfStyle');
 
 const router = express.Router();
 
@@ -95,6 +97,107 @@ router.get('/summary', async (req, res) => {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/summary]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to build compliance summary.' });
+  }
+});
+
+// ── GET /standards.pdf?siteId= ────────────────────────────────────────────────
+// On-demand "Compliance by Standard" summary as a Field Report PDF (masthead,
+// posture narrative, per-standard summary table, page-N-of-M footer) via
+// lib/reportsPdf.renderReportDocPdf. This is the Download PDF button on
+// /reports/compliance -- a live, non-anchored view, NOT audit evidence: for
+// immutable, SHA-256-anchored PDFs use POST /snapshots. Any authenticated role,
+// same read tier as /summary.
+
+router.get('/standards.pdf', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    const standards = await buildStandardsSummary(prisma, accountId, { siteId });
+
+    let companyName = '';
+    try {
+      const acct = await prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } });
+      companyName = (acct && acct.companyName) || '';
+    } catch (_) { /* org line is optional */ }
+    let siteScope = 'All sites';
+    if (siteId) {
+      try {
+        const site = await prisma.site.findFirst({ where: { id: siteId, accountId }, select: { name: true } });
+        siteScope = site ? site.name : 'Selected site';
+      } catch (_) { siteScope = 'Selected site'; }
+    }
+
+    const totals = standards.reduce((t: any, r: any) => ({
+      assets:    t.assets + (r.assetCount || 0),
+      schedules: t.schedules + (r.scheduleCount || 0),
+      overdue:   t.overdue + (r.overdueCount || 0),
+    }), { assets: 0, schedules: 0, overdue: 0 });
+
+    const fmtDue = (d: any) => {
+      if (!d) return '—';
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? '—' : dt.toISOString().slice(0, 10);
+    };
+
+    const sections = [
+      {
+        title: 'Compliance posture',
+        aux: `${standards.length} standard${standards.length === 1 ? '' : 's'}`,
+        body: [
+          `This report rolls maintenance compliance up by governing standard. Each row is one standard with the assets and schedules it governs, the share of schedules currently in compliance, and the count of overdue items. On screen the compliance rate is color-graded (green >= 90%, amber >= 70%, red below).`,
+          `This is a live, on-demand view. For immutable evidence suitable for an auditor or insurer, generate an Audit Evidence Snapshot from the Reports hub — those PDFs are SHA-256-anchored and re-verified on every download; this summary is not.`,
+        ],
+        stats: [
+          { label: 'Standards', value: standards.length },
+          { label: 'Assets',    value: totals.assets },
+          { label: 'Schedules', value: totals.schedules },
+          { label: 'Overdue',   value: totals.overdue },
+        ],
+      },
+      {
+        title: 'Compliance summary by standard',
+        aux: siteScope,
+        table: {
+          columns: [
+            { key: 'code',       label: 'Standard',   w: 1.15, bold: true },
+            { key: 'title',      label: 'Title',      w: 2.5 },
+            { key: 'assets',     label: 'Assets',     w: 0.7, numeric: true },
+            { key: 'schedules',  label: 'Schedules',  w: 0.85, numeric: true },
+            { key: 'compliance', label: 'Compliance', w: 0.9, numeric: true },
+            { key: 'overdue',    label: 'Overdue',    w: 0.7, numeric: true },
+            { key: 'nextDue',    label: 'Next Due',   w: 1.0, mono: true },
+          ],
+          rows: standards.map((r: any) => {
+            const std = r.standard || {};
+            const code = std.code || 'Account-defined';
+            return {
+              code:       std.edition ? `${code} (${std.edition})` : code,
+              title:      std.title || '—',
+              assets:     r.assetCount || 0,
+              schedules:  r.scheduleCount || 0,
+              compliance: r.complianceRate == null ? '—' : `${r.complianceRate}%`,
+              overdue:    r.overdueCount || 0,
+              nextDue:    fmtDue(r.nextDue),
+            };
+          }),
+          emptyText: 'No compliance data yet — add assets and apply maintenance schedules.',
+        },
+      },
+    ];
+
+    const genAt = new Date();
+    return renderReportDocPdf(res, {
+      title: 'Compliance by Standard',
+      org: companyName || undefined,
+      metaLines: [siteScope, formatTimestamp(genAt)],
+      generatedAt: genAt,
+      filename: `Compliance_by_Standard_${genAt.toISOString().slice(0, 10)}`,
+      sections,
+    });
+  } catch (err: any) {
+    if (handleBuilderError(res, err)) return;
+    console.error('[compliance/standards.pdf]', err && err.message);
+    return res.status(500).json({ success: false, error: 'Failed to build compliance PDF.' });
   }
 });
 

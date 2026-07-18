@@ -39,7 +39,8 @@ const router = require('express').Router();
 const prisma = require('../lib/prisma').default;
 const { buildEmpData, renderEmpPdf } = require('../lib/empDocument');
 const { requireManager } = require('../middleware/roles');
-const { renderReportTablePdf } = require('../lib/reportsPdf');
+const { renderReportTablePdf, renderReportDocPdf } = require('../lib/reportsPdf');
+const { formatTimestamp } = require('../lib/pdfStyle');
 const {
   buildDeficiencySummaryReport,
   buildOverdueWorkOrdersReport,
@@ -190,33 +191,156 @@ router.get('/arc-flash-coverage', requireManager, namedReportHandler(
 ));
 
 // -- GET /api/reports/multi-year-plan -----------------------------------------
-// 1/3/5-year forward maintenance plan: projects active schedules over a 5-year
-// horizon from task intervals + governing condition. The PDF shows the per-year
-// rollup; the JSON additionally carries per-asset / per-site / per-equipment
-// breakdowns (byAsset/bySite/byEquipmentType) for a richer in-app view later.
-router.get('/multi-year-plan', requireManager, namedReportHandler(
-  buildMultiYearMaintenancePlanReport,
-  '1 / 3 / 5-Year Maintenance Plan',
-  (data) => ({
-    // The PLAN itself: one line per scheduled maintenance task — equipment,
-    // what task, how often, when it's next due, and which year it falls in —
-    // earliest-due first. The per-year totals live in the subtitle.
-    columns: [
-      { key: 'dueDate', label: 'Next Due', width: 1.0 },
-      { key: 'year',    label: 'Yr',       width: 0.35 },
-      { key: 'asset',   label: 'Equipment', width: 2.1 },
-      { key: 'task',    label: 'Maintenance Task', width: 2.1 },
-      { key: 'cadence', label: 'Frequency', width: 0.9 },
-      { key: 'site',    label: 'Site',      width: 1.2 },
-    ],
-    rows: (data.plan || []).map((p: any) => ({
-      ...p,
-      year: `Y${p.year}`,
-      task: p.task + (p.requiresOutage ? ' (outage)' : '') + (p.requiresNeta ? ' [NETA]' : ''),
-    })),
-    subtitle: `${data.summary.fiveYearTasks} scheduled tasks over ${data.horizonYears} years across ${data.summary.assetsPlanned} assets, ${data.summary.sitesPlanned} site(s) — Year 1: ${data.summary.oneYearTasks} · through Year 3: ${data.summary.threeYearTasks} · through Year 5: ${data.summary.fiveYearTasks}. Listed earliest-due first; "(outage)" = de-energized work, "[NETA]" = NETA-certified tech required.`,
-  }),
-));
+// 1/3/5-year forward maintenance plan. JSON by default; ?format=pdf renders the
+// full "Field Report" plan DOCUMENT (lib/reportsPdf.renderReportDocPdf), not a
+// bare table: a program-summary narrative (NFPA 70B §4.2 framing + how the
+// intervals are derived), the year-by-year forecast, the line-by-line
+// maintenance schedule, then load broken out by site and by equipment type.
+// Projects active schedules over a 5-year horizon from each task's
+// condition-based interval + the asset's governing condition.
+router.get('/multi-year-plan', requireManager, async (req: any, res: any) => {
+  try {
+    const accountId = req.user.accountId;
+    const data = await buildMultiYearMaintenancePlanReport(prisma, accountId, req.query || {});
+
+    if (String(req.query.format || '').toLowerCase() !== 'pdf') {
+      return res.json({ success: true, data });
+    }
+
+    // Masthead context: company (org band) + site scope + generated stamp.
+    const siteId = req.query.siteId ? String(req.query.siteId) : null;
+    let companyName = '';
+    try {
+      const acct = await prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } });
+      companyName = (acct && acct.companyName) || '';
+    } catch (_) { /* org line is optional */ }
+    let siteScope = 'All sites';
+    if (siteId) {
+      try {
+        const site = await prisma.site.findFirst({ where: { id: siteId, accountId }, select: { name: true } });
+        siteScope = site ? site.name : 'Selected site';
+      } catch (_) { siteScope = 'Selected site'; }
+    }
+
+    const s = data.summary || {};
+    const horizon = data.horizonYears || 5;
+    const planRows = data.plan || [];
+    const capped = planRows.length >= 500;
+
+    const sections = [
+      {
+        title: 'Program summary',
+        aux: `${s.assetsPlanned || 0} assets · ${s.sitesPlanned || 0} site(s)`,
+        body: [
+          `This maintenance plan projects every active preventive-maintenance schedule across a ${horizon}-year horizon. Each task is scheduled from its asset's governing condition (C1/C2/C3) and the task's condition-based interval — the NFPA 70B §4.2 basis for a documented Electrical Maintenance Program. Items already past due are rolled forward to their next occurrence and are tracked in the Overdue Maintenance report rather than counted here.`,
+          `Use the forecast by year (Section 02) for budgeting and staffing, and the maintenance schedule (Section 03) as the working task list. In the schedule, "(outage)" marks de-energized work that requires a planned shutdown and "[NETA]" marks a task that requires a NETA-certified technician.`,
+        ],
+        stats: [
+          { label: 'Horizon', value: `${horizon} yr` },
+          { label: 'Assets', value: s.assetsPlanned || 0 },
+          { label: 'Sites', value: s.sitesPlanned || 0 },
+          { label: 'Year 1', value: s.oneYearTasks || 0 },
+          { label: 'Through Yr 3', value: s.threeYearTasks || 0 },
+          { label: 'Through Yr 5', value: s.fiveYearTasks || 0 },
+        ],
+      },
+      {
+        title: 'Forecast by year',
+        aux: 'scheduled tasks per year',
+        table: {
+          columns: [
+            { key: 'year',   label: 'Year',   w: 1.4 },
+            { key: 'tasks',  label: 'Tasks',  w: 1, numeric: true },
+            { key: 'outage', label: 'Outage', w: 1, numeric: true },
+            { key: 'neta',   label: 'NETA',   w: 1, numeric: true },
+            { key: 'assets', label: 'Assets', w: 1, numeric: true },
+            { key: 'sites',  label: 'Sites',  w: 1, numeric: true },
+          ],
+          rows: (data.byYear || []).map((y: any) => ({
+            year: y.label || `Year ${y.year}`,
+            tasks: y.tasks || 0,
+            outage: y.outageTasks || 0,
+            neta: y.netaTasks || 0,
+            assets: y.assets || 0,
+            sites: y.sites || 0,
+          })),
+          emptyText: 'No scheduled tasks fall in the planning horizon.',
+        },
+      },
+      {
+        title: 'Maintenance schedule',
+        aux: capped
+          ? `${planRows.length} line items (first 500, earliest due)`
+          : `${planRows.length} line items, earliest due first`,
+        table: {
+          columns: [
+            { key: 'dueDate', label: 'Next Due',        w: 1.05, mono: true },
+            { key: 'year',    label: 'Yr',              w: 0.4 },
+            { key: 'asset',   label: 'Equipment',       w: 2.1 },
+            { key: 'task',    label: 'Maintenance Task', w: 2.1 },
+            { key: 'cadence', label: 'Frequency',       w: 0.95 },
+            { key: 'site',    label: 'Site',            w: 1.2 },
+          ],
+          rows: planRows.map((p: any) => ({
+            dueDate: p.dueDate,
+            year: `Y${p.year}`,
+            asset: p.asset,
+            task: String(p.task) + (p.requiresOutage ? ' (outage)' : '') + (p.requiresNeta ? ' [NETA]' : ''),
+            cadence: p.cadence,
+            site: p.site,
+          })),
+          emptyText: 'No active schedules to plan.',
+        },
+      },
+      {
+        title: 'Load by site',
+        aux: 'task count in each window',
+        table: {
+          columns: [
+            { key: 'siteName', label: 'Site',         w: 2.4 },
+            { key: 'y1',       label: 'Year 1',       w: 1, numeric: true },
+            { key: 'y3',       label: 'Through Yr 3', w: 1, numeric: true },
+            { key: 'y5',       label: 'Through Yr 5', w: 1, numeric: true },
+          ],
+          rows: (data.bySite || []).map((r: any) => ({
+            siteName: r.siteName, y1: r.y1 || 0, y3: r.y3 || 0, y5: r.y5 || 0,
+          })),
+          emptyText: 'No sites in the plan.',
+        },
+      },
+      {
+        title: 'Load by equipment type',
+        aux: 'task count in each window',
+        table: {
+          columns: [
+            { key: 'equipmentType', label: 'Equipment Type', w: 2.4 },
+            { key: 'y1',            label: 'Year 1',       w: 1, numeric: true },
+            { key: 'y3',            label: 'Through Yr 3', w: 1, numeric: true },
+            { key: 'y5',            label: 'Through Yr 5', w: 1, numeric: true },
+          ],
+          rows: (data.byEquipmentType || []).map((r: any) => ({
+            equipmentType: r.equipmentType, y1: r.y1 || 0, y3: r.y3 || 0, y5: r.y5 || 0,
+          })),
+          emptyText: 'No equipment types in the plan.',
+        },
+      },
+    ];
+
+    const genAt = data.generatedAt instanceof Date ? data.generatedAt : new Date();
+    const dateStamp = genAt.toISOString().slice(0, 10);
+    return renderReportDocPdf(res, {
+      title: '1 / 3 / 5-Year Maintenance Plan',
+      org: companyName || undefined,
+      metaLines: [siteScope, formatTimestamp(genAt)],
+      generatedAt: genAt,
+      filename: `Maintenance_Plan_1-3-5yr_${dateStamp}`,
+      sections,
+    });
+  } catch (e) {
+    console.error('[reports/multi-year-plan] error:', e);
+    return res.status(500).json({ success: false, error: 'Failed to build report: 1 / 3 / 5-Year Maintenance Plan' });
+  }
+});
 
 // -- GET /api/reports/emp -----------------------------------------------------
 // Generates the NFPA 70B Section 4.2 Electrical Maintenance Program document

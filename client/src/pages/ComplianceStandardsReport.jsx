@@ -19,8 +19,9 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Printer } from 'lucide-react';
+import { BarChart3, Printer, Download } from 'lucide-react';
 import api from '../api/client';
+import { downloadAuthedFile } from '../api/download';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
@@ -75,6 +76,7 @@ export default function ComplianceStandardsReport() {
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     api.get('/api/sites')
@@ -118,6 +120,25 @@ export default function ComplianceStandardsReport() {
   // per render instead of two independent `new Date()` calls.
   const generatedAt = new Date();
 
+  // Server-rendered "Field Report" PDF of the standards summary (masthead,
+  // posture narrative, per-standard table). Distinct from browser Print: it's
+  // the same document an auditor would expect, generated server-side.
+  async function handleDownloadPdf() {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const qs = siteId ? `?siteId=${encodeURIComponent(siteId)}` : '';
+      const url = `${import.meta.env.VITE_API_URL ?? ''}/api/compliance/standards.pdf${qs}`;
+      const scope = (activeSiteName || 'All_Sites').replace(/[^\w-]+/g, '_');
+      const stamp = new Date().toISOString().slice(0, 10);
+      await downloadAuthedFile(url, `Compliance_by_Standard_${scope}_${stamp}.pdf`);
+    } catch (e) {
+      setError(e?.message || 'Failed to download the PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="page-header">
@@ -128,15 +149,27 @@ export default function ComplianceStandardsReport() {
             Maintenance compliance rolled up per governing standard. Click a row for the full evidence table.
           </div>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => window.print()}
-          title="Print this report"
-        >
-          <Printer size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-          Print
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleDownloadPdf}
+            disabled={pdfBusy || loading || rows.length === 0}
+            title="Download this report as a PDF"
+          >
+            <Download size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+            {pdfBusy ? 'Building PDF…' : 'Download PDF'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => window.print()}
+            title="Print this report"
+          >
+            <Printer size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+            Print
+          </button>
+        </div>
       </div>
 
       <div className="page-body print-doc">
