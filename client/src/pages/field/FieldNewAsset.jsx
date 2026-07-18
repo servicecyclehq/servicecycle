@@ -78,7 +78,7 @@ export default function FieldNewAsset() {
     setIdentifyBusy(true); setIdentifyError(null); setDupWarn(null);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('image', file);
       if (siteId) fd.append('siteId', siteId);
       const res = await api.post('/api/assets/photo-inspect', fd);
       const ident = res.data?.data?.analysis?.identification || {};

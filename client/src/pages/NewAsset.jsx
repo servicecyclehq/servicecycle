@@ -270,7 +270,7 @@ export default function NewAsset() {
     setPhotoError(null);
     try {
       const fd = new FormData();
-      fd.append('file', photoFile);
+      fd.append('image', photoFile);
       // No assetId — this is a pre-creation identify. Site context helps the
       // server scope upstream-candidate matching when one is already chosen.
       if (form.siteId) fd.append('siteId', form.siteId);

@@ -76,8 +76,8 @@ export default function AiConsentModal() {
           {/* Two-bullet summary */}
           <ul style={{ margin: '0 0 0.75rem', paddingLeft: '1.2rem' }}>
             <li style={{ marginBottom: '0.4rem' }}>
-              Your contract data is sent to <strong>{providerLabel}</strong> to generate
-              the brief. No data is stored by the AI provider beyond the request.
+              The data needed for this feature is sent to <strong>{providerLabel}</strong> to generate
+              the result. No data is stored by the AI provider beyond the request.
             </li>
             {demoMode && briefCap != null && (
               <li>
@@ -107,9 +107,9 @@ export default function AiConsentModal() {
           {showMore && (
             <div style={{ fontSize: '0.85rem', lineHeight: 1.55, color: 'var(--color-text-secondary, #555)' }}>
               <p style={{ margin: '0 0 0.6rem' }}>
-                Information sent includes the product name, vendor, dates, pricing, contract
-                terms, internal notes, tags, and renewal history for the contract you are
-                working with.
+                The information sent depends on the AI feature you are using. For a contract
+                brief it includes the product name, vendor, dates, pricing, terms, notes, and
+                renewal history; for nameplate reading it is the equipment photo you upload.
               </p>
               {aiProvider === 'cloudflare' && (
                 <p style={{ margin: '0 0 0.6rem' }}>

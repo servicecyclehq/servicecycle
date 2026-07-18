@@ -854,7 +854,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 480px)').matches);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 480px)').matches); const [siteTotal, setSiteTotal] = useState(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 480px)');
@@ -868,7 +868,7 @@ export default function Dashboard() {
     setLoading(true);
     setError('');
     api.get('/api/dashboard')
-      .then((res) => setData(res.data.data))
+      .then((res) => { setData(res.data.data); api.get('/api/sites').then((r) => setSiteTotal((r.data?.data?.sites || []).length)).catch(() => {}); })
       .catch(() => setError('Failed to load dashboard.'))
       .finally(() => setLoading(false));
   }, [user?.id]);
@@ -900,7 +900,7 @@ export default function Dashboard() {
     <>
       <InstrumentBand
         companyName={user?.account?.companyName}
-        siteCount={bySite.length}
+        siteCount={siteTotal ?? bySite.length}
         canWrite={canWrite}
         onNewAsset={() => navigate('/assets/new')}
       />

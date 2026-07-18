@@ -125,7 +125,7 @@ export default function HelpDrawer({ currentPath = '' }) {
   const [markdown, setMd]     = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
-  const [modules, setModules] = useState(null);
+  const [modules, setModules] = useState(null); const [modulesError, setModulesError] = useState(false);
   const bodyRef = useRef(null);
 
   // Live ref to currentPath so the open-help listener (registered once below)
@@ -160,10 +160,10 @@ export default function HelpDrawer({ currentPath = '' }) {
 
   // Fetch the module list once on first open (cached after).
   useEffect(() => {
-    if (!open || modules) return;
+    if (!open || modules) return; setModulesError(false);
     api.get('/api/help/modules')
       .then(r => setModules(r.data?.data?.modules || []))
-      .catch(err => console.warn('[HelpDrawer] modules fetch failed', err));
+      .catch(err => { console.warn('[HelpDrawer] modules fetch failed', err); setModulesError(true); });
   }, [open, modules]);
 
   // Fetch content when slug changes.
@@ -372,14 +372,14 @@ export default function HelpDrawer({ currentPath = '' }) {
           <p style={{ fontSize: 'var(--font-size-ui)', color: 'var(--color-text-secondary, #475569)', margin: '0 0 14px' }}>
             Pick a module to read its quick-reference guide. Each one covers what the module is, how to use it, common workflows, and what to check when something looks wrong.
           </p>
-          {!modules && (
+          {!modules && !modulesError && (
             <div style={{ color: 'var(--color-text-secondary, #64748b)', padding: '20px 0' }}>
               Loading modules…
             </div>
           )}
-          {modules && modules.length === 0 && (
+          {((modules && modules.length === 0) || modulesError) && (
             <div style={{ color: 'var(--color-text-secondary, #64748b)', padding: '20px 0' }}>
-              No help modules are configured on this instance.
+              {modulesError ? "Couldn't load help modules. Close and reopen Help to retry." : 'No help modules are configured on this instance.'}
             </div>
           )}
           {modules && modules.length > 0 && (

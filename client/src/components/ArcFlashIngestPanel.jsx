@@ -453,7 +453,7 @@ export default function ArcFlashIngestPanel({ siteId, canWrite = false }) {
                   <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.fileName || '(upload)'}</td>
                   <td>{i.readyBusCount}/{i.totalBusCount} ready</td>
                   <td>{i.overallBand && <Chip band={i.overallBand}>{i.status === 'confirmed' ? 'confirmed' : i.status.replace('_', ' ')}</Chip>}</td>
-                  <td><button className="btn-link" onClick={() => openDraft(i.id)} style={{ fontSize: '0.74rem' }}>Review</button></td>
+                  <td>{(i.status === 'queued' || i.status === 'processing' || i.status === 'extracting') ? <span style={{ fontSize: '0.74rem', color: 'var(--color-text-secondary)' }}>Processing...</span> : <button className="btn-link" onClick={() => openDraft(i.id)} style={{ fontSize: '0.74rem' }}>Review</button>}</td>
                 </tr>
               ))}
             </tbody>

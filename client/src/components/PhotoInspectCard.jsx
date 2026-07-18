@@ -259,7 +259,7 @@ export default function PhotoInspectCard({ asset, onApplied }) {
     setError(null);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('image', file);
       fd.append('assetId', asset.id);
       const siteId = asset.siteId || asset.site?.id;
       if (siteId) fd.append('siteId', siteId);

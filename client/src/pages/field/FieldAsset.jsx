@@ -544,7 +544,7 @@ export default function FieldAsset() {
     setPhotoResult(null);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('image', file);
       fd.append('assetId', id);
       const siteId = asset?.site?.id;
       if (siteId) fd.append('siteId', siteId);
