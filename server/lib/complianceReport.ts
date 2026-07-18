@@ -380,6 +380,10 @@ async function buildStandardReport(prisma, accountId, { standardCode, siteId = n
     },
   }));
 
+  // #29 §7.4: IR thermography drill-down. Only 70B mandates IR, so this costs
+  // nothing on other standards — buildIrThermographySection returns null.
+  const irThermography = await buildIrThermographySection(prisma, accountId, assetIds, standardShape, now);
+
   return {
     standard:    standardShape,
     generatedAt: now,
@@ -394,7 +398,122 @@ async function buildStandardReport(prisma, accountId, { standardCode, siteId = n
       'Open deficiencies listed here are asset-level findings on equipment ' +
       'that carries maintenance schedules under this standard. They are not ' +
       'attributed to the standard itself.',
+    irThermography,
   };
+}
+
+/**
+ * #29 §7.4 — the IR thermography drill-down for NFPA 70B.
+ *
+ * Before this existed, the compliance-by-standard report could say an asset's
+ * IR task was "current" while showing nothing about the scan itself: no scan
+ * date, no ΔT, no findings. This adds, per asset carrying a 70B schedule, the
+ * most recent survey (last-scan date + the conditions it was taken under) and
+ * its open findings.
+ *
+ * Above-threshold findings ALSO appear in `openDeficiencies` (they generate a
+ * Deficiency). `deficiencyId` is carried here so the client can cross-link the
+ * two rather than double-count them. The genuinely new information is the
+ * below-threshold findings (severity null), which the old free-text ingest
+ * discarded entirely.
+ *
+ * Returns null for any standard other than 70B.
+ */
+async function buildIrThermographySection(prisma, accountId, assetIds, standardShape, now) {
+  const code = String((standardShape && standardShape.code) || '').trim().toLowerCase();
+  if (code !== 'nfpa 70b') return null;
+  if (!assetIds || assetIds.length === 0) {
+    return { assets: [], findings: [], summary: { scanned: 0, neverScanned: 0, openFindings: 0 } };
+  }
+
+  const [surveys, findings] = await Promise.all([
+    // Newest-first; we keep the first survey seen per asset.
+    prisma.thermographySurvey.findMany({
+      where:   { accountId, assetId: { in: assetIds } },
+      orderBy: { surveyDate: 'desc' },
+      select: {
+        id: true, assetId: true, surveyDate: true, thermographerName: true,
+        thermographerQual: true, cameraMake: true, cameraModel: true,
+        ambientTempC: true, humidityPct: true, emissivity: true,
+        reflectedTempC: true, loadPercent: true, sourceDocumentId: true,
+      },
+    }),
+    prisma.thermographyFinding.findMany({
+      where:   { accountId, resolvedAt: null, assetId: { in: assetIds } },
+      orderBy: [{ severity: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        id: true, assetId: true, surveyId: true, component: true, deltaT: true,
+        referenceType: true, referenceDeltaT: true, loadPercent: true,
+        severity: true, severityLabel: true, correctiveAction: true,
+        deficiencyId: true, createdAt: true,
+      },
+    }),
+  ]);
+
+  const latestByAsset = new Map();
+  for (const s of surveys) if (!latestByAsset.has(s.assetId)) latestByAsset.set(s.assetId, s);
+
+  const openByAsset = new Map();
+  for (const f of findings) openByAsset.set(f.assetId, (openByAsset.get(f.assetId) || 0) + 1);
+
+  const assetRows = assetIds.map((id) => {
+    const s = latestByAsset.get(id) || null;
+    return {
+      assetId:        id,
+      lastScanDate:   s ? s.surveyDate : null,
+      lastSurveyId:   s ? s.id : null,
+      hasEvidence:    Boolean(s && s.sourceDocumentId),
+      openFindings:   openByAsset.get(id) || 0,
+      conditions: s ? {
+        thermographerName: s.thermographerName,
+        thermographerQual: s.thermographerQual,
+        cameraMake:        s.cameraMake,
+        cameraModel:       s.cameraModel,
+        ambientTempC:      decNum(s.ambientTempC),
+        humidityPct:       decNum(s.humidityPct),
+        emissivity:        decNum(s.emissivity),
+        reflectedTempC:    decNum(s.reflectedTempC),
+        loadPercent:       decNum(s.loadPercent),
+      } : null,
+    };
+  });
+
+  return {
+    assets: assetRows,
+    findings: findings.map((f) => ({
+      id:               f.id,
+      assetId:          f.assetId,
+      surveyId:         f.surveyId,
+      component:        f.component,
+      deltaT:           decNum(f.deltaT),
+      referenceType:    f.referenceType,
+      referenceDeltaT:  decNum(f.referenceDeltaT),
+      loadPercent:      decNum(f.loadPercent),
+      severity:         f.severity,          // null = below NETA threshold
+      severityLabel:    f.severityLabel,
+      correctiveAction: f.correctiveAction,
+      // Set when this finding also produced a Deficiency listed above — the
+      // client cross-links instead of showing the same hot spot twice.
+      deficiencyId:     f.deficiencyId,
+      createdAt:        f.createdAt,
+    })),
+    summary: {
+      scanned:      assetRows.filter((a) => a.lastScanDate).length,
+      neverScanned: assetRows.filter((a) => !a.lastScanDate).length,
+      openFindings: findings.length,
+    },
+    note:
+      'IR findings above the NETA Table 100.18 threshold also appear as open ' +
+      'deficiencies above; they are cross-linked, not duplicated. Findings with ' +
+      'no severity are below threshold and are retained for trending.',
+  };
+}
+
+/** Prisma Decimal → number (JSON would otherwise render it as a string). */
+function decNum(v) {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'object' && typeof v.toNumber === 'function' ? v.toNumber() : Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 // ── buildOverdueReport ────────────────────────────────────────────────────────

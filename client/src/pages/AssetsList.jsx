@@ -62,6 +62,8 @@ const COLUMNS = [
   { id: 'condition',    label: 'Condition' },
   { id: 'nextDue',       label: 'Next Due' },
   { id: 'openDef',      label: 'Open Deficiencies' },
+  // #29 §7.4: only rendered when the account has thermography_import on.
+  { id: 'lastIrScan',   label: 'Last IR Scan' },
   { id: 'criticality',  label: 'Criticality' },
   { id: 'location',     label: 'Location' },
   { id: 'mfgModel',     label: 'Manufacturer / Model' },
@@ -77,7 +79,7 @@ const DEFAULT_VISIBILITY = {
   equipment: true, mfgModel: true, serial: false, location: true,
   address: false, owner: false, condition: true, criticality: true,
   repairCost: false, priorityScore: false, nextDue: true, openDef: true, service: true,
-  nameplate: true,
+  nameplate: true, lastIrScan: true,
 };
 const COL_LABELS = Object.fromEntries(COLUMNS.map(c => [c.id, c.label]));
 // D6: ColumnPicker selection persists here (bump the suffix if ids change).
@@ -175,6 +177,33 @@ export function CriticalityBadge({ score }) {
   );
 }
 
+// #29 §7.4 "Last IR Scan". `irStatus` is null for equipment IR doesn't apply to
+// (the server omits it for non-IR types) — that renders an em dash, not a gap.
+const IR_STATUS_META = {
+  current: { label: 'current', bg: 'var(--chip-green-bg)',  fg: 'var(--chip-green-fg)' },
+  overdue: { label: 'overdue', bg: 'var(--color-danger-bg)', fg: 'var(--color-danger)' },
+  never:   { label: 'never',   bg: 'var(--chip-amber-bg)',  fg: 'var(--chip-amber-fg)' },
+};
+
+function LastIrScanCell({ asset }) {
+  if (!asset?.irStatus) return <span className="text-muted">—</span>;
+  const meta = IR_STATUS_META[asset.irStatus] || IR_STATUS_META.never;
+  return (
+    <div>
+      <div style={{ fontSize: 'var(--font-size-ui)', fontWeight: 600 }}>
+        {asset.lastIrScanDate ? fmtDate(asset.lastIrScanDate) : <span className="text-muted">No scan on file</span>}
+      </div>
+      <span style={{
+        display: 'inline-block', marginTop: 2, padding: '1px 7px', borderRadius: 20,
+        fontSize: 'var(--font-size-xs)', fontWeight: 700,
+        background: meta.bg, color: meta.fg,
+      }}>
+        {meta.label}
+      </span>
+    </div>
+  );
+}
+
 function NextDueCell({ schedule }) {
   if (!schedule?.nextDueDate) return <span className="text-muted">—</span>;
   const overdue = new Date(schedule.nextDueDate) < new Date();
@@ -199,7 +228,10 @@ export default function AssetsList() {
   // C1: row clicks record this list (path only — filters live in state, not
   // the URL) as the origin for AssetDetail's BackLink.
   const fromState = useFromState();
-  const { features } = useAuth();
+  const { features, accountFeatures } = useAuth();
+  // #29 §7.4: hide the Last IR Scan column entirely for accounts without the
+  // thermography surface, so their column layout is unchanged.
+  const irEnabled = Boolean(accountFeatures?.thermography_import);
   // assets_write is the converted feature key; fall back to contracts_write
   // until AuthContext's flag catalog is retargeted (same role semantics —
   // admin/manager can write, viewer/consultant cannot).
@@ -532,7 +564,7 @@ export default function AssetsList() {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
           <ColumnPicker
-            columns={COLUMNS}
+            columns={irEnabled ? COLUMNS : COLUMNS.filter(c => c.id !== 'lastIrScan')}
             visibility={colVis}
             onChange={setColVis}
             defaults={DEFAULT_VISIBILITY}
@@ -768,6 +800,9 @@ export default function AssetsList() {
                       {colVis.condition   && <th><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>Condition<Tip term="conditionRating" /></span></th>}
                       {colVis.nextDue     && <th>Next Due</th>}
                       {colVis.openDef     && <th style={{ textAlign: 'right' }}>Open Deficiencies</th>}
+                      {irEnabled && colVis.lastIrScan && (
+                        <th title="Most recent IR thermography survey (NFPA 70B §7.4 — annual for energized distribution equipment)">Last IR Scan</th>
+                      )}
                       {colVis.criticality && (
                         <th
                           role="button" tabIndex={0}
@@ -952,6 +987,7 @@ export default function AssetsList() {
                               )}
                             </td>
                           )}
+                          {irEnabled && colVis.lastIrScan && <td><LastIrScanCell asset={a} /></td>}
                           {colVis.criticality && <td><CriticalityBadge score={a.criticalityScore} /></td>}
                           {colVis.location    && (
                             <td>

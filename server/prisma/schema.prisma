@@ -223,6 +223,7 @@ enum DocType {
   inspection_report // Insurance or regulatory inspection report
   commissioning_report // Initial energisation / SAT report
   warranty // Warranty certificate or service contract
+  ir_survey // #29 IR thermography survey report (NFPA 70B 7.4 evidence)
   other
 }
 
@@ -402,6 +403,10 @@ model Account {
   // wo-chat-annotation-research.md Option 2) -- backend-only slice, no UI yet.
   workOrderComments   WorkOrderComment[]
   documentAnnotations DocumentAnnotation[]
+
+  // #29 NFPA 70B 7.4 structured IR thermography.
+  thermographySurveys  ThermographySurvey[]
+  thermographyFindings ThermographyFinding[]
 
   @@index([enterpriseGroupId])
   @@map("accounts")
@@ -606,6 +611,7 @@ model User {
   assignedWorkOrders      WorkOrder[]             @relation("WorkOrderAssignee")
   workOrderComments       WorkOrderComment[]
   documentAnnotations     DocumentAnnotation[]
+  thermographySurveys     ThermographySurvey[]
 
   // SCIM upsert key: (directory, externalId) is unique per directory. Both
   // NULL for password users — Postgres NULLs are distinct so no collision.
@@ -973,6 +979,8 @@ model Asset {
   telemetryNotifications TelemetryNotification[]
   spareInventory         SpareInventory[]
   assetRequirements      AssetPartRequirement[]
+  thermographySurveys    ThermographySurvey[]
+  thermographyFindings   ThermographyFinding[]
 
   @@index([accountId])
   @@index([accountId, siteId])
@@ -1315,6 +1323,7 @@ model Deficiency {
   account    Account    @relation(fields: [accountId], references: [id])
   workOrder  WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   asset      Asset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  thermographyFinding ThermographyFinding?
   resolvedBy User?      @relation("DeficiencyResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([accountId])
@@ -1887,6 +1896,8 @@ model Document {
   account     Account              @relation(fields: [accountId], references: [id])
   uploader    User                 @relation("Uploader", fields: [uploadedBy], references: [id])
   annotations DocumentAnnotation[]
+  // #29 surveys that cite this document as their source IR report.
+  surveyEvidence ThermographySurvey[] @relation("SurveyEvidence")
 
   @@index([accountId])
   @@index([assetId])
@@ -3855,4 +3866,80 @@ model AssetFeed {
   @@index([loadAssetId])
   @@index([sourceAssetId])
   @@map("asset_feeds")
+}
+
+/// #29 NFPA 70B:2023 7.4 / NETA MTS-2023 Table 100.18 structured IR thermography.
+/// Reference frame a finding's temperature rise was measured against. Mirrors
+/// lib/thermographyParse.ts HotspotReference; BASELINE grades on the
+/// similar-component scale until a dedicated band exists.
+enum ThermographyReference {
+  AMBIENT
+  SIMILAR
+  BASELINE
+}
+
+/// One IR thermography survey of one asset -- the 7.4 documentation record.
+/// Conditions (ambient/humidity/emissivity/reflected/load) are survey-level
+/// defaults; a finding may override load/emissivity per hot spot.
+model ThermographySurvey {
+  id                String   @id @default(cuid())
+  accountId         String
+  assetId           String
+  surveyDate        DateTime
+  thermographerName String?
+  thermographerQual String? // e.g. "NETA Level II", "Level III Thermographer"
+  cameraMake        String?
+  cameraModel       String?
+  ambientTempC      Decimal? @db.Decimal(5, 1)
+  humidityPct       Decimal? @db.Decimal(5, 1)
+  emissivity        Decimal? @db.Decimal(4, 2) // default frame for the survey, e.g. 0.95
+  reflectedTempC    Decimal? @db.Decimal(5, 1)
+  loadPercent       Decimal? @db.Decimal(5, 1) // survey-level load if not captured per finding
+  sourceDocumentId  String? // attached IR report PDF (Document)
+  notes             String?
+  createdById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  account        Account               @relation(fields: [accountId], references: [id])
+  asset          Asset                 @relation(fields: [assetId], references: [id])
+  sourceDocument Document?             @relation("SurveyEvidence", fields: [sourceDocumentId], references: [id])
+  createdBy      User?                 @relation(fields: [createdById], references: [id])
+  findings       ThermographyFinding[]
+
+  @@index([accountId, assetId, surveyDate])
+  @@map("thermography_surveys")
+}
+
+/// One hot spot from a survey. Below-threshold spots are persisted too
+/// (severity null) so a component can be trended across surveys -- the old
+/// free-text path dropped them.
+model ThermographyFinding {
+  id                String                @id @default(cuid())
+  accountId         String
+  assetId           String // denormalized for search / asset queries
+  surveyId          String
+  component         String // location / component label
+  deltaT            Decimal               @db.Decimal(6, 1)
+  referenceType     ThermographyReference @default(SIMILAR)
+  referenceDeltaT   Decimal?              @db.Decimal(6, 1)
+  loadPercent       Decimal?              @db.Decimal(5, 1)
+  emissivity        Decimal?              @db.Decimal(4, 2)
+  severity          DeficiencySeverity? // null = below NETA threshold (persisted for trending)
+  severityLabel     String? // NETA label text as graded
+  correctiveAction  String?
+  deficiencyId      String?               @unique // the Deficiency this finding generated (above threshold)
+  thermalImageDocId String? // reserved for future per-finding images
+  visibleImageDocId String? // reserved for future per-finding images
+  resolvedAt        DateTime?
+  createdAt         DateTime              @default(now())
+
+  account    Account            @relation(fields: [accountId], references: [id])
+  asset      Asset              @relation(fields: [assetId], references: [id])
+  survey     ThermographySurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  deficiency Deficiency?        @relation(fields: [deficiencyId], references: [id])
+
+  @@index([accountId, assetId])
+  @@index([surveyId])
+  @@map("thermography_findings")
 }

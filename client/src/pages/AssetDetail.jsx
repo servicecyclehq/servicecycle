@@ -50,6 +50,7 @@ import ArcFlashTrend from '../components/ArcFlashTrend';
 import ArcFlashAssetTab from '../components/ArcFlashAssetTab';
 import DgaImportCard from '../components/DgaImportCard';
 import ThermographyImportCard from '../components/ThermographyImportCard';
+import ThermographyHistoryPanel from '../components/ThermographyHistoryPanel';
 
 // IR thermography applies to energized distribution equipment (a 70B annual task).
 const IR_TYPES = new Set([
@@ -743,6 +744,11 @@ export default function AssetDetail() {
 
   const refetchAll = () => { fetchAsset(); fetchActivity(); };
 
+  // #29 §7.4: the IR history panel owns its own fetch, so a saved survey has to
+  // nudge it explicitly — refetchAll only refreshes the asset + activity feed.
+  const [irRefreshKey, setIrRefreshKey] = useState(0);
+  const refetchAfterIrSurvey = () => { refetchAll(); setIrRefreshKey((k) => k + 1); };
+
   // ── Unsaved-changes guard (page-level vectors) ────────────────────────────
   // Only armed while the edit form is open AND actually dirty (editDirty is
   // fed up from EditAssetForm via onDirtyChange). These three effects cover
@@ -1090,7 +1096,13 @@ export default function AssetDetail() {
         {/* ── IR thermography import (#29) — energized distribution gear ────── */}
         {/* Gated behind the per-account thermography_import flag. */}
         {accountFeatures.thermography_import && IR_TYPES.has(asset.equipmentType) && (
-          <ThermographyImportCard assetId={asset.id} canWrite={canWrite} onChanged={refetchAll} />
+          <>
+            <ThermographyImportCard assetId={asset.id} canWrite={canWrite} onChanged={refetchAfterIrSurvey} />
+            {/* §7.4 history: surveys, per-finding ΔT/severity, component trend,
+                and a link to the attached IR report. Renders nothing until the
+                asset has at least one survey. */}
+            <ThermographyHistoryPanel assetId={asset.id} refreshKey={irRefreshKey} />
+          </>
         )}
 
         {/* ── Open Deficiencies ─────────────────────────────────────────────── */}

@@ -34,6 +34,12 @@ import BackLink, { useFromState } from '../components/BackLink';
 import ReportActionBar from '../components/ReportActionBar';
 import { SEVERITY_META, DECAL_META, assetLabel, fmtDate } from '../lib/equipment';
 
+// #29 §7.4: ΔT reference frame. Mirrors the ThermographyReference enum — a
+// bare ΔT is not interpretable without the frame it was measured against.
+const IR_REF_LABEL = {
+  AMBIENT: 'Over ambient', SIMILAR: 'Similar component', BASELINE: 'Vs. baseline',
+};
+
 // Schedule compliance status chips. Literal hexes, matching the domain
 // traffic-light convention in lib/equipment.js (identical in dark mode).
 const STATUS_META = {
@@ -187,6 +193,17 @@ export default function ComplianceStandardDetailReport() {
   const summary = report.summary || {};
   const rows    = report.rows || [];
   const defs    = report.openDeficiencies || [];
+  // #29 §7.4 — null for every standard except NFPA 70B.
+  const ir      = report.irThermography || null;
+
+  // The IR section carries assetIds only; `rows` already holds the readable
+  // identity for the same assets, so name them from there rather than making
+  // the server repeat the asset payload.
+  const assetById = new Map(rows.filter((r) => r.asset).map((r) => [r.asset.id, r.asset]));
+  const assetNameFor = (assetId) => {
+    const a = assetById.get(assetId);
+    return a ? assetLabel(a) : assetId;
+  };
 
   return (
     <>
@@ -380,6 +397,115 @@ export default function ComplianceStandardDetailReport() {
         </div>
 
         </section>
+
+        {/* ── IR thermography (#29 §7.4) ──────────────────────────────────────
+            Present only for NFPA 70B — the server returns irThermography: null
+            for every other standard. This is the answer to "the compliance-by-
+            standard report never showed IR": per asset, when it was last
+            scanned, and every open finding including the below-threshold ones
+            that carry no deficiency but are the trend. */}
+        {ir && (
+          <section className="print-sec">
+            <div className="print-sec-head print-only">
+              <span className="print-sec-no" />
+              <h2 className="print-sec-title">IR thermography (NFPA 70B §7.4)</h2>
+              <span className="print-sec-aux">
+                {ir.summary.scanned} scanned · {ir.summary.neverScanned} never scanned
+              </span>
+            </div>
+            <div className="card mb-16">
+              <div className="card-header no-print">
+                <div className="card-title">IR Thermography (§7.4)</div>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                  {ir.summary.scanned} scanned · {ir.summary.neverScanned} never scanned · {ir.summary.openFindings} open finding(s)
+                </div>
+              </div>
+
+              <div className="table-wrap">
+                <table className="print-table">
+                  <thead>
+                    <tr>
+                      <th>Asset</th>
+                      <th>Last IR scan</th>
+                      <th>Thermographer / camera</th>
+                      <th style={{ textAlign: 'right' }}>Open findings</th>
+                      <th>Evidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ir.assets.length === 0 ? (
+                      <tr><td colSpan={5} className="text-muted">No assets carry an IR schedule under this standard.</td></tr>
+                    ) : ir.assets.map((a) => (
+                      <tr key={a.assetId}>
+                        <td>{assetNameFor(a.assetId)}</td>
+                        <td>
+                          {a.lastScanDate
+                            ? fmtDate(a.lastScanDate)
+                            : <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>Never scanned</span>}
+                        </td>
+                        <td style={{ fontSize: 'var(--font-size-xs)' }}>
+                          {a.conditions
+                            ? [
+                                a.conditions.thermographerName && (a.conditions.thermographerQual
+                                  ? `${a.conditions.thermographerName} (${a.conditions.thermographerQual})`
+                                  : a.conditions.thermographerName),
+                                [a.conditions.cameraMake, a.conditions.cameraModel].filter(Boolean).join(' ') || null,
+                                a.conditions.loadPercent != null ? `load ${a.conditions.loadPercent}%` : null,
+                              ].filter(Boolean).join(' · ') || '—'
+                            : '—'}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>{a.openFindings}</td>
+                        <td>{a.hasEvidence ? 'IR report on file' : <span className="text-muted">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {ir.findings.length > 0 && (
+                <div className="table-wrap" style={{ marginTop: 12 }}>
+                  <table className="print-table">
+                    <thead>
+                      <tr>
+                        <th>Component</th>
+                        <th style={{ textAlign: 'right' }}>ΔT</th>
+                        <th>Reference</th>
+                        <th>NETA severity</th>
+                        <th>Corrective action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ir.findings.map((f) => (
+                        <tr key={f.id}>
+                          <td>{f.component}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                            {f.deltaT == null ? '—' : `${f.deltaT}°C`}
+                          </td>
+                          <td>{IR_REF_LABEL[f.referenceType] || f.referenceType || '—'}</td>
+                          <td style={{ color: f.severity ? 'var(--color-danger)' : undefined }}>
+                            {f.severity || 'Below threshold'}
+                            {/* Above-threshold findings also appear in Open
+                                deficiencies below — flagged, not duplicated. */}
+                            {f.deficiencyId && (
+                              <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}> · see deficiency</span>
+                            )}
+                          </td>
+                          <td>{f.correctiveAction || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {ir.note && (
+                <div className="card-body" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                  {ir.note}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* ── Open deficiencies ───────────────────────────────────────────── */}
         <section className="print-sec">

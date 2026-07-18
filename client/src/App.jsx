@@ -172,6 +172,7 @@ const MultiYearPlanReport            = lazyWithReload(() => import('./pages/Mult
 const EmpReport                      = lazyWithReload(() => import('./pages/EmpReport'));           // EMP document (admin/manager)
 const AssetRegisterReport            = lazyWithReload(() => import('./pages/AssetRegisterReport')); // asset register export (admin/manager)
 const AccountBackupReport            = lazyWithReload(() => import('./pages/AccountBackupReport')); // full account backup (admin/manager)
+const ThermographyReport             = lazyWithReload(() => import('./pages/ThermographyReport')); // #29 IR §7.4 report (admin/manager)
 const AuditsPage                     = lazyWithReload(() => import('./pages/AuditsPage')); // audit visits + REC tracking
 const EquipmentTemplates             = lazyWithReload(() => import('./pages/EquipmentTemplates')); // equipment template library
 const OutagePlannerPage              = lazyWithReload(() => import('./pages/OutagePlannerPage')); // account-wide outage consolidation planner
@@ -501,6 +502,12 @@ function AppRoutes() {
             <Route path="reports/asset-register" element={
               <RequireRole roles={['admin', 'manager']}>
                 <AssetRegisterReport />
+              </RequireRole>
+            } />
+            {/* #29 §7.4 IR thermography — ?surveyId= for one survey, ?siteId= for a roll-up. */}
+            <Route path="reports/thermography" element={
+              <RequireRole roles={['admin', 'manager']}>
+                <ThermographyReport />
               </RequireRole>
             } />
             <Route path="reports/account-backup" element={

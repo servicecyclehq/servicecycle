@@ -62,6 +62,12 @@ const { buildCfoReportData, renderCfoReportPdf } = require('../lib/cfoReport');
 const { renderReportDocPdf } = require('../lib/reportsPdf');
 const { formatTimestamp } = require('../lib/pdfStyle');
 
+// #29 §7.4: ΔT reference frame as printed in the IR section. Mirrors the
+// ThermographyReference enum; a bare ΔT is meaningless without its frame.
+const IR_REF_LABEL: Record<string, string> = {
+  AMBIENT: 'Over ambient', SIMILAR: 'Similar component', BASELINE: 'Vs. baseline',
+};
+
 const router = express.Router();
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -256,6 +262,35 @@ async function renderStandardReportPdf(res, accountId, siteId, report) {
       },
     },
   ];
+
+  // #29 §7.4: IR thermography drill-down. Present only for NFPA 70B (the
+  // builder returns null for every other standard), so the PDF gains a section
+  // exactly where IR is actually mandated.
+  const ir = report.irThermography;
+  if (ir) {
+    sections.push({
+      title: 'IR thermography (NFPA 70B §7.4)',
+      aux: `${ir.summary.scanned} scanned · ${ir.summary.neverScanned} never scanned · ${ir.summary.openFindings} open finding(s)`,
+      table: {
+        columns: [
+          { key: 'component', label: 'Component', w: 2.2 },
+          { key: 'deltaT', label: 'ΔT', w: 0.7, mono: true },
+          { key: 'reference', label: 'Reference', w: 1.0 },
+          { key: 'severity', label: 'NETA severity', w: 1.3, bold: true },
+          { key: 'action', label: 'Corrective action', w: 2.0 },
+        ],
+        rows: ir.findings.map((f) => ({
+          component: f.component || '—',
+          deltaT: f.deltaT == null ? '—' : `${f.deltaT}°C`,
+          reference: IR_REF_LABEL[f.referenceType] || f.referenceType || '—',
+          severity: f.severity || 'Below threshold',
+          action: f.correctiveAction || '—',
+        })),
+        emptyText: 'No open IR findings on assets governed by this standard.',
+      },
+    });
+  }
+
   return renderReportDocPdf(res, {
     title: `${code} Compliance Report`,
     org: org || undefined,

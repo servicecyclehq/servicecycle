@@ -69,6 +69,13 @@ export const REPORTS = [
     to: '/reports/emp',
   },
   {
+    id: 'ir-thermography',
+    name: 'IR Thermography (NFPA 70B §7.4)',
+    description: 'Infrared survey record per NFPA 70B:2023 §7.4 — thermographer and qualification, camera, ambient/humidity/emissivity/reflected/load conditions, every finding graded against NETA Table 100.18 (including below-threshold spots kept for trending), and the source IR report as evidence.',
+    icon: BarChart3,
+    to: '/reports/thermography',
+  },
+  {
     id: 'compliance-by-standard',
     name: 'Compliance by Standard',
     description: 'Maintenance compliance rolled up per governing standard — NFPA 70B and every other standard in your task library, with asset counts, compliance rate, and a drill-down evidence table per standard.',

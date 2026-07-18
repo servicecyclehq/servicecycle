@@ -56,6 +56,7 @@ const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
 // R3: condition-based interval engine — recompute schedule due dates when an
 // asset's governing condition changes (close the loop) + power what-if preview.
 const { computeNextDueDate, intervalMonthsFor } = require('../lib/maintenanceInterval');
+const { buildIrScanMap } = require('../lib/irScanStatus'); // #29 §7.4 Last IR Scan
 
 // Redundancy posture vocabulary (Asset.redundancyStatus is a String column;
 // the route layer owns the enum).
@@ -497,6 +498,10 @@ router.get('/', async (req, res) => {
         { area:     { name: { contains: search, mode: 'insensitive' } } },
         { position: { name: { contains: search, mode: 'insensitive' } } },
         { position: { code: { contains: search, mode: 'insensitive' } } },
+        // #29 §7.4: an IR finding's component label ("Panel 3, Phase B lug")
+        // makes its asset findable — the hot spot is often the only place that
+        // text exists.
+        { thermographyFindings: { some: { component: { contains: search, mode: 'insensitive' } } } },
       ];
     }
 
@@ -564,9 +569,21 @@ router.get('/', async (req, res) => {
       });
     }
 
+    // #29 §7.4 "Last IR Scan": two grouped queries for the whole page (see
+    // lib/irScanStatus.ts), never one per asset. Non-IR equipment types are
+    // absent from the map and get nulls, so the column renders "—" for them.
+    const irScan = await buildIrScanMap(prisma, req.user.accountId, assets as any);
+
     const decorated = assets.map(a => {
       const d = decorateNextDue(a);
-      return { ...d, openDeficiencyCount: a._count?.deficiencies ?? 0 };
+      const ir = irScan.get(a.id) || null;
+      return {
+        ...d,
+        openDeficiencyCount: a._count?.deficiencies ?? 0,
+        lastIrScanDate: ir ? ir.lastIrScanDate : null,
+        irStatus:       ir ? ir.irStatus : null,
+        irNextDueDate:  ir ? ir.irNextDueDate : null,
+      };
     });
 
     res.json({
