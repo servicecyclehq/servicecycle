@@ -1,6 +1,8 @@
 const { verifyToken } = require('../lib/jwtSecrets');
 const { isFieldTechAllowed } = require('../lib/fieldRoleScope');
 import prisma from '../lib/prisma';
+const { hashApiKey } = require('./apiKeyAuth');
+const { writeLog } = require('../lib/activityLog');
 
 // L3: in-memory debounce cache for Account.lastActiveAt updates.
 // We don't want to do a write on every single authenticated request — that's
@@ -60,12 +62,53 @@ function touchAccountActivity(accountId) {
  * Verifies the Bearer JWT in the Authorization header.
  * On success, attaches req.user = { id, accountId, name, email, role }.
  */
+// D2 (service accounts): an admin-minted API key (sc_ prefix) carrying the
+// 'service' scope authenticates headless automation as a MANAGER over its
+// own account - no browser, no JWT, no expiry. Account-scoped + audited; it
+// reaches the same routes a manager JWT reaches, and requireAdmin stays closed.
+async function authenticateServiceKey(token, req, res, next) {
+  let key;
+  try {
+    key = await prisma.apiKey.findUnique({
+      where:  { keyHash: hashApiKey(token) },
+      select: { id: true, accountId: true, name: true, scopes: true, revokedAt: true, expiresAt: true },
+    });
+  } catch (err) {
+    console.error('[auth] service-key lookup failed:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+  const scopes = Array.isArray(key && key.scopes) ? key.scopes : [];
+  if (!key || key.revokedAt || (key.expiresAt && key.expiresAt < new Date()) || !scopes.includes('service')) {
+    return res.status(401).json({ success: false, error: 'Invalid service key' });
+  }
+  req.user = {
+    id:           'svc_' + key.id,
+    accountId:    key.accountId,
+    name:         key.name || 'Service key',
+    email:        null,
+    role:         'manager',
+    isServiceKey: true,
+    apiKeyId:     key.id,
+  };
+  req.isServiceKey = true;
+  try {
+    writeLog({ accountId: key.accountId, action: 'service_key_auth', details: { apiKeyId: key.id, method: req.method, path: String(req.originalUrl || req.url || '').split('?')[0] } });
+  } catch (_e) { /* audit is best-effort, never blocks the request */ }
+  return next();
+}
+
 async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // "Bearer <token>"
 
   if (!token) {
     return res.status(401).json({ success: false, error: 'Access token required' });
+  }
+
+  // D2: service-account key path. Normal user JWTs never start with 'sc_',
+  // so this branch is unambiguous. See authenticateServiceKey above.
+  if (token.startsWith('sc_')) {
+    return authenticateServiceKey(token, req, res, next);
   }
 
   try {

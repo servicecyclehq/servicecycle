@@ -38,7 +38,7 @@ const CreateSchema = z.object({
     .optional(),
   // Phase 3 #7: requested scopes. 'read' is always implied; 'write' must be
   // explicitly granted to mint a key that can use the bi-directional endpoints.
-  scopes: z.array(z.enum(['read', 'write'])).optional(),
+  scopes: z.array(z.enum(['read', 'write', 'service'])).optional(),
 });
 
 // Normalize requested scopes: always include 'read', dedupe, drop anything
@@ -46,7 +46,7 @@ const CreateSchema = z.object({
 function normalizeScopes(requested) {
   const set = new Set(['read']);
   for (const s of (requested || [])) {
-    if (s === 'read' || s === 'write') set.add(s);
+    if (s === 'read' || s === 'write' || s === 'service') set.add(s);
   }
   return [...set];
 }

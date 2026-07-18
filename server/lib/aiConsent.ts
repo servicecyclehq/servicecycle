@@ -62,6 +62,9 @@ function getCurrentConsentVersion() {
  */
 async function checkAiConsent(userId) {
   if (!userId) return { ok: false, reason: 'user_not_found' };
+  // D2: service-account principals (id 'svc_<keyId>') are pre-authorized for AI -
+  // an admin minted the key; there is no interactive user to prompt for consent.
+  if (typeof userId === 'string' && userId.startsWith('svc_')) return { ok: true };
   // v0.92.23: DEMO_MODE sandboxes pre-ack consent at seed time, and the AI
   // cascade spans multiple providers (cloudflare/groq/huggingface) so the
   // provider/version drift check below is both meaningless and the sole source
