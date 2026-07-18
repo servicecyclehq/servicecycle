@@ -19,9 +19,10 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Printer, Download } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 import api from '../api/client';
 import { downloadAuthedFile } from '../api/download';
+import ReportActionBar from '../components/ReportActionBar';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
@@ -149,27 +150,11 @@ export default function ComplianceStandardsReport() {
             Maintenance compliance rolled up per governing standard. Click a row for the full evidence table.
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleDownloadPdf}
-            disabled={pdfBusy || loading || rows.length === 0}
-            title="Download this report as a PDF"
-          >
-            <Download size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-            {pdfBusy ? 'Building PDF…' : 'Download PDF'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => window.print()}
-            title="Print this report"
-          >
-            <Printer size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-            Print
-          </button>
-        </div>
+        <ReportActionBar
+          onDownloadPdf={handleDownloadPdf}
+          pdfBusy={pdfBusy}
+          pdfDisabled={loading || rows.length === 0}
+        />
       </div>
 
       <div className="page-body print-doc">

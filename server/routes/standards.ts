@@ -32,6 +32,8 @@ const { z } = require('zod');
 const { requireAdmin } = require('../middleware/roles');
 const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const prisma = require('../lib/prisma').default;
+const { renderReportDocPdf } = require('../lib/reportsPdf');
+const { formatTimestamp } = require('../lib/pdfStyle');
 
 // Canonical EquipmentType list — single source of truth in lib/equipmentTypes.
 const { EQUIPMENT_TYPES } = require('../lib/equipmentTypes');
@@ -75,6 +77,47 @@ const UpdateTaskDefSchema = z.object({
 
 const toInt = (v) => (v == null ? v : parseInt(v, 10));
 
+// Block 1 #5: Standards Library as a Field Report PDF (Download PDF button on
+// /reports/standards-library). Table of the governing standards; the
+// plain-language "what it means" copy lives client-side and is intentionally
+// not duplicated here -- the PDF is the auditable library index.
+function renderStandardsLibraryPdf(res, standards) {
+  const genAt = new Date();
+  const rows = (standards || []).map((s) => ({
+    code: s.edition && s.edition !== 'current' ? `${s.code} (${s.edition})` : s.code,
+    publisher: s.publisher || '—',
+    title: s.title || '—',
+    mandate: s.keyMandate || '—',
+    tasks: (s._count && s._count.taskDefinitions) != null ? s._count.taskDefinitions : 0,
+  }));
+  return renderReportDocPdf(res, {
+    title: 'Standards Library',
+    metaLines: [formatTimestamp(genAt)],
+    generatedAt: genAt,
+    filename: `Standards_Library_${genAt.toISOString().slice(0, 10)}`,
+    sections: [
+      {
+        title: 'Governing standards',
+        aux: `${rows.length} standard${rows.length === 1 ? '' : 's'}`,
+        body: [
+          'The documents that govern an NFPA 70B electrical maintenance program and what the platform tracks against each. Editions shown are the ones tracked; the revision-alert workflow flags affected task definitions when a standards body publishes a new edition.',
+        ],
+        table: {
+          columns: [
+            { key: 'code', label: 'Standard', w: 1.1, bold: true },
+            { key: 'publisher', label: 'Publisher', w: 0.8 },
+            { key: 'title', label: 'Title', w: 2.0 },
+            { key: 'mandate', label: 'Key mandate', w: 2.8 },
+            { key: 'tasks', label: 'Tasks', w: 0.6, numeric: true },
+          ],
+          rows,
+          emptyText: 'No standards loaded.',
+        },
+      },
+    ],
+  });
+}
+
 // ─── GET /api/standards ───────────────────────────────────────────────────────
 // The standards library. Global — intentionally no accountId filter (these
 // rows have no tenant column); content is the same for everyone.
@@ -85,6 +128,9 @@ router.get('/', async (req, res) => {
       include: { _count: { select: { taskDefinitions: true } } },
     });
 
+    if (String(req.query.format || '').toLowerCase() === 'pdf') {
+      return renderStandardsLibraryPdf(res, standards);
+    }
     res.json({ success: true, data: { standards } });
   } catch (err) {
     console.error('List standards error:', err);

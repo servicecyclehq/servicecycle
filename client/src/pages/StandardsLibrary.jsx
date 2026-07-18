@@ -22,6 +22,8 @@ import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import EmptyState from '../components/EmptyState';
 import BackLink from '../components/BackLink';
+import ReportActionBar from '../components/ReportActionBar';
+import { downloadAuthedFile } from '../api/download';
 
 // Publisher chip palette — literal hexes per the house domain-chip convention.
 const PUBLISHER_META = {
@@ -89,6 +91,20 @@ export default function StandardsLibrary() {
   const [taskCounts, setTaskCounts] = useState(null); // { [code]: n } | null until loaded
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
+  const [pdfBusy, setPdfBusy]       = useState(false);
+
+  async function handleDownloadPdf() {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const url = `${import.meta.env.VITE_API_URL ?? ''}/api/standards?format=pdf`;
+      await downloadAuthedFile(url, `Standards_Library_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      setError(e?.message || 'Failed to download the PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -135,9 +151,21 @@ export default function StandardsLibrary() {
             in plain language, and what this platform tracks against it.
           </div>
         </div>
+        <ReportActionBar
+          onDownloadPdf={handleDownloadPdf}
+          pdfBusy={pdfBusy}
+          pdfDisabled={loading || standards.length === 0}
+        />
       </div>
 
-      <div className="page-body">
+      <div className="page-body print-doc">
+        <header className="print-masthead print-only">
+          <h1 className="print-masthead-title">Standards Library</h1>
+          <div className="print-masthead-meta">
+            Generated {new Date().toLocaleDateString()}
+          </div>
+        </header>
+        <div className="print-rule print-only"></div>
         {error && <div role="alert" className="alert alert-error mb-16">{error}</div>}
 
         {loading ? (
@@ -226,6 +254,11 @@ export default function StandardsLibrary() {
             reviewed against the updated requirements — you don’t have to watch the publishers yourself.
           </p>
         )}
+
+        <footer className="print-footer print-only">
+          <span>ServiceCycle</span>
+          <span className="print-footer-pages">Generated {new Date().toLocaleDateString()}</span>
+        </footer>
       </div>
     </>
   );

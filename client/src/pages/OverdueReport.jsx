@@ -21,9 +21,11 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Printer } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import api from '../api/client';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { downloadAuthedFile } from '../api/download';
+import ReportActionBar from '../components/ReportActionBar';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
 import { SEVERITY_META, assetLabel, fmtDate } from '../lib/equipment';
@@ -85,6 +87,21 @@ export default function OverdueReport() {
   const [report, setReport]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  async function handleDownloadPdf() {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const qs = siteId ? `?siteId=${encodeURIComponent(siteId)}&format=pdf` : '?format=pdf';
+      const url = `${import.meta.env.VITE_API_URL ?? ''}/api/compliance/overdue-report${qs}`;
+      await downloadAuthedFile(url, `Overdue_by_Severity_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      setError(e?.message || 'Failed to download the PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   useEffect(() => {
     api.get('/api/sites')
@@ -144,15 +161,11 @@ export default function OverdueReport() {
             {report?.scope?.siteName ? ` · ${report.scope.siteName}` : ''}.
           </div>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => window.print()}
-          title="Print this report"
-        >
-          <Printer size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-          Print
-        </button>
+        <ReportActionBar
+          onDownloadPdf={handleDownloadPdf}
+          pdfBusy={pdfBusy}
+          pdfDisabled={loading || isEmpty}
+        />
       </div>
 
       <div className="page-body print-doc">

@@ -85,6 +85,187 @@ function handleBuilderError(res, err) {
   return false;
 }
 
+// ── Field-report PDF renderers for the report endpoints below ─────────────────
+// Block 1 #5: every report page carries the same Print + Download PDF pair.
+// These back the Download PDF button (mirrors /standards.pdf). Live,
+// non-anchored views -- for immutable evidence use the snapshot pipeline.
+async function _acctSiteScope(accountId, siteId) {
+  let org = '';
+  try {
+    const acct = await prisma.account.findUnique({ where: { id: accountId }, select: { companyName: true } });
+    org = (acct && acct.companyName) || '';
+  } catch (_) { /* org line is optional */ }
+  let siteScope = 'All sites';
+  if (siteId) {
+    try {
+      const site = await prisma.site.findFirst({ where: { id: siteId, accountId }, select: { name: true } });
+      siteScope = site ? site.name : 'Selected site';
+    } catch (_) { siteScope = 'Selected site'; }
+  }
+  return { org, siteScope };
+}
+const _pdfDate = (d) => {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? '—' : dt.toISOString().slice(0, 10);
+};
+const _pdfAsset = (a) => {
+  if (!a) return '—';
+  const base = [a.manufacturer, a.model].filter(Boolean).join(' ') || a.equipmentType || 'Asset';
+  return a.serialNumber ? `${base} (SN ${a.serialNumber})` : base;
+};
+
+async function renderOverduePdf(res, accountId, siteId, report) {
+  const { org, siteScope } = await _acctSiteScope(accountId, siteId);
+  const overdue = Array.isArray(report.overdueSchedules) ? report.overdueSchedules : [];
+  const defGroups = Array.isArray(report.openDeficiencies) ? report.openDeficiencies : [];
+  const totalDefs = defGroups.reduce((n, g) => n + ((g.items && g.items.length) || 0), 0);
+  const immediate = (defGroups.find((g) => g.severity === 'IMMEDIATE') || {}).items;
+  const genAt = report.generatedAt ? new Date(report.generatedAt) : new Date();
+  const sections = [
+    {
+      title: 'Overdue posture',
+      aux: siteScope,
+      body: [
+        'The cross-standard overdue punch list: every active maintenance schedule whose next-due date has passed (most overdue first), plus open deficiencies grouped by severity.',
+        'A live, on-demand view. For immutable, SHA-256-anchored evidence suitable for an auditor or insurer, generate an Audit Evidence Snapshot from the Reports hub.',
+      ],
+      stats: [
+        { label: 'Overdue tasks', value: overdue.length },
+        { label: 'Open deficiencies', value: totalDefs },
+        { label: 'Immediate', value: (immediate && immediate.length) || 0 },
+      ],
+    },
+    {
+      title: 'Overdue maintenance tasks',
+      aux: `${overdue.length} overdue`,
+      table: {
+        columns: [
+          { key: 'asset', label: 'Asset', w: 1.8, bold: true },
+          { key: 'site', label: 'Site', w: 1.1 },
+          { key: 'task', label: 'Task', w: 1.6 },
+          { key: 'due', label: 'Due', w: 0.9, mono: true },
+          { key: 'days', label: 'Days overdue', w: 0.8, numeric: true },
+        ],
+        rows: overdue.map((r) => ({
+          asset: _pdfAsset(r.asset),
+          site: (r.asset && r.asset.site && r.asset.site.name) || '—',
+          task: (r.task && r.task.taskName) || '—',
+          due: _pdfDate(r.nextDueDate),
+          days: r.daysOverdue == null ? '—' : r.daysOverdue,
+        })),
+        emptyText: 'No overdue maintenance tasks in scope.',
+      },
+    },
+    {
+      title: 'Open deficiencies by severity',
+      aux: `${totalDefs} open`,
+      table: {
+        columns: [
+          { key: 'severity', label: 'Severity', w: 0.9, bold: true },
+          { key: 'description', label: 'Description', w: 2.4 },
+          { key: 'asset', label: 'Asset', w: 1.6 },
+          { key: 'age', label: 'Age (days)', w: 0.8, numeric: true },
+        ],
+        rows: defGroups.flatMap((g) => (g.items || []).map((it) => ({
+          severity: g.severity,
+          description: it.description || '—',
+          asset: _pdfAsset(it.asset),
+          age: it.ageDays == null ? '—' : it.ageDays,
+        }))),
+        emptyText: 'No open deficiencies in scope.',
+      },
+    },
+  ];
+  return renderReportDocPdf(res, {
+    title: 'Overdue Maintenance by Severity',
+    org: org || undefined,
+    metaLines: [siteScope, formatTimestamp(genAt)],
+    generatedAt: genAt,
+    filename: `Overdue_by_Severity_${genAt.toISOString().slice(0, 10)}`,
+    sections,
+  });
+}
+
+async function renderStandardReportPdf(res, accountId, siteId, report) {
+  const { org } = await _acctSiteScope(accountId, siteId);
+  const std = report.standard || {};
+  const summary = report.summary || {};
+  const rows = Array.isArray(report.rows) ? report.rows : [];
+  const defs = Array.isArray(report.openDeficiencies) ? report.openDeficiencies : [];
+  const siteScope = (report.scope && report.scope.siteName) || 'All sites';
+  const genAt = report.generatedAt ? new Date(report.generatedAt) : new Date();
+  const code = std.code || 'Standard';
+  const sections = [
+    {
+      title: `${code} compliance posture`,
+      aux: siteScope,
+      body: [
+        std.title ? `${std.title}${std.keyMandate ? ' — ' + std.keyMandate : ''}` : (std.keyMandate || 'Per-standard maintenance compliance evidence.'),
+        'A live, on-demand evidence view. For immutable, SHA-256-anchored evidence use the Audit Evidence Snapshot for this standard.',
+      ],
+      stats: [
+        { label: 'Assets', value: summary.assetCount ?? 0 },
+        { label: 'Schedules', value: summary.scheduleCount ?? 0 },
+        { label: 'Current', value: summary.currentCount ?? 0 },
+        { label: 'Overdue', value: summary.overdueCount ?? 0 },
+        { label: 'Unbaselined', value: summary.unbaselinedCount ?? 0 },
+        { label: 'Compliance', value: summary.complianceRate == null ? '—' : `${summary.complianceRate}%` },
+      ],
+    },
+    {
+      title: 'Evidence',
+      aux: `${rows.length} schedule${rows.length === 1 ? '' : 's'}`,
+      table: {
+        columns: [
+          { key: 'asset', label: 'Asset', w: 1.7, bold: true },
+          { key: 'site', label: 'Site', w: 1.0 },
+          { key: 'task', label: 'Task', w: 1.6 },
+          { key: 'last', label: 'Last completed', w: 1.0, mono: true },
+          { key: 'due', label: 'Next due', w: 1.0, mono: true },
+          { key: 'status', label: 'Status', w: 0.9 },
+        ],
+        rows: rows.map((r) => ({
+          asset: _pdfAsset(r.asset),
+          site: (r.asset && r.asset.siteName) || '—',
+          task: (r.task && r.task.taskName) || '—',
+          last: _pdfDate(r.schedule && r.schedule.lastCompletedDate),
+          due: _pdfDate(r.schedule && r.schedule.nextDueDate),
+          status: (r.schedule && r.schedule.status) || '—',
+        })),
+        emptyText: 'No schedules under this standard.',
+      },
+    },
+    {
+      title: 'Open deficiencies',
+      aux: `${defs.length} open`,
+      table: {
+        columns: [
+          { key: 'severity', label: 'Severity', w: 0.9, bold: true },
+          { key: 'description', label: 'Description', w: 2.6 },
+          { key: 'asset', label: 'Asset', w: 1.6 },
+          { key: 'logged', label: 'Logged', w: 1.0, mono: true },
+        ],
+        rows: defs.map((d) => ({
+          severity: d.severity,
+          description: d.description || '—',
+          asset: _pdfAsset(d.asset),
+          logged: _pdfDate(d.createdAt),
+        })),
+        emptyText: 'No open deficiencies on assets governed by this standard.',
+      },
+    },
+  ];
+  return renderReportDocPdf(res, {
+    title: `${code} Compliance Report`,
+    org: org || undefined,
+    metaLines: [std.edition ? String(std.edition) : null, siteScope, formatTimestamp(genAt)].filter(Boolean),
+    generatedAt: genAt,
+    filename: `${code.replace(/[^\w-]+/g, '_')}_Compliance_${genAt.toISOString().slice(0, 10)}`,
+    sections,
+  });
+}
+
 // ── GET /summary?siteId= ──────────────────────────────────────────────────────
 // Per-standard compliance summary for the account (optionally one site).
 
@@ -213,6 +394,9 @@ router.get('/report/:standardCode', async (req, res) => {
       standardCode: req.params.standardCode,
       siteId,
     });
+    if (String(req.query.format || '').toLowerCase() === 'pdf') {
+      return await renderStandardReportPdf(res, req.user.accountId, siteId, report);
+    }
     return res.json({ success: true, data: { report } });
   } catch (err) {
     if (handleBuilderError(res, err)) return;
@@ -231,6 +415,9 @@ router.get('/overdue-report', async (req, res) => {
   try {
     const siteId = req.query.siteId ? String(req.query.siteId) : null;
     const report = await buildOverdueReport(prisma, req.user.accountId, { siteId });
+    if (String(req.query.format || '').toLowerCase() === 'pdf') {
+      return await renderOverduePdf(res, req.user.accountId, siteId, report);
+    }
     return res.json({ success: true, data: { report } });
   } catch (err) {
     if (handleBuilderError(res, err)) return;

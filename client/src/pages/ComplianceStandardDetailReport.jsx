@@ -23,7 +23,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileCheck2, Printer } from 'lucide-react';
+import { FileCheck2 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -31,6 +31,7 @@ import { downloadAuthedFile } from '../api/download';
 import Toast from '../components/Toast';
 import EmptyState from '../components/EmptyState';
 import BackLink, { useFromState } from '../components/BackLink';
+import ReportActionBar from '../components/ReportActionBar';
 import { SEVERITY_META, DECAL_META, assetLabel, fmtDate } from '../lib/equipment';
 
 // Schedule compliance status chips. Literal hexes, matching the domain
@@ -93,6 +94,7 @@ export default function ComplianceStandardDetailReport() {
   const [error, setError]       = useState('');
   const [toast, setToast]       = useState(null);
   const [snapBusy, setSnapBusy] = useState(false);
+  const [pdfBusy, setPdfBusy]   = useState(false);
 
   useEffect(() => {
     api.get('/api/sites')
@@ -114,6 +116,24 @@ export default function ComplianceStandardDetailReport() {
       })
       .finally(() => setLoading(false));
   }, [standardCode, siteId]);
+
+  // Live Field Report PDF of this standard's evidence (Download PDF button --
+  // any role). Distinct from the anchored audit snapshot below.
+  async function handleDownloadPdf() {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const qs = siteId ? `?siteId=${encodeURIComponent(siteId)}&format=pdf` : '?format=pdf';
+      const base = import.meta.env.VITE_API_URL ?? '';
+      const url = `${base}/api/compliance/report/${encodeURIComponent(standardCode)}${qs}`;
+      const safe = String(standardCode).replace(/[^\w-]+/g, '_');
+      await downloadAuthedFile(url, `${safe}_Compliance_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      setToast({ message: err?.response?.data?.error || err?.message || 'Failed to download the PDF.', variant: 'error' });
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   // Generate an immutable snapshot for THIS standard (+ current site scope),
   // then auto-download the PDF and toast the audit-log integrity hash.
@@ -195,28 +215,21 @@ export default function ComplianceStandardDetailReport() {
             {summary.complianceRate != null && <SummaryChip label="compliance" value={`${summary.complianceRate}%`} />}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          {canSnapshot && (
+        <ReportActionBar
+          onDownloadPdf={handleDownloadPdf}
+          pdfBusy={pdfBusy}
+          leading={canSnapshot ? (
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-secondary"
               onClick={handleSnapshot}
               disabled={snapBusy}
               title="Generate an immutable PDF snapshot of this report; its SHA-256 hash is anchored in the tamper-evident audit log."
             >
-              {snapBusy ? 'Generating…' : 'Download audit snapshot (this standard)'}
+              {snapBusy ? 'Generating…' : 'Audit snapshot'}
             </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => window.print()}
-            title="Print this report"
-          >
-            <Printer size={14} strokeWidth={1.75} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-            Print
-          </button>
-        </div>
+          ) : null}
+        />
       </div>
 
       <div className="page-body print-doc">
