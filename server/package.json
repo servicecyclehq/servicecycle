@@ -7,8 +7,8 @@
   "scripts": {
     "start": "node node_modules/tsx/dist/cli.mjs index.ts",
     "dev": "tsx watch index.ts",
-    "type-check": "tsc --noEmit",
-    "build": "tsc --noEmit",
+    "type-check": "node scripts/check-reset-parity.js && tsc --noEmit",
+    "build": "node scripts/check-reset-parity.js && tsc --noEmit",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "generate": "prisma generate",
