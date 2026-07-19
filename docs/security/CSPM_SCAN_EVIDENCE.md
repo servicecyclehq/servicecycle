@@ -37,3 +37,4 @@ API call away (`tier_coverage.basic.resources: [...]`) once approved.
 |------|---------|------|----------|-------|
 | 2026-07-07 | `019f3f73-2370-7c7d-8ada-0ab1e82aa161` | FREE | 0 | First scan, right after enabling. Standard-resource checks only (see scope caveat above) — not a droplet/DB posture claim. |
 | 2026-07-12 | `019f578d-1333-78b9-b9e7-0d41d3233ab1` | FREE | 0 | Weekly scheduled scan. Standard-resource checks only (see scope caveat above) — not a droplet/DB posture claim. |
+| 2026-07-19 | `019f7b0c-f3ae-7c04-8c56-0c167ad6a278` | FREE | 0 | Weekly scheduled scan. Standard-resource checks only (see scope caveat above) — not a droplet/DB posture claim. |
