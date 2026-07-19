@@ -122,6 +122,9 @@ async function pruneAccount(accountId) {
 
   // ── Assets, then the site hierarchy bottom-up (all required site FKs are
   // no-action, so children must go before sites)
+  // #29 IR/thermography (asset-attached, assetId FK is no-action) — clear before assets.
+  await prisma.thermographyFinding.deleteMany({ where: filter }).catch(() => {});
+  await prisma.thermographySurvey.deleteMany({ where: filter }).catch(() => {});
   await prisma.asset.deleteMany({ where: filter }).catch(() => {});
   await prisma.equipmentPosition.deleteMany({ where: filter }).catch(() => {});
   await prisma.area.deleteMany({ where: filter }).catch(() => {});

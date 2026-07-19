@@ -172,6 +172,14 @@ async function _resetDemoAccount() {
     },
   }).catch(() => {});
 
+  // ── IR / thermography (#29, NFPA 70B 7.4) ─ asset-attached; assetId FK is
+  // no-action, so these MUST be cleared before asset.deleteMany() below, or the
+  // reset throws P2003 (thermography_surveys_assetId_fkey). Findings first, then
+  // surveys. Added 2026-07-19: the #29 thermography feature shipped without
+  // updating this reset chain, which broke every demo reseed. Sync w/ demoPrune.
+  await prisma.thermographyFinding.deleteMany({ where: filter }).catch(() => {});
+  await prisma.thermographySurvey.deleteMany({ where: filter }).catch(() => {});
+
   // ── Work-order / asset leaves ─────────────────────────────────────────────
   await prisma.alert.deleteMany({ where: filter }).catch(() => {});
   await prisma.testMeasurement.deleteMany({ where: filter }).catch(() => {});
