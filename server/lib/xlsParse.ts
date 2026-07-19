@@ -1,4 +1,11 @@
 /**
+ * THIRD-PARTY PROVENANCE
+ * Uses SheetJS Community Edition via `@e965/xlsx` (Apache-2.0, (c) SheetJS LLC,
+ * https://github.com/e965/sheetjs-npm-publisher). Dependency wrapper; no upstream
+ * source is vendored. See docs/THIRD_PARTY_PROVENANCE.md and NOTICE.
+ */
+
+/**
  * lib/xlsParse.ts — legacy binary .xls (BIFF8 / OLE2) reader via SheetJS.
  *
  * ExcelJS (the codebase's spreadsheet reader) only parses OOXML .xlsx — it

@@ -1,3 +1,12 @@
+/**
+ * THIRD-PARTY PROVENANCE
+ * Integrates with Ory Polis (formerly BoxyHQ "SAML Jackson"), run self-hosted as
+ * the `boxyhq/jackson:26.2.0` container. The wire-protocol shapes and behavior in
+ * this file were verified against that upstream (Apache-2.0, (c) Ory Corp,
+ * https://github.com/ory/polis). No upstream source is vendored here; this is
+ * original integration code. See docs/THIRD_PARTY_PROVENANCE.md and NOTICE.
+ */
+
 'use strict';
 
 /**

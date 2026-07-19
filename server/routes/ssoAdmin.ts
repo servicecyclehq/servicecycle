@@ -1,3 +1,8 @@
+// THIRD-PARTY PROVENANCE: integrates the Ory Polis (formerly BoxyHQ "SAML
+// Jackson") admin API. Wire-protocol shapes/behavior verified against that upstream
+// (Apache-2.0, (c) Ory Corp, https://github.com/ory/polis). No upstream source is
+// vendored; original integration code. See docs/THIRD_PARTY_PROVENANCE.md and NOTICE.
+
 const router = require('express').Router();
 const { z } = require('zod');
 import prisma from '../lib/prisma';

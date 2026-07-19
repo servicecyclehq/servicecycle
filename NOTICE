@@ -1,0 +1,39 @@
+ServiceCycle
+Copyright (c) 2026 ServiceCycle
+
+This product integrates with and/or depends on third-party software. The
+components below are acknowledged here; the full dependency license set is in
+the SBOMs (server/sbom/cyclonedx.json, server/sbom/spdx.json), and a detailed
+provenance analysis is in docs/THIRD_PARTY_PROVENANCE.md.
+
+No third-party source code is vendored (copied) into this repository's own
+source. The acknowledgements below cover components this software is built
+against or depends on.
+
+-------------------------------------------------------------------------------
+Ory Polis (formerly BoxyHQ "SAML Jackson")
+  Used as: self-hosted SSO/SCIM broker, run as the container image
+           boxyhq/jackson:26.2.0 (see docker-compose.polis.yml). ServiceCycle's
+           SSO integration derives its wire-protocol shapes and behavior from
+           this project. The Ory Enterprise License (OEL) add-ons are not used.
+  License: Apache License 2.0
+  Copyright: Copyright (c) Ory Corp
+  Source: https://github.com/ory/polis
+-------------------------------------------------------------------------------
+jose
+  Used as: JOSE/JWT/JWKS library for OIDC id_token validation (npm: jose).
+  License: MIT
+  Copyright: Copyright (c) 2018 Filip Skokan
+  Source: https://github.com/panva/jose
+-------------------------------------------------------------------------------
+SheetJS Community Edition (via @e965/xlsx)
+  Used as: legacy binary .xls (BIFF8/OLE2) reader (npm: @e965/xlsx).
+  License: Apache License 2.0
+  Copyright: Copyright (c) SheetJS LLC
+  Source: https://github.com/e965/sheetjs-npm-publisher
+-------------------------------------------------------------------------------
+
+Apache License 2.0 components above are used under the terms of that license; a
+copy of the Apache License 2.0 is available at
+https://www.apache.org/licenses/LICENSE-2.0. This NOTICE file is provided for
+attribution and does not modify those license terms.

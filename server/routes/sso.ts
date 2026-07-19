@@ -1,3 +1,10 @@
+// THIRD-PARTY PROVENANCE: integrates with Ory Polis (formerly BoxyHQ "SAML
+// Jackson"), run self-hosted as the `boxyhq/jackson:26.2.0` container. Wire-protocol
+// shapes/behavior here were verified against that upstream (Apache-2.0, (c) Ory
+// Corp, https://github.com/ory/polis); this file additionally cites reading the
+// upstream oauth.ts to verify tenant-resolution behavior. No upstream source is
+// vendored; original integration code. See docs/THIRD_PARTY_PROVENANCE.md and NOTICE.
+
 const router = require('express').Router();
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');

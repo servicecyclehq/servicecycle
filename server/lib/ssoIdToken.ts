@@ -1,3 +1,11 @@
+/**
+ * THIRD-PARTY PROVENANCE
+ * Uses `jose` (panva/jose, MIT, (c) 2018 Filip Skokan, https://github.com/panva/jose)
+ * for JWKS fetch + id_token/JWT validation. OIDC behavior is verified against Ory
+ * Polis (Apache-2.0, https://github.com/ory/polis). No upstream source is vendored.
+ * See docs/THIRD_PARTY_PROVENANCE.md and NOTICE.
+ */
+
 'use strict';
 
 /**
