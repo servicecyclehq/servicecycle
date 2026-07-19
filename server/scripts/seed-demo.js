@@ -172,14 +172,6 @@ async function _resetDemoAccount() {
     },
   }).catch(() => {});
 
-  // ── IR / thermography (#29, NFPA 70B 7.4) ─ asset-attached; assetId FK is
-  // no-action, so these MUST be cleared before asset.deleteMany() below, or the
-  // reset throws P2003 (thermography_surveys_assetId_fkey). Findings first, then
-  // surveys. Added 2026-07-19: the #29 thermography feature shipped without
-  // updating this reset chain, which broke every demo reseed. Sync w/ demoPrune.
-  await prisma.thermographyFinding.deleteMany({ where: filter }).catch(() => {});
-  await prisma.thermographySurvey.deleteMany({ where: filter }).catch(() => {});
-
   // ── Work-order / asset leaves ─────────────────────────────────────────────
   await prisma.alert.deleteMany({ where: filter }).catch(() => {});
   await prisma.testMeasurement.deleteMany({ where: filter }).catch(() => {});
@@ -1506,6 +1498,66 @@ async function _seedAccount() {
     description: 'C-phase cubicle 1 main bus joint showing delta-T 14 deg C above ambient at 62% load (NETA MTS Table 100.18: probable deficiency, repair as time permits -- 11-20 deg C over-ambient band)',
     correctiveAction: 'Clean and re-torque C-phase bus connection at next outage window; re-image under load to confirm resolution.',
     createdAt: addDays(now, -365),
+  } });
+
+  // IR / thermography surveys (#29, NFPA 70B:2023 7.4 / NETA MTS Table 100.18).
+  // Structured hot-spot records so /reports/thermography + the per-asset IR tab
+  // render. Survey A = the SWGR-1A-1 scan behind WO #10 / def5 (C-phase hot spot,
+  // linked). Below-threshold spots (severity null) persist for trend history.
+  // Added 2026-07-19: seed body previously created zero of these rows.
+  await prisma.thermographySurvey.create({ data: {
+    accountId: account.id,
+    assetId: assets['SWGR-1A-1'].id,
+    surveyDate: addDays(now, -365),
+    thermographerName: 'Carmen Rios',
+    thermographerQual: 'NETA Level II Thermographer',
+    cameraMake: 'FLIR', cameraModel: 'T540',
+    ambientTempC: 22.0, humidityPct: 48.0, emissivity: 0.95, reflectedTempC: 22.0, loadPercent: 62.0,
+    createdById: admin.id,
+    notes: 'Annual IR thermography, SWGR-1A lineup, scanned under 62% load. C-phase cubicle 1 main bus joint flagged; A/B phases within range. See linked deficiency for C-phase corrective action.',
+    findings: { create: [
+      {
+        accountId: account.id, assetId: assets['SWGR-1A-1'].id,
+        component: 'C-phase cubicle 1 main bus joint',
+        deltaT: 14.0, referenceType: 'AMBIENT', loadPercent: 62.0, emissivity: 0.95,
+        severity: 'RECOMMENDED', severityLabel: 'Probable deficiency - repair as time permits',
+        correctiveAction: 'Clean and re-torque C-phase bus connection at next outage window; re-image under load to confirm resolution.',
+        deficiencyId: def5.id,
+      },
+      {
+        accountId: account.id, assetId: assets['SWGR-1A-1'].id,
+        component: 'A-phase incoming lug',
+        deltaT: 6.0, referenceType: 'AMBIENT', loadPercent: 62.0, emissivity: 0.95,
+        severity: 'ADVISORY', severityLabel: 'Possible deficiency - investigate',
+        correctiveAction: 'Re-inspect A-phase lug at next scheduled scan; monitor for progression.',
+      },
+      {
+        accountId: account.id, assetId: assets['SWGR-1A-1'].id,
+        component: 'B-phase load-side connection',
+        deltaT: 0.7, referenceType: 'SIMILAR', loadPercent: 62.0, emissivity: 0.95,
+        severity: null, severityLabel: 'Within normal range',
+      },
+    ] },
+  } });
+
+  await prisma.thermographySurvey.create({ data: {
+    accountId: account.id,
+    assetId: assets['SWGR-1A-2'].id,
+    surveyDate: addDays(now, -30),
+    thermographerName: 'Carmen Rios',
+    thermographerQual: 'NETA Level II Thermographer',
+    cameraMake: 'FLIR', cameraModel: 'T540',
+    ambientTempC: 21.0, humidityPct: 45.0, emissivity: 0.95, reflectedTempC: 21.0, loadPercent: 55.0,
+    createdById: admin.id,
+    notes: 'Annual IR thermography, SWGR-1A Cubicle 2, scanned under 55% load. No hot spots above NETA MTS Table 100.18 thresholds; all bus joints and lugs within normal range.',
+    findings: { create: [
+      {
+        accountId: account.id, assetId: assets['SWGR-1A-2'].id,
+        component: 'Main bus joints (A/B/C phase)',
+        deltaT: 0.9, referenceType: 'SIMILAR', loadPercent: 55.0, emissivity: 0.95,
+        severity: null, severityLabel: 'Within normal range',
+      },
+    ] },
   } });
   await prisma.deficiency.create({ data: {
     accountId: account.id, assetId: assets['SWGR-2M'].id,

@@ -64,7 +64,13 @@ const BAD_DIRECTION = {
 const fmtDate = (d) => {
   if (!d) return '—';
   const dt = new Date(d);
-  return isNaN(dt) ? '—' : dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  if (isNaN(dt)) return '—';
+  const utc = dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 &&
+              dt.getUTCSeconds() === 0 && dt.getUTCMilliseconds() === 0;
+  return dt.toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    ...(utc ? { timeZone: 'UTC' } : {}),
+  });
 };
 
 const titleCase = (s) =>

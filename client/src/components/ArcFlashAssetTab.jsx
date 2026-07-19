@@ -50,7 +50,7 @@ const CALC_LABEL = { ieee_1584_2018: 'IEEE 1584-2018', lee_method: 'Lee method (
 const ENCLOSURE_LABEL = { panelboard: 'Panelboard', mcc: 'MCC', lv_switchgear: 'LV switchgear', mv_switchgear: 'MV switchgear', cable: 'Cable', open_air: 'Open air', other: 'Other' };
 const TEST_TYPE_LABEL = { relay_calibration: 'Relay calibration', breaker_trip_test: 'Breaker trip test', primary_injection: 'Primary injection', as_found_as_left: 'As-found / as-left', other: 'Other' };
 
-function fmtDate(d) { try { return d ? new Date(d).toLocaleDateString() : '—'; } catch { return '—'; } }
+function fmtDate(d) { try { if (!d) return '—'; const dt = new Date(d); if (Number.isNaN(dt.getTime())) return '—'; const utc = dt.getUTCHours()===0 && dt.getUTCMinutes()===0 && dt.getUTCSeconds()===0 && dt.getUTCMilliseconds()===0; return dt.toLocaleDateString(undefined, utc ? { timeZone: 'UTC' } : undefined); } catch { return '—'; } }
 function num(v, unit) { return (v == null || v === '') ? '—' : (unit ? `${v} ${unit}` : String(v)); }
 function yn(v) { return v == null ? '—' : (v ? 'Yes' : 'No'); }
 

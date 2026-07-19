@@ -121,7 +121,22 @@ registerSW({
         }
       });
     });
-    const check = () => { registration.update().catch(() => {}); };
+    const check = () => {
+      registration.update().catch((err) => {
+        // Do NOT swallow: a failing sw.js fetch (e.g. /sw.js re-gated behind the
+        // reverse-proxy auth -> 401, or a transient network error) silently pins
+        // the old worker so no update toast ever fires. Make it detectable.
+        try {
+          console.warn('[sw] update check failed:', err && err.message);
+          const t = window.localStorage && window.localStorage.getItem('servicecycle_token');
+          if (t) fetch('/api/errors/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+            body: JSON.stringify({ kind: 'sw-update-failed', message: String((err && err.message) || err) }),
+          }).catch(() => {});
+        } catch (_e) {}
+      });
+    };
     setInterval(check, 60 * 1000);
     window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
   },

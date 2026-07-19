@@ -169,5 +169,11 @@ export function fmtDate(d) {
   if (!d) return '—';
   const dt = new Date(d);
   if (Number.isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const isUtcMidnight =
+    dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 &&
+    dt.getUTCSeconds() === 0 && dt.getUTCMilliseconds() === 0;
+  return dt.toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+    ...(isUtcMidnight ? { timeZone: 'UTC' } : {}),
+  });
 }

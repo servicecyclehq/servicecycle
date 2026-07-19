@@ -7,7 +7,7 @@ import api from '../api/client';
 // so it's safe to mount unconditionally on any asset page.
 
 function hazColor(h) { return h === 'DANGER' ? 'var(--color-danger, #b91c1c)' : 'var(--color-warning, #c2410c)'; }
-function fmtDate(d) { try { return new Date(d).toLocaleDateString(); } catch { return ''; } }
+function fmtDate(d) { try { const dt = new Date(d); const utc = dt.getUTCHours()===0 && dt.getUTCMinutes()===0 && dt.getUTCSeconds()===0 && dt.getUTCMilliseconds()===0; return dt.toLocaleDateString(undefined, utc ? { timeZone: 'UTC' } : undefined); } catch { return ''; } }
 
 export default function ArcFlashTrend({ assetId }) {
   const [data, setData] = useState(null);
