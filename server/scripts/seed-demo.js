@@ -202,6 +202,9 @@ async function _resetDemoAccount() {
   await prisma.protectionCurve.deleteMany({ where: filter }).catch(() => {});
   await prisma.protectiveDevice.deleteMany({ where: filter }).catch(() => {});
   await prisma.arcFlashIncident.deleteMany({ where: filter }).catch(() => {});
+  // #29 IR/thermography (asset-attached; assetId FK is no-action) - clear before assets or reset throws P2003 (thermography_surveys_assetId_fkey). Re-applied 2026-07-19 (regressed by f98a3c2 IR-seed on a stale copy). Sync w/ demoPrune.
+  await prisma.thermographyFinding.deleteMany({ where: filter }).catch(() => {});
+  await prisma.thermographySurvey.deleteMany({ where: filter }).catch(() => {});
   await prisma.asset.deleteMany({ where: filter });
 
   // ── Hierarchy + site-scoped rows ──────────────────────────────────────────
