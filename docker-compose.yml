@@ -466,6 +466,12 @@ services:
       context: ./client
       dockerfile: Dockerfile
     container_name: servicecycle-client
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:5173/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
     # Pass-6 container hardening (dev) â€” relaxed read_only because vite
     # build writes to node_modules/.vite cache. Still drops Linux caps and
     # blocks privilege escalation. Production clients (compose.prod /
