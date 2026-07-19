@@ -1,6 +1,6 @@
 {
   "name": "servicecycle-client",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "license": "UNLICENSED",
   "description": "ServiceCycle React Client - ServiceCycle",
   "type": "module",

@@ -24,6 +24,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import Toast from '../components/Toast';
 import StudyAssetBinding from '../components/StudyAssetBinding';
 import ArcFlashIngestPanel from '../components/ArcFlashIngestPanel';
+import RedundancyImpactPanel from '../components/RedundancyImpactPanel';
 import DocumentsLibrary from './DocumentsLibrary';
 import BackLink, { useFromState } from '../components/BackLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -873,6 +874,9 @@ export default function SiteDetail() {
 
           <div style={{ padding: '14px 20px 0' }}>
             <ArcFlashIngestPanel siteId={site.id} canWrite={canWrite} />
+          </div>
+          <div style={{ padding: '0 20px 4px' }}>
+            <RedundancyImpactPanel siteId={site.id} assets={assets} />
           </div>
 
           {canWrite && studyFormOpen && (
