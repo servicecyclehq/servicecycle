@@ -6,14 +6,17 @@
  *   - server/scripts/seed-demo.js  ::  _resetDemoAccount()   (wipes the demo account's data)
  *   - server/lib/demoPrune.ts      ::  pruneAccount()        (deletes a whole tenant)
  *
- * A table whose foreign key to Asset is REQUIRED and NOT onDelete:Cascade will
- * block asset.deleteMany() with Prisma P2003 unless it is deleted first
- * (e.g. thermography_surveys_assetId_fkey). If the two chains disagree about
- * such a "blocking" table, a reseed/prune throws. That exact regression shipped
- * TWICE (2026-07-19) when the chains silently drifted, so this check FAILS when
- * they disagree on any blocking Asset-child. Optional (SetNull) and Cascade FKs
- * don't block, so they're intentionally ignored (no false positives on the
- * belt-and-suspenders deletes both chains already do).
+ * A model with a REQUIRED Prisma relation to Asset that is NOT onDelete:Cascade
+ * has a real DB foreign key that BLOCKS asset.deleteMany() with Prisma P2003
+ * unless it is deleted first (e.g. thermography_surveys_assetId_fkey). If the two
+ * chains disagree about such a "blocking" table, a reseed/prune throws. That exact
+ * regression shipped TWICE (2026-07-19) when the chains silently drifted, so this
+ * check FAILS when they disagree on any blocking Asset-child.
+ *
+ * Only REAL relations count: a bare `assetId String` scalar with no `@relation`
+ * (e.g. DrawingSymbolLink, the arc-flash scalar-FK records) has NO database FK, so
+ * it can't block and is ignored. Optional (Asset?) -> SetNull and Cascade also
+ * don't block, so they're ignored too. This keeps the guard free of false alarms.
  *
  * Pure static parse — no DB, no secrets. Exit 1 on drift.
  *   node server/scripts/check-reset-parity.js
@@ -31,8 +34,8 @@ const PRUNE  = process.env.PRUNE_PATH  || path.join(ROOT, 'lib', 'demoPrune.ts')
 const read = (p) => fs.readFileSync(p, 'utf8');
 const accessor = (m) => m.charAt(0).toLowerCase() + m.slice(1);
 
-// Blocking Asset-children: models whose assetId FK is REQUIRED (String, not String?)
-// and NOT onDelete:Cascade — these are the ones that FK-block asset.deleteMany().
+// Blocking Asset-children: models with a REQUIRED `<field> Asset @relation(...)`
+// (a real DB FK) that is NOT onDelete:Cascade — these actually block asset.deleteMany().
 function blockingAssetModels(schema) {
   const out = {}; // accessor -> model
   const re = /model\s+(\w+)\s*\{([\s\S]*?)\n\}/g;
@@ -40,11 +43,11 @@ function blockingAssetModels(schema) {
   while ((m = re.exec(schema))) {
     const name = m[1], body = m[2];
     if (name === 'Asset') continue;
-    const fk = body.match(/^\s*assetId\s+String(\??)/m);
-    if (!fk || fk[1] === '?') continue;                 // no FK, or optional (SetNull) -> can't block
-    const rel = body.match(/^\s*\w+\s+Asset\s+@relation\(([^)]*)\)/m);
-    const onDelete = rel ? (rel[1].match(/onDelete:\s*(\w+)/) || [, ''])[1] : '';
-    if (onDelete === 'Cascade') continue;               // cascades with the asset -> can't block
+    const rel = body.match(/^\s*\w+\s+Asset(\??)\s+@relation\(([^)]*)\)/m);
+    if (!rel) continue;                                  // no real relation -> no DB FK -> can't block
+    if (rel[1] === '?') continue;                        // optional relation -> SetNull -> doesn't block
+    const onDelete = (rel[2].match(/onDelete:\s*(\w+)/) || [, ''])[1];
+    if (onDelete === 'Cascade') continue;                // cascades with the asset -> doesn't block
     out[accessor(name)] = name;
   }
   return out;
@@ -89,13 +92,13 @@ for (const a of blockingSet) {
     continue;
   }
   // (b) covered in NEITHER — a blocking table nobody clears is a reseed time-bomb. WARN.
-  if (!s && !p) { warnings.push(`'${a}' (${blocking[a]}) — blocking Asset-child cleared in NEITHER reset (add to both, or confirm it cascades via a parent)`); continue; }
-  // (c) ORDER — cleared, but AFTER asset.deleteMany in a chain. WARN (may cascade via a parent).
+  if (!s && !p) { warnings.push(`'${a}' (${blocking[a]}) — blocking Asset-child cleared in NEITHER reset (add to both)`); continue; }
+  // (c) ORDER — cleared, but AFTER asset.deleteMany in a chain. WARN.
   if (seedIdx >= 0 && seedDel.indexOf(a) > seedIdx)  warnings.push(`seed-demo clears '${a}' AFTER asset.deleteMany`);
   if (pruneIdx >= 0 && pruneDel.indexOf(a) > pruneIdx) warnings.push(`demoPrune clears '${a}' AFTER asset.deleteMany`);
 }
 
-console.log(`blocking Asset-children (required, non-Cascade FK): ${[...blockingSet].sort().join(', ') || '(none)'}`);
+console.log(`blocking Asset-children (required, non-Cascade relation): ${[...blockingSet].sort().join(', ') || '(none)'}`);
 console.log(`  seed-demo clears: ${[...blockingSet].filter(inSeed).sort().join(', ') || '(none)'}`);
 console.log(`  demoPrune clears: ${[...blockingSet].filter(inPrune).sort().join(', ') || '(none)'}`);
 if (warnings.length) { console.warn('\n⚠️  warnings:'); for (const w of warnings) console.warn('  - ' + w); }
