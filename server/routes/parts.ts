@@ -200,12 +200,21 @@ router.post('/import', requireManager, upload.single('file'), async (req: any, r
     }
 
     // Confirm import: upsert parts + create account-wide inventory entries
+    // Batched read (mirrors the preview branch's findMany ~14 lines up): fetch
+    // all existing part ids once into a case-insensitive map instead of one
+    // findFirst per row; the map is updated in-loop on create so a partNumber
+    // repeated within the same CSV still resolves to the row created earlier.
+    const existingPartRows = await prisma.part.findMany({
+      where: { accountId },
+      select: { id: true, partNumber: true },
+    });
+    const partIdByNumber = new Map<string, string>(
+      existingPartRows.map((p: any) => [p.partNumber.toLowerCase(), p.id])
+    );
     let created = 0, updated = 0;
     for (const r of rows) {
-      const existing = await prisma.part.findFirst({
-        where: { accountId, partNumber: { equals: r.partNumber, mode: 'insensitive' } },
-        select: { id: true },
-      });
+      const existingId = partIdByNumber.get(r.partNumber.toLowerCase());
+      const existing = existingId ? { id: existingId } : null;
       if (existing) {
         await prisma.part.update({
           where: { id: existing.id },
@@ -249,6 +258,9 @@ router.post('/import', requireManager, upload.single('file'), async (req: any, r
             notes: r.notes ?? null,
           },
         });
+        // Keep the lookup map live so a partNumber repeated later in the same
+        // CSV resolves to this row (matches the old per-row findFirst).
+        partIdByNumber.set(r.partNumber.toLowerCase(), part.id);
         if (r.qtyOnHand > 0 || r.qtyMin != null) {
           await prisma.spareInventory.create({
             data: { accountId, partId: part.id, qtyOnHand: r.qtyOnHand ?? 0, qtyMin: r.qtyMin ?? null, location: r.location ?? null },

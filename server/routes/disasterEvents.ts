@@ -148,41 +148,52 @@ router.get('/regional', requireManager, async (req: any, res) => {
     // the requesting user (i.e., accounts in their org — for now, just the
     // requesting account's sites). In a multi-account OEM scenario, the OEM
     // would see all their customer accounts. For now we scope to self.
-    const enriched = await Promise.all(
-      systemEvents.map(async (ev: any) => {
-        // Count affected sites belonging to this account.
-        const mySites = await prisma.site.findMany({
-          where: {
-            id:         { in: ev.affectedSiteIds },
-            accountId,
-            archivedAt: null,
-          },
+    // Batched enrichment (was one site.findMany + one asset.count PER event):
+    // fetch every candidate site once, then one groupBy for the high-risk asset
+    // counts, and read per-event slices from in-memory maps below.
+    const allSiteIds = [
+      ...new Set(
+        systemEvents.flatMap((ev: any) =>
+          Array.isArray(ev.affectedSiteIds) ? ev.affectedSiteIds : []
+        )
+      ),
+    ];
+    const scopedSites = allSiteIds.length > 0
+      ? await prisma.site.findMany({
+          where: { id: { in: allSiteIds }, accountId, archivedAt: null },
           select: { id: true, name: true },
-        });
-
-        // Count assets at those sites with criticality 4–5 (high-risk).
-        const highRiskAssets = mySites.length > 0
-          ? await prisma.asset.count({
-              where: {
-                siteId:          { in: mySites.map((s) => s.id) },
-                accountId,
-                archivedAt:      null,
-                criticalityScore: { gte: 4 },
-              },
-            })
-          : 0;
-
-        return {
-          ...ev,
-          // SECURITY: strip the cross-tenant global site list on system events;
-          // expose only the caller's own affected sites (myAffectedSites below).
-          ...(ev.accountId === null ? { affectedSiteIds: mySites.map((s) => s.id) } : {}),
-          myAffectedSites:     mySites,
-          myAffectedSiteCount: mySites.length,
-          myHighRiskAssets:    highRiskAssets,
-        };
-      })
+        })
+      : [];
+    const scopedSiteIds = scopedSites.map((s) => s.id);
+    const highRiskRows = scopedSiteIds.length > 0
+      ? await prisma.asset.groupBy({
+          by: ['siteId'],
+          where: { siteId: { in: scopedSiteIds }, accountId, archivedAt: null, criticalityScore: { gte: 4 } },
+          _count: { _all: true },
+        })
+      : [];
+    const highRiskBySite = new Map<string, number>(
+      highRiskRows.map((r: any) => [r.siteId, r._count._all])
     );
+    const enriched = systemEvents.map((ev: any) => {
+      const eventSiteIds = new Set(
+        Array.isArray(ev.affectedSiteIds) ? ev.affectedSiteIds : []
+      );
+      const mySites = scopedSites.filter((s) => eventSiteIds.has(s.id));
+      const highRiskAssets = mySites.reduce(
+        (n, s) => n + (highRiskBySite.get(s.id) || 0),
+        0
+      );
+      return {
+        ...ev,
+        // SECURITY: strip the cross-tenant global site list on system events;
+        // expose only the caller's own affected sites (myAffectedSites below).
+        ...(ev.accountId === null ? { affectedSiteIds: mySites.map((s) => s.id) } : {}),
+        myAffectedSites:     mySites,
+        myAffectedSiteCount: mySites.length,
+        myHighRiskAssets:    highRiskAssets,
+      };
+    });
 
     // Only return events that affect at least one of our sites (or all if
     // the account has no sites yet — show everything so they're aware).
