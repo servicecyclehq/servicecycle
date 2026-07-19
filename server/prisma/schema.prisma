@@ -410,6 +410,9 @@ model Account {
 
   @@index([enterpriseGroupId])
   @@map("accounts")
+  @@index([partnerOrgId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([assignedRepId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([fallbackRepId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Async ingest jobs (#2) ────────────────────────────────────────────────────
@@ -989,6 +992,10 @@ model Asset {
   @@index([positionId])
   @@index([fedFromAssetId])
   @@map("assets")
+  @@index([ownerId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([siteId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([buildingId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([areaId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Compliance Standards ─────────────────────────────────────────────────────
@@ -1108,6 +1115,7 @@ model MaintenanceSchedule {
   @@index([accountId, isActive, nextDueDate])
   @@index([assetId])
   @@map("maintenance_schedules")
+  @@index([taskDefinitionId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Work Orders ──────────────────────────────────────────────────────────────
@@ -1203,6 +1211,7 @@ model WorkOrder {
   @@index([assignedUserId])
   @@index([assignedTechId]) // 2026-07-08 audit fix W1-L13: missing index
   @@map("work_orders")
+  @@index([quoteRequestId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Work-order comments (A4, 2026-07-05) ──────────────────────────────────
@@ -1234,6 +1243,7 @@ model WorkOrderComment {
   @@index([accountId])
   @@index([workOrderId, createdAt])
   @@map("work_order_comments")
+  @@index([authorId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Test Measurements ────────────────────────────────────────────────────────
@@ -1332,6 +1342,7 @@ model Deficiency {
   @@index([assetId])
   @@index([workOrderId])
   @@map("deficiencies")
+  @@index([resolvedById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Incident / protective-device-operation log (#24, NFPA 70B EMP element 9) ──
@@ -1483,6 +1494,7 @@ model SystemStudy {
   @@index([accountId, expiresAt])
   @@index([siteId, studyType])
   @@map("system_studies")
+  @@index([supersededById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Arc-flash / system-study asset coverage (#25) ─────────────────────────────
@@ -1666,6 +1678,7 @@ model AuditRecommendation {
   @@index([accountId, status, dueDate])
   @@index([auditVisitId])
   @@map("audit_recommendations")
+  @@index([assignedToUserId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Lab Samples ──────────────────────────────────────────────────────────────
@@ -1768,6 +1781,7 @@ model StandardRevisionAlert {
   @@index([accountId, acknowledgedAt])
   @@index([standardId])
   @@map("standard_revision_alerts")
+  @@index([acknowledgedById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Compliance Snapshots ─────────────────────────────────────────────────────
@@ -1806,6 +1820,9 @@ model ComplianceSnapshot {
 
   @@index([accountId, createdAt(sort: Desc)])
   @@map("compliance_snapshots")
+  @@index([siteId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([generatedById]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([auditVisitId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // Missing-access / open-items blocker log. Assets that couldn't be fully
@@ -1907,6 +1924,7 @@ model Document {
   // download triggers a full table scan.
   @@index([accountId, filePath])
   @@map("documents")
+  @@index([uploadedBy]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Document (photo) annotation (A4, 2026-07-05) ──────────────────────────
@@ -1939,6 +1957,7 @@ model DocumentAnnotation {
   @@index([accountId])
   @@index([documentId])
   @@map("document_annotations")
+  @@index([authorId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── EDMS Phase 1 scaffold (2026-07-05) ─────────────────────────────────────
@@ -2112,6 +2131,8 @@ model Communication {
   @@index([accountId])
   @@index([assetId])
   @@map("communications")
+  @@index([createdBy]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([contractorId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Alerts ───────────────────────────────────────────────────────────────────
@@ -2335,6 +2356,8 @@ model ConsultantAccess {
   @@index([accountId])
   @@index([consultantId])
   @@map("consultant_accesses")
+  @@index([grantedById]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([revokedById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── User Invites ─────────────────────────────────────────────────────────────
@@ -2356,6 +2379,7 @@ model UserInvite {
   @@index([accountId])
   @@index([token])
   @@map("user_invites")
+  @@index([invitedBy]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Refresh Tokens ───────────────────────────────────────────────────────────
@@ -2447,6 +2471,7 @@ model CustomFieldDefinition {
   @@index([accountId])
   @@index([accountId, archivedAt, displayOrder])
   @@map("custom_field_definitions")
+  @@index([createdById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 model CustomFieldValue {
@@ -2568,6 +2593,7 @@ model OutboundWebhookDLQ {
   @@index([createdAt])
   @@index([deliveryId])
   @@map("outbound_webhook_dlq")
+  @@index([webhookEndpointId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Notification Log ─────────────────────────────────────────────────────────
@@ -2597,6 +2623,7 @@ model NotificationLog {
   @@index([assetId, sentAt(sort: Desc)])
   @@index([sentAt]) // prune cron range query
   @@map("notification_logs")
+  @@index([userId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // === RenderError ==============================================================
@@ -2745,6 +2772,8 @@ model LotoProc {
   @@index([assetId])
   @@index([accountId, status])
   @@map("loto_procs")
+  @@index([approvedById]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([createdById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // One row per energy source that must be isolated before work begins.
@@ -2861,6 +2890,7 @@ model DisasterEvent {
   @@index([resolvedAt])
   @@index([nwsAlertId])
   @@map("disaster_events")
+  @@index([declaredBy]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // --- Import Webhook Delivery Log -----------------------------------------------
@@ -2927,6 +2957,7 @@ model AssetTemplateTask {
 
   @@unique([templateId, taskDefinitionId])
   @@map("asset_template_tasks")
+  @@index([taskDefinitionId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Service Rate Card (Task 24 — Fleet Modernization Forecast) ───────────────
@@ -3163,6 +3194,8 @@ model SsoLoginState {
 
   @@index([expiresAt])
   @@map("sso_login_states")
+  @@index([accountId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([connectionId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // One-time token handoff so real JWTs never appear in a redirect URL. The SPA
@@ -3183,6 +3216,7 @@ model SsoHandoff {
   @@index([userId])
   @@index([expiresAt])
   @@map("sso_handoffs")
+  @@index([accountId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // SCIM webhook idempotency/replay ledger. eventKey is sha256 of the raw event
@@ -3300,6 +3334,7 @@ model TelemetryNotification {
   @@index([assetId, acknowledgedAt])
   @@index([channelId, acknowledgedAt])
   @@map("telemetry_notifications")
+  @@index([acknowledgedById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 // ─── Arc-flash Slice 2: ingest + gap-analysis ────────────────────────────────
@@ -3866,6 +3901,7 @@ model AssetFeed {
   @@index([loadAssetId])
   @@index([sourceAssetId])
   @@map("asset_feeds")
+  @@index([siteId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 /// #29 NFPA 70B:2023 7.4 / NETA MTS-2023 Table 100.18 structured IR thermography.
@@ -3909,6 +3945,9 @@ model ThermographySurvey {
 
   @@index([accountId, assetId, surveyDate])
   @@map("thermography_surveys")
+  @@index([assetId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([sourceDocumentId]) // FK-index audit 2026-07-19 (DB_HEALTH)
+  @@index([createdById]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
 
 /// One hot spot from a survey. Below-threshold spots are persisted too
@@ -3942,4 +3981,5 @@ model ThermographyFinding {
   @@index([accountId, assetId])
   @@index([surveyId])
   @@map("thermography_findings")
+  @@index([assetId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
