@@ -31,6 +31,38 @@ const MAX_ATTEMPTS = Number(process.env.AF_INGEST_MAX_ATTEMPTS) || 3;
 // past that so we never requeue a job that is merely slow.
 const STALE_MS = Number(process.env.AF_INGEST_STALE_MS) || 12 * 60 * 1000;
 const POLL_MS = Number(process.env.AF_INGEST_WORKER_POLL_MS || process.env.INGEST_WORKER_POLL_MS || 4000);
+// --- overall extraction wall-clock cap (Block B fix) -------------------------
+// Each provider AI call is already bounded (see lib/ai PROVIDER_TIMEOUT_MS /
+// PDF_TIMEOUT_MS), but a large multi-chunk PDF makes SEVERAL sequential calls,
+// each of which can cascade across providers on timeout, so the AGGREGATE
+// extraction has no bound of its own. Without a cap, one pathological document
+// holds this single-flight, serial worker for many minutes and starves every
+// other queued ingest (head-of-line blocking) -- and because stale-recovery
+// runs inside the same _running-gated tick, it cannot intervene mid-flight.
+// Cap one attempt below STALE_MS so a runaway fails fast, is surfaced (A2), and
+// frees the worker. NOTE: this does not cancel the orphaned work (JS cannot kill
+// a promise); the per-call timeouts wind it down while the worker moves on.
+const EXTRACT_TIMEOUT_MS = Number(process.env.AF_INGEST_EXTRACT_TIMEOUT_MS) || 8 * 60 * 1000;
+
+class ArcFlashIngestTimeout extends Error {
+  constructor(ms: number) {
+    super(`arc-flash extraction exceeded ${Math.round(ms / 1000)}s wall-clock cap`);
+    this.name = 'ArcFlashIngestTimeout';
+  }
+}
+
+// Reject with ArcFlashIngestTimeout if `work` has not settled within `ms`. Does
+// not cancel `work`; attaches a handler so a late settle never becomes an
+// unhandledRejection.
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new ArcFlashIngestTimeout(ms)), ms);
+    work.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
 
 // Atomically claim the oldest queued ingest. The single UPDATE ... WHERE id =
 // (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1) is race-free across concurrent
@@ -61,18 +93,24 @@ async function runArcFlashIngest(ingest: any, extractor?: any): Promise<'done' |
   try {
     if (!ingest.fileKey) throw new Error('ingest has no stored fileKey — cannot process asynchronously');
     const buffer = await downloadFile(ingest.fileKey, ingest.accountId);
-    await processArcFlashIngestExtraction(ingest, buffer, { extractor });
+    await withTimeout(processArcFlashIngestExtraction(ingest, buffer, { extractor }), EXTRACT_TIMEOUT_MS);
     return 'done';
   } catch (e: any) {
-    const msg = e && e.message ? String(e.message).slice(0, 500) : 'arc-flash ingest failed';
-    const terminal = (ingest.attempts || 1) >= MAX_ATTEMPTS;
+    const isTimeout = !!(e && e.name === 'ArcFlashIngestTimeout');
+    const rawMsg = e && e.message ? String(e.message).slice(0, 500) : 'arc-flash ingest failed';
+    // A timed-out attempt is TERMINAL, not requeued: re-running the same heavy
+    // document would just time out again and re-starve the single-flight worker.
+    const terminal = isTimeout || (ingest.attempts || 1) >= MAX_ATTEMPTS;
+    const msg = isTimeout
+      ? rawMsg + '. The document may be too large or complex to extract in one pass -- try splitting it into smaller PDFs.'
+      : rawMsg;
     await prisma.arcFlashIngest.update({
       where: { id: ingest.id },
       data: terminal
         ? { status: 'failed', error: msg }
         : { status: 'queued', error: msg, startedAt: null },
     }).catch(() => {});
-    if (terminal) console.error(`[arcFlashIngestWorker] ingest ${ingest.id} failed permanently:`, msg);
+    if (terminal) console.error(`[arcFlashIngestWorker] ingest ${ingest.id} failed ${isTimeout ? '(timeout)' : 'permanently'}:`, msg);
     return 'failed';
   }
 }
