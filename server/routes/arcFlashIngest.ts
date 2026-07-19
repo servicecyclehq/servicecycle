@@ -398,7 +398,7 @@ router.get('/ingests', async (req: any, res: any) => {
     if (req.query.siteId) where.siteId = String(req.query.siteId);
     const rows = await prisma.arcFlashIngest.findMany({
       where, orderBy: { createdAt: 'desc' }, take: 100,
-      select: { id: true, siteId: true, sourceType: true, fileName: true, status: true, overallBand: true, readyBusCount: true, totalBusCount: true, extractionMethod: true, producedStudyId: true, createdAt: true, confirmedAt: true },
+      select: { id: true, siteId: true, sourceType: true, fileName: true, status: true, error: true, overallBand: true, readyBusCount: true, totalBusCount: true, extractionMethod: true, producedStudyId: true, createdAt: true, confirmedAt: true },
     });
     res.json({ success: true, data: { ingests: rows } });
   } catch (e) {
