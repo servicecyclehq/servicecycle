@@ -320,13 +320,18 @@ router.post('/ingest', requireManager, (req: any, res: any) => {
   upload.single('file')(req, res, async (err: any) => {
     if (err) return res.status(400).json({ success: false, error: err.message || 'Upload failed' });
     try {
-      const { siteId } = req.body;
+      const rawSiteId = req.body.siteId ? String(req.body.siteId).trim() : '';
+      const newSiteName = req.body.newSiteName ? String(req.body.newSiteName).trim().slice(0, 200) : '';
       const sourceType = req.body.sourceType === 'study_report' ? 'study_report' : 'one_line';
-      if (!siteId) return res.status(400).json({ success: false, error: 'siteId is required' });
+      if (!rawSiteId && !newSiteName) return res.status(400).json({ success: false, error: 'Pick an existing site or provide a name for a new one' });
       if (!req.file) return res.status(400).json({ success: false, error: 'Upload a PDF study report or a PNG/JPG one-line image' });
 
-      const site = await prisma.site.findFirst({ where: { id: siteId, accountId: req.user.accountId }, select: { id: true } });
-      if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
+      let siteId = '';
+      if (rawSiteId) {
+        const site = await prisma.site.findFirst({ where: { id: rawSiteId, accountId: req.user.accountId }, select: { id: true } });
+        if (!site) return res.status(404).json({ success: false, error: 'Site not found' });
+        siteId = site.id;
+      }
 
       let fileKey: string | null = null;
       try {
@@ -347,6 +352,22 @@ router.post('/ingest', requireManager, (req: any, res: any) => {
         return res.status(502).json({ success: false, error: 'Could not store the uploaded file for background processing — please retry.' });
       }
 
+      // Auto-onboarding: if the caller supplied a newSiteName instead of an
+      // existing siteId, create the Site from the imported document now that the
+      // file is safely stored. Dedupe case-insensitively against the account's
+      // sites so re-importing the same drawing reuses the site, not a duplicate.
+      if (!siteId) {
+        const existing = await prisma.site.findFirst({ where: { accountId: req.user.accountId, name: { equals: newSiteName, mode: 'insensitive' } }, select: { id: true } });
+        if (existing) {
+          siteId = existing.id;
+        } else {
+          const created = await prisma.site.create({ data: { accountId: req.user.accountId, name: newSiteName }, select: { id: true } });
+          siteId = created.id;
+          await logActivity(req.user.id, req.user.accountId, 'site_auto_created_from_import', { siteId, name: newSiteName, via: 'arc_flash_ingest', sourceType });
+        }
+      }
+      if (!siteId) return res.status(400).json({ success: false, error: 'Could not resolve a site for this import' });
+
       const ingest = await prisma.arcFlashIngest.create({
         data: {
           accountId: req.user.accountId, siteId, uploadedById: req.user.id, sourceType,
@@ -361,7 +382,7 @@ router.post('/ingest', requireManager, (req: any, res: any) => {
       // (-> needs_review / failed).
       return res.status(202).json({
         success: true,
-        data: { ingestId: ingest.id, status: 'queued' },
+        data: { ingestId: ingest.id, status: 'queued', siteId },
       });
     } catch (e) {
       console.error('arc-flash ingest error:', e);

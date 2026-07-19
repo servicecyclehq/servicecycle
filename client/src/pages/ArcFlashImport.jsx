@@ -24,6 +24,7 @@ export default function ArcFlashImport() {
   const [file, setFile] = useState(null);
   const [sites, setSites] = useState([]);
   const [siteId, setSiteId] = useState('');
+  const [newSiteName, setNewSiteName] = useState('');
   const [sourceType, setSourceType] = useState('study_report');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -72,12 +73,15 @@ export default function ArcFlashImport() {
     e.preventDefault();
     setErr(''); setResult(null); setPhase('queued');
     if (!file) { setErr('Choose a PDF/Word study or a PNG/JPG one-line first.'); return; }
-    if (!siteId) { setErr('Pick the site this study belongs to.'); return; }
+    const creatingSite = siteId === '__new__';
+    if (!creatingSite && !siteId) { setErr('Pick the site this study belongs to, or choose "+ New site".'); return; }
+    if (creatingSite && !newSiteName.trim()) { setErr('Enter a name for the new site.'); return; }
     setBusy(true);
     try {
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('siteId', siteId);
+      if (creatingSite) fd.append('newSiteName', newSiteName.trim());
+      else fd.append('siteId', siteId);
       fd.append('sourceType', sourceType);
       // /ingest returns 202 { ingestId, status:'queued' } immediately; the heavy
       // native-PDF extraction runs in arcFlashIngestWorker. Poll for the result
@@ -90,7 +94,7 @@ export default function ArcFlashImport() {
       setResult({
         ingestId: enq.ingestId, status: ing.status,
         totalBusCount: ing.totalBusCount, readyBusCount: ing.readyBusCount,
-        warnings: [], siteId,
+        warnings: [], siteId: enq.siteId || ing.siteId || siteId,
       });
       if (ing.status === 'failed') setErr(ing.error || 'Extraction failed — try a clearer file.');
     } catch (e2) {
@@ -129,7 +133,11 @@ export default function ArcFlashImport() {
             <select value={siteId} onChange={e => setSiteId(e.target.value)} style={{ width: '100%', maxWidth: 320 }}>
               <option value="">— pick a site —</option>
               {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <option value="__new__">+ New site (create from this document)</option>
             </select>
+            {siteId === '__new__' && (
+              <input type="text" value={newSiteName} onChange={e => setNewSiteName(e.target.value)} placeholder="New site name (e.g. from the drawing title block)" style={{ width: '100%', maxWidth: 320, marginTop: 8 }} />
+            )}
           </div>
 
           <div>
