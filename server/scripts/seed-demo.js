@@ -534,10 +534,13 @@ async function _seedAccount() {
   // reproducible and survives any future default flip.
   await prisma.accountSetting.createMany({
     data: [
-      ...['dga_import', 'thermography_import',
+      ...['dga_import',
         'enterprise_trust', 'neta_full_battery',
       ].map((f) => ({ accountId: account.id, key: `feature.${f}`, value: 'false' })),
       { accountId: account.id, key: 'feature.arc_flash_studies', value: 'true' },
+      // IR/thermography ON for the demo so the per-asset IR tab + NFPA 70B 7.4 survey
+      // surfaces stay visible across reseeds (matches the live-verified IR build).
+      { accountId: account.id, key: 'feature.thermography_import', value: 'true' },
       // Dustin approved (2026-07): QEMW wallet ON for the demo only — the QEMW
       // cert-wallet page + the 60d/14d expiry-alert cron have real, varied
       // ContractorTech credential data seeded below to show off.
