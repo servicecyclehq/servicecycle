@@ -60,4 +60,37 @@ on your end never silently loses an event.
 
 Forward a test report to your account's dedicated reports address and ServiceCycle
 ingests it automatically: the assets and readings appear as cards, and the sender
-gets an acknowledgement. It's the ze
+gets an acknowledgement. It's the zero-click ingestion path — see *Imports* for how
+matching and auto-commit behave. The address and inbound webhook are configured
+here.
+
+## Common workflows
+
+**"Sync assets from our system nightly."** Create an API key, read the OpenAPI
+spec, and write against `/api/v1` — the same validation and scoping as the app.
+
+**"Notify our ticketing system when something goes overdue."** Register a webhook,
+verify the HMAC signature on your side, and act on the event payload.
+
+**"Make routine reports flow in automatically."** Use the email-in address; no API
+work required.
+
+**"Connect our condition monitoring platform."** Create a write-scoped API key and
+point your edge gateway or cloud bridge at `POST /api/v1/telemetry/readings` with
+batched readings. Configure warn/critical thresholds per channel via
+`POST /api/v1/telemetry/channels` and ServiceCycle handles the rest — condition
+escalation, dashboard alerts, and arc-flash re-study flags.
+
+## When something looks wrong
+
+**API calls return unauthorized.** Confirm you're sending the key as a bearer
+token and that it hasn't expired or been revoked; you can issue a fresh key under
+Settings.
+
+**Webhook deliveries aren't arriving.** Check that the endpoint is HTTPS and
+reachable, and look at the dead-letter queue — failed deliveries land there with
+the last error so you can fix and replay them.
+
+**The signature won't verify.** Make sure you're computing HMAC-SHA256 over the raw
+request body with the endpoint's secret; verifying against a re-serialized body is
+the usual culprit.

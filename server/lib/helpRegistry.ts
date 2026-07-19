@@ -122,6 +122,22 @@ const MODULE_INDEX = Object.freeze([
     title:        'Arc Flash',
     description:  'Uploading IEEE 1584 studies, AI-assisted data extraction, per-asset PPE and incident-energy labels, AFX export, and the incident register.',
   },
+  // System-studies cluster: importing topology, redundancy analysis, and IR surveys.
+  {
+    slug:         'one-line-topology',
+    title:        'One-Line Import & Topology',
+    description:  'Import a one-line diagram or study, extract buses and power-path topology, review the IEEE 1584 gap analysis, and confirm to create assets and the multi-source feed graph.',
+  },
+  {
+    slug:         'redundancy',
+    title:        'Redundancy Impact',
+    description:  'What breaks if you drop a distribution side or a single source: which loads stay powered, which lose redundancy, and which go dark, by independent durable source paths.',
+  },
+  {
+    slug:         'thermography',
+    title:        'IR Thermography',
+    description:  'Structured infrared thermography surveys (NFPA 70B 7.4): capture from an asset, grade hot spots against NETA Table 100.18, track component trends, and produce the evidence report.',
+  },
   {
     slug:         'settings',
     title:        'Settings',

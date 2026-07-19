@@ -65,6 +65,28 @@ The multipliers and thresholds are engineering judgment calibrated against fleet
 outcomes, not bright-line rules in any single standard. Treat the score as a
 ranked planning signal, not a prediction of a specific failure date.
 
+## Book depreciation vs. functional life (a CFO question)
+
+Your accounting depreciation schedule and ServiceCycle's modernization-risk clock
+are answering two different questions, and they're supposed to disagree.
+
+Electrical distribution equipment is typically depreciated for tax/accounting
+purposes on a much shorter schedule than it actually lasts — under IRS MACRS,
+most electrical switchgear and distribution equipment falls in a 15-year class
+life. That's a bookkeeping convention: it says nothing about whether the
+equipment still works. ServiceCycle's base-life figures (e.g. ~30 years for MV
+and LV switchgear, per ASHE/AHA facility-equipment guidance and the IEEE/ANSI
+standards cited above) describe *functional* life — how long the equipment is
+expected to keep performing safely with normal maintenance.
+
+**In plain terms:** a switchgear lineup can be fully depreciated to zero book
+value on the balance sheet at year 15 while ServiceCycle still shows it healthy
+and mid-life, because it's tracking condition and engineering life expectancy,
+not tax basis. Neither number is wrong — they're not measuring the same thing.
+When a modernization-risk score climbs, that's a signal about physical
+condition and expected remaining service life, independent of what the
+equipment is worth on the books.
+
 ## Forecast ranges & budget horizons
 
 ServiceCycle turns the risk score into *when* to plan, not a promise of when
@@ -103,4 +125,14 @@ flags gaps before they bite:
 - IR thermographer certification
 - training status
 
-Each credential shows as **valid**, **expiring** (wi
+Each credential shows as **valid**, **expiring** (within 60 days), or
+**expired**. The wallet also computes a **coverage gap**: when upcoming jobs that
+require a certified tech have no qualified, in-date technician available, it warns
+you so you can schedule training or assign a contractor before the work comes due.
+
+## A note on accuracy
+
+These scores, ratings, and forecasts are estimates built from your recorded data
+and published standards. They are designed to help you prioritize and plan - not
+to replace an engineering study, a manufacturer's guidance, or the judgment of a
+qualified person. Verify anything you would stake a safety or budget decision on.

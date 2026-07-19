@@ -76,3 +76,32 @@ Unresolved incidents feed directly into the asset's risk score. An open arc-flas
 or fire/flood incident is treated as evidence that the asset is operating in an
 elevated-risk state, which tightens its condition rating and appears in the audit
 trail an insurer or PE reviewer will see.
+
+**Logging an incident:** Open the asset → Incident Log tab → Log incident. Pick
+the event type, set the date, add a note, then save. The log entry appears
+immediately in the asset's history and in the account-wide incident register
+(accessible via the Compliance section of Reports).
+
+**Resolving an incident:** Once the condition has been corrected — the root cause
+fixed, the study updated, or the risk controlled — open the log entry and mark it
+resolved. This stamps the resolution date and removes the entry from the
+unresolved count.
+
+**Who should log incidents:** any user with write access to the asset. Field
+technicians using Field Mode can log incidents directly from their device at the
+time of discovery — this is the recommended workflow, since the log entry
+preserves the as-found timestamp rather than being back-filled.
+
+## When something looks wrong
+
+**An asset is C3 and I didn't set it that way.** It most likely auto-promoted from
+two or more missed cycles (NFPA 70B 9.3.1). Catch up the maintenance and record a
+completed cycle to clear it.
+
+**Nameplate scan came back mostly blank or low-confidence.** The photo may be
+glare-washed or angled. Re-shoot square-on with even light, or type the fields in
+manually — the scan is a convenience, never a requirement.
+
+**A report didn't attach to the asset I expected.** The serial on the report
+probably didn't match. Confirm the asset on the import preview screen, or correct
+the serial on the asset so the next report matches cleanly.
