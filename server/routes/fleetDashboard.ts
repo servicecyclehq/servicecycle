@@ -447,7 +447,7 @@ router.get('/accounts/:id', async (req, res) => {
         prisma.workOrder.findMany({
           where: { accountId: targetAccountId, status: 'COMPLETE' },
           select: {
-            id: true, title: true, completedDate: true, asLeftCondition: true,
+            id: true, workOrderType: true, completedDate: true, asLeftCondition: true,
             asset: { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } },
           },
           orderBy: { completedDate: 'desc' },
@@ -473,7 +473,7 @@ router.get('/accounts/:id', async (req, res) => {
       overdueSchedules: withAssetName(overdueSchedules),
       immediateDeficiencies: withAssetName(immediateDeficiencies),
       serviceOpportunities: withAssetName(serviceOps),
-      recentWorkOrders: withAssetName(recentWorkOrders),
+      recentWorkOrders: withAssetName(recentWorkOrders).map((w: any) => ({ ...w, title: String(w.workOrderType || 'Work order').split('_').map((s: string) => s.charAt(0) + s.slice(1).toLowerCase()).join(' ') })),
       topAssets: topAssets.sort((a: any, b: any) => b._count.deficiencies - a._count.deficiencies).map((a: any) => ({ ...a, name: assetLabel(a, a.id) })),
     });
   } catch (err: any) {
