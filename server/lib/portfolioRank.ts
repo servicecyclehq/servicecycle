@@ -88,10 +88,13 @@ async function collectRawMetrics(prisma: any, accountIds: string[]) {
 
   // Maturity needs the full gap per account (same per-account pass fleet already does).
   const gapByAccount = new Map<string, any>();
-  await Promise.all(accountIds.map(async (id) => {
+  const CHUNK = 8;
+  for (let __i = 0; __i < accountIds.length; __i += CHUNK) {
+  await Promise.all(accountIds.slice(__i, __i + CHUNK).map(async (id) => {
     try { gapByAccount.set(id, await buildComplianceGap(prisma, id, { limit: Number.MAX_SAFE_INTEGER })); }
     catch (e: any) { gapByAccount.set(id, null); }
   }));
+  }
 
   const raw = new Map<string, any>();
   for (const id of accountIds) {

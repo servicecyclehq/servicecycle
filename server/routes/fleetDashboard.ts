@@ -284,7 +284,10 @@ router.get('/path-to-100', async (req, res) => {
 
     // Per-account gap. limit:3 keeps each payload to its top actions; the
     // summary numbers (rate, total actions, breakdown) are always complete.
-    const rows = await Promise.all(accounts.map(async (a: any) => {
+    const CHUNK = 8;
+    const rows: any[] = [];
+    for (let __i = 0; __i < accounts.length; __i += CHUNK) {
+    const __part = await Promise.all(accounts.slice(__i, __i + CHUNK).map(async (a: any) => {
       try {
         const gap = await buildComplianceGap(prisma, a.id, { limit: 3 });
         return {
@@ -306,6 +309,8 @@ router.get('/path-to-100', async (req, res) => {
         return { accountId: a.id, companyName: a.companyName, error: true, overallRate: null, totalActions: null };
       }
     }));
+    rows.push(...__part);
+    }
 
     // Rank: worst compliance first (most to gain), then most actions.
     rows.sort((x: any, y: any) => {
