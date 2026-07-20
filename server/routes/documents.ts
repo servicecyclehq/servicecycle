@@ -387,7 +387,7 @@ router.get('/asset/:assetId', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const accountId = req.user.accountId;
-    const { q, docType, siteId, assetId } = req.query;
+    const { q, docType, siteId, assetId } = req.query; const take = Math.min(Math.max(parseInt(String(req.query.limit ?? '300'), 10) || 300, 1), 500);
 
     if (docType && !isValidDocType(docType)) {
       return res.status(400).json({ success: false, error: 'Invalid docType filter' });
@@ -420,7 +420,7 @@ router.get('/', async (req, res) => {
         },
       },
       orderBy: [{ uploadedAt: 'desc' }],
-      take: 300,
+      take,
     });
 
     const data = docs.map((d) => ({

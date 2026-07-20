@@ -358,7 +358,7 @@ router.get('/multi-year-plan', requireManager, async (req: any, res: any) => {
 // Response: application/pdf with Content-Disposition: attachment and an
 // X-EMP-Document-Id header carrying the ephemeral document UUID (useful for
 // correlating a downloaded file with a support request).
-router.get('/emp', async (req: any, res) => {
+router.get('/emp', requireManager, async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
 

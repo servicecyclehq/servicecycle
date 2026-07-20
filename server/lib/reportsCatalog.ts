@@ -271,7 +271,7 @@ async function buildArcFlashCoverageReport(prisma: any, accountId: string, _opts
     }),
   ]);
 
-  const covered = new Set(studyAssets.map((sa: any) => sa.assetId));
+  const activeAssetIds = new Set(assets.map((a: any) => a.id)); const covered = new Set(studyAssets.map((sa: any) => sa.assetId).filter((id: any) => activeAssetIds.has(id)));
   const sites = await siteNameMap(prisma, accountId);
   const bySite = new Map<string, any>();
 
