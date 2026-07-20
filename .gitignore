@@ -128,3 +128,6 @@ data/jx.txt
 /Resume_Defense_CheatSheet.docx
 /COMPETITOR_PAIN_POINT_INTEL_2026-07-04.md
 /job-watch/
+
+# Codebase-audit bookkeeping (not app code; kept out of the deploy path)
+.codebase-audit-state.json
