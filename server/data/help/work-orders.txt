@@ -11,9 +11,9 @@ that drive the next round of work.
 jobs. The priority queue floats the most urgent work — overdue tasks and C3
 assets — to the top so you can see what to do next at a glance.
 
-**A work-order detail page** holds the visit's test measurements, its deficiency
-findings, the as-found and as-left condition, and the NETA decal applied to the
-equipment.
+**A work-order detail page** holds the visit's test conditions and instruments,
+its test measurements, its deficiency findings, any lab samples, the as-found and
+as-left condition, and the NETA decal applied to the equipment.
 
 ## As-found / as-left condition
 
@@ -22,16 +22,31 @@ arrival) and **as left** (the state on completion). Capturing both is what makes
 test history meaningful: it shows whether a visit actually moved the asset's
 condition, and it feeds the asset's governing condition and trend.
 
+## Test conditions & instruments
+
+Each job records the ambient temperature and humidity it was performed under and the
+calibrated instruments used, because the standards require them for a result to mean
+anything. NETA expects instruments calibrated within 12 months and NIST-traceable,
+so the instrument list is part of the evidence, not an afterthought.
+
 ## Test measurements
 
 Each measurement records what was tested (insulation resistance, contact
 resistance, turns ratio, and so on), the as-found and as-left values with units,
 the expected range from the governing standard, and a pass/fail result. A failing
 result automatically generates a deficiency so nothing falls through the cracks.
-Test conditions — ambient temperature, humidity, the calibrated instruments used —
-are captured alongside, because the standards require them for the result to mean
-anything. Deleting a measurement is a soft-delete: the row is retained for
-forensic integrity rather than erased.
+Deleting a measurement is a soft-delete: the row is retained for forensic integrity
+rather than erased.
+
+## Lab samples (DGA & oil)
+
+For liquid-filled equipment, a work order can carry lab-sample results — most
+importantly **dissolved gas analysis (DGA)** graded per IEEE C57.104: the individual
+gas concentrations in ppm (H₂, CH₄, C₂H₂, C₂H₄, C₂H₆, CO, CO₂, O₂, N₂), the IEEE
+C57.104 status (Normal / Caution / Action required), and an optional fault code. Oil
+quality and fuel samples are recorded the same way. These sit alongside the
+electrical measurements so a transformer's chemical and electrical health live on
+the same record.
 
 ## Deficiencies
 
@@ -41,6 +56,14 @@ from failed measurements and from the analysis modules (DGA, thermography), and
 you can add them by hand. The account-wide Deficiencies page (in the sidebar)
 triages every open finding across all assets; resolving one records who closed it
 and when.
+
+## Field-technician assignment
+
+A work order can be assigned to a specific field technician. Field technicians see
+only their assigned work orders in the mobile field view (default-deny), so a tech
+on site gets exactly their list and nothing more. The assigned tech's NETA level is
+checked against the task's required certification level so an unqualified assignment
+can't be recorded against work a standard says needs a qualified person.
 
 ## NETA decals & completion
 
@@ -57,9 +80,10 @@ the loop from "quote" through "work done" to "back in compliance."
 **"What's the most urgent job right now?"** Open the priority queue; overdue and
 C3 work sits at the top.
 
-**"Record a completed visit."** Enter the measurements with as-found/as-left
-values, set the as-left condition and NETA decal, and mark it complete — the
-schedule and asset update themselves.
+**"Record a completed visit."** Enter the conditions and instruments, the
+measurements with as-found/as-left values, any lab samples, set the as-left
+condition and NETA decal, and mark it complete — the schedule and asset update
+themselves.
 
 **"Where did this deficiency come from?"** Open the work order it's attached to;
 failed measurements link straight to the readings that triggered them.

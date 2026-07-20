@@ -3,7 +3,8 @@
 A site is a physical facility — a plant, a campus, a distribution center. Sites
 give every asset a place in the world and a hierarchy you can navigate, and they
 carry the things that are true of a location rather than a single device:
-on-site contacts, outage windows, and arc-flash studies.
+on-site contacts, outage windows, and the system studies for the facility's power
+system.
 
 ## The location hierarchy
 
@@ -38,19 +39,26 @@ A site can define date windows that change what work is allowed:
 Setting these correctly is what makes the scheduling and outage-planning advice
 trustworthy.
 
-## Arc-flash & system studies
+## System studies (arc flash, one-line, redundancy)
 
 Engineering studies live at the site level because they describe the facility's
-power system, not one device. ServiceCycle tracks arc-flash, short-circuit,
-coordination, and one-line studies as first-class records, each with the engineer
-of record and a **5-year review clock** (NFPA 70E 130.5(G)); the app warns you as
-a study nears or passes expiry.
+power system, not one device. The site's **System Studies** card tracks arc-flash,
+short-circuit, coordination, and one-line studies as first-class records, each with
+the engineer of record and a **5-year review clock** (NFPA 70E 130.5(G)); the app
+warns you as a study nears or passes expiry.
+
+The same card is where you **import a one-line diagram or study** to extract the
+site's buses and power-path topology and run the IEEE 1584 gap analysis (see
+*One-Line Import & Topology*), and where the **Redundancy Impact** view lets you ask
+"what breaks if I drop this side or source" once the feed graph is confirmed (see
+*Redundancy Impact*).
 
 Bind a study to the assets it covers and each one carries the on-equipment label
 data NFPA 70E 130.5(H) requires — nominal voltage, incident energy, arc-flash
 boundary, working distance, and PPE category. Binding can cascade to downstream
 equipment; downstream rows are left blank rather than guessed, so the gaps are
-honest and visible. See *Scores, Ratings & Forecasts* for what "covered" means.
+honest and visible. See *Scores, Ratings & Forecasts* for what "covered" means, and
+*Arc Flash* for the label lifecycle.
 
 ## Common workflows
 
@@ -60,8 +68,8 @@ honest and visible. See *Scores, Ratings & Forecasts* for what "covered" means.
 **"When can we do the de-energized work?"** Define the site's outage window; the
 Outage Planner then groups every outage-dependent task into that window.
 
-**"Is our arc-flash study still current?"** Open the site's studies; each shows
-its performed date and 5-year expiry, and the app alerts as expiry approaches.
+**"Is our arc-flash study still current?"** Open the site's System Studies; each
+shows its performed date and 5-year expiry, and the app alerts as expiry approaches.
 
 ## When something looks wrong
 

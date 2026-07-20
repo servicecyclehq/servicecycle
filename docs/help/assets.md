@@ -13,8 +13,9 @@ deficiencies it carries. Use the search box in the sidebar to jump straight to a
 asset by name or serial, or filter the list by site, type, or condition.
 
 **The asset detail page** is the single source of truth for one device: nameplate
-data, condition ratings, the open-deficiency list, test history and trends, any
-incident log entries, and the schedules that govern when it is next due.
+data, condition ratings, the open-deficiency list, test history and trends, its IR
+thermography survey history, any incident log entries, and the schedules that
+govern when it is next due.
 
 ## Nameplate data
 
@@ -45,11 +46,24 @@ Forecasts* for how condition feeds intervals, remaining-useful-life, and risk.
 - **From a test report** — import a PowerDB/NETA PDF and its readings attach to
   the matching asset as a work order with measurements (see *Imports*).
 - **From the field** — add equipment on a phone in Field Mode, nameplate-first.
+- **From an IR survey** — capture an infrared thermography survey on the asset (see
+  *IR Thermography*); its hot-spot findings and trend attach to the asset.
+- **From a one-line / study import** — buses extracted from a one-line diagram
+  become assets on confirm, wired into the site's feed graph (see *One-Line Import
+  & Topology*).
 - **In bulk** — a CSV or a zip of reports via the backfill flow.
 
 When a report comes in, ServiceCycle tries to match it to an existing asset by
 serial number first, then by site/position/type, and tells you how confident the
 match is so you can confirm rather than create a duplicate.
+
+## Multi-source feeds & redundancy
+
+An asset can record which sources feed it and on which side (A/B), and whether it's
+a redundant (2N / N+1) source or load. That feed graph is what powers the
+*Redundancy Impact* view on the site — "what breaks if I drop this source" — and it's
+built by confirming a one-line import. See *One-Line Import & Topology* and
+*Redundancy Impact*.
 
 ## Common workflows
 
@@ -79,8 +93,7 @@ trail an insurer or PE reviewer will see.
 
 **Logging an incident:** Open the asset → Incident Log tab → Log incident. Pick
 the event type, set the date, add a note, then save. The log entry appears
-immediately in the asset's history and in the account-wide incident register
-(accessible via the Compliance section of Reports).
+immediately in the asset's history and in the account-wide incident register.
 
 **Resolving an incident:** Once the condition has been corrected — the root cause
 fixed, the study updated, or the risk controlled — open the log entry and mark it
@@ -89,8 +102,8 @@ unresolved count.
 
 **Who should log incidents:** any user with write access to the asset. Field
 technicians using Field Mode can log incidents directly from their device at the
-time of discovery — this is the recommended workflow, since the log entry
-preserves the as-found timestamp rather than being back-filled.
+time of discovery — this preserves the as-found timestamp rather than being
+back-filled.
 
 ## When something looks wrong
 
