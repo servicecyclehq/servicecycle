@@ -604,6 +604,55 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ─── GET /api/assets/condition-changes ────────────────────────────────────────
+// Returns recent condition_changed activity log entries for the dashboard card.
+// Query params:
+//   ?days=30    — how many days back to look (1–90, default 30)
+//   ?limit=50   — max records (1–200, default 50)
+router.get('/condition-changes', async (req: any, res: any) => {
+  try {
+    const days  = Math.min(Math.max(parseInt(String(req.query.days  || '30'), 10), 1), 90);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10), 1), 200);
+    const since = new Date(Date.now() - days * 86_400_000);
+
+    const logs = await prisma.activityLog.findMany({
+      where: {
+        accountId: req.user.accountId,
+        action: 'condition_changed',
+        createdAt: { gte: since },
+      },
+      orderBy: [
+        // Sort C3 first (by destination condition rank), then newest first
+        { createdAt: 'desc' },
+      ],
+      take: limit,
+      include: {
+        asset: {
+          select: {
+            id: true, name: true, equipmentType: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+        user: { select: { id: true, name: true } },
+      },
+    });
+
+    // Client-side sort: C3 changes first, then C2, then improvements
+    const COND_RANK: Record<string, number> = { C3: 3, C2: 2, C1: 1 };
+    const sorted = logs.sort((a: any, b: any) => {
+      const toA = COND_RANK[(a.details as any)?.to ?? ''] ?? 0;
+      const toB = COND_RANK[(b.details as any)?.to ?? ''] ?? 0;
+      if (toB !== toA) return toB - toA;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    res.json({ success: true, data: { conditionChanges: sorted, days } });
+  } catch (err: any) {
+    console.error('[assets/condition-changes]', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch condition changes' });
+  }
+});
+
 // ─── GET /api/assets/:id ──────────────────────────────────────────────────────
 // Full asset detail: hierarchy context, maintenance schedules (with task
 // definitions so the UI can render interval + standard reference), recent
@@ -1822,55 +1871,6 @@ router.delete('/:id/nameplate', requireManager, async (req: any, res: any) => {
   } catch (err) {
     console.error('[assets/nameplate DELETE]', err);
     return res.status(500).json({ success: false, error: 'Failed to clear nameplate' });
-  }
-});
-
-// ─── GET /api/assets/condition-changes ────────────────────────────────────────
-// Returns recent condition_changed activity log entries for the dashboard card.
-// Query params:
-//   ?days=30    — how many days back to look (1–90, default 30)
-//   ?limit=50   — max records (1–200, default 50)
-router.get('/condition-changes', async (req: any, res: any) => {
-  try {
-    const days  = Math.min(Math.max(parseInt(String(req.query.days  || '30'), 10), 1), 90);
-    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10), 1), 200);
-    const since = new Date(Date.now() - days * 86_400_000);
-
-    const logs = await prisma.activityLog.findMany({
-      where: {
-        accountId: req.user.accountId,
-        action: 'condition_changed',
-        createdAt: { gte: since },
-      },
-      orderBy: [
-        // Sort C3 first (by destination condition rank), then newest first
-        { createdAt: 'desc' },
-      ],
-      take: limit,
-      include: {
-        asset: {
-          select: {
-            id: true, name: true, equipmentType: true,
-            site: { select: { id: true, name: true } },
-          },
-        },
-        user: { select: { id: true, name: true } },
-      },
-    });
-
-    // Client-side sort: C3 changes first, then C2, then improvements
-    const COND_RANK: Record<string, number> = { C3: 3, C2: 2, C1: 1 };
-    const sorted = logs.sort((a: any, b: any) => {
-      const toA = COND_RANK[(a.details as any)?.to ?? ''] ?? 0;
-      const toB = COND_RANK[(b.details as any)?.to ?? ''] ?? 0;
-      if (toB !== toA) return toB - toA;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-
-    res.json({ success: true, data: { conditionChanges: sorted, days } });
-  } catch (err: any) {
-    console.error('[assets/condition-changes]', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch condition changes' });
   }
 });
 
