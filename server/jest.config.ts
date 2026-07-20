@@ -1,5 +1,11 @@
 import type { Config } from 'jest';
 
+// Pin the test process to UTC. date-fns interval math (lib/maintenanceInterval)
+// is local-time based; on a UTC-behind host (America/Chicago) UTC-midnight date
+// anchors roll to the prior day and month/year assertions drift. CI runs in UTC;
+// this makes local runs match. Set here (loaded before any test Date usage).
+process.env.TZ = 'UTC';
+
 const config: Config = {
   // Serialize all tests — new integration tests hit a shared DB
   maxWorkers: 1,
