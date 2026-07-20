@@ -526,7 +526,7 @@ router.get('/', async (req, res) => {
       // a raw-SQL LATERAL join is the upgrade path if that ceiling moves.
       const slim = await prisma.asset.findMany({
         where,
-        select: { id: true, schedules: NEXT_DUE_SCHEDULES },
+        select: { id: true, schedules: NEXT_DUE_SCHEDULES }, orderBy: { id: 'asc' },
         take: 5000,
       });
       const keyed = slim.map(a => ({
@@ -1588,8 +1588,8 @@ router.get('/:id/activity', async (req, res) => {
     }
 
     const { page = 1, limit = 50 } = req.query;
-    const take = Math.min(parseInt(limit) || 50, 100);
-    const skip = ((parseInt(page) || 1) - 1) * take;
+    const take = Math.min(Math.max(parseInt(limit) || 50, 1), 100);
+    const skip = Math.max(((parseInt(page) || 1) - 1) * take, 0);
 
     // Defense-in-depth: scope log queries by accountId too (not only the
     // ownership check above), so these never return another tenant's entries.

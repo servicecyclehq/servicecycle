@@ -64,7 +64,7 @@ router.get('/status', requireAdmin, async (req, res) => {
 // ── GET /api/backup/logs ──────────────────────────────────────────────────────
 router.get('/logs', requireAdmin, async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10), 1), 200);
 
     const logs = await prisma.backupLog.findMany({
       where:   { accountId: req.user.accountId },
