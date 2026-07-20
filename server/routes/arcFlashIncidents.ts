@@ -78,7 +78,7 @@ router.get('/', async (req: any, res) => {
 });
 
 // ── POST /api/arc-flash-incidents ─────────────────────────────────────────────
-router.post('/', requireRole(['admin', 'manager', 'viewer']), async (req: any, res) => {
+router.post('/', requireRole(['admin', 'manager']), async (req: any, res) => {
   try {
     const accountId = req.user.accountId;
     const {

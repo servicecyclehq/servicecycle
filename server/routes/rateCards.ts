@@ -25,11 +25,11 @@ router.get('/', requireManager, async (req: any, res: any) => {
   try {
     const account = await prisma.account.findUnique({
       where: { id: req.user.accountId },
-      select: { partnerOrgId: true },
+      select: { partnerOrgId: true, enterpriseGroupId: true },
     });
     const resolver = await buildRateResolver(prisma, {
       accountId: req.user.accountId,
-      partnerOrgId: account?.partnerOrgId ?? null,
+      partnerOrgId: account?.partnerOrgId ?? null, enterpriseGroupId: account?.enterpriseGroupId ?? null,
     });
     const rates = resolver.resolvedAll().map((r: any) => ({
       serviceType: r.serviceType,

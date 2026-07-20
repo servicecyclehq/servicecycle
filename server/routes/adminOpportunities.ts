@@ -431,7 +431,7 @@ router.get('/opportunities', requireSuperAdmin, async (req: any, res: any) => {
       const drift = num(dv.drift);
       const total = num(ag.total);
       const incomplete = num(ag.incomplete);
-      const panels = num(ag.panels) || total;
+      const panels = num(ag.panels);
       const mTrip = monthsSince(dv.last_trip ? new Date(dv.last_trip) : null, now);
 
       let planningStatus: string;
@@ -482,7 +482,7 @@ router.get('/opportunities', requireSuperAdmin, async (req: any, res: any) => {
       const site = sitesById.get(wo.site_id);
       const acct = accountById.get(wo.account_id);
       const ag = assetSite.get(wo.site_id) || { panels: 0, total: 0 };
-      const panels = num(ag.panels) || num(ag.total);
+      const panels = num(ag.panels);
       const daysSinceStudy = Math.floor((now - performedMs) / DAY_MS);
       const est = systemChangeEstimate(wo.etype, panels, rs, status);
       systemChangeOpportunities.push({

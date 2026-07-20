@@ -36,7 +36,7 @@ const prisma = require('../lib/prisma').default;
 // promises read-only) and the cross-account roles (oem_admin/group_admin/
 // super_admin), which have no write business inside a customer account.
 // field_tech is already denied upstream at the auth chokepoint (fieldRoleScope).
-const requireQuoteWriter = requireRole(['admin', 'manager', 'viewer']);
+const requireQuoteWriter = requireRole(['admin', 'manager']);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

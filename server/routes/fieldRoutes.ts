@@ -384,7 +384,7 @@ router.get('/asset/:assetId/document/:documentId', async (req, res) => {
 // write path in the app (the requireRole exclusion pattern documented in
 // middleware/roles.ts). GET endpoints and POST /voice/parse (parse-only,
 // persists nothing) are untouched, so consultant read flows keep working.
-const requireFieldWriter = requireRole(['admin', 'manager', 'viewer', 'field_tech']);
+const requireFieldWriter = requireRole(['admin', 'manager', 'field_tech']);
 
 // Resolve a work order the caller may act on, honouring field-labor scope.
 // Returns the work order row (id, status, assetId) or null (404-worthy).

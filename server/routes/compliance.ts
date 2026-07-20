@@ -579,7 +579,7 @@ router.get('/maturity', async (req, res) => {
 // repair backlog, and RUL-driven modernization quantified as accruing "$ debt"
 // and rolled into a cumulative 1/3/5-year funding plan grouped by site. CFO-grade
 // budget artifact (same family as /cfo-report.pdf). Any authenticated role.
-router.get('/maintenance-debt', async (req, res) => {
+router.get('/maintenance-debt', requireManager, async (req, res) => {
   try {
     const data = await buildMaintenanceDebtData(prisma, req.user.accountId);
     return res.json({ success: true, data });
@@ -591,7 +591,7 @@ router.get('/maintenance-debt', async (req, res) => {
 
 // ── GET /maintenance-debt.csv ─────────────────────────────────────────────────
 // Exportable per-site funding plan. Any authenticated role.
-router.get('/maintenance-debt.csv', async (req, res) => {
+router.get('/maintenance-debt.csv', requireManager, async (req, res) => {
   try {
     const data = await buildMaintenanceDebtData(prisma, req.user.accountId);
     const csv = debtLedgerToCsv(data);
@@ -717,7 +717,7 @@ router.get('/forgotten-assets', async (req, res) => {
 // maturity readiness, ranked risk posture (#1) + off-radar equipment (#2), the
 // Maintenance Debt Ledger capital-plan $ ranges, and tamper-evident snapshot
 // integrity. Same data behind the break-glass insurer share link. Any auth role.
-router.get('/underwriting-package', async (req, res) => {
+router.get('/underwriting-package', requireManager, async (req, res) => {
   try {
     const data = await buildUnderwritingPackage(prisma, req.user.accountId);
     return res.json({ success: true, data });
@@ -745,7 +745,7 @@ router.get('/customer-digest', async (req, res) => {
 // #30 — the quarterly board-grade budget/compliance PDF, generated on demand.
 // Co-branded (#15). Not persisted/anchored (it is a derived summary, not audit
 // evidence — that's what /snapshots is for). Any authenticated role.
-router.get('/cfo-report.pdf', async (req, res) => {
+router.get('/cfo-report.pdf', requireManager, async (req, res) => {
   try {
     const data = await buildCfoReportData(prisma, req.user.accountId);
     const branding = await getAccountBranding(req.user.accountId);
