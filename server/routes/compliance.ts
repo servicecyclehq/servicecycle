@@ -307,8 +307,15 @@ async function renderStandardReportPdf(res, accountId, siteId, report) {
 router.get('/summary', async (req, res) => {
   try {
     const siteId = req.query.siteId ? String(req.query.siteId) : null;
-    const standards = await buildStandardsSummary(prisma, req.user.accountId, { siteId });
-    return res.json({ success: true, data: { standards } });
+    let asOf: any = null;
+    if (req.query.asOf != null && req.query.asOf !== '') {
+      const d = new Date(String(req.query.asOf));
+      if (Number.isNaN(d.getTime())) return res.status(400).json({ success: false, error: 'Invalid asOf date; use ISO 8601 (e.g. 2026-03-01).' });
+      const nowD = new Date();
+      asOf = d > nowD ? nowD : d;
+    }
+    const standards = await buildStandardsSummary(prisma, req.user.accountId, { siteId, asOf });
+    return res.json({ success: true, data: { standards, asOf: asOf ? asOf.toISOString() : null } });
   } catch (err) {
     if (handleBuilderError(res, err)) return;
     console.error('[compliance/summary]', err.message);

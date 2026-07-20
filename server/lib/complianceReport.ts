@@ -153,13 +153,26 @@ async function resolveSite(prisma, accountId, siteId) {
  * @returns Array<{ standard, assetCount, scheduleCount, currentCount,
  *                  overdueCount, unbaselinedCount, complianceRate, nextDue }>
  */
-async function buildStandardsSummary(prisma, accountId, { siteId = null } = {} as any) {
+/**
+ * [as-of | Forensics P2] Latest captured compliance state per schedule at or before
+ * asOf, from schedule_state_history. Returns Map<scheduleId, {nextDueDate, isActive}>.
+ * A schedule absent from the map did not exist as of asOf. DISTINCT ON uses the
+ * (accountId, scheduleId, changedAt) index.
+ */
+async function asOfScheduleState(prisma, accountId, asOf) {
+  const rows: any[] = await prisma.$queryRawUnsafe('SELECT DISTINCT ON ("scheduleId") "scheduleId", "nextDueDate", "isActive" FROM "schedule_state_history" WHERE "accountId" = $1 AND "changedAt" <= $2 ORDER BY "scheduleId", "changedAt" DESC', accountId, asOf);
+  const m = new Map();
+  for (const r of rows) m.set(r.scheduleId, { nextDueDate: r.nextDueDate, isActive: r.isActive });
+  return m;
+}
+async function buildStandardsSummary(prisma, accountId, { siteId = null, asOf = null } = {} as any) {
   await resolveSite(prisma, accountId, siteId); // validates tenant ownership
 
-  const schedules = await prisma.maintenanceSchedule.findMany({
+  let schedules = await prisma.maintenanceSchedule.findMany({
     where: {
       accountId,
-      isActive: true,
+      // as-of: don't filter on CURRENT isActive; the as-of value is applied after load.
+      ...(asOf ? {} : { isActive: true }),
       asset: { archivedAt: null, inService: true, ...(siteId ? { siteId } : {}) },
     },
     select: {
@@ -181,7 +194,18 @@ async function buildStandardsSummary(prisma, accountId, { siteId = null } = {} a
     },
   });
 
-  const now = new Date();
+  const now = asOf || new Date();
+
+  // [as-of reconstruction | Forensics P2] Override each schedule's mutable compliance
+  // state (nextDueDate / isActive) with its value as of asOf, and drop schedules that did
+  // not exist at asOf. Relations (standard) come from the live row; asset-archive state is
+  // not reconstructed (documented MVP bound). The default (no asOf) path is unchanged.
+  if (asOf) {
+    const stateMap = await asOfScheduleState(prisma, accountId, asOf);
+    schedules = schedules
+      .filter((s) => stateMap.has(s.id))
+      .map((s) => { const st = stateMap.get(s.id); return { ...s, nextDueDate: st.nextDueDate, isActive: st.isActive }; });
+  }
 
   // Group by standard code; merge editions under one entry.
   const groups = new Map(); // code -> { standardRows: Map<id,row>, schedules: [] }
