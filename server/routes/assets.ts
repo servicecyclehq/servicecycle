@@ -629,7 +629,7 @@ router.get('/condition-changes', async (req: any, res: any) => {
       include: {
         asset: {
           select: {
-            id: true, name: true, equipmentType: true,
+            id: true, equipmentType: true, manufacturer: true, model: true, serialNumber: true,
             site: { select: { id: true, name: true } },
           },
         },
@@ -646,7 +646,14 @@ router.get('/condition-changes', async (req: any, res: any) => {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
-    res.json({ success: true, data: { conditionChanges: sorted, days } });
+    // Asset has no name column -- compose a display label (manufacturer/model
+    // /serial) via the canonical assetLabel() helper so the client's
+    // ch.asset?.name renders a real label instead of a raw UUID fallback.
+    const labeled = sorted.map((row: any) =>
+      row.asset ? { ...row, asset: { ...row.asset, name: assetLabel(row.asset, row.assetId) } } : row
+    );
+
+    res.json({ success: true, data: { conditionChanges: labeled, days } });
   } catch (err: any) {
     console.error('[assets/condition-changes]', err);
     res.status(500).json({ success: false, error: 'Failed to fetch condition changes' });
