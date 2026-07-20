@@ -35,6 +35,7 @@ const { gradeReading } = require('./telemetryEvaluate');
 const { worstCondition, computeNextDueDate } = require('./maintenanceInterval');
 const { writeLog } = require('./activityLog');
 const { notifyConditionDegradation } = require('./assetAlertNotifier');
+const { assetLabel } = require('./assetLabel');
 
 const RANK: Record<string, number> = { OK: 0, WARN: 1, CRIT: 2 };
 
@@ -65,6 +66,7 @@ async function applyMonitoringState(db: any, accountId: string, assetId: string,
     select: {
       id: true, conditionPhysical: true, conditionCriticality: true, conditionEnvironment: true,
       governingCondition: true, autoConditionC3: true, autoConditionMonitoring: true,
+      manufacturer: true, model: true, serialNumber: true, equipmentType: true,
       schedules: {
         where: { isActive: true },
         select: { id: true, lastCompletedDate: true, conditionOverride: true,
@@ -105,7 +107,7 @@ async function applyMonitoringState(db: any, accountId: string, assetId: string,
     notifyConditionDegradation({
       accountId,
       assetId: asset.id,
-      assetName: asset.name ?? asset.id,
+      assetName: assetLabel(asset, asset.id),
       oldCondition: asset.governingCondition,
       newCondition: governing,
       triggeredBy: 'auto_telemetry',

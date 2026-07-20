@@ -15,6 +15,7 @@ import prisma from '../lib/prisma';
 const { requireOemAdmin } = require('../middleware/roles');
 const { buildComplianceGap } = require('../lib/complianceReport');
 const { buildPortfolioRank } = require('../lib/portfolioRank');
+const { assetLabel } = require('../lib/assetLabel');
 const { validateWebhookUrl, postJsonToValidatedUrl, signPayload } = require('../lib/webhook');
 
 const DAY_MS = 86_400_000;
@@ -414,7 +415,7 @@ router.get('/accounts/:id', async (req, res) => {
           where: { accountId: targetAccountId, isActive: true, nextDueDate: { lt: now, not: null }, asset: { archivedAt: null } },
           select: {
             id: true, nextDueDate: true, conditionOverride: true,
-            asset: { select: { id: true, name: true, serialNumber: true, equipmentType: true } },
+            asset: { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } },
             taskDefinition: { select: { taskCode: true, taskName: true } },
           },
           orderBy: { nextDueDate: 'asc' },
@@ -426,7 +427,7 @@ router.get('/accounts/:id', async (req, res) => {
           where: { accountId: targetAccountId, severity: 'IMMEDIATE', resolvedAt: null },
           select: {
             id: true, description: true, createdAt: true, correctiveAction: true,
-            asset: { select: { id: true, name: true, serialNumber: true } },
+            asset: { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } },
           },
           orderBy: { createdAt: 'asc' },
           take: 20,
@@ -437,7 +438,7 @@ router.get('/accounts/:id', async (req, res) => {
           where: { accountId: targetAccountId, severity: 'IMMEDIATE', resolvedAt: null, createdAt: { lte: ago30 } },
           select: {
             id: true, description: true, createdAt: true,
-            asset: { select: { id: true, name: true, serialNumber: true } },
+            asset: { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } },
           },
           take: 20,
         }),
@@ -447,7 +448,7 @@ router.get('/accounts/:id', async (req, res) => {
           where: { accountId: targetAccountId, status: 'COMPLETE' },
           select: {
             id: true, title: true, completedDate: true, asLeftCondition: true,
-            asset: { select: { id: true, name: true } },
+            asset: { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } },
           },
           orderBy: { completedDate: 'desc' },
           take: 5,
@@ -457,20 +458,23 @@ router.get('/accounts/:id', async (req, res) => {
         prisma.asset.findMany({
           where: { accountId: targetAccountId, archivedAt: null },
           select: {
-            id: true, name: true, serialNumber: true, equipmentType: true, criticality: true,
+            id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true, criticalityScore: true,
             _count: { select: { deficiencies: { where: { resolvedAt: null } } } },
           },
           take: 10,
         }),
       ]);
 
+    const withAssetName = (rows: any[]) =>
+      rows.map((r: any) => (r && r.asset ? { ...r, asset: { ...r.asset, name: assetLabel(r.asset, r.asset.id) } } : r));
+
     res.json({
       account: targetAccount,
-      overdueSchedules,
-      immediateDeficiencies,
-      serviceOpportunities: serviceOps,
-      recentWorkOrders,
-      topAssets: topAssets.sort((a, b) => b._count.deficiencies - a._count.deficiencies),
+      overdueSchedules: withAssetName(overdueSchedules),
+      immediateDeficiencies: withAssetName(immediateDeficiencies),
+      serviceOpportunities: withAssetName(serviceOps),
+      recentWorkOrders: withAssetName(recentWorkOrders),
+      topAssets: topAssets.sort((a: any, b: any) => b._count.deficiencies - a._count.deficiencies).map((a: any) => ({ ...a, name: assetLabel(a, a.id) })),
     });
   } catch (err: any) {
     console.error('[fleet/accounts/:id]', err);
