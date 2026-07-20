@@ -461,6 +461,75 @@ router.get('/overdue-report', async (req, res) => {
   }
 });
 
+// == GET /readings/:mid/history -- forensic edit/delete trail for one reading ==
+// Pure read of the tamper-evident activity-log chain: every measurement_updated
+// and measurement_deleted event committed for this reading, oldest-first, with
+// the chain-committed before/after (or deleted) values and the actor. Echoes the
+// account chain-head rowHash + rows-consumed so an auditor can independently
+// verify the trail. Read-only. (Schedule-level as-of compliance is a separate
+// path that needs historical nextDueDate == ScheduleStateHistory / P2.)
+router.get('/readings/:mid/history', async (req, res) => {
+  try {
+    const accountId = req.user.accountId;
+    const mid = String(req.params.mid);
+
+    const measurement = await prisma.testMeasurement.findFirst({
+      where: { id: mid, accountId },
+      select: { id: true, workOrderId: true, deletedAt: true },
+    });
+    if (!measurement) {
+      return res.status(404).json({ success: false, error: 'Reading not found.' });
+    }
+
+    const events = await prisma.activityLog.findMany({
+      where: {
+        accountId,
+        action: { in: ['measurement_updated', 'measurement_deleted'] },
+        details: { path: ['measurementId'], equals: mid },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { action: true, details: true, userId: true, createdAt: true, rowHash: true, prevHash: true },
+    });
+
+    // Account chain head: latest SETTLED rowHash (the ~30s settler backfills it).
+    // Auditor anchor -- recompute the chain and compare to this value.
+    const head = await prisma.activityLog.findFirst({
+      where: { accountId, rowHash: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: { rowHash: true, createdAt: true },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        measurementId: mid,
+        workOrderId: measurement.workOrderId,
+        currentlyDeleted: measurement.deletedAt != null,
+        history: events.map((e) => {
+          const d = (e.details || {});
+          return {
+            action: e.action,
+            at: e.createdAt,
+            userId: e.userId,
+            before: d.before != null ? d.before : null,
+            after: d.after != null ? d.after : null,
+            deletedValues: d.deleted != null ? d.deleted : null,
+            rowHash: e.rowHash,
+            prevHash: e.prevHash,
+            settled: e.rowHash != null,
+          };
+        }),
+        rowsConsumed: events.length,
+        chainHead: head ? head.rowHash : null,
+        chainHeadAt: head ? head.createdAt : null,
+      },
+    });
+  } catch (err) {
+    console.error('[compliance/readings/:mid/history]', err && (err).message);
+    return res.status(500).json({ success: false, error: 'Failed to build reading history.' });
+  }
+});
+
 // ── GET /path-to-100?siteId= ──────────────────────────────────────────────────
 // Gem N2 — the honest compliance picture + the ranked to-do list that closes
 // it. Returns schedule complianceRate AND asset coverageRate (the flatter the
