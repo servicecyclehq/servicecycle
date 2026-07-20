@@ -3983,3 +3983,29 @@ model ThermographyFinding {
   @@map("thermography_findings")
   @@index([assetId]) // FK-index audit 2026-07-19 (DB_HEALTH)
 }
+
+/// Append-only point-in-time history of the compliance-governing state of each
+/// MaintenanceSchedule (nextDueDate / lastCompletedDate / isActive / conditionOverride).
+/// Written by the capture_schedule_state() Postgres trigger on maintenance_schedules
+/// (Forensics P2 / P1-B) so as-of compliance can be reconstructed for any date -- NOT
+/// via Prisma Client on the schedule write path. Scalar-only by design (no Prisma
+/// relations) so it adds zero churn to Account/Asset/MaintenanceSchedule; referential
+/// integrity + tenant-cascade is enforced by the SQL foreign keys in migration
+/// 20260720120000_schedule_state_history (mirrors the access_blockers pattern).
+model ScheduleStateHistory {
+  id                String           @id @default(uuid())
+  accountId         String
+  scheduleId        String
+  assetId           String
+  nextDueDate       DateTime?
+  lastCompletedDate DateTime?
+  isActive          Boolean
+  conditionOverride ConditionRating?
+  changedAt         DateTime         @default(now())
+  source            String
+  actorId           String?
+
+  @@index([accountId, scheduleId, changedAt])
+  @@index([accountId, changedAt])
+  @@map("schedule_state_history")
+}
