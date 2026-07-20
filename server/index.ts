@@ -314,6 +314,7 @@ const { pruneActivityLog }  = require('./lib/activityLogPrune'); // (B2) retenti
 const { pruneBackupLog }    = require('./lib/backupLogPrune');   // (B1 5/02) retention
 const { pruneWebhookDlq }   = require('./lib/dlqPrune');         // v0.37.1 W5 MT-132
 const { pruneDocumentOrphans } = require('./lib/documentOrphanPrune'); // S4-FN-04 (v0.74.1)
+const { pruneTelemetryReadings } = require('./lib/telemetryReadingPrune'); // (DB_HEALTH 2026-07-19) telemetry retention
 const { pingHeartbeat }     = require('./lib/heartbeat'); // (Pass-5 Tier 4 / Agent 5 G10) per-cron healthchecks.io ping
 
 // ── Demo mode (S9) ───────────────────────────────────────────────────────────
@@ -2146,6 +2147,28 @@ httpServer = app.listen(PORT, '0.0.0.0', async () => {
       }
     }), { timezone: 'UTC' });
     console.log('[Cron] NotificationLog prune scheduled -- runs daily at 03:05');
+    // TelemetryReading retention prune (DB_HEALTH 2026-07-19) - runs 03:07 UTC.
+    // Deletes telemetry_readings older than TELEMETRY_READING_RETENTION_DAYS
+    // (default 365), batched. After NotificationLog prune (03:05), before the
+    // demo reset (03:30). Safe vs load-growth trends (which read only the last
+    // 200 readings per channel), so a 365-day window never affects a baseline.
+    cron.schedule('7 3 * * *', () => runOnce('telemetryReadingPrune', async () => {
+      console.log('[Cron] Pruning telemetry readings...');
+      try {
+        const result = await pruneTelemetryReadings();
+        if (result.error) {
+          console.error('[Cron] TelemetryReading prune error:', result.error);
+        } else {
+          console.log(
+            `[Cron] TelemetryReading prune complete: deleted ${result.deletedCount} rows ` +
+            `older than ${result.retentionDays} days (cutoff ${result.cutoff.toISOString()})`
+          );
+        }
+      } catch (e) {
+        console.error('[Cron] TelemetryReading prune crashed:', e.message);
+      }
+    }), { timezone: 'UTC' });
+    console.log('[Cron] TelemetryReading prune scheduled - runs daily at 03:07');
 
     // ── ActivityLog chain settler (W4 MT-127) ─ runs every 30 seconds ────
     // Picks up ActivityLog rows where rowHash IS NULL and computes the
