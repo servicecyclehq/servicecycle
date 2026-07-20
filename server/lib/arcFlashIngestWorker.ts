@@ -54,9 +54,9 @@ class ArcFlashIngestTimeout extends Error {
 // Reject with ArcFlashIngestTimeout if `work` has not settled within `ms`. Does
 // not cancel `work`; attaches a handler so a late settle never becomes an
 // unhandledRejection.
-function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+function withTimeout<T>(work: Promise<T>, ms: number, onTimeout?: () => void): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new ArcFlashIngestTimeout(ms)), ms);
+    const t = setTimeout(() => { try { if (onTimeout) onTimeout(); } catch {} reject(new ArcFlashIngestTimeout(ms)); }, ms);
     work.then(
       (v) => { clearTimeout(t); resolve(v); },
       (e) => { clearTimeout(t); reject(e); },
@@ -93,7 +93,8 @@ async function runArcFlashIngest(ingest: any, extractor?: any): Promise<'done' |
   try {
     if (!ingest.fileKey) throw new Error('ingest has no stored fileKey — cannot process asynchronously');
     const buffer = await downloadFile(ingest.fileKey, ingest.accountId);
-    await withTimeout(processArcFlashIngestExtraction(ingest, buffer, { extractor }), EXTRACT_TIMEOUT_MS);
+    const _ac = new AbortController();
+    await withTimeout(processArcFlashIngestExtraction(ingest, buffer, { extractor, signal: _ac.signal }), EXTRACT_TIMEOUT_MS, () => { try { _ac.abort(); } catch {} });
     return 'done';
   } catch (e: any) {
     const isTimeout = !!(e && e.name === 'ArcFlashIngestTimeout');

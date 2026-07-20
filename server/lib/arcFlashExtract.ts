@@ -309,7 +309,7 @@ function normalizeMedia(mimeType: any): string {
 function firstNonNull(...vals: any[]): any { for (const v of vals) if (v != null) return v; return null; }
 
 // Run the vision model on ONE image buffer and normalize the result.
-async function visionExtractOne(buffer: Buffer, mediaType: string, settings: any): Promise<any> {
+async function visionExtractOne(buffer: Buffer, mediaType: string, settings: any, signal: any = null): Promise<any> {
   // maxTokens 8192 already sized generously for a full one-line JSON body;
   // responseMimeType opts into Gemini 2.5-flash JSON mode so thinking tokens
   // don't consume the JSON budget mid-emission (2026-07-04: nameplate route
@@ -318,6 +318,7 @@ async function visionExtractOne(buffer: Buffer, mediaType: string, settings: any
   const out = await ai.completeWithImage({
     imageBuffer:      buffer,
     mediaType,
+    signal,
     prompt:           VISION_PROMPT,
     maxTokens:        8192,
     responseMimeType: 'application/json',
@@ -449,7 +450,7 @@ function parseNativeOut(out: any): { systemMeta: any; buses: any[]; warnings: st
 // text/vision path. `chunkOpts`: { maxPagesPerCall?, overlapPages? } — an
 // explicit maxPagesPerCall forces windowing (the eval harness uses it to
 // exercise the boundary); production derives the window from the bus estimate.
-async function extractNativePdf(buffer: Buffer, settings: any, tables: any[], chunkOpts: any = {}): Promise<any> {
+async function extractNativePdf(buffer: Buffer, settings: any, tables: any[], chunkOpts: any = {}, signal: any = null): Promise<any> {
   const warnings: string[] = [];
   const pages = await pdfPageCount(buffer);
   const SAFE = Number(process.env.AF_SAFE_BUSES_PER_CALL) || 60;
@@ -471,7 +472,7 @@ async function extractNativePdf(buffer: Buffer, settings: any, tables: any[], ch
 
   // Single call — the whole document fits the output budget.
   if (ranges.length <= 1) {
-    const out = await ai.completeWithPdf({ pdfBuffer: buffer, system: EXTRACT_SYSTEM, user: NATIVE_PDF_USER, maxTokens: NATIVE_MAX_TOKENS, responseMimeType: 'application/json', settings });
+    const out = await ai.completeWithPdf({ pdfBuffer: buffer, system: EXTRACT_SYSTEM, user: NATIVE_PDF_USER, maxTokens: NATIVE_MAX_TOKENS, responseMimeType: 'application/json', settings, signal });
     const norm = parseNativeOut(out);
     // Fail-soft: a native read that yields NO buses (unparseable/truncated JSON,
     // or a document the model couldn't structure) must NOT masquerade as a
@@ -495,7 +496,7 @@ async function extractNativePdf(buffer: Buffer, settings: any, tables: any[], ch
   }
   const perChunk: any[] = [];
   for (const sub of subPdfs) {
-    const out = await ai.completeWithPdf({ pdfBuffer: sub, system: EXTRACT_SYSTEM, user: NATIVE_PDF_USER, maxTokens: NATIVE_MAX_TOKENS, responseMimeType: 'application/json', settings });
+    const out = await ai.completeWithPdf({ pdfBuffer: sub, system: EXTRACT_SYSTEM, user: NATIVE_PDF_USER, maxTokens: NATIVE_MAX_TOKENS, responseMimeType: 'application/json', settings, signal });
     perChunk.push(parseNativeOut(out));
   }
   const merged = mergeExtractions(perChunk);
@@ -514,8 +515,8 @@ async function extractNativePdf(buffer: Buffer, settings: any, tables: any[], ch
 // Image -> vision; text-layer PDF -> text parse; scanned/vector PDF -> AUTO
 // rasterize to image(s) -> vision (no manual conversion). Fails SOFT: an
 // unreadable / unsupported file yields an empty model + a clear warning.
-async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string; fileName?: string; settings?: any; nativePdf?: any }): Promise<any> {
-  const { buffer, mimeType, fileName, nativePdf = {} } = opts;
+async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string; fileName?: string; settings?: any; nativePdf?: any; signal?: any }): Promise<any> {
+  const { buffer, mimeType, fileName, nativePdf = {}, signal = null } = opts;
   // [determinism] Pin extraction to temperature 0 so re-reading the same drawing is stable
   // run-to-run (cuts false topology drift). A caller can still override via opts.settings.
   const settings = { temperature: 0, ...(opts.settings || {}) };
@@ -526,7 +527,7 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
 
   // Image upload -> vision directly.
   if (isImage) {
-    const one = await visionExtractOne(buffer, normalizeMedia(mimeType), settings);
+    const one = await visionExtractOne(buffer, normalizeMedia(mimeType), settings, signal);
     return finalize('vision', null, one, warnings);
   }
 
@@ -552,7 +553,7 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
     // maxOutputTokens same as the vision path (see the responseMimeType
     // comment in _geminiComplete); without JSON mode a verbose multi-bus
     // schema can lose the whole output to truncation before the array closes.
-    const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(docxText), maxTokens: 16384, task: 'extract', responseMimeType: 'application/json', settings });
+    const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(docxText), maxTokens: 16384, task: 'extract', responseMimeType: 'application/json', settings, signal });
     const text = out && out.text ? out.text : '';
     let parsed: any;
     try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
@@ -583,8 +584,9 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
     const nativeDisabled = (nativePdf && nativePdf.disable === true) || process.env.AF_NATIVE_PDF === 'off';
     if (!nativeDisabled) {
       try {
-        return await extractNativePdf(buffer, settings, tables, nativePdf);
+        return await extractNativePdf(buffer, settings, tables, nativePdf, signal);
       } catch (e: any) {
+        if (e && e.name === 'AbortError') throw e;
         warnings.push('Native-PDF read unavailable (' + (e && e.message ? e.message : e) + '); used deterministic text/vision fallback.');
         // fall through to the deterministic path below
       }
@@ -602,7 +604,7 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
       // Text-layer PDF (study report) -> text path.
       // 2026-07-14: responseMimeType + bumped maxTokens -- see the docx branch
       // above for the root cause (multi-bus reports were truncating mid-JSON).
-      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(pdfText, tables), maxTokens: 16384, task: 'extract', responseMimeType: 'application/json', settings });
+      const out = await ai.complete({ system: EXTRACT_SYSTEM, user: buildUserPrompt(pdfText, tables), maxTokens: 16384, task: 'extract', responseMimeType: 'application/json', settings, signal });
       const text = out && out.text ? out.text : '';
       let parsed: any;
       try { parsed = ai.parseJSON(text, 'arc-flash-extract'); }
@@ -617,7 +619,7 @@ async function extractArcFlashDocument(opts: { buffer: Buffer; mimeType?: string
       return { method: 'needs_image', aiProvider: null, promptVersion: PROMPT_VERSION, systemMeta: null, buses: [], warnings, rawJsonText: '' };
     }
     const perPage: any[] = [];
-    for (const pg of pages) perPage.push(await visionExtractOne(pg, 'image/png', settings));
+    for (const pg of pages) { if (signal && signal.aborted) { const _e: any = new Error('aborted'); _e.name = 'AbortError'; throw _e; } perPage.push(await visionExtractOne(pg, 'image/png', settings, signal)); }
     const merged = mergeExtractions(perPage);
     if (pages.length > 1) warnings.push(`Auto-converted ${pages.length} PDF page(s) to images for reading.`);
     return finalize('vision_pdf', null, merged, warnings);

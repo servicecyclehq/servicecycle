@@ -63,7 +63,7 @@ async function _logActivity(userId: string | null, accountId: string, action: st
  */
 async function processArcFlashIngestExtraction(ingest: any, buffer: Buffer, opts: any = {}) {
   const extractor = opts.extractor || extractArcFlashDocument;
-  const ext = await extractor({ buffer, mimeType: ingest.mimeType, fileName: ingest.fileName });
+  const ext = await extractor({ buffer, mimeType: ingest.mimeType, fileName: ingest.fileName, signal: opts.signal });
 
   let buses = Array.isArray(ext.buses) ? ext.buses : [];
 

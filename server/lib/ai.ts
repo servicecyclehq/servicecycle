@@ -261,7 +261,16 @@ async function _cascadeComplete(args, chain) {
 // equivalent per-block caching primitives, so we accept the larger first-call
 // cost rather than emit a confusing error.
 
-async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSystem = false, task = null, responseMimeType = null }) {
+function _throwIfAborted(signal) {
+  if (signal && signal.aborted) {
+    const e: any = new Error('AI extraction aborted (wall-clock cap reached)');
+    e.name = 'AbortError'; e.code = 'AI_ABORTED';
+    throw e;
+  }
+}
+
+async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSystem = false, task = null, responseMimeType = null, signal = null }) {
+  _throwIfAborted(signal);
   const s = resolveSettings(settings);
 
   let result;
@@ -324,7 +333,8 @@ async function complete({ system, user, maxTokens = 4096, settings = {}, cacheSy
 // demo can set AI_VISION_PROVIDER=gemini and provide a Gemini key for the
 // vision path only.
 
-async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTokens = 4096, settings = {}, responseMimeType }) {
+async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt, maxTokens = 4096, settings = {}, responseMimeType, signal = null }) {
+  _throwIfAborted(signal);
   const s = resolveSettings(settings);
 
   let visionProvider = s.provider;
@@ -395,7 +405,8 @@ async function completeWithImage({ imageBuffer, mediaType = 'image/jpeg', prompt
 // base64 only, gated to MAX_INLINE_PDF_BYTES; a larger file throws
 // AI_NATIVE_PDF_TOO_LARGE so the caller chunks (structural boundaries) or falls
 // back rather than sending a request past the provider's inline ceiling.
-async function completeWithPdf({ pdfBuffer, system, user, maxTokens = 8192, settings = {}, responseMimeType = null }) {
+async function completeWithPdf({ pdfBuffer, system, user, maxTokens = 8192, settings = {}, responseMimeType = null, signal = null }) {
+  _throwIfAborted(signal);
   if (!Buffer.isBuffer(pdfBuffer) || !pdfBuffer.length) {
     const err: any = new Error('[ai] completeWithPdf: empty or invalid pdfBuffer');
     err.code = 'AI_NATIVE_PDF_UNSUPPORTED';
