@@ -131,3 +131,14 @@ data/jx.txt
 
 # Codebase-audit bookkeeping (not app code; kept out of the deploy path)
 .codebase-audit-state.json
+
+# session/test scratch output (2026-07 cleanup)
+eval_*.txt
+eval_*.json
+eval_*.md
+tsc_*.txt
+tc_*.txt
+_jest_*.txt
+server_boot_*.txt
+seed_local_*.txt
+fail_suites_*.txt
