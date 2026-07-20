@@ -226,21 +226,28 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('servicecycle_refresh_token');
       if (refreshToken) {
         try {
-          // Coalesce concurrent refresh attempts into one request
+          // Coalesce concurrent refresh attempts into one request.
+          // SC-07: persist the rotated tokens INSIDE the shared promise (in
+          // .then, before .finally clears _refreshPromise), so a concurrent 401
+          // arriving in the microtask gap can't re-present the just-rotated
+          // refresh token and trip the server's reuse-detection cascade (which
+          // revokes every session for the user).
           if (!_refreshPromise) {
             _refreshPromise = axios
               .post(
                 `${import.meta.env.VITE_API_URL ?? ''}/api/auth/refresh`,
                 { refreshToken }
               )
+              .then((refreshRes) => {
+                const { token: newAccessToken, refreshToken: newRefreshToken } = refreshRes.data.data;
+                localStorage.setItem('servicecycle_token', newAccessToken);
+                if (newRefreshToken) localStorage.setItem('servicecycle_refresh_token', newRefreshToken);
+                return newAccessToken;
+              })
               .finally(() => { _refreshPromise = null; });
           }
 
-          const refreshRes = await _refreshPromise;
-          const { token: newAccessToken, refreshToken: newRefreshToken } = refreshRes.data.data;
-
-          localStorage.setItem('servicecycle_token', newAccessToken);
-          if (newRefreshToken) localStorage.setItem('servicecycle_refresh_token', newRefreshToken);
+          const newAccessToken = await _refreshPromise;
 
           // Retry original request with the new access token
           originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
