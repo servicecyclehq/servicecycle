@@ -264,7 +264,20 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     try {
       const aiText = isDocx ? (docxText || '') : await extractPdfText(buffer);
       if (aiText && aiText.trim().length > 60) {
-        const filled = await aiFillReadings(aiText);
+        // [self-improving extraction, Phase 1] behind EXTRACTION_FEWSHOT_ENABLED:
+        // hand the extractor this account's recurring correction patterns as a
+        // few-shot block. Fail-open -- any error just extracts without hints.
+        let correctionHintBlock = '';
+        if (process.env.EXTRACTION_FEWSHOT_ENABLED === 'true') {
+          try {
+            const { getAccountCorrectionHints, renderCorrectionHintBlock } = require('./correctionMemory');
+            const hints = await getAccountCorrectionHints({ accountId, kind: 'test_report' });
+            correctionHintBlock = renderCorrectionHintBlock(hints);
+          } catch (e: any) {
+            console.warn('[testReportPreview] correction-hint fetch skipped:', e && e.message ? e.message : e);
+          }
+        }
+        const filled = await aiFillReadings(aiText, { correctionHintBlock });
         if (filled.ok) mergeMeta(filled.fields);
         if (filled.ok && filled.measurements.length) {
           aiAdded += mergeExtractedMeasurements(measurements, filled.measurements);

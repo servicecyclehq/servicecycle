@@ -130,7 +130,16 @@ async function aiFillReadings(rawText: string, opts: any = {}) {
   // document/field text. wrapInDelimiters pairs with the SYSTEM rule above so
   // the model treats the content as data, not instructions.
   const { text: sanitizedReportText } = sanitizeUntrustedText(scrubForAi(rawText).slice(0, MAX_INPUT_CHARS));
-  const user = 'TEST REPORT TEXT:\n' + wrapInDelimiters(sanitizedReportText);
+  // [self-improving extraction, Phase 1] optional per-account few-shot block,
+  // fetched + rendered by the caller (correctionMemory) and passed as a trusted
+  // preamble BEFORE the untrusted document. Empty when the flag is off or the
+  // account has no recurring corrections.
+  const hintPreamble =
+    typeof opts.correctionHintBlock === 'string' && opts.correctionHintBlock
+      ? opts.correctionHintBlock + '\n\n'
+      : '';
+  if (hintPreamble) console.log('[aiTestReport] account correction hints injected into extract prompt');
+  const user = hintPreamble + 'TEST REPORT TEXT:\n' + wrapInDelimiters(sanitizedReportText);
 
   // One text attempt: call -> parse -> coerce. Returns null on call/parse
   // failure. `settings` lets us force a provider on the retry.
