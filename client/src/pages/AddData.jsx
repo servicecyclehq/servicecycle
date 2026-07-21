@@ -23,6 +23,7 @@ function sniff(file) {
   if (/\.(csv|xlsx|xls)$/.test(name)) return { kind: 'assets', route: '/assets/import', label: 'asset / schedule spreadsheet' };
   if (name.endsWith('.pdf') || name.endsWith('.docx')) return { kind: 'document', label: 'PDF / Word document' };
   if (name.endsWith('.doc')) return { kind: 'legacy-doc', label: 'legacy Word .doc' };
+  if (/\.(jpe?g|png|heic|heif|webp|gif|tiff?|bmp)$/.test(name)) return { kind: 'image', label: 'photo / image' };
   return null;
 }
 
@@ -64,6 +65,10 @@ export default function AddData() {
     if (!s) { setErr(`Not sure how to read "${file.name}". Use a PDF/Word test report, a CSV/XLSX spreadsheet, or a .zip of reports.`); return; }
     if (s.kind === 'legacy-doc') {
       setErr(`Legacy .doc (Word 97-2003) isn't supported. Open "${file.name}" in Word and "Save As" .docx, then try again.`);
+      return;
+    }
+    if (s.kind === 'image') {
+      setErr(`"${file.name}" looks like a photo. Nameplate photos are read from an asset's page - open the asset and tap "Scan nameplate" to auto-fill its make, model, serial and ratings. For a batch of report PDFs or photos, drop a .zip here instead.`);
       return;
     }
     if (s.kind === 'backfill' || s.kind === 'assets') {
@@ -123,8 +128,8 @@ export default function AddData() {
         <UploadCloud size={22} strokeWidth={1.75} /> Add data
       </h1>
       <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 20px', maxWidth: 720, lineHeight: 1.6 }}>
-        Drop whatever you have — we'll figure out what it is. A contractor's test-report PDF, an asset
-        spreadsheet, a CMMS export. No need to know which importer it belongs to.
+        Drop a report, spreadsheet, or export and we'll route it to the right importer. A contractor's test-report PDF, an
+        asset spreadsheet, a CMMS export, or a .zip of reports. No need to know which importer it belongs to.
       </p>
 
       {err && <div style={{ padding: '12px 16px', background: 'var(--chip-red-bg)', border: '1px solid var(--chip-red-fg)', borderRadius: 8, color: 'var(--chip-red-fg)', marginBottom: 16 }}>{err}</div>}
