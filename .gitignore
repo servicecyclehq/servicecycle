@@ -142,3 +142,7 @@ _jest_*.txt
 server_boot_*.txt
 seed_local_*.txt
 fail_suites_*.txt
+
+# Local acquisition working materials (only the ideas doc is tracked)
+docs/acquisition/*
+!docs/acquisition/FUTURE_IDEAS.md
