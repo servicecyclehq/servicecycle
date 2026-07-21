@@ -75,6 +75,13 @@ async function buildRevenueAttribution(
     pricedOpen: 0, unpricedOpen: 0, pricedCompleted: 0, unpricedCompleted: 0 };
   const byTrigger = new Map<string, any>();
   const completedRows: any[] = [];
+  // SC-23: dedupe the priced opportunity $ by asset. A single asset's
+  // repairCostEstimate is a fixed property, so summing it across multiple
+  // quotes on the same asset would inflate the pipeline/realized opportunity $.
+  // Only the $ sums are de-duplicated per asset; the funnel/priced COUNTS stay
+  // per-quote (preserving pricedCompleted + unpricedCompleted === funnel.completed).
+  const seenPipelineAsset = new Set();
+  const seenRealizedAsset = new Set();
 
   for (const q of quotes) {
     const isDraft = q.status === 'draft';
@@ -99,9 +106,12 @@ async function buildRevenueAttribution(
     if (hasCompleteWo && triggered) attribution.completedFromAlert += 1;
 
     if (hasCompleteWo) {
-      if (est != null) { value.realized += est; value.pricedCompleted += 1; } else value.unpricedCompleted += 1;
+      if (est != null) value.pricedCompleted += 1; else value.unpricedCompleted += 1;
     } else if (isOpen) {
-      if (est != null) { value.pipeline += est; value.pricedOpen += 1; } else value.unpricedOpen += 1;
+      if (est != null) {
+        value.pricedOpen += 1;
+        if (!(q.assetId && seenPipelineAsset.has(q.assetId))) { if (q.assetId) seenPipelineAsset.add(q.assetId); value.pipeline += est; }
+      } else value.unpricedOpen += 1;
     }
 
     const key = q.triggerType || 'MANUAL';
@@ -109,7 +119,14 @@ async function buildRevenueAttribution(
     if (!t) { t = { trigger: key, label: TRIGGER_LABELS[key] || key, count: 0, accepted: 0, completed: 0, realizedValue: 0 }; byTrigger.set(key, t); }
     t.count += 1;
     if (isAccepted) t.accepted += 1;
-    if (hasCompleteWo) { t.completed += 1; if (est != null) t.realizedValue += est; }
+    if (hasCompleteWo) {
+      t.completed += 1;
+      if (est != null && !(q.assetId && seenRealizedAsset.has(q.assetId))) {
+        if (q.assetId) seenRealizedAsset.add(q.assetId);
+        value.realized += est;
+        t.realizedValue += est;
+      }
+    }
 
     if (hasCompleteWo) {
       const completedDate = wos
