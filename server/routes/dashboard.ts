@@ -82,15 +82,18 @@ router.get('/', async (req, res) => {
       prisma.$queryRaw<any[]>`
         SELECT s.id AS "siteId",
                s.name AS "siteName",
-               COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE ms."nextDueDate" < ${now})::int AS overdue
-          FROM maintenance_schedules ms
-          JOIN assets a ON a.id = ms."assetId"
-          JOIN sites  s ON s.id = a."siteId"
-         WHERE ms."accountId" = ${accountId}
+               COUNT(ms.id)::int AS total,
+               COUNT(ms.id) FILTER (WHERE ms."nextDueDate" < ${now})::int AS overdue
+          FROM sites s
+          LEFT JOIN assets a
+            ON a."siteId" = s.id AND a."archivedAt" IS NULL
+          LEFT JOIN maintenance_schedules ms
+            ON ms."assetId" = a.id
+           AND ms."accountId" = ${accountId}
            AND ms."isActive" = true
            AND ms."nextDueDate" IS NOT NULL
-           AND a."archivedAt" IS NULL
+         WHERE s."accountId" = ${accountId}
+           AND s."archivedAt" IS NULL
          GROUP BY s.id, s.name`,
 
       // Widget 4: recent work orders. V7: exclude synthetic WOs created by
@@ -150,10 +153,16 @@ router.get('/', async (req, res) => {
           siteName: r.siteName || '—',
           total,
           overdue,
-          complianceRate: total === 0 ? 100 : Math.round(((total - overdue) / total) * 100),
+          baselined: total > 0,
+          complianceRate: total === 0 ? null : Math.round(((total - overdue) / total) * 100),
         };
       })
-      .sort((a: any, b: any) => a.complianceRate - b.complianceRate);
+      .sort((a: any, b: any) => {
+        // Baselined sites first (worst compliance on top); unbaselined
+        // coverage-gap sites grouped at the end with a "not yet baselined" state.
+        if (a.baselined !== b.baselined) return a.baselined ? -1 : 1;
+        return (a.complianceRate ?? 0) - (b.complianceRate ?? 0);
+      });
 
     const overallTotal   = complianceBySite.reduce((sum: number, r: any) => sum + r.total, 0);
     const overallOverdue = complianceBySite.reduce((sum: number, r: any) => sum + r.overdue, 0);

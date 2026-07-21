@@ -180,11 +180,11 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
           <Instrument
             to="/reports/compliance"
             label="NFPA 70B maturity"
-            value={maturity ? maturity.score : '—'}
+            value={maturity ? Math.round(maturity.score) : '—'}
             unit={maturity ? '/100' : undefined}
             detail={maturity ? `Level ${maturity.level} · ${maturity.levelLabel}` : 'Loading…'}
             ariaLabel={maturity
-              ? `NFPA 70B maturity score ${maturity.score} of 100, level ${maturity.level}, ${maturity.levelLabel}`
+              ? `NFPA 70B maturity score ${Math.round(maturity.score)} of 100, level ${maturity.level}, ${maturity.levelLabel}`
               : 'NFPA 70B maturity, loading'}
           />
           <Instrument

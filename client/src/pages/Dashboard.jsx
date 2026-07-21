@@ -123,29 +123,34 @@ function complianceColor(rate) {
 }
 
 function SiteComplianceRow({ row, navigate }) {
-  const color = complianceColor(row.complianceRate);
+  const baselined = row.complianceRate != null;
+  const color = baselined ? complianceColor(row.complianceRate) : 'var(--color-text-secondary)';
   const go = () => navigate(`/sites/${row.siteId}`);
   return (
     <div
       className="hover-row"
       style={{ marginBottom: 4, cursor: 'pointer', padding: '7px 8px' }}
       onClick={go} role="button" tabIndex={0} onKeyDown={kbdActivate(go)}
-      title={`${row.siteName}: ${row.overdue} overdue of ${row.total} schedules`}
+      title={baselined
+        ? `${row.siteName}: ${row.overdue} overdue of ${row.total} schedules`
+        : `${row.siteName}: no maintenance schedules yet - not baselined`}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, gap: 8 }}>
         <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {row.siteName}
         </span>
         <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color, flexShrink: 0 }}>
-          {row.complianceRate}%
-          <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)', marginLeft: 8 }}>
-            {row.overdue} overdue / {row.total}
-          </span>
+          {baselined ? `${row.complianceRate}%` : 'Not yet baselined'}
+          {baselined && (
+            <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)', marginLeft: 8 }}>
+              {row.overdue} overdue / {row.total}
+            </span>
+          )}
         </span>
       </div>
       <div style={{ height: 8, background: 'color-mix(in srgb, var(--color-border) 55%, transparent)', borderRadius: 999, overflow: 'hidden' }}>
         <div style={{
-          height: '100%', width: `${row.complianceRate}%`, borderRadius: 999, transition: 'width 0.4s ease',
+          height: '100%', width: baselined ? `${row.complianceRate}%` : '0%', borderRadius: 999, transition: 'width 0.4s ease',
           background: `linear-gradient(90deg, color-mix(in srgb, ${color} 72%, transparent), ${color})`,
         }} />
       </div>
