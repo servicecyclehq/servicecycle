@@ -149,6 +149,9 @@ export default function ComplianceStandardsReport() {
           <div className="page-subtitle">
             Maintenance compliance rolled up per governing standard. Click a row for the full evidence table.
           </div>
+          <div className="page-subtitle no-print" style={{ marginTop: 4, fontSize: 'var(--font-size-xs)' }}>
+            Basis: these are <strong>schedule-compliance</strong> rates (current tasks / (current + overdue), excluding not-yet-baselined schedules). The dashboard headline uses the stricter <strong>all-assets</strong> basis (every asset counted, even untracked ones), so it reads lower.
+          </div>
         </div>
         <ReportActionBar
           onDownloadPdf={handleDownloadPdf}
