@@ -145,48 +145,71 @@ async function buildFailedTestRecapReport(prisma: any, accountId: string, opts: 
   const since = new Date(Date.now() - days * DAY_MS);
   const severities = opts.includeYellow ? ['RED', 'YELLOW'] : ['RED'];
 
+  // SC-16: window on the DOMAIN test date (the linked work order's completedDate,
+  // set from the report at ingest time in commitTestReport.ts), NOT the row's
+  // createdAt (import date) — otherwise a batch of old reports imported today all
+  // land in "last 90 days". Measurements with no linked WO / no completedDate are
+  // inherently un-dateable and fall outside every window.
+  const where = {
+    accountId,
+    deletedAt: null,
+    passFail: { in: severities },
+    workOrder: { completedDate: { gte: since } },
+  };
+
+  // Exact per-type counts across ALL matches (groupBy is not row-capped), so the
+  // headline total and the per-type breakdown stay honest even past the detail cap.
+  const grouped = await prisma.testMeasurement.groupBy({
+    by: ['measurementType', 'passFail'],
+    where,
+    _count: { _all: true },
+  });
+  const byType = new Map<string, { measurementType: string; RED: number; YELLOW: number; total: number }>();
+  let grandTotal = 0;
+  for (const g of grouped) {
+    if (!byType.has(g.measurementType)) {
+      byType.set(g.measurementType, { measurementType: g.measurementType, RED: 0, YELLOW: 0, total: 0 });
+    }
+    const bucket = byType.get(g.measurementType)!;
+    const n = (g._count && g._count._all) || 0;
+    (bucket as any)[g.passFail] = ((bucket as any)[g.passFail] || 0) + n;
+    bucket.total += n;
+    grandTotal += n;
+  }
+  const byTypeRows = Array.from(byType.values()).sort((a, b) => b.total - a.total);
+
+  // Detailed sample for display, newest test first (capped — this is a recap).
+  const READINGS_CAP = 200;
   const rows = await prisma.testMeasurement.findMany({
-    where: {
-      accountId,
-      deletedAt: null,
-      passFail: { in: severities },
-      createdAt: { gte: since },
-    },
+    where,
     select: {
       id: true, measurementType: true, phase: true, asFoundValue: true, asFoundUnit: true,
       passFail: true, expectedRange: true, createdAt: true,
-      workOrder: { select: { id: true, assetId: true, asset: { select: { siteId: true, equipmentType: true } } } },
+      workOrder: { select: { id: true, assetId: true, completedDate: true, testDateSource: true, asset: { select: { siteId: true, equipmentType: true } } } },
     },
-    orderBy: { createdAt: 'desc' },
-    take: 2000, // hard cap — this is a recap, not a full export
+    orderBy: { workOrder: { completedDate: 'desc' } },
+    take: READINGS_CAP,
   });
-
-  const byType = new Map<string, { measurementType: string; RED: number; YELLOW: number; total: number }>();
-  for (const m of rows) {
-    if (!byType.has(m.measurementType)) {
-      byType.set(m.measurementType, { measurementType: m.measurementType, RED: 0, YELLOW: 0, total: 0 });
-    }
-    const bucket = byType.get(m.measurementType)!;
-    (bucket as any)[m.passFail] = ((bucket as any)[m.passFail] || 0) + 1;
-    bucket.total += 1;
-  }
-
-  const byTypeRows = Array.from(byType.values()).sort((a, b) => b.total - a.total);
 
   return {
     generatedAt: new Date(),
     windowDays: days,
     includeYellow: !!opts.includeYellow,
-    summary: { total: rows.length, byMeasurementType: byTypeRows.length },
+    // total = exact count of matching failed measurements in the window;
+    // shown = detail rows included (<= READINGS_CAP); truncated = the detail list
+    // is a partial sample of total.
+    summary: { total: grandTotal, shown: rows.length, byMeasurementType: byTypeRows.length },
     byMeasurementType: byTypeRows,
-    readings: rows.slice(0, 200).map((m: any) => ({
+    readings: rows.map((m: any) => ({
       id: m.id, measurementType: m.measurementType, phase: m.phase,
       asFoundValue: m.asFoundValue, asFoundUnit: m.asFoundUnit, passFail: m.passFail,
       expectedRange: m.expectedRange, createdAt: m.createdAt,
+      testDate: m.workOrder?.completedDate || null,
+      testDateSource: m.workOrder?.testDateSource || null,
       assetId: m.workOrder?.assetId || null, siteId: m.workOrder?.asset?.siteId || null,
       equipmentType: m.workOrder?.asset?.equipmentType || null,
     })),
-    truncated: rows.length >= 2000,
+    truncated: grandTotal > rows.length,
   };
 }
 
