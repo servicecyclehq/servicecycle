@@ -76,7 +76,7 @@ const WINDOW_HOURS = 24;
 
     const priorImports = await prisma.extractionEvent.findMany({
       where: { accountId: { in: [...new Set(targetWOs.map((w) => w.accountId))] }, committedAt: { gte: since } },
-      select: { id: true, sha256: true, committedAt: true, originalName: true },
+      select: { id: true, sha256: true, committedAt: true },
     });
     console.log('\nDIAG: ' + priorImports.length + ' ExtractionEvent audit row(s) in the same window (would also be deleted by cleanup).');
 
