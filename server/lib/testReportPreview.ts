@@ -82,6 +82,35 @@ async function resolveSectionAsset(accountId: string, def: any, docSerial: strin
  *
  * Mutates `existing` in place; returns the number of net-new rows added.
  */
+// [P3 2026-07-22] Groups consecutive readings that share the same non-empty
+// `label` into one "test point" (e.g. a single A-G insulation-resistance
+// point prints 1-Min/10-Min/PI as 3 rows all labeled "A-G" -- see
+// extractor.py's _powerdb_grids / inline IR passes). Verified against the 3
+// Riverside NETA demo PDFs (2024/2025/DEMO): every reading's label appears
+// in exactly one CONSECUTIVE run -- a label is never reused non-adjacently
+// for a different point -- so same-label-and-adjacent is a safe grouping key
+// for this data. A reading with no label (null/empty) always starts its own
+// singleton point rather than merging with neighboring unlabeled readings,
+// since those are unrelated single-value rows (e.g. loosely-parsed
+// contact-resistance fragments), not a printed multi-row test point.
+function groupTestPoints(list: any[]): any[][] {
+  const points: any[][] = [];
+  let cur: any[] = [];
+  let curLabel: any = undefined;
+  for (const m of list) {
+    const lbl = (m && m.label) ? m.label : null;
+    if (cur.length && lbl !== null && lbl === curLabel) {
+      cur.push(m);
+    } else {
+      if (cur.length) points.push(cur);
+      cur = [m];
+      curLabel = lbl;
+    }
+  }
+  if (cur.length) points.push(cur);
+  return points;
+}
+
 function mergeExtractedMeasurements(existing: any[], incoming: any[]): number {
   let added = 0;
   const keyOf = (m: any) => `${m.measurementType}|${m.phase || ''}|${m.asFoundValue}|${m.source || 'det'}`;
@@ -344,13 +373,35 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
     }
   }
 
-  const sliceSummary = (list: any[]) => ({
-    total: list.length,
-    red:    list.filter((x: any) => x.passFail === 'RED').length,
-    yellow: list.filter((x: any) => x.passFail === 'YELLOW').length,
-    green:  list.filter((x: any) => x.passFail === 'GREEN').length,
-    deficienciesToCreate: list.filter((x: any) => severityFor(x.passFail, x.critical)).length,
-  });
+  const sliceSummary = (list: any[]) => {
+    // [P3 2026-07-22] additive point-grouped counts -- see groupTestPoints().
+    // `deficienciesToCreate` below is a READING count that row-splitting can
+    // inflate up to 3x for a single flagged IR test point (1-Min/10-Min/PI
+    // sharing one label/verdict); `deficiencyPoints` is the DISTINCT-problem
+    // count the Preview UI shows instead (summaryChips() in
+    // TestReportImport.jsx). Kept ADDITIVE alongside the existing
+    // reading-level fields, not replacing them -- commit behavior (actual
+    // Deficiency rows created per flagged reading) is unchanged; this is
+    // display-only, per the Option-A scope decision documented in the
+    // 2026-07-22 overnight report.
+    const points = groupTestPoints(list);
+    let redPoints = 0, yellowPoints = 0, greenPoints = 0, deficiencyPoints = 0;
+    for (const pt of points) {
+      if (pt.some((x: any) => x.passFail === 'RED')) redPoints++;
+      else if (pt.some((x: any) => x.passFail === 'YELLOW')) yellowPoints++;
+      else if (pt.some((x: any) => x.passFail === 'GREEN')) greenPoints++;
+      if (pt.some((x: any) => severityFor(x.passFail, x.critical))) deficiencyPoints++;
+    }
+    return {
+      total: list.length,
+      red:    list.filter((x: any) => x.passFail === 'RED').length,
+      yellow: list.filter((x: any) => x.passFail === 'YELLOW').length,
+      green:  list.filter((x: any) => x.passFail === 'GREEN').length,
+      deficienciesToCreate: list.filter((x: any) => severityFor(x.passFail, x.critical)).length,
+      testPointCount: points.length,
+      redPoints, yellowPoints, greenPoints, deficiencyPoints,
+    };
+  };
   const summary = sliceSummary(measurements);
 
   // #1 per-section split.

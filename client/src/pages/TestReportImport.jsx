@@ -314,9 +314,21 @@ export default function TestReportImport() {
 
   function summaryChips(sum) {
     if (!sum) return null;
+    // [P3 2026-07-22] Point-grouped display -- see sliceSummary()/
+    // groupTestPoints() in testReportPreview.ts. Row-splitting means a
+    // single flagged test point (1-Min/10-Min/PI readings sharing one
+    // label) previously showed as 3 separate "problems" here. Falls back to
+    // the reading-level fields if an older cached preview payload doesn't
+    // carry the point-grouped ones yet.
+    const hasPoints = sum.testPointCount != null;
+    const red = hasPoints ? sum.redPoints : sum.red;
+    const yellow = hasPoints ? sum.yellowPoints : sum.yellow;
+    const green = hasPoints ? sum.greenPoints : sum.green;
+    const defPoints = hasPoints ? sum.deficiencyPoints : sum.deficienciesToCreate;
+    const readingNote = (hasPoints && sum.total !== sum.testPointCount) ? ` (${sum.total} readings)` : '';
     return (
       <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-        <span style={{ color: '#b91c1c', fontWeight: 700 }}>{sum.red} RED</span> · <span style={{ color: '#92400e', fontWeight: 700 }}>{sum.yellow} YELLOW</span> · {sum.green} GREEN · {sum.deficienciesToCreate} deficiencies
+        <span style={{ color: '#b91c1c', fontWeight: 700 }}>{red} RED</span> · <span style={{ color: '#92400e', fontWeight: 700 }}>{yellow} YELLOW</span> · {green} GREEN · {defPoints} flagged test point{defPoints === 1 ? '' : 's'}{readingNote}
       </span>
     );
   }
