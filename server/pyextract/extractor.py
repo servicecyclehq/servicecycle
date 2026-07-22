@@ -297,7 +297,7 @@ _UNIT = (r"(?:M\s?Ω|MΩ|Mohm|megohm|M\?|M0hm|Nchm|kΩ|kohm|µΩ|uΩ|uohm|u\?|ud
 # and post-nameplate-suppression the /i flag adds no known false-positive class.
 _INLINE_RE = re.compile(r"([A-Za-z][\w .,/&()+#-]{0,28}?)[ \t]*[:=]?[ \t]*(" + _NUM + r")[ \t]*(" + _UNIT + r")(?![A-Za-z0-9])", re.I)
 _EXPECT_RE = re.compile(r"(?:Expected|Limit|Min(?:imum)?|Spec|Acceptance|Nameplate)\.?\s*[:=]?\s*([<>]=?\s*[\d.]+\s*[A-Za-zΩµ%]*)", re.I)
-_RESULT_RE = re.compile(r"\b(GREEN|YELLOW|RED|PASS(?:ED)?|FAIL(?:ED)?|MARGINAL|SAT|UNSAT|ACCEPTABLE|DEFICIENT)\b", re.I)
+_RESULT_RE = re.compile(r"\b(GREEN|YELLOW|RED|PASS(?:ED)?|FAIL(?:ED)?|MARGINAL|MONITOR|CAUTION|OK|SAT|UNSAT|ACCEPTABLE|DEFICIENT)\b", re.I)
 
 # Report-LEVEL overall verdict (feeds domainValidators.verdictCrossCheck).
 # Matches phrasing conventions across NETA/PowerDB/Megger/Doble cover pages:

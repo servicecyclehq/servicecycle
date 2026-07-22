@@ -105,7 +105,7 @@ MEASUREMENT_COLUMNS = [
 
 # Verdict-token normalization -> ResultRating (GREEN/YELLOW/RED).
 RESULT_TOKENS = {
-    "GREEN": "GREEN", "PASS": "GREEN", "SAT": "GREEN", "OK": "GREEN",
+    "GREEN": "GREEN", "PASS": "GREEN", "SAT": "GREEN", "OK": "GREEN", "ACCEPTABLE": "GREEN",
     "YELLOW": "YELLOW", "MARGINAL": "YELLOW", "CAUTION": "YELLOW", "MONITOR": "YELLOW",
     "RED": "RED", "FAIL": "RED", "UNSAT": "RED", "DEFICIENT": "RED",
 }
