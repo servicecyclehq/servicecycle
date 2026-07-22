@@ -14,7 +14,7 @@
 'use strict';
 
 const prisma = require('./prisma').default;
-const { extractPdfText, parseTestReport, severityFor, evaluate } = require('./testReportParse');
+const { extractPdfText, parseTestReport, severityFor, evaluate, groupTestPoints } = require('./testReportParse');
 const { runDeterministic } = require('./testReportExtract');
 const { aiFillReadings, aiFillReadingsFromImage } = require('./aiTestReportExtract');
 const { sha256Hex, confStats, recordExtraction, findPriorImport } = require('./extractionTelemetry');
@@ -82,34 +82,11 @@ async function resolveSectionAsset(accountId: string, def: any, docSerial: strin
  *
  * Mutates `existing` in place; returns the number of net-new rows added.
  */
-// [P3 2026-07-22] Groups consecutive readings that share the same non-empty
-// `label` into one "test point" (e.g. a single A-G insulation-resistance
-// point prints 1-Min/10-Min/PI as 3 rows all labeled "A-G" -- see
-// extractor.py's _powerdb_grids / inline IR passes). Verified against the 3
-// Riverside NETA demo PDFs (2024/2025/DEMO): every reading's label appears
-// in exactly one CONSECUTIVE run -- a label is never reused non-adjacently
-// for a different point -- so same-label-and-adjacent is a safe grouping key
-// for this data. A reading with no label (null/empty) always starts its own
-// singleton point rather than merging with neighboring unlabeled readings,
-// since those are unrelated single-value rows (e.g. loosely-parsed
-// contact-resistance fragments), not a printed multi-row test point.
-function groupTestPoints(list: any[]): any[][] {
-  const points: any[][] = [];
-  let cur: any[] = [];
-  let curLabel: any = undefined;
-  for (const m of list) {
-    const lbl = (m && m.label) ? m.label : null;
-    if (cur.length && lbl !== null && lbl === curLabel) {
-      cur.push(m);
-    } else {
-      if (cur.length) points.push(cur);
-      cur = [m];
-      curLabel = lbl;
-    }
-  }
-  if (cur.length) points.push(cur);
-  return points;
-}
+// [P5 2026-07-22] groupTestPoints() moved to testReportParse.ts so
+// commitTestReport.ts's commitAssetReadings() can reuse the exact same
+// grouping key at commit time (previously Preview-display-only, which left
+// commit-time Deficiency creation ungrouped -- up to 3x inflation per
+// flagged point). See testReportParse.ts for the full definition/comment.
 
 function mergeExtractedMeasurements(existing: any[], incoming: any[]): number {
   let added = 0;

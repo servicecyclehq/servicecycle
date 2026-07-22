@@ -11,7 +11,7 @@
 'use strict';
 
 const prisma = require('./prisma').default;
-const { severityFor } = require('./testReportParse');
+const { severityFor, groupTestPoints } = require('./testReportParse');
 
 // W4 trend flags: which direction is "worse" per measurement type, and the
 // year-over-year percentage that turns an in-spec reading into an ADVISORY.
@@ -21,6 +21,11 @@ const BAD_DIRECTION: any = {
   dissolved_gas: 'up', excitation_current: 'up', ground_resistance: 'up',
 };
 const TREND_PCT = 15;
+
+// [P5 2026-07-22] Worst-severity-wins ranking used when collapsing a
+// multi-reading test point (see groupTestPoints()) down to a single
+// deficiency. Higher = worse.
+const SEV_RANK: any = { ADVISORY: 1, RECOMMENDED: 2, IMMEDIATE: 3 };
 
 // Thrown inside a $transaction to abort the whole commit with a specific HTTP
 // status. The route catch maps `httpStatus` to the response.
@@ -112,98 +117,136 @@ async function commitAssetReadings(db: any, p: {
   let trendDeficiencies = 0;
   let sanityFlags = 0;
   const defBySeverity: any = { IMMEDIATE: 0, RECOMMENDED: 0, ADVISORY: 0 };
-  for (const x of measurements) {
-    const raw = x.asFoundValue;
-    const val = (raw != null && raw !== '') ? Number(raw) : null;
-    const passFail = ['GREEN', 'YELLOW', 'RED'].includes(x.passFail) ? x.passFail : null;
-    await db.testMeasurement.create({
-      data: {
-        accountId, workOrderId: wo.id,
-        measurementType: String(x.measurementType || 'measurement'),
-        phase: x.phase || null,
-        asFoundValue: (val != null && !isNaN(val)) ? val : null,
-        asFoundUnit: x.asFoundUnit || null,
-        passFail,
-        expectedRange: x.expectedRange || null,
-        testVoltage: x.testVoltage || null,
-        notes: x.notes || null,
-        // [W2] The extractor already computes this identity (DGA gas
-        // species, winding pair, PF test mode, battery cell) and this same
-        // function already READS x.label below for deficiency text -- it
-        // was just never persisted on the row itself until now.
-        label: x.label || null,
-        // [W8] testReportParse.ts's physical-plausibility gate computes this
-        // (the reason a value was forced to RED) and the bulk-preview UI
-        // already surfaces it to the reviewer -- but it was dropped between
-        // preview and persistence, so the committed row (and any deficiency
-        // built from it) carried no trace of why. passFailBasis() below
-        // reads it back off `x` to give the auto-deficiency an honest basis.
-        sanityNote: x.sanityNote || null,
-        // [2026-07-08 acquisition audit W2-AI] The preview stage (aiTestReportExtract,
-        // testReportPreview) already stamps every reading with `source`
-        // ('ai' | 'deterministic') and `confidence` -- but this create() never
-        // wrote them, so once committed an AI-vision guess from a blurry photo
-        // was indistinguishable from a deterministically-parsed ruled-table
-        // value, both in the record and in every export. Populate straight off
-        // `x`: 'deterministic' when the extractor didn't stamp a source (the
-        // common/default case, matching aiTestReportExtract's convention that
-        // only AI/vision-recovered readings carry an explicit source), and
-        // confidence only meaningful when source='ai' (schema comment).
-        source: x.source || 'deterministic',
-        confidence: (x.source === 'ai' && x.confidence != null && !isNaN(Number(x.confidence)))
-          ? Number(x.confidence) : null,
-      },
-    });
-    measurementsCreated++;
 
-    if (val != null && !isNaN(val)) {
-      const sanity = checkMeasurementSanity(x.measurementType, val);
-      if (sanity) {
-        await db.deficiency.create({
-          data: {
-            accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
-            description: `[data check] ${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${sanity}`,
-            correctiveAction: 'Verify the reading and its unit against the source report before trusting the trend.',
-          },
-        });
-        defBySeverity.ADVISORY++;
-        sanityFlags++;
+  // [P5 2026-07-22] Group readings into NETA test points (groupTestPoints(),
+  // moved here from testReportPreview.ts) BEFORE creating pass/fail-severity
+  // and trend deficiencies, so a single physical test point that prints
+  // multiple rows (e.g. an A-G insulation-resistance point's 1-Min/10-Min/PI
+  // readings, all sharing one `label`) yields AT MOST ONE severity
+  // deficiency and AT MOST ONE trend deficiency -- not one of each per row.
+  // Previously this loop ran per-READING, so a single flagged point could
+  // create up to 3x the deficiencies it should have (confirmed against the
+  // 3 Riverside NETA demo commits: 1 pre-existing deficiency ballooned to 32
+  // across 2024/2025/DEMO). TestMeasurement creation and the sanity-check
+  // deficiency stay per-READING below -- those are legitimately about one
+  // physical value each, not the point as a whole.
+  const points = groupTestPoints(measurements);
+  for (const point of points) {
+    let worstSev: 'IMMEDIATE' | 'RECOMMENDED' | 'ADVISORY' | null = null;
+    let worstSevX: any = null;
+    let worstSevPassFail: string | null = null;
+    const trendCandidates: Array<{ x: any; dir: string; prior: number; val: number; pct: number }> = [];
+
+    for (const x of point) {
+      const raw = x.asFoundValue;
+      const val = (raw != null && raw !== '') ? Number(raw) : null;
+      const passFail = ['GREEN', 'YELLOW', 'RED'].includes(x.passFail) ? x.passFail : null;
+      await db.testMeasurement.create({
+        data: {
+          accountId, workOrderId: wo.id,
+          measurementType: String(x.measurementType || 'measurement'),
+          phase: x.phase || null,
+          asFoundValue: (val != null && !isNaN(val)) ? val : null,
+          asFoundUnit: x.asFoundUnit || null,
+          passFail,
+          expectedRange: x.expectedRange || null,
+          testVoltage: x.testVoltage || null,
+          notes: x.notes || null,
+          // [W2] The extractor already computes this identity (DGA gas
+          // species, winding pair, PF test mode, battery cell) and this same
+          // function already READS x.label below for deficiency text -- it
+          // was just never persisted on the row itself until now.
+          label: x.label || null,
+          // [W8] testReportParse.ts's physical-plausibility gate computes this
+          // (the reason a value was forced to RED) and the bulk-preview UI
+          // already surfaces it to the reviewer -- but it was dropped between
+          // preview and persistence, so the committed row (and any deficiency
+          // built from it) carried no trace of why. passFailBasis() below
+          // reads it back off `x` to give the auto-deficiency an honest basis.
+          sanityNote: x.sanityNote || null,
+          // [2026-07-08 acquisition audit W2-AI] The preview stage (aiTestReportExtract,
+          // testReportPreview) already stamps every reading with `source`
+          // ('ai' | 'deterministic') and `confidence` -- but this create() never
+          // wrote them, so once committed an AI-vision guess from a blurry photo
+          // was indistinguishable from a deterministically-parsed ruled-table
+          // value, both in the record and in every export. Populate straight off
+          // `x`: 'deterministic' when the extractor didn't stamp a source (the
+          // common/default case, matching aiTestReportExtract's convention that
+          // only AI/vision-recovered readings carry an explicit source), and
+          // confidence only meaningful when source='ai' (schema comment).
+          source: x.source || 'deterministic',
+          confidence: (x.source === 'ai' && x.confidence != null && !isNaN(Number(x.confidence)))
+            ? Number(x.confidence) : null,
+        },
+      });
+      measurementsCreated++;
+
+      if (val != null && !isNaN(val)) {
+        const sanity = checkMeasurementSanity(x.measurementType, val);
+        if (sanity) {
+          await db.deficiency.create({
+            data: {
+              accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
+              description: `[data check] ${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${sanity}`,
+              correctiveAction: 'Verify the reading and its unit against the source report before trusting the trend.',
+            },
+          });
+          defBySeverity.ADVISORY++;
+          sanityFlags++;
+        }
+      }
+
+      const sev = severityFor(passFail, !!x.critical);
+      if (sev) {
+        // Worst-severity-wins across the point's readings -- at most one
+        // severity deficiency is created for the whole point, below.
+        if (!worstSev || SEV_RANK[sev] > SEV_RANK[worstSev]) {
+          worstSev = sev;
+          worstSevX = x;
+          worstSevPassFail = passFail;
+        }
+      } else if (val != null && !isAcceptanceTest) {
+        const dir = BAD_DIRECTION[String(x.measurementType)];
+        const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}`);
+        if (dir && prior != null && prior !== 0) {
+          const pct = ((val - prior) / Math.abs(prior)) * 100;
+          const worse = (dir === 'up' && pct >= TREND_PCT) || (dir === 'down' && pct <= -TREND_PCT);
+          if (worse) trendCandidates.push({ x, dir, prior, val, pct });
+        }
       }
     }
 
-    const sev = severityFor(passFail, !!x.critical);
-    if (sev) {
+    // At most ONE severity deficiency per point -- the worst reading wins.
+    if (worstSev && worstSevX) {
       // [NETA-8-11] State the pass/fail BASIS so an auto-created deficiency is
       // defensible: the expected range/limit from the report when present, else
       // the applicable standard floor (IEEE 43 for PI/DAR), else that the verdict
       // came from the report's own result column. Always name the verdict.
-      const basis = passFailBasis(x, passFail);
+      const basis = passFailBasis(worstSevX, worstSevPassFail as string);
       await db.deficiency.create({
         data: {
-          accountId, assetId, workOrderId: wo.id, severity: sev,
-          description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''}: ${x.asFoundValue ?? '?'}${x.asFoundUnit || ''}${x.expectedRange ? ` -- expected ${x.expectedRange}` : ''} [${passFail}; ${basis}]`,
+          accountId, assetId, workOrderId: wo.id, severity: worstSev,
+          description: `${worstSevX.label || worstSevX.measurementType}${worstSevX.phase ? ` (Ph ${worstSevX.phase})` : ''}: ${worstSevX.asFoundValue ?? '?'}${worstSevX.asFoundUnit || ''}${worstSevX.expectedRange ? ` -- expected ${worstSevX.expectedRange}` : ''} [${worstSevPassFail}; ${basis}]`,
           correctiveAction: 'Flagged from test report ingest -- review reading and schedule corrective work.',
         },
       });
-      defBySeverity[sev]++;
-    } else if (val != null && !isAcceptanceTest) {
-      const dir = BAD_DIRECTION[String(x.measurementType)];
-      const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}`);
-      if (dir && prior != null && prior !== 0) {
-        const pct = ((val - prior) / Math.abs(prior)) * 100;
-        const worse = (dir === 'up' && pct >= TREND_PCT) || (dir === 'down' && pct <= -TREND_PCT);
-        if (worse) {
-          await db.deficiency.create({
-            data: {
-              accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
-              description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''} trending ${dir === 'up' ? 'up' : 'down'} ${Math.abs(Math.round(pct))}% since last test (${prior}->${val}${x.asFoundUnit || ''}) -- still in spec, monitor`,
-              correctiveAction: 'Trend flag from test-report ingest -- watch for continued degradation before next cycle.',
-            },
-          });
-          defBySeverity.ADVISORY++;
-          trendDeficiencies++;
-        }
-      }
+      defBySeverity[worstSev]++;
+    }
+
+    // At most ONE trend deficiency per point -- the steepest degrading
+    // reading (largest |pct| among qualifying candidates) wins.
+    if (trendCandidates.length) {
+      const worstTrend = trendCandidates.reduce((w, c) => (Math.abs(c.pct) > Math.abs(w.pct) ? c : w));
+      const { x, dir, prior, val, pct } = worstTrend;
+      await db.deficiency.create({
+        data: {
+          accountId, assetId, workOrderId: wo.id, severity: 'ADVISORY',
+          description: `${x.label || x.measurementType}${x.phase ? ` (Ph ${x.phase})` : ''} trending ${dir === 'up' ? 'up' : 'down'} ${Math.abs(Math.round(pct))}% since last test (${prior}->${val}${x.asFoundUnit || ''}) -- still in spec, monitor`,
+          correctiveAction: 'Trend flag from test-report ingest -- watch for continued degradation before next cycle.',
+        },
+      });
+      defBySeverity.ADVISORY++;
+      trendDeficiencies++;
     }
   }
 

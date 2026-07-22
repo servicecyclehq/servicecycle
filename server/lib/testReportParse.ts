@@ -336,5 +336,39 @@ function severityFor(passFail: string | null, critical: boolean): 'IMMEDIATE' | 
   return null;
 }
 
-module.exports = { extractPdfText, parseTestReport, evaluate, severityFor, MEASUREMENT_VOCAB };
+// [P5 2026-07-22] Groups consecutive readings that share the same non-empty
+// `label` into one "test point" (e.g. a single A-G insulation-resistance
+// point prints 1-Min/10-Min/PI as 3 rows all labeled "A-G" -- see
+// extractor.py's _powerdb_grids / inline IR passes). Moved here from
+// testReportPreview.ts (added there for the Preview-only P3 fix) so
+// commitTestReport.ts can reuse the IDENTICAL grouping key at commit time --
+// see commitAssetReadings() in commitTestReport.ts: without this, a single
+// flagged test point created one Deficiency row per READING (up to 3x
+// inflation) instead of one per point. Verified against the 3 Riverside NETA
+// demo PDFs (2024/2025/DEMO): every reading's label appears in exactly one
+// CONSECUTIVE run -- a label is never reused non-adjacently for a different
+// point -- so same-label-and-adjacent is a safe grouping key for this data.
+// A reading with no label (null/empty) always starts its own singleton point
+// rather than merging with neighboring unlabeled readings, since those are
+// unrelated single-value rows (e.g. loosely-parsed contact-resistance
+// fragments), not a printed multi-row test point.
+function groupTestPoints(list: any[]): any[][] {
+  const points: any[][] = [];
+  let cur: any[] = [];
+  let curLabel: any = undefined;
+  for (const m of list) {
+    const lbl = (m && m.label) ? m.label : null;
+    if (cur.length && lbl !== null && lbl === curLabel) {
+      cur.push(m);
+    } else {
+      if (cur.length) points.push(cur);
+      cur = [m];
+      curLabel = lbl;
+    }
+  }
+  if (cur.length) points.push(cur);
+  return points;
+}
+
+module.exports = { extractPdfText, parseTestReport, evaluate, severityFor, groupTestPoints, MEASUREMENT_VOCAB };
 export {};
