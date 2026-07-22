@@ -61,6 +61,7 @@ export default function TestReportImport() {
   const [sel, setSel] = useState([]);               // per-section asset id | CREATE
   const [createFields, setCreateFields] = useState([]); // per-section new-asset inputs
   const [testDate, setTestDate] = useState('');
+  const [testDateGuessed, setTestDateGuessed] = useState(false); // P1 2026-07-22: true when no date was extracted from the report -- testDate silently defaults to today()
   const [vendor, setVendor] = useState('');
   const [techName, setTechName] = useState('');
   const [isAcceptanceTest, setIsAcceptanceTest] = useState(false); // #27 year-0 baseline
@@ -103,7 +104,9 @@ export default function TestReportImport() {
     } else {
       setSel([]); setCreateFields([]);
     }
-    setTestDate(d.meta?.testDate || new Date().toISOString().slice(0, 10));
+    const extractedTestDate = d.meta?.testDate || '';
+    setTestDate(extractedTestDate || new Date().toISOString().slice(0, 10));
+    setTestDateGuessed(!extractedTestDate);
     setVendor(d.meta?.vendor || '');
     setTechName(d.meta?.techName || '');
     setStep(2);
@@ -441,7 +444,14 @@ export default function TestReportImport() {
           <div className="card mb-16"><div className="card-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
             <div>
               <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Test date</label>
-              <input type="date" className="input" value={testDate} onChange={e => setTestDate(e.target.value)} style={{ width: 160 }} />
+              <input type="date" className="input" value={testDate}
+                onChange={e => { setTestDate(e.target.value); setTestDateGuessed(false); }}
+                style={{ width: 160, ...(testDateGuessed ? { borderColor: '#f59e0b', boxShadow: '0 0 0 1px #f59e0b' } : {}) }} />
+              {testDateGuessed && (
+                <div style={{ fontSize: 11, color: '#92400e', marginTop: 3, maxWidth: 200 }}>
+                  Date not found in report - please confirm
+                </div>
+              )}
             </div>
             <div>
               <label style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Vendor</label>
