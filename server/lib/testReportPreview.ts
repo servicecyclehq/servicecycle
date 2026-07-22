@@ -95,6 +95,11 @@ function mergeExtractedMeasurements(existing: any[], incoming: any[]): number {
       String(e.asFoundValue) === String(m.asFoundValue));
     if (exact) {
       if ((exact.source || 'det') !== (m.source || 'ai')) exact.crossSourceAgreement = true;
+      // 2026-07-22 (result-column backfill): an agreeing incoming reading may
+      // have read a printed verdict (PASS/FAIL/MARGINAL/...) off the document
+      // that the retained reading's own pass never captured -- keep it rather
+      // than silently discarding the whole incoming measurement on agreement.
+      if (!exact.passFail && m.passFail) exact.passFail = m.passFail;
       continue;
     }
     // Within-source exact repeat → skip.

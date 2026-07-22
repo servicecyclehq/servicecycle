@@ -1830,6 +1830,21 @@ def extract_measurements(cells, page_tables, full_text=""):
     raw_spans, _sections = _build_sections(full_text)
     for m in out:
         off = m.pop("_off", None)
+        # 2026-07-22 (result-column backfill): several table layouts print a
+        # PASS/FAIL/MARGINAL/... verdict on the same physical line as the value,
+        # but only _inline_readings ever looked for it (its own same-line
+        # _RESULT_RE recovery, above). Generalize that recovery here, once, for
+        # every surviving reading that still lacks a passFail -- deterministic,
+        # same technique already proven there, no added AI cost. Only fills a
+        # currently-null verdict; never overrides one a pass already set.
+        if not m.get("passFail") and off is not None:
+            _nl = full_text.find("\n", off)
+            _tail = full_text[off: _nl if _nl != -1 else len(full_text)]
+            _rm = _RESULT_RE.search(_tail)
+            if _rm:
+                _pf = parse_value("result", _rm.group(0))
+                if _pf:
+                    m["passFail"] = _pf
         if raw_spans:
             m["section"] = _section_for_offset(off, raw_spans) if off is not None else 0
         else:
