@@ -258,7 +258,23 @@ def extract_header(cells, text):
             extra_neg = r"(?<!EQUIPMENT )(?<!DEVICE )(?<!APPARATUS )" if lbl == "type" else ""
             pat = re.compile(
                 extra_neg + r"(?<![A-Za-z])" + re.escape(lbl) +
-                r"\s*[:#]?\s*(.+?)(?=\s{2,}|\s+(?:" + stop_alt + r")\b\s*[:#]|[\r\n]|$)",
+                # [P2 2026-07-22] a short/prefix label (e.g. "tech", "date")
+                # must not match glued to more letters of a LONGER word (e.g.
+                # "tech" inside "TECHNICIAN") -- mirrors the existing
+                # lookbehind guard before the label, but after it. Sibling of
+                # the label->value glue fix below: without this, "tech" was
+                # free to match mid-word once the fuller "technician" label
+                # correctly stopped matching (see _grid_header_fallback).
+                r"(?![A-Za-z])" +
+                # label->value glue must not cross a newline: a bare `\s*`
+                # here silently jumped from a label with nothing after it on
+                # its own line into the START of the NEXT text line, capturing
+                # unrelated content (grid-layout headers with all labels on
+                # one line and all values on the next -- see
+                # _grid_header_fallback below). [ \t]* keeps intra-line
+                # spacing/tab tolerance while refusing to bridge a real line
+                # break.
+                r"[ \t]*[:#]?[ \t]*(.+?)(?=\s{2,}|\s+(?:" + stop_alt + r")\b\s*[:#]|[\r\n]|$)",
                 re.I)
             m = pat.search(text)
             if not m:
@@ -267,7 +283,90 @@ def extract_header(cells, text):
             if v:
                 out[f["key"]] = {"value": v, "raw": m.group(1).strip(), "confidence": 0.85}
                 break
+    _grid_header_fallback(cells, out)
     return out
+
+
+def _grid_header_fallback(cells, out):
+    """[P2 2026-07-22] Fallback for grid-style headers where every label sits on
+    ONE text line and every value sits on the line below (e.g. a 4-column
+    FACILITY / AREA / TEST DATE / TECHNICIAN row with the values printed on the
+    next line) -- the same-line regex above can never see across that line
+    break, so a field can come back empty (testDate: failed date-format
+    validation on whatever followed the label on ITS OWN line) or, before the
+    label->value glue fix above, silently WRONG (techName: nothing followed
+    TECHNICIAN on the label line, so the old `\s*` glue crossed the newline
+    and grabbed the *next* line's leading text -- confirmed on the Riverside
+    SWGR-2M demo reports, e.g. techName landing on "Riverside Plant Main
+    Production" instead of "R. Fenwick, NETA L2").
+
+    Only fills a field extract_header's same-line pass left missing -- never
+    overrides a value already found. Groups `cells` into visual rows by `top`;
+    a row is a "label row" if at least one cell's text is EXACTLY a known
+    header label (case-insensitive, trailing `:`/`#` stripped) -- an exact
+    match, not a substring search, to keep the false-positive rate low. The
+    row immediately below supplies each label's value, but matched at the
+    WORD level (not whole-cell): a below-row's value for one column routinely
+    shares a merged cell with its horizontal neighbour (no _page_cells column
+    gap between "Mezzanine MCC" and "07/15/2025") even though the row above
+    split FACILITY/AREA/TEST DATE/TECHNICIAN into separate label cells --
+    confirmed via direct pdfplumber word geometry on the demo PDFs: a value
+    word's x0 lines up with its column's LABEL x0, not with any below-row cell
+    boundary. Each label's column is bounded by its own x0 and the next
+    label's x0 in the same row (or a generous fallback span for the last
+    column); words whose x0 falls in that span are joined and run through the
+    same `_hdr_valid` type check every other header value already gets."""
+    if not cells:
+        return
+    label_lookup = {}
+    for f in HEADER_FIELDS:
+        if f["key"] in out:
+            continue
+        for lbl in f["labels"]:
+            label_lookup[lbl.upper()] = f
+    if not label_lookup:
+        return
+
+    rows = []
+    cur, cur_top = [], None
+    for c in cells:
+        if cur_top is None or abs(c["top"] - cur_top) <= Y_TOL:
+            cur.append(c)
+            cur_top = c["top"] if cur_top is None else cur_top
+        else:
+            rows.append(cur)
+            cur, cur_top = [c], c["top"]
+    if cur:
+        rows.append(cur)
+
+    for ri in range(len(rows) - 1):
+        row_sorted = sorted(rows[ri], key=lambda c: c["x0"])
+        label_hits = []  # (field, cell, position-in-row)
+        for pos, c in enumerate(row_sorted):
+            norm = c["text"].strip().rstrip(":#").strip().upper()
+            f = label_lookup.get(norm)
+            if f:
+                label_hits.append((f, c, pos))
+        if not label_hits:
+            continue
+        value_row = rows[ri + 1]
+        gap = min(c["top"] for c in value_row) - row_sorted[0]["top"]
+        if gap <= 0 or gap > 25:
+            continue  # not the visually-next line -- don't reach further down the page
+        value_words = sorted(
+            (w for c in value_row for w in c["words"]), key=lambda w: w["x0"])
+        for f, label_cell, pos in label_hits:
+            if f["key"] in out:
+                continue  # an earlier row in this same document already filled it
+            lo = label_cell["x0"] - 5
+            hi = row_sorted[pos + 1]["x0"] - 5 if pos + 1 < len(row_sorted) else label_cell["x0"] + 260
+            words_in_col = [w["text"] for w in value_words if lo <= w["x0"] < hi]
+            if not words_in_col:
+                continue
+            joined = " ".join(words_in_col)
+            v = _hdr_valid(f["dtype"], joined)
+            if v:
+                out[f["key"]] = {"value": v, "raw": joined, "confidence": 0.8}
 
 
 # --- measurements ---
