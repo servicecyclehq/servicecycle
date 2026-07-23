@@ -9,7 +9,7 @@
 //   2. Test-event history — one card per dated test event with its readings.
 //
 // Data: GET /api/assets/:id/test-history → { events: [{ id, date, vendor,
-//   techName, measurements: [{ measurementType, phase, value, unit, passFail,
+//   techName, measurements: [{ measurementType, phase, label, value, unit, passFail,
 //   expectedRange, testVoltage, notes }] }] } (events sorted oldest→newest).
 // Charts/Excel export are follow-ups; this is the history + YoY core.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,20 +225,28 @@ export default function TestingTrendsTab({ asset }) {
     );
   }
 
-  // Build the YoY pivot: one row per (measurementType + phase), columns = events.
-  const rowKey = (m) => `${m.measurementType}||${m.phase || ''}`;
+  // Build the YoY pivot: one row per (measurementType + phase + label), columns = events.
+  // [D-col 2026-07-23] Key includes `label` (device/position name, e.g. "Main
+  // Breaker (MB-1)"), not just type+phase. Without it, every device sharing a
+  // type+phase (6 breakers' Contact Resistance Phase A, or all 6 null-phase
+  // Trip Times) collapsed into ONE pivot row -- silently showing only
+  // whichever device's reading happened to land last in the map, with no way
+  // to tell which device a row's numbers actually belonged to.
+  const rowKey = (m) => `${m.measurementType}||${m.phase || ''}||${m.label || ''}`;
   const rowMap = new Map();
   for (const ev of events) {
     for (const m of ev.measurements || []) {
       const k = rowKey(m);
       if (!rowMap.has(k))
-        rowMap.set(k, { measurementType: m.measurementType, phase: m.phase || '', unit: m.unit || '', byEvent: {} });
+        rowMap.set(k, { measurementType: m.measurementType, phase: m.phase || '', label: m.label || '', unit: m.unit || '', byEvent: {} });
       rowMap.get(k).byEvent[ev.id] = m;
     }
   }
   const rows = [...rowMap.values()].sort(
     (a, b) =>
-      a.measurementType.localeCompare(b.measurementType) || String(a.phase).localeCompare(String(b.phase)),
+      a.measurementType.localeCompare(b.measurementType) ||
+      String(a.phase).localeCompare(String(b.phase)) ||
+      String(a.label).localeCompare(String(b.label)),
   );
 
   const flagFor = (row) => {
@@ -279,19 +287,34 @@ export default function TestingTrendsTab({ asset }) {
   // Series (one per phase) for the active measurementType, keyed by event year.
   const activeRows = rows.filter((r) => r.measurementType === activeType);
   const chartUnit = activeRows.find((r) => r.unit)?.unit || '';
+  // [D-col 2026-07-23] activeRows can now hold multiple rows per phase (one
+  // per device, e.g. 6 breakers all reporting Phase A). The hero chart draws
+  // one line per PHASE across the whole asset, so take the worst-case (max)
+  // value per phase per event rather than letting devices silently overwrite
+  // each other while building the chart point/series.
   const chartData = events.map((ev) => {
     const point = { label: yearLabel(ev.date), date: ev.date };
     for (const r of activeRows) {
       const v = num(r.byEvent[ev.id]?.value);
-      point[r.phase || 'value'] = v;
+      if (v == null) continue;
+      const k = r.phase || 'value';
+      point[k] = point[k] == null ? v : Math.max(point[k], v);
     }
     return point;
   });
-  const chartSeries = activeRows.map((r, i) => ({
-    key: r.phase || 'value',
-    name: r.phase ? `Phase ${r.phase}` : titleCase(activeType),
-    color: colorForPhase(r.phase || '', i),
-  }));
+  const seenPhaseKeys = new Set();
+  const chartSeries = activeRows
+    .filter((r) => {
+      const k = r.phase || 'value';
+      if (seenPhaseKeys.has(k)) return false;
+      seenPhaseKeys.add(k);
+      return true;
+    })
+    .map((r, i) => ({
+      key: r.phase || 'value',
+      name: r.phase ? `Phase ${r.phase}` : titleCase(activeType),
+      color: colorForPhase(r.phase || '', i),
+    }));
 
   // Top flagged readings (bad-direction movers) for the gauge row.
   const gaugeRows = rows
@@ -306,7 +329,7 @@ export default function TestingTrendsTab({ asset }) {
       // Sensible gauge max: a bit above the historical peak so the needle has room.
       const max = peak > 0 ? peak * 1.25 : (latest || 1) * 1.25;
       return {
-        label: `${titleCase(row.measurementType)}${row.phase ? ' · ' + row.phase : ''}`,
+        label: `${titleCase(row.measurementType)}${row.label ? ' · ' + row.label : ''}${row.phase ? ' · ' + row.phase : ''}`,
         value: latest,
         unit: row.unit || '',
         max,
@@ -435,9 +458,10 @@ export default function TestingTrendsTab({ asset }) {
               {rows.map((row) => {
                 const flag = flagFor(row);
                 return (
-                  <tr key={`${row.measurementType}-${row.phase}`}>
+                  <tr key={`${row.measurementType}-${row.phase}-${row.label}`}>
                     <td>
                       {titleCase(row.measurementType)}
+                      {row.label && <span className="text-muted"> · {row.label}</span>}
                       {row.phase && <span className="text-muted"> · {row.phase}</span>}
                       {row.unit && <span className="text-muted" style={{ fontSize: 11 }}> ({row.unit})</span>}
                     </td>
@@ -484,6 +508,7 @@ export default function TestingTrendsTab({ asset }) {
               <thead>
                 <tr>
                   <th>Test</th>
+                  <th>Device</th>
                   <th>Phase</th>
                   <th style={{ textAlign: 'right' }}>Value</th>
                   <th>Unit</th>
@@ -495,6 +520,7 @@ export default function TestingTrendsTab({ asset }) {
                 {(ev.measurements || []).map((m) => (
                   <tr key={m.id}>
                     <td>{titleCase(m.measurementType)}</td>
+                    <td className="text-muted">{m.label || '—'}</td>
                     <td>{m.phase || '—'}</td>
                     <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {m.value != null && m.value !== '' ? m.value : '—'}

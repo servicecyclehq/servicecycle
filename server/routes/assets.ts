@@ -783,6 +783,7 @@ router.get('/:id/test-history', async (req, res) => {
         id:              m.id,
         measurementType: m.measurementType,
         phase:           m.phase,
+        label:           m.label,
         value:           m.asFoundValue,
         unit:            m.asFoundUnit,
         asLeftValue:     m.asLeftValue,
