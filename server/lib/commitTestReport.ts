@@ -104,12 +104,22 @@ async function commitAssetReadings(db: any, p: {
 
   const priorRows = await db.testMeasurement.findMany({
     where: { accountId, deletedAt: null, asFoundValue: { not: null }, workOrder: { assetId } },
-    select: { measurementType: true, phase: true, asFoundValue: true, createdAt: true },
+    select: { measurementType: true, phase: true, label: true, asFoundValue: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   });
+  // [W17 2026-07-23] Key includes `label`, not just type+phase. Without it,
+  // every device on a contact_resistance/trip_time table (Main Breaker,
+  // Tie Breaker, Feeder F-1..F-4 -- same type, and for trip_time the same
+  // null phase too) collapsed into ONE map slot, so a trend deficiency could
+  // compare one device's new reading against an UNRELATED device's old one
+  // (confirmed live: "Feeder F-3 (Ph A) trending up 33% since last test
+  // (66->88uOhm)" -- 66 was actually Feeder F-4's 2024 Phase-A value, not
+  // Feeder F-3's). label still doesn't disambiguate insulation_resistance's
+  // 1-Min/10-Min/PI trio (all three share one label, e.g. "A-G") -- that
+  // narrower residual case is a separate, smaller-scope follow-up.
   const priorByKey = new Map<string, number>();
   for (const r of priorRows as any[]) {
-    const k = `${r.measurementType}|${r.phase || ''}`;
+    const k = `${r.measurementType}|${r.phase || ''}|${r.label || ''}`;
     if (!priorByKey.has(k)) priorByKey.set(k, Number(r.asFoundValue));
   }
 
@@ -207,7 +217,7 @@ async function commitAssetReadings(db: any, p: {
         }
       } else if (val != null && !isAcceptanceTest) {
         const dir = BAD_DIRECTION[String(x.measurementType)];
-        const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}`);
+        const prior = priorByKey.get(`${x.measurementType}|${x.phase || ''}|${x.label || ''}`);
         if (dir && prior != null && prior !== 0) {
           const pct = ((val - prior) / Math.abs(prior)) * 100;
           const worse = (dir === 'up' && pct >= TREND_PCT) || (dir === 'down' && pct <= -TREND_PCT);
