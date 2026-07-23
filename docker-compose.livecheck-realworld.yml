@@ -1,0 +1,15 @@
+# Sibling to docker-compose.livecheck.yml -- same pattern, points at the
+# real-world ABB reference-diagram observational check instead of the
+# synthetic-fixture pass/fail check. See that file's header for the general
+# rationale (avoids a long multi-flag docker compose one-liner).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.livecheck-realworld.yml \
+#     --project-directory /root/ServiceCycle run server
+services:
+  server:
+    volumes:
+      - ./server/tests:/app/tests:ro
+    environment:
+      RUN_LIVE_AI_TEST: "1"
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "tests/runRealWorldSideCheck.ts"]
