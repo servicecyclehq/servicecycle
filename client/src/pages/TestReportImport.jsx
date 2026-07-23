@@ -86,9 +86,24 @@ export default function TestReportImport() {
 
   // Apply a preview payload (same shape from the sync /preview route OR the #2
   // async ingest job result) to the review UI.
+  // [D-match 2026-07-23] For any measurement the server fuzzy-matched
+  // against this asset's own label history (see deviceLabelMatch.ts),
+  // default the row to the SUGGESTED canonical label -- both green
+  // (high-confidence) and yellow (needs-a-glance) links start "accepted" so
+  // the common case (the suggestion is right) costs zero clicks; a one-click
+  // toggle in the readings table reverts to treating it as a new device.
+  // `labelOriginalText` keeps what this report actually printed, so
+  // reverting (or just hovering) doesn't lose it.
+  function applyLabelMatch(m) {
+    if ((m.labelTier === 'green' || m.labelTier === 'yellow') && m.labelMatchedTo) {
+      return { ...m, labelOriginalText: m.label, label: m.labelMatchedTo, labelLinkAccepted: true };
+    }
+    return m;
+  }
+
   function applyPreview(d) {
     setPreview(d);
-    setRows(d.measurements.map(m => ({ ...m, include: true })));
+    setRows(d.measurements.map(m => ({ ...applyLabelMatch(m), include: true })));
     setOriginal(d.measurements.map(m => ({ passFail: m.passFail ?? null, asFoundValue: m.asFoundValue ?? null })));
     setPreviewedAt(Date.now());
     setAssetId(d.assetMatch?.id || '');
@@ -240,6 +255,33 @@ export default function TestReportImport() {
   // inline without a component boundary; defining a component inside the page
   // and mounting it as JSX would remount on every keystroke and drop input
   // focus in the create-asset form. ─────────────────────────────────────────
+  // [D-match 2026-07-23] Small inline affordance next to a reading's device
+  // label when the server fuzzy-matched it to a device already on file for
+  // this asset. Accepted (the default) shows what it's linked to with a
+  // one-click way to say "not this one" -- rejected shows the reverse, so
+  // either state is a single click from the other. Green vs yellow only
+  // changes the wording/color, not the mechanism: both are pre-accepted.
+  function deviceMatchBadge(r, i) {
+    if (!r.labelTier || r.labelTier === 'red' || !r.labelMatchedTo) return null;
+    const color = r.labelTier === 'green' ? '#15803d' : '#92400e';
+    if (r.labelLinkAccepted) {
+      return (
+        <span style={{ marginLeft: 6, fontSize: 10, color }}>
+          {r.labelTier === 'green' ? 'linked to prior device' : `linked to prior device (${Math.round((r.labelMatchScore || 0) * 100)}% match)`}
+          {' · '}
+          <a href="#" onClick={e => { e.preventDefault(); setRow(i, { label: r.labelOriginalText, labelLinkAccepted: false }); }} style={{ color, textDecoration: 'underline' }}>not this one?</a>
+        </span>
+      );
+    }
+    return (
+      <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-text-secondary)' }}>
+        treating as new device
+        {' · '}
+        <a href="#" onClick={e => { e.preventDefault(); setRow(i, { label: r.labelMatchedTo, labelLinkAccepted: true }); }} style={{ color, textDecoration: 'underline' }}>actually &quot;{r.labelMatchedTo}&quot;?</a>
+      </span>
+    );
+  }
+
   function readingsTable(indices) {
     const idx = (indices || rows.map((_, i) => i)).map(i => [rows[i], i]);
     if (!idx.length) return <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>No readings in this section.</div>;
@@ -261,7 +303,7 @@ export default function TestReportImport() {
         <tr key={i} style={{ borderTop: '1px solid var(--color-border)', background: lvl === 'low' ? '#fef2f2' : 'transparent' }}>
           <td><input type="checkbox" checked={r.include} onChange={() => setRow(i, { include: !r.include })} /></td>
           <td title={CONF_LABEL[lvl]}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 999, background: CONF_DOT[lvl] }} /></td>
-          <td>{r.label}</td>
+          <td>{r.label}{deviceMatchBadge(r, i)}</td>
           <td>{r.phase || '—'}</td>
           <td>{r.asFoundValue ?? '—'} {r.asFoundUnit || ''}</td>
           <td style={{ color: 'var(--color-text-secondary)' }}>{r.expectedRange || '—'}</td>

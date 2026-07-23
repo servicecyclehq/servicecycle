@@ -20,6 +20,7 @@ const { aiFillReadings, aiFillReadingsFromImage } = require('./aiTestReportExtra
 const { sha256Hex, confStats, recordExtraction, findPriorImport } = require('./extractionTelemetry');
 const { resolveAsset } = require('./assetIdentity');
 const { extractDocxText } = require('./docxText');
+const { matchDeviceLabel } = require('./deviceLabelMatch');
 
 const IMAGE_RE = /\.(jpe?g|png|heic|heif|webp)$/i;
 const DOCX_RE  = /\.docx$/i;
@@ -400,6 +401,58 @@ async function buildTestReportPreview(inputBuffer: Buffer, opts: BuildPreviewOpt
         assetMatch: best, assetCandidates: candidates,
       };
     }));
+  }
+
+  // #6 device-label identity resolution (2026-07-23) -- see
+  // deviceLabelMatch.ts for the full design rationale (research doc:
+  // Device_Identity_Matching_Research_ServiceCycle.md). Fuzzy-matches each
+  // measurement's extracted label against THIS asset's own label history so
+  // the Testing & Trends year-over-year view doesn't fork a device's trend
+  // line over a formatting difference between reports/vendors ("MB-1" vs
+  // "Main Breaker (MB-1)"). Skipped for measurements that never got a real
+  // label (extract_measurements' `label: x.label || x.measurementType`
+  // fallback above -- a bare measurementType is not a device identity to
+  // match on) and for brand-new assets with no prior history (correctly
+  // "new device", not a gap). Advisory only: this never changes which asset
+  // a reading commits to, only whether the client offers to relabel it to
+  // match a device already on file for whichever asset ends up chosen.
+  {
+    const bucketAssetId = (mi: number): string | null => {
+      if (!sections.length) return assetMatch ? assetMatch.id : null;
+      const m = measurements[mi];
+      const sIdx = (m.section === null || m.section === undefined) ? 0 : m.section;
+      const sec = sections[sIdx];
+      return (sec && sec.assetMatch) ? sec.assetMatch.id : null;
+    };
+    const priorLabelCache = new Map<string, Map<string, string[]>>(); // assetId -> measurementType -> labels
+    for (let i = 0; i < measurements.length; i++) {
+      const m = measurements[i];
+      if (!m.label || m.label === m.measurementType) continue;
+      const targetAssetId = bucketAssetId(i);
+      if (!targetAssetId) continue;
+      let byType = priorLabelCache.get(targetAssetId);
+      if (!byType) {
+        const rows = await prisma.testMeasurement.findMany({
+          where: { accountId, deletedAt: null, workOrder: { assetId: targetAssetId } },
+          select: { measurementType: true, label: true },
+        });
+        byType = new Map<string, string[]>();
+        for (const r of rows as any[]) {
+          if (!r.label) continue;
+          if (!byType.has(r.measurementType)) byType.set(r.measurementType, []);
+          byType.get(r.measurementType)!.push(r.label);
+        }
+        priorLabelCache.set(targetAssetId, byType);
+      }
+      const priorLabels = byType.get(m.measurementType) || [];
+      if (!priorLabels.length) continue;
+      const match = matchDeviceLabel(m.label, priorLabels);
+      if (match.tier !== 'red') {
+        m.labelTier = match.tier;
+        m.labelMatchedTo = match.matchedLabel;
+        m.labelMatchScore = match.score;
+      }
+    }
   }
 
   // #4 telemetry.
