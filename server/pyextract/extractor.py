@@ -700,6 +700,48 @@ _PHASEHDR_RE = re.compile(r"\bPHASE\s+\d", re.I)
 # Riverside_NETA_Test_Report_DEMO.pdf, an older sample with both shapes in one
 # grid window).
 _TESTPOINT_LABEL_RE = re.compile(r"^[A-Za-z0-9]{1,3}[-–][A-Za-z0-9]{1,3}$")
+# 2026-07-24 (P3 debug session, adjacent to P1 above): the P1 comment block
+# above claims "gating on the header text keeps [unrelated 3-value rows]
+# untouched" -- that's only true for the polarization_index MISROUTE (`pos ==
+# 2` of an `is_pi_triple` row). `ir_has_pi` does nothing to stop a row from
+# being tagged as insulation_resistance in the first place: every row this grid
+# sees still falls into the `else` branch below unconditionally once it clears
+# the shape gate (label <=4 tokens, >=1 number). Confirmed via
+# Riverside_NETA_Test_Report_DEMO.pdf (the OLDER, non-SWGR2M sample): SWGR-A's
+# own "Contact Resistance (µΩ) 42 44 41" sits 1 line below the header that
+# opens the FIRST MΩ window, well inside its 8-line countdown; TX-01's "Turns
+# Ratio 28.75 28.79 28.73 28.75" sits 6 lines below that SAME window (still
+# inside it); and CB-12's "Contact Resistance (µΩ) 118 214 122" / "Trip Time,
+# Open (ms) 28 29 28" sit 7 and 8 lines below a SECOND MΩ window that TX-01's
+# own (legitimate) "WINDING INSULATION RESISTANCE (1 MIN, MΩ) POLARIZATION
+# INDEX" header re-arms to a fresh `ir_rows = 8` -- and that window never
+# closes early because `_PHASEHDR_RE` only recognizes digit-style "PHASE 1/2/3"
+# columns, not the letter-style "PHASE A/B/C" columns CB-12's own table header
+# uses. All 9 values were tagged insulation_resistance/MΩ. Neither retuning
+# the `ir_rows` countdown nor broadening `_PHASEHDR_RE` fixes this at the
+# mechanism: both are still blind timing heuristics with no notion of what
+# table a row actually belongs to, so either one still leaks whenever the next
+# table happens to sit at a different distance or its header happens to omit
+# the word "PHASE" (as TX-01's own "TEST H1-X1 H2-X2 H3-X3 NAMEPLATE RATIO"
+# header does) -- confirmed empirically: shrinking `ir_rows` enough to stop
+# this file's leaks (tested at 3) also cuts the P1 target SWGR2M reports'
+# polarization_index recall from 6 to 3 and insulation_resistance from 12 to 6
+# on all three (2024, 2025, Test_Report_DEMO), because their genuine multi-
+# winding grids need more than 3 real rows of countdown to begin with -- the
+# countdown length that's "too long" for this report is simultaneously "not
+# long enough" for that one, because neither number means anything about
+# table boundaries. What DOES generalize: every row this grid emits already
+# has its own descriptive label captured in `label` a few lines below, and a
+# row whose label NAMES a different NETA test type is never insulation
+# resistance no matter how it got swept into the window -- so gate on that
+# label text, the same mechanism already used one line below for boilerplate
+# rows (`READING|COUNTER|WIRING|COMMENT`), rather than trying to make the
+# timing heuristics smarter. Scoped to the three types confirmed leaking here;
+# see the P3 debug session notes for other NETA type names that share this
+# risk but have no confirmed repro yet (dissipation factor, power factor,
+# winding/DC resistance, excitation current) -- not added speculatively.
+_MOHM_GRID_OTHER_TABLE_RE = re.compile(
+    r"CONTACT RESISTANCE|TRIP TIME|TURNS RATIO", re.I)
 
 
 def _is_numtok(t):
@@ -847,6 +889,11 @@ def _powerdb_grids(text):
             label = " ".join(lbl).strip("':")
             if re.search(r"READING|COUNTER|WIRING|COMMENT", label, re.I):
                 continue               # counter/boilerplate rows, not readings
+            if _MOHM_GRID_OTHER_TABLE_RE.search(label):
+                continue               # a real reading, but of a DIFFERENT NETA
+                                        # type (see _MOHM_GRID_OTHER_TABLE_RE) --
+                                        # not insulation resistance regardless
+                                        # of how it landed inside this window
             # 2026-07-04: `len(run) >= 1` (was `>= 2`) — real PowerDB reports
             # commonly have per-winding rows with just the 1-min value when
             # the 10-min column is empty or shown as "--" (report_004:

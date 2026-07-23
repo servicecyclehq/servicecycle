@@ -997,13 +997,19 @@ async function buildComplianceGap(prisma, accountId, { siteId = null, limit = 50
   };
 }
 
-// ── buildComplianceByCustomer / buildComplianceBySite (monthly digest) ────────
+// ── buildComplianceByCustomer (monthly digest) ────────────────────────────
 //
-// Roll-ups for the two-email monthly digest. The manager roll-up charts
-// compliance BY CUSTOMER (Account), not by the 120 individual sites; the rep
-// email and the standalone-account fallback chart BY SITE within one account.
-// Both reuse the same active-schedule taxonomy + summarizeSchedules math as the
+// Roll-up for the two-email monthly digest. The manager roll-up charts
+// compliance BY CUSTOMER (Account), not by the 120 individual sites. Reuses
+// the same active-schedule taxonomy + summarizeSchedules math as the
 // per-standard report above, so the digest rate and the in-app rate agree.
+//
+// (buildComplianceBySite, the per-site counterpart, was removed 2026-07-24 —
+// unreachable dead code (zero callers repo-wide, confirmed via repo-wide
+// search) whose body still carried the pre-fix SC-03 "sites with zero active
+// schedules are omitted" bug pattern verbatim. If a by-site digest view is
+// ever needed again, build it fresh from the LEFT-JOIN-from-sites approach in
+// routes/dashboard.ts — do not resurrect this function.)
 
 /**
  * One compliance summary per account in `accountIds`. Single query across all
@@ -1056,58 +1062,12 @@ async function buildComplianceByCustomer(prisma, accountIds, { now = new Date() 
   return out;
 }
 
-/**
- * One compliance summary per SITE within a single account (the standalone /
- * fallback path charts this). Sites with zero active schedules are omitted.
- *
- * @returns Array<{ siteId, siteName, ...summarizeSchedules }> worst-first.
- */
-async function buildComplianceBySite(prisma, accountId, { now = new Date() } = {} as any) {
-  const schedules = await prisma.maintenanceSchedule.findMany({
-    where: {
-      accountId,
-      isActive: true,
-      asset: { archivedAt: null, inService: true },
-    },
-    select: {
-      assetId: true,
-      isActive: true,
-      nextDueDate: true,
-      asset: { select: { site: { select: { id: true, name: true } } } },
-    },
-  });
-
-  const bySite = new Map();
-  for (const s of schedules) {
-    const site = s.asset?.site;
-    const key = site?.id || '__none__';
-    let g = bySite.get(key);
-    if (!g) { g = { siteId: site?.id || null, siteName: site?.name || 'Unassigned', schedules: [] }; bySite.set(key, g); }
-    g.schedules.push(s);
-  }
-
-  const out = [...bySite.values()].map((g) => ({
-    siteId: g.siteId,
-    siteName: g.siteName,
-    ...summarizeSchedules(g.schedules, now),
-  }));
-
-  out.sort((a, b) => {
-    if (a.complianceRate === null && b.complianceRate === null) return 0;
-    if (a.complianceRate === null) return 1;
-    if (b.complianceRate === null) return -1;
-    return a.complianceRate - b.complianceRate;
-  });
-  return out;
-}
-
 module.exports = {
   buildStandardsSummary,
   buildStandardReport,
   buildOverdueReport,
   buildComplianceGap,
   buildComplianceByCustomer,
-  buildComplianceBySite,
   ACCOUNT_DEFINED_CODE,
 };
 
