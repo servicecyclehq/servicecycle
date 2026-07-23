@@ -115,6 +115,7 @@ const { settleAllPending, verifyAllChains } = require('../lib/activityLogChain')
 
 const HAS_DRY_RUN_FLAG = process.argv.includes('--dry-run');
 const HAS_EXECUTE_FLAG = process.argv.includes('--execute');
+const HAS_VERIFY_ONLY_FLAG = process.argv.includes('--verify-only');
 const EXECUTE = HAS_EXECUTE_FLAG;
 const PAGE_SIZE = 1000;
 const SAMPLE_LOG_COUNT = 3;
@@ -247,15 +248,39 @@ async function verify() {
 async function main() {
   console.log('=== ServiceCycle ActivityLog attribution backfill (SC-10 Approach B, historical-row catch-up) ===');
 
+  // --verify-only (2026-07-24 addition): a standalone, read-mostly spot-check
+  // that just runs Pass 3 (verifyAllChains) and prints ONLY the compact
+  // summary -- added after a real --execute run's console output got
+  // truncated by the calling tool's own output-length cap before the Pass 3
+  // summary was visible. Doesn't touch details/_actor or rowHash/prevHash at
+  // all (verifyAllChains only WRITES if it finds a break, to log the break
+  // itself as its own audit event -- same as the existing nightly cron
+  // already does). Safe to run any time, as often as wanted.
+  if (HAS_VERIFY_ONLY_FLAG) {
+    console.log('*** VERIFY-ONLY -- checking chain integrity, no backfill logic runs ***');
+    console.log('');
+    try {
+      await verify();
+    } catch (err) {
+      console.error('Verify failed:', err);
+      process.exitCode = 1;
+    } finally {
+      await prisma.$disconnect();
+    }
+    return;
+  }
+
   // Explicit-mode requirement (2026-07-24): require exactly one of
-  // --dry-run / --execute so every invocation is self-describing from the
-  // command line alone, with zero DB connection attempted until the mode is
-  // unambiguous -- a reviewer (human or automated) shouldn't have to read
-  // this file's source to know whether a given invocation writes anything.
+  // --dry-run / --execute / --verify-only so every invocation is
+  // self-describing from the command line alone, with zero DB connection
+  // attempted until the mode is unambiguous -- a reviewer (human or
+  // automated) shouldn't have to read this file's source to know whether a
+  // given invocation writes anything.
   if (HAS_DRY_RUN_FLAG === HAS_EXECUTE_FLAG) { // both false, or both true -- either way, ambiguous
-    console.error('Usage: node scripts/backfill-activity-log-actor.js --dry-run | --execute');
-    console.error('  --dry-run  Read-only. Reports what would change. No writes, no DB mutation of any kind.');
-    console.error('  --execute  Performs the backfill for real (Pass 1 writes + Pass 2 chain re-anchor + Pass 3 verify).');
+    console.error('Usage: node scripts/backfill-activity-log-actor.js --dry-run | --execute | --verify-only');
+    console.error('  --dry-run     Read-only. Reports what would change. No writes, no DB mutation of any kind.');
+    console.error('  --execute     Performs the backfill for real (Pass 1 writes + Pass 2 chain re-anchor + Pass 3 verify).');
+    console.error('  --verify-only Just runs the Pass 3 chain-integrity check and prints the summary. No backfill.');
     process.exitCode = 1;
     return;
   }
