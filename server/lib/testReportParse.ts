@@ -143,7 +143,7 @@ function evaluate(
  * Returns ≥2 {phase, value} pairs when a table is detected; null otherwise
  * (caller falls back to the legacy single-value path).
  */
-function extractTableRows(seg: string): Array<{ phase: string; value: number }> | null {
+function extractTableRows(seg: string): Array<{ phase: string | null; value: number; label?: string; expected?: string | null }> | null {
   // Strip test-condition noise before scanning so instrument model numbers like
   // "S1-5010" and test voltages like "@ 5000 VDC" don't produce phantom rows.
   const cleaned = seg
@@ -176,6 +176,64 @@ function extractTableRows(seg: string): Array<{ phase: string; value: number }> 
   }
   const phaseSet = new Set(phases.map((p) => p.phase));
   if (phases.length >= 2 && phaseSet.size >= 2) return phases;
+
+  // ── Position / device rows (breaker contact resistance, trip timing, and
+  // similar NETA tables laid out by device rather than by phase letter) ─────
+  // [P6 2026-07-23] Shape (after whitespace-normalisation):
+  //   "POSITION PHASE A PHASE B PHASE C [MFR. THRESHOLD] RESULT
+  //    Main Breaker (MB-1) 65 76 68 PASS
+  //    Tie Breaker (TB-1) 70 74 71 PASS ..."
+  // i.e. a device NAME (not a bare phase letter) followed by 1-4 bare numeric
+  // readings, an optional inline threshold ("≤100"), and a verdict word.
+  // Confirmed present in all 3 Riverside NETA demo PDFs' "Contact Resistance
+  // by Breaker Position" and "Breaker Timing" sections -- previously fell
+  // through to the legacy single-value path, which grabbed a stray number
+  // from the nearest threshold/prose instead of the real per-position table.
+  //
+  // The header row always ends in the literal word "RESULT" (data rows end in
+  // PASS/FAIL/MONITOR/MARGINAL instead, never the word "RESULT" itself), so
+  // stripping through the FIRST "RESULT" removes the whole header in one go
+  // regardless of how far into this segment it falls -- otherwise the lazy
+  // device-name group would be tempted to swallow header text ("POSITION
+  // PHASE A PHASE B PHASE C RESULT") into the first row's label when
+  // searching for the nearest number run. (Not anchored to segment start or
+  // bounded to a fixed prefix length: for a hit whose OWN label is the table
+  // heading, e.g. "Contact Resistance by Breaker Position (...)", the header
+  // row's "RESULT" can be 100+ chars in; for a hit that starts mid-table,
+  // e.g. "TRIP TIME (MS) RESULT ...", it's only a few chars in.)
+  const posHeader = cleaned.match(/\bRESULT\b\s*/i);
+  const posRowsText = posHeader ? cleaned.slice((posHeader.index ?? 0) + posHeader[0].length) : cleaned;
+  // Device-name group is capped at ~30 chars (real position names like "Main
+  // Breaker (MB-1)" are well under that) as defense-in-depth against the
+  // label swallowing more than one row; the header strip above is the primary
+  // guard. Numbers must be 2+ digits (as with the phase-row check above) to
+  // avoid matching the "-1"/"-4" etc. embedded in position codes.
+  const posRowRe = /([A-Za-z][A-Za-z0-9()\-. ]{1,28}?)\s+((?:\d{2,}(?:\.\d+)?\s+){1,4})(?:([≤≥<>]=?\s*\d+(?:\.\d+)?)\s+)?(PASS|FAIL|MONITOR|MARGINAL)\b/gi;
+  const posRows: Array<{ phase: string | null; value: number; label: string; expected: string | null }> = [];
+  let posRowCount = 0;
+  while ((m = posRowRe.exec(posRowsText)) !== null) {
+    // A PDF page break can interleave a repeated report-attribution footer
+    // line mid-table (seen in the Riverside DEMO report, between the
+    // "Feeder F-3" and "Feeder F-4" rows of the Breaker Timing table); when
+    // that footer text is short enough to fall inside the device-name group's
+    // length cap, it gets captured as a prefix on the following row's label.
+    // Real device names never contain a bare space-delimited digit (a
+    // hyphen-joined code like "(MB-1)" or "F-4" doesn't count -- there's no
+    // whitespace around that digit), but footer/address-style text often
+    // does ("... Section 1 Feeder F-4"), so trim through the LAST such token.
+    const posLabel = m[1].trim().replace(/\s+/g, ' ').replace(/^[\s\S]*\s\d\s+/, '');
+    const vals = m[2].trim().split(/\s+/).map((s) => parseFloat(s));
+    const thr = m[3] ? m[3].replace('≤', '<=').replace('≥', '>=') : null;
+    const phaseLetters: Array<string | null> = vals.length === 1 ? [null] : ['A', 'B', 'C', 'D'].slice(0, vals.length);
+    let rowHadValue = false;
+    vals.forEach((v, i) => {
+      if (Number.isFinite(v)) { posRows.push({ phase: phaseLetters[i], value: v, label: posLabel, expected: thr }); rowHadValue = true; }
+    });
+    if (rowHadValue) posRowCount++;
+  }
+  // Require ≥2 distinct device rows (not just ≥2 flattened values) so a
+  // single stray match can't masquerade as a table.
+  if (posRowCount >= 2 && posRows.length >= 2) return posRows;
 
   return null;
 }
@@ -217,13 +275,58 @@ function parseTestReport(rawText: string) {
   }
   hits.sort((a, b) => a.idx - b.idx);
 
+  // [P6 2026-07-23] Keep only the FIRST occurrence of each label. PowerDB/NETA
+  // reports routinely echo measurement-type names a second time outside their
+  // data table -- most commonly a synopsis/"Summary" section near the end
+  // repeating category names ("CATEGORY RESULT Insulation Resistance -- Main
+  // Bus 6 of 6 PASS Contact Resistance -- Breaker Positions ..."), sometimes
+  // also a narrative aside referencing the measurement by name ("MB-1 Phase B
+  // contact resistance (142μΩ) exceeds..."). Each such repeat was previously
+  // treated as a fresh hit: it produced its own bogus single-value reading
+  // (no real table around it, so the legacy path grabs whatever stray number
+  // is nearby), AND it silently inflated the segment window of whichever
+  // measurement immediately preceded it (segments are bounded by "the next
+  // hit's index" -- a distant summary-section repeat pushes that boundary far
+  // past the real table, letting unrelated text bleed in; confirmed via the
+  // Riverside DEMO report, where a summary-section repeat of "contact
+  // resistance" after Trip Time let a stray "Ω" from a later mechanical-
+  // inspection line ("Ground bus continuity <1Ω...") get picked up as Trip
+  // Time's unit). A real report table for a given measurement type appears
+  // once; treat every later mention of the same label as discussion of
+  // already-tabulated data, not a second data table.
+  const seenLabels = new Set<string>();
+  const dedupedHits = hits.filter((h) => {
+    if (seenLabels.has(h.label)) return false;
+    seenLabels.add(h.label);
+    return true;
+  });
+  hits.length = 0;
+  hits.push(...dedupedHits);
+
   const measurements: any[] = [];
   for (let h = 0; h < hits.length; h++) {
     const { idx, label } = hits[h];
     // 200-char fallback window (up from 90) so multi-row tables (H-G/X-G/H-X
     // or A/B/C phase rows) fall inside the segment for extractTableRows().
+    // Kept intentionally SHORT for unit/expected/testVoltage extraction below
+    // (those should only ever match text right next to the label) -- a wider,
+    // separate window is used for table-row detection only, see tableSeg.
     const end = h + 1 < hits.length ? hits[h + 1].idx : Math.min(text.length, idx + 200);
     const seg = text.slice(idx, end);
+    // [P6 2026-07-23] The LAST hit has no next-label boundary to respect, so
+    // there's no risk of a wider window bleeding into another MEASUREMENT's
+    // data -- extend it to the rest of the document for table-row detection
+    // specifically. A fixed +200 window was silently truncating trailing rows
+    // of the last measurement's table when a PDF interleaves footer/page-break
+    // text mid-table (seen in the Riverside DEMO report: a repeated
+    // attribution line lands between the "Feeder F-3" and "Feeder F-4" rows of
+    // the final Breaker Timing table, pushing F-4 past the old +200 cutoff).
+    // This does NOT widen unit/expected/testVoltage extraction (see `seg`
+    // above) -- those stay scoped tight so an unrelated unit symbol appearing
+    // far down the document (e.g. "<1Ω" in a later mechanical-inspection
+    // section) can't get picked up as the table's unit.
+    const tableEnd = h + 1 < hits.length ? hits[h + 1].idx : text.length;
+    const tableSeg = end === tableEnd ? seg : text.slice(idx, tableEnd);
     const vocab = MEASUREMENT_VOCAB[label];
 
     const phase    = firstMatch(/\bPh(?:ase)?\.?\s*([ABCN](?:-[ABCN])?)/i, seg);
@@ -252,22 +355,41 @@ function parseTestReport(rawText: string) {
       // These small integers precede the actual MΩ readings and beat them in the bare-number
       // fallback when no unit-anchored match is found.
       .replace(/\b\d+\s+min\b/ig, ' ');
+    // Same label/voltage/expected/min stripping as valueScope, but run over
+    // the WIDER tableSeg window (see tableEnd above) so a table whose last
+    // rows land beyond the +200 cap is still fully visible to the row
+    // detector below -- while unit/expected/testVoltage (extracted from the
+    // narrower `seg` above) stay unaffected by that wider window.
+    const tableValueScope = tableSeg === seg ? valueScope : tableSeg
+      .replace(label, '')
+      .replace(/Test\s*Voltage\s*[\d.]+\s*k?V?DC?/ig, ' ')
+      .replace(/Expected\s*[<>]=?\s*[\d.]+\s*[A-Za-zµΩ%]*/ig, ' ')
+      .replace(/@\s*[\d.]+\s*(?:k?VDC?|k?VAC?|KV)\b/ig, ' ')
+      .replace(/\b\d+\s+min\b/ig, ' ');
     // [NETA-8-9] Multi-row table extraction: PowerDB lays transformer IR,
     // contact resistance, and trip-time data as winding (H-G/X-G/H-X) or
     // phase (A/B/C) tables.  When we detect ≥2 rows in the segment, emit
     // one measurement per row and skip the legacy single-value path entirely.
-    const tableRows = extractTableRows(valueScope);
+    const tableRows = extractTableRows(tableValueScope);
     if (tableRows && tableRows.length >= 2) {
       const unitForTable = unit || vocab.unit;
       for (const row of tableRows) {
-        const rowResult = evaluate(row.value, expected, { bad: vocab.bad, measurementType: vocab.type });
+        // [P6 2026-07-23] Position-row tables (see extractTableRows) carry
+        // their OWN per-row label (the device name, e.g. "Main Breaker
+        // (MB-1)") and may carry their own inline threshold (e.g. "≤100")
+        // instead of the segment-level `expected` string. Winding/phase-letter
+        // rows don't set these, so `row.label`/`row.expected` are undefined
+        // there and this falls back to the prior behavior unchanged.
+        const rowLabel = row.label ? row.label : label.replace(/\b\w/g, c => c.toUpperCase());
+        const rowExpected = row.expected != null ? row.expected : expected;
+        const rowResult = evaluate(row.value, rowExpected, { bad: vocab.bad, measurementType: vocab.type });
         measurements.push({
           measurementType: vocab.type,
-          label: label.replace(/\b\w/g, c => c.toUpperCase()),
+          label: rowLabel,
           phase: row.phase,
           asFoundValue: row.value,
           asFoundUnit: unitForTable,
-          expectedRange: expected,
+          expectedRange: rowExpected,
           testVoltage: testV,
           passFail: rowResult,
           critical: vocab.critical,
