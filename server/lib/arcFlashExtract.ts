@@ -212,8 +212,8 @@ function normSide(v: any): 'A' | 'B' | null {
   const s = cleanStr(v);
   if (!s) return null;
   const up = s.toUpperCase();
-  if (up === 'A' || up === '1' || up === 'SIDE A' || up === 'TRAIN A') return 'A';
-  if (up === 'B' || up === '2' || up === 'SIDE B' || up === 'TRAIN B') return 'B';
+  if (up === 'A' || up === '1' || up === 'SIDE A' || up === 'TRAIN A' || up === 'LEFT' || up === 'LEFT SIDE' || up === 'LEFT TRAIN') return 'A';
+  if (up === 'B' || up === '2' || up === 'SIDE B' || up === 'TRAIN B' || up === 'RIGHT' || up === 'RIGHT SIDE' || up === 'RIGHT TRAIN') return 'B';
   return null;
 }
 
