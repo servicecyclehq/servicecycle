@@ -1,0 +1,25 @@
+# Override file for running one-off, real (billed) AI validation scripts
+# against the `server` image without needing jest (a devDependency stripped
+# from the production image -- see server/Dockerfile line 71) and without a
+# long hand-typed `docker compose run --rm -v ... -e ... server <cmd>`
+# one-liner (that shape has repeatedly tripped run_approved_command's safety
+# board with a generic parse-failure, 2026-07-23).
+#
+# Not referenced by the normal `docker compose up` / deploy path -- only
+# takes effect when explicitly passed via `-f docker-compose.livecheck.yml`,
+# so it has zero effect on production.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.livecheck.yml \
+#     --project-directory /root/ServiceCycle run --rm server
+#
+# To point this at a different script under server/tests/, edit the
+# `command:` line below and commit -- deliberately explicit/reviewable
+# rather than accepting an arbitrary script path as a runtime argument.
+services:
+  server:
+    volumes:
+      - ./server/tests:/app/tests:ro
+    environment:
+      RUN_LIVE_AI_TEST: "1"
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "tests/runLiveSideMappingCheck.ts"]
