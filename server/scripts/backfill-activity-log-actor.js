@@ -90,8 +90,16 @@
  *     re-run a little later to confirm.
  *
  * Run with (exactly one flag required -- see Safety above):
- *   docker compose exec server node scripts/backfill-activity-log-actor.js --dry-run   # read-only, zero writes
- *   docker compose exec server node scripts/backfill-activity-log-actor.js --execute   # writes for real
+ *   docker compose exec server node node_modules/tsx/dist/cli.mjs scripts/backfill-activity-log-actor.js --dry-run   # read-only, zero writes
+ *   docker compose exec server node node_modules/tsx/dist/cli.mjs scripts/backfill-activity-log-actor.js --execute   # writes for real
+ *
+ * MUST run through tsx, not bare `node` (2026-07-24 correction -- the
+ * original version of this comment said plain `node`, which throws
+ * MODULE_NOT_FOUND on '../lib/prisma': this image has no compiled .js
+ * counterpart for lib/*.ts, and only tsx (see package.json's own "start"
+ * script, "node node_modules/tsx/dist/cli.mjs index.ts") resolves .ts
+ * requires at runtime here. Confirmed working with the exact invocation
+ * above.
  */
 
 'use strict';
