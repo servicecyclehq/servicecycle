@@ -30,6 +30,7 @@ export default function ArcFlashImport() {
   const [err, setErr] = useState('');
   const [result, setResult] = useState(null); // { ingestId, status, totalBusCount, warnings, siteId }
   const [phase, setPhase] = useState(''); // '' | 'queued' | 'processing' — while the background worker runs
+  const [elapsed, setElapsed] = useState(0); // seconds since submit — visible so a long extract never looks frozen
 
   // W2 hand-off: adopt the file the Add-data door passed us (consumed once),
   // plus an optional sourceType hint (one_line vs study_report) -- Add Data's
@@ -44,6 +45,18 @@ export default function ArcFlashImport() {
   useEffect(() => {
     api.get('/api/sites').then(r => setSites(r.data?.data?.sites || [])).catch(() => setSites([]));
   }, []);
+
+  // Tick a visible elapsed clock while the background worker runs. Extraction
+  // can take several minutes on a big report or when the AI provider is under
+  // load, and the old static "can take a minute" line made a normal 3-4 minute
+  // run look hung. Reset whenever we leave the busy state.
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return; }
+    const t0 = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [busy]);
+  const fmtElapsed = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   // W1 part 2 (2026-07-14): extraction runs in a background worker, so we poll
   // GET /api/arc-flash/ingest/:id until the row leaves queued/processing. A
@@ -154,7 +167,8 @@ export default function ArcFlashImport() {
             </button>
             {busy && (
               <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>
-                Reading the document in the background — a large report can take a minute.
+                <strong>{phase === 'processing' || phase === 'extracting' ? 'Extracting' : 'Queued'} · {fmtElapsed(elapsed)} elapsed.</strong>{' '}
+                Reading the document in the background — usually under a minute, but a large report (or heavy AI load) can take several minutes. You can leave this page; the study will be waiting on the site's Arc Flash panel.
               </div>
             )}
           </div>
