@@ -23,7 +23,17 @@ function sniff(file) {
   if (/\.(csv|xlsx|xls)$/.test(name)) return { kind: 'assets', route: '/assets/import', label: 'asset / schedule spreadsheet' };
   if (name.endsWith('.pdf') || name.endsWith('.docx')) return { kind: 'document', label: 'PDF / Word document' };
   if (name.endsWith('.doc')) return { kind: 'legacy-doc', label: 'legacy Word .doc' };
-  if (/\.(jpe?g|png|heic|heif|webp|gif|tiff?|bmp)$/.test(name)) return { kind: 'image', label: 'photo / image' };
+  // SC-26 fix (2026-07-24): a nameplate photo used to hard dead-end here with
+  // a "go find the asset's page" message even though a working AI nameplate
+  // reader already existed (NewAsset.jsx's "Start from a photo" panel, POST
+  // /api/assets/photo-inspect) -- it just wasn't wired to this page. Only the
+  // types that reader's server-side multer filter actually accepts
+  // (server/routes/assetPhotoInspect.ts ACCEPTED_MIME: jpeg/png/webp/heic/heif)
+  // get routed there; gif/tiff/bmp still sniff as a photo so they get an
+  // honest "not supported yet" message instead of falling through to the
+  // generic "not sure how to read this" error below.
+  if (/\.(jpe?g|png|heic|heif|webp)$/.test(name)) return { kind: 'image', label: 'photo / image' };
+  if (/\.(gif|tiff?|bmp)$/.test(name)) return { kind: 'image-unsupported', label: 'photo / image' };
   return null;
 }
 
@@ -67,8 +77,18 @@ export default function AddData() {
       setErr(`Legacy .doc (Word 97-2003) isn't supported. Open "${file.name}" in Word and "Save As" .docx, then try again.`);
       return;
     }
+    if (s.kind === 'image-unsupported') {
+      setErr(`"${file.name}" is a photo type we can't read for nameplate scanning yet (JPEG, PNG, WebP, and HEIC are supported -- that covers basically every phone camera). Re-save/export it as JPEG and try again, or drop a .zip if this is part of a batch.`);
+      return;
+    }
     if (s.kind === 'image') {
-      setErr(`"${file.name}" looks like a photo. Nameplate photos are read from an asset's page - open the asset and tap "Scan nameplate" to auto-fill its make, model, serial and ratings. For a batch of report PDFs or photos, drop a .zip here instead.`);
+      // SC-26 fix: hand the photo to /assets/new's existing "Start from a
+      // photo" AI flow instead of dead-ending here -- that flow already does
+      // everything a nameplate scan needs (AI-consent gate, HEIC transcode,
+      // structured manufacturer/model/serial/ratings extraction). NewAsset.jsx
+      // picks this file up via takePendingImport() on mount and auto-runs it.
+      setPendingImport(file);
+      navigate('/assets/new');
       return;
     }
     if (s.kind === 'backfill' || s.kind === 'assets') {
@@ -137,9 +157,9 @@ export default function AddData() {
       <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}>
         <UploadCloud size={40} strokeWidth={1.25} style={{ color: 'var(--color-text-secondary)', marginBottom: 12 }} />
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Drop a file or choose one</div>
-        <input type="file" accept=".pdf,.doc,.docx,.csv,.xlsx,.xls,.zip" onChange={onFile} disabled={busy} />
+        <input type="file" accept=".pdf,.doc,.docx,.csv,.xlsx,.xls,.zip,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={onFile} disabled={busy} />
         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 10 }}>
-          PDF / Word test report · arc-flash study · asset CSV/XLSX · .zip of reports (bulk backfill)
+          PDF / Word test report · arc-flash study · asset CSV/XLSX · nameplate photo · .zip of reports (bulk backfill)
         </div>
         {busy && (
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 8 }}>

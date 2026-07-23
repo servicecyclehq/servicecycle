@@ -25,6 +25,7 @@ import CustomFieldInputs from '../components/CustomFieldInputs';
 import Toast from '../components/Toast';
 import BackLink from '../components/BackLink';
 import { EQUIPMENT_TYPE_LABELS, CONDITION_META, REDUNDANCY_META, CRITICALITY_SCORE_META } from '../lib/equipment';
+import { takePendingImport } from '../lib/pendingImport';
 
 // CUST-8-13: lightweight draft persistence — a half-filled new-asset form is
 // a lot of typing; an accidental tab-close / back-nav used to lose all of it.
@@ -36,7 +37,21 @@ const DRAFT_KEY = 'sc_new_asset_draft_v1';
 
 // ── "Start from a photo" helpers ─────────────────────────────────────────────
 const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
-const PHOTO_ACCEPT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+// 2026-07-24 (SC-26 bonus fix): HEIC/HEIF added -- server/routes/
+// assetPhotoInspect.ts's ACCEPTED_MIME already accepts them (this container's
+// sharp build carries libheif and transcodes before the model call), but this
+// list never followed, so an iPhone's default camera format was rejected
+// client-side before the request that already handles it was ever sent.
+const PHOTO_ACCEPT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+// Some browsers report HEIC/HEIF files with an empty or generic `.type`
+// (unreliable MIME sniffing for this format) -- mirror the server's own
+// filename-extension fallback (same file, `heicName` check) so a real HEIC
+// photo isn't rejected here on a browser quirk before it even reaches the
+// server that already handles it.
+function isAcceptedPhotoFile(file) {
+  if (PHOTO_ACCEPT_TYPES.includes(file.type)) return true;
+  return /\.(heic|heif)$/i.test(file.name || '');
+}
 
 // Best-effort map of the model's free-text equipment guess onto our enum.
 function matchEquipmentType(guess) {
@@ -125,6 +140,38 @@ export default function NewAsset() {
 
   // Revoke the preview object URL when replaced / on unmount.
   useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+
+  // SC-26 fix (2026-07-24): a nameplate photo dropped on the /add-data page
+  // now hands the file here via pendingImport (setPendingImport(file) + a
+  // navigate('/assets/new')) instead of dead-ending with a "go find the
+  // asset's page" message. Pick it up once on mount and drop it straight into
+  // the existing "Start from a photo" panel's file slot -- the tech shouldn't
+  // have to re-pick the same photo they just dropped one page ago.
+  const [pendingPhotoAutoRun, setPendingPhotoAutoRun] = useState(false);
+  useEffect(() => {
+    const f = takePendingImport();
+    if (!f) return;
+    if (!isAcceptedPhotoFile(f) || f.size > PHOTO_MAX_BYTES) return; // let the tech pick manually instead
+    setPhotoOpen(true);
+    setPhotoFile(f);
+    setPhotoPreview(URL.createObjectURL(f));
+    setPendingPhotoAutoRun(true); // consumed below, once photoFile has actually committed to state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Wait for the photoFile state set above to actually commit (this effect's
+  // own re-run, once photoFile is no longer null) before auto-running the
+  // scan -- runPhotoInspect closes over `photoFile`, so calling it in the same
+  // tick as setPhotoFile would still see the old (null) value. Still routed
+  // through requestConsent, same as the manual "Identify from photo" button
+  // (handleIdentify below) -- never skip the AI-consent gate.
+  useEffect(() => {
+    if (!pendingPhotoAutoRun || !photoFile) return;
+    setPendingPhotoAutoRun(false);
+    if (!photoPanelAvailable) return; // AI photo-identify not enabled for this account -- leave the photo attached, let the tech drive
+    requestConsent(runPhotoInspect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPhotoAutoRun, photoFile, photoPanelAvailable]);
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -246,9 +293,9 @@ export default function NewAsset() {
     const f = e.target.files?.[0];
     setPhotoError(null);
     if (!f) { setPhotoFile(null); setPhotoPreview(null); return; }
-    if (!PHOTO_ACCEPT_TYPES.includes(f.type)) {
+    if (!isAcceptedPhotoFile(f)) {
       setPhotoFile(null); setPhotoPreview(null);
-      setPhotoError('Unsupported image type — please use a JPEG, PNG, or WebP photo.');
+      setPhotoError('Unsupported image type — please use a JPEG, PNG, WebP, or HEIC photo.');
       if (photoInputRef.current) photoInputRef.current.value = '';
       return;
     }

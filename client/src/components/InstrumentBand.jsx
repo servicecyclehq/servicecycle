@@ -180,11 +180,23 @@ export default function InstrumentBand({ companyName, siteCount, canWrite, onNew
           <Instrument
             to="/reports/compliance"
             label="NFPA 70B maturity"
-            value={maturity ? Math.round(maturity.score) : '—'}
-            unit={maturity ? '/100' : undefined}
-            detail={maturity ? `Level ${maturity.level} · ${maturity.levelLabel}` : 'Loading…'}
+            // SC-04 fix (2026-07-24): maturity.score is INTENTIONALLY
+            // === the Compliance tile's overallRate (see lib/maturityScore.ts's
+            // header comment — "the maturity headline can never disagree with
+            // the Path-to-100 number on the same screen"), so showing it here
+            // too as the headline number made two adjacent tiles display the
+            // identical figure (e.g. both read "28.4") -- read as a rendering
+            // glitch, not a design choice, in the 07-20 shakedown. The level
+            // LABEL is the genuinely distinct information this tile has to
+            // offer; the score/level number and the single biggest lever
+            // (already computed server-side, previously unused here) move to
+            // the detail line instead of disappearing.
+            value={maturity ? maturity.levelLabel : '—'}
+            detail={maturity
+              ? `Level ${maturity.level}/5 · ${Math.round(maturity.score)}/100${maturity.biggestLever ? ` · biggest gap: ${maturity.biggestLever.label}` : ''}`
+              : 'Loading…'}
             ariaLabel={maturity
-              ? `NFPA 70B maturity score ${Math.round(maturity.score)} of 100, level ${maturity.level}, ${maturity.levelLabel}`
+              ? `NFPA 70B maturity level ${maturity.level} of 5, ${maturity.levelLabel}, score ${Math.round(maturity.score)} of 100`
               : 'NFPA 70B maturity, loading'}
           />
           <Instrument
