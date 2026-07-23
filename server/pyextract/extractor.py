@@ -476,6 +476,57 @@ def _looks_like_nameplate_label(label):
     return any(w in _NAMEPLATE_LABEL_TOKENS for w in words)
 
 
+# 2026-07-24 (P2): a NETA report that flags an elevated reading routinely adds
+# a one-sentence engineer's note right after the table, e.g. (Riverside SWGR-2M
+# CR tables) "MB-1 Phase B up from 76μΩ last year to 98μΩ -- approaching the
+# 100μΩ threshold" (PET-2025-0715) or "...(142μΩ) exceeds the 100μΩ
+# manufacturer threshold" (PET-2026-0720/DEMO). Every μΩ number in that prose
+# already has a real, correctly phase-tagged reading from the structured
+# POSITION grid pass (`_position_grid_readings`) -- but `_INLINE_RE` also
+# matches the SAME numbers again from the sentence, one match per "<number>
+# <unit>" it contains, and derives a label from whatever words happen to sit
+# immediately before each number ("Last Year To", "Approaching The", "Exceeds
+# The"). The existing phased-value dedup below only catches these when the
+# prose number happens to collide exactly with a real (type, phase, value,
+# unit) tuple already in the combined set; a prior-year comparison value or a
+# MFR. THRESHOLD constant usually doesn't, so it survives as a garbled,
+# unphased, made-up "contact_resistance" reading (confirmed: 2 stray rows on
+# the 2025 report, 1 on DEMO, 0 on the 2024 report whose commentary sentence
+# has no elevated reading to comment on). Recognize the commentary by its own
+# vocabulary instead, the same way `_looks_like_nameplate_label` recognizes a
+# rating instead of a reading -- these words describe a COMPARISON or a LIMIT,
+# never a device/test-point label, so the false-negative risk (suppressing a
+# genuine reading) is negligible while the false-positive class this closes is
+# systemic: any NETA report with a MONITOR/MARGINAL/FAIL commentary sentence
+# reusing the same unit as its table would hit this. Confirmed NOT limited to
+# contact_resistance/µΩ: the same DEMO report's unrelated "Cross-Reference —
+# Prior Findings" paragraph ("...Category III threshold 60°C") produced the
+# same class of spurious reading one measurementType over -- a bare "60.0 °C"
+# labeled "Bient, Category Iii Threshold" -- via the same _INLINE_RE pass, the
+# same missing signal (the word "threshold" itself, which falls BEFORE the
+# number here, unlike the µΩ cases above where it fell after). "threshold" is
+# added as its own token for that reason; it's the same reserved vocabulary
+# class the file already treats as a limit/spec, never a reading, elsewhere
+# (`_EXPECT_RE` matches Expected/Limit/Min/Spec/Acceptance for the same reason).
+_COMMENTARY_LABEL_TOKENS = {"approaching", "exceeds", "exceeding", "exceeded", "threshold"}
+_COMMENTARY_LABEL_PHRASES = (
+    "up from", "down from", "last year", "prior year", "previous year",
+)
+
+
+def _looks_like_commentary_label(label):
+    """True if this label is prose COMMENTARY (a threshold citation or a
+    year-over-year comparison) riding along in the same sentence as a real
+    reading, not a label for a new one."""
+    low = label.lower().strip()
+    if not low:
+        return False
+    if any(p in low for p in _COMMENTARY_LABEL_PHRASES):
+        return True
+    words = re.findall(r"[a-z]+", low)
+    return any(w in _COMMENTARY_LABEL_TOKENS for w in words)
+
+
 def _inline_readings(text):
     """General pass: every <label> <value> <unit> in the text layer. Captures
     real PowerDB / prose / load-bank readings the ruled-table pass misses."""
@@ -488,6 +539,8 @@ def _inline_readings(text):
         # ratings not readings — surface them as nameplate data elsewhere,
         # never as fake voltage/current/percent measurements.
         if _looks_like_nameplate_label(label):
+            continue
+        if _looks_like_commentary_label(label):
             continue
         # Reject 1-2 letter labels for ambiguous units (V/A/%). These are the
         # "AMBIENT: 28 C / 45% RH" → label='C' class: the greedy regex snags
