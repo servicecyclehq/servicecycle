@@ -70,8 +70,15 @@ export default function ThermographyImportCard({ assetId, canWrite, onChanged })
     setFile(null); if (fileRef.current) fileRef.current.value = '';
   }
 
-  // The JSON body shared by preview and commit.
-  function payload() {
+  // The JSON body shared by preview and commit. `includeText` defaults on
+  // (preview needs reportText to parse) but commit passes it off: sending
+  // the still-populated textarea alongside the already-parsed `rows` used to
+  // make the server parse the SAME hot-spots twice and double every
+  // finding/deficiency on save (DUPE-IR-1, 2026-07-23) -- rows are the
+  // reviewed, authoritative source by the time save() runs, so commit no
+  // longer sends reportText at all. Belt-and-suspenders alongside the
+  // server-side fix in resolveHotspots().
+  function payload({ includeText = true } = {}) {
     const hotspots = rows
       .filter((r) => r.deltaT !== '' && r.deltaT != null)
       .map((r) => ({
@@ -88,7 +95,7 @@ export default function ThermographyImportCard({ assetId, canWrite, onChanged })
       if (v !== '' && v != null) hdr[f.key] = f.type === 'number' ? Number(v) : v;
     }
     if (header.notes) hdr.notes = header.notes;
-    return { hotspots, surveyDate, reportText: text.trim() || undefined, header: hdr };
+    return { hotspots, surveyDate, reportText: includeText ? (text.trim() || undefined) : undefined, header: hdr };
   }
 
   async function preview() {
@@ -136,10 +143,10 @@ export default function ThermographyImportCard({ assetId, canWrite, onChanged })
         // Multipart: the JSON body travels in `payload`, the PDF in `file`.
         const fd = new FormData();
         fd.append('file', file);
-        fd.append('payload', JSON.stringify(payload()));
+        fd.append('payload', JSON.stringify(payload({ includeText: false })));
         r = await api.post(`/api/assets/${assetId}/thermography/commit`, fd);
       } else {
-        r = await api.post(`/api/assets/${assetId}/thermography/commit`, payload());
+        r = await api.post(`/api/assets/${assetId}/thermography/commit`, payload({ includeText: false }));
       }
       const d = r.data?.data || {};
       const bits = [

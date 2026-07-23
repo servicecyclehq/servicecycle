@@ -29,6 +29,7 @@ const { parseThermographyText } = require('../lib/thermographyParse');
 const { resolveAccountFeatures } = require('../lib/accountFeatures');
 const { uploadFile } = require('../lib/storage');
 const { dec, shapeSurvey } = require('../lib/thermographyShape');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 async function ownAsset(req: any) {
   return prisma.asset.findFirst({ where: { id: req.params.id, accountId: req.user.accountId }, select: { id: true } });
@@ -124,10 +125,11 @@ function numOrNull(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Merge structured hotspots with any parsed from report text. Each hot-spot
- *  carries its own reference frame (NETA-8-1) so it is graded on the correct
- *  NETA Table 100.18 scale. Structured rows may set `reference`; a body-level
- *  `reference` is the default for rows that don't, then 'similar'. */
+/** Structured hotspots OR report text — never both (2026-07-23 fix, see
+ *  DUPE-IR-1 below). Each hot-spot carries its own reference frame (NETA-8-1)
+ *  so it is graded on the correct NETA Table 100.18 scale. Structured rows
+ *  may set `reference`; a body-level `reference` is the default for rows
+ *  that don't, then 'similar'. */
 function resolveHotspots(body: any): { hotspots: any[]; surveyDate: string | null; parsedHeader: any; confidence: any } {
   const out: any[] = [];
   const bodyRef: string | undefined = typeof body?.reference === 'string' ? body.reference : undefined;
@@ -150,13 +152,31 @@ function resolveHotspots(body: any): { hotspots: any[]; surveyDate: string | nul
   let surveyDate: string | null = typeof body?.surveyDate === 'string' ? body.surveyDate : null;
   let parsedHeader: any = null;
   let confidence: any = {};
-  if (typeof body?.reportText === 'string' && body.reportText.trim()) {
+  // [DUPE-IR-1, 2026-07-23] This used to run unconditionally, so a commit
+  // sent with BOTH the (already-parsed, tech-reviewed) `hotspots` rows AND
+  // the still-populated `reportText` textarea — which is exactly what the
+  // client sends on every normal paste -> Preview/parse -> Save flow, since
+  // the textarea is never cleared after a preview — got every hot-spot
+  // parsed and appended a SECOND time on top of the structured rows,
+  // doubling findings/deficiencies on every survey saved this way. Only
+  // fall back to parsing reportText when the caller didn't already supply
+  // structured hotspots, so a commit sees ONE source of truth, not a union
+  // of both. (The client also stopped sending reportText on commit as a
+  // second, independent guard — see ThermographyImportCard.jsx save().)
+  if (out.length === 0 && typeof body?.reportText === 'string' && body.reportText.trim()) {
     const parsed = parseThermographyText(body.reportText);
     // The parser already inferred a per-hot-spot reference from the line text;
     // keep it. Only fall back to the body-level reference when absent.
     for (const h of parsed.hotspots) {
       out.push({ ...h, reference: (h as any).reference ?? bodyRef, referenceDeltaT: (h as any).referenceDeltaT ?? null });
     }
+    if (!surveyDate) surveyDate = parsed.surveyDate;
+    parsedHeader = parsed.header;
+    confidence = parsed.confidence || {};
+  } else if (typeof body?.reportText === 'string' && body.reportText.trim()) {
+    // Structured hotspots were supplied too — still parse the text for its
+    // HEADER (camera/ambient/etc.) and surveyDate, just don't re-add hotspots.
+    const parsed = parseThermographyText(body.reportText);
     if (!surveyDate) surveyDate = parsed.surveyDate;
     parsedHeader = parsed.header;
     confidence = parsed.confidence || {};
@@ -380,6 +400,71 @@ router.post('/:id/thermography/commit', requireThermographyFeature, requireManag
   } catch (err: any) {
     console.error('[thermography/commit]', err?.message || err);
     return res.status(500).json({ success: false, error: 'Failed to record the IR survey' });
+  }
+});
+
+// ── DELETE /:id/thermography/surveys/:surveyId ───────────────────────────────
+// Undo a survey import — the ThermographySurvey, all of its
+// ThermographyFinding rows, and every Deficiency those findings created.
+// Added 2026-07-23 alongside the DUPE-IR-1 fix above, since a bad/duplicate
+// import previously had no way back except manually resolving each spawned
+// deficiency one at a time and living with the orphaned duplicate finding
+// rows in the survey history forever (no DELETE endpoint existed at all).
+// requireManager-gated like commit; this is a real evidence deletion, so it
+// writes a tamper-evident-adjacent activity-log entry the same way
+// documents.ts DELETE and workOrders.ts measurement DELETE do — deleting
+// compliance evidence must leave a trail, never happen silently.
+router.delete('/:id/thermography/surveys/:surveyId', requireThermographyFeature, requireManager, async (req: any, res: any) => {
+  try {
+    const asset = await ownAsset(req);
+    if (!asset) return res.status(404).json({ success: false, error: 'Asset not found' });
+    const accountId = req.user.accountId;
+
+    const survey = await prisma.thermographySurvey.findFirst({
+      where: { id: req.params.surveyId, accountId, assetId: asset.id },
+      include: { findings: { select: { id: true, component: true, deltaT: true, severity: true, deficiencyId: true } } },
+    });
+    if (!survey) return res.status(404).json({ success: false, error: 'Survey not found' });
+
+    const deficiencyIds: string[] = survey.findings.map((f: any) => f.deficiencyId).filter(Boolean);
+
+    await prisma.$transaction(async (tx: any) => {
+      // ThermographyFinding.survey has onDelete: Cascade, so this also
+      // removes every finding row. It does NOT touch the Deficiency rows
+      // those findings pointed to (Finding -> Deficiency is not cascading in
+      // either direction), so those are deleted explicitly next, once the
+      // findings that referenced them are already gone.
+      await tx.thermographySurvey.delete({ where: { id: survey.id } });
+      if (deficiencyIds.length) {
+        await tx.deficiency.deleteMany({ where: { id: { in: deficiencyIds }, accountId } });
+      }
+    });
+
+    // sourceDocumentId (the attached IR report PDF, if any) is deliberately
+    // left in place — it's a Document row like any other upload, and hard-
+    // deleting it would additionally need to reason about storage cleanup
+    // this route doesn't otherwise touch. Worst case it's an orphaned
+    // evidence file in the Documents list, not a dangling reference.
+    writeActivityLog({
+      userId: req.user.id, accountId, assetId: asset.id,
+      action: 'thermography_survey_deleted',
+      details: {
+        surveyId: survey.id,
+        surveyDate: survey.surveyDate,
+        findingsRemoved: survey.findings.map((f: any) => ({
+          component: f.component, deltaT: dec(f.deltaT), severity: f.severity,
+        })),
+        deficienciesRemoved: deficiencyIds.length,
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: { findingsRemoved: survey.findings.length, deficienciesRemoved: deficiencyIds.length },
+    });
+  } catch (err: any) {
+    console.error('[thermography/surveys DELETE]', err?.message || err);
+    return res.status(500).json({ success: false, error: 'Failed to delete the IR survey' });
   }
 });
 

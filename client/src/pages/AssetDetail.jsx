@@ -1101,7 +1101,7 @@ export default function AssetDetail() {
             {/* §7.4 history: surveys, per-finding ΔT/severity, component trend,
                 and a link to the attached IR report. Renders nothing until the
                 asset has at least one survey. */}
-            <ThermographyHistoryPanel assetId={asset.id} refreshKey={irRefreshKey} />
+            <ThermographyHistoryPanel assetId={asset.id} refreshKey={irRefreshKey} canWrite={canWrite} onChanged={refetchAfterIrSurvey} />
           </>
         )}
 

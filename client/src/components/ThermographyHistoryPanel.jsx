@@ -6,12 +6,18 @@
 // over survey is visible at a glance. Below-threshold findings are shown too —
 // they carry no deficiency but they are the trend.
 //
-// Props: { assetId, refreshKey }
+// A manager can also delete a survey outright (undo an accidental/duplicate
+// import — see DUPE-IR-1) — this removes the survey, its findings, and every
+// deficiency they spawned, server-side; see the DELETE route added alongside
+// this in server/routes/thermographyIngest.ts.
+//
+// Props: { assetId, refreshKey, canWrite, onChanged }
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import api from '../api/client';
 import { fmtDate } from '../lib/equipment';
+import { useConfirm } from '../context/ConfirmContext';
 
 const SEV_COLOR = { IMMEDIATE: 'var(--chip-red-fg)', RECOMMENDED: 'var(--chip-amber-fg)', ADVISORY: 'var(--chip-slate-fg)' };
 const REF_LABEL = { AMBIENT: 'over ambient', SIMILAR: 'vs. similar', BASELINE: 'vs. baseline' };
@@ -65,12 +71,15 @@ function conditionLine(s) {
   return bits.join(' · ');
 }
 
-export default function ThermographyHistoryPanel({ assetId, refreshKey }) {
+export default function ThermographyHistoryPanel({ assetId, refreshKey, canWrite, onChanged }) {
+  const confirm = useConfirm();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [delErr, setDelErr] = useState(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let alive = true;
     setLoading(true);
     api.get(`/api/assets/${assetId}/thermography/history`)
@@ -84,7 +93,30 @@ export default function ThermographyHistoryPanel({ assetId, refreshKey }) {
       })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [assetId, refreshKey]);
+  }, [assetId]);
+
+  useEffect(() => load(), [load, refreshKey]);
+
+  async function handleDelete(survey) {
+    setDelErr(null);
+    const findingCount = (survey.findings || []).length;
+    if (!await confirm({
+      title: 'Delete this IR survey?',
+      message: `Deletes the ${fmtDate(survey.surveyDate)} survey, its ${findingCount} finding${findingCount === 1 ? '' : 's'}, and every deficiency it created. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })) return;
+    setDeletingId(survey.id);
+    try {
+      await api.delete(`/api/assets/${assetId}/thermography/surveys/${survey.id}`);
+      load();
+      onChanged && onChanged();
+    } catch (e) {
+      setDelErr(e?.response?.data?.error || 'Could not delete this survey');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   if (loading) return null;
   if (error) {
@@ -108,6 +140,10 @@ export default function ThermographyHistoryPanel({ assetId, refreshKey }) {
         </div>
       </div>
       <div className="card-body">
+
+        {delErr && (
+          <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--color-danger)' }}>{delErr}</div>
+        )}
 
         {trends.length > 0 && (
           <div style={{ marginBottom: 16 }}>
@@ -147,6 +183,18 @@ export default function ThermographyHistoryPanel({ assetId, refreshKey }) {
               <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                 {(s.findings || []).length} finding{(s.findings || []).length === 1 ? '' : 's'}
               </span>
+              {canWrite && (
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={deletingId === s.id}
+                  style={{ fontSize: 11, background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--color-danger)' }}
+                  title="Delete this survey, its findings, and the deficiencies it created"
+                  onClick={() => handleDelete(s)}
+                >
+                  {deletingId === s.id ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
             </div>
 
             {conditionLine(s) && (
