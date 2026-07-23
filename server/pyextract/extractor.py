@@ -637,6 +637,16 @@ _DGA_ROW_RE = re.compile(
     r"((?:-?[\d,]+(?:\.\d+)?[ \t]+)*-?[\d,]+(?:\.\d+)?)$")
 _PF_ROW_RE = re.compile(r"^\d+\s+([HXhx]\d)\s+\S+\s+(?:GRD|GND|GST|UST)\b(.+)$")
 _PHASEHDR_RE = re.compile(r"\bPHASE\s+\d", re.I)
+# 2026-07-24 (P1): a NETA insulation-resistance test-point identifier — "A-G",
+# "B-C", "HV-LV", "H1-H2" — is always a short bare token DASH short bare token,
+# nothing else on either side. Used (alongside the POLARIZATION header check)
+# to scope the 1-MIN/10-MIN/PI retyping to genuine test-point rows and away
+# from unrelated 3-value rows a permissive grid countdown can sweep up later
+# in the same window (e.g. "Contact Resistance (μΩ) 42 44 41" or "Trip Time,
+# Open (ms) 28 29 28" — descriptive multi-word labels, confirmed via
+# Riverside_NETA_Test_Report_DEMO.pdf, an older sample with both shapes in one
+# grid window).
+_TESTPOINT_LABEL_RE = re.compile(r"^[A-Za-z0-9]{1,3}[-–][A-Za-z0-9]{1,3}$")
 
 
 def _is_numtok(t):
@@ -690,6 +700,16 @@ def _powerdb_grids(text):
     out = []
     ir_rows = 0        # countdown: data rows left in a Μ Ω READING grid
     ir_micro = False   # grid also carries a POLE RESISTANCE - MICRO-OHMS block
+    # 2026-07-24 (P1): whether the header that opened THIS grid names a
+    # POLARIZATION INDEX column (e.g. "TEST POINT 1 MIN (MΩ) 10 MIN (MΩ)
+    # POLARIZATION INDEX RESULT"). Scoped to the triggering header line, not
+    # just "does this row have exactly 3 numbers" -- other real report shapes
+    # emit unrelated 3-value rows inside the same MΩ-triggered grid window
+    # (e.g. a 3-phase "Contact Resistance (μΩ) 42 44 41" or "Trip Time, Open
+    # (ms) 28 29 28" row swept up by a permissive countdown -- confirmed via
+    # Riverside_NETA_Test_Report_DEMO.pdf, an older sample). Gating on the
+    # header text keeps those untouched.
+    ir_has_pi = False
     unit_cols = None   # units from a "(minutes) (kVDC) (megohms) …" header
     unit_rows = 0
     ctx = None         # nearest "WINDING n" context label
@@ -755,6 +775,7 @@ def _powerdb_grids(text):
         if _MOHM_HDR_RE.search(raw) and not _MOHM_HDR_COMPLETE_READING_RE.search(raw):
             ir_rows = 8
             ir_micro = "MICRO-OHM" in raw.upper()
+            ir_has_pi = "POLARIZATION" in raw.upper()
             continue
         if ir_rows > 0:
             ir_rows -= 1
@@ -780,7 +801,30 @@ def _powerdb_grids(text):
             # mode (triggered by an MΩ / M? / MQ header) so a single numeric
             # row is unambiguously an IR reading.
             if lbl and len(lbl) <= 4 and len(run) >= 1:
-                for t in run[:6]:      # ≤3 phases × (reading, 20°C-corrected)
+                # 2026-07-24 (P1): a 3-value row under a header that names a
+                # POLARIZATION INDEX column is the NETA 1-MIN / 10-MIN / PI
+                # test-point triple (confirmed on the Riverside NETA demo
+                # reports: "A-G 15,800 19,400 1.26" -- the first two are large
+                # MΩ insulation-resistance readings, the third is the
+                # dimensionless PI ratio = 10-min/1-min). Previously all 3
+                # were tagged insulation_resistance/MΩ, so the PI value
+                # silently skipped every polarization_index-specific check
+                # (IEEE-43 floor, PI recompute) and could collide in
+                # extract_measurements()'s dedup with another test point's
+                # numerically-identical PI ratio (same type+phase+unit key --
+                # e.g. A-B and C-A often round to the same PI, confirmed on
+                # all 3 demo PDFs). Reuses _pi_readings()'s type/unit
+                # constants (the correct classification already exists for
+                # the inline-text PI phrasing; this shape just never routed
+                # through it). `phase` is set to the test-point label to
+                # disambiguate the dedup key across different test points --
+                # `label` itself is deliberately left as the test-point id
+                # (not renamed to "Polarization Index") so groupTestPoints()
+                # (client + commitTestReport.ts) still collapses this row
+                # with its 1-min/10-min siblings into one test point, exactly
+                # as before.
+                is_pi_triple = ir_has_pi and len(run) == 3 and bool(_TESTPOINT_LABEL_RE.match(label))
+                for pos, t in enumerate(run[:6]):      # ≤3 phases × (reading, 20°C-corrected)
                     v = _tofloat(t)
                     # 2026-07-04: `v >= 0` (was `v > 0`). A zero IR reading is
                     # a legitimate — and safety-critical — value (indicates a
@@ -788,8 +832,13 @@ def _powerdb_grids(text):
                     # case. Skipping negatives still keeps "--" and other
                     # unparseable tokens out.
                     if v is not None and v >= 0:
-                        out.append(_grid_rec("insulation_resistance", label, v,
-                                             "MΩ", "D", False, 0.75, loff))
+                        if is_pi_triple and pos == 2:
+                            out.append(_grid_rec("polarization_index", label, v,
+                                                 "ratio", "D", False, 0.75, loff,
+                                                 phase=label))
+                        else:
+                            out.append(_grid_rec("insulation_resistance", label, v,
+                                                 "MΩ", "D", False, 0.75, loff))
                 extra = run[6:]        # µΩ pole-resistance block beside the IR grid
                 if ir_micro and len(extra) == 3:
                     for pi, t in enumerate(extra, 1):
