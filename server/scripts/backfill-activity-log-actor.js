@@ -63,9 +63,13 @@
  *             declaring success.
  *
  * Safety:
- *   - Defaults to dry-run (report-only, zero writes) -- same convention as
- *     backfillDrawingRevisions.ts / p5-cleanup-riverside-imports.js elsewhere
- *     in this directory. Pass --execute to actually write.
+ *   - Requires an EXPLICIT --dry-run or --execute flag; a bare invocation
+ *     with neither (or both) prints usage and exits before any DB call is
+ *     attempted. This is stricter than the --execute-or-nothing convention
+ *     used elsewhere in this directory (backfillDrawingRevisions.ts,
+ *     p5-cleanup-riverside-imports.js) on purpose: a reviewer reading only
+ *     the command line (human or automated) should be able to tell dry-run
+ *     from execute without having to read this file's source first.
  *   - Idempotent: a second run finds zero rows missing _actor (Pass 1 no-ops)
  *     and, since nothing changed, skips Pass 2/3 entirely rather than
  *     redundantly resettling an already-correct chain.
@@ -85,8 +89,8 @@
  *     finishes the resettle on its own -- Pass 3's verify can simply be
  *     re-run a little later to confirm.
  *
- * Run with:
- *   docker compose exec server node scripts/backfill-activity-log-actor.js            # dry run (default)
+ * Run with (exactly one flag required -- see Safety above):
+ *   docker compose exec server node scripts/backfill-activity-log-actor.js --dry-run   # read-only, zero writes
  *   docker compose exec server node scripts/backfill-activity-log-actor.js --execute   # writes for real
  */
 
@@ -101,7 +105,9 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const prisma = require('../lib/prisma').default;
 const { settleAllPending, verifyAllChains } = require('../lib/activityLogChain');
 
-const EXECUTE = process.argv.includes('--execute');
+const HAS_DRY_RUN_FLAG = process.argv.includes('--dry-run');
+const HAS_EXECUTE_FLAG = process.argv.includes('--execute');
+const EXECUTE = HAS_EXECUTE_FLAG;
 const PAGE_SIZE = 1000;
 const SAMPLE_LOG_COUNT = 3;
 
@@ -232,7 +238,21 @@ async function verify() {
 
 async function main() {
   console.log('=== ServiceCycle ActivityLog attribution backfill (SC-10 Approach B, historical-row catch-up) ===');
-  console.log(EXECUTE ? '*** EXECUTE MODE -- this WILL write to the database ***' : '(dry run -- pass --execute to write for real)');
+
+  // Explicit-mode requirement (2026-07-24): require exactly one of
+  // --dry-run / --execute so every invocation is self-describing from the
+  // command line alone, with zero DB connection attempted until the mode is
+  // unambiguous -- a reviewer (human or automated) shouldn't have to read
+  // this file's source to know whether a given invocation writes anything.
+  if (HAS_DRY_RUN_FLAG === HAS_EXECUTE_FLAG) { // both false, or both true -- either way, ambiguous
+    console.error('Usage: node scripts/backfill-activity-log-actor.js --dry-run | --execute');
+    console.error('  --dry-run  Read-only. Reports what would change. No writes, no DB mutation of any kind.');
+    console.error('  --execute  Performs the backfill for real (Pass 1 writes + Pass 2 chain re-anchor + Pass 3 verify).');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(EXECUTE ? '*** EXECUTE MODE -- this WILL write to the database ***' : '*** DRY RUN -- read-only, zero writes ***');
   console.log('');
   try {
     const rows = await findRowsNeedingBackfill();
