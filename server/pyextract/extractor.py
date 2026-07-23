@@ -258,23 +258,7 @@ def extract_header(cells, text):
             extra_neg = r"(?<!EQUIPMENT )(?<!DEVICE )(?<!APPARATUS )" if lbl == "type" else ""
             pat = re.compile(
                 extra_neg + r"(?<![A-Za-z])" + re.escape(lbl) +
-                # [P2 2026-07-22] a short/prefix label (e.g. "tech", "date")
-                # must not match glued to more letters of a LONGER word (e.g.
-                # "tech" inside "TECHNICIAN") -- mirrors the existing
-                # lookbehind guard before the label, but after it. Sibling of
-                # the label->value glue fix below: without this, "tech" was
-                # free to match mid-word once the fuller "technician" label
-                # correctly stopped matching (see _grid_header_fallback).
-                r"(?![A-Za-z])" +
-                # label->value glue must not cross a newline: a bare `\s*`
-                # here silently jumped from a label with nothing after it on
-                # its own line into the START of the NEXT text line, capturing
-                # unrelated content (grid-layout headers with all labels on
-                # one line and all values on the next -- see
-                # _grid_header_fallback below). [ \t]* keeps intra-line
-                # spacing/tab tolerance while refusing to bridge a real line
-                # break.
-                r"[ \t]*[:#]?[ \t]*(.+?)(?=\s{2,}|\s+(?:" + stop_alt + r")\b\s*[:#]|[\r\n]|$)",
+                r"\s*[:#]?\s*(.+?)(?=\s{2,}|\s+(?:" + stop_alt + r")\b\s*[:#]|[\r\n]|$)",
                 re.I)
             m = pat.search(text)
             if not m:
@@ -283,90 +267,7 @@ def extract_header(cells, text):
             if v:
                 out[f["key"]] = {"value": v, "raw": m.group(1).strip(), "confidence": 0.85}
                 break
-    _grid_header_fallback(cells, out)
     return out
-
-
-def _grid_header_fallback(cells, out):
-    """[P2 2026-07-22] Fallback for grid-style headers where every label sits on
-    ONE text line and every value sits on the line below (e.g. a 4-column
-    FACILITY / AREA / TEST DATE / TECHNICIAN row with the values printed on the
-    next line) -- the same-line regex above can never see across that line
-    break, so a field can come back empty (testDate: failed date-format
-    validation on whatever followed the label on ITS OWN line) or, before the
-    label->value glue fix above, silently WRONG (techName: nothing followed
-    TECHNICIAN on the label line, so the old `\s*` glue crossed the newline
-    and grabbed the *next* line's leading text -- confirmed on the Riverside
-    SWGR-2M demo reports, e.g. techName landing on "Riverside Plant Main
-    Production" instead of "R. Fenwick, NETA L2").
-
-    Only fills a field extract_header's same-line pass left missing -- never
-    overrides a value already found. Groups `cells` into visual rows by `top`;
-    a row is a "label row" if at least one cell's text is EXACTLY a known
-    header label (case-insensitive, trailing `:`/`#` stripped) -- an exact
-    match, not a substring search, to keep the false-positive rate low. The
-    row immediately below supplies each label's value, but matched at the
-    WORD level (not whole-cell): a below-row's value for one column routinely
-    shares a merged cell with its horizontal neighbour (no _page_cells column
-    gap between "Mezzanine MCC" and "07/15/2025") even though the row above
-    split FACILITY/AREA/TEST DATE/TECHNICIAN into separate label cells --
-    confirmed via direct pdfplumber word geometry on the demo PDFs: a value
-    word's x0 lines up with its column's LABEL x0, not with any below-row cell
-    boundary. Each label's column is bounded by its own x0 and the next
-    label's x0 in the same row (or a generous fallback span for the last
-    column); words whose x0 falls in that span are joined and run through the
-    same `_hdr_valid` type check every other header value already gets."""
-    if not cells:
-        return
-    label_lookup = {}
-    for f in HEADER_FIELDS:
-        if f["key"] in out:
-            continue
-        for lbl in f["labels"]:
-            label_lookup[lbl.upper()] = f
-    if not label_lookup:
-        return
-
-    rows = []
-    cur, cur_top = [], None
-    for c in cells:
-        if cur_top is None or abs(c["top"] - cur_top) <= Y_TOL:
-            cur.append(c)
-            cur_top = c["top"] if cur_top is None else cur_top
-        else:
-            rows.append(cur)
-            cur, cur_top = [c], c["top"]
-    if cur:
-        rows.append(cur)
-
-    for ri in range(len(rows) - 1):
-        row_sorted = sorted(rows[ri], key=lambda c: c["x0"])
-        label_hits = []  # (field, cell, position-in-row)
-        for pos, c in enumerate(row_sorted):
-            norm = c["text"].strip().rstrip(":#").strip().upper()
-            f = label_lookup.get(norm)
-            if f:
-                label_hits.append((f, c, pos))
-        if not label_hits:
-            continue
-        value_row = rows[ri + 1]
-        gap = min(c["top"] for c in value_row) - row_sorted[0]["top"]
-        if gap <= 0 or gap > 25:
-            continue  # not the visually-next line -- don't reach further down the page
-        value_words = sorted(
-            (w for c in value_row for w in c["words"]), key=lambda w: w["x0"])
-        for f, label_cell, pos in label_hits:
-            if f["key"] in out:
-                continue  # an earlier row in this same document already filled it
-            lo = label_cell["x0"] - 5
-            hi = row_sorted[pos + 1]["x0"] - 5 if pos + 1 < len(row_sorted) else label_cell["x0"] + 260
-            words_in_col = [w["text"] for w in value_words if lo <= w["x0"] < hi]
-            if not words_in_col:
-                continue
-            joined = " ".join(words_in_col)
-            v = _hdr_valid(f["dtype"], joined)
-            if v:
-                out[f["key"]] = {"value": v, "raw": joined, "confidence": 0.8}
 
 
 # --- measurements ---
@@ -911,6 +812,160 @@ def _powerdb_grids(text):
                     "Bushing %s Power Factor" % pm.group(1).upper(),
                     nums[4], "%", "D", False, 0.75, loff,
                     phase=pm.group(1).upper()))
+    return out
+
+
+# ── Device-row "POSITION ... RESULT" grids (2026-07-22) ─────────────────────
+# Breaker/feeder contact-resistance and trip-timing tables print each device
+# on its own row under a plain "POSITION <col...> RESULT" header, with NO
+# unit token anywhere in that header line: the unit lives either in the
+# SECTION TITLE above ("...by Breaker Position (Micro-Ohmmeter, μΩ)") or, for
+# timing tables, inline in the lone column header ("TRIP TIME (MS)"). This
+# means neither `_column_tables` (needs real pdfplumber ruled-table borders —
+# these reports draw none) nor `_powerdb_grids`'s Μ Ω/µΩ-header grid mode
+# (mode 3 above, keyed off a literal MΩ/µΩ token in the header) ever see it —
+# confirmed empirically: a real NETA report with exactly this shape produced
+# ZERO contact_resistance / trip_time readings before this pass existed.
+# Mirrors the client-side testReportParse.ts posRowRe/posLabel device-row
+# detector added the same day for the identical table shape in the pdfjs
+# fallback path (frontend gem P6).
+_POSITION_HDR_RE = re.compile(r"^\s*POSITION\b(?P<rest>.*)\bRESULT\s*$", re.I)
+_POSITION_ROW_RE = re.compile(
+    r"^\s*(?P<label>[A-Za-z][A-Za-z0-9()\-.\s]{1,40}?)\s+"
+    r"(?P<vals>(?:-?\d{1,6}(?:,\d{3})*(?:\.\d+)?\s+){1,4})"
+    r"(?:(?P<thresh>[≤≥<>]=?\s*-?\d+(?:\.\d+)?)\s+)?"
+    r"(?P<verdict>PASS(?:ED)?|FAIL(?:ED)?|MONITOR|MARGINAL|ACCEPTABLE|INVESTIGATE)\s*$",
+    re.I,
+)
+
+
+def _is_generic_measurement_type(t):
+    """Same generic-type test as extract_measurements()'s local
+    _is_generic_type, duplicated here (module scope) so this pass can refuse
+    to emit a table it can't confidently name — a bare "position_reading" is
+    exactly the kind of ungrounded slug the rest of the file never trusts."""
+    if not t:
+        return True
+    return t.endswith("_reading") or t in ("reading", "resistance")
+
+
+def _position_grid_readings(text):
+    """POSITION <cols...> RESULT device-row tables -> per-row (per-phase, for
+    multi-value rows) diagnostic readings. See module comment above."""
+    if not text:
+        return []
+    lines = text.split("\n")
+    offsets = []
+    off = 0
+    for raw in lines:
+        offsets.append(off)
+        off += len(raw) + 1
+
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        hm = _POSITION_HDR_RE.match(line)
+        if not hm:
+            i += 1
+            continue
+        header_rest = hm.group("rest") or ""
+
+        # Inline unit carried on the header itself, e.g. "TRIP TIME (MS)".
+        hdr_units = _UNITCOL_RE.findall(header_rest)
+        inline_unit = normalize_unit(hdr_units[0]) if hdr_units else None
+
+        # Nearest non-blank line above, usually the numbered section heading
+        # ("2. Contact Resistance by Breaker Position (Micro-Ohmmeter, μΩ)").
+        ctx_label = None
+        ctx_unit = None
+        for back in range(i - 1, max(-1, i - 12), -1):
+            bl = lines[back].strip()
+            if not bl:
+                continue
+            ctx_units = _UNITCOL_RE.findall(bl)
+            if ctx_units:
+                ctx_unit = normalize_unit(ctx_units[-1])
+            ctx_label = re.sub(r"^\d+\.\s*", "", bl)
+            ctx_label = re.sub(r"\([^)]*\)", "", ctx_label).strip(" —-")
+            break
+
+        header_col_label = re.sub(r"\bRESULT\b|\bMFR\.?\s*THRESHOLD\b", "", header_rest, flags=re.I).strip()
+        header_col_label = re.sub(r"\([^)]*\)", "", header_col_label).strip()
+
+        # Try the column header's own words FIRST ("TRIP TIME" -> trip_time):
+        # a report's literal column name is a more precise match than the
+        # (often more narrative) section title, which can accidentally
+        # collide with an unrelated library alias (e.g. "Breaker Timing"
+        # contains the generic "timing" -> open_close_timing fragment, which
+        # would incorrectly steal a "TRIP TIME" column's own explicit type —
+        # this ordering is the fix for that, matching the precedent set by
+        # the 2026-07-04 "trip time" removal from open_close_timing's alias
+        # list for the identical reason).
+        mt = crit = u = kind = None
+        for cand in (header_col_label, ctx_label):
+            if not cand:
+                continue
+            e = classify_label(cand)
+            if e:
+                mt, crit, u, kind = e["type"], e["type"] in CRITICAL_TYPES, e["unit"], e["kind"]
+                break
+        if mt is None:
+            seed = header_col_label or ctx_label or "Position Reading"
+            mt, crit, u, kind = _classify(seed, inline_unit or ctx_unit)
+        if _is_generic_measurement_type(mt):
+            i += 1
+            continue
+
+        unit = inline_unit or ctx_unit or u
+        phase_cols = re.findall(r"\bPHASE\s+([ABC])\b", header_rest, re.I)
+
+        # Collect data rows without emitting yet (posRowCount >= 2 guard,
+        # same as the TS detector) -- and tolerate up to 2 consecutive
+        # non-row lines that are clearly page-break noise (a repeated report
+        # header/footer), not a new table or section, so a mid-table page
+        # break (confirmed on a real DEMO report: the timing table's last two
+        # rows landed on the next PDF page, split off by a footer line) never
+        # truncates the table.
+        rows = []
+        j = i + 1
+        misses = 0
+        while j < len(lines) and j < i + 60:
+            rl = lines[j].strip()
+            if not rl:
+                break
+            rm = _POSITION_ROW_RE.match(rl)
+            if rm:
+                rows.append((j, rm))
+                misses = 0
+                j += 1
+                continue
+            if misses < 2 and not re.match(r"^\d+\.\s", rl) and not _POSITION_HDR_RE.match(rl):
+                misses += 1
+                j += 1
+                continue
+            break
+
+        if len(rows) >= 2:
+            for (rj, rm) in rows:
+                label = rm.group("label").strip()
+                vals = rm.group("vals").split()
+                if phase_cols and len(vals) == len(phase_cols):
+                    phases = phase_cols
+                elif len(vals) > 1:
+                    phases = ["A", "B", "C", "D"][:len(vals)]
+                else:
+                    phases = [None]
+                for k, tok in enumerate(vals):
+                    v = _tofloat(tok)
+                    if v is None:
+                        continue
+                    out.append(_grid_rec(mt, label, v, unit, kind, crit, 0.75,
+                                         offsets[rj],
+                                         phase=phases[k] if k < len(phases) else None))
+            i = max(j, i + 1)
+            continue
+        i += 1
     return out
 
 
@@ -1867,8 +1922,9 @@ def extract_measurements(cells, page_tables, full_text=""):
     phase_nohdr_out = _phase_lines_after_unit_header(full_text)  # per-phase rows, no "PHASE" header row
     testcond_out = _label_testcond_reading(full_text)    # reading right after a glued test-condition token
     phase_ctx_out = _phase_context_readings(full_text)   # single-phase-per-line under a context header (VLF tan delta)
+    position_out = _position_grid_readings(full_text)    # "POSITION <cols> RESULT" device-row grids (contact resistance / trip timing)
     inline_out = _inline_readings(full_text)             # general value+unit pass (post-nameplate-suppression)
-    combined = table_out + grid_out + dga_out + pi_out + pf_out + dual_min_out + bus_out + phase_grid_out + phase_nohdr_out + testcond_out + phase_ctx_out + inline_out
+    combined = table_out + grid_out + dga_out + pi_out + pf_out + dual_min_out + bus_out + phase_grid_out + phase_nohdr_out + testcond_out + phase_ctx_out + position_out + inline_out
     # Which (type, value, unit) triples already have a PHASED reading (from the
     # richer column-table pass) — used to drop the inline pass's phase-less
     # duplicate of the same value.

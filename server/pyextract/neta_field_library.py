@@ -132,6 +132,11 @@ _UNIT_NORM = [
     (re.compile(r"ppm", re.I), "ppm"),
     (re.compile(r"vdc", re.I), "VDC"),
     (re.compile(r"kv", re.I), "kV"),
+    # milliseconds -- MUST be checked before the "sec|second" rule below (2026-07-22):
+    # "TRIP TIME (MS)" / "TRIP TIME (MSEC)" column headers are milliseconds, not
+    # seconds. Anchored fullmatch so it never fires on an unrelated token that
+    # merely contains "ms" as a substring.
+    (re.compile(r"^(ms|msec|millisec(?:ond)?)$", re.I), "ms"),
     (re.compile(r"sec|second", re.I), "sec"),
     (re.compile(r"^%$"), "%"),
 ]
