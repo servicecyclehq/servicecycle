@@ -26,7 +26,7 @@ jobs:
         target: [server, client]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -67,7 +67,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Generate SPDX-JSON SBOM
         uses: aquasecurity/trivy-action@v0.36.0
