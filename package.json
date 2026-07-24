@@ -27,7 +27,7 @@
     "eslint": "^9.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "fast-check": "^4.8.0",
-    "globals": "^15.11.0",
+    "globals": "^17.7.0",
     "html-validate": "^9.0.0",
     "lighthouse": "^12.2.0",
     "puppeteer-core": "^23.0.0",
