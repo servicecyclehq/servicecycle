@@ -66,8 +66,9 @@
  *   - Requires an EXPLICIT --dry-run or --execute flag; a bare invocation
  *     with neither (or both) prints usage and exits before any DB call is
  *     attempted. This is stricter than the --execute-or-nothing convention
- *     used elsewhere in this directory (backfillDrawingRevisions.ts,
- *     p5-cleanup-riverside-imports.js) on purpose: a reviewer reading only
+ *     used elsewhere in this directory (backfillDrawingRevisions.ts, the
+ *     legacy p5-cleanup/w17-cleanup scripts before they were retired) on
+ *     purpose: a reviewer reading only
  *     the command line (human or automated) should be able to tell dry-run
  *     from execute without having to read this file's source first.
  *   - Idempotent: a second run finds zero rows missing _actor (Pass 1 no-ops)
