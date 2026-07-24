@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload knip report artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: knip-report-${{ github.sha }}
           path: knip-report.txt
