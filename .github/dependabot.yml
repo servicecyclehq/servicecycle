@@ -51,6 +51,89 @@ updates:
     cooldown:
       default-days: 7
 
+  # SDK npm dependencies
+  # 2026-07-09 coverage audit (from overnight-hardening branch, cherry-picked
+  # to main 2026-07-24): sdk/ has its own package.json + lockfile, published
+  # standalone (see .dependency-cruiser.cjs no-sdk-to-app rule) but had zero
+  # Dependabot coverage before this.
+  - package-ecosystem: npm
+    directory: /sdk
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      patch-and-minor:
+        update-types:
+          - minor
+          - patch
+    cooldown:
+      default-days: 7
+
+  # Root npm dependencies (eslint/stylelint/playwright/lighthouse tooling --
+  # see knip.json; these must stay installed for CI dead-code/lint checks
+  # to run without false positives). 2026-07-09 coverage audit: root has
+  # its own package.json + lockfile, previously uncovered.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      patch-and-minor:
+        update-types:
+          - minor
+          - patch
+    cooldown:
+      default-days: 7
+
+  # Docker base images -- server/Dockerfile(.prod|.migrate),
+  # client/Dockerfile(.prod). Dependabot's docker ecosystem scans every
+  # Dockerfile* in the given directory automatically. 2026-07-09 coverage
+  # audit: previously zero Docker base-image coverage anywhere in the repo.
+  - package-ecosystem: docker
+    directory: /server
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: docker
+    directory: /client
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 7
+
   # GitHub Actions
   - package-ecosystem: github-actions
     directory: /
