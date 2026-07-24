@@ -21,6 +21,7 @@ const multer = require('multer');
 const prisma = require('../lib/prisma').default;
 const { uploadFile } = require('../lib/storage');
 const { resolveTargetAccount } = require('../lib/oemTargetAccount');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_RE = /\.(pdf|jpe?g|png|heic|heif|webp)$/i;
@@ -75,6 +76,16 @@ router.post('/jobs', upload.single('file'), async (req: any, res: any) => {
         fileKey:         storageKey,
         fileName:        req.file.originalname || null,
         targetAccountId: targetAccountId,
+      },
+    });
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'ingest_job_enqueued',
+      details: {
+        jobId: job.id,
+        kind: job.kind,
+        fileName: req.file.originalname || null,
+        targetAccountId,
       },
     });
 

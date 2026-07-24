@@ -29,6 +29,7 @@
 const router = require('express').Router();
 const { requireManager, requireRole, requireViewer } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 // Internal account users (incl. read-only viewers who legitimately raise a
 // service request from an asset) may create/send a quote. EXCLUDES the external
@@ -387,6 +388,17 @@ router.post('/', requireQuoteWriter, async (req, res) => {
     // Drafts stay silent until POST /:id/send.
     if (!isDraft) emitQuoteCreatedEvent(req.user.accountId, qr, dossierSnapshot);
 
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: isDraft ? 'quote_request_drafted' : 'quote_request_created',
+      details: {
+        quoteRequestId: qr.id,
+        assetId: qr.assetId ?? null,
+        driver: (qr as any).driver ?? null,
+        timeline: (qr as any).timeline ?? null,
+        isDraft,
+      },
+    });
+
     return res.status(201).json({ success: true, data: qr });
   } catch (err) {
     console.error('[quoteRequests POST /]', err);
@@ -484,6 +496,18 @@ router.patch('/:id/status', requireManager, async (req, res) => {
       } catch { /* never block the status response */ }
     }
 
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'quote_request_status_changed',
+      details: {
+        quoteRequestId: updated.id,
+        assetId: existing.assetId,
+        fromStatus: existing.status,
+        toStatus: status,
+        declineReason: status === 'declined' ? (declineReason || null) : null,
+        workOrderCreated: createdWorkOrder ? createdWorkOrder.id : null,
+      },
+    });
+
     return res.json({ success: true, data: updated, workOrder: createdWorkOrder });
   } catch (err) {
     console.error('[quoteRequests PATCH /:id/status]', err);
@@ -518,6 +542,11 @@ router.post('/:id/send', requireQuoteWriter, async (req, res) => {
 
     // Now that it's actually sent, notify the contractor pipeline.
     emitQuoteCreatedEvent(req.user.accountId, qr, (qr as any).dossierSnapshot);
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'quote_request_sent',
+      details: { quoteRequestId: qr.id, assetId: (qr as any).assetId ?? null },
+    });
 
     return res.json({ success: true, data: qr });
   } catch (err) {

@@ -11,6 +11,7 @@ const router   = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const { requireAdmin }      = require('../middleware/roles');
 import prisma from '../lib/prisma';
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 // All routes require auth
 router.use(authenticateToken);
@@ -79,6 +80,11 @@ router.post('/grant', requireAdmin, async (req, res) => {
       },
     });
 
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'consultant_access_granted',
+      details: { recordId: record.id, consultantId: consultant.id, consultantEmail: consultant.email },
+    });
+
     res.json({ success: true, data: { record } });
   } catch (err) {
     console.error('Grant consultant access error:', err);
@@ -145,6 +151,11 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       throw e;
     }
 
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'consultant_access_revoked',
+      details: { recordId: record.id, consultantId: record.consultantId },
+    });
+
     res.json({ success: true, data: { record: updated } });
   } catch (err) {
     console.error('Revoke consultant access error:', err);
@@ -192,6 +203,11 @@ router.post('/:id/restore', requireAdmin, async (req, res) => {
         data: { isActive: true },
       }),
     ]);
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'consultant_access_restored',
+      details: { newRecordId: record.id, previousRecordId: old.id, consultantId: old.consultantId },
+    });
 
     res.json({ success: true, data: { record } });
   } catch (err) {

@@ -37,6 +37,7 @@
 const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const PDFDocument = require('pdfkit');
 // C2a: shared Field Report theme (lib/pdfStyle.ts) -- masthead, footer,
 // locked palette (docs/design/EXPORT_SURFACE_INVENTORY_2026-07-13.md callout 6).
@@ -572,6 +573,17 @@ router.post('/commit', requireManager, async (req: any, res: any) => {
       });
       workOrders.push(wo);
     }
+
+    writeActivityLog({
+      accountId, userId: req.user.id, action: 'outage_planner_committed',
+      details: {
+        date: (new Date(date)).toISOString().slice(0, 10),
+        blackoutCount: blackouts.length,
+        workOrderCount: workOrders.length,
+        selectionCount: selections.length,
+        createBlackout,
+      },
+    });
 
     return res.status(201).json({
       success: true,

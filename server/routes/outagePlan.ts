@@ -22,6 +22,7 @@
 const router = require('express').Router({ mergeParams: true });
 const { requireManager } = require('../middleware/roles');
 const prisma  = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const WINDOW_DAYS = 90; // task-clustering lookahead/lookbehind
 
@@ -327,6 +328,11 @@ router.post('/work-order', requireManager, async (req, res) => {
         asset:      { select: { id: true, manufacturer: true, model: true, serialNumber: true, equipmentType: true } },
         contractor: { select: { id: true, name: true } },
       },
+    });
+
+    writeActivityLog({
+      accountId, userId: req.user.id, action: 'outage_plan_work_order_created',
+      details: { workOrderId: wo.id, assetId, taskCount: schedules.length, scheduleIds, scheduledDate: when.toISOString(), contractorId: contractorId || null },
     });
 
     return res.status(201).json({ success: true, data: wo, taskCount: schedules.length });

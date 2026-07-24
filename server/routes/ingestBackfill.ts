@@ -22,6 +22,7 @@ const { uploadFile } = require('../lib/storage');
 const { requireManager } = require('../middleware/roles');
 const { resolveTargetAccount } = require('../lib/oemTargetAccount');
 const { assertZipInflatesWithinBudget } = require('../lib/zipInflateGuard');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const MAX_ZIP_BYTES  = 100 * 1024 * 1024; // 100 MB archive (compressed)
 const MAX_FILES      = 200;               // jobs per batch
@@ -162,6 +163,18 @@ router.post('/backfill', requireManager, upload.single('file'), async (req: any,
       });
       jobIds.push(job.id);
     }
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'backfill_batch_enqueued',
+      details: {
+        batchSize: jobIds.length,
+        truncated,
+        skippedCount: skipped,
+        skippedNonReportCount: nonReport.length,
+        siteId,
+        targetAccountId,
+      },
+    });
 
     return res.status(202).json({
       success: true,

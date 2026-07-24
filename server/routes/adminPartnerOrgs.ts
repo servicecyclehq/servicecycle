@@ -16,6 +16,7 @@ export {};
 const express   = require('express');
 const bcrypt    = require('bcryptjs');
 const prisma    = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { requireSuperAdmin } = require('../middleware/roles');
 
 const router = express.Router();
@@ -108,6 +109,11 @@ router.post('/', async (req: any, res: any) => {
       },
     });
 
+    writeActivityLog({
+      accountId: null, userId: req.user.id, action: 'partner_org_created',
+      details: { partnerOrgId: org.id, name: org.name, actor: 'super_admin' },
+    });
+
     res.status(201).json({ org });
   } catch (err: any) {
     if (err.code === 'P2002') {
@@ -148,6 +154,11 @@ router.patch('/:id', async (req: any, res: any) => {
         webhookUrl: true, digestIntervalDays: true, createdAt: true, updatedAt: true,
       },
     });
+    writeActivityLog({
+      accountId: null, userId: req.user.id, action: 'partner_org_updated',
+      details: { partnerOrgId: org.id, name: org.name, fieldsChanged: Object.keys(data), actor: 'super_admin' },
+    });
+
     res.json({ org });
   } catch (err) {
     console.error('[adminPartnerOrgs PATCH /:id]', err);
@@ -170,6 +181,10 @@ router.delete('/:id', async (req: any, res: any) => {
     if (existing._count.accounts === 0) {
       // Safe to hard-delete
       await prisma.partnerOrganization.delete({ where: { id } });
+      writeActivityLog({
+        accountId: null, userId: req.user.id, action: 'partner_org_deleted',
+        details: { partnerOrgId: id, name: existing.name, mode: 'hard', actor: 'super_admin' },
+      });
       return res.json({ deleted: true, hard: true });
     }
 
@@ -186,6 +201,11 @@ router.delete('/:id', async (req: any, res: any) => {
         webhookUrl: null,
         webhookSecret: null,
       },
+    });
+
+    writeActivityLog({
+      accountId: null, userId: req.user.id, action: 'partner_org_deleted',
+      details: { partnerOrgId: id, name: existing.name, mode: 'soft', accountCount: existing._count.accounts, actor: 'super_admin' },
     });
 
     res.json({ deleted: true, hard: false, accountCount: existing._count.accounts });
@@ -214,6 +234,11 @@ router.post('/:id/link-account', async (req: any, res: any) => {
       where: { id: accountId },
       data:  { partnerOrgId: id },
       select: { id: true, companyName: true, partnerOrgId: true },
+    });
+
+    writeActivityLog({
+      accountId: updated.id, userId: req.user.id, action: 'partner_org_account_linked',
+      details: { partnerOrgId: id, partnerOrgName: org.name, accountId: updated.id, companyName: updated.companyName, actor: 'super_admin' },
     });
 
     res.json({ account: updated });
@@ -270,6 +295,16 @@ router.post('/:id/create-oem-user', async (req: any, res: any) => {
       });
 
       return { account, user };
+    });
+
+    writeActivityLog({
+      accountId: result.account.id, userId: req.user.id, action: 'oem_user_created',
+      details: {
+        partnerOrgId: id, partnerOrgName: org.name,
+        newAccountId: result.account.id, newAccountCompanyName: result.account.companyName,
+        newUserId: result.user.id, newUserEmail: result.user.email, newUserRole: result.user.role,
+        actor: 'super_admin',
+      },
     });
 
     res.status(201).json({
