@@ -1027,6 +1027,11 @@ router.post('/commit', requireManager, handleUpload, async (req, res) => {
       }).catch(() => {}); // swallow — already handled inside fireImportWebhook
     }
 
+    writeActivityLog({
+      accountId, userId: req.user.id, action: 'assets_import_committed',
+      details: { created, skipped, failed, sitesCreated, schedulesCreated, createMissingSites, autoApplySchedules },
+    });
+
     return res.json({
       success: true,
       data: {

@@ -1691,6 +1691,7 @@ model LabSample {
   accountId    String
   assetId      String
   workOrderId  String? // sample may be pulled during a work order
+  enteredById  String? // 2026-07-24 audit-coverage pass -- which user committed this result (previously uncaptured anywhere: no field, no log)
   sampleType   String // "dga" | "oil_quality" | "fuel" (string, not enum — lab menus grow)
   sampleDate   DateTime
   labName      String?

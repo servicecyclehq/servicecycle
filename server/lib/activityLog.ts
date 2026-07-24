@@ -23,6 +23,12 @@
  *   arc_flash_label_generated -- NFPA 70E arc-flash label PDF generated
  *                               (details.scope = 'single' | 'bulk')
  *
+ * Added by 2026-07-24 liability/audit-coverage pass (SCAN 5, non-arc-flash
+ * ingestion review):
+ *   assets_import_committed        -- bulk asset CSV/Excel import committed
+ *   deficiencies_import_committed  -- bulk deficiency/finding import committed
+ *   dga_sample_committed           -- transformer-oil DGA lab result committed
+ *
  * NOTE: ActivityLog.userId is nullable as of B4 (migration
  * 20260502160000_activity_log_user_optional). Anonymous events such as
  * login_failed against an unregistered email persist with userId = null.

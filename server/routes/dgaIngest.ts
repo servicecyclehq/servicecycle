@@ -18,6 +18,7 @@ import prisma from '../lib/prisma';
 const { requireManager, requireViewer } = require('../middleware/roles');
 const { evaluateDga } = require('../lib/dgaEvaluate');
 const { parseDgaText } = require('../lib/dgaParse');
+const { writeLog } = require('../lib/activityLog');
 
 const GAS_KEYS = ['h2', 'ch4', 'c2h2', 'c2h4', 'c2h6', 'co', 'co2', 'o2', 'n2'];
 
@@ -114,7 +115,7 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
     const result = await prisma.$transaction(async (tx: any) => {
       const sample = await tx.labSample.create({
         data: {
-          accountId: req.user.accountId, assetId: asset.id,
+          accountId: req.user.accountId, assetId: asset.id, enteredById: req.user.id,
           sampleType: 'dga', sampleDate: when, labName: labName || null,
           h2: gases.h2 ?? null, ch4: gases.ch4 ?? null, c2h2: gases.c2h2 ?? null,
           c2h4: gases.c2h4 ?? null, c2h6: gases.c2h6 ?? null, co: gases.co ?? null,
@@ -168,6 +169,15 @@ router.post('/:id/dga/commit', requireManager, async (req: any, res: any) => {
         }
       }
       return { sample, deficiencyCreated };
+    });
+
+    writeLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'dga_sample_committed',
+      assetId: asset.id,
+      details: {
+        sampleId: result.sample.id, ieeeStatus: evaluation.ieeeStatus, faultCode: evaluation.faultCode,
+        overallCondition: evaluation.overallCondition, deficiencyCreated: result.deficiencyCreated,
+      },
     });
 
     return res.status(201).json({ success: true, data: { ...result, evaluation } });

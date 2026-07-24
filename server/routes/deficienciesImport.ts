@@ -28,6 +28,7 @@ const Papa   = require('papaparse');
 const ExcelJS = require('exceljs');
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+const { writeLog } = require('../lib/activityLog');
 
 const MAX_ROWS  = 1000;
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -359,6 +360,11 @@ router.post('/commit', requireManager, handleUpload, async (req: any, res: any) 
         created++;
       }
     }, { timeout: 60000 });
+
+    writeLog({
+      accountId, userId: req.user.id, action: 'deficiencies_import_committed',
+      details: { created, skipped: skippedRows.length, failed: errorRows.length },
+    });
 
     return res.json({
       success: true,
