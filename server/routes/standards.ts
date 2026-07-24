@@ -32,6 +32,7 @@ const { z } = require('zod');
 const { requireAdmin } = require('../middleware/roles');
 const { validateBody, UuidStr, emptyToUndef } = require('../lib/validate');
 const prisma = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { renderReportDocPdf } = require('../lib/reportsPdf');
 const { formatTimestamp } = require('../lib/pdfStyle');
 
@@ -258,6 +259,18 @@ router.post('/task-definitions', requireAdmin, async (req, res) => {
       include: { standard: { select: { id: true, code: true, edition: true } } },
     });
 
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'task_definition_created',
+      details: {
+        taskDefinitionId: taskDefinition.id,
+        taskCode: taskDefinition.taskCode,
+        taskName: taskDefinition.taskName,
+        equipmentType: taskDefinition.equipmentType,
+        standardId: taskDefinition.standardId,
+        intervals: { c1: taskDefinition.intervalC1Months, c2: taskDefinition.intervalC2Months, c3: taskDefinition.intervalC3Months },
+      },
+    });
+
     res.status(201).json({ success: true, data: { taskDefinition } });
   } catch (err) {
     // (accountId, equipmentType, taskCode) unique.
@@ -367,6 +380,16 @@ router.post('/task-definitions/:id/archive', requireAdmin, async (req, res) => {
       return res.status(409).json({ success: false, error: 'Task definition was already archived by another request.' });
     }
     const taskDefinition = await prisma.maintenanceTaskDefinition.findFirst({ where: { id: gate.def.id } });
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'task_definition_archived',
+      details: {
+        taskDefinitionId: gate.def.id,
+        taskCode: taskDefinition?.taskCode ?? null,
+        taskName: taskDefinition?.taskName ?? null,
+        equipmentType: taskDefinition?.equipmentType ?? null,
+      },
+    });
 
     res.json({ success: true, data: { taskDefinition } });
   } catch (err) {

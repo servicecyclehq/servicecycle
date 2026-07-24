@@ -37,6 +37,7 @@
 
 import { Router } from 'express';
 import prisma from '../lib/prisma';
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const { requireManager, requireAdmin } = require('../middleware/roles');
 
 const router: Router = Router();
@@ -316,6 +317,17 @@ router.post('/declare', requireManager, async (req: any, res) => {
       },
     });
 
+    writeActivityLog({
+      accountId, userId: req.user.id, action: 'disaster_event_declared',
+      details: {
+        eventId: event.id,
+        eventType,
+        title: event.title,
+        affectedStates: event.affectedStates,
+        affectedSiteCount: validSiteIds.length,
+      },
+    });
+
     // Notify the service rep if configured.
     const account = await prisma.account.findUnique({
       where:  { id: accountId },
@@ -392,6 +404,17 @@ router.post('/:id/resolve', requireManager, async (req: any, res) => {
     const updated: any = await prisma.disasterEvent.update({
       where: { id: event.id },
       data:  { resolvedAt: new Date() },
+    });
+
+    writeActivityLog({
+      accountId: accountId ?? event.accountId ?? null, userId: req.user.id, action: 'disaster_event_resolved',
+      details: {
+        eventId: event.id,
+        eventType: event.eventType,
+        title: event.title,
+        source: event.source,
+        systemEvent: event.accountId == null,
+      },
     });
 
     res.json({ success: true, data: { event: updated } });

@@ -31,6 +31,7 @@ const multer = require('multer');
 const Papa   = require('papaparse');
 const ExcelJS = require('exceljs');
 const { requireManager } = require('../middleware/roles');
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 const prisma = require('../lib/prisma').default;
 
 const MAX_ROWS  = 2000;
@@ -406,6 +407,11 @@ router.post('/commit', requireManager, handleUpload, async (req: any, res: any) 
         updated++;
       }
     }, { timeout: 60000 });
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'schedules_import_committed',
+      details: { updated, skipped: skippedRows.length, failed: errorRows.length },
+    });
 
     return res.json({
       success: true,
