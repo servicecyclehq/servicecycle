@@ -745,6 +745,21 @@ function _isGeminiCascadeError(err) {
   return /\b404\b|NOT_FOUND|models?\/\S+ is not found|is not supported for generateContent|no longer supported|deprecated/i.test(msg);
 }
 
+// The @google/generative-ai SDK's GoogleGenerativeAIAbortError inherits Error's
+// default name ('Error') rather than 'AbortError' -- a caller using the standard
+// e.name === 'AbortError' idiom silently misses it and falls through to
+// fallback paths (observed at arcFlashExtract.ts:618 producing an 84s
+// extractArcFlashDocument call against an 8s AI_PDF_TIMEOUT_MS bound: the
+// abort surfaced but was mis-classified as a normal extraction failure and
+// cascaded through the text/vision fallbacks anyway). Detect by message
+// signature; each _geminiXxx catch-block below normalizes err.name to
+// 'AbortError' before re-throwing so callers using the standard abort check
+// get the short-circuit behavior they expect.
+function _isGeminiAbortError(err) {
+  const msg = (err && err.message) || String(err);
+  return /^\[GoogleGenerativeAI Error\]:\s+Request aborted when fetching/.test(msg);
+}
+
 async function _geminiComplete({ system, user, maxTokens, s, responseMimeType = null }) {
   let GoogleGenerativeAI;
   try { ({ GoogleGenerativeAI } = require('@google/generative-ai')); } catch {
@@ -783,6 +798,7 @@ async function _geminiComplete({ system, user, maxTokens, s, responseMimeType = 
       }
       return { text: result.response.text().trim() };
     } catch (err) {
+      if (_isGeminiAbortError(err)) { err.name = 'AbortError'; throw err; }
       if (_isGeminiCascadeError(err)) {
         console.warn(`[ai][gemini] ${modelName} unavailable (${(err && err.message) || err}); trying next model in cascade`);
         lastError = err;
@@ -834,6 +850,7 @@ async function _geminiImage({ imageBuffer, mediaType, prompt, maxTokens, s, resp
       }
       return { text: result.response.text().trim(), model: modelName };
     } catch (err) {
+      if (_isGeminiAbortError(err)) { err.name = 'AbortError'; throw err; }
       if (_isGeminiCascadeError(err)) {
         console.warn(`[ai][gemini] image: ${modelName} unavailable (${(err && err.message) || err}); trying next model in cascade`);
         lastError = err;
@@ -888,6 +905,7 @@ async function _geminiPdf({ pdfBuffer, system, user, maxTokens, s, responseMimeT
       }
       return { text: result.response.text().trim(), model: modelName };
     } catch (err) {
+      if (_isGeminiAbortError(err)) { err.name = 'AbortError'; throw err; }
       if (_isGeminiCascadeError(err)) {
         console.warn(`[ai][gemini] pdf: ${modelName} unavailable (${(err && err.message) || err}); trying next model in cascade`);
         lastError = err;
