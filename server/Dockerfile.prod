@@ -17,7 +17,7 @@
 # runtime, so dev deps are intentionally kept. The native build toolchain used
 # by `npm ci` is installed in a virtual package and removed afterwards.
 
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 
 # Runtime system deps:
 #   openssl           - Prisma probes for libssl at boot

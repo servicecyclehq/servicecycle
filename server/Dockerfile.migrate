@@ -16,7 +16,7 @@
 #     -f server/Dockerfile.migrate server/
 #
 
-FROM node:20-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache python3 make g++ openssl
 COPY package.json package-lock.json ./
@@ -31,7 +31,7 @@ COPY prisma ./prisma
 RUN npx prisma generate
 RUN npm prune --omit=dev
 
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 RUN apk add --no-cache openssl postgresql-client \
  && rm -rf /var/cache/apk/*
 WORKDIR /app

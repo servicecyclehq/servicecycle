@@ -28,7 +28,7 @@
 # -- Stage 1: deps ------------------------------------------------------------
 # Debian (node:20-slim), NOT Alpine: the Prisma engine generated here must match
 # the runtime libc (glibc), and the extractor's pypdfium2 needs manylinux wheels.
-FROM node:20-slim AS deps
+FROM node:26-slim AS deps
 
 WORKDIR /app
 
@@ -72,7 +72,7 @@ RUN npm prune --omit=dev
 
 
 # -- Stage 2: runtime ---------------------------------------------------------
-FROM node:20-slim AS runtime
+FROM node:26-slim AS runtime
 
 # Runtime-only system deps:
 #   openssl              -- Prisma probes for libssl at boot
