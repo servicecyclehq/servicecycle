@@ -16,6 +16,7 @@ const express = require('express');
 const { requireAdmin } = require('../middleware/roles');
 const { runAlertEngine } = require('../lib/alertEngine');
 import prisma from '../lib/prisma';
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const router = express.Router();
 
@@ -169,6 +170,12 @@ router.post('/:id/acknowledge', async (req, res) => {
       where: { id: alert.id },
       data:  { status: 'acknowledged', acknowledgedAt: new Date() },
     });
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'alert_acknowledged',
+      details: { alertId: alert.id, alertType: (alert as any).type ?? null, assetId: (alert as any).assetId ?? null },
+    });
+
     return res.json({ success: true, data: { alert: updated } });
   } catch (err) {
     console.error('Acknowledge alert error:', err);
@@ -181,6 +188,15 @@ router.post('/:id/acknowledge', async (req, res) => {
 router.post('/run', requireAdmin, async (req, res) => {
   try {
     const result = await runAlertEngine({ accountId: req.user.accountId });
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'alert_engine_manual_run',
+      details: {
+        created: (result as any)?.created ?? null,
+        resolved: (result as any)?.resolved ?? null,
+      },
+    });
+
     return res.json({ success: true, data: result });
   } catch (err) {
     console.error('Manual alert engine run error:', err);

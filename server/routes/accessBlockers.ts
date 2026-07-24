@@ -15,6 +15,7 @@
 const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 const VALID_KINDS = ['LOCKED_DOOR', 'OUTAGE_NEEDED', 'MISSING_LABEL', 'ACCESS_LIMIT', 'OTHER'];
 const VALID_STATUS = ['open', 'resolved'];
@@ -118,6 +119,12 @@ router.post('/', async (req: any, res: any) => {
       },
     });
     const [decorated] = await decorate(req.user.accountId, [blocker]);
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'access_blocker_created',
+      details: { blockerId: blocker.id, kind: blocker.kind, assetId: blocker.assetId, siteId: blocker.siteId },
+    });
+
     return res.status(201).json({ success: true, data: decorated });
   } catch (err: any) {
     console.error('[accessBlockers POST /]', err.message);
@@ -145,6 +152,12 @@ router.patch('/:id', async (req: any, res: any) => {
 
     const updated = await prisma.accessBlocker.update({ where: { id: existing.id }, data });
     const [decorated] = await decorate(req.user.accountId, [updated]);
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'access_blocker_updated',
+      details: { blockerId: existing.id, previousStatus: existing.status, newStatus: (data as any).status ?? existing.status, fieldsChanged: Object.keys(data) },
+    });
+
     return res.json({ success: true, data: decorated });
   } catch (err: any) {
     console.error('[accessBlockers PATCH /:id]', err.message);
@@ -158,6 +171,12 @@ router.delete('/:id', requireManager, async (req: any, res: any) => {
     const existing = await prisma.accessBlocker.findFirst({ where: { id: req.params.id, accountId: req.user.accountId }, select: { id: true } });
     if (!existing) return res.status(404).json({ success: false, error: 'Blocker not found.' });
     await prisma.accessBlocker.delete({ where: { id: existing.id } });
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'access_blocker_deleted',
+      details: { blockerId: existing.id },
+    });
+
     return res.json({ success: true });
   } catch (err: any) {
     console.error('[accessBlockers DELETE /:id]', err.message);

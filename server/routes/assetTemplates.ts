@@ -21,6 +21,7 @@
 const router = require('express').Router();
 const { requireManager } = require('../middleware/roles');
 const prisma = require('../lib/prisma').default;
+const { writeLog: writeActivityLog } = require('../lib/activityLog');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -197,6 +198,11 @@ router.post('/', requireManager, async (req, res) => {
       include: TEMPLATE_INCLUDE,
     });
 
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'asset_template_created',
+      details: { templateId: t.id, name: t.name, equipmentType: t.equipmentType, taskDefinitionCount: parsed.taskDefinitionIds.length },
+    });
+
     return res.status(201).json({ success: true, data: { template: formatTemplate(t) } });
   } catch (err) {
     console.error('[assetTemplates POST /]', err);
@@ -264,6 +270,11 @@ router.put('/:id', requireManager, async (req, res) => {
       where: { id: req.params.id },
       include: TEMPLATE_INCLUDE,
     });
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'asset_template_updated',
+      details: { templateId: req.params.id, name: updated?.name ?? null, equipmentType: updated?.equipmentType ?? null },
+    });
+
     return res.json({ success: true, data: { template: formatTemplate(updated) } });
   } catch (err) {
     console.error('[assetTemplates PUT /:id]', err);
@@ -282,6 +293,12 @@ router.delete('/:id', requireManager, async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, error: 'Template not found or is a global template (read-only)' });
 
     await prisma.assetTemplate.delete({ where: { id: req.params.id } });
+
+    writeActivityLog({
+      accountId: req.user.accountId, userId: req.user.id, action: 'asset_template_deleted',
+      details: { templateId: req.params.id },
+    });
+
     return res.json({ success: true });
   } catch (err) {
     console.error('[assetTemplates DELETE /:id]', err);
