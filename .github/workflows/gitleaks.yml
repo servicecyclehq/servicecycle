@@ -69,7 +69,7 @@ jobs:
       - name: Upload SARIF to GitHub Security tab
         # Runs even on failure so findings surface in the Security tab.
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4.37.1
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
