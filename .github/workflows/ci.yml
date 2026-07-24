@@ -129,6 +129,21 @@ jobs:
         # importable, but no DB/migrations.
         run: npm run openapi:check
 
+      - name: Help-sync drift check
+        # 2026-07-20 codebase audit (tech-debt: "help:sync-automation") ---
+        # scripts/sync-help.js exists and is deterministic (docs/help/*.md
+        # -> server/data/help/*.txt), but drift wasn't gated in CI. Same
+        # pattern as the OpenAPI check above: regenerate, then fail the
+        # build if git sees any diff. Runs from server/ (cwd of this job
+        # per the earlier steps), so git diff needs the repo-root path.
+        run: |
+          npm run help:sync
+          cd ..
+          git diff --exit-code server/data/help/ docs/help/ || (
+            echo "::error::Help docs drifted from docs/help/*.md source. Run 'npm run help:sync' locally and commit."
+            exit 1
+          )
+
       - name: Run DB migrations
         run: npx prisma migrate deploy
 
