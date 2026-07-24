@@ -87,7 +87,7 @@ jobs:
 
       - name: Run ZAP baseline
         if: steps.target.outputs.no-target != 'true'
-        uses: zaproxy/action-baseline@v0.14.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: ${{ steps.target.outputs.target }}
           rules_file_name: '.zap/rules.tsv'
