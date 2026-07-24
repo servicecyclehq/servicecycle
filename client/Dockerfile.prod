@@ -16,7 +16,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Stage 1 — build the Vite SPA inside a clean node:20-alpine.
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 
 WORKDIR /app
 

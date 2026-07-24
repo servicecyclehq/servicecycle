@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:26-alpine
 
 # Pre-create /app owned by node so the node user can write to it at runtime
 # (Vite writes vite.config.js.timestamp-*.mjs and .vite/ cache during build)
