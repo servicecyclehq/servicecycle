@@ -32,6 +32,6 @@
     "lighthouse": "^12.2.0",
     "puppeteer-core": "^23.0.0",
     "stylelint": "^16.10.0",
-    "stylelint-config-standard": "^36.0.0"
+    "stylelint-config-standard": "^40.0.0"
   }
 }
