@@ -19,14 +19,14 @@
     "bump": "node scripts/bump-version.mjs"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.10.0",
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^9.13.0",
-    "@google/generative-ai": "^0.21.0",
-    "@playwright/test": "^1.49.0",
+    "@google/generative-ai": "^0.24.1",
+    "@playwright/test": "^1.61.1",
     "chrome-launcher": "^1.1.2",
     "eslint": "^9.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "fast-check": "^4.8.0",
+    "fast-check": "^4.9.0",
     "globals": "^15.11.0",
     "html-validate": "^9.0.0",
     "lighthouse": "^12.2.0",
